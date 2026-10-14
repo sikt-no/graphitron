@@ -7259,6 +7259,17 @@ COMMENT ON COLUMN java_file.source_root IS 'the walked root the file was reached
 COMMENT ON COLUMN java_file.stamp IS 'content hash of the file as parsed, spelled <scheme>:<hex> like every stamp SourceStamp writes and always the sha256: scheme here, this family reading every file it stamps. On ClasspathSources'' terms and for its reasons: modification time is a heuristic that a checkout, a rebase or a container layer defeats. NOT NULL because a file that cannot be read cannot be parsed either, so there is no partially-written partition to record';
 COMMENT ON COLUMN java_file.read_at IS 'when the content behind this row''s stamp began being read, on store_source.read_at''s terms and for its reasons: written for every file a refresh hashed, whether it rewrote the row or found the stamp still current, and taken before the walk that read the file rather than at the write. A refresh that can establish the file has not moved since this instant skips the hash entirely, which is the whole saving; a refresh that cannot hashes it exactly as it did before the column existed. NULL only where no pass has dated the row yet, which is a transient state rather than the cold-start one: a DDL change rebuilds every persisted store, so the first pass after this column arrived fills it. What makes a session start cold is the comparison rather than the null, a value a previous session wrote being below this session''s floor';
 
+CREATE TABLE java_source_root (
+  source_root     VARCHAR NOT NULL,
+  newest_modified TIMESTAMP NOT NULL,
+  read_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_root)
+);
+COMMENT ON TABLE java_source_root IS 'One walked source root, and when the newest .java file under it was last modified. For example a service module''s src/main/java, whose newest file was saved after the module last compiled.';
+COMMENT ON COLUMN java_source_root.source_root IS 'the walked root, absolute and normalised, as java_file.source_root spells it; the key';
+COMMENT ON COLUMN java_source_root.newest_modified IS 'the newest modification time among the .java files the walk found under the root, as the filesystem reports it. Recorded for the one question a time answers, whether the sources changed since the module compiled, and believed for nothing else: whether a file is read again is the stamp''s to decide, a checkout or a rebase moving times without moving content';
+COMMENT ON COLUMN java_source_root.read_at IS 'when the walk that measured it began; a root the walk covers and finds no file under has no row';
+
 CREATE TABLE java_class_declaration (
   file          VARCHAR NOT NULL,
   class_name    VARCHAR NOT NULL,
@@ -13823,6 +13834,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('source-root',
+   'one source root the java source walk covers',
+   'source_root', 'java-source'),
   ('graph-module',
    'one workspace module whose output or a copy of it one graph''s run reads',
    'graph_name, coordinate', 'configuration'),
@@ -14262,6 +14276,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
 
 INSERT INTO meta_relation VALUES
+  ('java_source_root', 'source-root', 'java-source',
+   'One walked source root, and when the newest .java file under it was last modified.',
+   'For example a service module''s src/main/java, whose newest file was saved after the module last compiled.',
+   'The source half of whether a workspace module was compiled since it was edited, beside the class files'' times store_class_file holds for the output half. Per root and not per file, the question being only whether anything under it changed, and per root rather than per module because a root is what the walk covers. A time and not a stamp, because what is asked is when, and content cannot say whether a compile came after an edit; the family''s refusal to trust times stands for what it governs, deciding whether a file is read again.'),
   ('store_graph_module', 'graph-module', 'store',
    'One module of the workspace whose output or a copy of it is on the classpath the build handed this graph''s run, with where it lives and where its build writes.',
    'For example the consumer''s service module, at its own directory, writing its classes to target/classes and its jar to target.',

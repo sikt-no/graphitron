@@ -13,6 +13,7 @@ import org.junit.jupiter.api.io.TempDir;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.attribute.FileTime;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -21,6 +22,7 @@ import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FILE;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
+import static no.sikt.graphitron.model.Tables.JAVA_SOURCE_ROOT;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 import no.sikt.graphitron.model.sources.SourceWalker;
@@ -208,6 +210,40 @@ class JavaSourceFactsTest {
             assertThat(store.dsl().selectCount().from(JAVA_METHOD_DECLARATION).fetchOne(0, int.class))
                 .as("the pruned file's declarations went with its row")
                 .isEqualTo(1);
+        }
+    }
+
+    /**
+     * The source half of whether a module compiled since it was edited: each walked root's newest
+     * modification time, and no row for a root the walk finds empty.
+     */
+    @Test
+    @DisplayName("each walked root records its newest file's time, and an emptied root its absence")
+    void eachRootRecordsItsNewestFile(@TempDir Path tmp) throws IOException {
+        Path own = Files.createDirectories(tmp.resolve("own"));
+        Path sibling = Files.createDirectories(tmp.resolve("sibling"));
+        Path older = write(own, "com/example/Widgets.java", WIDGETS);
+        Path newer = write(own, "com/example/Gadgets.java", GADGETS);
+        Path lone = write(sibling, "com/example/Gadgets.java", GADGETS);
+        Files.setLastModifiedTime(older, FileTime.fromMillis(1_000_000_000_000L));
+        Files.setLastModifiedTime(newer, FileTime.fromMillis(1_700_000_000_000L));
+
+        try (var store = FactStores.inMemory()) {
+            refreshJavaSources(store.dsl(), List.of(own, sibling));
+            assertThat(store.dsl().select(JAVA_SOURCE_ROOT.NEWEST_MODIFIED).from(JAVA_SOURCE_ROOT)
+                .where(JAVA_SOURCE_ROOT.SOURCE_ROOT.eq(own.toString()))
+                .fetchOne(JAVA_SOURCE_ROOT.NEWEST_MODIFIED))
+                .as("the newer of the root's two files")
+                .isEqualTo(java.time.LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(1_700_000_000_000L), java.time.ZoneId.systemDefault()));
+
+            Files.delete(lone);
+            refreshJavaSources(store.dsl(), List.of(own, sibling));
+
+            assertThat(store.dsl().select(JAVA_SOURCE_ROOT.SOURCE_ROOT).from(JAVA_SOURCE_ROOT)
+                .fetch(JAVA_SOURCE_ROOT.SOURCE_ROOT))
+                .as("a root with no file left has no row")
+                .containsExactly(own.toString());
         }
     }
 

@@ -1483,11 +1483,13 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
       so neither relation carries a column empty on most rows. Written by the configuration gatherer
       from the entries, each `ClasspathEntry` carrying the `WorkspaceModule` the plugin resolved it
       to, the project's own output included.
-    * **A module's newest source is captured** `open`. Per module and not per file, the question
-      being only whether anything changed since the compile. Java sources only, read by the
-      `java-source` gatherer from the roots it walks: the names behind a "not found" are classes,
-      methods and tables, and a change to a resource alone is the rare miss an advisory warning
-      can afford.
+    * **A module's newest source is captured** `done`. `java_source_root`, one row per root the
+      `java-source` gatherer walks with the newest modification time among its `.java` files,
+      written and swept in the refresh that writes `java_file`. A time and not a stamp, because
+      content cannot say whether a compile came after an edit; the family's refusal to trust times
+      stands for what it governs, whether a file is read again. Java sources only: the names behind
+      a "not found" are classes, methods and tables, and a resource-only change is the rare miss an
+      advisory warning can afford.
   * **A catalog is compared with what generated it** `open`. The catalog module's sources are
     generated, so a stale catalog shows only against the migrations or DDL its codegen read, which
     only the codegen configuration names. Its own fact first, then a condition beside the module's.

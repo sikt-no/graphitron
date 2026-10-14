@@ -120,7 +120,7 @@ class RelationRegistrationGateTest {
             // reduced two ways, pinned in JavaSourceFactsTest beside the source-partitioned
             // lifecycle anchor. Nothing in this class's fixtures reaches them, capture never
             // writing a .java file's declarations.
-            "java_file", "java_class_declaration", "java_method_declaration",
+            "java_file", "java_source_root", "java_class_declaration", "java_method_declaration",
             "java_field_declaration")) {
             registrations.put(relation, Arm.EQUALITY);
         }

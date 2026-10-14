@@ -11,8 +11,12 @@ import org.jooq.exception.DataAccessException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -26,6 +30,7 @@ import static no.sikt.graphitron.model.Tables.JAVA_CLASS_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FIELD_DECLARATION;
 import static no.sikt.graphitron.model.Tables.JAVA_FILE;
 import static no.sikt.graphitron.model.Tables.JAVA_METHOD_DECLARATION;
+import static no.sikt.graphitron.model.Tables.JAVA_SOURCE_ROOT;
 
 /**
  * The {@code java_} family's writer: transcribes a source walk's declarations into the store, one
@@ -201,6 +206,7 @@ public final class JavaSourceFacts {
             }
             date(verified, readAt);
             prune(normalised(sourceRoots), seen);
+            roots(normalised(sourceRoots), parsed, readAt);
         } catch (DataAccessException e) {
             LOG.warn("java source declarations could not be written to the fact store;"
                 + " store-side readers answer from the declarations already there", e);
@@ -336,6 +342,43 @@ public final class JavaSourceFacts {
     /** The store's spelling of an absent doc comment: NULL, never the walker's empty string. */
     private static String javadocOf(String javadoc) {
         return javadoc == null || javadoc.isEmpty() ? null : javadoc;
+    }
+
+    /**
+     * Each walked root's newest modification time, which is the source half of whether its module
+     * compiled since it was edited; see {@code java_source_root}. A root with no file left has no
+     * row.
+     */
+    private void roots(List<String> roots, List<SourceWalker.ParsedFile> parsed,
+                       LocalDateTime readAt) {
+        if (roots.isEmpty()) {
+            return;
+        }
+        var newest = new HashMap<String, Long>();
+        for (SourceWalker.ParsedFile file : parsed) {
+            try {
+                long modified = Files.getLastModifiedTime(file.file()).toMillis();
+                newest.merge(file.sourceRoot().toAbsolutePath().normalize().toString(), modified,
+                    Math::max);
+            } catch (IOException e) {
+                // Gone since the walk; the next walk will not see it either.
+            }
+        }
+        var r = JAVA_SOURCE_ROOT;
+        for (String root : roots) {
+            Long modified = newest.get(root);
+            if (modified == null) {
+                dsl.deleteFrom(r).where(r.SOURCE_ROOT.eq(root)).execute();
+                continue;
+            }
+            var at = LocalDateTime.ofInstant(Instant.ofEpochMilli(modified), ZoneId.systemDefault());
+            dsl.insertInto(r, r.SOURCE_ROOT, r.NEWEST_MODIFIED, r.READ_AT)
+                .values(root, at, readAt)
+                .onDuplicateKeyUpdate()
+                .set(r.NEWEST_MODIFIED, at)
+                .set(r.READ_AT, readAt)
+                .execute();
+        }
     }
 
     /**

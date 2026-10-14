@@ -623,7 +623,8 @@ class FactSchemaGateTest {
      * {@code java_} partitions by source too, at the grain its refresh runs at, and its dimension
      * is spelled {@code file} rather than {@code source_name} on purpose: a source file is not a
      * {@code store_source} row, and two columns with one name that never join would read as though
-     * they did.
+     * they did. {@code java_source_root} leads with {@code source_root}, the walked root being the
+     * scope a walk owns and the grain that relation is at.
      * {@code store_} is the store's own bookkeeping and answers the question per relation rather
      * than per prefix: {@code store_graph} is keyed on {@code graph_name} and its two recipe
      * children lead with it, while {@code store_source} and {@code store_stamp} carry neither
@@ -659,7 +660,7 @@ class FactSchemaGateTest {
                     || table.startsWith("code_")) {
                     expected = "source_name";
                 } else if (table.startsWith("java_")) {
-                    expected = "file";
+                    expected = "java_source_root".equals(table) ? "source_root" : "file";
                 } else if (table.startsWith("store_")) {
                     expected = switch (table) {
                         case "store_graph", "store_graph_schema_input", "store_graph_schema_extension"
