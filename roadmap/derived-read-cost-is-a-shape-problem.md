@@ -1784,11 +1784,28 @@ resolved one.
 * **Table types, nodes and node key columns are marked and swept** `open`, after the move. A binding
   that changed is deleted first, taking that type's node and key columns with it; the rest are
   upserted on their keys and swept, and an unchanged binding keeps everything hanging off it.
-* **"Is a node" is the resolved node** `open`. `graphitron_node_type` is `graphitron_node` and every
-  written `@node` besides, and the rows it adds are only ever wrong answers to its readers: a reach
-  marked batched, a `@nodeId` resolved to a node that does not exist. Its three readers,
+* **"Is a node" is the resolved node** `blocked`, on the node-id subject replacing
+  `graphitron_node_id_instruction` and the `intent_node_id_decode*` views, whose eight seeded classes
+  seed `@node` without `implements Node`. `graphitron_node_type` is `graphitron_node` and every
+  written `@node` besides, and the rows it adds are only ever wrong answers to its readers: a
+  reach marked batched, a `@nodeId` resolved to a node that does not exist. Its three readers,
   `graphitron_type_reach_rule`, `graphitron_node_id_instruction_rule` and
-  `intent_node_container_member`, read `graphitron_node`, and the view goes.
+  `intent_node_container_member`, read `graphitron_node`, and the view goes. A node is what the
+  manual says takes effect: `@node`, a `@table` the catalog resolves and `implements Node`, or the
+  last two over published metadata. Written once and set aside, which found the rest of it:
+  * the walk spells the same membership in `NodeDeclaration.isNodeType`, read by
+    `SchemaReachability`, `ArrivalIndex`, `KeyNodeSynthesiser` and `BuildContext.namesANodeType`,
+    and `NodeTypeShadowTest` binds the two, so the predicate moves in the same commit: a `@node`
+    with no table, one over a table the catalog does not resolve, and one implementing nothing are
+    nodes on neither spelling;
+  * `Nodes` itself admits a `@node` over `@table` implementing nothing, which
+    `facts/node-population.graphqls` states today and the move removes;
+  * an interface or union carrying `@node` is never a node, so `@nodeId(typeName:)` naming one
+    takes the container path, which the store's rule already does;
+  * seven real-schema test classes write those shapes and lean on the old answer, among them
+    `FederationKeyDerivationTest`, `NodeTypeCompletionsTest` and
+    `facts/argmapping-projection-defect.graphqls`; their schemas say what they mean in the move;
+  * `NodeCaptureTest` is redundant once the documents run capture, and goes with it.
 * **A `@node` on a type without `@table` is a defect** `done`. `NODE_WITHOUT_TABLE`, at the `@node`:
   the anti-join between the entry and the node, a type with no table binding entry. A `@table` that
   does not resolve is that directive's own defect and draws nothing here.

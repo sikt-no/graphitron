@@ -40,8 +40,9 @@ type Ev implements Node @table(name: "event") @node { id: ID! }
 # Metadata the catalog could not use infers nothing; with @node it would answer to its own name.
 type HalfInferred implements Node @table(name: "node_metadata_half") { id: ID! }
 
-# @node over @table without implements Node is a node, answering to its own name, and the missing
-# interface is NODE_WITHOUT_NODE_INTERFACE at the @node.
+# @node over @table without implements Node is a node today, answering to its own name, beside
+# NODE_WITHOUT_NODE_INTERFACE at the @node. The manual requires all three for a node, so this row
+# goes when "is a node" becomes what took effect.
 type NoInterface @table(name: "plain_id") @node { id: ID! }
 
 extend type Query {
