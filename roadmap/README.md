@@ -20,7 +20,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R981` | Stop the thread store's clear paying almost a boot to reset statistics after a capture | In Review | 2026-10-13 <sub>created 2026-09-28</sub> | [plan](thread-store-clear-pays-for-statistics.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
@@ -734,7 +733,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R776` [**An agent cannot run SQL against the fact store, only the queries we anticipated**](store-query-mcp-tool.md) — Spec, dx
 - `R913` [**An agent re-reads every diagnostic to learn what one edit changed**](mcp-diagnostics-delta-and-capture-notification.md) — Backlog, mcp
 - `R733` [**Hold the build wall clock with a budget, and take the derived-read slices R732 left unmeasured**](build-wall-clock-guardrail.md) — Backlog, dx
-- `R981` [**Stop the thread store's clear paying almost a boot to reset statistics after a capture**](thread-store-clear-pays-for-statistics.md) — In Review, dx
 - `R1021` [**The javadoc reference gate renders 566 MB of HTML to check links javac checks while compiling**](javadoc-reference-gate-runs-in-javac.md) — Backlog, dx
 - `R872` [**The keys say what a source owns, and the gatherer decides how to refresh it**](warm-capture-empties-unpartitioned-catalog-relations.md) — Spec, architecture
 - `R1010` [**The sakila catalog regenerates whenever its inputs change: a gate refuses an init.sql or codegen change that leaves jooq.codegen.schema.version where it was**](sakila-catalog-version-follows-its-inputs.md) — Backlog, dx
