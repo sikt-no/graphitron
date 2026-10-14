@@ -288,11 +288,19 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aCycleAlsoEnteredUnboundRejectsOnEveryMember() {
+    void aCycleAlsoEnteredThroughARejectedUnboundRootRejectsOnlyAtThatRoot() {
+        // Every fix the root's rejection offers binds it, so the cycle is judged as entered
+        // through two binding roots: both members inherit, and the root's error stands alone.
         var schema = build(filmInventoryCycle("", "", "", "\n    inventories: [Inventory!]!"));
 
-        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
-        assertRejects(schema, "Inventory.film", "no ancestor established a tenant context");
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.rejection())
+                .isInstanceOfSatisfying(Rejection.AuthorError.NoTenantBinding.class, r -> {
+                    assertThat(r.coordinate()).isEqualTo("Query.inventories");
+                    assertThat(r.detail()).contains("no argument or input field maps to tenant column");
+                }));
+        assertInherited(schema, "Film", "inventories");
+        assertInherited(schema, "Inventory", "film");
     }
 
     @Test
@@ -315,16 +323,22 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void aDispatchVetoOnACycleMemberReachesTheWholeCycle() {
-        // No Query.node: the unroutable node key is the only thing denying Inventory a context.
+    void aDispatchVetoOnACycleMemberRejectsOnceAndTheCycleInherits() {
+        // No Query.node: the unroutable node key is the only dispatch entry into the cycle. Every
+        // fix that keeps the entry resolvable routes it, so the cycle is judged as entered routed,
+        // and the node key's own text is the one error (not repeated as a federation key).
         var schema = build(filmInventoryCycle("",
             "implements Node @node(keyColumns: [\"inventory_id\"]) ", "\n    id: ID! @nodeId", ""));
 
-        assertThat(schema.tenantBindings().rejections())
-            .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
-                && r.coordinate().equals("Inventory")
-                && r.detail().contains("node id key"));
-        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.rejection())
+                .isInstanceOfSatisfying(Rejection.AuthorError.NoTenantBinding.class, r -> {
+                    assertThat(r.coordinate()).isEqualTo("Inventory");
+                    assertThat(r.detail()).contains("node id key")
+                        .endsWith("Add tenant column 'film_id' to @node(keyColumns:).");
+                }));
+        assertInherited(schema, "Film", "inventories");
+        assertInherited(schema, "Inventory", "film");
     }
 
     @Test
@@ -1792,6 +1806,8 @@ class TenantBindingClassificationTest {
     void anUndecodedIdHandedAConnectionRejectsAtTheRootAndTheChildStillRejects() {
         // The same undecoded id, but the service is handed a DSLContext: it would write on the
         // default database, so the root itself is refused, beside the payload child's own text.
+        // The child's error is not consequential: @globalData would be accepted on the root, and
+        // after that fix the payload really has no tenant.
         var schema = build(SERVICE_TYPES + """
             type Mutation { rateByRawIdOnConnection(film: ID!): RateFilmsPayload %s }
             """.formatted(service("rateByRawIdOnConnection")));
@@ -1827,6 +1843,24 @@ class TenantBindingClassificationTest {
         assertThat(rejection.message())
             .contains("Its arguments carry tenant-scoped values that bind no tenant: FilmRecord at in.")
             .doesNotContain("@globalData");
+    }
+
+    @Test
+    void anUnroutedConnectionServiceWithTenantEvidenceRejectsAloneAndItsPayloadInherits() {
+        // The @globalData ladder refuses the marker over the evidence, so every fix left binds a
+        // tenant in the arguments, and the payload's tenant-scoped child is judged as it leaves it.
+        var schema = build(SERVICE_TYPES + """
+            input RetitleFilmInput { title: String @field(name: "title") }
+            type Mutation { retitleFilmRated(in: RetitleFilmInput!): RateFilmsPayload %s }
+            """.formatted(service("retitleFilmRated")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "retitleFilmRated")).isNull();
+        assertThat(assertUnroutedWithoutDeclines(schema, "Mutation.retitleFilmRated").evidence())
+            .containsExactly("FilmRecord at in");
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.coordinate()).isEqualTo("Mutation.retitleFilmRated"));
+        assertInherited(schema, "RateFilmsPayload", "films");
+        assertInherited(schema, "Film", "inventories");
     }
 
     @Test
@@ -1890,6 +1924,11 @@ class TenantBindingClassificationTest {
             .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
                 && r.coordinate().equals("Mutation.pickFilmForThing")
                 && r.detail().contains("no argument or input field maps to tenant column"));
+        // The decline's fix lands in a slot, which hands Film a tenant: the decline is the one
+        // error, and the returned row's child inherits rather than repeating it.
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.coordinate()).isEqualTo("Mutation.pickFilmForThing"));
+        assertInherited(schema, "Film", "inventories");
     }
 
     @Test
@@ -2046,6 +2085,8 @@ class TenantBindingClassificationTest {
         var rejection = assertUnroutedWithoutDeclines(schema, "Mutation.rateByFilmId");
         assertThat(rejection.message())
             .contains("mark the scalar argument or input field that holds the tenant with @tenant");
+        // A plain Int is no tenant evidence, so @globalData would be accepted on the root, and
+        // the payload child keeps its own error.
         assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
     }
 
@@ -2785,6 +2826,10 @@ class TenantBindingClassificationTest {
 
         assertThat(schema.tenantBindingOf("EndorsementAbout", "film")).isNull();
         assertRejects(schema, "EndorsementAbout.film", "no ancestor established a tenant context");
+        // The frontier field rejects alone: every fix it is offered hands Film a tenant.
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.coordinate()).isEqualTo("EndorsementAbout.film"));
+        assertInherited(schema, "Film", "inventories");
     }
 
     @Test
@@ -2992,5 +3037,107 @@ class TenantBindingClassificationTest {
             });
         assertInherited(schema, "RateFilmsPayload", "films");
         assertInherited(schema, "Film", "inventories");
+    }
+
+    // ===== Any rejected field or dispatch entry that needs a tenant rejects alone =====
+
+    @Test
+    void anEntityKeyMissingTheTenantColumnRejectsAloneNamingItsFix() {
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") @key(fields: "title") {
+                title: String
+                inventories: [Inventory!]! @splitQuery
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query { x: String }
+            """);
+
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.rejection())
+                .isInstanceOfSatisfying(Rejection.AuthorError.NoTenantBinding.class, r -> {
+                    assertThat(r.coordinate()).isEqualTo("Film");
+                    assertThat(r.detail()).contains("federation key alternative #0")
+                        .endsWith("Add a field mapped to tenant column 'film_id' to the key's"
+                            + " fields, or mark the alternative resolvable: false.");
+                }));
+        assertInherited(schema, "Film", "inventories");
+    }
+
+    /** Two tenant-scoped node types reached through {@code Query.node}; {@code %s} is Inventory's key. */
+    private static final String TWO_NODE_TYPES = """
+        type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
+            id: ID! @nodeId
+            inventories: [Inventory!]!
+        }
+        type Inventory implements Node @table(name: "inventory") @node(keyColumns: [%s]) {
+            id: ID! @nodeId
+        }
+        type Query { node(id: ID!): Node }
+        """;
+
+    @Test
+    void aNodeKeyMissingTheTenantColumnRejectsAloneAndOtherNodeTypesKeepTheirContext() {
+        // One bad key no longer voids node dispatch for every node type: Film still routes.
+        var schema = build(TWO_NODE_TYPES.formatted("\"inventory_id\""));
+
+        assertThat(schema.tenantBindings().rejections()).singleElement()
+            .satisfies(e -> assertThat(e.rejection())
+                .isInstanceOfSatisfying(Rejection.AuthorError.NoTenantBinding.class, r -> {
+                    assertThat(r.coordinate()).isEqualTo("Inventory");
+                    assertThat(r.detail()).contains("node id key");
+                }));
+        assertInherited(schema, "Film", "inventories");
+        assertThat(schema.tenantBindingOf("Query", "node")).isEqualTo(TenantBinding.NodeIdBound.INSTANCE);
+    }
+
+    @Test
+    void nodeDispatchOverOnlyUnroutableTenantScopedTypesIsStillNodeIdBound() {
+        // The arm the fold's answer implies: once the key is fixed, node dispatch routes.
+        var schema = build("""
+            type Inventory implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id"]) {
+                id: ID! @nodeId
+            }
+            type Query { node(id: ID!): Node }
+            """);
+
+        assertRejects(schema, "Inventory", "node id key");
+        assertThat(schema.tenantBindingOf("Query", "node")).isEqualTo(TenantBinding.NodeIdBound.INSTANCE);
+    }
+
+    @Test
+    void aFanOutMarkerBelowARejectedUnboundRootRejectsBesideIt() {
+        // Every fix to Query.films binds it, after which the marked child sits under a bound
+        // ancestor, so it rejects now.
+        var schema = build("""
+            type Film @table(name: "film") {
+                title: String
+                inventories: [Inventory!]! @tenantFanOut
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Query { films: [Film!]! }
+            """);
+
+        assertFanOutRejects(schema, "Film.inventories", "sits under a tenant-bound ancestor");
+        assertRejects(schema, "Query.films", "no argument or input field maps to tenant column");
+        assertThat(schema.tenantBindings().rejections()).hasSize(2);
+    }
+
+    @Test
+    void aCrossScopeRootHandsItsSubtreeNothing() {
+        // The scope mix offers no tenant fix, and restructuring the field may leave it global, so
+        // the child below it keeps its own error.
+        var schema = build("""
+            type Film @table(name: "film") {
+                filmId: Int @field(name: "film_id")
+                inventories: [Inventory!]!
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int }
+            type Language @table(name: "language") { name: String }
+            union Media = Film | Language
+            type Query { media: [Media!]! }
+            """);
+
+        assertRejects(schema, "Query.media", "cross-scope");
+        assertRejects(schema, "Film.inventories", "no ancestor established a tenant context");
     }
 }

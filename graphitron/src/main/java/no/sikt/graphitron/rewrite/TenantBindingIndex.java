@@ -24,6 +24,7 @@ import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
+import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.JoinSlot;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
@@ -343,12 +344,20 @@ public record TenantBindingIndex(
         /** Types reached, along any path, below a {@code @tenantFanOut} edge. */
         private Set<String> belowFannedEdge;
 
-        /** Node dispatch facts, computed once: type name -> decoded tenant position. */
-        private final Map<String, Integer> nodePositions = new LinkedHashMap<>();
-        private boolean nodeDispatchRoutable = true;
+        /**
+         * The dispatch facts, decided once by {@link #classifyNodeDispatch} and
+         * {@link #classifyEntityDispatch}: type name -> how {@code _entities} and
+         * {@code Query.node} enter it. See {@link DispatchFact}.
+         */
+        private final Map<String, DispatchFact> dispatchFacts = new LinkedHashMap<>();
+        /**
+         * The sites {@link #handsDownAsIfFixed} counts, computed once before the ancestor folds
+         * read them. Identity-keyed: each {@link Site} is one classified instance.
+         */
+        private final Set<Site> countedSites =
+            java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
 
         private final Map<FieldCoordinates, TenantBinding> byCoordinate = new LinkedHashMap<>();
-        private final Map<String, TenantBinding.EntityRepBound> byEntityType = new LinkedHashMap<>();
         private final List<ValidationError> rejections = new ArrayList<>();
         /** Per tenancy marker, the coordinates that reached its ladder: the sweep's verdict set. */
         private final Map<String, Set<String>> markerVerdicts = new HashMap<>();
@@ -467,7 +476,15 @@ public record TenantBindingIndex(
         TenantBindingIndex run() {
             classifyNodeDispatch();
             classifyEntityDispatch();
-            // The ancestor facts read the dispatch facts just filled, and armOf reads them.
+            for (var coordinateSites : sites.values()) {
+                for (Site site : coordinateSites) {
+                    if (handsDownAsIfFixed(site)) {
+                        countedSites.add(site);
+                    }
+                }
+            }
+            // The ancestor facts read the dispatch facts and the counted sites just filled, and
+            // armOf reads them.
             foldAncestorContexts();
             for (var entry : sites.entrySet()) {
                 var arm = combine(entry.getValue().stream().map(this::checkedArmOf).toList());
@@ -477,7 +494,7 @@ public record TenantBindingIndex(
             }
             sweepUnreachedMarkers();
             sweepTenantMarkers();
-            return new TenantBindingIndex(byCoordinate, byEntityType, rejections);
+            return new TenantBindingIndex(byCoordinate, routedEntities(), rejections);
         }
 
         /**
@@ -493,7 +510,7 @@ public record TenantBindingIndex(
                 case Verdict.Arm a -> a.binding() instanceof TenantBinding.ParentRowBound
                     || a.binding() instanceof TenantBinding.Inherited;
             };
-            if (!expected && handsDownAsIfFixed(site)) {
+            if (!expected && countedSites.contains(site)) {
                 var coord = site.coord();
                 throw new IllegalStateException("Generator bug: '" + coord.getTypeName() + "."
                     + coord.getFieldName() + "' was counted as handing its subtree a tenant, but"
@@ -776,7 +793,9 @@ public record TenantBindingIndex(
                 // "nothing names the tenant" text, which would send an author looking for a
                 // binding they already wrote. Only where the statement needs a tenant at all:
                 // a field whose own SQL stays on the default source has nothing to route, so
-                // the shape that could not route it is moot.
+                // the shape that could not route it is moot. The rejection is the field's alone:
+                // every decline's fix lands in a slot, so the ancestor folds treat its subtree as
+                // the fix leaves it (handsDownAsIfFixed).
                 case Reading.Declined declined when needsTenant -> {
                     return rejectUnrouted(coordinate, reach, anyTenant, declined.declines(),
                         direct.evidence());
@@ -786,8 +805,8 @@ public record TenantBindingIndex(
                 }
                 // Every slot is optional, so a request may leave them all out and name no tenant:
                 // there is no correct routing for that request. The rejection is the field's
-                // alone: the ancestor folds treat its subtree as either fix leaves it
-                // (handsDownAsIfFixed). Where nothing in the field's own SQL needs a tenant it
+                // alone, as for a decline: the ancestor folds treat its subtree as either fix
+                // leaves it (handsDownAsIfFixed). Where nothing in the field's own SQL needs a tenant it
                 // falls through like an unbound field, and a tenant-scoped child below it then
                 // finds no context and rejects on its own.
                 case Reading.Conditional conditional when needsTenant -> {
@@ -798,13 +817,13 @@ public record TenantBindingIndex(
                 default -> { }
             }
             if (hasKind(members, OperationMember.Kind.NODE_RESOLVE)) {
-                // Node dispatch spans types; the arm exists iff every tenant-scoped node
-                // type's key embeds the tenant column (rejections fired once in
-                // classifyNodeDispatch). No tenant-scoped node types at all means node
-                // dispatch reads only global tables, which is a global read.
-                return new Verdict.Arm(nodePositions.isEmpty()
-                    ? TenantBinding.Untenanted.GlobalRead.INSTANCE
-                    : TenantBinding.NodeIdBound.INSTANCE);
+                // Node dispatch spans types, and routes the decoded id's tenant wherever some
+                // node type it dispatches is tenant-scoped (a key missing the tenant column is
+                // rejected once in classifyNodeDispatch, and read as routed once fixed). None
+                // at all means node dispatch reads only global tables, which is a global read.
+                return new Verdict.Arm(nodeDispatchRoutes()
+                    ? TenantBinding.NodeIdBound.INSTANCE
+                    : TenantBinding.Untenanted.GlobalRead.INSTANCE);
             }
             if (!needsTenant) {
                 return new Verdict.Arm(untenantedLeaf(members));
@@ -908,30 +927,69 @@ public record TenantBindingIndex(
         }
 
         /**
-         * Whether an optional-only field hands its subtree a tenant in both ancestor folds,
-         * {@link #siteEstablishesContext} and {@link #siteDivinesTenant}: the field carries neither
-         * tenancy marker, every slot naming the tenant is optional ({@link Reading.Conditional}),
-         * and its own statement {@link #needsTenant needs a tenant}.
+         * Whether a field that needs a tenant hands its subtree one in both ancestor folds,
+         * {@link #siteEstablishesContext} and {@link #siteDivinesTenant}, whatever its own verdict:
+         * the field carries neither tenancy marker, its own statement {@link #needsTenant needs a
+         * tenant}, that statement does not span tenant-scoped and global tables, its reading is not
+         * {@link Reading.Guaranteed} (which both folds count on its own), and the
+         * {@code @globalData} ladder would not accept the marker on it ({@link #acceptsGlobalData}).
+         * {@link #run} computes the answer once per site into {@link #countedSites}, which both
+         * folds and {@link #checkedArmOf} read.
          *
          * <p>Such a field ends in one of three verdicts in {@link #armOf}: it routes by its parent
          * row, it inherits the tenant its parent type already has on every path, or it rejects. A
          * rejected field generates nothing, so its subtree is judged as it will be once the
-         * author applies a fix the rejection offers, and each fix hands a tenant down: the
-         * {@link #optionalOnlyDetail} offers a non-null slot, and {@code @tenantFanOut} only where
-         * {@link #acceptsFanOut} holds; a connection service is rejected as
-         * {@link no.sikt.graphitron.model.diagnostics.Rejection.AuthorError.UnroutedServiceCall}
-         * carrying that same detail as a decline, so it is never steered to {@code @globalData},
-         * which would hand nothing down. A rejection that starts offering any other fix must
-         * revisit this predicate; {@link #run} throws if a counted site ends in a fourth verdict.
+         * author applies a fix the rejection offers, and every fix it can be offered hands a
+         * tenant down: a required or optional binding on the field or an ancestor, a
+         * {@code @tenant} marker, a node-typed record, a {@code @splitQuery} hint toward the
+         * parent row, or {@code @tenantFanOut} where {@link #acceptsFanOut} holds. A decline's own
+         * fix lands in a slot, or removes a SET-side tenant field and leaves the WHERE slots or an
+         * unbound reading whose rejection again offers only those fixes. The exclusions are the
+         * rejections that offer something else:
          *
-         * <p>Marked fields are excluded: they take their verdict from the marker's ladder, and a
-         * {@code @tenantFanOut} field narrowing on an optional slot ends {@code FanOut}. One that
-         * needs no tenant runs on the default source, and its subtree really has none.
+         * <ul>
+         *   <li>A cross-scope statement offers no tenant fix at all; restructuring the field may
+         *   leave it global.</li>
+         *   <li>{@code @globalData} hands nothing down: a root connection service that reaches no
+         *   table and names no tenant is offered it, and after taking it its subtree really has no
+         *   tenant, so its children's errors are real now. Asked of the ladder rather than of the
+         *   message, which also offers the marker where the ladder refuses it.</li>
+         *   <li>A marked field takes its verdict from the marker's ladder, and a field that needs
+         *   no tenant runs on the default source; neither subtree gets one.</li>
+         * </ul>
+         *
+         * <p>A passing build classifies as it would without this predicate, by a fixed point.
+         * Counting a site only ever turns an edge from passing a context on into establishing
+         * one, so the types without a context can only shrink. In a passing build a counted site
+         * whose parent type has no context cannot inherit, since both inherited rungs need
+         * {@link #tenantContextOf}; {@link #checkedArmOf} holds it to the three verdicts, so it
+         * ends {@link TenantBinding.ParentRowBound}, which {@link #parentRowBinding} already
+         * establishes on, or rejected, which a passing build has none of. Every edge whose answer
+         * changed therefore leaves a type that already had a context, {@link #closeForward} never
+         * follows it from the unbound seeds, and the closure is unchanged. A rejection that
+         * starts offering a fix outside the list above must revisit this predicate;
+         * {@link #checkedArmOf} throws if a counted site ends in a fourth verdict.
          */
         private boolean handsDownAsIfFixed(Site site) {
-            return !fanMarked(site.coord()) && !globalMarked(site.coord())
-                && directBinding(site).reading() instanceof Reading.Conditional
-                && needsTenant(site, reachedTables(site.field()));
+            if (fanMarked(site.coord()) || globalMarked(site.coord())) {
+                return false;
+            }
+            List<TableRef> reach = reachedTables(site.field());
+            boolean crossScope = reach.stream().anyMatch(this::tenantScoped)
+                && reach.stream().anyMatch(t -> !tenantScoped(t));
+            return needsTenant(site, reach)
+                && !crossScope
+                && !(directBinding(site).reading() instanceof Reading.Guaranteed)
+                && !acceptsGlobalData(site);
+        }
+
+        /**
+         * Whether the {@code @globalData} ladder would accept the marker on this field, asked of
+         * the ladder itself, as {@link #acceptsFanOut} asks its own. A nesting type's field is
+         * turned away from both marker ladders before either runs, so it never qualifies.
+         */
+        private boolean acceptsGlobalData(Site site) {
+            return !site.nested() && globalDataArmOf(site) instanceof Verdict.Arm;
         }
 
         // ===== The parent-row binding =====
@@ -1228,7 +1286,9 @@ public record TenantBindingIndex(
 
         /**
          * True when some path reaching {@code typeName} crosses a tenant-divining edge (a
-         * direct binding, or routable node dispatch). The any-path mirror of
+         * guaranteed direct binding, a field {@link #handsDownAsIfFixed} counts, routable node
+         * dispatch, or a parent-row binding) or starts at a type a dispatch entry routes. The
+         * any-path mirror of
          * {@link #tenantContextOf}'s every-path fold, matching the nested-marker rung's posture:
          * a marked field rejects if fanning would contradict a divined tenant on <em>any</em>
          * path (rejections are conservative), while the {@link TenantBinding.Inherited} verdict
@@ -1248,14 +1308,17 @@ public record TenantBindingIndex(
         }
 
         private boolean siteDivinesTenant(Site site) {
-            // The same posture as siteEstablishesContext: a @tenantFanOut field below an
-            // optional-only field rejects now, as it would after either fix.
+            // The same posture as siteEstablishesContext: a @tenantFanOut field below a rejected
+            // field that needs a tenant rejects now, as it would after any fix. A counted site
+            // that inherits divines nothing new: every type with a context already lies below a
+            // divining edge, a fanned edge, or a routed dispatch entry (the seeds in
+            // foldAncestorContexts).
             if (directBinding(site).reading() instanceof Reading.Guaranteed
-                    || handsDownAsIfFixed(site)) {
+                    || countedSites.contains(site)) {
                 return true;
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
-                return nodeDispatchRoutable && !nodePositions.isEmpty();
+                return nodeDispatchRoutes();
             }
             return parentRowBinding(site) != null;
         }
@@ -1374,13 +1437,10 @@ public record TenantBindingIndex(
          * <p>A decline is not an absent binding. The author did name the tenant; the shape just
          * has no single value to acquire a connection from, so it gets its own rejection text
          * rather than the generic "nothing maps to the tenant column". A coordinate carrying one
-         * also stops divining for its subtree, which is what {@link #reading()} states: it
-         * rejects, so nothing is handed down and a child inheriting from it would inherit a value
-         * that is never computed. That holds for {@link Reading.Declined} only, which has not
-         * adopted the forward-looking posture an optional-only reading takes: a
-         * {@link Reading.Conditional} field that needs a tenant hands its subtree one as either
-         * fix would ({@link Fold#handsDownAsIfFixed}), so it rejects without its children
-         * repeating the error.
+         * rejects, and generates nothing; what its subtree is judged against is the fix: every
+         * decline's fix lands in a slot, so a declined field that needs a tenant hands its
+         * subtree one as the fix would ({@link Fold#handsDownAsIfFixed}), as an optional-only or
+         * unbound one does, and it rejects without its children repeating the error.
          *
          * <p>{@code evidence} names the argument values typed by a tenant-scoped table that bound
          * no slot (a {@code FilmRecord} bound only to {@code title}, a decode of a tenant-scoped
@@ -2049,8 +2109,72 @@ public record TenantBindingIndex(
             }
         }
 
-        // ===== Node dispatch =====
+        // ===== Dispatch entries =====
 
+        /**
+         * How the batched dispatch surfaces, {@code _entities} and {@code Query.node}, enter one
+         * type. A type with no resolvable alternative ({@link EntityResolution#resolvable}), or no
+         * entity entry at all, is entered by neither and has no fact.
+         */
+        private sealed interface DispatchFact {
+
+            /** The entry routes each representation by its tenant column. */
+            record Routed(TenantBinding.EntityRepBound binding) implements DispatchFact {}
+
+            /**
+             * Tenant-scoped, and rejected because a resolvable alternative or the node key lacks
+             * the tenant column. Read as routed: every fix that keeps the entry resolvable routes
+             * it, and the one that does not removes the entry, leaving the type to its field
+             * edges. Only a failing build carries one.
+             */
+            enum RoutedOnceFixed implements DispatchFact { INSTANCE }
+
+            /** A global entity or node type, served from the default source. */
+            enum ServedUntenanted implements DispatchFact { INSTANCE }
+
+            /** Whether the entry hands its type a tenant, now or once its rejection is fixed. */
+            default boolean handsDownTenant() {
+                return !(this instanceof ServedUntenanted);
+            }
+        }
+
+        private DispatchFact dispatchFact(String typeName) {
+            return dispatchFacts.get(typeName);
+        }
+
+        /**
+         * Whether node dispatch routes the decoded id's tenant: some node type it dispatches is
+         * tenant-scoped, routed now or once fixed. The one question behind node dispatch's arm in
+         * {@link #armOf} and its divining answer in {@link #siteDivinesTenant}.
+         */
+        private boolean nodeDispatchRoutes() {
+            return dispatchFacts.entrySet().stream().anyMatch(e ->
+                types.get(e.getKey()) instanceof GraphitronType.NodeType
+                    && e.getValue().handsDownTenant());
+        }
+
+        /** The {@link DispatchFact.Routed} projection: the map the emitted dispatcher stamps rows from. */
+        private Map<String, TenantBinding.EntityRepBound> routedEntities() {
+            var routed = new LinkedHashMap<String, TenantBinding.EntityRepBound>();
+            dispatchFacts.forEach((typeName, fact) -> {
+                if (fact instanceof DispatchFact.Routed r) {
+                    routed.put(typeName, r.binding());
+                }
+            });
+            return routed;
+        }
+
+        private boolean resolvableEntity(String typeName) {
+            var resolution = entitiesByType.get(typeName);
+            return resolution != null && resolution.resolvable();
+        }
+
+        /**
+         * Rejects every tenant-scoped node type whose key does not embed the tenant column, and
+         * records it {@link DispatchFact.RoutedOnceFixed}. Runs ahead of
+         * {@link #classifyEntityDispatch}, which reads that fact to leave the type's
+         * {@link KeyAlternative.NodeId} alternative to this text.
+         */
         private void classifyNodeDispatch() {
             for (GraphitronType type : types.values()) {
                 if (!(type instanceof GraphitronType.NodeType nt)) continue;
@@ -2059,69 +2183,71 @@ public record TenantBindingIndex(
                 List<ColumnRef> keyColumns = nt.nodeKeyColumns().isEmpty()
                     ? table.primaryKeyColumns()
                     : nt.nodeKeyColumns();
-                int position = -1;
-                for (int i = 0; i < keyColumns.size(); i++) {
-                    if (matchesTenantColumn(keyColumns.get(i))) {
-                        position = i;
-                        break;
-                    }
-                }
-                if (position < 0) {
-                    nodeDispatchRoutable = false;
-                    rejections.add(new ValidationError(
-                        nt.name(),
-                        Rejection.noTenantBinding(
-                            nt.name(), table.tableName(),
-                            "its node id key does not embed tenant column '"
-                                + scopes.columnName() + "', so a decoded id cannot name the"
-                                + " tenant to fetch from."),
-                        graphql.language.SourceLocation.EMPTY));
-                } else {
-                    nodePositions.put(nt.name(), position);
+                if (tenantIndex(keyColumns) >= 0) continue;
+                rejections.add(new ValidationError(
+                    nt.name(),
+                    Rejection.noTenantBinding(
+                        nt.name(), table.tableName(),
+                        "its node id key does not embed tenant column '"
+                            + scopes.columnName() + "', so a decoded id cannot name the"
+                            + " tenant to fetch from. Add tenant column '" + scopes.columnName()
+                            + "' to @node(keyColumns:)."),
+                    graphql.language.SourceLocation.EMPTY));
+                if (resolvableEntity(nt.name())) {
+                    dispatchFacts.put(nt.name(), DispatchFact.RoutedOnceFixed.INSTANCE);
                 }
             }
         }
 
-        // ===== Entity dispatch =====
-
+        /**
+         * Decides every resolvable entity's {@link DispatchFact}: global, routed by the tenant
+         * column of every resolvable alternative, or rejected and routed once fixed. A
+         * {@link KeyAlternative.NodeId} alternative of a node type
+         * {@link #classifyNodeDispatch} already rejected is not rejected twice.
+         */
         private void classifyEntityDispatch() {
             for (var entry : entitiesByType.entrySet()) {
+                String typeName = entry.getKey();
                 EntityResolution res = entry.getValue();
-                if (!tenantScoped(res.table())) continue;
+                if (!res.resolvable()) continue;
+                if (!tenantScoped(res.table())) {
+                    dispatchFacts.put(typeName, DispatchFact.ServedUntenanted.INSTANCE);
+                    continue;
+                }
+                boolean nodeRejected = dispatchFact(typeName) instanceof DispatchFact.RoutedOnceFixed;
                 var alternatives = new ArrayList<TenantBinding.EntityRepBound.AlternativeSlot>();
                 boolean routable = true;
                 var keyAlternatives = res.alternatives();
                 for (int i = 0; i < keyAlternatives.size(); i++) {
                     var alt = keyAlternatives.get(i);
                     if (!alt.resolvable()) continue;
-                    int position = -1;
-                    List<ColumnRef> columns = alt.columns();
-                    for (int p = 0; p < columns.size(); p++) {
-                        if (matchesTenantColumn(columns.get(p))) {
-                            position = p;
-                            break;
-                        }
-                    }
-                    if (position < 0) {
-                        routable = false;
-                        rejections.add(new ValidationError(
-                            entry.getKey(),
-                            Rejection.noTenantBinding(
-                                entry.getKey(), res.table().tableName(),
-                                "its federation key alternative #" + i + " does not carry"
-                                    + " tenant column '" + scopes.columnName()
-                                    + "', so a representation cannot name the tenant to"
-                                    + " fetch from."),
-                            graphql.language.SourceLocation.EMPTY));
-                    } else {
+                    int position = tenantIndex(alt.columns());
+                    if (position >= 0) {
                         alternatives.add(
                             new TenantBinding.EntityRepBound.AlternativeSlot(i, position));
+                        continue;
                     }
+                    routable = false;
+                    boolean nodeKey = alt instanceof KeyAlternative.NodeId;
+                    if (nodeKey && nodeRejected) continue;
+                    rejections.add(new ValidationError(
+                        typeName,
+                        Rejection.noTenantBinding(
+                            typeName, res.table().tableName(),
+                            "its federation key alternative #" + i + " does not carry"
+                                + " tenant column '" + scopes.columnName()
+                                + "', so a representation cannot name the tenant to"
+                                + " fetch from. " + (nodeKey
+                                    ? "Add tenant column '" + scopes.columnName()
+                                        + "' to @node(keyColumns:)."
+                                    : "Add a field mapped to tenant column '" + scopes.columnName()
+                                        + "' to the key's fields, or mark the alternative"
+                                        + " resolvable: false.")),
+                        graphql.language.SourceLocation.EMPTY));
                 }
-                if (routable && !alternatives.isEmpty()) {
-                    byEntityType.put(entry.getKey(),
-                        new TenantBinding.EntityRepBound(alternatives));
-                }
+                dispatchFacts.put(typeName, routable
+                    ? new DispatchFact.Routed(new TenantBinding.EntityRepBound(alternatives))
+                    : DispatchFact.RoutedOnceFixed.INSTANCE);
             }
         }
 
@@ -2160,18 +2286,28 @@ public record TenantBindingIndex(
          * entered only through establishing edges is never reached, while an unbound entry
          * reaching any member, by a field edge or by dispatch, reaches the whole cycle through
          * its internal edges. The any-path facts close from the targets of their edges along
-         * every edge.
+         * every edge; "below a divining edge" also closes from the types a dispatch entry routes,
+         * now or once fixed, since a routed entity row has a fixed tenant just as a divining
+         * field's rows do. With that seed every type with a context lies below a divining edge,
+         * a fanned edge, or a routed entry, which is what lets {@link #siteDivinesTenant} count a
+         * {@link #handsDownAsIfFixed} site without asking whether it inherits.
          */
         private void foldAncestorContexts() {
             var unbound = new HashSet<String>(roots);
+            var routedEntries = new HashSet<String>();
             for (String typeName : domain) {
                 if (unboundDispatchEntry(typeName)
                         || (!reachingEdges.containsKey(typeName) && !routableDispatchSurface(typeName))) {
                     unbound.add(typeName);
                 }
+                if (routableDispatchSurface(typeName)) {
+                    routedEntries.add(typeName);
+                }
             }
             withoutContext = closeForward(unbound, edge -> !edgeEstablishesContext(edge));
-            belowBoundEdge = closeForward(targetsOfEdges(this::edgeDivinesTenant), edge -> true);
+            var divined = targetsOfEdges(this::edgeDivinesTenant);
+            divined.addAll(routedEntries);
+            belowBoundEdge = closeForward(divined, edge -> true);
             belowFannedEdge = closeForward(targetsOfEdges(this::fanMarked), edge -> true);
         }
 
@@ -2220,36 +2356,30 @@ public record TenantBindingIndex(
         /**
          * Batched dispatch surfaces reach the type outside the field-edge graph, whatever else
          * reaches it, but only when this subgraph resolves it: an entity with no resolvable
-         * alternative ({@link EntityResolution#resolvable}) is entered by neither
-         * {@code _entities} nor {@code Query.node}, which share one dispatch core. A surface that
-         * does enter hands the type a tenant only when routable: a tenant-scoped node type whose
-         * key does not embed the tenant column enters with none, and so does an entity type with
-         * no {@link TenantBinding.EntityRepBound}. That includes every untenanted entity, node
-         * types among them, which entity and node dispatch serve from the default source.
+         * alternative is entered by neither {@code _entities} nor {@code Query.node}, which share
+         * one dispatch core, and has no {@link DispatchFact}. A surface that does enter hands the
+         * type no tenant only when it serves it from the default source,
+         * {@link DispatchFact.ServedUntenanted}: every global entity, node types among them. A
+         * tenant-scoped entry whose key lacks the tenant column is rejected on its own and read
+         * as routed, so it voids no context below it.
          */
         private boolean unboundDispatchEntry(String typeName) {
-            var resolution = entitiesByType.get(typeName);
-            if (resolution != null && !resolution.resolvable()) {
-                return false;
-            }
-            if (types.get(typeName) instanceof GraphitronType.NodeType nt
-                    && tenantScoped(nt.table())
-                    && (!nodeDispatchRoutable || !nodePositions.containsKey(typeName))) {
-                return true;
-            }
-            return entitiesByType.containsKey(typeName) && !byEntityType.containsKey(typeName);
+            return dispatchFact(typeName) instanceof DispatchFact.ServedUntenanted;
         }
 
         /**
-         * A dispatch surface that hands its type a tenant: a type with an
-         * {@link TenantBinding.EntityRepBound}, node types whose key embeds the tenant column
-         * included. This is the map the dispatcher routes and stamps each resolved row from
+         * A dispatch surface that hands its type a tenant: {@link DispatchFact.Routed}, node types
+         * whose key embeds the tenant column included, or {@link DispatchFact.RoutedOnceFixed},
+         * which only a failing build carries. {@link DispatchFact.Routed} is what
+         * {@link #routedEntities} projects into the map the dispatcher routes and stamps each
+         * resolved row from
          * ({@link no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator}),
-         * so "the classifier says this surface hands a tenant down" and "the emitted dispatcher
-         * stamps this surface's rows" are one fact.
+         * so in every build that generates, "the classifier says this surface hands a tenant
+         * down" and "the emitted dispatcher stamps this surface's rows" are one fact.
          */
         private boolean routableDispatchSurface(String typeName) {
-            return byEntityType.containsKey(typeName);
+            var fact = dispatchFact(typeName);
+            return fact != null && fact.handsDownTenant();
         }
 
         /**
@@ -2271,15 +2401,18 @@ public record TenantBindingIndex(
         }
 
         private boolean siteEstablishesContext(Site site) {
-            // A guaranteed binding names a tenant on every request. An optional-only field that
-            // needs a tenant is judged as its fixes leave it, so it rejects alone rather than
-            // voiding the context of every type it reaches.
+            // A guaranteed binding names a tenant on every request. A counted field that needs a
+            // tenant without one guaranteed is judged as its fixes leave it, so it rejects alone
+            // rather than voiding the context of every type it reaches.
             if (directBinding(site).reading() instanceof Reading.Guaranteed
-                    || handsDownAsIfFixed(site)) {
+                    || countedSites.contains(site)) {
                 return true;
             }
             if (hasKind(site.members(), OperationMember.Kind.NODE_RESOLVE)) {
-                return nodeDispatchRoutable;
+                // Each node type's own dispatch fact decides what node dispatch hands it: a
+                // global one is an unbound entry, seeded in foldAncestorContexts, and a
+                // tenant-scoped one routes, or will once its key is fixed.
+                return true;
             }
             // The parent row names the tenant per row, so the subtree below the edge is
             // tenant-homogeneous per parent row and its children inherit.

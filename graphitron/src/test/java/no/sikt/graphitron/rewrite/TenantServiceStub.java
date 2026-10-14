@@ -86,6 +86,11 @@ class TenantServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /** {@link #retitleFilm} returning a payload with a tenant-scoped child below it. */
+    public static TenantFilmsPayload retitleFilmRated(DSLContext dsl, FilmRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
     /** A polymorphic record member at an empty-reach root handed a connection. */
     public static String pickForThing(DSLContext dsl, TestNodeIdPolymorphicRecordBean in) {
         throw new UnsupportedOperationException();

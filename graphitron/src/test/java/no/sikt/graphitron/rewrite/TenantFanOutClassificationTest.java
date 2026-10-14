@@ -411,6 +411,69 @@ class TenantFanOutClassificationTest {
             .hasSize(2);
     }
 
+    // ===== A routed _entities entry fixes the tenant like a bound ancestor =====
+
+    private static final String KEY_DIRECTIVE =
+        "directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE\n";
+
+    @Test
+    void markerOnARoutedEntityRejects() {
+        // _entities routes each Film representation by its film_id, so a Film row has one tenant
+        // and fanning its child batch across every tenant would contradict it.
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") @key(fields: "filmId") {
+                filmId: Int @field(name: "film_id")
+                inventories: [Inventory!]! @tenantFanOut
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+            type Query { x: String }
+            """);
+
+        assertFanOutRejection(schema, "Film.inventories",
+            "sits under a tenant-bound ancestor", "tenantFanOut");
+        assertThat(schema.tenantBindings().rejections()).hasSize(1);
+    }
+
+    @Test
+    void markerBelowAnInheritingFieldOfARoutedEntityRejects() {
+        var schema = build(KEY_DIRECTIVE + """
+            type Film @table(name: "film") @key(fields: "filmId") {
+                filmId: Int @field(name: "film_id")
+                inventories: [Inventory!]!
+            }
+            type Inventory @table(name: "inventory") { inventoryId: Int  film: Sequel }
+            type Sequel @table(name: "film") {
+                title: String
+                categories: [FilmCategory!]! @tenantFanOut
+            }
+            type FilmCategory @table(name: "film_category") { categoryId: Int }
+            type Query { x: String }
+            """);
+
+        assertThat(schema.tenantBindingOf("Film", "inventories"))
+            .isEqualTo(new TenantBinding.Inherited("Film"));
+        assertFanOutRejection(schema, "Sequel.categories",
+            "sits under a tenant-bound ancestor", "tenantFanOut");
+        assertThat(schema.tenantBindings().rejections()).hasSize(1);
+    }
+
+    @Test
+    void markerOnAGlobalEntityStaysAccepted() {
+        // _entities serves Language from the default source, which fixes no tenant.
+        var schema = build(KEY_DIRECTIVE + """
+            type Language @table(name: "language") @key(fields: "languageId") {
+                languageId: Int @field(name: "language_id")
+                films: [Film] @reference(path: [{key: "film_language_id_fkey"}]) @tenantFanOut
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { x: String }
+            """);
+
+        assertThat(schema.tenantBindingOf("Language", "films"))
+            .isEqualTo(TenantBinding.FanOut.PLAIN);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
     @Test
     void nestedMarkerBelowAFannedFieldRejects() {
         var schema = build("""
