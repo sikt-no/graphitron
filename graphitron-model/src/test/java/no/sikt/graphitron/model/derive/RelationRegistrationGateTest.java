@@ -463,6 +463,9 @@ class RelationRegistrationGateTest {
         // is vacuous by construction; the arm-specific derived columns are pinned by
         // DiagnosticFactsTest against their Java spellings.
         registrations.put("diagnostic", Arm.DERIVED);
+        // A rule over the configuration, the classpath reading and the source walk, evaluated when
+        // read; StaleModuleTest states it.
+        registrations.put("build_warning_stale_module", Arm.DERIVED);
         // The schema self-description stratum: views over row values authored in the DDL itself,
         // so capture never writes them and agreement with the walk is vacuous by construction.
         // Their anchors are the roster gates in FactSchemaGateTest, which close the family rows

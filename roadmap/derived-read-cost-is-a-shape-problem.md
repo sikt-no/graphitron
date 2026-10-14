@@ -1490,6 +1490,14 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
       stands for what it governs, whether a file is read again. Java sources only: the names behind
       a "not found" are classes, methods and tables, and a resource-only change is the rare miss an
       advisory warning can afford.
+  * **The stale modules are a rule** `done`. `build_warning_stale_module`, one row per workspace
+    module a run read stale, with its reason and both times: `NO_OUTPUT` where the entry the run
+    read is neither the module's classes directory nor under its build directory, so an installed
+    copy, and `SOURCES_NEWER` where the module's own output's newest class time predates its
+    `src/main/java` root's newest file. A view evaluated when read, its source half being written by
+    the dev loop's walk after a capture's derivations have run, so `SOURCES_NEWER` exists in a dev
+    session and `NO_OUTPUT` in any capture. The derivation gatherer reads `classpath-source` for the
+    class times.
   * **A catalog is compared with what generated it** `open`. The catalog module's sources are
     generated, so a stale catalog shows only against the migrations or DDL its codegen read, which
     only the codegen configuration names. Its own fact first, then a condition beside the module's.

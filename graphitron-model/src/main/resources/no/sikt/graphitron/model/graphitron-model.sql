@@ -13412,6 +13412,40 @@ COMMENT ON COLUMN build_warning_no_rule.file IS 'path of the advisory''s SDL sou
 COMMENT ON COLUMN build_warning_no_rule.source_line IS 'source line of the advisory''s location, 1-based; NULL where unlocated';
 COMMENT ON COLUMN build_warning_no_rule.source_column IS 'source column of the advisory''s location, 1-based; NULL where unlocated';
 
+CREATE VIEW build_warning_stale_module
+  (graph_name, coordinate, reason, source_name, sources_modified, output_modified) AS
+-- What the run read for each module, and that output's newest class time: a classes directory's
+-- files, or a jar's entries, which carry their compile time.
+WITH read (graph_name, coordinate, base_directory, source_name, own, output_modified) AS (
+  SELECT m.graph_name, m.coordinate, m.base_directory, e.source_name,
+         e.source_name = m.classes_directory
+           OR e.source_name LIKE m.build_directory || '/%',
+         (SELECT MAX(f.mtime) FROM store_class_file f WHERE f.source_name = e.source_name)
+    FROM store_graph_module m
+    JOIN store_graph_module_entry e
+      ON e.graph_name = m.graph_name AND e.coordinate = m.coordinate
+)
+-- The module had no output, so the run read a copy installed in a repository, whatever it holds.
+SELECT r.graph_name, r.coordinate, 'NO_OUTPUT', r.source_name, s.newest_modified,
+       r.output_modified
+  FROM read r
+  LEFT JOIN java_source_root s ON s.source_root = r.base_directory || '/src/main/java'
+ WHERE NOT r.own
+UNION ALL
+-- The module's own output, older than its newest source.
+SELECT r.graph_name, r.coordinate, 'SOURCES_NEWER', r.source_name, s.newest_modified,
+       r.output_modified
+  FROM read r
+  JOIN java_source_root s ON s.source_root = r.base_directory || '/src/main/java'
+ WHERE r.own AND s.newest_modified > r.output_modified;
+COMMENT ON VIEW build_warning_stale_module IS 'One workspace module a graph''s run read stale, with why and the two times that say so. For example a service module whose sources were saved after its target/classes was written, or a module with no output read from the copy last installed.';
+COMMENT ON COLUMN build_warning_stale_module.graph_name IS 'the graph whose run read the module';
+COMMENT ON COLUMN build_warning_stale_module.coordinate IS 'the module''s groupId:artifactId; with the graph, the grain';
+COMMENT ON COLUMN build_warning_stale_module.reason IS 'NO_OUTPUT where the module had neither target/classes nor a jar in target and the run read an installed copy, SOURCES_NEWER where it read the module''s own output and a source is newer';
+COMMENT ON COLUMN build_warning_stale_module.source_name IS 'the classpath entry the run read for the module';
+COMMENT ON COLUMN build_warning_stale_module.sources_modified IS 'when the newest .java file under the module''s src/main/java was modified; NULL where no source walk has measured it, which only a dev session runs';
+COMMENT ON COLUMN build_warning_stale_module.output_modified IS 'the newest class time in what the run read; NULL where that entry held no class';
+
 CREATE VIEW diagnostic
   (graph_name, source, severity, actionable, kind, variant, lsp_code, attempt_kind, attempt,
    stub_key, lint_rule, type_name, field_name, coordinate, file,
@@ -13784,6 +13818,7 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron-ast', 'code'),
   ('code', 'classpath-source'),
   ('derivation', 'store'),
+  ('derivation', 'classpath-source'),
   ('derivation', 'sdl'),
   ('derivation', 'graphql-source'),
   ('derivation', 'graphql-ast'),
@@ -13834,6 +13869,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('stale-module',
+   'one workspace module one graph''s run read stale',
+   'graph_name, coordinate', 'classpath'),
   ('source-root',
    'one source root the java source walk covers',
    'source_root', 'java-source'),
@@ -14276,6 +14314,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
 
 INSERT INTO meta_relation VALUES
+  ('build_warning_stale_module', 'stale-module', 'derivation',
+   'One workspace module a graph''s run read stale, with why and the two times that say so.',
+   'For example a service module whose sources were saved after its target/classes was written, or a module with no output read from the copy last installed.',
+   'The schema is checked against the classes a run reads, so a module read stale makes every name added to it since read as an author error, and one warning naming the module is what turns many errors into one cause. A rule over captured facts and evaluated when read rather than stored, because its source half is written by the dev loop''s source walk, after a capture''s derivations have run: the configuration says which module each entry is, the classpath reading the output''s class times, and the source walk the sources'' newest. Advisory, so the comparison may be approximate: times rather than content, Java sources only, and a module''s build directory matched by path prefix.'),
   ('java_source_root', 'source-root', 'java-source',
    'One walked source root, and when the newest .java file under it was last modified.',
    'For example a service module''s src/main/java, whose newest file was saved after the module last compiled.',
