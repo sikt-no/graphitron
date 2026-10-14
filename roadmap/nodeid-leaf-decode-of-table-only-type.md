@@ -1,7 +1,7 @@
 ---
 id: R1032
 title: "A @nodeId leaf on a DML or filter input decodes a @table-only type from its catalog node metadata"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: classification-model
@@ -104,8 +104,8 @@ When the tenant column is in a catalog decode's key, the leaf **routes** and doe
 
 **Names and javadoc premises** corrected in the same change, each to say "the `@nodeId(typeName:)` target: a node type, or a `@table` type over a table with catalog node metadata":
 
-- `HelperRef.Decode`: "Per-Node decoder helper", and `nodeTypeName()` ("The GraphQL node type this decoder answers for"), renamed `targetTypeName()`. It has about fifteen readers, and they are message builders and helper-name derivations that read it as "the type the id belongs to".
-- `NodeIdLeafResolver.Resolved` arm parameters: "`decode<TypeName>` helper resolved on the target NodeType", five places.
+- `HelperRef.Decode`: "Per-Node decoder helper", and `nodeTypeName()` ("The GraphQL node type this decoder answers for"), renamed `targetTypeName()`. It has about half a dozen readers, and they are message builders and helper-name derivations that read it as "the type the id belongs to".
+- `NodeIdLeafResolver.Resolved` arm parameters: "`decode<TypeName>` helper resolved on the target NodeType", four places.
 - `GraphitronType.NodeType`'s javadoc on `decodeMethod`, which stays true but is no longer the only source; say so.
 - `NodeIdEncoderClassGenerator` class javadoc, as above.
 
@@ -122,7 +122,7 @@ When the tenant column is in a catalog decode's key, the leaf **routes** and doe
 
 - **Tenant in the key routes.** `type FilmActorCode @table(name: "film_actor")` (metadata key `ACTOR_ID, FILM_ID`) named by a filter input field under the `film_id` tenant column. Asserts `DecodedKeySlot` at slot 1 whose `decode` is `decodeFilmActorCode`. `nodeIdFilterInputFieldDivinesTheDecodedSlot` is its node-type twin and keeps passing unchanged.
 - **The record decline's new reason.** `aJooqRecordParameterDecodingATableOnlyTypeWithTheTenantInItsKeyDeclines` keeps its two assertions and gains one on the reworded reason.
-- **Slot miss reports evidence off the decode's table.** The node-type case of the rewritten `collectFromServiceLeaf` branch, which no test pins today: a root `@service` with a scalar slot `inventoryId: ID! @nodeId(typeName: "Inventory")` whose Java parameter takes the key value (`ThrowOnMismatch`), over `type Inventory implements Node @table(name: "inventory")`. `inventory` carries the `film_id` tenant column but its key `inventory_id` does not, so the branch reads `inventory` off `decode.table()` and the unrouted-service rejection's evidence contains `Inventory id at inventoryId`. The `@table`-only form of this case cannot be written from SDL until the named-parameter slot widens, so it is R1033's to add.
+- **Slot miss reports evidence off the decode's table.** The node-type case of the rewritten `collectFromServiceLeaf` branch, which no test pins today: a root `@service` with a scalar slot `inventoryId: ID! @nodeId(typeName: "Inventory")` whose Java parameter takes the key value (`ThrowOnMismatch`), over `type Inventory implements Node @table(name: "inventory") @node` (`inventory` carries no catalog metadata, so without `@node` it would stay a `TableType`). `inventory` carries the `film_id` tenant column but its key `inventory_id` does not, so the branch reads `inventory` off `decode.table()` and the unrouted-service rejection's evidence contains `Inventory id at inventoryId`. The `@table`-only form of this case cannot be written from SDL until the named-parameter slot widens, so it is R1033's to add.
 
 In `NodeIdLeafResolverTest`, one case per arm with a `@table`-only target, asserting the arm and that its `decodeMethod()` is `decode<T>` with the metadata's type id and key columns: `SameTable`, `DirectFk`, `TranslatedFk` (`nodeidfixture.parent_node` / `child_ref`) and `AuthorOwnedPredicate`. Plus the two remaining rejections. A `@table`-only type over `nodeidfixture.qux`, which has no metadata, rejects with `resolveTargetKeys`' existing "not a @node type (no NodeId catalog metadata, no @node directive)" text. A type carrying `@node` without `implements Node`, over `qux`, rejects with the `OfDeclaredNode` text and no longer advises adding `@node`. A `BuildContext`-level case pins `TargetKeys`' arm per source: node, catalog and declared node.
 
