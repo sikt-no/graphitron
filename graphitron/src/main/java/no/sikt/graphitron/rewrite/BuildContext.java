@@ -3416,9 +3416,10 @@ class BuildContext {
      *
      * <p>No {@code decode<TypeName>} method name is resolved here: the materialization calls
      * {@code decodeValues(typeId, nodeId)}, never {@code decode<Type>}. What {@link Resolved} does
-     * carry beside the body's facts is the node type's own {@code typeName}, which is the decode's
-     * identity downstream, the emit side keying both its collection and its helper name on it. Two
-     * node types can back one table, so the table cannot stand in for the name.
+     * carry beside the body's facts is the {@code typeName} of the {@code @nodeId(typeName:)}
+     * target, a node type or a {@code @table} type over a table with catalog node metadata, which is
+     * the decode's identity downstream, the emit side keying both its collection and its helper name
+     * on it. Two types can back one table, so the table cannot stand in for the name.
      */
     sealed interface NodeIdRecordDecode {
         record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeName,

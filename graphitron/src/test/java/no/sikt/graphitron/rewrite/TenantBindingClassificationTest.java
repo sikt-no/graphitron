@@ -1627,6 +1627,109 @@ class TenantBindingClassificationTest {
         assertThat(schema.tenantBindings().rejections()).isEmpty();
     }
 
+    /**
+     * A code table with catalog node metadata (type id {@code Baz}, key {@code id}) exposed as a
+     * plain {@code @table} type: no {@code implements Node}, no {@code @node}, and no tenant column.
+     */
+    private static final String TABLE_ONLY_BAZ = """
+        type Baz @table(name: "baz") { code: String @field(name: "id") }
+        """;
+
+    /**
+     * The field classified, bound no tenant slot, and drew no tenant rejection of its own. Its
+     * payload's tenant-scoped child is what makes the fold ask whether the root establishes a
+     * context, which is the path that reaches the decode; with nothing naming a tenant, the child
+     * rejects as it would beside any other argument that names none.
+     */
+    private static void assertBuildsUnbound(GraphitronSchema schema, String field) {
+        assertThat(schema.field("Mutation", field)).isNotInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(schema.tenantBindingOf("Mutation", field))
+            .isNotNull()
+            .isNotInstanceOf(TenantBinding.ArgumentBound.class);
+        assertThat(schema.tenantBindings().rejections())
+            .noneMatch(e -> e.coordinate().equals("Mutation." + field));
+        assertRejects(schema, "RateFilmsPayload.films", "no ancestor established a tenant context");
+    }
+
+    @Test
+    void aJooqRecordParameterDecodingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode() {
+        var schema = build(SERVICE_TYPES + TABLE_ONLY_BAZ + """
+            input ModifyBazInput { id: ID! @nodeId(typeName: "Baz") }
+            type Mutation { modifyBaz(in: ModifyBazInput!): RateFilmsPayload %s }
+            """.formatted(service("modifyBaz")));
+
+        assertBuildsUnbound(schema, "modifyBaz");
+    }
+
+    @Test
+    void aJooqRecordParameterReferencingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode() {
+        // The reported shape: a foreign key loaded from the id of a code table that is no longer
+        // a node type in this schema, beside plain column bindings for the rest of the record.
+        var schema = build(SERVICE_TYPES + TABLE_ONLY_BAZ + """
+            input ModifyBarInput {
+                bazId: ID @nodeId(typeName: "Baz")
+                id2: String! @field(name: "id_2")
+                name: String @field(name: "name")
+            }
+            type Mutation { modifyBar(in: ModifyBarInput!): RateFilmsPayload %s }
+            """.formatted(service("modifyBar")));
+
+        assertBuildsUnbound(schema, "modifyBar");
+    }
+
+    @Test
+    void aRecordSlotDecodingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode() {
+        var schema = build(SERVICE_TYPES + TABLE_ONLY_BAZ + """
+            type Mutation { pickBaz(baz: ID! @nodeId(typeName: "Baz")): RateFilmsPayload %s }
+            """.formatted(service("pickBaz")));
+
+        assertBuildsUnbound(schema, "pickBaz");
+    }
+
+    @Test
+    void aJooqRecordParameterDecodingATableOnlyTypeWithTheTenantInItsKeyDeclines() {
+        // The node-type twin is aJooqRecordParameterDecodingACompositeKeyReadsTheTenantPosition:
+        // same table, same key, but there the decode helper exists to route on.
+        var schema = build(SERVICE_TYPES + """
+            type FilmActorCode @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
+            input PickByFilmActorInput { id: ID! @nodeId(typeName: "FilmActorCode") }
+            type Mutation { pickFilmForFilmActor(in: PickByFilmActorInput!): Film %s }
+            """.formatted(service("pickFilmForFilmActor")));
+
+        assertThat(schema.tenantBindingOf("Mutation", "pickFilmForFilmActor")).isNull();
+        assertRejects(schema, "Mutation.pickFilmForFilmActor",
+            "the tenant is reached through @nodeId(typeName: 'FilmActorCode') at in.id, whose key"
+                + " carries tenant column 'film_id', but 'FilmActorCode' is not a node type");
+        assertRejects(schema, "Mutation.pickFilmForFilmActor",
+            "Make 'FilmActorCode' a node type, or bind the tenant through a field mapping to tenant"
+                + " column 'film_id'.");
+    }
+
+    @Test
+    void aScalarArgumentOrFilterFieldNamingATableOnlyTypeRejectsInTheClassifier() {
+        // The third decode carrier only ever names a node type: the classifier refuses the
+        // table-only target before the fold sees it, so the fold has nothing to look up.
+        var schema = build(TABLE_ONLY_BAZ + """
+            input BazFilter { id: ID @nodeId(typeName: "Baz") }
+            type Query {
+                baz(id: ID! @nodeId(typeName: "Baz")): Baz
+                bazes(filter: BazFilter): [Baz!]!
+            }
+            """);
+
+        assertThat(schema.field("Query", "baz"))
+            .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class,
+                unclassified -> assertThat(unclassified.reason()).contains("'Baz' is not a node type"));
+        // A filter input field's cause is minted on the input field; the consuming field states
+        // the consequence.
+        assertThat(schema.field("Query", "bazes"))
+            .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class,
+                unclassified -> assertThat(unclassified.reason()).contains("1 input field could not be resolved"));
+        assertThat(TestSchemaHelper.diagnosticMessages(schema))
+            .contains("Input field 'BazFilter.id'")
+            .contains("'Baz' is not a node type");
+    }
+
     @Test
     void aTopLevelNodeIdArgumentReadsTheArgument() {
         var schema = build(SERVICE_TYPES + """

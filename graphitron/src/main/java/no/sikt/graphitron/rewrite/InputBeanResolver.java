@@ -680,7 +680,8 @@ final class InputBeanResolver {
             targetColumns = ((BuildContext.RecordFkTargets.Resolved) fkTargets).targetColumns();
         }
         return new KeyDecodeResult.Ok(new CallSiteExtraction.RecordKeyDecode(
-            path, resolved.encoderClass(), resolved.typeId(), targetColumns, nonNull));
+            path, resolved.encoderClass(), resolved.typeName(), resolved.typeId(),
+            resolved.keyColumns(), targetColumns, nonNull));
     }
 
     /**

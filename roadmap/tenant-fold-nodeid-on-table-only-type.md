@@ -81,6 +81,18 @@ All in `TenantBindingClassificationTest` (classification tier, tenant column `fi
 
 The existing decode tests in the class (`nodeIdFilterInputFieldDivinesTheDecodedSlot`, `wrapperServiceWithANodeIdRecordMemberDivinesAndItsChildrenInherit`, the polymorphic-decline tests) are the regression guard that node-type targets still bind exactly as before.
 
+## Implementation notes
+
+Landed as specified: `RecordKeyDecode` carries `typeName` and `keyColumns`, `TenantBindingIndex.Fold.decodedSlotAccess` reads both record-shaped carriers, and the `NodeIdDecodeKeys` slot-miss branch looks its node type up through `nodeTypeOf(HelperRef.Decode)`, which throws on a miss with the minted-from-a-`NodeType` invariant in its javadoc. A declined decode counts as a binding in `collectFromJooqRecord`, so the record is not also reported as tenant evidence; the decline already names the slot.
+
+One deviation in the tests. The spec had the three skip-path cases return a type over a global table, but that return shape never reaches the decode: with nothing below the root needing a tenant, the fold never asks whether the root establishes a context, and the old code passed them. The sis trace runs through `foldAncestorContexts`, which a tenant-scoped child triggers. So those three cases return `RateFilmsPayload` (a tenant-scoped `films` child) and assert, besides the root drawing no slot and no rejection of its own, that the child rejects with "no ancestor established a tenant context", the honest consequence of an argument that names no tenant. Reverting only the fold makes all four fold tests throw `IllegalStateException: no node type carries type id ...`; with the fold change they pass. The tests are in `TenantBindingClassificationTest`:
+
+- `aJooqRecordParameterDecodingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode` (identity decode)
+- `aJooqRecordParameterReferencingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode` (the sis reference shape)
+- `aRecordSlotDecodingATableOnlyTypeWithoutTheTenantInItsKeySkipsTheDecode` (`NodeIdDecodeRecord`)
+- `aJooqRecordParameterDecodingATableOnlyTypeWithTheTenantInItsKeyDeclines` (the decline text)
+- `aScalarArgumentOrFilterFieldNamingATableOnlyTypeRejectsInTheClassifier` (third carrier). The filter input field's "'Baz' is not a node type" cause is a diagnostic on `BazFilter.id`; the consuming field's reason is the roll-up "1 input field could not be resolved".
+
 ## Retired vocabulary
 
 - `nodeTypeByTypeId` (the `TenantBindingIndex.Fold` method).

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.test.jooq.nodeidfixture.tables.records.BarRecord;
+import no.sikt.graphitron.rewrite.test.jooq.nodeidfixture.tables.records.BazRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.LanguageRecord;
@@ -182,6 +184,26 @@ class TenantServiceStub {
     /** Child returning a global table, binding {@code $session}. */
     public static Map<Row1<Integer>, LanguageRecord> languageForSession(
             Set<Row1<Integer>> keys, DSLContext dsl, String identity) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A global table's record decoded from a {@code @nodeId} naming a {@code @table}-only type. */
+    public static TenantFilmsPayload modifyBaz(BazRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A global table's record whose foreign key is loaded from a {@code @table}-only type's id. */
+    public static TenantFilmsPayload modifyBar(BarRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A top-level {@code @nodeId} argument naming a {@code @table}-only type, decoded to its record. */
+    public static TenantFilmsPayload pickBaz(BazRecord baz) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A composite-key record decoded through a {@code @table}-only type whose key holds the tenant. */
+    public static FilmRecord pickFilmForFilmActor(FilmActorRecord in) {
         throw new UnsupportedOperationException();
     }
 }

@@ -20,6 +20,7 @@ import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.InputColumnBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.InputColumnBindingGroup;
@@ -50,6 +51,7 @@ import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.function.Predicate;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -1802,10 +1804,10 @@ public record TenantBindingIndex(
 
         /**
          * A jOOQ record parameter: a column binding on the tenant column reads the tenant off the
-         * wire as it is, and a {@code @nodeId} decode whose node key includes the tenant column
-         * reads it off the decoded key at that position. Both paths are relative to the
-         * record's own input, so they extend the parameter's argument path. A tenant-scoped
-         * table's record that binds neither is tenant evidence.
+         * wire as it is, and a {@code @nodeId} decode whose target's key includes the tenant column
+         * reads it off the decoded key at that position (see {@link #decodedSlotAccess}). Both
+         * paths are relative to the record's own input, so they extend the parameter's argument
+         * path. A tenant-scoped table's record that binds neither is tenant evidence.
          */
         private void collectFromJooqRecord(ValueShape.JooqRecordInput jr, FieldCoordinates use,
                                            SlotCollector collector) {
@@ -1822,16 +1824,15 @@ public record TenantBindingIndex(
                 }
             }
             for (var keyDecode : jr.carrier().keyDecodes()) {
-                // Read off the node type's own key tuple rather than the record's target columns: a
+                // Read off the target's own key tuple rather than the record's target columns: a
                 // reference decode lands the key on foreign-key columns that need not carry the
-                // tenant column's name, and the tuple is what the decode helper projects from.
-                var decode = nodeTypeByTypeId(keyDecode.typeId()).decodeMethod();
-                int slot = tenantIndex(decode.outputColumnShape());
-                if (slot < 0) continue;
+                // tenant column's name, and the tuple is what the decode projects from.
                 var full = concat(base, keyDecode.path());
+                var access = decodedSlotAccess(keyDecode.typeName(), keyDecode.keyColumns(),
+                    readOf(full), slotNameOf(full));
+                if (access.isEmpty()) continue;
                 bound = true;
-                collector.add(slotNameOf(full), new SlotAccess.Resolved(
-                    readOf(full), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
+                collector.add(slotNameOf(full), access.get());
             }
             if (!bound && tenantScoped(jr.carrier().table())) {
                 collector.evidence(recordNameOf(jr.carrier().table()) + " at " + slotNameOf(base));
@@ -1839,32 +1840,31 @@ public record TenantBindingIndex(
         }
 
         /**
-         * One service leaf. A record decode of one node type and a key decode read the tenant off
+         * One service leaf. A record decode of one target type and a key decode read the tenant off
          * the decoded key at the tenant column's position; a polymorphic record decode declines,
          * since its candidates decode the same id with their own key columns; every other leaf
-         * carries no column and mints nothing. A decode of a tenant-scoped node type whose key
-         * misses the tenant column is tenant evidence.
+         * carries no column and mints nothing. A decode of a tenant-scoped type whose key misses
+         * the tenant column is tenant evidence.
          */
         private void collectFromServiceLeaf(CallSiteExtraction leaf, List<String> path,
                                             SlotCollector collector) {
             switch (leaf) {
                 case CallSiteExtraction.NodeIdDecodeRecord record -> {
-                    var decode = nodeTypeByTypeId(record.typeId()).decodeMethod();
-                    int slot = tenantIndex(decode.outputColumnShape());
-                    if (slot < 0) {
+                    var access = decodedSlotAccess(record.typeName(), record.keyColumns(),
+                        readOf(path), slotNameOf(path));
+                    if (access.isEmpty()) {
                         if (tenantScoped(record.table())) {
                             collector.evidence(recordNameOf(record.table()) + " at " + slotNameOf(path));
                         }
                         return;
                     }
-                    collector.add(slotNameOf(path), new SlotAccess.Resolved(
-                        readOf(path), new TenantBinding.SlotProjection.DecodedKeySlot(decode, slot)));
+                    collector.add(slotNameOf(path), access.get());
                 }
                 case CallSiteExtraction.NodeIdDecodeKeys keys -> {
                     var shape = keys.decodeMethod().outputColumnShape();
                     int slot = tenantIndex(shape);
                     if (slot < 0) {
-                        var node = nodeTypeByTypeId(keys.decodeMethod().typeId());
+                        var node = nodeTypeOf(keys.decodeMethod());
                         if (tenantScoped(node.table())) {
                             collector.evidence(node.name() + " id at " + slotNameOf(path));
                         }
@@ -1905,16 +1905,41 @@ public record TenantBindingIndex(
         }
 
         /**
-         * The node type a decode's type id names. {@code TypeBuilder} enforces type-id
-         * uniqueness, so at most one matches; a decode naming none is a classifier bug.
+         * Where a record-shaped {@code @nodeId(typeName:)} decode reads the tenant, or empty when
+         * the target's key tuple {@code keyColumns} has no tenant column. A target that is a node
+         * type reads the tenant off its {@code decode<TypeName>} helper at the tenant column's
+         * position; a {@code @table} type that is not a node type has no such helper, so a key
+         * carrying the tenant column declines. Looked up by {@code typeName}, not by type id: two
+         * types can back one table, and a {@code @table}-only type's catalog type id can coincide
+         * with a node type's.
          */
-        private GraphitronType.NodeType nodeTypeByTypeId(String typeId) {
-            for (GraphitronType type : types.values()) {
-                if (type instanceof GraphitronType.NodeType nt && typeId.equals(nt.typeId())) {
-                    return nt;
-                }
+        private Optional<SlotAccess> decodedSlotAccess(String typeName, List<ColumnRef> keyColumns,
+                                                       TenantBinding.SlotRead read, String slotName) {
+            int slot = tenantIndex(keyColumns);
+            if (slot < 0) {
+                return Optional.empty();
             }
-            throw new IllegalStateException("no node type carries type id '" + typeId + "'");
+            if (types.get(typeName) instanceof GraphitronType.NodeType nt) {
+                return Optional.of(new SlotAccess.Resolved(
+                    read, new TenantBinding.SlotProjection.DecodedKeySlot(nt.decodeMethod(), slot)));
+            }
+            return Optional.of(new SlotAccess.Declined("the tenant is reached through @nodeId(typeName: '"
+                + typeName + "') at " + slotName + ", whose key carries tenant column '"
+                + scopes.columnName() + "', but '" + typeName + "' is not a node type: there is no"
+                + " node id decode helper to route on. Make '" + typeName + "' a node type, or bind"
+                + " the tenant through a field mapping to tenant column '" + scopes.columnName() + "'."));
+        }
+
+        /**
+         * The node type a decode helper answers for. Every {@link HelperRef.Decode} is minted from
+         * a {@link GraphitronType.NodeType}, so a miss is a classifier bug.
+         */
+        private GraphitronType.NodeType nodeTypeOf(HelperRef.Decode decode) {
+            if (types.get(decode.nodeTypeName()) instanceof GraphitronType.NodeType nt) {
+                return nt;
+            }
+            throw new IllegalStateException("no node type answers for decode helper '"
+                + decode.methodName() + "'");
         }
 
         /** An argument path as its SDL names: the argument, then each input field below it. */

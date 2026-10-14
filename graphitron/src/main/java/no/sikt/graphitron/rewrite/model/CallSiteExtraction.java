@@ -203,14 +203,15 @@ public sealed interface CallSiteExtraction
      * {@code table.primaryKeyColumns()} because an {@code @node(keyColumns:)} key may differ from
      * the PK.
      *
-     * <p>{@code typeName} is the decode's identity, as it is on {@link PolymorphicCandidate}: every
-     * other component is a function of the node type it names, and two node types can share one
-     * table (a rename that keeps the old name exposed is exactly that shape), so the table cannot
+     * <p>{@code typeName} is the decode's identity, as it is on {@link PolymorphicCandidate}: it
+     * names the {@code @nodeId(typeName:)} target, a node type or a {@code @table} type over a table
+     * with catalog node metadata, every other component is a function of that target, and two
+     * types can share one table (a rename that keeps the old name exposed is exactly that shape), so the table cannot
      * tell two decodes apart. Collection and naming both key on it.
      *
      * <p>Produced only by {@code InputBeanResolver} when an input-bean field's loaded Java type is
      * assignable to {@code org.jooq.Record} and the SDL field carries {@code @nodeId(typeName:)};
-     * consumed only by {@code InputBeanInstantiationEmitter}, which emits a per-node-type
+     * consumed only by {@code InputBeanInstantiationEmitter}, which emits a per-target-type
      * {@code decode<TypeName>Record} helper (plus a {@code …RecordList} variant for list-valued
      * members) on the enclosing {@code *Fetchers} class. Any other exhaustive
      * {@link CallSiteExtraction} switch treats this arm as unreachable-by-construction.
@@ -634,12 +635,18 @@ public sealed interface CallSiteExtraction
      * enclosing nested-grouping-input field names a flatten descends through.
      *
      * <p>{@code targetColumns} is the resolved list of columns <em>on this record</em> the decoded
-     * values load into, in node-key (decode) order (one entry for a single-key NodeType, N for a
+     * values load into, in key (decode) order (one entry for a single-column key, N for a
      * composite key). For a same-table identity decode these are the record's own key columns;
      * for a cross-table FK-reference decode they are the FK's child columns on this record,
      * resolved by FK-constraint pairing in {@code BuildContext}. The identity-vs-FK distinction
      * lives <em>only in the resolver</em>; the carrier holds the resolved target either way (both
      * arms load the columns identically, so there is no sub-axis).
+     *
+     * <p>{@code typeName} names the {@code @nodeId(typeName:)} target, a node type or a
+     * {@code @table} type over a table with catalog node metadata, and {@code keyColumns} is that
+     * target's own key tuple in decode order. Both sit beside {@code targetColumns} because a
+     * reference decode lands the key on foreign-key columns that need not carry the tenant
+     * column's name, so the tenant position is read off the target's own tuple.
      *
      * <p>{@code nonNull} reflects the SDL field's nullability ({@code ID!} vs {@code ID}) and drives
      * the emitter's null semantics, applied identically to identity and FK-reference decodes:
@@ -650,8 +657,8 @@ public sealed interface CallSiteExtraction
      * method owns the insert/update, so the framework does not force even a same-table identity to be
      * non-null; a nullable identity is a legitimate service-side upsert input.
      */
-    record RecordKeyDecode(List<String> path, ClassName encoderClass, String typeId,
-                           List<ColumnRef> targetColumns, boolean nonNull) {
+    record RecordKeyDecode(List<String> path, ClassName encoderClass, String typeName, String typeId,
+                           List<ColumnRef> keyColumns, List<ColumnRef> targetColumns, boolean nonNull) {
         public RecordKeyDecode {
             if (path == null || path.isEmpty()) {
                 throw new IllegalArgumentException("RecordKeyDecode path must be non-empty");
@@ -665,9 +672,16 @@ public sealed interface CallSiteExtraction
             if (encoderClass == null) {
                 throw new IllegalArgumentException("RecordKeyDecode encoderClass must be non-null");
             }
+            if (typeName == null || typeName.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode typeName must be non-empty");
+            }
             if (typeId == null || typeId.isEmpty()) {
                 throw new IllegalArgumentException("RecordKeyDecode typeId must be non-empty");
             }
+            if (keyColumns == null || keyColumns.isEmpty()) {
+                throw new IllegalArgumentException("RecordKeyDecode keyColumns must be non-empty");
+            }
+            keyColumns = List.copyOf(keyColumns);
             if (targetColumns == null || targetColumns.isEmpty()) {
                 throw new IllegalArgumentException("RecordKeyDecode targetColumns must be non-empty");
             }
