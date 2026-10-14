@@ -1,7 +1,7 @@
 ---
 id: R1032
 title: "A @nodeId leaf on a DML or filter input decodes a @table-only type from its catalog node metadata"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: classification-model
@@ -162,6 +162,17 @@ Each asserts the field classifies and that the generated `NodeIdEncoder` declare
 **A separate registry record beside the reference**, `CatalogNodeDecode(typeName, TableRef, HelperRef.Decode)`, leaving `HelperRef.Decode` as it is. The generator and the fold would then each need a second, name-keyed source to answer which table a `decode<T>` reads, and the fold would consult a `NodeType` or the registry to answer one question. With the table on the reference, every reader asks the carrier.
 
 **Collect the catalog decodes from the classified carriers after the walk**, instead of registering at the mint. `NodeIdDecodeKeys` is held by input fields, arguments, lookup mappings and condition parameters, so the collector would be a walk over all of them that must keep up with every new holder. The mint is one site, and an entry it leaves behind for a leaf that later rejects is never emitted.
+
+## Implementation notes
+
+Implemented as specified, in one commit. What the reviewer should know beyond the plan:
+
+- **The `TargetKeys` arm test** sits in `NodeIdLeafResolverTest` (`targetKeys_recordWhichSourceAnswered`), which already builds a `BuildContext` through `buildContextForTests`; no separate `BuildContext`-level class was added.
+- **Filter positions in `TableOnlyNodeIdLeafPipelineTest` name their foreign key.** `studierett`'s two foreign keys to `studieprogram` make auto-discovery ambiguous for filters too, so the scalar filter field, the list filter field and the top-level argument each carry `@reference(path: [{key: ...}])`. Auto-discovery is covered by the permuted-key `UPDATE` case over `reordered_fk_child`, which asserts its SET columns land in key order (`fk_a`, `fk_b`, `fk_c`).
+- **The `UPDATE` pipeline case** also checks the rendered `MutationFetchers` calls `NodeIdEncoder.decodeStudieprogram(`, beside the model-level assertion that both foreign keys land in the SET partition and only `studierett_id` in the key partition.
+- **Execution tier.** `study_level` / `level_interval` sit beside the `xlat_*` fixture in `init.sql`, with a `NodeIdFixtureGenerator.METADATA` entry (`StudyLevel`, key `CODE`). No field returns `StudyLevel`, so its decode helper exists only because a leaf names it, which is the registry path end to end. The filter is the input-field form (`levelIntervals(filter: {fromLevelIds: [...]})`). `TableOnlyNodeIdLeafExecutionTest` covers the update, the filter, and a wrong-type id on each. **One deviation from the plan's assertion:** on the filter a wrong-type id fails with the generated "Invalid node id ... expected a StudyLevel id" client error, but on the UPDATE it fails with a redacted "An error occurred. Reference: ...", because the UPDATE rail's decode check throws a plain `GraphqlErrorException` that `ErrorRouter` does not surface. Node-type references on UPDATE inputs share that emitter (`StraddlingReferenceUpdateExecutionTest` asserts only non-empty errors for the same reason), so it predates this item; the update case asserts the call fails and writes nothing, and the redaction is filed as R1036.
+- **User manual.** `nodeId.adoc`'s constraint "The named or inferred type must be a node type" now admits a `@table` type over a metadata table at the positions this item opens (and at a jOOQ-record `@service` parameter, which already accepted it), and says the scalar key slot still needs a node type. The plan did not list a docs change; the old sentence became false.
+- **Retirement sweep.** Clean: no source outside `roadmap/` names `nodeTypeOf`, `HelperRef.Decode.nodeTypeName()`, the record-shaped `TargetKeys`, or the retired phrases. The remaining `nodeTypeName` identifiers belong to other records (`NodeIdDecodeCoverageFacts.Instruction`, key-projection rows, record-decode locals).
 
 ## Reviewer findings
 
