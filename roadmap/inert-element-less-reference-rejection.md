@@ -7,7 +7,7 @@ priority: 7
 theme: diagnostics
 depends-on: []
 created: 2026-08-17
-last-updated: 2026-10-12
+last-updated: 2026-10-14
 ---
 
 # An element-less @reference is an author error at every site
@@ -61,3 +61,11 @@ rather than a directive that does nothing.
 
 Until this lands, the fact store treats `[]` as equivalent to no directive, which is what the
 generator does on a field definition and in effect on the other two sites.
+
+## Notes
+
+**2026-10-14.** No consumer schema writes `@reference(path: [])`, and none writes `path: {}`.
+Checked across the seven Graphitron subgraphs in fs-plattform at `origin/main` `4d2f79280b`: sis,
+opptak, tilgangsstyring, utdanningsregisteret, kompetanse, kreg and fskode, about 1,400
+`@reference` applications between them. The breaking change this item makes reaches none of them.
+`roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
