@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1029` | The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type | Ready | 2026-10-14 | [plan](tenant-fold-nodeid-on-table-only-type.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
-| `R1027` | A rejected Declined or Unbound tenant root does not void its subtree tenant context | Spec | 2026-10-14 <sub>created 2026-10-13</sub> | [plan](rejected-declined-or-unbound-root-keeps-subtree-context.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
@@ -30,6 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1027` | A rejected Declined or Unbound tenant root does not void its subtree tenant context | Ready | 2026-10-14 <sub>created 2026-10-13</sub> | [plan](rejected-declined-or-unbound-root-keeps-subtree-context.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -457,7 +457,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R1029` [**The tenant fold crashes on a @nodeId(typeName:) decode whose target is a @table-only type**](tenant-fold-nodeid-on-table-only-type.md) — Ready, bug
 - `R411` [**Wire-coercion cast guard for @condition and @externalField (R261 Slice 2)**](reject-wire-coercion-nonservice-sites.md) — Backlog, architecture
-- `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — Spec, bug
+- `R1027` [**A rejected Declined or Unbound tenant root does not void its subtree tenant context**](rejected-declined-or-unbound-root-keeps-subtree-context.md) — Ready, bug
 - `R817` [**AuthoredClaimConflicts.fieldGrain reads a recursive view once per conflict row**](authored-claim-conflicts-reads-a-recursive-view-per-row.md) — Backlog, bug
 - `R625` [**Honour coercing argMapping leaf extractions on routine bindings**](routine-coercing-arg-extractions.md) — Backlog, validation
 - `R670` [**Root @lookupKey plus @asConnection reports a @table error the author cannot act on**](root-lookup-connection-diagnostic.md) — Backlog, bug

@@ -1,7 +1,7 @@
 ---
 id: R1027
 title: "A rejected Declined or Unbound tenant root does not void its subtree tenant context"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: diagnostics
