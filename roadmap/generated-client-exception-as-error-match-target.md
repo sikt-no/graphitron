@@ -1,7 +1,7 @@
 ---
 id: R1047
 title: "An @error GENERIC handler can name the generated GraphitronClientException on a clean build"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 4
 theme: error-channel
