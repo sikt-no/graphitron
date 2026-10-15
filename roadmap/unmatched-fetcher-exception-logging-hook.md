@@ -1,7 +1,7 @@
 ---
 id: R1048
 title: "Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: error-channel
@@ -180,7 +180,7 @@ throw new IllegalStateException("@mutation(typeName: UPDATE) bulk row matched ze
 
 - **R920** (Backlog, batch failures log once) sketches "an optional sink the generated `redact` prefers over its own logger" in the `GraphQLContext`. That is this item's seam; R920 gains a `depends-on:` edge to this item and keeps its own goal (one record per failed batch, an SQL-free default line, a batch cap). Its memo naturally sits in front of the hook, so a consumer's log is also called once per batch failure, and its new default summary line replaces the `log == null` branch above without touching the hook path.
 - **R1046** (In Progress) swaps the channel fall-through to `surfaceClientErrorOrRedact`, which still ends in `redact`. Either order works; they touch neighbouring methods of `ErrorRouterClassGenerator`.
-- **R1040** (Ready) edits `buildCarrierBulkPerRowUpdateBody` for empty patches and quotes "matched zero rows" in its user docs; the kept prefix leaves that prose true. A textual overlap only.
+- **R1040** (In Review) edits `buildCarrierBulkPerRowUpdateBody` for empty patches and quotes "matched zero rows" in its user docs; the kept prefix leaves that prose true. A textual overlap only.
 - **R423** (Backlog) would change how the reference is minted; the `String reference` parameter absorbs that.
 
 ## Other solutions we've considered
