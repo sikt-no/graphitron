@@ -1,7 +1,7 @@
 ---
 id: R1042
 title: "What an explicit null on a @nodeId UPDATE input means, and whether it agrees with the INSERT rule"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 4
 theme: mutation-write
