@@ -1,7 +1,7 @@
 ---
 id: R1041
 title: "A mutation called with an empty input list returns an empty payload without routing to a tenant"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: runtime-connection
