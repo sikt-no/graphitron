@@ -18,7 +18,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Emitter unit-tier tests for {@link ChannelCatchArmEmitter} and
  * {@link ChannelEarlyReturnEmitter}. Renders {@code CodeBlock.toString()} once per arm to anchor
  * the structural intent (the {@code Mapped} mapping-walk that returns an
- * {@code Outcome.ErrorList} and falls through to redact, and the validator-pre-step early
+ * {@code Outcome.ErrorList} and falls through to the no-channel disposition, and the validator-pre-step early
  * return) without pinning the full generated body. The emitter takes
  * {@link ErrorChannel.Mapped} directly; the {@link ErrorChannel.RouterDispatched} arms and the
  * no-channel disposition emit through {@code TypeFetcherGenerator}'s catch-arm seams, whose
@@ -45,8 +45,9 @@ class ChannelCatchArmEmitterTest {
             .contains("mapping.match(cause)")
             .contains("ErrorList<>(")
             .contains("cause")
-            .as("unmapped fall-through stays a redact")
-            .contains("redact(e, env)");
+            .as("unmapped fall-through is the no-channel disposition")
+            .contains("ErrorRouter.surfaceClientErrorOrRedact(e, env);")
+            .doesNotContain("ErrorRouter.redact(e, env)");
     }
 
     @Test

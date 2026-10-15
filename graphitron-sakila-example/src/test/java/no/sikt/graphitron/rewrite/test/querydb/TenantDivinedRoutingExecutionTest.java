@@ -509,6 +509,34 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
+    void dmlPayload_onTheErrorChannel_anUnclaimedClientErrorSurfacesAsOnAFieldWithoutAChannel() {
+        // The channel's only handler is DATABASE, so nothing claims the tenant refusal; it reaches
+        // the client with its own message, exactly as on a channel-less field, not as a redacted
+        // correlation id.
+        var result = execute("mutation { retitleFilmsChecked(in: [{ id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"Refused\" }])"
+            + " { films { title } errors { __typename } } }", List.of(1));
+        assertUnclaimedClientErrorSurfaced(result, "retitleFilmsChecked", "'2' is not permitted for this request");
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    @Test
+    void service_onTheErrorChannel_anUnclaimedClientErrorSurfacesAsOnAFieldWithoutAChannel() {
+        var result = execute("mutation { rateFilmsChecked(in: [{ film: \""
+            + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn errors { __typename } } }", List.of(1));
+        assertUnclaimedClientErrorSurfaced(result, "rateFilmsChecked", "'2' is not permitted for this request");
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    private static void assertUnclaimedClientErrorSurfaced(ExecutionResult result, String field, String message) {
+        assertThat(result.getErrors())
+            .as("errors: " + result.getErrors())
+            .anySatisfy(e -> assertThat(e.getMessage()).contains(message))
+            .noneSatisfy(e -> assertThat(e.getMessage()).contains("An error occurred. Reference:"));
+        assertThat((Map<String, Object>) result.getData()).containsEntry(field, null);
+    }
+
+    @Test
     void service_jooqRecordParameter_routesOnTheCompositeKeysTenantSlot() {
         var result = execute("mutation { rateFilmActors(in: [{ id: \""
             + NodeIdEncoder.encodeFilmActor(20, 2) + "\" }]) { ranOn films { title } } }");

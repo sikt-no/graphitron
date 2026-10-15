@@ -1603,7 +1603,7 @@ public class TypeFetcherGenerator {
      *
      * <p>The catch arm forks on {@code errorChannel}: a present channel routes through
      * {@code ErrorRouter.dispatch} with the channel's mapping table and synthesized payload
-     * factory; an absent channel routes through {@code ErrorRouter.redact}. Generator-side DTO
+     * factory; an absent channel routes through {@code ErrorRouter.surfaceClientErrorOrRedact}. Generator-side DTO
      * construction is unavoidable on the error path because no value was returned for per-field
      * wiring to project from.
      */
@@ -6348,7 +6348,8 @@ public class TypeFetcherGenerator {
      * Builds the catch arm for a synchronous fetcher. Forks on {@code errorChannel}: a present
      * channel emits {@code return ErrorRouter.dispatch(e, ErrorMappings.<CONST>, env, factory)}
      * with the channel's mapping table and the synthesized payload factory; an absent channel
-     * emits {@code return ErrorRouter.redact(e, env)} (no-channel privacy disposition).
+     * emits {@code return ErrorRouter.surfaceClientErrorOrRedact(e, env)}, which is also where
+     * {@code dispatch} falls through when no mapping claims the throw.
      *
      * <p>Used by every sync fetcher builder backing a {@link no.sikt.graphitron.rewrite.model.WithErrorChannel}
      * field after emitting the success-path

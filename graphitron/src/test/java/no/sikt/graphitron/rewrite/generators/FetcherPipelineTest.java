@@ -268,7 +268,7 @@ class FetcherPipelineTest {
         // buildServiceFetcherCommon lifts the fetcher's return to the Outcome wrapper
         // (DataFetcherResult<Outcome<X>>); the return type is the structural signal that the
         // classification reached the emitter. The catch-arm body shape (the Outcome.ErrorList
-        // mapping-walk + redact fallthrough) is pinned behaviourally by ChannelCatchArmEmitterTest
+        // mapping-walk + no-channel-disposition fallthrough) is pinned behaviourally by ChannelCatchArmEmitterTest
         // (unit) and the GraphQLQueryTest execution-tier round-trip, not by a code-string
         // assertion on the generated body (banned per development-principles.adoc).
         var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");

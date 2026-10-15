@@ -79,8 +79,9 @@ public final class ErrorDispatchFragments {
      * The {@code Outcome}-wrapped arm: walks the channel's mappings in source order and, per
      * mapping, the throw's cause chain outermost-first; the first match returns
      * {@code ErrorList(List.of(cause))} as the entry point's data, which the payload's errors
-     * field reads off its source. An unmatched throw falls through to the router's
-     * {@code redact}. One spelling for every producer on the {@code Outcome} transport: the
+     * field reads off its source. An unmatched throw falls through to {@link #redactArm}, the
+     * same disposition a fetcher without a channel gets, so an unclaimed client exception
+     * surfaces its own message rather than redacting. One spelling for every producer on the {@code Outcome} transport: the
      * command-seam renderers reach it through {@link #catchArm}, the unmigrated generator hosts
      * call it directly.
      */
@@ -102,16 +103,17 @@ public final class ErrorDispatchFragments {
             .add("}\n")
             .unindent()
             .add("}\n")
-            .add("return $T.redact(e, env);\n", errorRouterClass)
+            .add(redactArm(errorRouterClass, "e"))
             .build();
     }
 
     /**
      * The privacy disposition, as a bare expression over the named throwable local:
      * {@code ErrorRouter.surfaceClientErrorOrRedact(<var>, env)}. A client exception surfaces its
-     * own message; every other throwable redacts to a correlation id. Shared by the synchronous
-     * catch arms and the asynchronous {@code .exceptionally} tails, which is why it is an
-     * expression rather than a statement.
+     * own message; every other throwable redacts to a correlation id. It is the whole arm on a
+     * fetcher without a channel and the unmatched tail of {@link #outcomeArm}. Shared by the
+     * synchronous catch arms and the asynchronous {@code .exceptionally} tails, which is why it
+     * is an expression rather than a statement.
      */
     public static CodeBlock redact(ClassName errorRouterClass, String throwableVar) {
         return CodeBlock.of("$T.surfaceClientErrorOrRedact($L, env)", errorRouterClass, throwableVar);

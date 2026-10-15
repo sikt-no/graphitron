@@ -112,8 +112,10 @@ public final class ErrorRouterClassGenerator {
                 + "{@code .exceptionally} arm for async fetchers) that funnels thrown exceptions\n"
                 + "through this class: either to a channel-mapped typed payload\n"
                 + "({@code dispatch}, with a {@code Mapping[]} constant from {@code ErrorMappings})\n"
-                + "or, in the no-channel case, to a redacted {@code DataFetcherResult} carrying\n"
-                + "only a correlation ID ({@code redact}).\n"
+                + "or, when there is no channel or no mapping claims the throw, to\n"
+                + "{@code surfaceClientErrorOrRedact}: a client exception surfaces as a top-level\n"
+                + "error, anything else becomes a redacted {@code DataFetcherResult} carrying only\n"
+                + "a correlation ID ({@code redact}).\n"
                 + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
                 + "no-runtime-jar invariant.\n")
@@ -324,17 +326,18 @@ public final class ErrorRouterClassGenerator {
             .returns(resultOfP)
             .addParameter(THROWABLE, "thrown")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addJavadoc("No-channel disposition for fetchers that may throw a client-input error.\n"
-                + "Walks the cause chain outermost-first; if a {@link $T} (itself a\n"
-                + "{@code GraphQLError}) is found, returns a {@link $T} with {@code data=null} and\n"
-                + "that error, so the real client-facing message reaches the response\n"
-                + "{@code errors} array. On no match falls through to {@link #redact}: genuine\n"
-                + "internal faults keep the privacy contract (logged + correlation id only).\n"
+            .addJavadoc("Unmatched disposition for every fetcher: the whole catch arm when the field\n"
+                + "has no {@code @error} channel, and the fall-through after the channel's mappings\n"
+                + "when it has one and none claims the throw. Walks the cause chain\n"
+                + "outermost-first; if a {@link $T} (itself a {@code GraphQLError}) is found,\n"
+                + "returns a {@link $T} with {@code data=null} and that error, so the real\n"
+                + "client-facing message reaches the response {@code errors} array. On no match\n"
+                + "falls through to {@link #redact}: genuine internal faults keep the privacy\n"
+                + "contract (logged + correlation id only).\n"
                 + "\n"
-                + "<p>This is the no-channel counterpart {@code redact} was for channel-less\n"
-                + "fetchers; it narrows surfacing to the client-error marker type so a future query\n"
-                + "{@code @error} lift can route the same throw through a channel with no\n"
-                + "change at the throw site.\n",
+                + "<p>Surfacing is narrowed to the client-error marker type, so an unclaimed client\n"
+                + "error reads the same with or without a channel, while an authored mapping that\n"
+                + "matches it still places it into the payload.\n",
                 clientException, DATA_FETCHER_RESULT)
             .addCode(CodeBlock.builder()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
@@ -367,7 +370,8 @@ public final class ErrorRouterClassGenerator {
             .addJavadoc("Channel-mapped dispatch (source-direct contract). For each mapping in\n"
                 + "source-declaration order, walks the cause chain outermost-first; the first\n"
                 + "match places the matched {@code Throwable} itself into the errors list and\n"
-                + "returns the populated payload. Falls through to {@link #redact} on no match.\n"
+                + "returns the populated payload. Falls through to {@link #surfaceClientErrorOrRedact}\n"
+                + "on no match, the disposition a fetcher without a channel gets.\n"
                 + "graphql-java's {@code PropertyDataFetcher} reads each declared {@code @error}\n"
                 + "field directly from whatever source object happens to be in the slot;\n"
                 + "per-channel {@code TypeResolver}s dispatch each source to its SDL\n"
@@ -393,9 +397,9 @@ public final class ErrorRouterClassGenerator {
             .endControlFlow()
             .endControlFlow()
             .endControlFlow()
-            // ----- Unmatched: redact -----
-            .addCode("\n// Unmatched: log + redacted DataFetcherResult.\n")
-            .addStatement("return redact(thrown, env)")
+            // ----- Unmatched: surface a client error, else redact -----
+            .addCode("\n// Unmatched: surface a client error, else log + redacted DataFetcherResult.\n")
+            .addStatement("return surfaceClientErrorOrRedact(thrown, env)")
             .build();
     }
 

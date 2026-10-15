@@ -115,11 +115,14 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void dispatch_unmatchedFallsThroughToRedact() {
+    void dispatch_unmatchedFallsThroughToSurfaceClientErrorOrRedact() {
         var router = generate();
         var dispatch = method(router, "dispatch");
-        // The final unmatched arm forwards to redact; no rethrow path.
-        assertThat(dispatch.code().toString()).contains("redact(thrown, env)");
+        // The unmatched tail is the no-channel disposition: an unclaimed client exception surfaces,
+        // anything else redacts. No rethrow path, and no direct redact that would swallow a client error.
+        assertThat(dispatch.code().toString())
+            .contains("return surfaceClientErrorOrRedact(thrown, env)")
+            .doesNotContain("return redact(thrown, env)");
     }
 
     @Test

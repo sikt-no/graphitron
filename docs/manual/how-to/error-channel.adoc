@@ -59,7 +59,7 @@ for (Mapping mapping : mappings) {
         }
     }
 }
-return redact(thrown, env);
+return surfaceClientErrorOrRedact(thrown, env);
 ----
 
 (`ErrorRouterClassGenerator.buildDispatchMethod`.)
@@ -148,9 +148,10 @@ The walk is per `@error` type rather than channel-wide, which matters when two t
 
 If you want a localised or sanitised message and `description:` is too static for it (a per-request locale, say), override `getMessage()` in the exception class and leave `description:` off.
 
+[#unmatched-exceptions]
 == Unmatched exceptions: redact and correlate
 
-When no handler matches, the router runs the redact path (`ErrorRouterClassGenerator.redactBody`):
+When no handler matches, the router first walks the exception's cause chain for a `GraphitronClientException`, the error graphitron itself raises for a client mistake: a tenant outside the request's tenant set, a malformed or wrong-type node id, an out-of-range page size or an invalid cursor. If it finds one, that error reaches the response's top-level `errors` with its own message and the field resolves to `null`, exactly as on a field without an error channel; nothing is logged. A handler you declare still wins, because handlers are tried first. Every other unmatched exception runs the redact path (`ErrorRouterClassGenerator.redactBody`):
 
 [source,java]
 ----
@@ -179,7 +180,7 @@ Add a typed channel slot when an untyped fallthrough turns out to be a regular, 
 * *`path:` is the response path.* If you need to point at an input argument, encode it in the exception or in a custom field on the error type. The synthesised fetcher reads `env.getExecutionStepInfo().getPath()` and can't distinguish argument positions.
 * *`VALIDATION` runs pre-execution.* The Bean-Validation handler intercepts before the service method runs, and the <<column-length-check,column-length check>> before a payload-returning `@mutation` writes; their results bypass the dispatch loop and route straight into the errors slot. There's at most one `VALIDATION` handler per channel.
 * *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
-* *Unmatched flows redact.* If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log for a correlation ID, then add the handler.
+* *Unmatched flows redact, except graphitron's own client errors.* A `GraphitronClientException` no handler claims surfaces as a top-level error with its own message, as described under <<unmatched-exceptions,unmatched exceptions>>. If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log for a correlation ID, then add the handler.
 * *An error payload from a `@service` field says the call failed, not that nothing was written.* Graphitron opens no transaction around a `@service` invocation (see xref:../reference/directives/service.adoc#transaction-demarcation[the `@service` constraint]), so a method that threw partway through a batch may already have committed the rows it got to, and the payload is well-formed either way. A payload-returning DML xref:../reference/directives/mutation.adoc[`@mutation`] carrier does carry the rollback promise: its per-row writes run inside one transaction graphitron opens, so an error payload from one means nothing was written. A payload-returning xref:../reference/directives/routine.adoc[`@routine`] Mutation write carries it for statement 1 only, the caveat that page already publishes. A service that needs the promise must open the transaction itself; the trap is a service whose own javadoc claims all-or-nothing, since believing the contract is satisfied somewhere is what makes a partial commit invisible rather than merely surprising.
 * *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload one of the three producer families returns: a `@service` field, a payload-returning DML `@mutation`, or a payload-returning `@routine` Mutation write. A standalone `@error` type with no carrier is rejected at classify time.
 
