@@ -1,7 +1,7 @@
 ---
 id: R1041
 title: "A mutation called with an empty input list returns an empty payload without routing to a tenant"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: runtime-connection
@@ -189,6 +189,20 @@ Classification tier, in `TenantBindingClassificationTest`:
 No test asserts on generated code text; the execution tier pins the behaviour, and the multi-tenant fixture's compile at `<release>17</release>` pins that every `AnswerEmpty` rendering compiles.
 
 The sis ITs above are the external acceptance; they are not in this repo.
+
+## Implementation notes
+
+Where the landed code departs from the plan above, or fills in what it left open:
+
+- **The command path restates the arm in its own vocabulary.** `PackageImportDirectionTest` keeps `TenantBinding` out of `command`, so `TenantAcquisition.ArgumentBound` carries `TenantAcquisition.WhenNoTenant` (`Unreachable`, `AnswerEmpty`, `Refuse(arguments)`), which `RoutineWriteCommands` maps one to one. `AnswerEmpty` carries no value there: the plan-row renderer has no early return, so it throws at generation, which is the `NoEmptyAnswer` case.
+- **The refusal wording has one home,** `TenantAcquisitionFragments.noTenantMessage`, which `TenantDslEmitter` reads too, so the field-carrier and plan-row paths cannot word it differently. The message matches the plan: `Mutation.rateFilms names no tenant: its tenant is read from the elements of 'in', which is empty.`
+- **The leaf table is a pattern switch with a `default` arm** for the "everything else" row (`TenantBindingIndex.Fold.emptyAnswerOf`), since `OutputField`'s permits include every child and query leaf the table refuses. The rows the table names are explicit `case` arms with their list guards, and the record-service arms switch exhaustively over `ServiceMethodCall.ReturnContainer`.
+- **`ReturnContainer.of` lives on the model type.** The walker calls it with a record-class-to-table resolver; `FieldBuilder` passes `ServiceCatalog::resolveTableByRecordClassName`. A `Result` over a record class the catalog does not name is `Other`. The old `walk` overload stays and resolves no table, for callers with no catalog.
+- **Every site that can return early builds the same `Renders`.** The default expression rendering is `TenantDslEmitter.emptyValue` (`List.of()`, `Set.of()`, `DSL.using(SQLDialect.DEFAULT).newResult(Tables.X)`). The bulk record two-step renders its own `EmptyResult` over the key fields, as before but on the detached context, since its guard now sits above acquisition in every build.
+- **The DML gate is a helper,** `TenantDslEmitter.gatedOnEmptyInput(ctx, field, inputArgName)`: it checks that an `AnswerEmpty` arm's per-element slots read through exactly the builder's input argument and returns `Gated`.
+- **A refusal on an error-channel field** throws the generated `GraphitronClientException` inside the fetcher's `try`, so it reaches the channel's catch arm, which today redacts a client exception no mapping claims (R1046 covers that disposition). No fixture field takes that path: the refusal cases in the execution tier (`rateFilms`, `filmActorsByNodeId`) carry no channel, and every channel field the fixture has answers empty.
+- **Fixture.** `rateFilmsAsRecords` (the sis carrier shape, on the existing `RateFilmsError` channel), `rateFilmsAsFilms` (a `@table` list return, so its non-empty call goes through the lift companion), `retitleFilms` (projected list DML, through the `emitReentry` companion) and `filmsByKey` (`@lookupKey` over `film_id`). Both service methods throw on an empty batch.
+- **Classification tier.** `SlotPresence` is pinned directly against a parsed field definition (`aSlotsPresenceRecordsEveryListItsPathCrosses`), which covers the nested `[["in"], ["in", "b"]]` shape without needing a service bean that nests a list; the leaf-level `Refuse` for a nested list is pinned through a filter input holding a list (`filmActorsByFilter(filter: FilmActorsFilter!)`, `Refuse(["filter"])`).
 
 ## Other solutions we've considered
 
