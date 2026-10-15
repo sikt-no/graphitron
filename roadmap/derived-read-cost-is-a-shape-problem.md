@@ -2034,6 +2034,16 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   session then serves from page cache until a read misses it. A connection's teardown cancels
   without interrupting, the store survives an interrupt anywhere else, and a store whose file is
   gone fails loudly rather than half-serving.
+  * **A connection's teardown lets its drains finish** `done`. `DevServer.stopDrains` shuts the
+    drain executor down without interrupting, so a drain inside the store runs to its end and a
+    queued one runs rather than being dropped, its publish landing on a client that is gone.
+    `DevServerTest` holds a drain in flight across the teardown and fails if it is interrupted. The
+    comment that said an interrupted store read runs to its budget is corrected.
+  * **The store survives an interrupt anywhere else** `open`. Another thread interrupted inside H2's
+    file I/O closes the channel the same way; H2's `async:` file system is one guard, and needs a
+    timing check against the store's current one before it is taken.
+  * **A store whose file is gone fails loudly** `open`, rather than answering from page cache until
+    a read misses it.
 
 ## Tests
 

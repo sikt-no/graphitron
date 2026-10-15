@@ -123,23 +123,34 @@ public final class DevServer implements AutoCloseable {
             // notification a disconnecting editor may never send, so this is the only place
             // guaranteed to run. The disconnect goes first: it releases what this connection
             // installed in the shared workspace, so a build swap arriving after it reaches
-            // nothing rather than a service whose executor is about to die. The interrupting
-            // shutdown then drops any queued drain and interrupts one in flight, best-effort: a
-            // store read already inside the database runs to its budget, and a publish that
-            // still lands on the closed client is dropped by the launcher's stream-closed
-            // policy. The daemon flag keeps JVM exit correct regardless. The disconnect narrows
-            // the window without closing it, so the document service still absorbs a rejected
-            // submit from a mutation that read the listener slot before the clear.
+            // nothing rather than a service whose executor is about to die. The drains are then
+            // stopped without interrupting them; see stopDrains. A publish that lands on the
+            // closed client is dropped by the launcher's stream-closed policy, and the daemon flag
+            // keeps JVM exit correct regardless. The disconnect narrows the window without
+            // closing it, so the document service still absorbs a rejected submit from a mutation
+            // that read the listener slot before the clear.
             if (server != null) {
                 server.disconnect();
             }
-            drainExecutor.shutdownNow();
+            stopDrains(drainExecutor);
             try {
                 client.close();
             } catch (IOException ignored) {
                 // already closed
             }
         }
+    }
+
+    /**
+     * Stops a connection's drains without interrupting one in flight, which then runs to its end.
+     * A drain reads the store, and an interrupt that reaches a thread inside H2's file I/O closes
+     * the file channel of the whole in-process store, not only that read: the session then answers
+     * from H2's page cache until a read misses it and fails with a {@code ClosedChannelException}.
+     * So the drain is let finish, and a queued one runs too rather than being dropped, its publish
+     * landing on a client that is gone.
+     */
+    static void stopDrains(ExecutorService drainExecutor) {
+        drainExecutor.shutdown();
     }
 
     @Override

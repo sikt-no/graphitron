@@ -149,6 +149,36 @@ class DevServerTest {
         @Override public void close() {}
     }
 
+    /**
+     * A drain in flight when its connection ends runs to its end, uninterrupted. An interrupt that
+     * reaches a drain inside H2's file I/O closes the file channel of the whole in-process store,
+     * which is how a disconnecting editor left a live session failing with
+     * {@code ClosedChannelException} on its next read that missed the page cache.
+     */
+    @Test
+    void aDisconnectLetsADrainInFlightFinishUninterrupted() throws Exception {
+        var drains = Executors.newSingleThreadExecutor();
+        var started = new java.util.concurrent.CountDownLatch(1);
+        var release = new java.util.concurrent.CountDownLatch(1);
+        var drain = drains.submit(() -> {
+            started.countDown();
+            boolean interrupted = false;
+            try {
+                release.await();
+            } catch (InterruptedException e) {
+                interrupted = true;
+            }
+            return interrupted || Thread.currentThread().isInterrupted();
+        });
+        assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+
+        DevServer.stopDrains(drains);
+        release.countDown();
+
+        assertThat(drain.get(5, TimeUnit.SECONDS)).as("the drain was interrupted").isFalse();
+        assertThat(drains.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+    }
+
     @Test
     void bindingTakenPortFailsWithIoException() throws Exception {
         try (var first = new DevServer(loopback(0), new Workspace(), uri -> {})) {
