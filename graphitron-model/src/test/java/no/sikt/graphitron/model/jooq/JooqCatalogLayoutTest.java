@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.jooq;
 
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
@@ -151,6 +152,23 @@ class JooqCatalogLayoutTest {
             .isInstanceOfSatisfying(JooqCatalog.RoutineResolution.Resolved.class, resolved ->
                 assertThat(resolved.routinesClassName())
                     .isEqualTo(layout.functionPackage() + ".Routines"));
+    }
+
+    /**
+     * A column's database type is the Java type of the value jOOQ exchanges with the database:
+     * behind the converter where one maps the column, the bound type itself where none does.
+     */
+    @Test
+    void aColumnCarriesTheJavaTypeOfItsDatabaseValue() {
+        var catalog = new JooqCatalog(COMBINED);
+        assertThat(catalog.findColumn("converter_org", "org_code")).hasValueSatisfying(column -> {
+            assertThat(column.columnClass()).isEqualTo("java.lang.String");
+            assertThat(column.databaseType()).isEqualTo("java.lang.Long");
+        });
+        assertThat(catalog.findColumn("film", "film_id")).hasValueSatisfying(column -> {
+            assertThat(column.columnClass()).isEqualTo("java.lang.Integer");
+            assertThat(column.databaseType()).isEqualTo("java.lang.Integer");
+        });
     }
 
     private static org.jooq.Table<?> table(JooqCatalog catalog, String name) {

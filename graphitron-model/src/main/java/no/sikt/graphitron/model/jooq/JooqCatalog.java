@@ -1156,8 +1156,7 @@ public class JooqCatalog {
             return Optional.empty();
         }
         var c = match.getFirst();
-        return Optional.of(new ColumnEntry(c.getKey(), c.getValue().getType().getName(),
-            c.getValue().getName(), c.getValue().getDataType().nullable()));
+        return Optional.of(columnEntry(c.getKey(), c.getValue()));
     }
 
     /**
@@ -1291,7 +1290,7 @@ public class JooqCatalog {
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, te.table());
-                    return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
+                    return columnEntry(f.getName(), col);
                 })
                 .toList())
             .orElse(java.util.List.of());
@@ -1445,7 +1444,7 @@ public class JooqCatalog {
             .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
             .map(f -> {
                 var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                return new ColumnEntry(f.getName(), col.getType().getName(), col.getName(), col.getDataType().nullable());
+                return columnEntry(f.getName(), col);
             })
             .toList();
         return entries.stream().filter(e -> columnName.equalsIgnoreCase(e.javaName())).findFirst()
@@ -1706,8 +1705,21 @@ public class JooqCatalog {
      * {@code columnType} is the same live {@code Class} decided once via {@code TypeName.get(...)}
      * for codegen, so array columns emit a real {@code ArrayTypeName} rather than crashing
      * {@code ClassName.bestGuess}.
+     *
+     * <p>{@code databaseType} is the Java type of the value jOOQ exchanges with the database,
+     * the column converter's {@code fromType()}. With no converter jOOQ reports its identity
+     * converter, whose {@code fromType()} is the bound type, so it equals {@code columnClass} on
+     * an unconverted column; on a converter-backed column (a {@code bigint} bound to
+     * {@code String}) it names the type behind the conversion ({@code java.lang.Long}).
      */
-    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable) {}
+    public record ColumnEntry(String javaName, String columnClass, String sqlName, boolean nullable,
+                              String databaseType) {}
+
+    /** The one reduction of a live column to a {@link ColumnEntry}. */
+    private static ColumnEntry columnEntry(String javaName, org.jooq.Field<?> col) {
+        return new ColumnEntry(javaName, col.getType().getName(), col.getName(),
+            col.getDataType().nullable(), col.getConverter().fromType().getName());
+    }
 
     /**
      * Sub-taxonomy of outcomes for {@link #findTable(String)}. Lookup failures fan out into

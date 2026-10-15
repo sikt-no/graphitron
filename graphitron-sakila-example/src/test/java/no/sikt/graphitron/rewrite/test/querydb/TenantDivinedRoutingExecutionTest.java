@@ -929,6 +929,47 @@ class TenantDivinedRoutingExecutionTest {
             .isZero();
     }
 
+    // ===== A wire-form tenant value: the key follows the column's own coercion =====
+
+    private static List<Object> filmTitles(ExecutionResult result, String field) {
+        return ((List<Map<String, Object>>) data(result, field)).stream().map(f -> f.get("title")).toList();
+    }
+
+    @Test
+    void wireValue_theColumnCannotStore_isAClientErrorBeforeAnyConnection() {
+        var result = execute("{ filmsByWireId(filmId: \"abc\") { title } }");
+        assertThat(result.getErrors().toString())
+            .contains("Tenant value 'abc' is not a value of the tenant column");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void wireValue_theColumnCannotStore_inANarrowedFanOut_isTheSameClientErrorNotAnEmptyList() {
+        var result = execute("{ filmsNarrowableByWireId(filmId: \"abc\") { title } }");
+        assertThat(result.getErrors().toString())
+            .contains("Tenant value 'abc' is not a value of the tenant column");
+        assertThat(((Map<String, Object>) result.getData()).get("filmsNarrowableByWireId")).isNull();
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void wireValue_theColumnBindsByCoercion_routesToTheTenantTheSqlReads() {
+        // film_id binds "1.5" as 1 in the WHERE clause; the router agrees with it.
+        assertThat(filmTitles(execute("{ filmsByWireId(filmId: \"1.5\") { title } }"), "filmsByWireId"))
+            .containsExactly("Tenant One Film");
+        assertThat(TENANT_1_OPENED.get()).isPositive();
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void wireValue_theColumnBindsByCoercion_narrowsTheFanOutToThatTenant() {
+        assertThat(filmTitles(execute("{ filmsNarrowableByWireId(filmId: \"1.5\") { title } }"),
+                "filmsNarrowableByWireId"))
+            .containsExactly("Tenant One Film");
+        assertThat(TENANT_1_OPENED.get()).isPositive();
+        assertThat(TENANT_2_OPENED.get()).as("the narrowing names tenant 1 only").isZero();
+    }
+
     // ===== The request tenant set: routing only to tenants the request may touch =====
 
     @Test

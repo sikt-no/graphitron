@@ -15,7 +15,11 @@ Point the plugin at the column that scopes your tables:
 </configuration>
 ----
 
-Tables carrying the column are tenant-scoped; tables without it are global reference data served from the default source, or from a request's default tenant (see §2). The tenant key's Java type is read off the catalog (all tables must agree), and it types every tenant-keyed runtime surface, so wiring a map keyed with the wrong type is a compile error.
+Tables carrying the column are tenant-scoped; tables without it are global reference data served from the default source, or from a request's default tenant (see §2). The tenant key's Java type is read off the catalog, and it types every tenant-keyed runtime surface, so wiring a map keyed with the wrong type is a compile error. All tables carrying the column must agree on its Java type and on the Java type of the database value behind it, so a column a converter maps to `String` on one table cannot be a plain `varchar` on another. Graphitron compares keys through the converter of the first table carrying the column, so map the column through one converter everywhere: two different converters between the same types cannot be told apart at build time, and the first table's then decides for both.
+
+Tenant keys are compared by the value the column stores. When a converter maps the column, graphitron puts every key through it and back before comparing: with an `INTEGER` column mapped to `String`, a client sending `"0194"` reaches the same tenant as one sending `"194"`, exactly as the SQL does. The keys you supply get the same treatment. Register your `DataSource` map and build `RequestTenants` with whichever spelling you have, and graphitron reduces them to the column's form; your mount, `tenantKeys()` and `RequestTenants.tenants()` report that form. To key your own state the same way, call `TenantConnections.canonicalTenantKey`. Two map keys that name one tenant are refused when the runtime is built.
+
+A tenant value the column cannot store, such as `"abc"` on a numeric column, is a client error. A value the column stores by coercion names the tenant the query itself reads: on an integer column `"1.5"` is bound as `1` in the SQL, so it reaches tenant 1, and only if the request may read tenant 1.
 
 == 2. Wire one DataSource per tenant
 

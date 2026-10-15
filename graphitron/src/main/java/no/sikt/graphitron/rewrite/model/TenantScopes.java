@@ -5,6 +5,8 @@ import no.sikt.graphitron.javapoet.TypeName;
 import java.util.List;
 import java.util.Set;
 import no.sikt.graphitron.model.diagnostics.Rejection;
+import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * The catalog-wide tenant-scope classification: which tables live in the per-tenant databases
@@ -16,7 +18,7 @@ import no.sikt.graphitron.model.diagnostics.Rejection;
  * (a declared tenant-index scope) can land later without touching every consumer.
  *
  * <p>Every field holds only resolved immutable values ({@link String}, {@link TypeName},
- * {@link Set}, {@link List}) so the classification can be read after the codegen loader closes,
+ * {@link TableRef}, {@link ColumnRef}, {@link Set}, {@link List}) so the classification can be read after the codegen loader closes,
  * the same invariant {@link no.sikt.graphitron.model.capture.jooq.JooqFactCapture} holds to when it
  * reduces the live catalog into relations.
  */
@@ -53,6 +55,14 @@ public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Con
      *                           disagreement, or {@code null} when no table carries the column
      *                           at all. Both states carry a rejection that fails the build
      *                           before any consumer can emit against the placeholder.
+     * @param tenantTable        the representative table: the first tenant-scoped table in
+     *                           schema-then-table order, whose column decides key equality at
+     *                           runtime; {@code null} exactly when no table carries the column
+     * @param tenantColumn       the representative table's tenant column; together with
+     *                           {@code tenantTable} it renders {@code <Tables>.<TABLE>.<COLUMN>}.
+     *                           Sound as a stand-in for every table because the classification
+     *                           rejects tables disagreeing on the bound type or the database
+     *                           type behind it
      * @param tenantScopedTables schema-qualified SQL names ({@code "schema.table"}) of every
      *                           table carrying the column, in the catalog's stable
      *                           schema-then-table order
@@ -62,6 +72,8 @@ public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Con
     record Configured(
         String columnName,
         TypeName tenantType,
+        TableRef tenantTable,
+        ColumnRef tenantColumn,
         Set<String> tenantScopedTables,
         List<Rejection> conflicts
     ) implements TenantScopes {

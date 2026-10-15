@@ -52,7 +52,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void configuredTenantColumnTypesEveryTenantKeyedSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
@@ -69,7 +70,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantAcquisitionTakesTheTenantItMountsFor() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         // The tenant rides between the seam's settings and the abort executor; the runtime's
         // Optional.of(key) / Optional.empty() arguments are pinned where they run, in
@@ -99,7 +101,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierHoldsTheRequestTenantSet() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
         // The shape of the set the carrier owns. What entryFor does with it (refusal before any
@@ -133,7 +136,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantBuildEmitsTheRequestTenancyValue() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var requestTenants = type(units, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
 
         // Record-shaped: the two components, the canonical constructor over them, and accessors.
@@ -170,7 +174,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheGlobalReadAcquisition() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var carrier = type(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
 
         var defaultTenant = carrier.fieldSpecs().stream()
@@ -216,7 +221,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheRoutingStatics() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -227,7 +233,6 @@ class TenantRuntimeKeyTypeTest {
             .contains("static java.lang.Integer divinedTenant(java.lang.Object... candidates)")
             .contains("Tenant bindings disagree within one operation")
             .contains("The tenant binding value is absent")
-            .contains("if (key instanceof java.lang.Integer typed)")
             // The build-time-path nested slot read.
             .contains("static java.lang.Object tenantSlot(java.lang.Object container, java.lang.String... path)")
             // The single loader-naming seam: bare path form plus the tenant-partitioned form
@@ -260,7 +265,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantRuntimeShipsTheFanOutConfigurationSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var runtime = render(units, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         assertThat(runtime)
@@ -281,7 +287,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheScatterSurface() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)
@@ -310,7 +317,8 @@ class TenantRuntimeKeyTypeTest {
     @Test
     void multiTenantCarrierShipsTheFanOutHelpers() {
         var units = ConnectionRuntimeClassGenerator.generate(
-            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class));
+            "fake.code.generated", SessionHooks.NotConfigured.INSTANCE, ClassName.get(Integer.class),
+            TenantColumnFixtures.INTEGER_KEY_COLUMN);
 
         var carrier = render(units, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         assertThat(carrier)

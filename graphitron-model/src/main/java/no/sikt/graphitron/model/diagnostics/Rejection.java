@@ -278,11 +278,14 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
         /**
          * The configured tenant column does not resolve to a single Java type across the
-         * catalog: two or more tables carry the column with disagreeing jOOQ column types. The
-         * tenant type is read off the catalog rather than configured, and every routed
-         * acquisition keys the per-tenant DataSource map with a value of that one type, so
-         * disagreement would make the divined key's type depend on which table a field happens
-         * to bind through.
+         * catalog: two or more tables carry the column with disagreeing jOOQ column types, or
+         * with one bound type over disagreeing database types (a {@code varchar} bound to
+         * {@code String} beside a {@code bigint} a converter maps to {@code String}). The tenant
+         * type is read off the catalog rather than configured, every routed acquisition keys the
+         * per-tenant DataSource map with a value of that one type, and keys are compared through
+         * one representative column's converter, so disagreement would make the divined key's
+         * type, or which spellings name one tenant, depend on which table a field happens to
+         * bind through.
          *
          * <p>Carries the configured column name plus a typed {@link TableSite} list (one per
          * table carrying the column, in the catalog's stable schema-then-table order). Fires
@@ -300,10 +303,12 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
                     .append("' has disagreeing Java types across catalog tables:");
                 for (TableSite site : tables) {
                     sb.append("\n  - ").append(site.qualifiedTable())
-                      .append(" declared ").append(site.declared());
+                      .append(" declared ").append(site.declared())
+                      .append(" over database type ").append(site.databaseType());
                 }
                 sb.append("\n  Resolve by aligning every table's '").append(columnName)
-                  .append("' column on a single Java type, or point <tenantColumn> at a column the catalog agrees on.");
+                  .append("' column on a single Java type and a single database type behind it,"
+                      + " or point <tenantColumn> at a column the catalog agrees on.");
                 return sb.toString();
             }
 
@@ -313,12 +318,15 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             /**
              * One table carrying the tenant column: its schema-qualified SQL name
-             * ({@code "schema.table"}) and the name of the Java type its column declares, as the
-             * catalog captured it.
+             * ({@code "schema.table"}), the name of the Java type its column declares, and the
+             * name of the Java type of the database value behind it (the converter's
+             * {@code fromType()}, equal to {@code declared} on an unconverted column), as the
+             * catalog captured them.
              */
             public record TableSite(
                 String qualifiedTable,
-                String declared
+                String declared,
+                String databaseType
             ) {}
         }
 

@@ -9,7 +9,9 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.TreeSet;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Classifies every catalog table into a tenant scope against the configured
@@ -19,7 +21,9 @@ import no.sikt.graphitron.model.jooq.JooqCatalog;
  * <p>Runs once at catalog load, while the codegen loader is open, and reduces every live jOOQ
  * handle to resolved immutable values, so the returned {@link TenantScopes} is readable after
  * the loader closes. The tenant Java type is not configured; it is read off the jOOQ catalog's
- * column type, and all tables carrying the column must agree on it. Disagreement is the typed
+ * column type, and all tables carrying the column must agree on it and on the database type
+ * behind it, since keys are compared through the first carrying table's column (the
+ * representative). Disagreement is the typed
  * {@link Rejection.AuthorError.TenantColumnTypeDisagreement} rejection; a configured column no
  * catalog table carries is an {@link Rejection.AuthorError.UnknownName} rejection (a typo'd
  * declaration silently classifying every table as global would route tenant data through the
@@ -39,8 +43,12 @@ public final class TenantScopeClassifier {
         }
         var scopedTables = new LinkedHashSet<String>();
         var sites = new ArrayList<Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite>();
-        var distinctTypes = new LinkedHashSet<String>();
+        // Keyed on the pair: one bound type over two database types would canonicalise one
+        // client spelling two ways, which one representative column cannot absorb.
+        var distinctTypes = new LinkedHashSet<List<String>>();
         var allColumnNames = new TreeSet<String>();
+        TableRef representativeTable = null;
+        ColumnRef representativeColumn = null;
         for (var entry : catalog.allTableEntries()) {
             var table = entry.table();
             var column = catalog.findColumn(table, tenantColumn);
@@ -53,8 +61,16 @@ public final class TenantScopeClassifier {
             String qualified = table.getSchema().getName() + "." + table.getName();
             scopedTables.add(qualified);
             sites.add(new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
-                qualified, column.get().columnClass()));
-            distinctTypes.add(column.get().columnClass());
+                qualified, column.get().columnClass(), column.get().databaseType()));
+            distinctTypes.add(List.of(column.get().columnClass(), column.get().databaseType()));
+            if (representativeTable == null) {
+                String javaName = column.get().javaName();
+                representativeTable = entry.toTableRef(table.getName());
+                representativeColumn = entry.allColumnRefs().stream()
+                    .filter(ref -> ref.javaName().equals(javaName))
+                    .findFirst()
+                    .orElseThrow();
+            }
         }
         var conflicts = new ArrayList<Rejection>();
         if (scopedTables.isEmpty()) {
@@ -72,7 +88,8 @@ public final class TenantScopeClassifier {
         // deterministic placeholder; the drained rejection fails the build before any consumer
         // emits against it.
         TypeName tenantType = distinctTypes.isEmpty() ? null
-            : CatalogRefs.decodeBindingType(distinctTypes.iterator().next());
-        return new TenantScopes.Configured(tenantColumn, tenantType, scopedTables, conflicts);
+            : CatalogRefs.decodeBindingType(distinctTypes.iterator().next().get(0));
+        return new TenantScopes.Configured(tenantColumn, tenantType, representativeTable,
+            representativeColumn, scopedTables, conflicts);
     }
 }

@@ -64,7 +64,8 @@ class TenantScatterSubstrateTest {
     static void compile() {
         var hooks = SessionHooksFixtures.recordingConnectionHooks();
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, ClassName.get(String.class))) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, ClassName.get(String.class),
+                TenantColumnFixtures.STRING_KEY_COLUMN)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {

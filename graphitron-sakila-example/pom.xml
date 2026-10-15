@@ -427,6 +427,35 @@
                             </sessionState>
                         </configuration>
                     </execution>
+                    <!--
+                        Converted-tenant fixture: the sakila catalog compiled with
+                        <tenantColumn>owner_org</tenantColumn>, a bigint domain the
+                        OrgCodeStringConverter forced type maps to String. Its execution tests
+                        prove tenant keys are compared by the column's database value, so a
+                        client's "0186" and a consumer's "186" name one tenant.
+                    -->
+                    <execution>
+                        <id>rewrite-generate-converted-tenant</id>
+                        <goals>
+                            <goal>generate</goal>
+                        </goals>
+                        <configuration>
+                            <schemaInputs>
+                                <schemaInput>
+                                    <pattern>src/main/resources/graphql/converted-tenant.graphqls</pattern>
+                                </schemaInput>
+                            </schemaInputs>
+                            <jooqPackage>${jooqPackage}</jooqPackage>
+                            <outputPackage>no.sikt.graphitron.generated.convertedtenant</outputPackage>
+                            <tenantColumn>owner_org</tenantColumn>
+                            <!-- A handle-less mount declaring the String tenant slot, so the
+                                 execution tests can see the form a mounted tenant takes;
+                                 combine.self keeps the plugin-level unmount out of it. -->
+                            <sessionState combine.self="override">
+                                <mount>no.sikt.graphitron.rewrite.test.services.OrgTenantSessionIdentity#mount</mount>
+                            </sessionState>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>rewrite-generate-multischema</id>
                         <goals>

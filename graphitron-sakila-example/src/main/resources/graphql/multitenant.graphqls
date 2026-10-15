@@ -154,6 +154,9 @@ input InventoryCreateInput {
 type Query {
     # ArgumentBound root: filter argument mapping to the tenant column routes the subtree.
     films(filmId: Int! @field(name: "film_id")): [Film!]!
+    # The same root over a wire-form tenant value: an ID reaches the Integer tenant key as a
+    # String, which coerces through film_id's data type exactly as the generated filter binds it.
+    filmsByWireId(filmId: ID! @field(name: "film_id")): [Film!]!
     # The read-side decoded-slot arm: a same-table composite @nodeId filter whose key embeds the
     # tenant column. The wire value is an encoded key rather than the tenant value, so the routed
     # acquisition decodes it and reads slot 1; every id in one call must decode to one tenant.
@@ -179,6 +182,9 @@ type Query {
     # tenant it names is queried; omitted, the field fans out over the whole domain. Unmarked,
     # the optional argument would be a build error, since a request omitting it names no tenant.
     filmsNarrowable(filmId: Int @field(name: "film_id")): [Film] @tenantFanOut
+    # The narrowed fan-out over a wire-form tenant value: a value film_id cannot store is a client
+    # error, never a domain narrowed to nothing.
+    filmsNarrowableByWireId(filmId: ID @field(name: "film_id")): [Film] @tenantFanOut
     # The list-valued narrowing: each decoded id names its own tenant (the String key segment
     # coerced to the Integer tenant key), so the field queries exactly the tenants the ids name.
     # An empty list names no tenant, so it constrains nothing and the field fans the whole domain.

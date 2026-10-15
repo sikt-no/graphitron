@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
@@ -7,6 +8,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.javapoet.TypeVariableName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -160,6 +162,9 @@ public final class ConnectionRuntimeClassGenerator {
     private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DATA_TYPE = ClassName.get("org.jooq", "DataType");
+    private static final ClassName CONVERTER = ClassName.get("org.jooq", "Converter");
+    private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
     private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
     private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
@@ -200,19 +205,32 @@ public final class ConnectionRuntimeClassGenerator {
      *                      emits {@link #SESSION_HOOK_IMPL_CLASS_NAME}, called directly
      */
     public static List<TypeSpec> generate(String outputPackage, SessionHooks sessionHooks) {
-        return generate(outputPackage, sessionHooks, null);
+        return generate(outputPackage, sessionHooks, null, null);
     }
 
     /**
-     * Canonical form carrying the divined tenant key type. {@code tenantKeyType} is the tenant
-     * Java type read off the jOOQ catalog's tenant column when {@code <tenantColumn>} is
-     * configured, or {@code null} for single-tenant builds. A configured type replaces the
-     * erased {@code Object} on every tenant-keyed surface (the constructor map, the keyed
-     * acquisition, the per-operation carrier), so a consumer wiring a map keyed with the wrong
-     * type is a compile error rather than a first-request lookup miss.
+     * Canonical form carrying the divined tenant key type and the representative tenant column.
+     * {@code tenantKeyType} is the tenant Java type read off the jOOQ catalog's tenant column when
+     * {@code <tenantColumn>} is configured, or {@code null} for single-tenant builds. A configured
+     * type replaces the erased {@code Object} on every tenant-keyed surface (the constructor map,
+     * the keyed acquisition, the per-operation carrier), so a consumer wiring a map keyed with
+     * the wrong type is a compile error rather than a first-request lookup miss.
+     *
+     * <p>{@code tenantColumn} is the representative column rendered as
+     * {@code <Tables>.<TABLE>.<COLUMN>}, whose {@code DataType} and converter decide tenant key
+     * equality: every key graphitron receives is put through the converter and back before it is
+     * compared, so two spellings the column stores as one database value name one tenant. Both
+     * arguments are {@code null} for a single-tenant build or both present.
+     *
+     * @throws IllegalArgumentException when exactly one of the two is {@code null}
      */
     public static List<TypeSpec> generate(String outputPackage, SessionHooks sessionHooks,
-                                          TypeName tenantKeyType) {
+                                          TypeName tenantKeyType, CodeBlock tenantColumn) {
+        if ((tenantKeyType == null) != (tenantColumn == null)) {
+            throw new IllegalArgumentException("A multi-tenant runtime needs both the tenant key type and"
+                + " the representative tenant column; a single-tenant one neither (key type: "
+                + tenantKeyType + ", column: " + tenantColumn + ")");
+        }
         TypeName tenantKey = tenantKeyType == null
             ? OBJECT_KEY
             : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
@@ -230,11 +248,12 @@ public final class ConnectionRuntimeClassGenerator {
 
         var units = new ArrayList<TypeSpec>();
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, tenantKey, multiTenant));
-        units.add(runtime(runtime, pinnedConnection, instrumentation, sessionHooks, tenantKey, multiTenant));
+        units.add(runtime(runtime, pinnedConnection, instrumentation, sessionHooks, tenantKey, multiTenant,
+            tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, sessionHooks, requestTenants));
+            multiTenant, sessionHooks, requestTenants, tenantColumn));
         if (multiTenant) {
-            units.add(requestTenants(requestTenants, tenantKey));
+            units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
         if (sessionHooks.emitsHookImplementation()) {
             units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
@@ -594,7 +613,8 @@ public final class ConnectionRuntimeClassGenerator {
      * Mojo. No hook state lives here: the mount/unmount choice is emitted, not held.
      */
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
-                                    SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
+                                    SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant,
+                                    ClassName tenantConnections) {
         var payload = payloadParams(sessionHooks);
         var source = runtime.nestedClass(SOURCE_CLASS_NAME);
 
@@ -650,9 +670,32 @@ public final class ConnectionRuntimeClassGenerator {
                 .addParameter(DURATION, "fanOutTimeout");
         }
         canonicalBuilder
-            .addStatement("this.defaultSource = $T.requireNonNull(defaultSource, $S)", OBJECTS, "defaultSource")
-            .addStatement("this.sourcesByTenant = new $T<>($T.requireNonNull(sourcesByTenant, $S))",
-                LINKED_HASH_MAP, OBJECTS, "sourcesByTenant");
+            .addStatement("this.defaultSource = $T.requireNonNull(defaultSource, $S)", OBJECTS, "defaultSource");
+        if (multiTenant) {
+            // The consumer's keys take the column's form here, so every comparison downstream
+            // (the acquisition gate, the fan-out domain, the source lookup) is like with like.
+            canonicalBuilder
+                .addStatement("$T<$T, $T> canonical = new $T<>()", MAP, tenantKey, source, LINKED_HASH_MAP)
+                .addStatement("$T<$T, Object> spelledAs = new $T<>()", MAP, tenantKey, HASH_MAP)
+                .beginControlFlow("for ($T<? extends $T, $T> entry :"
+                    + " $T.requireNonNull(sourcesByTenant, $S).entrySet())",
+                    ClassName.get("java.util", "Map", "Entry"), tenantKey, source, OBJECTS, "sourcesByTenant")
+                .addStatement("$T key = $T.canonicalTenantKey($T.requireNonNull(entry.getKey(), $S))",
+                    tenantKey, tenantConnections, OBJECTS, "tenant key")
+                .addStatement("Object earlier = spelledAs.putIfAbsent(key, entry.getKey())")
+                .beginControlFlow("if (earlier != null)")
+                .addStatement("throw new $T($S + earlier + $S + entry.getKey() + $S + key + $S)",
+                    IllegalArgumentException.class, "Tenant keys '", "' and '",
+                    "' name the same tenant '", "': the tenant column stores them as one value.")
+                .endControlFlow()
+                .addStatement("canonical.put(key, entry.getValue())")
+                .endControlFlow()
+                .addStatement("this.sourcesByTenant = canonical");
+        } else {
+            canonicalBuilder
+                .addStatement("this.sourcesByTenant = new $T<>($T.requireNonNull(sourcesByTenant, $S))",
+                    LINKED_HASH_MAP, OBJECTS, "sourcesByTenant");
+        }
         if (multiTenant) {
             canonicalBuilder
                 .addStatement("this.fanOutExecutor = $T.requireNonNull(fanOutExecutor, $S)", OBJECTS, "fanOutExecutor")
@@ -671,10 +714,15 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param defaultSource source for untenanted SQL; must not be {@code null}\n"
                 + "@param sourcesByTenant per-tenant sources keyed by divined tenant value; may be empty\n"
                 + (multiTenant
-                    ? "@param fanOutExecutor the executor scatter workers run on; the supplier owns its\n"
+                    ? "Each key is reduced to the tenant column's form ({@link "
+                        + tenantConnections.simpleName() + "#canonicalTenantKey}), so\n"
+                        + "{@link #tenantKeys()} and the mount report that form whichever spelling was supplied.\n"
+                        + "@param fanOutExecutor the executor scatter workers run on; the supplier owns its\n"
                         + "concurrency bound (e.g. virtual threads); must not be {@code null}\n"
                         + "@param fanOutTimeout the per-scatter deadline, enforced by the join whichever\n"
                         + "executor runs the workers; must be positive\n"
+                        + "@throws IllegalArgumentException when two keys name the same tenant, or a key is not\n"
+                        + "a value of the tenant column\n"
                     : ""))
             .build();
 
@@ -1022,7 +1070,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionHooks sessionHooks,
-                                              ClassName requestTenants) {
+                                              ClassName requestTenants, CodeBlock tenantColumn) {
         var payload = payloadParams(sessionHooks);
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
         boolean handled = handleType != null;
@@ -1343,7 +1391,25 @@ public final class ConnectionRuntimeClassGenerator {
                     + "the one-key case of the unified per-key design. See\n"
                     + "{@code ConnectionRuntimeClassGenerator} for the full contract.\n");
         if (multiTenant) {
-            carrier.addField(scatterWorkerMarkerField);
+            // DataType.convert(Object) is deprecated for removal in jOOQ 3.20 with no public
+            // Object-to-T successor; the same suppression NodeIdEncoder carries.
+            carrier.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
+                    .addMember("value", "{$S, $S}", "deprecation", "removal")
+                    .build())
+                .addField(FieldSpec.builder(ParameterizedTypeName.get(DATA_TYPE, tenantKey), "TENANT_COLUMN_TYPE",
+                        Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$L.getDataType()", tenantColumn)
+                    .addJavadoc("The representative tenant column's data type: the coercion a client value takes\n"
+                        + "on its way to the column, the same one the generated SQL binds it with.\n")
+                    .build())
+                .addField(FieldSpec.builder(
+                        ParameterizedTypeName.get(CONVERTER, WildcardTypeName.subtypeOf(Object.class), tenantKey),
+                        "TENANT_COLUMN_CONVERTER", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                    .initializer("$L.getConverter()", tenantColumn)
+                    .addJavadoc("The representative tenant column's converter between its database value and its\n"
+                        + "Java form; jOOQ's identity converter when the column has none.\n")
+                    .build())
+                .addField(scatterWorkerMarkerField);
         }
         carrier.addField(runtimeField)
             .addField(policyField);
@@ -1402,8 +1468,10 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(staticDslGlobal(self))
                 .addMethod(namedTenant(tenantKey))
                 .addMethod(divinedTenant(tenantKey))
-                .addMethod(tenantKeyOf(tenantKey))
-                .addMethod(divinedTenantAgree(clientException))
+                .addMethod(canonicalTenantKey(tenantKey))
+                .addMethod(roundTrip(tenantKey))
+                .addMethod(tenantKeyOf(tenantKey, clientException))
+                .addMethod(divinedTenantAgree(tenantKey, clientException))
                 .addMethod(permits(self, tenantKey))
                 .addMethod(staticDefaultTenant(tenantKey))
                 .addMethod(tenantSlot())
@@ -2094,7 +2162,7 @@ public final class ConnectionRuntimeClassGenerator {
      * value equality) is the same. {@code tenantKey} is the boxed tenant key type, so the class is
      * not generic. Valid Java 17.
      */
-    private static TypeSpec requestTenants(ClassName self, TypeName tenantKey) {
+    private static TypeSpec requestTenants(ClassName self, ClassName tenantConnections, TypeName tenantKey) {
         var setType = ParameterizedTypeName.get(SET, tenantKey);
         var optionalKey = ParameterizedTypeName.get(OPTIONAL, tenantKey);
         var collectionType = ParameterizedTypeName.get(COLLECTION, tenantKey);
@@ -2102,19 +2170,28 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addParameter(setType, "tenants")
             .addParameter(optionalKey, "defaultTenant")
-            .addStatement("$T<$T> copy = $T.copyOf($T.requireNonNull(tenants, $S))",
-                SET, tenantKey, SET, OBJECTS, "tenants")
-            .addStatement("$T.requireNonNull(defaultTenant, $S)", OBJECTS, "defaultTenant")
-            .beginControlFlow("if (defaultTenant.isPresent() && !copy.contains(defaultTenant.get()))")
+            .addStatement("$T<$T> canonical = new $T<>()", LIST, tenantKey, ARRAY_LIST)
+            .beginControlFlow("for ($T tenant : $T.requireNonNull(tenants, $S))", tenantKey, OBJECTS, "tenants")
+            .addStatement("canonical.add($T.canonicalTenantKey($T.requireNonNull(tenant, $S)))",
+                tenantConnections, OBJECTS, "tenant")
+            .endControlFlow()
+            .addStatement("$T<$T> copy = $T.copyOf(canonical)", SET, tenantKey, SET)
+            .addStatement("$T<$T> canonicalDefault = $T.requireNonNull(defaultTenant, $S)"
+                + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "defaultTenant", tenantConnections)
+            .beginControlFlow("if (canonicalDefault.isPresent() && !copy.contains(canonicalDefault.get()))")
             .addStatement("throw new $T($S + defaultTenant.get() + $S)", IllegalArgumentException.class,
                 "Default tenant '", "' is not in the request tenant set.")
             .endControlFlow()
             .addStatement("this.tenants = copy")
-            .addStatement("this.defaultTenant = defaultTenant")
-            .addJavadoc("@param tenants the tenants this request may touch in this deployment; copied\n"
+            .addStatement("this.defaultTenant = canonicalDefault")
+            .addJavadoc("Every tenant is reduced to the tenant column's form ({@link "
+                + tenantConnections.simpleName() + "#canonicalTenantKey})\n"
+                + "before the membership check, so two spellings the column stores as one value are one\n"
+                + "tenant, and {@link #tenants()} and {@link #defaultTenant()} report that form.\n"
+                + "@param tenants the tenants this request may touch in this deployment; copied\n"
                 + "@param defaultTenant the member of {@code tenants} that serves global reads, or empty\n"
                 + "@throws IllegalArgumentException when {@code defaultTenant} is present and not in\n"
-                + "{@code tenants}\n")
+                + "{@code tenants}, or a tenant is not a value of the tenant column\n")
             .build();
         var of = MethodSpec.methodBuilder("of")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -2343,7 +2420,8 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code static T namedTenant(Object... candidates)}: folds every runtime value of a field's
      * tenant bindings into the one tenant they name, or {@code null} when they name none (every
      * slot absent, or every list it reads through empty). Collections flatten; all non-null values
-     * must agree; a value of the wrong Java type is a request-level error. The absent-tolerant
+     * must agree once reduced to the column's form; a value the column cannot store is a
+     * request-level error. The absent-tolerant
      * fold behind {@code divinedTenant}, called directly where an empty request has its own
      * answer.
      */
@@ -2353,14 +2431,15 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(tenantKey)
             .addParameter(Object[].class, "candidates")
             .varargs()
-            .addStatement("Object key = null")
+            .addStatement("$T key = null", tenantKey)
             .beginControlFlow("for (Object candidate : candidates)")
             .addStatement("key = agreeOnTenant(key, candidate)")
             .endControlFlow()
-            .addStatement("return key == null ? null : tenantKeyOf(key)")
+            .addStatement("return key")
             .addJavadoc("Folds the runtime values of a field's tenant bindings into the one tenant they\n"
-                + "name, or {@code null} when they name none: collections flatten, all non-null values\n"
-                + "must agree, and a wrongly-typed value is a request-level error before any SQL.\n"
+                + "name, or {@code null} when they name none: collections flatten, every non-null value is\n"
+                + "reduced to the tenant column's form ({@link #canonicalTenantKey}) and all must agree,\n"
+                + "and a value the column cannot store is a request-level error before any SQL.\n"
                 + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
             .build();
     }
@@ -2384,53 +2463,114 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .addStatement("return key")
             .addJavadoc("Folds the runtime values of a field's tenant bindings into the one divined key:\n"
-                + "collections flatten, all non-null values must agree, and an absent or wrongly-typed\n"
-                + "value is a request-level error before any SQL. For a numeric tenant column a\n"
-                + "String candidate parses to the column type (decoded node-id segments arrive in\n"
-                + "wire form).\n"
+                + "collections flatten, all non-null values must agree once reduced to the tenant\n"
+                + "column's form, and an absent value or one the column cannot store is a request-level\n"
+                + "error before any SQL. A wire-form candidate (a decoded node-id segment, an ID\n"
+                + "argument) coerces through the column's data type, as the generated SQL binds it.\n"
                 + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
             .build();
     }
 
     /**
-     * {@code private static K tenantKeyOf(Object value)}: one tenant value coerced to the tenant
-     * key type, shared by the routing fold and the fan-out narrowing so a value names the same
-     * tenant whichever reads it. Wire-form coercion for numeric tenant columns: decoded node-id
-     * segments and ID-typed arguments arrive as Strings, so they parse to the catalog type and
-     * per-row keys and typed keys agree in one map. Non-numeric parses fail loudly
-     * ({@code NumberFormatException}); any other type is a request-level error.
+     * {@code public static K canonicalTenantKey(Object value)}: the one tenant key equality. The
+     * value is coerced through the representative tenant column's {@code DataType}, then put
+     * through the column's converter to its database value and back, so every spelling the
+     * column stores as one database value comes out as one key. For a column without a converter
+     * the round trip is jOOQ's identity converter, so there is one emitted shape. Public so a
+     * consumer can key its own tenant state by the same equality.
+     *
+     * <p>{@code DataType.convert} is lenient: a value it cannot coerce yields {@code null} rather
+     * than throwing. A {@code null} from either step on a non-null input, an
+     * {@code IllegalArgumentException} or a {@code DataTypeException} from the coercion or the
+     * converter, and a {@code null} input all mean the column cannot store the value, and throw
+     * {@code IllegalArgumentException} naming it. Any other converter exception propagates: it is
+     * a fault in the consumer's converter, not a fact about the value. A value the column binds
+     * by coercion ({@code "1.5"} on an integer column) names the tenant it coerces to, because
+     * the key follows the bind.
      */
-    private static MethodSpec tenantKeyOf(TypeName tenantKey) {
-        var b = MethodSpec.methodBuilder("tenantKeyOf")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+    private static MethodSpec canonicalTenantKey(TypeName tenantKey) {
+        return MethodSpec.methodBuilder("canonicalTenantKey")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(tenantKey)
-            .addParameter(Object.class, "key")
-            .beginControlFlow("if (key instanceof $T typed)", tenantKey)
-            .addStatement("return typed")
-            .endControlFlow();
-        if (tenantKey.equals(ClassName.get(Integer.class)) || tenantKey.equals(ClassName.get(Long.class))) {
-            b.beginControlFlow("if (key instanceof String s)")
-                .addStatement("return $T.valueOf(s)", tenantKey)
-                .endControlFlow();
-        }
-        return b.addStatement("throw new $T($S + key + $S)", IllegalArgumentException.class,
-                "Divined tenant value '", "' does not have the tenant column's Java type.")
+            .addParameter(Object.class, "value")
+            .beginControlFlow("if (value != null)")
+            .beginControlFlow("try")
+            .addStatement("$T coerced = TENANT_COLUMN_TYPE.convert(value)", tenantKey)
+            .beginControlFlow("if (coerced != null)")
+            .addStatement("$T canonical = roundTrip(TENANT_COLUMN_CONVERTER, coerced)", tenantKey)
+            .beginControlFlow("if (canonical != null)")
+            .addStatement("return canonical")
+            .endControlFlow()
+            .endControlFlow()
+            .nextControlFlow("catch ($T | $T e)", IllegalArgumentException.class, DATA_TYPE_EXCEPTION)
+            .addComment("The column cannot store the value; reported below with every other such case.")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("throw new $T($S + value + $S)", IllegalArgumentException.class,
+                "Tenant value '", "' is not a value of the tenant column.")
+            .addJavadoc("The tenant key a value names: the value coerced through the tenant column's data\n"
+                + "type, then put through the column's converter to its database value and back. Two values\n"
+                + "the column stores as one database value give one key, so use this to key your own tenant\n"
+                + "state by the equality graphitron routes with.\n"
+                + "@param value a tenant value in any form the column's data type coerces\n"
+                + "@return the key in the column's canonical Java form\n"
+                + "@throws IllegalArgumentException when the value is {@code null} or the column cannot store it\n")
             .build();
     }
 
     /**
-     * The recursive agree-fold behind {@code divinedTenant}: flattens collections, rejects
-     * disagreement. Disagreement is the caller's mistake (a batch whose ids decode to two tenants,
-     * or two bound arguments naming different ones), and one statement on one connection has no
-     * correct execution for it, so it raises the generated client-error type and the client reads
-     * which tenants disagreed rather than a redacted reference.
+     * The generic half of {@code canonicalTenantKey}: captures the converter's wildcard database
+     * type so the to-and-back round trip type-checks in Java 17.
      */
-    private static MethodSpec divinedTenantAgree(ClassName clientException) {
+    private static MethodSpec roundTrip(TypeName tenantKey) {
+        var dbType = TypeVariableName.get("D");
+        return MethodSpec.methodBuilder("roundTrip")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(dbType)
+            .returns(tenantKey)
+            .addParameter(ParameterizedTypeName.get(CONVERTER, dbType, tenantKey), "converter")
+            .addParameter(tenantKey, "value")
+            .addStatement("$T databaseValue = converter.to(value)", dbType)
+            .addStatement("return databaseValue == null ? null : converter.from(databaseValue)")
+            .build();
+    }
+
+    /**
+     * {@code private static K tenantKeyOf(Object value)}: one client-sourced tenant value reduced
+     * to its canonical key, shared by the routing fold and the fan-out narrowing so a value names
+     * the same tenant whichever reads it. A value the tenant column cannot store is the client's
+     * mistake, raised as the generated client-error type before the request tenant set is
+     * consulted, so it reveals nothing about which tenants exist, and before a narrowed domain is
+     * intersected, so it cannot empty one.
+     */
+    private static MethodSpec tenantKeyOf(TypeName tenantKey, ClassName clientException) {
+        return MethodSpec.methodBuilder("tenantKeyOf")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(tenantKey)
+            .addParameter(Object.class, "value")
+            .beginControlFlow("try")
+            .addStatement("return canonicalTenantKey(value)")
+            .nextControlFlow("catch ($T e)", IllegalArgumentException.class)
+            .addStatement("throw new $T($S + value + $S)", clientException,
+                "Tenant value '", "' is not a value of the tenant column.")
+            .endControlFlow()
+            .build();
+    }
+
+    /**
+     * The recursive agree-fold behind {@code divinedTenant}: flattens collections, reduces each
+     * leaf to its canonical key, rejects disagreement. Disagreement is the caller's mistake (a
+     * batch whose ids decode to two tenants, or two bound arguments naming different ones), and
+     * one statement on one connection has no correct execution for it, so it raises the generated
+     * client-error type and the client reads which tenants disagreed rather than a redacted
+     * reference.
+     */
+    private static MethodSpec divinedTenantAgree(TypeName tenantKey, ClassName clientException) {
         var collection = ClassName.get("java.util", "Collection");
         return MethodSpec.methodBuilder("agreeOnTenant")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(Object.class)
-            .addParameter(Object.class, "current")
+            .returns(tenantKey)
+            .addParameter(tenantKey, "current")
             .addParameter(Object.class, "candidate")
             .beginControlFlow("if (candidate == null)")
             .addStatement("return current")
@@ -2441,13 +2581,14 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .addStatement("return current")
             .endControlFlow()
-            .beginControlFlow("if (current != null && !current.equals(candidate))")
-            .addStatement("throw new $T($S + current + $S + candidate + $S)", clientException,
+            .addStatement("$T key = tenantKeyOf(candidate)", tenantKey)
+            .beginControlFlow("if (current != null && !current.equals(key))")
+            .addStatement("throw new $T($S + current + $S + key + $S)", clientException,
                 "Tenant bindings disagree within one operation: '", "' vs '",
                 "'. One call writes or reads one tenant database, so every tenant value it names"
                     + " must be the same.")
             .endControlFlow()
-            .addStatement("return candidate")
+            .addStatement("return key")
             .build();
     }
 

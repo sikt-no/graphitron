@@ -61,7 +61,8 @@ class TenantAuthorizationSubstrateTest {
         var hooks = SessionHooksFixtures.recordingTenantSlotHooks();
         var tenantType = ClassName.get(String.class);
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, tenantType)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, tenantType,
+                TenantColumnFixtures.STRING_KEY_COLUMN)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {

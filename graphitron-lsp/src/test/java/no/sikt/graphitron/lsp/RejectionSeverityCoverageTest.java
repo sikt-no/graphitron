@@ -245,9 +245,11 @@ class RejectionSeverityCoverageTest {
                 List.of(
                     new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
                         "public.emne",
+                        Integer.class.getName(),
                         Integer.class.getName()),
                     new Rejection.AuthorError.TenantColumnTypeDisagreement.TableSite(
                         "public.person",
+                        String.class.getName(),
                         String.class.getName())));
         }
         if (permit == Rejection.AuthorError.NoTenantBinding.class) {

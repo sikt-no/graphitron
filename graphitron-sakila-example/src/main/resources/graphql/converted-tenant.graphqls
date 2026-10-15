@@ -1,0 +1,21 @@
+# Converted-tenant fixture: compiled with <tenantColumn>owner_org</tenantColumn> (see the
+# rewrite-generate-converted-tenant execution in this module's pom). owner_org is a bigint domain
+# that a jOOQ converter maps to String, the sis shape: "0186" binds as 186 and reads back as "186".
+# org_site is the only table carrying the column, so it is the one tenant-scoped table and the
+# representative column whose converter decides tenant key equality. The execution tests prove a
+# client value routes to the tenant the SQL binds it to, whatever its spelling.
+
+type OrgSite @table(name: "org_site") {
+    siteId: Int! @field(name: "site_id")
+    siteName: String! @field(name: "site_name")
+    ownerOrg: String! @field(name: "owner_org")
+}
+
+type Query {
+    # ArgumentBound root: the argument names the tenant and routes the statement.
+    sites(ownerOrg: String! @field(name: "owner_org")): [OrgSite!]!
+    # A narrowed fan-out: given, only the tenant the argument names is asked.
+    sitesNarrowable(ownerOrg: String @field(name: "owner_org")): [OrgSite] @tenantFanOut
+    # A list argument: every element must name the same tenant.
+    sitesIn(ownerOrg: [String!]! @field(name: "owner_org")): [OrgSite!]!
+}

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
@@ -10,6 +12,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.lang.model.element.Modifier;
 import javax.sql.DataSource;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -273,6 +276,49 @@ class TenantConnectionsGeneratorTest {
                 }
                 default -> objectMethodOrDefault(proxy, method, args, "fakePreparedStatement");
             });
+    }
+
+    // --- the canonical tenant key: structural only, behaviour is pinned at the execution tier ---
+
+    private static TypeSpec carrierOf(List<TypeSpec> units) {
+        return units.stream()
+            .filter(t -> ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME.equals(t.name()))
+            .findFirst()
+            .orElseThrow();
+    }
+
+    @Test
+    void multiTenantCarrierDeclaresThePublicCanonicalTenantKey() {
+        var carrier = carrierOf(ConnectionRuntimeClassGenerator.generate(PACKAGE,
+            SessionHooksFixtures.recordingConnectionHooks(), ClassName.get(String.class),
+            TenantColumnFixtures.STRING_KEY_COLUMN));
+
+        assertThat(carrier.methodSpecs())
+            .filteredOn(m -> "canonicalTenantKey".equals(m.name()))
+            .singleElement()
+            .satisfies(m -> {
+                assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+                assertThat(m.returnType()).isEqualTo(ClassName.get(String.class));
+            });
+    }
+
+    @Test
+    void singleTenantCarrierHasNoCanonicalTenantKey() {
+        var carrier = carrierOf(ConnectionRuntimeClassGenerator.generate(PACKAGE,
+            SessionHooksFixtures.recordingConnectionHooks()));
+
+        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("canonicalTenantKey");
+    }
+
+    @Test
+    void aKeyTypeWithoutAColumnOrAColumnWithoutAKeyTypeIsRefused() {
+        var hooks = SessionHooksFixtures.recordingConnectionHooks();
+        assertThatThrownBy(() -> ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks,
+                ClassName.get(String.class), null))
+            .isInstanceOf(IllegalArgumentException.class);
+        assertThatThrownBy(() -> ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks,
+                null, TenantColumnFixtures.STRING_KEY_COLUMN))
+            .isInstanceOf(IllegalArgumentException.class);
     }
 
     private static Object objectMethodOrDefault(Object proxy, Method method, Object[] args, String label) {

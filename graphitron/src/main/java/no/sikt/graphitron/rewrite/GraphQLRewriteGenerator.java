@@ -3,10 +3,12 @@ package no.sikt.graphitron.rewrite;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.command.GlobalCommand;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.JavaFile;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.EmitPlan;
+import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.run.CapturedGraph;
 import no.sikt.graphitron.model.run.CapturedSchema;
@@ -490,6 +492,13 @@ public class GraphQLRewriteGenerator {
         var tenantKeyType = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
             ? configuredTenancy.tenantType()
             : null;
+        // The representative tenant column, rendered beside the key type: its DataType and
+        // converter decide which tenant spellings are one key at runtime.
+        var tenantColumn = schema.tenantScopes() instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured representative
+            ? CodeBlock.of("$T.$L.$L",
+                CatalogRefs.constantsClass(representative.tenantTable()),
+                representative.tenantTable().javaFieldName(), representative.tenantColumn().javaName())
+            : null;
 
         // The global command relation: the core decided the family membership (the federation
         // @oneOf gate, the entity-dispatch, node-fetcher and dev-executor gates, the session-hook
@@ -500,7 +509,8 @@ public class GraphQLRewriteGenerator {
         // per-type-emitting families below fold over the type-unit relation's rows the same way.
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
-                renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, federationLink),
+                renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
+                    federationLink),
                 emittedThisRun);
         }
         // The condition command relation: every row renders glue at the address its ref commits,
@@ -585,7 +595,8 @@ public class GraphQLRewriteGenerator {
      */
     private List<TypeSpec> renderGlobal(GlobalCommand command, GraphitronSchema schema, GraphQLSchema assembled,
                                         List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> schemaShapeRows,
-                                        TypeName tenantKeyType, boolean federationLink) {
+                                        TypeName tenantKeyType, CodeBlock tenantColumn,
+                                        boolean federationLink) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
@@ -599,7 +610,7 @@ public class GraphQLRewriteGenerator {
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
             case GRAPHITRON_CONTEXT -> GraphitronContextInterfaceGenerator.generate();
-            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType);
+            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType, tenantColumn);
             case TRANSACTION_PROVIDER -> GraphitronTransactionProviderGenerator.generate(outputPackage);
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, schema.sessionHooks());
             case CONSTRAINT_VIOLATIONS -> ConstraintViolationsClassGenerator.generate();

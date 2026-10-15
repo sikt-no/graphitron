@@ -75,8 +75,8 @@ class JooqCatalogNodeIdMetadataTest {
     // --- Malformed — direct validator coverage ---
 
     private static final Function<String, Optional<ColumnEntry>> RESOLVE_ID_COLUMNS = name -> {
-        if ("id_1".equalsIgnoreCase(name)) return Optional.of(new ColumnEntry("ID_1", "java.lang.String", "id_1", false));
-        if ("id_2".equalsIgnoreCase(name)) return Optional.of(new ColumnEntry("ID_2", "java.lang.String", "id_2", false));
+        if ("id_1".equalsIgnoreCase(name)) return Optional.of(new ColumnEntry("ID_1", "java.lang.String", "id_1", false, "java.lang.String"));
+        if ("id_2".equalsIgnoreCase(name)) return Optional.of(new ColumnEntry("ID_2", "java.lang.String", "id_2", false, "java.lang.String"));
         return Optional.empty();
     };
 

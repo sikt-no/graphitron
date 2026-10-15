@@ -234,7 +234,8 @@ class SessionHookImplGeneratorTest {
 
     private Class<?> compileHook(SessionHooks hooks, TypeName tenantKeyType) {
         Map<String, TypeSpec> units = new LinkedHashMap<>();
-        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, tenantKeyType)) {
+        for (TypeSpec spec : ConnectionRuntimeClassGenerator.generate(PACKAGE, hooks, tenantKeyType,
+                TenantColumnFixtures.columnFor(tenantKeyType))) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
         for (TypeSpec spec : GraphitronTransactionProviderGenerator.generate(PACKAGE)) {

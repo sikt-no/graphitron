@@ -1209,6 +1209,32 @@ CREATE TABLE plain_org_site (
     campus_count int         NOT NULL DEFAULT 0
 );
 
+-- Tenant column behind a converter, the sis shape: owner_org is the org_code_domain the
+-- type-selected forcedType maps to java.lang.String through OrgCodeStringConverter, so a client's
+-- "0186" binds as 186 and reads back as "186". The converted-tenant fixture in
+-- graphitron-sakila-example routes on <tenantColumn>owner_org</tenantColumn>, proving the router
+-- compares tenant keys by the database value rather than the Java spelling. issuer_org is the
+-- same domain, paired with plain_org_permit below for the tenant column type agreement check.
+-- Neither column name appears on any other table.
+CREATE TABLE org_site (
+    site_id     serial          PRIMARY KEY,
+    owner_org   org_code_domain NOT NULL,
+    issuer_org  org_code_domain,
+    site_name   varchar(50)     NOT NULL
+);
+INSERT INTO org_site (site_id, owner_org, issuer_org, site_name) VALUES
+    (1, 186,  186,  'Tromsø main'),
+    (2, 186,  NULL, 'Tromsø annex'),
+    (3, 1120, 1120, 'Trondheim main');
+
+-- issuer_org as a plain varchar: it binds String like org_site.issuer_org, but over a database
+-- value of another type, so the two would canonicalise "0186" differently. Only the tenant-scope
+-- classifier's agreement check reads it.
+CREATE TABLE plain_org_permit (
+    permit_id   serial      PRIMARY KEY,
+    issuer_org  varchar(20)
+);
+
 -- Composite primary key whose first column is converter-backed: org_code is the org_code_domain
 -- the type-selected forcedType maps to java.lang.String via OrgCodeStringConverter, so a decoded
 -- (org_code, term_no) key is a Row2<String, Integer> over a (bigint domain, integer) pair. The
