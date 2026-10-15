@@ -1,7 +1,7 @@
 ---
 id: R1048
 title: "Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 3
 theme: error-channel
