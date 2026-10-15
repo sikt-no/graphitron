@@ -1,7 +1,7 @@
 ---
 id: R1043
 title: "A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: classification-model
@@ -110,6 +110,12 @@ Not changed here: the inline standalone arm's semantics and its mislabelling com
   - `BatchedLookupValidationTest.Case.TABLE_CONNECTION_BLOCKED` (table arm, `List.of()` path, null correlation): give it an FK path and `TestFixtures.pcFor(...)` like the `BatchedTableFieldValidationTest` table cases; its assertion is about the connection wrapper.
   - `RECORD_SINGLE_NO_PATH` in both `BatchedLookupValidationTest` and `BatchedTableFieldValidationTest`, and the other null-correlation record case in `BatchedLookupValidationTest`: give them `OnLiftedSlots` over the target PK, the correlation the real record-sourced mints land on an empty path.
   - Grep the test tree for any other `BatchedTableField` construction passing a null correlation and repoint it the same way.
+
+## Implementation notes
+
+- The guard sits in `FieldBuilder`'s `TableBoundReturnType` child arm, ahead of the `@lookupKey` gate, and `deriveSplitQuerySource` moved inside the `hasSplitQuery` branch. The message drops the `Field '<coordinate>': ` lead from the Goal's wording because `ValidationError.forField` prefixes it; the classifier rejection carries the rest.
+- `@tenantFanOut` alone: the tenant fold does not stop the child arm from running. Classification reaches the same mint and the rejection names `@tenantFanOut` (`SplitQuerySameTableRejectionPipelineTest.tenantFanOutAlone_namesTenantFanOut`).
+- Tests: `SplitQuerySameTableRejectionPipelineTest` (pipeline tier, every row in § Tests, the validator-output case included) and `BatchedTableFieldCorrelationInvariantTest` (unit tier, both source arms). `BatchedLookupValidationTest` (`TABLE_CONNECTION_BLOCKED` to an FK path; `RECORD_SINGLE_NO_PATH` and `RECORD_CONNECTION_BLOCKED` to `OnLiftedSlots`) and `BatchedTableFieldValidationTest` (`RECORD_SINGLE_NO_PATH`) were repointed; the generator test tier found no other null-correlation construction.
 
 ## Other solutions we've considered
 
