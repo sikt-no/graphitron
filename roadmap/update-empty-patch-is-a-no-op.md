@@ -1,7 +1,7 @@
 ---
 id: R1040
 title: "A DML UPDATE row that sends only its key fields is a no-op that still returns the row"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: mutation-write
