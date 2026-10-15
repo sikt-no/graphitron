@@ -1171,6 +1171,14 @@ reads nothing off the classpath that capture has already read, and builds no sch
       the author cannot fix, so no author can leave federation while tags are configured. The mint
       writes only what the graph's link imports, or the configured link imports what the mint
       writes; which one is the node's first decision.
+    * **A link's imported definitions are captured where the link is** `open`, a regression.
+      Reported 2026-10-15 from a live session. With the authored federation `@link` in place,
+      generate accepts `@tag` and `@key` but the editor flags each as "Unknown directive":
+      `DiagnosticFacts.directiveName` judges against `graphql_directive`, which holds only
+      definitions written in a document, while `FederationLinkApplier` adds the imported ones to the
+      generator's registry alone. The store has the link (`graphitron_federation_link`) and not what
+      it imports. The imported definitions are captured as base facts, sourced to the link, so the
+      editor and the generator read one vocabulary; the sibling node above reads the same fact.
   * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
     to rename.
 * **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
@@ -1982,6 +1990,14 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   declaration hovers take about 0.05 s; a hover on a type name written as a field's type answers
   nothing; and a `@reference` field has a path but no classification claim, so it draws no
   classification hint.
+* **An editor that disconnects leaves the store open** `open`, a regression. Reported 2026-10-15
+  from a live session: capture's stamp read failed with H2's `ClosedChannelException`, and the
+  store console read no rows of `graphql_directive` while `count(*)` and the hot relations still
+  answered. `DevServer`'s per-connection teardown calls `shutdownNow()` on the drain executor, and
+  an interrupt during file I/O closes H2's file channel for every user of the in-process store; the
+  session then serves from page cache until a read misses it. A connection's teardown cancels
+  without interrupting, the store survives an interrupt anywhere else, and a store whose file is
+  gone fails loudly rather than half-serving.
 
 ## Tests
 
