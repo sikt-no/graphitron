@@ -267,11 +267,10 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   participant and a position, both read off the same path elements by the graphitron anchor and
   marked and swept with it. `field-path-and-participant-path` states a field with two participants'
   paths and one left to discovery beside a `@reference` chain. On the sakila store the ten
-  chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. The
-  path is read once a field's target is its target type, under "A field's target is its target
-  type": a participant is then a member of the field's target, one join to `graphql_poly_member`,
-  and the reading takes the participant's path for that participant and the coordinate's path for
-  the rest.
+  chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. Its
+  reader is the two walks, under "A path is resolved by two deterministic walks": a walk toward a
+  participant's arriving type reads that participant's own path where it has one. Until then those
+  ten fields get no chain at all, so the walks' first reading of them may surface real defects.
 * **Writing `@reference` and `@referenceFor` at one coordinate is a defect** `open`, as is a
   `@referenceFor` on a coordinate whose type is neither a union nor an interface. Both are rejections
   the vocabulary states; as codes they are where the editor learns of them.
@@ -293,7 +292,9 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   every round of each recursive walk. Instead an element names one thing, and a walk reads it from
   where it stands, one hop or a failure. There are two walks, each a relation of its own built and
   tested alone: forward from the field's departures, and backward from each arriving type's table.
-  Each is deterministic or fails, so the backward walk fails more often, at any table with several
+  The path walked toward an arriving type is that participant's own `@referenceFor` path where it
+  has one, and the coordinate's `@routine` and `@reference` path otherwise; a coordinate writing
+  both is a defect, so no walk mixes them. Each is deterministic or fails, so the backward walk fails more often, at any table with several
   keys into it, and is never wrong. Where both reach a position they agree by construction; where
   one reaches it, that one is the answer; where a path breaks, the positions the two stopped at
   bracket the fault.
