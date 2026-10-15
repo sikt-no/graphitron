@@ -1,7 +1,7 @@
 ---
 id: R1038
 title: "A client-supplied tenant key routes by the tenant column database value, not its converted Java form"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: runtime-connection

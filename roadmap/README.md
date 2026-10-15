@@ -30,11 +30,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | Ready | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
-| `R1038` | A client-supplied tenant key routes by the tenant column database value, not its converted Java form | Ready | 2026-10-15 | [plan](tenant-key-equality-follows-the-column.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Ready | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R1043` | A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation | In Progress | 2026-10-15 | [plan](splitquery-same-row-null-correlation.md) |
+| `R1038` | A client-supplied tenant key routes by the tenant column database value, not its converted Java form | In Progress | 2026-10-15 | [plan](tenant-key-equality-follows-the-column.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1041` | A mutation called with an empty input list returns an empty payload without routing to a tenant | In Review | 2026-10-15 | [plan](empty-input-list-skips-tenant-routing.md) |
 | `R1047` | An @error GENERIC handler can name the generated GraphitronClientException on a clean build | Spec | 2026-10-15 | [plan](generated-client-exception-as-error-match-target.md) |
@@ -605,7 +605,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### runtime-connection
 
-- `R1038` [**A client-supplied tenant key routes by the tenant column database value, not its converted Java form**](tenant-key-equality-follows-the-column.md) — Ready, bug
+- `R1038` [**A client-supplied tenant key routes by the tenant column database value, not its converted Java form**](tenant-key-equality-follows-the-column.md) — In Progress, bug
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R1041` [**A mutation called with an empty input list returns an empty payload without routing to a tenant**](empty-input-list-skips-tenant-routing.md) — In Review, bug
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
