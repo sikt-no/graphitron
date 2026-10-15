@@ -1,7 +1,7 @@
 ---
 id: R1043
 title: "A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: classification-model
