@@ -33,7 +33,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1048` | Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message | In Progress | 2026-10-15 | [plan](unmatched-fetcher-exception-logging-hook.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | In Review | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
-| `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | In Review | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -558,7 +557,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### mutation-write
 
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
-- `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — In Review, bug
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug
 - `R882` [**A nullable input field can be the sole supplier of a matched-key column on UPDATE, and an omitted value then has no diagnostic**](nullable-carrier-as-sole-row-identity.md) — Backlog, validation
