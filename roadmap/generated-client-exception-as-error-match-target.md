@@ -107,6 +107,18 @@ This is a component on an existing record: no new `Handler` variant, no new leaf
 
 The first-client check reads simply: one class name, spelled from configuration the consumer already has, with no new handler kind to learn.
 
+## Implementation notes
+
+Shipped as specified; where the code differs from the plan text above, this is where.
+
+- **Test homes.** The accessor-check pair on the `ErrorChannelWalker` path is in `ErrorChannelWalkerTest` (unit tier, as that class already is). The DML-payload-path pair is in `ErrorChannelClassificationTest` (pipeline tier, `extraField_generatedClientException_*`), beside the existing `extraField_*` cases that drive `FieldBuilder.checkErrorTypeSourceAccessors`. The five `accessorSourceClassName()` rows live in a new `ErrorHandlerAccessorSourceTest` in the model test package, not in `CheckedExceptionMatcherTest`, since they test the model rather than the matcher.
+- **Generator check is stricter than planned.** `emits_noMethodBeyondTheConstructor` asserts every emitted method is a constructor, not only that no public non-constructor method exists. The class has no private helpers to exempt, and a private accessor would be just as invisible to the superclass-based check.
+- **Execution case.** The new mutation is `retitleFilmsClaimed`, returning `FilmsRetitledClaimedPayload { films, errors: [FilmWriteClaimedError] }`. The test is `dmlPayload_aGenericHandlerOnTheGeneratedClientException_claimsTheTenantRefusal`. Locally the sakila example was generated after deleting its `target/` outright, so the clean-build path ran here too, not only in CI.
+- **One more stale javadoc.** `FieldBuilder.checkErrorTypeSourceAccessors` repeated the "GENERIC className was already rejected at parse time" claim; it now names `accessorSourceClassName()` and the superclass for the generated arm.
+- **Import direction.** `GeneratedUnits` now imports `GraphitronClientExceptionClassGenerator` for `CLASS_NAME`. `PackageImportDirectionTest` bans `plan` from importing the emit library and `render` only, so this is allowed, and it is a compile-time constant.
+- **Construction sites** came to twenty-three (three in `TypeBuilder`, twenty in tests), not twenty-two.
+- The bullet in R521 about `GraphitronClientExceptionClassGenerator`'s emitted javadoc mentioning "a future query `@error` handler" is resolved here, so it was removed from that item.
+
 ## Other solutions we've considered
 
 - **A dedicated handler kind** (`{handler: CLIENT}`, a fifth `Handler` variant) that matches "graphitron client errors" without a class name. It still matches by class identity, so it would be a second mechanism next to `ExceptionHandler` doing the same thing. It also touches the directive SDL, `ErrorHandlerType`, and every `Handler` switch. Its one advantage is that the SDL does not spell the output package. The recognised name does spell it, but that is safe: if the configured package is renamed, the old name falls through to the classpath rule and fails the build loudly, rather than silently matching nothing.
