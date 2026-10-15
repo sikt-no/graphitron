@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass.GeneratedClientException;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -19,18 +20,23 @@ import java.util.List;
  * surfaces an instance of this type as a real {@code GraphQLError} instead of redacting it to a
  * correlation id; genuine internal faults still redact. The stable name is also the
  * {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches with zero change at
- * the throw site.
+ * the throw site: the classifier recognises the name before the class has ever compiled and
+ * records it as a {@link GeneratedClientException}.
  *
  * <p>Subclasses {@link graphql.GraphqlErrorException} so it <em>is</em> a {@link graphql.GraphQLError}
  * (channel-matchable, natively serialisable into the response {@code errors} array). Generated as
  * a source file rather than shipped in a runtime jar, preserving the rewrite's no-runtime-jar
  * invariant.
+ *
+ * <p>The superclass is read from {@link GeneratedClientException#SUPERCLASS}, and the class declares
+ * nothing beyond its constructor. The classify-time accessor check on an {@code @error} type's extra
+ * fields runs against that superclass in place of this class, which is sound only while both hold.
  */
 public final class GraphitronClientExceptionClassGenerator {
 
     public static final String CLASS_NAME = "GraphitronClientException";
 
-    private static final ClassName GRAPHQL_ERROR_EXCEPTION = ClassName.get("graphql", "GraphqlErrorException");
+    private static final ClassName GRAPHQL_ERROR_EXCEPTION = ClassName.bestGuess(GeneratedClientException.SUPERCLASS);
 
     private GraphitronClientExceptionClassGenerator() {}
 
@@ -52,7 +58,7 @@ public final class GraphitronClientExceptionClassGenerator {
             .addJavadoc("Marker for a client-side input mistake surfaced from a generated fetcher\n"
                 + "(e.g. a malformed or wrong-type {@code @nodeId} filter value). Surfaced raw by\n"
                 + "{@code ErrorRouter.surfaceClientErrorOrRedact} rather than redacted; the stable\n"
-                + "{@code instanceof} anchor a future query {@code @error} handler matches.\n")
+                + "{@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches.\n")
             .addField(serialVersionUID)
             .addMethod(ctor)
             .build();

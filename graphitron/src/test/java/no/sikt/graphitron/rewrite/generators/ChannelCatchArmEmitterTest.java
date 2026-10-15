@@ -62,7 +62,7 @@ class ChannelCatchArmEmitterTest {
 
     private static ErrorType anyErrorType() {
         return new ErrorType("NotFound", new SourceLocation(1, 1),
-            List.of(new ErrorType.ExceptionHandler("java.lang.RuntimeException",
+            List.of(new ErrorType.ExceptionHandler(new ErrorType.ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource())), List.of());
     }
 }

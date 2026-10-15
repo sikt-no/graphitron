@@ -314,9 +314,7 @@ public final class ErrorRouterClassGenerator {
             TypeVariableName typeP,
             ParameterizedTypeName resultOfP,
             String outputPackage) {
-        var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
-            .singleton(no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA,
-                GraphitronClientExceptionClassGenerator.CLASS_NAME);
+        var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
         var clientException = ClassName.get(
             clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
 

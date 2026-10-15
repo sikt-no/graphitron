@@ -326,6 +326,13 @@ public sealed interface GraphitronType
 
             /** Optional substring filter on the matched exception's {@code getMessage()}. */
             Optional<String> matches();
+
+            /**
+             * The class whose accessors must cover the {@code @error} type's extra fields (every
+             * field besides {@code path} / {@code message}): the matched object, or for a
+             * generated class the classpath supertype it inherits every accessor from.
+             */
+            String accessorSourceClassName();
         }
 
         /**
@@ -359,13 +366,76 @@ public sealed interface GraphitronType
         /**
          * Matches by exception class identity, walking the cause chain.
          * Lift target for {@code {handler: GENERIC, className: ...}} and the no-discriminator
-         * {@code {handler: DATABASE}} (which lifts to {@code ExceptionHandler(java.sql.SQLException)}).
+         * {@code {handler: DATABASE}} (which lifts to a {@link ExceptionClass.ClasspathClass} on
+         * {@code java.sql.SQLException}).
+         *
+         * <p>{@code exceptionClass} records the classifier's one decision about the named class:
+         * whether it resolved on the codegen classpath, or is the client exception this run
+         * emits and no classpath carries yet. Every later reflection site reads that decision
+         * here instead of loading the name again.
          */
         public record ExceptionHandler(
-            String exceptionClassName,
+            ExceptionClass exceptionClass,
             Optional<String> matches,
             ClientMessage clientMessage
-        ) implements Handler {}
+        ) implements Handler {
+
+            /** The fully qualified name of the matched class, whichever arm carries it. */
+            public String exceptionClassName() {
+                return exceptionClass.className();
+            }
+
+            @Override
+            public String accessorSourceClassName() {
+                return exceptionClass.accessorSourceClassName();
+            }
+        }
+
+        /**
+         * The class an {@link ExceptionHandler} matches, by what it is rather than by who wrote
+         * the name: {@code java.sql.SQLException} from the {@code DATABASE} lift is a classpath
+         * class no author wrote.
+         */
+        public sealed interface ExceptionClass
+            permits ExceptionClass.ClasspathClass, ExceptionClass.GeneratedClientException {
+
+            /** The fully qualified class name. */
+            String className();
+
+            /** The class whose accessors back the {@code @error} type's extra fields. */
+            String accessorSourceClassName();
+
+            /**
+             * A class the classifier resolved on the codegen classpath, confirmed to extend
+             * {@link Throwable}.
+             */
+            record ClasspathClass(String className) implements ExceptionClass {
+                @Override
+                public String accessorSourceClassName() {
+                    return className;
+                }
+            }
+
+            /**
+             * {@code <outputPackage>.schema.GraphitronClientException}, which this run emits and
+             * so no classpath carries before the first compile. The class is {@code final}, extends
+             * {@link #SUPERCLASS} and declares no accessor of its own, so the accessor check runs
+             * against the superclass and gives the same answer on a clean build as on a dirty one.
+             */
+            record GeneratedClientException(String className) implements ExceptionClass {
+
+                /**
+                 * The emitted class's superclass. Lives here rather than on the generator because
+                 * the model does not import generators; the generator reads it from here.
+                 */
+                public static final String SUPERCLASS = "graphql.GraphqlErrorException";
+
+                @Override
+                public String accessorSourceClassName() {
+                    return SUPERCLASS;
+                }
+            }
+        }
 
         /**
          * Matches any {@link java.sql.SQLException} in the cause chain whose
@@ -376,7 +446,9 @@ public sealed interface GraphitronType
             String sqlState,
             Optional<String> matches,
             ClientMessage clientMessage
-        ) implements Handler {}
+        ) implements Handler {
+            @Override public String accessorSourceClassName() { return "java.sql.SQLException"; }
+        }
 
         /**
          * Matches any {@link java.sql.SQLException} in the cause chain whose
@@ -387,7 +459,9 @@ public sealed interface GraphitronType
             String vendorCode,
             Optional<String> matches,
             ClientMessage clientMessage
-        ) implements Handler {}
+        ) implements Handler {
+            @Override public String accessorSourceClassName() { return "java.sql.SQLException"; }
+        }
 
         /**
          * Marks the channel for native Jakarta validation: the wrapper invokes
@@ -399,6 +473,7 @@ public sealed interface GraphitronType
          */
         public record ValidationHandler() implements Handler {
             @Override public Optional<String> matches() { return Optional.empty(); }
+            @Override public String accessorSourceClassName() { return "graphql.GraphQLError"; }
         }
     }
 

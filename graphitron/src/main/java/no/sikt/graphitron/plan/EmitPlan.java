@@ -149,8 +149,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
         globals.add(one(GlobalUnitKind.CONSTRAINT_VIOLATIONS,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "ConstraintViolations")));
-        globals.add(one(GlobalUnitKind.CLIENT_EXCEPTION,
-            units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronClientException")));
+        globals.add(one(GlobalUnitKind.CLIENT_EXCEPTION, units.clientException()));
         globals.add(one(GlobalUnitKind.ERROR_ROUTER, units.errorRouter()));
         globals.add(one(GlobalUnitKind.OUTCOME, units.outcome()));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));

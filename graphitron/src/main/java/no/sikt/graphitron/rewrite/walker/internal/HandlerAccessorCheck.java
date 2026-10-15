@@ -80,20 +80,16 @@ public final class HandlerAccessorCheck {
     }
 
     /**
-     * The runtime source class for a handler variant, or {@code null} when it cannot be loaded on
-     * the codegen classloader (a {@code GENERIC} className would already have been rejected at
-     * parse time, so a miss here means a broken classifier classpath).
+     * The handler's {@linkplain ErrorType.Handler#accessorSourceClassName() accessor source class}
+     * on the codegen classloader, or {@code null} when it cannot be loaded. Every name reaching
+     * here is one the classifier already resolved or one that is always present (a JDK class,
+     * a graphql-java supertype standing in for the generated client exception), so a miss means
+     * a broken classifier classpath rather than a state of {@code target/}.
      */
     private static Class<?> resolveHandlerSourceClass(ErrorType.Handler handler, ClassLoader codegenLoader) {
-        String fqn = switch (handler) {
-            case ErrorType.ExceptionHandler eh -> eh.exceptionClassName();
-            case ErrorType.SqlStateHandler ignored -> "java.sql.SQLException";
-            case ErrorType.VendorCodeHandler ignored -> "java.sql.SQLException";
-            case ErrorType.ValidationHandler ignored -> "graphql.GraphQLError";
-        };
         try {
             // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated, or a fixed JDK / graphql-java name)
-            return Class.forName(fqn, false, codegenLoader);
+            return Class.forName(handler.accessorSourceClassName(), false, codegenLoader);
         } catch (ClassNotFoundException e) {
             return null;
         }

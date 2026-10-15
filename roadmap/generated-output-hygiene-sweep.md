@@ -136,8 +136,6 @@ diagnostics are collected here:
 - `BuildContext` emits "file a roadmap item if this shape needs admission" and "a future Backlog
   item may admit multi-data carriers" diagnostics; consumers have no `roadmap/` directory.
 - `ConnectionRuntimeClassGenerator`'s `.addJavadoc` literals mention work "slices".
-- `GraphitronClientExceptionClassGenerator`'s emitted javadoc references a future query
-  `@error` handler.
 - `ConstraintViolationsClassGenerator`'s emitted javadoc restates its generator class doc at
   length; align with whatever per-class on-ramp convention this item lands.
 

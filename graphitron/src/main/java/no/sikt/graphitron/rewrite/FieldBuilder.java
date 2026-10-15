@@ -4898,11 +4898,14 @@ class FieldBuilder {
      *
      * <p>For each {@code (mappedErrorType, handler)} pair in the channel, looks up each
      * declared SDL field on the {@code @error} type against the handler's source class via
-     * {@link ClassAccessorResolver}. The source class is determined by handler kind:
+     * {@link ClassAccessorResolver}. The source class is the handler's
+     * {@link ErrorType.Handler#accessorSourceClassName()}:
      *
      * <ul>
      *   <li>{@link ErrorType.ExceptionHandler}: the resolved Java class named by
-     *       {@code exceptionClassName}.</li>
+     *       {@code exceptionClassName}, or for the generated client exception its
+     *       {@linkplain ErrorType.ExceptionClass.GeneratedClientException#SUPERCLASS superclass},
+     *       since the generated class is not on the classpath before its first compile.</li>
      *   <li>{@link ErrorType.SqlStateHandler} / {@link ErrorType.VendorCodeHandler}:
      *       {@code java.sql.SQLException} (the universal supertype these variants match in
      *       the cause chain).</li>
@@ -4918,11 +4921,10 @@ class FieldBuilder {
      * handler discriminator, field, and source class.
      *
      * <p>Returns the first reject reason encountered, or {@code null} when every field on
-     * every handler resolves cleanly. The classifier source classes ({@code SQLException},
-     * {@code GraphQLError}, the {@code ExceptionHandler} className) are resolved at parse time
-     * via {@code Class.forName} on {@code ctx.codegenLoader()}; a load failure on a
-     * {@code GENERIC} className was already rejected at parse time by
-     * {@code TypeBuilder.validateExceptionClass}, so this check trusts those classes to load.
+     * every handler resolves cleanly. Each source class is loaded via {@code Class.forName} on
+     * {@code ctx.codegenLoader()}: a classpath {@code GENERIC} className was already resolved at
+     * parse time by {@code TypeBuilder.validateExceptionClass}, and every other name is a JDK or
+     * graphql-java class, so this check trusts those classes to load.
      */
     private String checkErrorTypeSourceAccessors(List<ErrorType> mappedErrorTypes) {
         for (ErrorType errorType : mappedErrorTypes) {
@@ -4965,22 +4967,16 @@ class FieldBuilder {
     }
 
     /**
-     * The runtime source class for an {@code @error} {@link ErrorType.Handler} variant. Returns
-     * {@code null} when the source class cannot be loaded on the codegen classloader (a
-     * {@code GENERIC} className would have been rejected at parse time by
-     * {@code TypeBuilder.validateExceptionClass}, so this path is only reached for the
-     * fixed-FQN cases where a missing class indicates a broken classifier classpath).
+     * The handler's {@linkplain ErrorType.Handler#accessorSourceClassName() accessor source class}
+     * on the codegen classloader, or {@code null} when it cannot be loaded. Every name reaching
+     * here is one the classifier already resolved or one that is always present (a JDK class,
+     * a graphql-java supertype standing in for the generated client exception), so a miss means
+     * a broken classifier classpath rather than a state of {@code target/}.
      */
     private Class<?> resolveHandlerSourceClass(ErrorType.Handler handler) {
-        String fqn = switch (handler) {
-            case ErrorType.ExceptionHandler eh -> eh.exceptionClassName();
-            case ErrorType.SqlStateHandler ignored -> "java.sql.SQLException";
-            case ErrorType.VendorCodeHandler ignored -> "java.sql.SQLException";
-            case ErrorType.ValidationHandler ignored -> "graphql.GraphQLError";
-        };
         try {
             // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated, or a fixed JDK / graphql-java name)
-            return Class.forName(fqn, false, ctx.codegenLoader());
+            return Class.forName(handler.accessorSourceClassName(), false, ctx.codegenLoader());
         } catch (ClassNotFoundException e) {
             return null;
         }

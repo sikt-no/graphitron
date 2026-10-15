@@ -97,16 +97,21 @@ final class CheckedExceptionMatcher {
 
     private static boolean covers(ErrorType.Handler h, Class<?> ex, ClassLoader codegenLoader) {
         return switch (h) {
-            case ExceptionHandler eh -> {
-                Class<?> handlerClass;
-                try {
-                    // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated)
-                    handlerClass = Class.forName(eh.exceptionClassName(), false, codegenLoader);
-                } catch (ClassNotFoundException ignored) {
-                    yield false;
+            case ExceptionHandler eh -> switch (eh.exceptionClass()) {
+                // The generated client exception is unchecked, so it is never the supertype of a
+                // declared checked exception.
+                case ErrorType.ExceptionClass.GeneratedClientException ignored -> false;
+                case ErrorType.ExceptionClass.ClasspathClass cc -> {
+                    Class<?> handlerClass;
+                    try {
+                        // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated)
+                        handlerClass = Class.forName(cc.className(), false, codegenLoader);
+                    } catch (ClassNotFoundException ignored) {
+                        yield false;
+                    }
+                    yield handlerClass.isAssignableFrom(ex);
                 }
-                yield handlerClass.isAssignableFrom(ex);
-            }
+            };
             case SqlStateHandler ignored -> SQLException.class.isAssignableFrom(ex);
             case VendorCodeHandler ignored -> SQLException.class.isAssignableFrom(ex);
             case ValidationHandler ignored -> false;

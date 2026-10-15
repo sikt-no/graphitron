@@ -16,6 +16,7 @@ import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
+import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.model.lint.LintFix;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -2172,12 +2173,21 @@ class TypeBuilder {
                         + " (those apply to DATABASE only)");
                     return null;
                 }
+                // The client exception this run emits is recognised by name: no classpath carries
+                // it before the first compile, and the generator fixes its Throwable superclass.
+                // Only this run's own output package qualifies; any other name takes the
+                // classpath rule.
+                if (className.equals(new GeneratedUnits(ctx.ctx.outputPackage()).clientException().fqcn())) {
+                    return new ErrorType.ExceptionHandler(
+                        new ErrorType.ExceptionClass.GeneratedClientException(className), matchesOpt, clientMessage);
+                }
                 String resolveError = validateExceptionClass(className, "GENERIC");
                 if (resolveError != null) {
                     rejectReasons.add(resolveError);
                     return null;
                 }
-                return new ErrorType.ExceptionHandler(className, matchesOpt, clientMessage);
+                return new ErrorType.ExceptionHandler(
+                    new ErrorType.ExceptionClass.ClasspathClass(className), matchesOpt, clientMessage);
             }
             case DATABASE -> {
                 // Rule 3: DATABASE cannot AND both vendor discriminators.
@@ -2201,7 +2211,8 @@ class TypeBuilder {
                 // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). SQLException
                 // always resolves on the classifier classpath, so no Class.forName check is
                 // needed here.
-                return new ErrorType.ExceptionHandler("java.sql.SQLException", matchesOpt, clientMessage);
+                return new ErrorType.ExceptionHandler(
+                    new ErrorType.ExceptionClass.ClasspathClass("java.sql.SQLException"), matchesOpt, clientMessage);
             }
             case VALIDATION -> {
                 // Rule 5: VALIDATION takes neither discriminators, nor matches, nor a client
@@ -2240,8 +2251,10 @@ class TypeBuilder {
     }
 
     /**
-     * Resolves an {@code ExceptionHandler.exceptionClassName} on the classifier classpath and
-     * verifies it's a {@link Throwable} subtype. Returns a non-null reject reason when the class
+     * Resolves a {@code GENERIC} handler's {@code className} on the classifier classpath and
+     * verifies it's a {@link Throwable} subtype. Not called for the generated client exception,
+     * which {@link #parseErrorHandler} recognises by name before reaching here. Returns a
+     * non-null reject reason when the class
      * cannot be loaded or doesn't extend {@code Throwable}; returns {@code null} on a clean
      * resolution. The runtime matcher walks the cause chain testing each link with
      * {@code Class.isInstance}, so a non-{@code Throwable} class would never match anything and

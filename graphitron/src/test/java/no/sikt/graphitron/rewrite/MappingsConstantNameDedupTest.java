@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -165,7 +166,7 @@ class MappingsConstantNameDedupTest {
     }
 
     private static ExceptionHandler exceptionHandler(String className) {
-        return new ExceptionHandler(className, Optional.empty(), new ClientMessage.FromSource());
+        return new ExceptionHandler(new ExceptionClass.ClasspathClass(className), Optional.empty(), new ClientMessage.FromSource());
     }
 
     private static SqlStateHandler sqlStateHandler(String state) {

@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass.GeneratedClientException;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -25,7 +26,16 @@ class GraphitronClientExceptionClassGeneratorTest {
         TypeSpec spec = specs.get(0);
         assertThat(spec.name()).isEqualTo("GraphitronClientException");
         assertThat(spec.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
-        assertThat(spec.superclass().toString()).isEqualTo("graphql.GraphqlErrorException");
+        assertThat(spec.superclass().toString()).isEqualTo(GeneratedClientException.SUPERCLASS);
+    }
+
+    @Test
+    void emits_noMethodBeyondTheConstructor() {
+        // The classify-time accessor check on an @error type naming this class runs against its
+        // superclass, because no classpath carries the class before its first compile. That is
+        // sound only while the class adds no accessor of its own.
+        TypeSpec spec = GraphitronClientExceptionClassGenerator.generate().get(0);
+        assertThat(spec.methodSpecs()).allMatch(MethodSpec::isConstructor);
     }
 
     @Test

@@ -5840,8 +5840,27 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
                 assertThat(h).isInstanceOf(ErrorType.ExceptionHandler.class);
-                assertThat(((ErrorType.ExceptionHandler) h).exceptionClassName())
-                    .isEqualTo("java.sql.SQLException");
+                assertThat(((ErrorType.ExceptionHandler) h).exceptionClass())
+                    .isEqualTo(new ErrorType.ExceptionClass.ClasspathClass("java.sql.SQLException"));
+            }),
+
+        GENERIC_NAMING_GENERATED_CLIENT_EXCEPTION_LIFTS_TO_GENERATED_ARM(
+            "GENERIC naming this run's own GraphitronClientException classifies without the class on the classpath",
+            """
+            type ClientError @error(handlers: [{handler: GENERIC, className: "fake.code.generated.schema.GraphitronClientException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { err: ClientError }
+            """,
+            schema -> {
+                // The test codegen loader never carries the generated class, so this is the
+                // clean-build state: the name is recognised, not loaded.
+                var h = ((ErrorType) schema.type("ClientError")).handlers().get(0);
+                assertThat(h).isInstanceOf(ErrorType.ExceptionHandler.class);
+                assertThat(((ErrorType.ExceptionHandler) h).exceptionClass())
+                    .isEqualTo(new ErrorType.ExceptionClass.GeneratedClientException(
+                        "fake.code.generated.schema.GraphitronClientException"));
             }),
 
         VALIDATION_LIFTS_TO_VALIDATION_HANDLER(
@@ -6098,6 +6117,20 @@ class GraphitronSchemaBuilderTest {
                 assertThat(t.reason())
                     .contains("no.does.not.exist.Missing")
                     .contains("could not be loaded");
+            }),
+
+        REJECT_GENERIC_NAMING_ANOTHER_PACKAGES_CLIENT_EXCEPTION(
+            "GENERIC naming a GraphitronClientException outside this run's output package takes the classpath rule",
+            """
+            type BadError @error(handlers: [{handler: GENERIC, className: "other.pkg.schema.GraphitronClientException"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Query { err: BadError }
+            """,
+            schema -> {
+                var t = (UnclassifiedType) schema.type("BadError");
+                assertThat(t.reason()).contains("other.pkg.schema.GraphitronClientException");
             }),
 
         REJECT_GENERIC_WITH_NON_THROWABLE_CLASS(

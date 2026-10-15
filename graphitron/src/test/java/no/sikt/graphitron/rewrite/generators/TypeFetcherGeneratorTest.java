@@ -748,7 +748,7 @@ class TypeFetcherGeneratorTest {
         var errorType = new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType(
             "SakError", null,
             List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler(
-                "java.lang.RuntimeException", Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource())),
+                new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass.ClasspathClass("java.lang.RuntimeException"), Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource())),
             List.of());
         return new ErrorChannel.Mapped(List.of(errorType), "SAK_PAYLOAD");
     }

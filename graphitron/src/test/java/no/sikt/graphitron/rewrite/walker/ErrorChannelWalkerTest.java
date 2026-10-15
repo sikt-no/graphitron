@@ -112,6 +112,33 @@ class ErrorChannelWalkerTest {
             .containsExactly("DetailError");
     }
 
+    @Test
+    void walk_generatedClientException_checksExtraFieldsAgainstSuperclass() {
+        // No classpath carries the generated class, as on a clean build; the check runs against
+        // its superclass, which declares getLocalizedMessage().
+        var et = errorType("ClientError", generatedClientException());
+        var result = walker.walk(outcome("ThingPayload", "errors", et),
+            schemaWithExtraField("ClientError", "localizedMessage"), loader(), t -> String.class);
+
+        assertThat(ok(result).mappedErrorTypes()).extracting(ErrorType::name)
+            .containsExactly("ClientError");
+    }
+
+    @Test
+    void walk_generatedClientException_missingAccessor_namesSuperclass() {
+        var et = errorType("ClientError", generatedClientException());
+        var result = walker.walk(outcome("ThingPayload", "errors", et),
+            schemaWithExtraField("ClientError", "bogus"), loader(), t -> String.class);
+
+        assertThat(err(result)).anySatisfy(e -> {
+            assertThat(e).isInstanceOf(ErrorChannelWalkerError.HandlerSourceAccessorMissing.class);
+            var m = (ErrorChannelWalkerError.HandlerSourceAccessorMissing) e;
+            assertThat(m.missingFieldName()).isEqualTo("bogus");
+            assertThat(m.handlerClassName()).isEqualTo(
+                ErrorType.ExceptionClass.GeneratedClientException.SUPERCLASS);
+        });
+    }
+
     // ===== fixtures =====
 
     /** Handler source class missing the {@code detail} accessor. */
@@ -149,7 +176,13 @@ class ErrorChannelWalkerTest {
     }
 
     private static ErrorType.ExceptionHandler exception(String className) {
-        return new ErrorType.ExceptionHandler(className, Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource());
+        return new ErrorType.ExceptionHandler(new ErrorType.ExceptionClass.ClasspathClass(className), Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource());
+    }
+
+    private static ErrorType.ExceptionHandler generatedClientException() {
+        return new ErrorType.ExceptionHandler(
+            new ErrorType.ExceptionClass.GeneratedClientException("com.example.schema.GraphitronClientException"),
+            Optional.empty(), new ErrorType.ClientMessage.FromSource());
     }
 
     private static ErrorType.ValidationHandler validation() {
@@ -171,6 +204,15 @@ class ErrorChannelWalkerTest {
             .field(GraphQLFieldDefinition.newFieldDefinition().name("detail").type(Scalars.GraphQLString).build())
             .build();
         return GraphQLSchema.newSchema().query(dummyQuery()).additionalType(detailError).build();
+    }
+
+    private static GraphQLSchema schemaWithExtraField(String typeName, String extraField) {
+        var type = GraphQLObjectType.newObject()
+            .name(typeName)
+            .field(GraphQLFieldDefinition.newFieldDefinition().name("message").type(Scalars.GraphQLString).build())
+            .field(GraphQLFieldDefinition.newFieldDefinition().name(extraField).type(Scalars.GraphQLString).build())
+            .build();
+        return GraphQLSchema.newSchema().query(dummyQuery()).additionalType(type).build();
     }
 
     private static GraphQLObjectType dummyQuery() {

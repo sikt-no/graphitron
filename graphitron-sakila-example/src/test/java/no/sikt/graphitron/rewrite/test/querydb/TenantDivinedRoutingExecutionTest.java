@@ -488,6 +488,27 @@ class TenantDivinedRoutingExecutionTest {
     }
 
     @Test
+    void dmlPayload_aGenericHandlerOnTheGeneratedClientException_claimsTheTenantRefusal() {
+        // The payload's union claims GraphitronClientException through a GENERIC handler, so the
+        // refusal of a tenant outside the request's set renders as the typed error inside the
+        // payload, with a null data field and no top-level error, before any tenant is opened.
+        var result = execute("mutation { retitleFilmsClaimed(in: [{ id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"Never Written\" }])"
+            + " { films { title } errors { __typename ... on FilmWriteClientError { message } } } }",
+            List.of(1));
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("retitleFilmsClaimed");
+        assertThat(payload).containsEntry("films", null);
+        assertThat((List<Map<String, Object>>) payload.get("errors"))
+            .singleElement()
+            .satisfies(error -> {
+                assertThat(error.get("__typename")).isEqualTo("FilmWriteClientError");
+                assertThat(error.get("message")).isEqualTo("Tenant '2' is not permitted for this request.");
+            });
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    @Test
     void service_jooqRecordParameter_routesOnTheCompositeKeysTenantSlot() {
         var result = execute("mutation { rateFilmActors(in: [{ id: \""
             + NodeIdEncoder.encodeFilmActor(20, 2) + "\" }]) { ranOn films { title } } }");

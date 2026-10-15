@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
@@ -31,6 +32,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>A {@code SqlStateHandler}/{@code VendorCodeHandler} alone does not cover a
  *       non-{@code SQLException} declared throw.</li>
  *   <li>{@code ValidationHandler} covers nothing in the matcher (it's a wrapper-side flag).</li>
+ *   <li>An {@code ExceptionHandler} on the generated client exception covers nothing: the class
+ *       is unchecked.</li>
  *   <li>The {@code InterruptedException} and {@code IOException} exemptions skip the match
  *       check entirely.</li>
  *   <li>Unchecked exceptions ({@code RuntimeException} subclasses) are skipped (Java doesn't
@@ -47,13 +50,13 @@ class CheckedExceptionMatcherTest {
 
     @Test
     void emptyDeclaredList_returnsEmpty() {
-        var channel = channelWith(new ExceptionHandler("java.lang.RuntimeException", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of(), Optional.of(channel), LOADER)).isEmpty();
     }
 
     @Test
     void exceptionHandler_exactClass_matches() {
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.sql.SQLException"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
@@ -62,7 +65,7 @@ class CheckedExceptionMatcherTest {
     void exceptionHandler_subclassOfHandlerClass_matches() {
         // ExceptionHandler(SQLException) covers a method declaring throws SQLDataException
         // because the handler's class is a supertype of the declared class.
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.sql.SQLException"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
@@ -71,7 +74,7 @@ class CheckedExceptionMatcherTest {
     void exceptionHandler_supertypeNotCoveredBySubtypeHandler() {
         // A method throws Throwable is NOT covered by ExceptionHandler(SQLException) — the
         // handler's class is more specific than the declared class.
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.sql.SQLException"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Throwable"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Throwable");
     }
@@ -166,9 +169,21 @@ class CheckedExceptionMatcherTest {
     }
 
     @Test
+    void generatedClientException_coversNoCheckedException() {
+        // The generated client exception is unchecked, so it never covers a declared checked
+        // exception. Decided by the arm: the class is never loaded, and no classpath carries it.
+        var channel = channelWith(new ExceptionHandler(
+            new ExceptionClass.GeneratedClientException("com.example.schema.GraphitronClientException"),
+            Optional.empty(), new ClientMessage.FromSource()));
+        assertThat(CheckedExceptionMatcher.unmatched(
+                List.of("java.lang.Exception", "java.sql.SQLException"), Optional.of(channel), LOADER))
+            .containsExactly("java.lang.Exception", "java.sql.SQLException");
+    }
+
+    @Test
     void multipleDeclaredExceptions_partialMatch_returnsOnlyUnmatched() {
         // A method may declare multiple checked exceptions; only the unmatched ones surface.
-        var channel = channelWith(new ExceptionHandler("java.sql.SQLException", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.sql.SQLException"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(
                 List.of("java.sql.SQLException", "java.lang.Exception"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Exception");

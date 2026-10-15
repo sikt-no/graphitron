@@ -78,6 +78,28 @@ On a xref:../reference/directives/mutation.adoc#payload-with-an-errors-field[`@m
 
 Coming from Graphitron 9: the error type `<recordValidation><schemaErrorType>` named is the one to give `{handler: VALIDATION}`. Graphitron 10 has no `<recordValidation>` setting, and does not need jOOQ's `<validationAnnotations>`.
 
+[#client-errors]
+== Catching Graphitron's own client errors
+
+Generated code reports a client mistake by throwing `GraphitronClientException`. Examples are a tenant outside the request's tenant set, a node id that decodes to the wrong type, and an out-of-range page size or an invalid cursor. Graphitron generates this class into your output package, at `<outputPackage>.schema.GraphitronClientException`. To deliver these errors as data in a payload, rather than as top-level errors, give an `@error` type a `GENERIC` handler that names it:
+
+[source,graphql]
+----
+type InvalidInput @error(handlers: [{
+    handler: GENERIC,
+    className: "com.example.generated.schema.GraphitronClientException"
+}]) {
+    path: [String!]!
+    message: String!
+}
+----
+
+The build accepts the name before the class has ever been compiled, so a clean checkout works. Extra fields on the type read from `graphql.GraphqlErrorException`, the class it extends. Prefer this over a handler on `graphql.GraphqlErrorException` itself: that also catches every other `GraphqlErrorException` your services throw, and it requires graphql-java as a direct dependency of your module.
+
+Only the name in this execution's own output package is recognised this way. A project with two Graphitron executions that names the other execution's client exception gets the ordinary classpath rule for it.
+
+Coming from Graphitron 9: this is how to keep the in-payload shape Graphitron 9 gave these errors on mutations.
+
 == `description:` overrides `message:`, and nothing else
 
 Set `description:` on a handler entry and the `message:` field of that entry's `@error` type reads the authored string instead of the matched exception's `getMessage()`. Leave it off and `message:` reads the source's own message. Nothing else about the error changes.

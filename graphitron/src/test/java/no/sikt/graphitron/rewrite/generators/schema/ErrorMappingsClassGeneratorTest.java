@@ -13,6 +13,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
@@ -59,7 +60,7 @@ class ErrorMappingsClassGeneratorTest {
     void emits_oneConstant_perChannelKeyedByMappingsConstantName() {
         var filmChannel = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-                List.of(new ExceptionHandler("java.lang.RuntimeException",
+                List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                     Optional.empty(), new ClientMessage.FromSource())))));
         var schema = synthesizeSchema(List.of(filmChannel));
 
@@ -89,7 +90,7 @@ class ErrorMappingsClassGeneratorTest {
         // distinct shapes. The emitter sees already-resolved names and just emits.
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-                List.of(new ExceptionHandler("java.lang.RuntimeException",
+                List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                     Optional.empty(), new ClientMessage.FromSource())))));
         var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
@@ -110,7 +111,7 @@ class ErrorMappingsClassGeneratorTest {
     void distinctPayloadClasses_yieldDistinctConstants() {
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-                List.of(new ExceptionHandler("java.lang.RuntimeException",
+                List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                     Optional.empty(), new ClientMessage.FromSource())))));
         var ch2 = channel("CreateFilmPayload", CREATE_FILM_PAYLOAD_FQN, "CREATE_FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
@@ -127,7 +128,7 @@ class ErrorMappingsClassGeneratorTest {
     void initializer_emitsExceptionMappingForExceptionHandler() {
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-                List.of(new ExceptionHandler("java.lang.IllegalArgumentException",
+                List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalArgumentException"),
                     Optional.of("not found"), new ClientMessage.Static("Film not found"))))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
@@ -221,7 +222,7 @@ class ErrorMappingsClassGeneratorTest {
             new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()),
             new SqlStateHandler("23505", Optional.empty(), new ClientMessage.FromSource())));
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN, List.of(
-            new ExceptionHandler("java.lang.RuntimeException",
+            new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(et1, et2));
         var spec = ErrorMappingsClassGenerator
@@ -241,7 +242,7 @@ class ErrorMappingsClassGeneratorTest {
         var et1 = errorType("FilmFkViolation", FILM_FK_FQN,
             List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())));
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-            List.of(new ExceptionHandler("java.lang.RuntimeException",
+            List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
         var spec = ErrorMappingsClassGenerator.generate(synthesizeSchema(List.of(
             channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(et2, et1)))),
@@ -264,7 +265,7 @@ class ErrorMappingsClassGeneratorTest {
         var mapped = errorType("FilmFkViolation", FILM_FK_FQN,
             List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())));
         var unmapped = errorType("FilmValidation", FILM_VALIDATION_FQN,
-            List.of(new ExceptionHandler("java.lang.IllegalStateException",
+            List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalStateException"),
                 Optional.empty(), new ClientMessage.Static("nope"))));
         var raw = synthesizeSchema(List.of(
             channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(mapped))));
@@ -288,10 +289,10 @@ class ErrorMappingsClassGeneratorTest {
         // exception itself goes into the errors list, so the absence of a Java class on the
         // SDL @error side is no longer a reason to drop a Mapping.
         var withClass = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-            List.of(new ExceptionHandler("java.lang.RuntimeException",
+            List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
         var withoutClass = new ErrorType("Untyped", null,
-            List.of(new ExceptionHandler("java.lang.IllegalStateException",
+            List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalStateException"),
                 Optional.empty(), new ClientMessage.FromSource())), List.of());
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(withClass, withoutClass));

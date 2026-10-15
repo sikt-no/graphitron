@@ -131,7 +131,7 @@ class QueryServiceTableFieldValidationTest {
         private static ErrorChannel.Mapped mappedChannel() {
             var errorType = new GraphitronType.ErrorType("FilmError", null,
                 List.of(new GraphitronType.ErrorType.ExceptionHandler(
-                    "java.lang.RuntimeException", Optional.empty(),
+                    new GraphitronType.ErrorType.ExceptionClass.ClasspathClass("java.lang.RuntimeException"), Optional.empty(),
                     new GraphitronType.ErrorType.ClientMessage.FromSource())),
                 List.of());
             return new ErrorChannel.Mapped(List.of(errorType), "FILM_PAYLOAD");

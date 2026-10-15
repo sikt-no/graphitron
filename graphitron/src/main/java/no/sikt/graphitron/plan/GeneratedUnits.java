@@ -2,6 +2,7 @@ package no.sikt.graphitron.plan;
 
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 
 import java.nio.file.Path;
 
@@ -138,6 +139,15 @@ public final class GeneratedUnits {
     /** {@code <pkg>.schema.ErrorRouter} — the generated throw-disposition runtime. */
     public UnitRef errorRouter() {
         return unit(SUB_SCHEMA, "ErrorRouter");
+    }
+
+    /**
+     * {@code <pkg>.schema.GraphitronClientException}: the client-mistake exception generated code
+     * throws. The run writes the class at this address, and the classifier recognises this same
+     * name as a {@code GENERIC} {@code @error} handler target before the class has ever compiled.
+     */
+    public UnitRef clientException() {
+        return unit(SUB_SCHEMA, GraphitronClientExceptionClassGenerator.CLASS_NAME);
     }
 
     /**

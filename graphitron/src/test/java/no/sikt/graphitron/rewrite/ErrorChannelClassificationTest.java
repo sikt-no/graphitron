@@ -451,6 +451,56 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
+    void extraField_generatedClientException_checkedAgainstSuperclassOnCleanBuild() {
+        // The test codegen loader never carries the generated GraphitronClientException, which
+        // is the clean-build state. The accessor check still runs, against the generated class's
+        // superclass graphql.GraphqlErrorException, which inherits getLocalizedMessage().
+        var schema = build("""
+            type ClientErr @error(handlers: [{handler: GENERIC, className: "fake.code.generated.schema.GraphitronClientException"}]) {
+                path: [String!]!
+                message: String!
+                localizedMessage: String
+            }
+            union SakError = ClientErr
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("ClientErr");
+    }
+
+    @Test
+    void extraField_generatedClientException_missingAccessor_rejectsNamingSuperclass() {
+        var schema = build("""
+            type ClientErr @error(handlers: [{handler: GENERIC, className: "fake.code.generated.schema.GraphitronClientException"}]) {
+                path: [String!]!
+                message: String!
+                bogus: String
+            }
+            union SakError = ClientErr
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("ClientErr")
+            .contains("bogus")
+            .contains("graphql.GraphqlErrorException");
+    }
+
+    @Test
     void extraField_pathAndMessageStaySynthesized_noAccessorCheckOnThem() {
         // path and message are populated by per-@error-type synthesised DataFetchers, not by the
         // source class's accessors. The accessor check exempts them so an @error type with only

@@ -360,6 +360,24 @@ type FilmWriteDbError @error(handlers: [{handler: DATABASE}]) {
 
 union FilmWriteError = FilmWriteDbError
 
+# The same write claiming graphitron's own client errors as data: the GENERIC handler names the
+# client exception this run generates, so the build accepts it before the class has ever compiled.
+# A tenant outside the request's set then lands in the payload rather than as a top-level error.
+type FilmsRetitledClaimedPayload {
+    films: [Film]
+    errors: [FilmWriteClaimedError]
+}
+
+type FilmWriteClientError @error(handlers: [{
+    handler: GENERIC,
+    className: "no.sikt.graphitron.generated.multitenant.schema.GraphitronClientException"
+}]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmWriteClaimedError = FilmWriteDbError | FilmWriteClientError
+
 # The carrier shape on the error channel: the service returns the rated films' records, and the
 # data field re-reads them. An empty batch names no tenant, so it answers an empty list here
 # without calling the service.
@@ -413,6 +431,7 @@ type Mutation {
     deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
     updateFilmByNodeId(in: UpdateFilmByNodeIdInput!): Film @mutation(typeName: UPDATE, table: "film")
     retitleFilmsChecked(in: [UpdateFilmByNodeIdInput!]!): FilmsRetitledPayload @mutation(typeName: UPDATE, table: "film")
+    retitleFilmsClaimed(in: [UpdateFilmByNodeIdInput!]!): FilmsRetitledClaimedPayload @mutation(typeName: UPDATE, table: "film")
     # A bulk write projecting its rows: the re-read runs in a companion below the fetcher's
     # empty-input guard.
     retitleFilms(in: [UpdateFilmByNodeIdInput!]!): [Film!]! @mutation(typeName: UPDATE, table: "film")
