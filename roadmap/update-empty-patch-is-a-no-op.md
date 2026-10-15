@@ -76,16 +76,21 @@ The read issues on the same `DSLContext` the UPDATE would have used (`dsl` on th
 
 On the bulk direct arm the read keeps the VALUES table: `select(K).from(t).join(v).on(W)`, where `W` is the existing `t.k.eq(v.field(t.k))` conjunction and `v` carries only the key columns (no SET column is present in the first row). It returns each matched row once, as the UPDATE's `RETURNING` does; neither form orders by input position, and the reentry companion's `idx` ordering downstream is untouched. The duplicate-lookup-key guard and the Postgres dialect guard stay in front of both branches.
 
-The emitted Java is a branch at the point the statement is built, for example on the single-row projected arm:
+The emitted Java chooses the statement in statement form, per the generated-code readability rule ("statement form over expression tricks": a developer cannot breakpoint a ternary arm). A typed local is assigned in an `if` / `else` and the terminator reads the local, for example on the single-row projected arm:
 
 ```java
-Record1<Integer> keys = dsl.transactionResult(tx -> (sets.isEmpty()
-        ? DSL.using(tx).select(FILM.FILM_ID).from(film).where(FILM.FILM_ID.eq(...))
-        : DSL.using(tx).update(film).set(sets).where(FILM.FILM_ID.eq(...)).returningResult(FILM.FILM_ID))
-    .fetchOne());
+Record1<Integer> keys = dsl.transactionResult(tx -> {
+    ResultQuery<Record1<Integer>> statement;
+    if (sets.isEmpty()) {
+        statement = DSL.using(tx).select(FILM.FILM_ID).from(film).where(FILM.FILM_ID.eq(...));
+    } else {
+        statement = DSL.using(tx).update(film).set(sets).where(FILM.FILM_ID.eq(...)).returningResult(FILM.FILM_ID);
+    }
+    return statement.fetchOne();
+});
 ```
 
-If the conditional's inferred type does not compile cleanly at `release 17`, an explicitly typed `ResultQuery<RecordN<...>>` local inside a block lambda is equivalent; the compilation tier (`graphitron-sakila-example` compiles the emitted sources at 17) decides, and the implementer picks whichever form it accepts.
+The transactional arms become block lambdas to hold the local; the encoded arm, which runs on `dsl` with no transaction, declares the local in the fetcher body. The bulk payload arm already sits in a block lambda and declares it per row.
 
 **The read takes no row lock and fires nothing.** No UPDATE trigger runs for an empty-patch row and no row version is written, which is what Graphitron 9's `store()` did and what sis's "row unchanged" assertion needs: an audit trigger that stamps a modified-at column on every UPDATE would otherwise change a row the client did not touch.
 
@@ -95,7 +100,7 @@ If the conditional's inferred type does not compile cleanly at `release 17`, an 
 
 All in `graphitron/src/main/java/no/sikt/graphitron/rewrite/generators/TypeFetcherGenerator.java` unless named otherwise.
 
-- **One rendering of the branch, shared by the four terminators.** Today the terminators take an opaque `CodeBlock dmlChain` (and `DmlChainAndGuards.chain`) and append `.returningResult(K)` themselves. Widen that seam to a small private statement type that renders the full key-returning query given a receiver expression and `K`, with two shapes: the existing chain-plus-`returningResult` (INSERT, DELETE and the unreachable UPSERT, rendered byte-identically to today) and the UPDATE shape carrying the table local, the optional `v` table and `W`, which renders the conditional above. `emitEncoded`, `emitKeysTransaction`, `buildSingleRecordTwoStepFetcher` and `buildCarrierBulkPerRowUpdateBody` take the statement type; `emitDmlReturnExpression` and `buildDmlFetcher` thread it through. This keeps the empty-patch read in one helper rather than four inline copies, and makes the INSERT / DELETE emit provably unchanged.
+- **One rendering of the branch, shared by the four terminators.** Today the terminators take an opaque `CodeBlock dmlChain` (and `DmlChainAndGuards.chain`) and append `.returningResult(K)` themselves. Widen that seam to a small private sealed statement type that renders the key-returning statement given a receiver expression and `K`, one record per render shape, each holding only what its render needs: the existing chain plus `returningResult` (INSERT, DELETE and the unreachable UPSERT, rendered byte-identically to today); the keyed UPDATE (table local and `W`), whose read is `from(t).where(W)`; and the VALUES-join UPDATE (table local, `v` and `W`), whose read is `from(t).join(v).on(W)`. The two UPDATE records render the `if` / `else` above; the renderer switches on the record, never on whether a `v` is present. `emitEncoded`, `emitKeysTransaction`, `buildSingleRecordTwoStepFetcher` and `buildCarrierBulkPerRowUpdateBody` take the statement type; `emitDmlReturnExpression` and `buildDmlFetcher` thread it through. This keeps the empty-patch read in one helper rather than four inline copies, and makes the INSERT / DELETE emit provably unchanged.
 - **Remove the two UPDATE throws.** The `if (sets.isEmpty()) throw ...` blocks in `buildMutationUpdateFetcher`, `buildBulkUpdateFetcher`, `buildCarrierUpdateChainSingle` and `buildCarrierBulkPerRowUpdateBody` go; the branch replaces them. The UPSERT copies stay.
 - **Prose that names the guard.** `buildBulkUpdateFetcher`'s javadoc lists "No-set-fields-present" as one of three guards; `buildDmlFetcher`'s javadoc says `postInGuard` runs "the no-set-fields-present runtime check"; `buildCarrierUpdateChainSingle`'s javadoc lists "a runtime empty-SET guard". Rewrite each to describe the empty-patch read. `emitSetVFieldPuts`'s javadoc warns that removing the self-FK cross-partition put "reintroduces the empty-SET throw on the minimal self-FK shape"; after this item the same removal would turn a valid self-FK update into a silent no-op read, which is worse, so that warning is rewritten to say so rather than deleted.
 - **Fixture comment.** The `FilmUpdateNestedInput.details` comment in `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls` says an absent or null group makes "the runtime empty-SET guard" fire; it now makes the row an empty patch. Same for the bulk-fixture comment that lists "no-set-fields" among the VALUES-join guards.
@@ -112,14 +117,14 @@ It reads simply, and states the rule from the client's side; no new directive or
 
 ## Tests
 
-The acceptance evidence is the execution tier, one case per arm, each asserting the response *and* the statements issued (a SQL-capturing `ExecuteListener`, the idiom `DmlSqlBaselineTest` already uses): for an empty-patch row exactly one SELECT on the write target and no UPDATE, and the row's columns unchanged in the database.
+The acceptance evidence is the execution tier, one case per arm, each asserting the response *and* the statements issued (a SQL-capturing `ExecuteListener`, the idiom `DmlSqlBaselineTest` already uses): for an empty-patch row no UPDATE, the key read as the only statement inside the write transaction, and the row's columns unchanged in the database. (The projected and payload arms then run their usual follow-up re-select of the payload outside the transaction; that statement is the same as for a non-empty patch and is not what the case pins.)
 
 New execution-tier class `EmptyPatchUpdateExecutionTest` in `graphitron-sakila-example/src/test/java/no/sikt/graphitron/rewrite/test/querydb/`, driving the fixtures whose set-side fields are all optional (`FilmUpdateNestedInput`, nullable `details`):
 
-- `updateFilmNested(in: {filmId})`: direct projected, single. Film echoed with its current `title`, no errors, SELECT only.
-- `updateFilmsNested(in: [{filmId: a}, {filmId: b}])`: direct projected, list (the VALUES arm). Both films returned, SELECT joined to the VALUES table, no UPDATE.
+- `updateFilmNested(in: {filmId})`: direct projected, single. Film echoed with its current `title`, no errors, no UPDATE.
+- `updateFilmsNested(in: [{filmId: a}, {filmId: b}])`: direct projected, list (the VALUES arm). Both films returned; the key read joins the VALUES table; no UPDATE.
 - `updateFilmNestedPayload(in: {filmId})`: payload carrier, single. `film` echoed.
-- `updateFilmsNestedPayload(in: [{filmId: a}, {filmId: b, details: {title: "X"}}, {filmId: c}])`: payload carrier, list, mixed. Order a, b, c preserved; only b written; statements are SELECT, UPDATE, SELECT in row order inside one transaction.
+- `updateFilmsNestedPayload(in: [{filmId: a}, {filmId: b, details: {title: "X"}}, {filmId: c}])`: payload carrier, list, mixed. Order a, b, c preserved; only b written; inside the one write transaction the statements are key read, UPDATE, key read, in row order.
 - Missing-key parity, one per no-match shape: `updateFilmNested(in: {filmId: <absent>})` resolves `null` with no errors, matching the same call with `details: {title: "X"}`; `updateFilmsNestedPayload` with one absent key returns the same error response as the non-empty patch on that key, and the batch's other rows are rolled back in both.
 
 In `TenantDivinedRoutingExecutionTest`, beside the existing `updateFilmByNodeId` / `retitleFilmsChecked` cases (`UpdateFilmByNodeIdInput.title` is optional): an empty patch on a film owned by one tenant routes to that tenant's database and echoes it; and `updateFilmActorNoteByNodeId(in: {id})` covers the encoded `ID` single arm under routing. `updateFilmSceneParents(in: [{id}])` covers the encoded `ID` list arm; it can live in either class.
@@ -128,7 +133,7 @@ Flipped or removed:
 
 - `NestedInputDmlExecutionTest.updateNested_absentOuterGroup_skipsWholeGroup_emptySetGuardFires` and `..._nullOuterGroup_...`: renamed and inverted to assert no errors, the film echoed, and `description` unchanged (their database assertion already holds).
 - `GraphQLQueryTest.updateFilm_onlyLookupKeyFields_raisesError` and `DmlBulkMutationsExecutionTest.updateFilms_onlyLookupKeyFields_raisesError`: deleted. They test GraphQL validation of `title: String!`, not graphitron, and the new class covers what their names claim. The two `@Disabled` UPSERT siblings stay with the UPSERT emitters.
-- `FetcherPipelineTest`: the two "no-set-fields-present runtime check" assertion groups (the single-row `updateFilm` and the bulk `updateFilms` cases) flip to assert the empty-patch branch (`sets.isEmpty() ?` with a `.select(` of the key columns) and the absence of the old message.
+- `FetcherPipelineTest`: the two "no-set-fields-present runtime check" assertion groups (the single-row `updateFilm` and the bulk `updateFilms` cases) are deleted, not flipped. They are code-string matches on generated bodies, which `docs/architecture/how-to/testing.adoc` bans at every tier; writing new ones would also pin the emitted form. The execution-tier cases above pin the behaviour, and `graphitron-sakila-example`'s release-17 compile pins that the emitted form compiles.
 
 Regression guard: every existing `DmlSqlBaselineTest` pin passes unedited, which shows non-empty UPDATE, INSERT and DELETE render the same SQL as before.
 
