@@ -1,7 +1,7 @@
 ---
 id: R1046
 title: "An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: error-channel
