@@ -1,7 +1,7 @@
 ---
 id: R1039
 title: "An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: mutation-write
