@@ -210,14 +210,15 @@ class DevQueryExecutorTest {
     }
 
     @Test
-    void missingExecutorClass_failsWithAPointerAtCompileDiagnosticsAndTheFederationGap() {
+    void missingExecutorClass_failsNamingAFailedRegenerationAndPointingAtDiagnostics() {
         var wrongPackage = new DevQueryExecutor.Wiring("com.absent", classesDir, List.of(libDir));
         assertThatThrownBy(() ->
             DevQueryExecutor.execute(wrongPackage, db("c"), "{ ping }", null, null))
             .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
             .hasMessageContaining("com.absent.GraphitronDevExecutor")
+            .hasMessageContaining("regenerat")
             .hasMessageContaining("diagnostics")
-            .hasMessageContaining("federation");
+            .hasMessageNotContaining("federation");
     }
 
     @Test

@@ -39,10 +39,9 @@ import java.util.Objects;
  * the same acquisition/hook/transaction path a real application does, and exploration can never
  * persist a write.
  *
- * <p>Emission is gated to non-federation schemas: a federation subgraph builds through the
- * two-arg {@code buildSchema(schemaCustomizer, federationCustomizer)} and needs an entity
- * fetcher this executor does not supply. The compile-dependency graph models the unit
- * unconditionally, which is superset-safe: the render skips units never emitted.
+ * <p>A federation subgraph gets one too: the facade's one-arg {@code buildSchema} builds the
+ * federation-wrapped schema with the default entity fetcher, so the executor runs
+ * {@code _entities} and {@code _service} the way the subgraph serves them.
  */
 public final class GraphitronDevExecutorGenerator {
 
@@ -55,10 +54,7 @@ public final class GraphitronDevExecutorGenerator {
     private GraphitronDevExecutorGenerator() {}
 
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
-            SessionHooks sessionHooks, boolean federationLink) {
-        if (federationLink) {
-            return List.of();
-        }
+            SessionHooks sessionHooks) {
         String schemaPackage = outputPackage + ".schema";
         var facade = ClassName.get(outputPackage, GraphitronFacadeGenerator.CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);

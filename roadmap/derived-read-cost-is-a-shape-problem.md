@@ -2057,12 +2057,15 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   line, and the persisted store keeps it across a restart while `status` says `Current`. The rows
   are of a reading, so a reading that did not happen either sweeps them or states them stale, and
   the status reads that state.
-* **The dev executor runs on a federated schema** `open`. `execute` is off for every federated
-  subgraph: `EmitPlan` emits `DEV_EXECUTOR` only without a federation link, and
-  `GraphitronDevExecutorGenerator.generate` returns early, both for want of an entity fetcher the
+* **The dev executor runs on a federated schema** `done`. `execute` was off for every federated
+  subgraph: `EmitPlan` emitted `DEV_EXECUTOR` only without a federation link, and
+  `GraphitronDevExecutorGenerator.generate` returned early, both for want of an entity fetcher the
   schema class has since wired (`resolveEntityType` and `fetchEntities` inside
-  `Federation.transform`). The gate goes, and the tool's refusal names its real cause, a gate or a
-  failed regenerate, where it says "check compilation succeeded".
+  `Federation.transform`). Both gates are gone; the facade's one-arg `buildSchema` already builds
+  the federation-wrapped schema, so the executor needed no other change. Every schema now gets an
+  executor, so the tool's refusal for a missing one names its one cause, a regeneration or compile
+  that has not succeeded, and points at the diagnostics tool. `DevExecuteExecutionTest` resolves a
+  `Customer` through the federated fixture's executor's `_entities`.
 * **The session's hovers and hints, as found** `open`, evidence for the nodes above, measured
   2026-10-15 in a live session: a field hover takes about 2.8 s where directive, key and
   declaration hovers take about 0.05 s; a hover on a type name written as a field's type answers

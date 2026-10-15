@@ -136,10 +136,10 @@ public final class DevQueryExecutor {
                 Connection.class, String.class, String.class, Map.class, String.class, Map.class);
         } catch (ClassNotFoundException e) {
             throw new DevExecutionException(
-                "The generated " + wiring.executorClassName() + " is not on the dev classpath. "
-                    + "It is compiled by the dev loop's incremental compiler; check that compilation "
-                    + "succeeded (the diagnostics tool shows compile errors) and that the schema is "
-                    + "not a federation subgraph (federation execution is not supported yet).", e);
+                "The generated " + wiring.executorClassName() + " is not on the dev classpath: "
+                    + "every schema gets one, so the dev loop has not yet regenerated and compiled "
+                    + "this schema successfully. The diagnostics tool shows why the last "
+                    + "regeneration or its compile failed.", e);
         } catch (NoSuchMethodException e) {
             throw new DevExecutionException(
                 "The generated " + wiring.executorClassName() + " does not expose the expected "

@@ -20,8 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Unit-tier tests for {@link GraphitronDevExecutorGenerator}: the JDK-only {@code execute}
- * signature (the reflection boundary the dev-loop host pins), the federation emission gate, the
- * contextArgs-helper emission rule, and the nested single-connection {@code DataSource} shape.
+ * signature (the reflection boundary the dev-loop host pins), the contextArgs-helper emission
+ * rule, and the nested single-connection {@code DataSource} shape.
  * Structural {@code MethodSpec}/{@code TypeSpec} assertions only; code-string assertions on
  * generated method bodies are banned at every tier (development-principles.adoc,
  * review-enforced), so body behaviour is pinned where it runs instead:
@@ -63,7 +63,7 @@ class GraphitronDevExecutorGeneratorTest {
     }
 
     private static TypeSpec generate(GraphitronSchema schema, SessionHooks sessionHooks) {
-        return GraphitronDevExecutorGenerator.generate(schema, "com.example", sessionHooks, false).get(0);
+        return GraphitronDevExecutorGenerator.generate(schema, "com.example", sessionHooks).get(0);
     }
 
     private static MethodSpec executeMethod(TypeSpec spec) {
@@ -76,19 +76,10 @@ class GraphitronDevExecutorGeneratorTest {
     @Test
     void generate_returnsExactlyOneClassNamedGraphitronDevExecutor() {
         var result = GraphitronDevExecutorGenerator.generate(
-            emptySchema(), "com.example", SessionHooks.NotConfigured.INSTANCE, false);
+            emptySchema(), "com.example", SessionHooks.NotConfigured.INSTANCE);
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("GraphitronDevExecutor");
         assertThat(result.get(0).modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
-    }
-
-    @Test
-    void federationSchema_emitsNothing() {
-        // A federation subgraph builds through the two-arg buildSchema and needs an entity
-        // fetcher, neither of which this executor provides, so federation schemas emit nothing.
-        var result = GraphitronDevExecutorGenerator.generate(
-            emptySchema(), "com.example", SessionHooks.NotConfigured.INSTANCE, true);
-        assertThat(result).isEmpty();
     }
 
     @Test

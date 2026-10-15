@@ -35,18 +35,15 @@ class EmitPlanTest {
     private static final EnumSet<GlobalUnitKind> UNCONDITIONAL = EnumSet.complementOf(EnumSet.of(
         GlobalUnitKind.ONE_OF_DIRECTIVE_SDL,
         GlobalUnitKind.ENTITY_FETCHER_DISPATCH,
-        GlobalUnitKind.QUERY_NODE_FETCHER,
-        GlobalUnitKind.DEV_EXECUTOR));
+        GlobalUnitKind.QUERY_NODE_FETCHER));
 
     @Test
-    void plainSchema_producesTheUnconditionalKindsPlusDevExecutor() {
+    void plainSchema_producesTheUnconditionalKinds() {
         var plan = producePlain();
 
-        var expected = EnumSet.copyOf(UNCONDITIONAL);
-        expected.add(GlobalUnitKind.DEV_EXECUTOR);
         assertThat(kinds(plan))
             .as("every unconditional kind exactly once; the gated kinds' excluded shapes appear zero times")
-            .isEqualTo(expected);
+            .isEqualTo(UNCONDITIONAL);
     }
 
     @Test
@@ -97,10 +94,10 @@ class EmitPlanTest {
     }
 
     @Test
-    void devExecutorRow_isAbsentUnderFederation() {
+    void devExecutorRow_isPresentUnderFederation() {
         var model = TestSchemaHelper.buildBundle(PLAIN_SDL).model();
         var federated = EmitPlan.produceWithoutStore(model, true, false, DEFAULT_OUTPUT_PACKAGE);
-        assertThat(kinds(federated)).doesNotContain(GlobalUnitKind.DEV_EXECUTOR);
+        assertThat(kinds(federated)).contains(GlobalUnitKind.DEV_EXECUTOR);
     }
 
     @Test
@@ -124,7 +121,7 @@ class EmitPlanTest {
      * The dispatch row is the sealed relation's one data-carrying arm: its schema-dependent
      * outbound refs (the per-type projection classes the emitted dispatch references) ride the
      * row, node types included through the {@code @node}-to-{@code @key} synthesis. A plain
-     * schema gets no row at all (pinned by {@link #plainSchema_producesTheUnconditionalKindsPlusDevExecutor}),
+     * schema gets no row at all (pinned by {@link #plainSchema_producesTheUnconditionalKinds}),
      * so the arm's non-empty guard never meets a live empty set.
      */
     @Test

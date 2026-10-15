@@ -46,7 +46,7 @@ class GraphitronDevExecutorGeneratorPipelineTest {
             """;
         var schema = TestSchemaHelper.buildSchema(sdl);
         var result = GraphitronDevExecutorGenerator.generate(
-            schema, "com.example", SessionHooks.NotConfigured.INSTANCE, false);
+            schema, "com.example", SessionHooks.NotConfigured.INSTANCE);
         assertThat(result).hasSize(1);
 
         MethodSpec execute = result.get(0).methodSpecs().stream()

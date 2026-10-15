@@ -111,6 +111,25 @@ class DevExecuteExecutionTest {
     }
 
     @Test
+    void federatedSubgraph_resolvesAnEntityThroughTheExecutor() throws Exception {
+        // The federated fixture's own executor: _entities only exists on the federation-wrapped
+        // schema, so a hydrated row proves the executor builds through the entity fetcher.
+        String query = "query($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Customer { firstName } } }";
+        var reps = java.util.List.of(Map.of(
+            "__typename", "Customer",
+            "id", no.sikt.graphitron.generated.federated.util.NodeIdEncoder.encode("Customer", 1)));
+
+        String result;
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+            result = no.sikt.graphitron.generated.federated.GraphitronDevExecutor.execute(
+                connection, "POSTGRES", query, Map.of("reps", reps), CLAIMS, Map.of());
+        }
+        assertThat(result).contains("\"__typename\":\"Customer\"", "\"firstName\"")
+            .doesNotContain("\"errors\"");
+    }
+
+    @Test
     void variables_bindThroughTheExecutor() throws Exception {
         String query = "query($ids: [ID]) { filmById(film_id: $ids) { filmId title } }";
         String result;

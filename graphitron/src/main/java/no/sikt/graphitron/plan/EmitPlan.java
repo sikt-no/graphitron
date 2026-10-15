@@ -158,9 +158,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             globals.add(one(GlobalUnitKind.QUERY_NODE_FETCHER, units.queryNodeFetcher()));
         }
         globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));
-        if (!federationLink) {
-            globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
-        }
+        globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         var conditions = ConditionCommands.produce(schema, outputPackage);
         var routineWrites = RoutineWriteCommands.produce(store, schema, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);

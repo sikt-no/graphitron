@@ -621,7 +621,7 @@ public class GraphQLRewriteGenerator {
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink);
-            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, schema.sessionHooks(), federationLink);
+            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, schema.sessionHooks());
         };
     }
 

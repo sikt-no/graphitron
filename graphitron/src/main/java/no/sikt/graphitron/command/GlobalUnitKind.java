@@ -5,8 +5,8 @@ package no.sikt.graphitron.command;
  * that commits a fixed-name unit set per run (the {@code GeneratedUnits} {@code singleton} /
  * {@code rootUnit} naming schemes) rather than one unit per schema type. Each kind appears at
  * most once in a produced plan; most appear exactly once, and the gated kinds
- * ({@link #ONE_OF_DIRECTIVE_SDL}, {@link #ENTITY_FETCHER_DISPATCH}, {@link #QUERY_NODE_FETCHER},
- * {@link #DEV_EXECUTOR}) are absent when their producer-side membership predicate excludes them.
+ * ({@link #ONE_OF_DIRECTIVE_SDL}, {@link #ENTITY_FETCHER_DISPATCH}, {@link #QUERY_NODE_FETCHER})
+ * are absent when their producer-side membership predicate excludes them.
  *
  * <p>A pure key: where a unit of the kind lands is carried by the command's {@link UnitRef}s,
  * not here. The per-type-emitting families (types, conditions, fetchers, inputs, per-type schema
@@ -41,6 +41,5 @@ public enum GlobalUnitKind {
     /** Present exactly when the schema classifies at least one node type. */
     QUERY_NODE_FETCHER,
     FACADE,
-    /** Present exactly when the schema is not federated. */
     DEV_EXECUTOR
 }
