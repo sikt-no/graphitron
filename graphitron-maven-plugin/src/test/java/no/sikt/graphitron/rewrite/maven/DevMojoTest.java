@@ -355,8 +355,7 @@ class DevMojoTest {
             var log = new CapturingLog();
             mojo.setLog(log);
             mojo.sessionStore = store;
-            mojo.rejectionFacts = FactWriters.rejectionFacts(store.dsl(), "DevMojoTest", basedir);
-            mojo.warningFacts = FactWriters.buildWarningFacts(store.dsl(), "DevMojoTest", basedir);
+            mojo.reportFacts = FactWriters.reportFacts(store.dsl(), "DevMojoTest", basedir);
 
             var workspace = new Workspace();
             workspace.didOpen(uri, 1, Files.readString(schema));
@@ -380,6 +379,48 @@ class DevMojoTest {
     }
 
     /**
+     * A round that fails before it can report withholds the last round's findings rather than
+     * leaving them on lines the edit has moved, and its progress row says the report is withheld.
+     */
+    @Test
+    void regeneratePass_aFailedRoundWithholdsTheLastReport(@TempDir Path basedir) throws Exception {
+        Path schema = basedir.resolve("schema.graphqls");
+        Files.writeString(schema, """
+            type Film @table(name: "film") {
+              languageName: String @reference(path: [{key: "no_such_fk"}])
+              original_language_id: Int
+            }
+            type Query { film: Film }
+            """);
+
+        try (var store = FactStores.inMemory()) {
+            var mojo = new DevMojo();
+            mojo.setLog(new CapturingLog());
+            mojo.sessionStore = store;
+            mojo.reportFacts = FactWriters.reportFacts(store.dsl(), "DevMojoTest", basedir);
+            var workspace = new Workspace();
+
+            mojo.regeneratePass(jooqContextFor(basedir, schema), workspace);
+            assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.LINT_FINDING))
+                .as("the first round reports").isPositive();
+
+            Files.writeString(schema, "type Film { title: String\n");
+            mojo.regeneratePass(jooqContextFor(basedir, schema), workspace);
+
+            assertThat(store.dsl().fetchCount(no.sikt.graphitron.model.Tables.LINT_FINDING)
+                    + store.dsl().fetchCount(no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR))
+                .as("the last round's findings are not left on the edited file's lines")
+                .isZero();
+            var p = no.sikt.graphitron.model.Tables.STORE_GRAPH_PROGRESS;
+            var row = store.dsl().selectFrom(p).where(p.GATHERER_NAME.eq("report")).fetchOne();
+            assertThat(row).isNotNull();
+            assertThat(row.getLastCompleted())
+                .as("started after it last completed, which is how a reader tells withheld from clean")
+                .isBefore(row.getLastStarted());
+        }
+    }
+
+    /**
      * The half of this item a developer actually sees. A round used to announce that it happened
      * and nothing else, which is enough while the guess about why is right and useless exactly when
      * it is wrong: an editor writing a stray file, or another terminal's build, produces a round
@@ -398,8 +439,7 @@ class DevMojoTest {
             var log = new CapturingLog();
             mojo.setLog(log);
             mojo.sessionStore = store;
-            mojo.rejectionFacts = FactWriters.rejectionFacts(store.dsl(), "DevMojoTest", basedir);
-            mojo.warningFacts = FactWriters.buildWarningFacts(store.dsl(), "DevMojoTest", basedir);
+            mojo.reportFacts = FactWriters.reportFacts(store.dsl(), "DevMojoTest", basedir);
             mojo.recentChanges = new RecentChanges(basedir);
             mojo.recentChanges.record("sdl", schema);
 

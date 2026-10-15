@@ -1,11 +1,13 @@
 package no.sikt.graphitron.mcp;
 
+import no.sikt.graphitron.model.diagnostics.ReportFacts;
 import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_PROGRESS;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.selectOne;
@@ -49,8 +51,9 @@ import static org.jooq.impl.DSL.selectOne;
  *
  * @param captured whether the store holds this graph's anchor
  * @param refused whether the newest read of this graph's schema refused a source or a document
+ * @param withheld whether the last dev round failed before it could report, its findings swept
  */
-record SchemaLifecycle(boolean captured, boolean refused) {
+record SchemaLifecycle(boolean captured, boolean refused, boolean withheld) {
 
     /**
      * Reads both axes for the handle's graph in one statement.
@@ -68,9 +71,25 @@ record SchemaLifecycle(boolean captured, boolean refused) {
                     .where(STORE_GRAPH.GRAPH_NAME.eq(store.graphName())))),
                 field(exists(selectOne()
                     .from(GRAPHQL_SCHEMA_PROBLEM)
-                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(store.graphName())))))
+                    .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq(store.graphName())))),
+                // The last round started reporting and did not complete, so its report is withheld.
+                field(exists(selectOne()
+                    .from(STORE_GRAPH_PROGRESS)
+                    .where(STORE_GRAPH_PROGRESS.GRAPH_NAME.eq(store.graphName()))
+                    .and(STORE_GRAPH_PROGRESS.GATHERER_NAME.eq(ReportFacts.GATHERER))
+                    .and(STORE_GRAPH_PROGRESS.LAST_COMPLETED.isNull()
+                        .or(STORE_GRAPH_PROGRESS.LAST_COMPLETED.lt(STORE_GRAPH_PROGRESS.LAST_STARTED))))))
             .fetchSingle();
-        return new SchemaLifecycle(row.value1(), row.value2());
+        return new SchemaLifecycle(row.value1(), row.value2(), row.value3());
+    }
+
+    /**
+     * Whether the last round's report stands, as the wire spells it: {@code Withheld} where a round
+     * failed before it could report and its findings were swept rather than left on lines the edit
+     * moved, {@code Current} otherwise.
+     */
+    String report() {
+        return withheld ? "Withheld" : "Current";
     }
 
     /** The availability axis as the wire spells it. */

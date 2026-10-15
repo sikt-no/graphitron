@@ -2051,12 +2051,12 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   tell the two apart, so the two silent gates say so once per document where the budget already
   warns.
 
-* **A failed round's report rows say they are stale** `open`, a regression. Reported 2026-10-15.
-  `DevMojo.writeReportFacts` keeps the last successful round's lint findings and diagnostics when a
-  round fails, but they carry that file version's line numbers, so a warning lands on an unrelated
-  line, and the persisted store keeps it across a restart while `status` says `Current`. The rows
-  are of a reading, so a reading that did not happen either sweeps them or states them stale, and
-  the status reads that state.
+* **A failed round's report rows say they are stale** `done`, a regression reported 2026-10-15.
+  A dev round's report, the walk's rejections, lint findings and advisories, is written through
+  `ReportFacts`, which records the round in `store_graph_progress` as the `report` gatherer. A round
+  that fails before it can report withholds it: the rows are swept rather than left on lines the
+  edit has moved, and its progress row is started and not completed, which persists across a restart.
+  `status` reads that row and says `report` is `Withheld`, with why, where it said `Current`.
 * **The dev executor runs on a federated schema** `done`. `execute` was off for every federated
   subgraph: `EmitPlan` emitted `DEV_EXECUTOR` only without a federation link, and
   `GraphitronDevExecutorGenerator.generate` returned early, both for want of an entity fetcher the

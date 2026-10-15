@@ -53,6 +53,13 @@ public final class FactWriters {
         return new RejectionFacts(dsl, identity(graphName, baseDir));
     }
 
+    /** A round's report writer for one graph, both families and their progress row. */
+    public static no.sikt.graphitron.model.diagnostics.ReportFacts reportFacts(DSLContext dsl,
+                                                                               String graphName,
+                                                                               Path baseDir) {
+        return new no.sikt.graphitron.model.diagnostics.ReportFacts(dsl, identity(graphName, baseDir));
+    }
+
     /** The warning family's writer for one graph, taking the list a build already suppressed. */
     public static BuildWarningFacts buildWarningFacts(DSLContext dsl, String graphName, Path baseDir) {
         return new BuildWarningFacts(dsl, identity(graphName, baseDir));

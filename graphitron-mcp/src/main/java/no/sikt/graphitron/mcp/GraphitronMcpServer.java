@@ -372,7 +372,9 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "captured facts on two axes: availability (Built once anything has captured the "
                 + "graph, Unavailable before) and, when built, freshness (Current when the newest "
                 + "read of the schema refused nothing, Previous when it refused and the tools are "
-                + "answering from the last clean facts). Also lists, as staleModules, the workspace "
+                + "answering from the last clean facts). report is Current, or Withheld when the "
+                + "last round failed before it could report and its diagnostics were withheld rather "
+                + "than shown on lines the edit moved. Also lists, as staleModules, the workspace "
                 + "modules the run read stale: a module whose sources changed since it compiled, or "
                 + "one read from its installed copy for want of output, whose names then read as not "
                 + "found. Takes no arguments.")
@@ -408,6 +410,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         var lifecycle = SchemaLifecycle.read(storeHandle);
         fields.put("availability", lifecycle.availability());
         lifecycle.freshness().ifPresent(freshness -> fields.put("freshness", freshness));
+        fields.put("report", lifecycle.report());
         String gloss;
         if (!lifecycle.captured()) {
             gloss = " (nothing has captured this graph yet).";
@@ -416,6 +419,10 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "parseable sources yielded are what the tools answer from).";
         } else {
             gloss = ".";
+        }
+        if (lifecycle.withheld()) {
+            gloss += " The last round failed before it could report, so its diagnostics are withheld"
+                + " rather than shown on lines the edit has moved.";
         }
         var stale = staleModules(storeHandle);
         fields.put("staleModules", stale);

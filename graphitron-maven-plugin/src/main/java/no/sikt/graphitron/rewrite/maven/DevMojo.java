@@ -14,14 +14,13 @@ import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.boot.UserCacheRoot;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.diagnostics.ReportFacts;
 import no.sikt.graphitron.model.diagnostics.StaleModules;
 import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
 import no.sikt.graphitron.model.capture.compile.CompileFacts;
 import no.sikt.graphitron.rewrite.compile.CompileOutcome;
-import no.sikt.graphitron.model.diagnostics.BuildWarningFacts;
-import no.sikt.graphitron.model.diagnostics.RejectionFacts;
 import no.sikt.graphitron.rewrite.compile.IncrementalCompiler;
 import no.sikt.graphitron.rewrite.maven.dev.DevServer;
 import no.sikt.graphitron.mcp.DevQueryExecutor;
@@ -393,8 +392,7 @@ public class DevMojo extends AbstractRewriteMojo {
     // compileFacts and fed the pre-fuse lists wherever the build output is published: the
     // rejection residue off the walk's error stream, the warning arms off the
     // suppression-filtered list.
-    RejectionFacts rejectionFacts;
-    BuildWarningFacts warningFacts;
+    ReportFacts reportFacts;
     // The last successful generation (result + compile graph), captured by runGeneratorPass. The
     // consumer-.class-change path recompiles the whole cached tree off this; the schema-save path
     // recompiles the delta against its graph. Volatile: written by the schema-watcher thread and read
@@ -483,9 +481,7 @@ public class DevMojo extends AbstractRewriteMojo {
         this.storeConsoleHandle = startStoreConsole();
         this.compileFacts = new CompileFacts(sessionStore.dsl(),
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
-        this.rejectionFacts = new RejectionFacts(sessionStore.dsl(),
-            new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
-        this.warningFacts = new BuildWarningFacts(sessionStore.dsl(),
+        this.reportFacts = new ReportFacts(sessionStore.dsl(),
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         // What the session watches. Constructed once the store is open, because registering a
         // corpus reads the roster to refuse one no crawler declares, and before the save listener
@@ -538,6 +534,8 @@ public class DevMojo extends AbstractRewriteMojo {
             // enqueue: a recalculation replays what this round wrote about each open file.
             writeReportFacts(initial.walkErrors(), initial.warnings());
             workspace.markAllForRecalculation();
+        } else {
+            reportFacts.withhold();
         }
         // Build the debounce and save-listener before bindServer so DevServer
         // can hand the listener to each editor-facing GraphitronLanguageServer.
@@ -1066,10 +1064,12 @@ public class DevMojo extends AbstractRewriteMojo {
         }
         // The round's own diagnostics, from the pass that produced them, whether or not it emitted:
         // a validation-rejected round has a report and publishes it. A read that refused has none,
-        // having written its own verdict to the store on the way through, so the stratum keeps the
-        // last good round's rows and the recalculation below replays that verdict either way.
+        // having written its own verdict to the store on the way through, and the last round's
+        // report is withheld rather than left on lines this version has moved.
         if (round.output() != null) {
             writeReportFacts(round.output().walkErrors(), round.output().warnings());
+        } else {
+            reportFacts.withhold();
         }
         workspace.markAllForRecalculation();
     }
@@ -1096,6 +1096,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     // Bad schema mid-edit: republish diagnostics, the refused read having written
                     // its own verdict. The next save will re-trigger.
                     getLog().warn("graphitron:dev: classpath round failed: " + e.getMessage());
+                    reportFacts.withhold();
                     workspace.markAllForRecalculation();
                 }
             });
@@ -1156,14 +1157,13 @@ public class DevMojo extends AbstractRewriteMojo {
      * Publishes one build's schema-side diagnostics into the fact store beside the workspace
      * publication: the walk's error stream to the rejection residue, the suppression-filtered
      * warning list to the lint and advisory arms. Same handle and cadence as
-     * {@link CompileFacts}; called only where the build produced output, never on a failure
-     * path, so a broken build keeps the previous snapshot's rows instead of writing an empty
-     * partition that would read as a clean schema.
+     * {@link CompileFacts}; called only where the build produced output. A failure path
+     * withholds instead, which {@link ReportFacts} records so a reader tells it from a clean
+     * schema.
      */
     private void writeReportFacts(List<no.sikt.graphitron.model.diagnostics.ValidationError> walkErrors,
                                   List<no.sikt.graphitron.model.diagnostics.BuildWarning> warnings) {
-        rejectionFacts.write(walkErrors);
-        warningFacts.write(warnings);
+        reportFacts.write(walkErrors, warnings);
     }
 
     /**

@@ -13740,6 +13740,9 @@ INSERT INTO meta_gatherer VALUES
   ('store', 'no.sikt.graphitron.model.capture.store.StoreEntries'),
   ('java-source', 'no.sikt.graphitron.model.capture.java.JavaSourceFacts'),
   ('compile', 'no.sikt.graphitron.model.capture.compile.CompileFacts'),
+  -- A dev round's report, the walk's rejections, lint findings and advisories: a round that fails
+  -- before reporting withholds them, and its progress row says so.
+  ('report', 'no.sikt.graphitron.model.diagnostics.ReportFacts'),
   ('derivation', 'no.sikt.graphitron.model.derive.DerivationStratum'),
   -- The capture itself, which runs the gatherers above in order and records how far it got.
   ('capture', 'no.sikt.graphitron.model.run.ModelCapture');

@@ -351,6 +351,28 @@ class GraphitronMcpServerTest {
     }
 
     /**
+     * A round that failed before it could report leaves the report withheld, which the status says
+     * so a developer reading no squiggles knows the schema is not clean, only unreported.
+     */
+    @Test
+    void statusToolSaysAWithheldReport(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
+            var dsl = fixture.handle().dsl();
+            var graph = new no.sikt.graphitron.model.run.GraphIdentity(fixture.handle().graphName(), tmp);
+            var report = new no.sikt.graphitron.model.diagnostics.ReportFacts(dsl, graph);
+
+            report.write(List.of(), List.of());
+            assertThat(structured(GraphitronMcpServer.statusResult(fixture.handle())))
+                .containsEntry("report", "Current");
+
+            report.withhold();
+            var result = GraphitronMcpServer.statusResult(fixture.handle());
+            assertThat(structured(result)).containsEntry("report", "Withheld");
+            assertThat(firstLine(result)).contains("diagnostics are withheld");
+        }
+    }
+
+    /**
      * The handle-less arm, which every other store-backed surface answers with a refusal and this one
      * does not: the call itself settles liveness, so {@code toolsReady} stands and the axes are
      * omitted with the reason named. Reporting {@code Unavailable} would state a fact about a store
