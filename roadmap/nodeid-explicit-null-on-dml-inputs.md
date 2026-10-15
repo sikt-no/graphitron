@@ -106,6 +106,16 @@ And the `@service` jOOQ-record paragraph gains one sentence after "an explicit `
 - **A carrier-grain null rule for INSERT, stated by a walker the way `CarrierNullRule` is for UPDATE.** There is no third answer on INSERT to state, so the fact would be a copy of the field's SDL nullability that the leaf already carries.
 - **Fix the UPDATE shared-SET agreement here too.** One rule across rails is the end state, but it reverses R880's reviewed `nullAgrees` decision and is entangled with sis's "ignore on UPDATE" expectation, so R1042 owns it.
 
+## Implementation notes
+
+Landed as the plan describes, with these points for the reviewer:
+
+- **`SetField.nonNull()`.** The plan reads leaf nullability "off the leaf carrier's `nonNull()`". A two-arm `switch` over `ColumnBackedField` / `ColumnBackedReferenceField` to reach it raised `CommandSeamRatchetTest`'s generator case-pattern pin, which only moves down. Instead, `InputField.SetField` now declares `boolean nonNull()`, which both permitted records already implement through their component, and `TypeFetcherGenerator.insertLeafNonNull` reads it through a `SetField` downcast. Only a `SetField` leaf carries an INSERT decode local, so the cast cannot miss. Neither ratchet pin moves.
+- **Byte-identical check.** I diffed `graphitron-sakila-example`'s generated sources with the pre-change emitters against the final ones, over the final schema. Only `MutationFetchers.java` differs, and every hunk is a nullable (`ID`) leaf's decode local or cell (`filmRef`, `inReplyTo`), a shared INSERT cell's empty-list arm, or a record helper's agreement guard and load guard. `ID!` leaves on the INSERT path and every bulk UPDATE SET decode local are unchanged.
+- **The rule also reaches `agreeStorageBin`.** `StorageBinAgreeInput.binId` is a nullable same-table `@nodeId` that shares `bin_id` with the plain `binIdText`. Under the new rule an explicit `null` `binId` beside a `binIdText` value takes the plain value instead of conflicting. Its existing three cases are unaffected, and no case pins the new combination; the `insertEndorsementOverlap` case pins the same shape on INSERT.
+- **Refusal assertions.** A wrong-type id and an agreement conflict currently reach the client redacted (R1036). So `wrongTypeInReplyTo_stillThrowsAndInsertsNothing`, `serviceRecord_disagreeingSelfFkReference_stillThrows` and `mutationInsert_explicitNullPlainBesideReferenceValue_stillConflicts` assert a non-empty error list and the absent row or value, as the sibling cases do, rather than the message text.
+- **Not done: the sis directive-shape confirmation** the Evidence section asks for. This session has no sis checkout. The fix is the same either way, as Evidence says.
+
 ## Reviewer findings
 
 ### Round 1 (2026-10-15, Spec -> Ready, reviewer session 01V3bb9ygBzzjMoHEbMNG9ih)
