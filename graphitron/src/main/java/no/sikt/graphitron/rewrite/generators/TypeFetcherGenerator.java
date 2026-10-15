@@ -1221,7 +1221,11 @@ public class TypeFetcherGenerator {
             builder.addStatement("return $T.collapseFanOut(env, $T.$L(env))",
                 tenantConnections, launcherClass, row.unit().methodName());
         } else {
-            var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
+            var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
+                new TenantDslEmitter.EmptyAnswerSite.Renders(value -> CodeBlock.builder()
+                    .addStatement("$T empty = $L", valueType, TenantDslEmitter.emptyValue(value))
+                    .add(returnSyncSuccess(valueType, "empty", TenantHandDown.none()))
+                    .build()));
             builder.addCode(tenantDsl.declaration());
             builder.addStatement("$T payload = $T.$L(dsl, env)", valueType, launcherClass, row.unit().methodName());
             builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
@@ -1668,7 +1672,16 @@ public class TypeFetcherGenerator {
         // A divining field declares its _divinedTenant local ahead of the call, so a batch whose
         // ids name two tenants is refused before the service runs; the call's own dsl local (and
         // the lift's, when the call declares none) reads it. Every other arm pastes nothing here.
-        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        // A request whose slots name no tenant returns the field's empty answer here, ahead of
+        // argument extraction and the call, where the binding has one.
+        TypeName emptyLocalType = lift == null ? valueType : liftedValueType;
+        var emptySite = new TenantDslEmitter.EmptyAnswerSite.Renders(value -> CodeBlock.builder()
+            .addStatement("$T empty = $L", emptyLocalType, TenantDslEmitter.emptyValue(value))
+            .add(wrap
+                ? returnSyncSuccessWrapped(payloadType, outputPackage, "empty", TenantHandDown.none())
+                : returnSyncSuccess(liftedValueType, "empty", TenantHandDown.none()))
+            .build());
+        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage, emptySite);
         builder.addCode(tenantHandDown.declaration());
         CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
         ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(), dslSource,
@@ -1729,9 +1742,12 @@ public class TypeFetcherGenerator {
             ServiceReentryLift lift, ServiceMethodCall carrier, CodeBlock dslSource,
             TypeName valueType, String outputPackage) {
         var row = lift.row();
+        // The companion runs only from the service fetcher below, which rendered the field's
+        // empty answer ahead of the call.
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
             row, lift.carrierDsl(),
-            TenantDslEmitter.resolve(ctx, lift.field(), outputPackage).declaration(),
+            TenantDslEmitter.resolve(ctx, lift.field(), outputPackage,
+                TenantDslEmitter.EmptyAnswerSite.Gated.INSTANCE).declaration(),
             ctx.argPathHelpers(), ctx.projectedKeyHost()));
 
         boolean isList = row.result() instanceof no.sikt.graphitron.command.ResultShape.RecordList;
@@ -4741,20 +4757,25 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
-        builder.addCode(tenantDsl.declaration());
-        emitDialectGuard(builder, dialectRequirement);
         if (listInput) {
             builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
                 ClassName.get(List.class), MAP, inputArgName);
             // Empty-list contract: no round-trip, return typed empty list. Bypasses the
             // projection terminator entirely; jOOQ rejects empty VALUES on every verb, so the
-            // short-circuit is mandatory, not just an optimisation.
+            // short-circuit is mandatory, not just an optimisation. Hoisted above the tenant
+            // acquisition and the dialect guard: an empty batch takes no connection, and in a
+            // multi-tenant build this guard is the rendering of the field's empty answer.
             builder.beginControlFlow("if (in.isEmpty())")
                 .addStatement("return $T.<$T>newResult().data($T.of()).build()",
                     DATA_FETCHER_RESULT, valueType, ClassName.get(List.class))
                 .endControlFlow();
-        } else {
+        }
+        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
+            listInput ? TenantDslEmitter.gatedOnEmptyInput(ctx, field, inputArgName)
+                      : TenantDslEmitter.EmptyAnswerSite.NoEmptyAnswer.INSTANCE);
+        builder.addCode(tenantDsl.declaration());
+        emitDialectGuard(builder, dialectRequirement);
+        if (!listInput) {
             builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, inputArgName);
         }
         if (!postInGuard.isEmpty()) {
@@ -4910,8 +4931,10 @@ public class TypeFetcherGenerator {
         var reentry = (no.sikt.graphitron.command.LaunchSource.Reentry) row.source();
         boolean isList = row.result() instanceof no.sikt.graphitron.command.ResultShape.RecordList;
         String rowsName = row.unit().methodName();
+        // The companion runs only from buildDmlFetcher, below its hoisted empty-input guard.
         ctx.addCompanionMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
-            row, carrierDsl, TenantDslEmitter.resolve(ctx, field, outputPackage).declaration(),
+            row, carrierDsl, TenantDslEmitter.resolve(ctx, field, outputPackage,
+                TenantDslEmitter.EmptyAnswerSite.Gated.INSTANCE).declaration(),
             ctx.argPathHelpers(), ctx.projectedKeyHost()));
 
         var body = CodeBlock.builder()
@@ -5711,24 +5734,29 @@ public class TypeFetcherGenerator {
             .returns(syncResultType(valueType))
             .addParameter(ENV, "env");
         builder.beginControlFlow("try");
-        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage);
-        builder.addCode(tenantDsl.declaration());
         builder.addStatement("$T<$T<?, ?>> in = env.getArgument($S)",
             LIST, MAP, argName);
+
+        // Empty-list short-circuit: no DML, return empty Result. Mirrors the empty-input
+        // short-circuit on the direct-@table bulk arms (no transaction opened, no rows touched).
+        // Hoisted above the tenant acquisition: an empty batch takes no connection, so the empty
+        // Result is built on a connection-less context, and in a multi-tenant build this guard is
+        // the rendering of the field's empty answer.
+        builder.beginControlFlow("if (in.isEmpty())")
+            .addStatement("$T empty = $L.newResult($L)", resultType, TenantDslEmitter.detachedDsl(),
+                buildPkFieldList(pkCols, tablesOnly, tableRef))
+            .addCode(wrap
+                ? returnSyncSuccessWrapped(valueType, outputPackage, "empty", TenantHandDown.none())
+                : returnSyncSuccess(resultType, "empty", TenantHandDown.none()))
+            .endControlFlow();
+        var tenantDsl = TenantDslEmitter.resolve(ctx, field, outputPackage,
+            TenantDslEmitter.gatedOnEmptyInput(ctx, field, argName));
+        builder.addCode(tenantDsl.declaration());
         builder.addStatement("$T $L = $T.$L",
             tablesOnly.jooqTableClass(), tableLocal, tablesOnly.tablesClass(), tableRef.javaFieldName());
         if (lengthCheck instanceof no.sikt.graphitron.rewrite.model.LengthCheck.Checked checked) {
             builder.addCode(lengthCheckPreStep(checked, argName, true, valueType, outputPackage));
         }
-
-        // Empty-list short-circuit: no DML, return empty Result. Mirrors the empty-input
-        // short-circuit on the direct-@table bulk arms (no transaction opened, no rows touched).
-        builder.beginControlFlow("if (in.isEmpty())")
-            .addStatement("$T empty = dsl.newResult($L)", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
-            .addCode(wrap
-                ? returnSyncSuccessWrapped(valueType, outputPackage, "empty", tenantDsl.handDown())
-                : returnSyncSuccess(resultType, "empty", tenantDsl.handDown()))
-            .endControlFlow();
 
         // transactionResult: per-row DML inside one transaction. The lambda binds a transactional
         // DSLContext (txd), allocates a typed Result over the PK columns, iterates input rows

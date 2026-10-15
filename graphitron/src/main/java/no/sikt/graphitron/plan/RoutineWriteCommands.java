@@ -117,7 +117,15 @@ public final class RoutineWriteCommands {
             case TenantBinding.NodeIdBound ignored -> new TenantAcquisition.Inherited();
             case TenantBinding.EntityRepBound ignored -> new TenantAcquisition.Inherited();
             case TenantBinding.ArgumentBound bound -> new TenantAcquisition.ArgumentBound(
-                bound.bindings().stream().map(RoutineWriteCommands::slotReadOf).toList());
+                bound.bindings().stream().map(RoutineWriteCommands::slotReadOf).toList(),
+                switch (bound.whenNoTenant()) {
+                    case TenantBinding.WhenNoTenant.Unreachable ignored ->
+                        new TenantAcquisition.WhenNoTenant.Unreachable();
+                    case TenantBinding.WhenNoTenant.AnswerEmpty ignored ->
+                        new TenantAcquisition.WhenNoTenant.AnswerEmpty();
+                    case TenantBinding.WhenNoTenant.Refuse refuse ->
+                        new TenantAcquisition.WhenNoTenant.Refuse(refuse.arguments());
+                });
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "the routine-write coordinate " + coordinate + " is classified as tenant fan-out;"
                 + " the fanned emission acquires per tenant through scatter and owns that"

@@ -255,7 +255,8 @@ public final class MultiTablePolymorphicEmitter {
         // Service call: declares `<reflectedReturnType> result = ServiceClass.method(args);` and a
         // `dsl` local iff the method binds a DSLContext / is instance-shaped. Stage 2's by-PK
         // auto-fetch needs a `dsl` local, so declare one here when the service call did not.
-        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage,
+            emptyAnswer(valueType));
         builder.addCode(tenantHandDown.declaration());
         CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
         ServiceMethodCallEmitter.emit(serviceCall, serviceCall.javaReturnType(), ctx.fetchersHelperNames(),
@@ -428,7 +429,8 @@ public final class MultiTablePolymorphicEmitter {
         builder.beginControlFlow("try");
         // Service call: declares `result` and a `dsl` local iff the method binds a DSLContext /
         // is instance-shaped. The by-PK re-fetch needs `dsl`, so declare one here when it did not.
-        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage);
+        var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage,
+            emptyAnswer(valueType));
         builder.addCode(tenantHandDown.declaration());
         CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
         ServiceMethodCallEmitter.emit(serviceCall, serviceCall.javaReturnType(), ctx.fetchersHelperNames(),
@@ -2655,6 +2657,17 @@ public final class MultiTablePolymorphicEmitter {
     private static CodeBlock returnSyncSuccess(TypeName valueType, String payloadLocal,
             no.sikt.graphitron.render.TenantHandDown handDown) {
         return no.sikt.graphitron.render.FetcherResult.success(valueType, payloadLocal, handDown);
+    }
+
+    /**
+     * A service fetcher's early return of the empty answer, for a request whose slots name no
+     * tenant: the empty value as the payload, with no hand-down.
+     */
+    private static TenantDslEmitter.EmptyAnswerSite emptyAnswer(TypeName valueType) {
+        return new TenantDslEmitter.EmptyAnswerSite.Renders(value -> CodeBlock.builder()
+            .addStatement("$T empty = $L", valueType, TenantDslEmitter.emptyValue(value))
+            .add(returnSyncSuccess(valueType, "empty"))
+            .build());
     }
 
     private static CodeBlock noChannelCatchArm(String outputPackage) {

@@ -32,7 +32,8 @@ class ServiceTableInterfaceFieldValidationTest {
     private static ServiceMethodCall call() {
         return new ServiceMethodCall.Static(
             "no.sikt.graphitron.rewrite.TestServiceStub", "getContents", List.of(),
-            ClassName.get("org.jooq", "Record"));
+            ClassName.get("org.jooq", "Record"),
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
     }
 
     enum Case implements ValidatorCase {

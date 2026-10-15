@@ -41,6 +41,21 @@ class TenantServiceStub {
         throw new UnsupportedOperationException();
     }
 
+    /** The batch shape answering a list of the rated films' records. */
+    public static List<FilmRecord> rateFilmsAsRecords(List<TestNodeIdRecordBean> ratings) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The batch shape answering a jOOQ {@code Result} of the rated films' records. */
+    public static org.jooq.Result<FilmRecord> rateFilmsAsResult(List<TestNodeIdRecordBean> ratings) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The batch shape beside a non-null {@code @tenant} argument. */
+    public static TenantFilmsPayload rateFilmsInTenant(List<TestNodeIdRecordBean> ratings, Integer filmId) {
+        throw new UnsupportedOperationException();
+    }
+
     /** Two parameters whose members both end in {@code film}. */
     public static TenantFilmsPayload rateTwo(TestNodeIdRecordBean first, TestNodeIdRecordBean second) {
         throw new UnsupportedOperationException();

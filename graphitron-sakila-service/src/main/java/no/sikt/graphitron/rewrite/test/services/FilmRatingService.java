@@ -46,6 +46,27 @@ public final class FilmRatingService {
         return new RateFilmsCheckedPayload(payload.ranOn(), payload.films(), List.of());
     }
 
+    /**
+     * The carrier shape: hands back the rated films' records, which the payload's data field
+     * re-reads. An empty batch names no tenant, so graphitron answers it without calling here;
+     * the throw proves the call was skipped.
+     */
+    public static List<FilmRecord> rateFilmsAsRecords(DSLContext dsl, List<FilmRating> ratings) {
+        return ratedFilms(dsl, ratings);
+    }
+
+    /** {@link #rateFilmsAsRecords} behind a {@code @table} list return, re-selected by key. */
+    public static List<FilmRecord> rateFilmsAsFilms(DSLContext dsl, List<FilmRating> ratings) {
+        return ratedFilms(dsl, ratings);
+    }
+
+    private static List<FilmRecord> ratedFilms(DSLContext dsl, List<FilmRating> ratings) {
+        if (ratings.isEmpty()) {
+            throw new IllegalStateException("called with an empty batch, which names no tenant");
+        }
+        return payload(dsl, ratings.stream().map(r -> r.film().getFilmId()).toList()).films();
+    }
+
     /** The same over a jOOQ record parameter whose composite key carries the tenant at position 1. */
     public static RateFilmsPayload rateFilmActors(DSLContext dsl, List<FilmActorRecord> actors) {
         return payload(dsl, actors.stream().map(FilmActorRecord::getFilmId).toList());

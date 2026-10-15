@@ -158,6 +158,9 @@ type Query {
     # tenant column. The wire value is an encoded key rather than the tenant value, so the routed
     # acquisition decodes it and reads slot 1; every id in one call must decode to one tenant.
     filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
+    # A keyed lookup over the tenant column: each key names its row's tenant, and an empty key list
+    # names none, so it answers the empty list without opening a tenant database.
+    filmsByKey(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]!
     # The suppressed-predicate arm: the field-level override takes every argument's implicit
     # predicate over, so no predicate names film_id, yet the argument still binds the tenant
     # column and routes the statement. The only field here whose slot cannot come from a
@@ -351,6 +354,14 @@ type FilmWriteDbError @error(handlers: [{handler: DATABASE}]) {
 
 union FilmWriteError = FilmWriteDbError
 
+# The carrier shape on the error channel: the service returns the rated films' records, and the
+# data field re-reads them. An empty batch names no tenant, so it answers an empty list here
+# without calling the service.
+type FilmsRatedPayload {
+    films: [Film!]
+    errors: [RateFilmsError]
+}
+
 type Mutation {
     # ArgumentBound @service arms: the tenant is divined from the batch's ids before the service
     # is called, so a batch naming two tenants is refused without running it.
@@ -378,6 +389,15 @@ type Mutation {
     rateFilmActors(in: [FilmActorRatingInput!]!): RateFilmsPayload @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
         method: "rateFilmActors", argMapping: "actors: in"})
+    # The list-answer services: graphitron can build the answer to an empty batch, which names no
+    # tenant, so it does without calling the service. One projects the returned records through a
+    # payload; the other returns the @table type, re-selecting the records by key.
+    rateFilmsAsRecords(in: [FilmRatingInput!]!): FilmsRatedPayload @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsAsRecords", argMapping: "ratings: in"})
+    rateFilmsAsFilms(in: [FilmRatingInput!]!): [Film!]! @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService",
+        method: "rateFilmsAsFilms", argMapping: "ratings: in"})
     createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
     createEndorsement(in: FilmEndorsementCreateInput!): FilmEndorsement @mutation(typeName: INSERT, table: "film_endorsement")
     createInventoryByFilmRef(in: InventoryCreateByFilmRefInput!): Inventory @mutation(typeName: INSERT, table: "inventory")
@@ -387,6 +407,9 @@ type Mutation {
     deleteFilmActorsByNodeId(in: [DeleteFilmActorByNodeIdInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film_actor")
     updateFilmByNodeId(in: UpdateFilmByNodeIdInput!): Film @mutation(typeName: UPDATE, table: "film")
     retitleFilmsChecked(in: [UpdateFilmByNodeIdInput!]!): FilmsRetitledPayload @mutation(typeName: UPDATE, table: "film")
+    # A bulk write projecting its rows: the re-read runs in a companion below the fetcher's
+    # empty-input guard.
+    retitleFilms(in: [UpdateFilmByNodeIdInput!]!): [Film!]! @mutation(typeName: UPDATE, table: "film")
     updateFilmActorNoteByNodeId(in: UpdateFilmActorNoteByNodeIdInput!): ID @mutation(typeName: UPDATE, table: "film_actor_note")
     updateFilmSceneParent(in: UpdateFilmSceneParentInput!): ID @mutation(typeName: UPDATE, table: "film_scene")
     updateFilmSceneParents(in: [UpdateFilmSceneParentInput!]!): [ID!]! @mutation(typeName: UPDATE, table: "film_scene")

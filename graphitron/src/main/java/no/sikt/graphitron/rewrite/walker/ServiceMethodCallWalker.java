@@ -57,6 +57,18 @@ public final class ServiceMethodCallWalker {
      */
     public WalkerResult<ServiceMethodCall> walk(String parentTypeName, GraphQLFieldDefinition fieldDef,
                                                 MethodRef.Service method) {
+        return walk(parentTypeName, fieldDef, method, record -> java.util.Optional.empty());
+    }
+
+    /**
+     * {@link #walk(String, GraphQLFieldDefinition, MethodRef.Service)} with a resolver from a jOOQ
+     * record class to its catalog table, which classifies a {@code Result<XRecord>} return as
+     * {@link ServiceMethodCall.ReturnContainer.JooqResult}.
+     */
+    public WalkerResult<ServiceMethodCall> walk(String parentTypeName, GraphQLFieldDefinition fieldDef,
+                                                MethodRef.Service method,
+                                                java.util.function.Function<ClassName,
+                                                    java.util.Optional<no.sikt.graphitron.model.jooq.TableRef>> recordTable) {
         List<Rejection.AuthorError> errors = new ArrayList<>();
         var site = new Site(parentTypeName, fieldDef);
 
@@ -82,17 +94,20 @@ public final class ServiceMethodCallWalker {
                 method.className(), ServiceMethodCallError.Round.METHOD));
         }
 
+        var returnContainer = ServiceMethodCall.ReturnContainer.of(method.returnType(), recordTable);
         ServiceMethodCall carrier = switch (method.callShape()) {
             case MethodRef.CallShape.Static s ->
                 new ServiceMethodCall.Static(
-                    method.className(), method.methodName(), methodArgs, method.returnType());
+                    method.className(), method.methodName(), methodArgs, method.returnType(),
+                    returnContainer);
             case MethodRef.CallShape.InstanceWithDslHolder holder ->
                 new ServiceMethodCall.Instance(
                     method.className(),
                     ctorArgs(holder, method, site, errors),
                     method.methodName(),
                     methodArgs,
-                    method.returnType());
+                    method.returnType(),
+                    returnContainer);
         };
 
         if (!errors.isEmpty()) {

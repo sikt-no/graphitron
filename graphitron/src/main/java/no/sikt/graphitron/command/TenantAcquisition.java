@@ -50,8 +50,11 @@ public sealed interface TenantAcquisition {
      * tenant key type, {@link TenantRouting.Routed#tenantKeyTypeName()}, a run-wide fact rather than
      * one carried per slot: a slot need not bind a column at all (a scalar marked
      * {@code @tenant} has none).
+     *
+     * <p>{@code whenNoTenant} restates what a request whose slots name no tenant gets (every
+     * slot read through a list that arrives empty), as the classifier decided it.
      */
-    record ArgumentBound(List<SlotRead> slots) implements TenantAcquisition {
+    record ArgumentBound(List<SlotRead> slots, WhenNoTenant whenNoTenant) implements TenantAcquisition {
         public ArgumentBound {
             if (slots.isEmpty()) {
                 throw new IllegalArgumentException(
@@ -59,7 +62,32 @@ public sealed interface TenantAcquisition {
                     + " with no slot there is nothing to divine from and the coordinate is"
                     + " untenanted or inherited instead");
             }
+            java.util.Objects.requireNonNull(whenNoTenant, "whenNoTenant");
             slots = List.copyOf(slots);
+        }
+    }
+
+    /**
+     * What an argument-bound entry point does with a request whose slots name no tenant. The
+     * renderer has no early return of its own, so an {@link AnswerEmpty} reaching it is a
+     * production failure rather than a runtime absent-tenant throw.
+     */
+    sealed interface WhenNoTenant {
+
+        /** Some slot is present on every request: the fold always names a tenant. */
+        record Unreachable() implements WhenNoTenant {}
+
+        /** The coordinate answers an empty request with an empty value it builds itself. */
+        record AnswerEmpty() implements WhenNoTenant {}
+
+        /**
+         * The request fails with a client error naming {@code arguments}, the top-level arguments
+         * whose empty lists named no tenant.
+         */
+        record Refuse(List<String> arguments) implements WhenNoTenant {
+            public Refuse {
+                arguments = List.copyOf(arguments);
+            }
         }
     }
 

@@ -59,7 +59,7 @@ public final class TenantAcquisitionFragments {
                         + " back to the request context's connection would route a tenant-scoped"
                         + " read to the default source");
                 }
-                yield routed(acquisition, ClassName.bestGuess(routed.tenantKeyTypeName()),
+                yield routed(coordinate, acquisition, ClassName.bestGuess(routed.tenantKeyTypeName()),
                     className(routed.connections()), contextRead);
             }
         };
@@ -74,8 +74,8 @@ public final class TenantAcquisitionFragments {
             TenantHandDown.none());
     }
 
-    private static Declaration routed(TenantAcquisition acquisition, TypeName keyType,
-            ClassName connections, RequestContextRead contextRead) {
+    private static Declaration routed(FieldCoordinates coordinate, TenantAcquisition acquisition,
+            TypeName keyType, ClassName connections, RequestContextRead contextRead) {
         return switch (acquisition) {
             case TenantAcquisition.DefaultSource ignored -> new Declaration(
                 CodeBlock.builder()
@@ -90,7 +90,7 @@ public final class TenantAcquisitionFragments {
                 TenantHandDown.none());
             case TenantAcquisition.ArgumentBound bound -> new Declaration(
                 CodeBlock.builder()
-                    .add(divinedKey(bound, keyType, connections, contextRead))
+                    .add(divinedKey(coordinate, bound, keyType, connections, contextRead))
                     .addStatement("$T dsl = $T.dslFor(env, $L)",
                         DSL_CONTEXT, connections, TENANT_KEY_LOCAL)
                     .build(),
@@ -101,12 +101,24 @@ public final class TenantAcquisitionFragments {
     /**
      * The divined-key declaration: every bound slot's read folded through the carrier's agreement
      * guard. Declared with the run's {@link TenantRouting.Routed#tenantKeyTypeName()}, because
-     * generated sources never use {@code var}.
+     * generated sources never use {@code var}. Forks on the acquisition's
+     * {@link TenantAcquisition.WhenNoTenant} arm: an unreachable empty request folds through
+     * {@code divinedTenant}, a refused one through {@code namedTenant} and the client error
+     * {@link #noTenantMessage} words; an entry point of this kind has no early return, so an
+     * empty answer reaching it is a production failure.
      */
-    private static CodeBlock divinedKey(TenantAcquisition.ArgumentBound bound, TypeName keyType,
-            ClassName connections, RequestContextRead contextRead) {
+    private static CodeBlock divinedKey(FieldCoordinates coordinate, TenantAcquisition.ArgumentBound bound,
+            TypeName keyType, ClassName connections, RequestContextRead contextRead) {
+        String fold = switch (bound.whenNoTenant()) {
+            case TenantAcquisition.WhenNoTenant.Unreachable ignored -> "divinedTenant";
+            case TenantAcquisition.WhenNoTenant.Refuse ignored -> "namedTenant";
+            case TenantAcquisition.WhenNoTenant.AnswerEmpty ignored -> throw new IllegalStateException(
+                "Graphitron generator bug (tenancy acquisition): coordinate '" + coordinate
+                + "' answers an empty request with an empty value, but its entry point declares"
+                + " its connection through a plan row, which has no early return to render it");
+        };
         var b = CodeBlock.builder()
-            .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, connections);
+            .add("$T $L = $T.$L(", keyType, TENANT_KEY_LOCAL, connections, fold);
         var slots = bound.slots();
         for (int i = 0; i < slots.size(); i++) {
             if (i > 0) {
@@ -114,7 +126,33 @@ public final class TenantAcquisitionFragments {
             }
             b.add(slotRead(slots.get(i), connections, contextRead));
         }
-        return b.add(");\n").build();
+        b.add(");\n");
+        if (bound.whenNoTenant() instanceof TenantAcquisition.WhenNoTenant.Refuse refuse) {
+            b.beginControlFlow("if ($L == null)", TENANT_KEY_LOCAL)
+                .addStatement("throw new $T($S)",
+                    ClassName.get(connections.packageName(), CLIENT_EXCEPTION_CLASS),
+                    noTenantMessage(coordinate.getTypeName() + "." + coordinate.getFieldName(),
+                        refuse.arguments()))
+                .endControlFlow();
+        }
+        return b.build();
+    }
+
+    /** The generated client-error type's simple name, beside the connections carrier. */
+    private static final String CLIENT_EXCEPTION_CLASS = "GraphitronClientException";
+
+    /**
+     * The client-facing refusal for a request whose lists name no tenant:
+     * {@code Mutation.rateFilms names no tenant: its tenant is read from the elements of 'in',
+     * which is empty.} One home for the wording, which the field-carrier emission reads too.
+     */
+    public static String noTenantMessage(String coordinate, java.util.List<String> arguments) {
+        var quoted = arguments.stream().map(a -> "'" + a + "'").toList();
+        String names = quoted.size() == 1
+            ? quoted.get(0)
+            : String.join(", ", quoted.subList(0, quoted.size() - 1)) + " and " + quoted.getLast();
+        return coordinate + " names no tenant: its tenant is read from the elements of " + names
+            + (quoted.size() == 1 ? ", which is empty." : ", which are empty.");
     }
 
     /** One bound slot's runtime read, rendered from the arm the classifier resolved for it. */

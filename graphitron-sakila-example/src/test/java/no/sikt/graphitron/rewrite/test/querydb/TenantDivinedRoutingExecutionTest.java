@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
+import graphql.GraphQLError;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
@@ -1387,6 +1388,116 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(entities).singleElement().as("inventory 1 lives in tenant 1's database").isNull();
         assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
         assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    // ===== An empty list names no tenant: an empty answer, or a readable refusal =====
+
+    private static void assertNoTenantOpened() {
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("an empty request names no tenant, so no tenant database is opened").isZero();
+    }
+
+    @Test
+    void emptyList_directReturnDelete_answersEmptyWithoutRouting() {
+        assertThat((List<?>) data(execute("mutation { deleteFilmActorsByNodeId(in: []) }"),
+            "deleteFilmActorsByNodeId")).isEmpty();
+        assertNoTenantOpened();
+    }
+
+    @Test
+    void emptyList_bulkUpdate_answersEmptyAheadOfItsDialectGuard() {
+        assertThat((List<?>) data(execute("mutation { updateFilmSceneParents(in: []) }"),
+            "updateFilmSceneParents")).isEmpty();
+        assertNoTenantOpened();
+    }
+
+    @Test
+    void emptyList_dmlPayloadOnTheErrorChannel_answersAnEmptyPayload() {
+        var payload = (Map<String, Object>) data(execute(
+            "mutation { retitleFilmsChecked(in: []) { films { title } errors { __typename } } }"),
+            "retitleFilmsChecked");
+        assertThat((List<?>) payload.get("films")).isEmpty();
+        assertThat(payload).containsEntry("errors", null);
+        assertNoTenantOpened();
+    }
+
+    @Test
+    void emptyList_projectedBulkDml_answersEmpty_andANonEmptyBatchStillRoutes() {
+        assertThat((List<?>) data(execute("mutation { retitleFilms(in: []) { title } }"), "retitleFilms"))
+            .isEmpty();
+        assertNoTenantOpened();
+
+        try {
+            var films = (List<Map<String, Object>>) data(execute("mutation { retitleFilms(in: [{ id: \""
+                + NodeIdEncoder.encodeFilm(2) + "\", title: \"Retitled\" }]) { title } }"), "retitleFilms");
+            assertThat(films).extracting(f -> f.get("title")).containsExactly("Retitled");
+            assertThat(TENANT_1_OPENED.get()).isZero();
+            assertThat(TENANT_2_OPENED.get()).isPositive();
+        } finally {
+            try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+                t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
+            }
+        }
+    }
+
+    @Test
+    void emptyList_listAnswerServiceOnTheErrorChannel_answersAnEmptyPayloadWithoutCallingIt() {
+        // The service throws on an empty batch, so a clean answer proves it was not called.
+        var payload = (Map<String, Object>) data(execute(
+            "mutation { rateFilmsAsRecords(in: []) { films { title } errors { __typename } } }"),
+            "rateFilmsAsRecords");
+        assertThat((List<?>) payload.get("films")).isEmpty();
+        assertThat(payload).containsEntry("errors", null);
+        assertNoTenantOpened();
+
+        var routed = (Map<String, Object>) data(execute("mutation { rateFilmsAsRecords(in: [{ film: \""
+            + NodeIdEncoder.encodeFilm(1) + "\" }]) { films { title } errors { __typename } } }"),
+            "rateFilmsAsRecords");
+        assertThat((List<Map<String, Object>>) routed.get("films"))
+            .extracting(f -> f.get("title")).containsExactly("Tenant One Film");
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void emptyList_tableReturningService_answersEmptyWithoutCallingIt() {
+        assertThat((List<?>) data(execute("mutation { rateFilmsAsFilms(in: []) { title } }"),
+            "rateFilmsAsFilms")).isEmpty();
+        assertNoTenantOpened();
+
+        var films = (List<Map<String, Object>>) data(execute("mutation { rateFilmsAsFilms(in: [{ film: \""
+            + NodeIdEncoder.encodeFilm(2) + "\" }]) { title } }"), "rateFilmsAsFilms");
+        assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant Two Film");
+        assertThat(TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void emptyList_keyedLookup_answersEmpty() {
+        assertThat((List<?>) data(execute("{ filmsByKey(filmId: []) { title } }"), "filmsByKey")).isEmpty();
+        assertNoTenantOpened();
+
+        var films = (List<Map<String, Object>>) data(execute("{ filmsByKey(filmId: [1]) { title } }"),
+            "filmsByKey");
+        assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant One Film");
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    @Test
+    void emptyList_serviceReturningItsOwnPayloadClass_isRefusedReadably() {
+        var result = execute("mutation { rateFilms(in: []) { films { title } } }");
+        assertThat(result.getErrors()).singleElement()
+            .satisfies(error -> assertThat(error.getMessage()).isEqualTo("Mutation.rateFilms names no"
+                + " tenant: its tenant is read from the elements of 'in', which is empty."));
+        assertNoTenantOpened();
+    }
+
+    @Test
+    void emptyList_listFilter_isRefusedReadably() {
+        var result = execute("{ filmActorsByNodeId(ids: []) { actorId } }");
+        // The field is non-null, so graphql-java adds its null-bubbling error beside the refusal.
+        assertThat(result.getErrors()).extracting(GraphQLError::getMessage)
+            .contains("Query.filmActorsByNodeId names no tenant: its tenant is read from the"
+                + " elements of 'ids', which is empty.");
+        assertNoTenantOpened();
     }
 
     // ===== helpers =====

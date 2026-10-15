@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.ServiceMethodCall;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -159,19 +160,21 @@ class TenantBindingClassificationTest {
     void aContextArgumentSlotIsRequired() {
         // The consumer supplies context arguments server-side; a missing one is a wiring bug, not
         // a choice the client makes, so it guarantees the tenant like a non-null argument.
-        assertThat(TenantBindingIndex.slotRequired(null, "tenant",
-            TenantBinding.SlotRead.ContextArg.INSTANCE)).isTrue();
+        assertThat(TenantBindingIndex.slotPresence(null, "tenant",
+            TenantBinding.SlotRead.ContextArg.INSTANCE))
+            .isInstanceOf(TenantBinding.SlotPresence.Guaranteed.class);
     }
 
     @Test
     void theArmsRefuseASlotListThatBreaksTheirPresenceRule() {
         var optional = new TenantBinding.BoundSlot("filmId", TenantBinding.SlotRead.TopLevelArg.INSTANCE,
-            TenantBinding.SlotProjection.Raw.INSTANCE, false);
+            TenantBinding.SlotProjection.Raw.INSTANCE, TenantBinding.SlotPresence.Optional.INSTANCE);
         var required = new TenantBinding.BoundSlot("filmId", TenantBinding.SlotRead.TopLevelArg.INSTANCE,
-            TenantBinding.SlotProjection.Raw.INSTANCE, true);
+            TenantBinding.SlotProjection.Raw.INSTANCE, TenantBinding.SlotPresence.Guaranteed.INSTANCE);
 
         org.assertj.core.api.Assertions.assertThatThrownBy(
-                () -> new TenantBinding.ArgumentBound(List.of(optional)))
+                () -> new TenantBinding.ArgumentBound(List.of(optional),
+                    new TenantBinding.WhenNoTenant.Refuse(List.of("filmId"))))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("at least one required slot");
         org.assertj.core.api.Assertions.assertThatThrownBy(
@@ -838,6 +841,162 @@ class TenantBindingClassificationTest {
         assertThat(entityBinding.alternatives())
             .containsExactly(new TenantBinding.EntityRepBound.AlternativeSlot(0,
                 new TenantBinding.EntityRepBound.TenantSource.KeyColumn(1)));
+    }
+
+    // ===== An empty list names no tenant: what the request gets instead =====
+
+    private static graphql.schema.GraphQLFieldDefinition queryField(String sdl, String field) {
+        var schema = graphql.schema.idl.UnExecutableSchemaGenerator.makeUnExecutableSchema(
+            new graphql.schema.idl.SchemaParser().parse(sdl));
+        return schema.getQueryType().getFieldDefinition(field);
+    }
+
+    @Test
+    void aSlotsPresenceRecordsEveryListItsPathCrosses() {
+        var definition = queryField("""
+            input B { filmId: Int! }
+            input X { filmId: Int!, b: [B!]!, maybe: Int }
+            type Query {
+                f(in: [X!]!, ids: [ID!]!, one: X!, filmId: Int!, nullableIds: [ID], loose: [ID]!): Int
+            }
+            """, "f");
+
+        assertThat(TenantBindingIndex.slotPresence(definition, "in.filmId",
+                new TenantBinding.SlotRead.NestedInput("in", List.of("filmId"))))
+            .isEqualTo(new TenantBinding.SlotPresence.PerElement(List.of(List.of("in"))));
+        assertThat(TenantBindingIndex.slotPresence(definition, "ids", TenantBinding.SlotRead.TopLevelArg.INSTANCE))
+            .isEqualTo(new TenantBinding.SlotPresence.PerElement(List.of(List.of("ids"))));
+        assertThat(TenantBindingIndex.slotPresence(definition, "in.b.filmId",
+                new TenantBinding.SlotRead.NestedInput("in", List.of("b", "filmId"))))
+            .isEqualTo(new TenantBinding.SlotPresence.PerElement(List.of(List.of("in"), List.of("in", "b"))));
+        assertThat(TenantBindingIndex.slotPresence(definition, "one.filmId",
+                new TenantBinding.SlotRead.NestedInput("one", List.of("filmId"))))
+            .isInstanceOf(TenantBinding.SlotPresence.Guaranteed.class);
+        assertThat(TenantBindingIndex.slotPresence(definition, "filmId", TenantBinding.SlotRead.TopLevelArg.INSTANCE))
+            .isInstanceOf(TenantBinding.SlotPresence.Guaranteed.class);
+        assertThat(TenantBindingIndex.slotPresence(definition, "in.maybe",
+                new TenantBinding.SlotRead.NestedInput("in", List.of("maybe"))))
+            .isInstanceOf(TenantBinding.SlotPresence.Optional.class);
+        assertThat(TenantBindingIndex.slotPresence(definition, "nullableIds", TenantBinding.SlotRead.TopLevelArg.INSTANCE))
+            .isInstanceOf(TenantBinding.SlotPresence.Optional.class);
+        assertThat(TenantBindingIndex.slotPresence(definition, "loose", TenantBinding.SlotRead.TopLevelArg.INSTANCE))
+            .isInstanceOf(TenantBinding.SlotPresence.Optional.class);
+    }
+
+    private static final String EMPTY_LIST_TYPES = """
+        type FilmActor implements Node @table(name: "film_actor")
+                @node(keyColumns: ["actor_id", "film_id"]) {
+            id: ID! @nodeId
+        }
+        input DeleteFilmActorInput { id: ID! @nodeId(typeName: "FilmActor") }
+        input UpdateFilmInput {
+            id: ID! @nodeId(typeName: "Film")
+            title: String @field(name: "title")
+        }
+        type FilmsRetitledPayload { films: [Film] }
+        type RatedFilmsPayload { films: [Film!] }
+        """;
+
+    private static TenantBinding.WhenNoTenant whenNoTenant(GraphitronSchema schema, String type, String field) {
+        return argumentBound(schema, type, field).whenNoTenant();
+    }
+
+    @Test
+    void aFieldThatCanBuildItsEmptyAnswerAnswersEmpty() {
+        var schema = build(SERVICE_TYPES + EMPTY_LIST_TYPES + """
+            extend type Query {
+                filmsByKey(filmId: [Int!]! @field(name: "film_id") @lookupKey): [Film]!
+            }
+            type Mutation {
+                deleteFilmActors(in: [DeleteFilmActorInput!]!): [ID!]!
+                    @mutation(typeName: DELETE, table: "film_actor")
+                retitleFilms(in: [UpdateFilmInput!]!): FilmsRetitledPayload
+                    @mutation(typeName: UPDATE, table: "film")
+                rateFilmsAsFilms(ratings: [RateFilmInput!]!): [Film!]! %s
+                rateFilmsAsRecords(ratings: [RateFilmInput!]!): RatedFilmsPayload %s
+            }
+            """.formatted(service("rateFilmsAsRecords"), service("rateFilmsAsRecords")));
+
+        var emptyList = new TenantBinding.WhenNoTenant.AnswerEmpty(TenantBinding.EmptyValue.EmptyList.INSTANCE);
+        assertThat(whenNoTenant(schema, "Mutation", "deleteFilmActors")).isEqualTo(emptyList);
+        assertThat(whenNoTenant(schema, "Mutation", "rateFilmsAsFilms")).isEqualTo(emptyList);
+        assertThat(whenNoTenant(schema, "Mutation", "rateFilmsAsRecords")).isEqualTo(emptyList);
+        assertThat(whenNoTenant(schema, "Query", "filmsByKey")).isEqualTo(emptyList);
+        assertThat(whenNoTenant(schema, "Mutation", "retitleFilms"))
+            .isInstanceOfSatisfying(TenantBinding.WhenNoTenant.AnswerEmpty.class,
+                empty -> assertThat(empty.value()).isInstanceOfSatisfying(
+                    TenantBinding.EmptyValue.EmptyResult.class,
+                    result -> assertThat(result.table().tableName()).isEqualToIgnoringCase("film")));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aFieldThatCannotBuildItsEmptyAnswerRefusesNamingTheEmptyArgument() {
+        var schema = build(SERVICE_TYPES + """
+            type FilmActor implements Node @table(name: "film_actor")
+                    @node(keyColumns: ["actor_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            input FilmActorsFilter { ids: [ID!]! @nodeId(typeName: "FilmActor") }
+            extend type Query {
+                filmActorsByNodeId(ids: [ID!]! @nodeId(typeName: "FilmActor")): [FilmActor!]!
+                filmActorsByFilter(filter: FilmActorsFilter!): [FilmActor!]!
+            }
+            type Mutation { rateFilms(ratings: [RateFilmInput!]!): RateFilmsPayload %s }
+            """.formatted(service("rateFilms")));
+
+        assertThat(whenNoTenant(schema, "Mutation", "rateFilms"))
+            .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("ratings")));
+        assertThat(whenNoTenant(schema, "Query", "filmActorsByNodeId"))
+            .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("ids")));
+        // The list sits inside the argument, so the argument itself still has a row to act on.
+        assertThat(whenNoTenant(schema, "Query", "filmActorsByFilter"))
+            .isEqualTo(new TenantBinding.WhenNoTenant.Refuse(List.of("filter")));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aSlotOutsideEveryListMakesTheEmptyRequestUnreachable() {
+        var schema = build(SERVICE_TYPES + """
+            type Mutation {
+                rateFilmsInTenant(ratings: [RateFilmInput!]!, filmId: Int! @tenant): RateFilmsPayload %s
+            }
+            """.formatted(service("rateFilmsInTenant")));
+
+        assertThat(whenNoTenant(schema, "Mutation", "rateFilmsInTenant"))
+            .isInstanceOf(TenantBinding.WhenNoTenant.Unreachable.class);
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
+    void aServiceCallRecordsItsReturnContainer() {
+        var film = TestFixtures.tableRef("film", "FILM", "Film", List.of());
+        java.util.function.Function<no.sikt.graphitron.javapoet.ClassName,
+                java.util.Optional<no.sikt.graphitron.model.jooq.TableRef>> filmTable =
+            record -> java.util.Optional.of(film);
+        var filmRecord = no.sikt.graphitron.javapoet.ClassName.get("com.example", "FilmRecord");
+        java.util.function.Function<String, no.sikt.graphitron.javapoet.TypeName> of = raw ->
+            no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+                no.sikt.graphitron.javapoet.ClassName.bestGuess(raw), filmRecord);
+
+        assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("java.util.List"), filmTable))
+            .isInstanceOf(ServiceMethodCall.ReturnContainer.ListLike.class);
+        assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("java.util.Set"), filmTable))
+            .isInstanceOf(ServiceMethodCall.ReturnContainer.SetLike.class);
+        assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("org.jooq.Result"), filmTable))
+            .isEqualTo(new ServiceMethodCall.ReturnContainer.JooqResult(film));
+        assertThat(ServiceMethodCall.ReturnContainer.of(
+                no.sikt.graphitron.javapoet.ClassName.get("com.example", "RateFilmsPayload"), filmTable))
+            .isInstanceOf(ServiceMethodCall.ReturnContainer.Other.class);
+
+        // The walker resolves the Result's record class against the catalog.
+        var schema = build(SERVICE_TYPES + """
+            type Mutation { rateFilmsAsResult(ratings: [RateFilmInput!]!): [Film!]! %s }
+            """.formatted(service("rateFilmsAsResult")));
+        var field = (no.sikt.graphitron.rewrite.model.ServiceField) schema.field("Mutation", "rateFilmsAsResult");
+        assertThat(field.serviceMethodCall().returnContainer())
+            .isInstanceOfSatisfying(ServiceMethodCall.ReturnContainer.JooqResult.class,
+                result -> assertThat(result.table().tableName()).isEqualToIgnoringCase("film"));
     }
 
     // ===== The decoded-key projection: the tenant sits inside a node id =====

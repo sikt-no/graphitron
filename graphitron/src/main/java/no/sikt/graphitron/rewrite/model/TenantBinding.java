@@ -52,17 +52,136 @@ public sealed interface TenantBinding {
      * cross-product. Both are resolved together at every minting site, so a site cannot read
      * one axis and drop the other.
      *
-     * <p>{@code required} is whether the client cannot omit the slot: its read path is non-null
-     * all the way down, list element types included, since a nullable element can arrive as
-     * {@code null} and name no tenant. A context argument counts as required, because the
-     * consumer supplies it server-side. Only a required slot guarantees every request a tenant,
-     * which is what lets a field route on its arguments ({@link ArgumentBound}); optional slots
-     * alone can only narrow a fan-out ({@link FanOut}).
+     * <p>{@code presence} is whether the client can omit the slot, and whether a request that
+     * includes it can still carry no value for it: see {@link SlotPresence}. Only a
+     * {@linkplain SlotPresence.Guaranteed guaranteed} slot names a tenant on every request; a
+     * {@linkplain SlotPresence.PerElement per-element} one names one exactly when the lists it
+     * reads through are non-empty, and {@link ArgumentBound#whenNoTenant()} says what a request
+     * whose lists name none gets. Optional slots alone can only narrow a fan-out
+     * ({@link FanOut}).
      */
-    record BoundSlot(String slotName, SlotRead read, SlotProjection projection, boolean required) {
+    record BoundSlot(String slotName, SlotRead read, SlotProjection projection, SlotPresence presence) {
         public BoundSlot {
             java.util.Objects.requireNonNull(read, "read");
             java.util.Objects.requireNonNull(projection, "projection");
+            java.util.Objects.requireNonNull(presence, "presence");
+        }
+
+        /**
+         * Whether the client cannot omit the slot: its read path is non-null all the way down,
+         * list element types included. Says nothing about lists, which a non-null path can still
+         * cross and arrive empty; {@link #presence()} carries that.
+         */
+        public boolean required() {
+            return !(presence instanceof SlotPresence.Optional);
+        }
+    }
+
+    /**
+     * Whether a bound slot's value is present on a request, read off the consuming field's own
+     * definition (one input type can be list-wrapped at one field and not at another).
+     */
+    sealed interface SlotPresence {
+
+        /**
+         * The client may leave the slot out: some type on its read path is nullable, list
+         * element types included, since {@code [ID]!} can arrive as {@code [null]}.
+         */
+        record Optional() implements SlotPresence {
+            public static final Optional INSTANCE = new Optional();
+        }
+
+        /**
+         * Present on every request: a non-null path that crosses no list, or a context argument,
+         * which the consumer supplies server-side.
+         */
+        record Guaranteed() implements SlotPresence {
+            public static final Guaranteed INSTANCE = new Guaranteed();
+        }
+
+        /**
+         * Non-null all the way down, but the path crosses one or more lists, so the slot yields
+         * one value per element and none for an empty list. Each entry is one crossed list's path
+         * from the argument: {@code [["in"]]} for {@code in: [X!]!} with the tenant on {@code X},
+         * {@code [["ids"]]} for a top-level {@code ids: [ID!]!}, {@code [["in"], ["in", "b"]]}
+         * when {@code X.b: [B!]!} carries it. A list nested directly in a list is crossed twice
+         * at the same path, and appears twice.
+         */
+        record PerElement(List<List<String>> crossedLists) implements SlotPresence {
+            public PerElement {
+                if (crossedLists.isEmpty()) {
+                    throw new IllegalArgumentException("PerElement must cross at least one list");
+                }
+                crossedLists = crossedLists.stream().map(List::copyOf).toList();
+            }
+
+            /** The top-level argument every crossed list hangs off. */
+            public String argument() {
+                return crossedLists.get(0).get(0);
+            }
+
+            /** Whether the only list on the path is the top-level argument itself. */
+            public boolean crossesOnlyItsArgument() {
+                return crossedLists.size() == 1 && crossedLists.get(0).size() == 1;
+            }
+        }
+    }
+
+    /**
+     * What a request whose slots name no tenant gets, for an {@link ArgumentBound} field. Decided
+     * by the fold from the slots and the field's classified leaf; every emitter site renders it.
+     */
+    sealed interface WhenNoTenant {
+
+        /** Some slot is {@linkplain SlotPresence.Guaranteed guaranteed}: every request names a tenant. */
+        record Unreachable() implements WhenNoTenant {
+            public static final Unreachable INSTANCE = new Unreachable();
+        }
+
+        /**
+         * No slot is guaranteed, every per-element slot crosses only its own top-level argument's
+         * list, and the field's answer to no input is an empty value graphitron can build. The fold
+         * comes up empty exactly when those lists are all empty (and any optional slot is
+         * omitted), so {@code value} is the field's own answer to an empty batch, returned without
+         * acquiring a tenant connection.
+         */
+        record AnswerEmpty(EmptyValue value) implements WhenNoTenant {
+            public AnswerEmpty {
+                java.util.Objects.requireNonNull(value, "value");
+            }
+        }
+
+        /**
+         * No slot is guaranteed, and either the field has no buildable empty answer or a slot
+         * crosses a list nested inside its argument (an outer list whose inner lists are all empty
+         * names no tenant, yet still has rows to act on). The request fails with a client error
+         * naming {@code arguments}, the top-level arguments the per-element slots read through.
+         */
+        record Refuse(List<String> arguments) implements WhenNoTenant {
+            public Refuse {
+                arguments = List.copyOf(arguments);
+            }
+        }
+    }
+
+    /** The empty answer an {@link WhenNoTenant.AnswerEmpty} field returns; each site renders it. */
+    sealed interface EmptyValue {
+
+        /** An empty {@code java.util.List}. */
+        record EmptyList() implements EmptyValue {
+            public static final EmptyList INSTANCE = new EmptyList();
+        }
+
+        /** An empty {@code java.util.Set}. */
+        record EmptySet() implements EmptyValue {
+            public static final EmptySet INSTANCE = new EmptySet();
+        }
+
+        /** An empty jOOQ {@code Result} over {@code table}'s records or keys, per the site. */
+        record EmptyResult(TableRef table) implements EmptyValue {
+            public EmptyResult {
+                java.util.Objects.requireNonNull(table, "table");
+            }
         }
     }
 
@@ -135,17 +254,27 @@ public sealed interface TenantBinding {
      * Argument / input-object fields whose column mappings resolve to tenant columns. Carries
      * every co-binding, optional ones included; the first is the documented-precedence primary
      * (argument declaration order), and the emitter guards at runtime that all divined values
-     * agree. At least one binding is {@linkplain BoundSlot#required required}, so every request
-     * names a tenant: a field whose slots are all optional is not routable on its arguments.
+     * agree. At least one binding is {@linkplain BoundSlot#required required}, so a client cannot
+     * leave every slot out; a request still names no tenant when every required slot reads
+     * through a list that arrives empty, and {@code whenNoTenant} says what that request gets.
+     * It is {@link WhenNoTenant.Unreachable} exactly when some slot is
+     * {@linkplain SlotPresence.Guaranteed guaranteed}.
      */
-    record ArgumentBound(List<BoundSlot> bindings) implements TenantBinding {
+    record ArgumentBound(List<BoundSlot> bindings, WhenNoTenant whenNoTenant) implements TenantBinding {
         public ArgumentBound {
+            java.util.Objects.requireNonNull(whenNoTenant, "whenNoTenant");
             if (bindings.isEmpty()) {
                 throw new IllegalArgumentException("ArgumentBound requires at least one bound slot");
             }
             if (bindings.stream().noneMatch(BoundSlot::required)) {
                 throw new IllegalArgumentException("ArgumentBound requires at least one required slot,"
                     + " or a request omitting every slot names no tenant: " + bindings);
+            }
+            boolean guaranteed = bindings.stream()
+                .anyMatch(b -> b.presence() instanceof SlotPresence.Guaranteed);
+            if (guaranteed != (whenNoTenant instanceof WhenNoTenant.Unreachable)) {
+                throw new IllegalArgumentException("ArgumentBound's whenNoTenant is Unreachable exactly"
+                    + " when some slot is Guaranteed: " + whenNoTenant + " over " + bindings);
             }
             bindings = List.copyOf(bindings);
         }

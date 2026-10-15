@@ -91,7 +91,8 @@ class TenantAcquisitionFragmentsTest {
     @Test
     void anArgumentBoundAcquisitionDivinesFromItsSlotsAndHandsTheKeyDown() {
         var declaration = declare(new TenantAcquisition.ArgumentBound(
-            List.of(new TenantAcquisition.SlotRead.TopLevelArg("customerId"))));
+            List.of(new TenantAcquisition.SlotRead.TopLevelArg("customerId")),
+            new TenantAcquisition.WhenNoTenant.Unreachable()));
 
         assertThat(declaration.statement().toString())
             .isEqualTo("java.lang.Integer _divinedTenant = com.example.generated.schema"
@@ -114,7 +115,8 @@ class TenantAcquisitionFragmentsTest {
             List.of(
                 new TenantAcquisition.SlotRead.TopLevelArg("customerId"),
                 new TenantAcquisition.SlotRead.NestedInput("input", List.of("owner", "customerId")),
-                new TenantAcquisition.SlotRead.ContextArg("tenant"))));
+                new TenantAcquisition.SlotRead.ContextArg("tenant")),
+            new TenantAcquisition.WhenNoTenant.Unreachable()));
 
         assertThat(declaration.statement().toString())
             .isEqualTo("java.lang.Integer _divinedTenant = com.example.generated.schema"
@@ -134,7 +136,8 @@ class TenantAcquisitionFragmentsTest {
     @Test
     void theKeyLocalIsDeclaredWithTheRunsTenantKeyType() {
         var declaration = declare(String.class.getName(), new TenantAcquisition.ArgumentBound(
-            List.of(new TenantAcquisition.SlotRead.TopLevelArg("institution"))));
+            List.of(new TenantAcquisition.SlotRead.TopLevelArg("institution")),
+            new TenantAcquisition.WhenNoTenant.Unreachable()));
 
         assertThat(declaration.statement().toString()).startsWith("java.lang.String _divinedTenant");
     }

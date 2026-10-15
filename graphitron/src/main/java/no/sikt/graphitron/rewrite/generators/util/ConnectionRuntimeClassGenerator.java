@@ -1400,6 +1400,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(dslGlobal)
                 .addMethod(staticDslGlobal(self))
+                .addMethod(namedTenant(tenantKey))
                 .addMethod(divinedTenant(tenantKey))
                 .addMethod(tenantKeyOf(tenantKey))
                 .addMethod(divinedTenantAgree(clientException))
@@ -2339,13 +2340,15 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static T divinedTenant(Object... candidates)}: folds every runtime value of a field's
-     * tenant bindings into the one divined key. Collections flatten (a list-valued binding
-     * contributes each element); all non-null values must agree; an all-null/absent fold is a
-     * request-level error before any SQL, as is a value of the wrong Java type.
+     * {@code static T namedTenant(Object... candidates)}: folds every runtime value of a field's
+     * tenant bindings into the one tenant they name, or {@code null} when they name none (every
+     * slot absent, or every list it reads through empty). Collections flatten; all non-null values
+     * must agree; a value of the wrong Java type is a request-level error. The absent-tolerant
+     * fold behind {@code divinedTenant}, called directly where an empty request has its own
+     * answer.
      */
-    private static MethodSpec divinedTenant(TypeName tenantKey) {
-        return MethodSpec.methodBuilder("divinedTenant")
+    private static MethodSpec namedTenant(TypeName tenantKey) {
+        return MethodSpec.methodBuilder("namedTenant")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(tenantKey)
             .addParameter(Object[].class, "candidates")
@@ -2354,13 +2357,32 @@ public final class ConnectionRuntimeClassGenerator {
             .beginControlFlow("for (Object candidate : candidates)")
             .addStatement("key = agreeOnTenant(key, candidate)")
             .endControlFlow()
+            .addStatement("return key == null ? null : tenantKeyOf(key)")
+            .addJavadoc("Folds the runtime values of a field's tenant bindings into the one tenant they\n"
+                + "name, or {@code null} when they name none: collections flatten, all non-null values\n"
+                + "must agree, and a wrongly-typed value is a request-level error before any SQL.\n"
+                + "@param candidates each bound slot's runtime value (a value, a collection of values, or {@code null})\n")
+            .build();
+    }
+
+    /**
+     * {@code static T divinedTenant(Object... candidates)}: {@code namedTenant}, where a fold
+     * naming no tenant is a request-level error before any SQL.
+     */
+    private static MethodSpec divinedTenant(TypeName tenantKey) {
+        return MethodSpec.methodBuilder("divinedTenant")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(tenantKey)
+            .addParameter(Object[].class, "candidates")
+            .varargs()
+            .addStatement("$T key = namedTenant(candidates)", tenantKey)
             .beginControlFlow("if (key == null)")
             .addComment("Absent binding value: a request-level error before any SQL, same family as the")
             .addComment("unknown-tenant acquisition failure.")
             .addStatement("throw new $T($S)", NO_SUCH_ELEMENT,
                 "The tenant binding value is absent; cannot route the operation to a tenant database.")
             .endControlFlow()
-            .addStatement("return tenantKeyOf(key)")
+            .addStatement("return key")
             .addJavadoc("Folds the runtime values of a field's tenant bindings into the one divined key:\n"
                 + "collections flatten, all non-null values must agree, and an absent or wrongly-typed\n"
                 + "value is a request-level error before any SQL. For a numeric tenant column a\n"

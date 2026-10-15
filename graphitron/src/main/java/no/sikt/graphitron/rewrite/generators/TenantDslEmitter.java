@@ -43,6 +43,11 @@ import java.util.List;
  *       service; acquires the fixed default source via {@code dslDefault()} in every request.</li>
  * </ul>
  *
+ * <p>An {@link TenantBinding.ArgumentBound} field's {@link TenantBinding.WhenNoTenant} arm says what
+ * a request whose slots name no tenant gets, and each site says through {@link EmptyAnswerSite}
+ * whether it can return that answer early, has had it returned by a dominating caller, or has no
+ * rendering for it.
+ *
  * <p>The per-row family ({@link TenantBinding.NodeIdBound}, {@link TenantBinding.EntityRepBound})
  * partitions at its dispatch surfaces ({@code QueryNodeFetcherClassGenerator},
  * {@code EntityFetcherDispatchClassGenerator}), not here; a per-row-bound coordinate reaching one
@@ -81,6 +86,44 @@ final class TenantDslEmitter {
     }
 
     /**
+     * What one routing site does with a request whose slots name no tenant, for an
+     * {@link TenantBinding.WhenNoTenant.AnswerEmpty} field. {@link TenantBinding.WhenNoTenant.Unreachable}
+     * and {@link TenantBinding.WhenNoTenant.Refuse} render the same at every site, since neither
+     * returns early.
+     */
+    sealed interface EmptyAnswerSite {
+
+        /**
+         * The site can return early: {@code early} renders the statements that return the empty
+         * value from the site's method (wrapped as a success where the field has an error
+         * channel). {@code AnswerEmpty} renders the absent-tolerant fold and this return when the
+         * fold names no tenant, ahead of any acquisition and hand-down.
+         */
+        record Renders(java.util.function.Function<TenantBinding.EmptyValue, CodeBlock> early)
+            implements EmptyAnswerSite {}
+
+        /**
+         * A caller that dominates this site has already answered the empty request (a DML
+         * builder's hoisted empty-input guard, or the fetcher whose reentry companion this is),
+         * so on every path reaching the site the fold names a tenant. {@code AnswerEmpty} renders
+         * the {@code Unreachable} declaration, whose absent-fold throw then means only a broken
+         * gate.
+         */
+        record Gated() implements EmptyAnswerSite {
+            static final Gated INSTANCE = new Gated();
+        }
+
+        /**
+         * The site has no rendering. {@code AnswerEmpty} reaching it is a generator bug, thrown
+         * at generation, so a fetcher that should render the arm cannot fall through to the
+         * runtime absent-tenant throw.
+         */
+        record NoEmptyAnswer() implements EmptyAnswerSite {
+            static final NoEmptyAnswer INSTANCE = new NoEmptyAnswer();
+        }
+    }
+
+    /**
      * Resolves the {@code DSLContext} declaration for {@code field}, emitted as the fetcher
      * method whose {@code env} parameter is the field's own {@code DataFetchingEnvironment}.
      * Falls back to the single-tenant form whenever the emission context carries no classified
@@ -90,10 +133,20 @@ final class TenantDslEmitter {
      * binding is a generator bug ({@link #requireBinding}), never a fallback.
      */
     static Resolution resolve(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {
-        return resolve(ctx, field.name(), outputPackage);
+        return resolve(ctx, field.name(), outputPackage, EmptyAnswerSite.NoEmptyAnswer.INSTANCE);
     }
 
-    private static Resolution resolve(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
+    /**
+     * {@link #resolve(TypeFetcherEmissionContext, OutputField, String)} at a site that states what
+     * it does with an empty request ({@link EmptyAnswerSite}).
+     */
+    static Resolution resolve(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage,
+                              EmptyAnswerSite site) {
+        return resolve(ctx, field.name(), outputPackage, site);
+    }
+
+    private static Resolution resolve(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage,
+                                      EmptyAnswerSite site) {
         if (!routes(ctx)) {
             return singleTenant(ctx);
         }
@@ -110,7 +163,7 @@ final class TenantDslEmitter {
                     .addStatement("$T dsl = $T.dslDefault(env)", DSL_CONTEXT, tenantConnections)
                     .build(),
                 false);
-            case TenantBinding.ArgumentBound bound -> argumentBound(ctx, bound, tenantConnections);
+            case TenantBinding.ArgumentBound bound -> argumentBound(ctx, fieldName, bound, tenantConnections, site);
             case TenantBinding.FanOut ignored -> throw new IllegalStateException(
                 "Field '" + ctx.parentTypeName() + "." + fieldName + "' classified as tenant "
                     + "FanOut reached the generic DSL-declaration site; the fanned-fetcher emission "
@@ -133,6 +186,35 @@ final class TenantDslEmitter {
     }
 
     /**
+     * The site for a DML builder below its hoisted empty-input guard on {@code inputArgName}: the
+     * guard has returned the empty answer whenever {@code in} is empty, and an
+     * {@link TenantBinding.WhenNoTenant.AnswerEmpty} binding's slots cross exactly that argument's
+     * list, so the fold names a tenant on every path past it ({@link EmptyAnswerSite.Gated}). An
+     * {@code AnswerEmpty} arm reading through any other argument would leave the guard short of
+     * the empty request, and is a generator bug.
+     */
+    static EmptyAnswerSite gatedOnEmptyInput(TypeFetcherEmissionContext ctx, OutputField field,
+                                             String inputArgName) {
+        if (routes(ctx)
+                && requireBinding(ctx, field.name()) instanceof TenantBinding.ArgumentBound bound
+                && bound.whenNoTenant() instanceof TenantBinding.WhenNoTenant.AnswerEmpty) {
+            var arguments = bound.bindings().stream()
+                .map(TenantBinding.BoundSlot::presence)
+                .filter(p -> p instanceof TenantBinding.SlotPresence.PerElement)
+                .map(p -> ((TenantBinding.SlotPresence.PerElement) p).argument())
+                .distinct()
+                .toList();
+            if (!arguments.equals(List.of(inputArgName))) {
+                throw new IllegalStateException(
+                    "Graphitron generator bug (tenant routing): DML field '" + ctx.parentTypeName() + "."
+                        + field.name() + "' answers an empty request from its input '" + inputArgName
+                        + "', but its tenant slots read through " + arguments + ".");
+            }
+        }
+        return EmptyAnswerSite.Gated.INSTANCE;
+    }
+
+    /**
      * {@link #resolve} for sites that carry only the field's name: the binding is read by
      * coordinate ({@code ctx.parentTypeName()} + name), which is the whole input {@link #resolve}
      * needs, so a multi-table polymorphic root whose participant filters bind the tenant column
@@ -141,7 +223,7 @@ final class TenantDslEmitter {
      * serves flat and nested coordinates alike.
      */
     static Resolution resolveByName(TypeFetcherEmissionContext ctx, String fieldName, String outputPackage) {
-        return resolve(ctx, fieldName, outputPackage);
+        return resolve(ctx, fieldName, outputPackage, EmptyAnswerSite.NoEmptyAnswer.INSTANCE);
     }
 
     /**
@@ -213,9 +295,11 @@ final class TenantDslEmitter {
      * from {@link #serviceDslExpression}. When the field is {@link TenantBinding.ArgumentBound} in
      * a multi-tenant build, yields just the divined-key local so the fetcher's success return can
      * hand the key down the subtree; every other case yields an empty declaration. A companion
-     * re-divines from the same {@code env}, so the two reads agree by construction.
+     * re-divines from the same {@code env}, so the two reads agree by construction. {@code site}
+     * says what the fetcher does with a request whose slots name no tenant.
      */
-    static Resolution handDownOnly(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage) {
+    static Resolution handDownOnly(TypeFetcherEmissionContext ctx, OutputField field, String outputPackage,
+                                   EmptyAnswerSite site) {
         if (!routes(ctx)) {
             return new Resolution(CodeBlock.of(""), false);
         }
@@ -223,7 +307,7 @@ final class TenantDslEmitter {
         var none = new Resolution(CodeBlock.of(""), false);
         return switch (binding) {
             case TenantBinding.ArgumentBound bound -> new Resolution(
-                divinedKeyDeclaration(ctx, bound, tenantConnectionsClass(outputPackage)), true);
+                divinedKeyDeclaration(ctx, field.name(), bound, tenantConnectionsClass(outputPackage), site), true);
             // A fanned field hands tenants down per element (each unioned row's DataFetcherResult
             // carries its own localContext), never as one divined-key local; the fanned-fetcher
             // emission owns that stamping.
@@ -401,11 +485,12 @@ final class TenantDslEmitter {
             false);
     }
 
-    private static Resolution argumentBound(TypeFetcherEmissionContext ctx,
-                                            TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
+    private static Resolution argumentBound(TypeFetcherEmissionContext ctx, String fieldName,
+                                            TenantBinding.ArgumentBound bound, ClassName tenantConnections,
+                                            EmptyAnswerSite site) {
         return new Resolution(
             CodeBlock.builder()
-                .add(divinedKeyDeclaration(ctx, bound, tenantConnections))
+                .add(divinedKeyDeclaration(ctx, fieldName, bound, tenantConnections, site))
                 .addStatement("$T dsl = $T.dslFor(env, $L)", DSL_CONTEXT, tenantConnections, TENANT_KEY_LOCAL)
                 .build(),
             true);
@@ -442,16 +527,82 @@ final class TenantDslEmitter {
     }
 
     /**
-     * The {@code <T> _divinedTenant = TenantConnections.divinedTenant(<slot reads>);} statement,
-     * declared with the catalog-read tenant key type (generated sources never use {@code var}).
+     * The {@value #TENANT_KEY_LOCAL} declaration over the slot reads, declared with the
+     * catalog-read tenant key type (generated sources never use {@code var}), forked on the
+     * binding's {@link TenantBinding.WhenNoTenant} arm and the site:
+     *
+     * <ul>
+     *   <li>{@code Unreachable}, or {@code AnswerEmpty} at a {@link EmptyAnswerSite.Gated} site:
+     *       {@code divinedTenant}, whose absent fold throws.</li>
+     *   <li>{@code Refuse}: {@code namedTenant}, then the generated client error naming the field
+     *       and the empty arguments when it names none.</li>
+     *   <li>{@code AnswerEmpty} at a {@link EmptyAnswerSite.Renders} site: {@code namedTenant},
+     *       then the site's early return of the empty value when it names none.</li>
+     * </ul>
      */
-    private static CodeBlock divinedKeyDeclaration(TypeFetcherEmissionContext ctx,
-                                                   TenantBinding.ArgumentBound bound, ClassName tenantConnections) {
+    private static CodeBlock divinedKeyDeclaration(TypeFetcherEmissionContext ctx, String fieldName,
+                                                   TenantBinding.ArgumentBound bound, ClassName tenantConnections,
+                                                   EmptyAnswerSite site) {
         var scopes = (TenantScopes.Configured) ctx.graphitronSchema().tenantScopes();
         var keyType = scopes.tenantType().isPrimitive() ? scopes.tenantType().box() : scopes.tenantType();
         var reads = slotReads(ctx, bound.bindings(), tenantConnections);
+        return switch (bound.whenNoTenant()) {
+            case TenantBinding.WhenNoTenant.Unreachable ignored ->
+                fold(keyType, "divinedTenant", reads, tenantConnections);
+            case TenantBinding.WhenNoTenant.Refuse refuse -> CodeBlock.builder()
+                .add(fold(keyType, "namedTenant", reads, tenantConnections))
+                .beginControlFlow("if ($L == null)", TENANT_KEY_LOCAL)
+                .addStatement("throw new $T($S)", clientExceptionClass(tenantConnections),
+                    no.sikt.graphitron.render.TenantAcquisitionFragments.noTenantMessage(
+                        ctx.parentTypeName() + "." + fieldName, refuse.arguments()))
+                .endControlFlow()
+                .build();
+            case TenantBinding.WhenNoTenant.AnswerEmpty empty -> switch (site) {
+                case EmptyAnswerSite.Renders renders -> CodeBlock.builder()
+                    .add(fold(keyType, "namedTenant", reads, tenantConnections))
+                    .beginControlFlow("if ($L == null)", TENANT_KEY_LOCAL)
+                    .add(renders.early().apply(empty.value()))
+                    .endControlFlow()
+                    .build();
+                case EmptyAnswerSite.Gated ignored ->
+                    fold(keyType, "divinedTenant", reads, tenantConnections);
+                case EmptyAnswerSite.NoEmptyAnswer ignored -> throw new IllegalStateException(
+                    "Graphitron generator bug (tenant routing): field '" + ctx.parentTypeName() + "."
+                        + fieldName + "' answers an empty request with " + empty.value()
+                        + ", but it reached a DSL site that has no rendering for that answer;"
+                        + " the site must render it (EmptyAnswerSite.Renders) or sit behind a"
+                        + " caller that does (EmptyAnswerSite.Gated).");
+            };
+        };
+    }
+
+    /**
+     * The default rendering of an empty answer as an expression: {@code List.of()},
+     * {@code Set.of()}, or an empty {@code Result} over the table's own record type
+     * ({@code DSL.using(SQLDialect.DEFAULT).newResult(Tables.FILM)}). A site whose empty
+     * {@code Result} has another record type renders that arm itself.
+     */
+    static CodeBlock emptyValue(TenantBinding.EmptyValue value) {
+        return switch (value) {
+            case TenantBinding.EmptyValue.EmptyList ignored -> CodeBlock.of("$T.of()", ClassName.get(List.class));
+            case TenantBinding.EmptyValue.EmptySet ignored -> CodeBlock.of("$T.of()", ClassName.get(java.util.Set.class));
+            case TenantBinding.EmptyValue.EmptyResult result -> CodeBlock.of("$L.newResult($T.$L)",
+                detachedDsl(), no.sikt.graphitron.render.CatalogRefs.constantsClass(result.table()),
+                result.table().javaFieldName());
+        };
+    }
+
+    /** {@code DSL.using(SQLDialect.DEFAULT)}: a connection-less context to build an empty result on. */
+    static CodeBlock detachedDsl() {
+        return CodeBlock.of("$T.using($T.DEFAULT)", ClassName.get("org.jooq.impl", "DSL"),
+            ClassName.get("org.jooq", "SQLDialect"));
+    }
+
+    /** {@code <K> _divinedTenant = TenantConnections.<method>(<slot reads>);} */
+    private static CodeBlock fold(no.sikt.graphitron.javapoet.TypeName keyType, String method,
+                                  List<CodeBlock> reads, ClassName tenantConnections) {
         var divined = CodeBlock.builder()
-            .add("$T $L = $T.divinedTenant(", keyType, TENANT_KEY_LOCAL, tenantConnections);
+            .add("$T $L = $T.$L(", keyType, TENANT_KEY_LOCAL, tenantConnections, method);
         for (int i = 0; i < reads.size(); i++) {
             if (i > 0) {
                 divined.add(", ");
@@ -459,6 +610,12 @@ final class TenantDslEmitter {
             divined.add(reads.get(i));
         }
         return divined.add(");\n").build();
+    }
+
+    /** The generated client-error type, beside {@code TenantConnections} in the schema package. */
+    private static ClassName clientExceptionClass(ClassName tenantConnections) {
+        return ClassName.get(tenantConnections.packageName(),
+            no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
     }
 
     /**

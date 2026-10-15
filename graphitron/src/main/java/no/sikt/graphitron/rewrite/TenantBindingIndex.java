@@ -261,24 +261,35 @@ public record TenantBindingIndex(
     }
 
     /**
-     * Whether the client cannot omit a bound slot: its read path is non-null all the way down,
-     * the top-level argument for {@link TenantBinding.SlotRead.TopLevelArg} (read by the slot
-     * name) and the outer argument plus every input field on the path for
-     * {@link TenantBinding.SlotRead.NestedInput}. A list wrapper's element type counts too,
-     * since {@code [ID]!} can arrive as {@code [null]} and name no tenant. Nullability decides
-     * alone: a non-null list can still arrive empty. A context argument is supplied by the
-     * consumer server-side, so a missing one is a wiring bug, not a client choice.
+     * Whether a bound slot's value is present on a request: {@link TenantBinding.SlotPresence}
+     * read off the consuming field's definition. The read path is the top-level argument for
+     * {@link TenantBinding.SlotRead.TopLevelArg} (read by the slot name) and the outer argument
+     * plus every input field on the path for {@link TenantBinding.SlotRead.NestedInput}. Any
+     * nullable type on it, a list wrapper's element type included (since {@code [ID]!} can
+     * arrive as {@code [null]}), makes the slot optional; otherwise each list the path unwraps is
+     * recorded by its path from the argument, since a non-null list can still arrive empty. A
+     * context argument is supplied by the consumer server-side, so a missing one is a wiring bug,
+     * not a client choice: guaranteed.
      */
-    static boolean slotRequired(GraphQLFieldDefinition definition, String slotName,
-                                TenantBinding.SlotRead read) {
-        return switch (read) {
-            case TenantBinding.SlotRead.ContextArg ignored -> true;
-            case TenantBinding.SlotRead.TopLevelArg ignored ->
-                nonNullAllTheWay(argumentType(definition, slotName));
+    static TenantBinding.SlotPresence slotPresence(GraphQLFieldDefinition definition, String slotName,
+                                                   TenantBinding.SlotRead read) {
+        var optional = TenantBinding.SlotPresence.Optional.INSTANCE;
+        var crossed = new ArrayList<List<String>>();
+        switch (read) {
+            case TenantBinding.SlotRead.ContextArg ignored -> {
+                return TenantBinding.SlotPresence.Guaranteed.INSTANCE;
+            }
+            case TenantBinding.SlotRead.TopLevelArg ignored -> {
+                if (!nonNullAllTheWay(argumentType(definition, slotName), List.of(slotName), crossed)) {
+                    return optional;
+                }
+            }
             case TenantBinding.SlotRead.NestedInput nested -> {
+                var path = new ArrayList<String>();
+                path.add(nested.outerArgName());
                 graphql.schema.GraphQLType type = argumentType(definition, nested.outerArgName());
-                if (!nonNullAllTheWay(type)) {
-                    yield false;
+                if (!nonNullAllTheWay(type, path, crossed)) {
+                    return optional;
                 }
                 for (String segment : nested.path()) {
                     if (!(GraphQLTypeUtil.unwrapAll(type) instanceof GraphQLInputObjectType input)
@@ -286,13 +297,16 @@ public record TenantBindingIndex(
                         throw unresolvableSlot(definition, slotName, read);
                     }
                     type = input.getField(segment).getType();
-                    if (!nonNullAllTheWay(type)) {
-                        yield false;
+                    path.add(segment);
+                    if (!nonNullAllTheWay(type, path, crossed)) {
+                        return optional;
                     }
                 }
-                yield true;
             }
-        };
+        }
+        return crossed.isEmpty()
+            ? TenantBinding.SlotPresence.Guaranteed.INSTANCE
+            : new TenantBinding.SlotPresence.PerElement(crossed);
     }
 
     private static graphql.schema.GraphQLType argumentType(GraphQLFieldDefinition definition,
@@ -305,13 +319,19 @@ public record TenantBindingIndex(
         return argument.getType();
     }
 
-    private static boolean nonNullAllTheWay(graphql.schema.GraphQLType type) {
+    /**
+     * Whether {@code type} is non-null all the way down, list element types included; each list
+     * it unwraps on the way is recorded into {@code crossed} under {@code path}.
+     */
+    private static boolean nonNullAllTheWay(graphql.schema.GraphQLType type, List<String> path,
+                                            List<List<String>> crossed) {
         graphql.schema.GraphQLType current = type;
         while (current instanceof graphql.schema.GraphQLNonNull nonNull) {
             current = nonNull.getWrappedType();
             if (!(current instanceof graphql.schema.GraphQLList list)) {
                 return true;
             }
+            crossed.add(List.copyOf(path));
             current = list.getWrappedType();
         }
         return false;
@@ -873,7 +893,8 @@ public record TenantBindingIndex(
                         direct.evidence());
                 }
                 case Reading.Guaranteed guaranteed -> {
-                    return new Verdict.Arm(new TenantBinding.ArgumentBound(guaranteed.slots()));
+                    return new Verdict.Arm(new TenantBinding.ArgumentBound(guaranteed.slots(),
+                        whenNoTenant(out, guaranteed.slots())));
                 }
                 // Every slot is optional, so a request may leave them all out and name no tenant:
                 // there is no correct routing for that request. The rejection is the field's
@@ -1508,6 +1529,75 @@ public record TenantBindingIndex(
             return tables;
         }
 
+        /**
+         * What a request whose slots name no tenant gets, for an argument-routed field: never
+         * reached where some slot is guaranteed; the field's own empty answer where every
+         * per-element slot crosses only its top-level argument's list and the leaf has an empty
+         * answer graphitron can build ({@link #emptyAnswerOf}); a client error naming the
+         * arguments otherwise.
+         */
+        static TenantBinding.WhenNoTenant whenNoTenant(OutputField out, List<TenantBinding.BoundSlot> slots) {
+            if (slots.stream().anyMatch(s -> s.presence() instanceof TenantBinding.SlotPresence.Guaranteed)) {
+                return TenantBinding.WhenNoTenant.Unreachable.INSTANCE;
+            }
+            var perElement = slots.stream()
+                .map(TenantBinding.BoundSlot::presence)
+                .filter(p -> p instanceof TenantBinding.SlotPresence.PerElement)
+                .map(p -> (TenantBinding.SlotPresence.PerElement) p)
+                .toList();
+            List<String> arguments = perElement.stream()
+                .map(TenantBinding.SlotPresence.PerElement::argument).distinct().toList();
+            if (perElement.stream().allMatch(TenantBinding.SlotPresence.PerElement::crossesOnlyItsArgument)) {
+                var empty = emptyAnswerOf(out);
+                if (empty.isPresent()) {
+                    return new TenantBinding.WhenNoTenant.AnswerEmpty(empty.get());
+                }
+            }
+            return new TenantBinding.WhenNoTenant.Refuse(arguments);
+        }
+
+        /**
+         * The field's answer to no input, where it is an empty value graphitron can build: the
+         * list DML verbs, the list-returning service leaves (whose fetcher value is the
+         * re-selected or dispatched {@code List<Record>} whatever the service's own container),
+         * a record service by its return container, and a keyed list lookup. Every other leaf
+         * (filters, connections, single returns, the child batched lookup) has none.
+         */
+        private static Optional<TenantBinding.EmptyValue> emptyAnswerOf(OutputField out) {
+            var emptyList = Optional.<TenantBinding.EmptyValue>of(TenantBinding.EmptyValue.EmptyList.INSTANCE);
+            return switch (out) {
+                case MutationField.DmlTableField f when f.write().listInput() -> emptyList;
+                case MutationField.MutationBulkDmlRecordField f ->
+                    Optional.of(new TenantBinding.EmptyValue.EmptyResult(f.write().table()));
+                case MutationField.MutationServiceTableField f when f.returnType().wrapper().isList() -> emptyList;
+                case QueryField.QueryServiceTableField f when f.returnType().wrapper().isList() -> emptyList;
+                case MutationField.MutationServicePolymorphicField f when f.returnType().wrapper().isList() -> emptyList;
+                case QueryField.QueryServicePolymorphicField f when f.returnType().wrapper().isList() -> emptyList;
+                case MutationField.MutationServiceTableInterfaceField f when f.returnType().wrapper().isList() -> emptyList;
+                case QueryField.QueryServiceTableInterfaceField f when f.returnType().wrapper().isList() -> emptyList;
+                case MutationField.MutationServiceRecordField f -> emptyOfContainer(f.serviceMethodCall());
+                case QueryField.QueryServiceRecordField f -> emptyOfContainer(f.serviceMethodCall());
+                case QueryField.QueryTableField f
+                        when f.lookup().isKeyed() && f.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.List ->
+                    emptyList;
+                default -> Optional.empty();
+            };
+        }
+
+        private static Optional<TenantBinding.EmptyValue> emptyOfContainer(
+                no.sikt.graphitron.rewrite.model.ServiceMethodCall call) {
+            return switch (call.returnContainer()) {
+                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.ListLike ignored ->
+                    Optional.of(TenantBinding.EmptyValue.EmptyList.INSTANCE);
+                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.SetLike ignored ->
+                    Optional.of(TenantBinding.EmptyValue.EmptySet.INSTANCE);
+                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.JooqResult r ->
+                    Optional.of(new TenantBinding.EmptyValue.EmptyResult(r.table()));
+                case no.sikt.graphitron.rewrite.model.ServiceMethodCall.ReturnContainer.Other ignored ->
+                    Optional.empty();
+            };
+        }
+
         private static void addParticipantTables(List<ParticipantRef> participants, List<TableRef> out) {
             for (ParticipantRef participant : participants) {
                 if (participant instanceof ParticipantRef.TableBacked tb) {
@@ -1581,7 +1671,12 @@ public record TenantBindingIndex(
             /** A shape names the tenant column but cannot route; the slots beside it are kept. */
             record Declined(List<String> declines, List<TenantBinding.BoundSlot> slots) implements Reading {}
 
-            /** No declines and at least one required slot: every request names a tenant. */
+            /**
+             * No declines and at least one required slot: a client cannot leave every slot out.
+             * A request still names no tenant when its required slots all read through lists
+             * that arrive empty; {@link TenantBinding.ArgumentBound#whenNoTenant()} says what it
+             * gets.
+             */
             record Guaranteed(List<TenantBinding.BoundSlot> slots) implements Reading {}
 
             /** No declines, and every slot optional: a request may name no tenant at all. */
@@ -1621,7 +1716,7 @@ public record TenantBindingIndex(
                     case SlotAccess.Resolved r -> {
                         if (seenNames.add(slotName)) {
                             slots.add(new TenantBinding.BoundSlot(slotName, r.read(), r.projection(),
-                                slotRequired(definition, slotName, r.read())));
+                                slotPresence(definition, slotName, r.read())));
                         }
                     }
                     case SlotAccess.Declined d -> decline(d.detail());
