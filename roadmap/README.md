@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1043` | A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation | Spec | 2026-10-15 | [plan](splitquery-same-row-null-correlation.md) |
-| `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | Spec | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
 | `R1038` | A client-supplied tenant key routes by the tenant column database value, not its converted Java form | Spec | 2026-10-15 | [plan](tenant-key-equality-follows-the-column.md) |
 | `R1041` | A mutation called with an empty input list returns an empty payload without routing to a tenant | Spec | 2026-10-15 | [plan](empty-input-list-skips-tenant-routing.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
@@ -33,6 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | Ready | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -560,7 +560,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutation-write
 
-- `R1040` [**A DML UPDATE row that sends only its key fields is a no-op that still returns the row**](update-empty-patch-is-a-no-op.md) — Spec, bug
+- `R1040` [**A DML UPDATE row that sends only its key fields is a no-op that still returns the row**](update-empty-patch-is-a-no-op.md) — Ready, bug
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
 - `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — Spec, bug
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
