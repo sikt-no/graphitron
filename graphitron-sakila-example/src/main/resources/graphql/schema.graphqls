@@ -5031,6 +5031,12 @@ type Mutation {
     createFilmBookmarks(in: [FilmBookmarkCreateInput!]!): [FilmBookmark!]! @mutation(typeName: INSERT)
     insertBookmarkOverlap(in: FilmBookmarkOverlapInput!): FilmBookmark @mutation(typeName: INSERT)
 
+    # The bulk sibling of insertBookmarkOverlap. A row that sends filmRef as an explicit null, with no
+    # bookmarkedFilm, has a present writer and nothing to agree on, so bookmarked_film binds a typed
+    # NULL; a row that sends neither writer takes the DEFAULT gap cell. bookmarked_film has no
+    # default, so only the rendered statement tells the two apart.
+    insertBookmarkOverlaps(in: [FilmBookmarkOverlapInput!]!): [FilmBookmark!]! @mutation(typeName: INSERT)
+
     # R322 single-row UPDATE SET value agreement: endorsed_film is SET by both endorsedFilm (@field) and
     # filmRef (@nodeId FK reference). requireColumnAgreement throws on disagreement before the .set(sets)
     # runs; agreeing writers update to the agreed value.
@@ -5072,6 +5078,20 @@ type Mutation {
     # decoded mailbox disagrees with mailboxRef; agreeing writers insert (in_reply_to_no carries the
     # parent's message_no). An omitted inReplyTo leaves the lone mailboxRef decode (in_reply_to_no NULL).
     insertEmailReply(in: InsertEmailReplyInput!): Email @mutation(typeName: INSERT)
+
+    # The bulk sibling of insertEmailReply. An explicit null inReplyTo is a missing reference: the row
+    # takes mailbox_id from mailboxRef and in_reply_to_no is NULL, the same row an omitted inReplyTo gives.
+    insertEmailReplies(in: [InsertEmailReplyInput!]!): [Email!]! @mutation(typeName: INSERT)
+
+    # The @service jOOQ-record path over the same input: describeReply reports mailbox_id and
+    # in_reply_to_no off the EmailRecord the generated helper built, without writing it. inReplyTo
+    # follows mailboxRef in the input, so its decode loads last; an explicit null there must leave the
+    # shared mailbox_id at mailboxRef's value rather than overwrite it with NULL.
+    describeEmailReply(in: InsertEmailReplyInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.EmailReplyRecordService",
+            method: "describeReply"
+        })
 
     # R354 self-FK @nodeId reference on a Graphitron-owned single-row UPDATE: `id` pins the row by its
     # own PK (mailbox_id, message_no) → WHERE; the self-FK `inReplyTo` routes its child columns

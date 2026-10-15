@@ -13,6 +13,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -35,6 +36,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * before the INSERT so nothing is written; and an <b>omitted</b> nullable self-FK leaves the lone
  * {@code mailboxRef} decode on {@code mailbox_id} with {@code in_reply_to_no} NULL (the presence
  * guard, no agreement check).
+ *
+ * <p>An explicit {@code null} on the nullable self-FK is a missing reference, not a {@code NULL} for
+ * every column it names: the row takes {@code mailbox_id} from {@code mailboxRef} and leaves
+ * {@code in_reply_to_no} {@code NULL}, the same row the omitted case gives, on the single-row and the
+ * bulk ({@code insertEmailReplies}) arm alike. A value that is not an {@code Email} id still throws.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -82,9 +88,10 @@ class SelfFkNodeIdInsertExecutionTest {
         // Each test inserts a reply at a distinct message_no in this class's band, and the cleanup
         // names the band's far end as well as its near one. Four classes in this module write
         // `email`, each owning a hundred-wide band; an open-ended `>= 100` would delete a sibling
-        // class's in-flight rows the moment the two ran at the same time.
+        // class's in-flight rows the moment the two ran at the same time. The bulk case writes into
+        // both seeded mailboxes, still inside this class's band.
         dsl.deleteFrom(DSL.table("email"))
-            .where(DSL.field("mailbox_id", Integer.class).eq(MAILBOX_ALICE))
+            .where(DSL.field("mailbox_id", Integer.class).in(MAILBOX_ALICE, MAILBOX_BOB))
             .and(DSL.field("message_no", Integer.class).between(MESSAGE_NO_BAND_START, MESSAGE_NO_BAND_END))
             .execute();
     }
@@ -160,5 +167,78 @@ class SelfFkNodeIdInsertExecutionTest {
         assertThat(row)
             .as("an omitted self-FK leaves in_reply_to_no NULL (lone mailbox decode)")
             .extractingByKey("inReplyToNo").isNull();
+    }
+
+    @Test
+    void explicitNullNullableSelfFk_insertsInMailboxRefsMailboxWithNullReplyPointer() {
+        // inReplyTo sent as an explicit null: the self-FK writes NULL to in_reply_to_no, the column only
+        // it writes, and contributes nothing to mailbox_id, which it shares with mailboxRef. The row is
+        // (5, n, NULL), the same Email the omitted case returns.
+        int msgNo = 103;
+        String mailbox5 = NodeIdEncoder.encode("Mailbox", MAILBOX_ALICE);
+        Map<String, Object> data = execute(
+            "mutation { insertEmailReply(in: {mailboxRef: \"" + mailbox5 + "\", messageNo: " + msgNo
+            + ", subject: \"a root\", inReplyTo: null}) { messageNo inReplyToNo } }");
+        Map<String, Object> row = (Map<String, Object>) data.get("insertEmailReply");
+        assertThat(row).extractingByKey("messageNo").isEqualTo(msgNo);
+        assertThat(row)
+            .as("an explicit null self-FK returns the same Email as the omitted one")
+            .extractingByKey("inReplyToNo").isNull();
+        assertThat(storedReplyPointers(msgNo))
+            .as("the row lands in mailboxRef's mailbox with a NULL reply pointer")
+            .containsExactly(new ReplyRow(MAILBOX_ALICE, msgNo, null));
+    }
+
+    @Test
+    void wrongTypeInReplyTo_stillThrowsAndInsertsNothing() {
+        // A Mailbox id where an Email id belongs is a value that fails to decode, not a missing
+        // reference, so it still throws before the INSERT runs. The decode failure reaches the client
+        // redacted today, so this pins the refusal and the absent row rather than the message.
+        int msgNo = 107;
+        String mailbox5 = NodeIdEncoder.encode("Mailbox", MAILBOX_ALICE);
+        ExecutionResult result = executeRaw(
+            "mutation { insertEmailReply(in: {mailboxRef: \"" + mailbox5 + "\", messageNo: " + msgNo
+            + ", inReplyTo: \"" + mailbox5 + "\"}) { messageNo } }");
+        assertThat(result.getErrors())
+            .as("a wrong-type id on the nullable self-FK must still be rejected")
+            .isNotEmpty();
+        assertThat((Map<String, Object>) result.getData()).containsEntry("insertEmailReply", null);
+        assertThat(storedReplyPointers(msgNo)).as("nothing is inserted").isEmpty();
+    }
+
+    @Test
+    void bulkInsert_valueExplicitNullAndOmittedSelfFk_eachRowTakesItsOwnMailbox() {
+        // One statement, three rows across both seeded mailboxes: a reply in Alice's mailbox, an
+        // explicit-null reply pointer in Bob's, and an omitted one in Alice's. mailbox_id always comes
+        // from the row's own mailboxRef; in_reply_to_no is the parent's number, then NULL twice.
+        String mailbox5 = NodeIdEncoder.encode("Mailbox", MAILBOX_ALICE);
+        String mailbox9 = NodeIdEncoder.encode("Mailbox", MAILBOX_BOB);
+        String parentEmail = NodeIdEncoder.encode("Email", MAILBOX_ALICE, ROOT_MESSAGE_NO);
+        Map<String, Object> data = execute(
+            "mutation { insertEmailReplies(in: ["
+            + "{mailboxRef: \"" + mailbox5 + "\", messageNo: 104, inReplyTo: \"" + parentEmail + "\"},"
+            + "{mailboxRef: \"" + mailbox9 + "\", messageNo: 105, inReplyTo: null},"
+            + "{mailboxRef: \"" + mailbox5 + "\", messageNo: 106}"
+            + "]) { messageNo inReplyToNo } }");
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("insertEmailReplies");
+        assertThat(rows).extracting(r -> r.get("messageNo")).containsExactly(104, 105, 106);
+        assertThat(storedReplyPointers(104, 105, 106)).containsExactly(
+            new ReplyRow(MAILBOX_ALICE, 104, ROOT_MESSAGE_NO),
+            new ReplyRow(MAILBOX_BOB, 105, null),
+            new ReplyRow(MAILBOX_ALICE, 106, null));
+    }
+
+    private record ReplyRow(Integer mailboxId, Integer messageNo, Integer inReplyToNo) {}
+
+    /** The stored {@code email} rows at these message numbers, in message-number order. */
+    private List<ReplyRow> storedReplyPointers(Integer... messageNos) {
+        var mailboxId = DSL.field("mailbox_id", Integer.class);
+        var messageNo = DSL.field("message_no", Integer.class);
+        var inReplyToNo = DSL.field("in_reply_to_no", Integer.class);
+        return dsl.select(mailboxId, messageNo, inReplyToNo)
+            .from(DSL.table("email"))
+            .where(messageNo.in(messageNos))
+            .orderBy(messageNo)
+            .fetch(r -> new ReplyRow(r.value1(), r.value2(), r.value3()));
     }
 }

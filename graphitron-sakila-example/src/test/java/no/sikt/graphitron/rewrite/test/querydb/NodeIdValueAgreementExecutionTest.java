@@ -44,6 +44,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code NULL} only when none does. A plain field's {@code null} is a value for its column and still
  * conflicts with a reference's value. The {@code film_bookmark} cases cover a nullable shared column,
  * on the single-row arm and the payload arm.
+ *
+ * <p>On INSERT, a nullable {@code @nodeId} sent as an explicit {@code null} is a missing reference and contributes
+ * nothing to a column it shares: on {@code insertEndorsementOverlap} the plain writer's value lands,
+ * while a plain writer's own explicit {@code null} still names the column and still conflicts. The
+ * {@code describeEmailReply} fixture carries the same rule onto the {@code @service} record path, over
+ * two references sharing {@code email.mailbox_id}. (The lone explicit-null case, where nothing carries
+ * a value for the shared column, needs a nullable column and lives on {@code film_bookmark} in
+ * {@code DmlBulkMutationsExecutionTest}.)
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -124,6 +132,45 @@ class NodeIdValueAgreementExecutionTest {
     }
 
     @Test
+    void serviceRecord_explicitNullSelfFkReference_keepsMailboxRefsMailboxAndNullsReplyPointer() {
+        // inReplyTo is the last decode to load, so without the load-phase guard its explicit null would
+        // overwrite the mailbox_id mailboxRef already set. It drops out of agreement instead, and only
+        // in_reply_to_no, the column it alone writes, is NULL.
+        String mailbox5 = NodeIdEncoder.encode("Mailbox", 5);
+        Map<String, Object> data = execute(
+            "mutation { describeEmailReply(in: {mailboxRef: \"" + mailbox5 + "\", messageNo: 1,"
+            + " inReplyTo: null}) }");
+        assertThat(data).extractingByKey("describeEmailReply")
+            .isEqualTo("mailbox_id=5, in_reply_to_no=null");
+    }
+
+    @Test
+    void serviceRecord_agreeingSelfFkReference_loadsBothColumns() {
+        String mailbox5 = NodeIdEncoder.encode("Mailbox", 5);
+        String parent = NodeIdEncoder.encode("Email", 5, 1);
+        Map<String, Object> data = execute(
+            "mutation { describeEmailReply(in: {mailboxRef: \"" + mailbox5 + "\", messageNo: 2,"
+            + " inReplyTo: \"" + parent + "\"}) }");
+        assertThat(data).extractingByKey("describeEmailReply")
+            .isEqualTo("mailbox_id=5, in_reply_to_no=1");
+    }
+
+    @Test
+    void serviceRecord_disagreeingSelfFkReference_stillThrows() {
+        // A parent in mailbox 9 against mailboxRef's mailbox 5: two values for one column still conflict.
+        String mailbox5 = NodeIdEncoder.encode("Mailbox", 5);
+        String parentInOtherMailbox = NodeIdEncoder.encode("Email", 9, 1);
+        ExecutionResult result = executeRaw(
+            "mutation { describeEmailReply(in: {mailboxRef: \"" + mailbox5 + "\", messageNo: 2,"
+            + " inReplyTo: \"" + parentInOtherMailbox + "\"}) }");
+        assertThat(result.getErrors())
+            .as("disagreeing references on mailbox_id must surface a value-agreement error")
+            .isNotEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("describeEmailReply")).isNull();
+    }
+
+    @Test
     void mutationInsert_twoWritersAgree_dedupsColumnAndInsertsAgreedValue() {
         // Both filmRef (@nodeId FK reference -> endorsed_film) and endorsedFilm (@field) target
         // endorsed_film. The structural dedup emits endorsed_film once (no "column specified more than
@@ -175,6 +222,42 @@ class NodeIdValueAgreementExecutionTest {
                 + note + "\"}) { endorsedFilm } }");
             Map<String, Object> row = (Map<String, Object>) data.get("insertEndorsementOverlap");
             assertThat(row).extractingByKey("endorsedFilm").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationInsert_explicitNullReferenceBesidePlainValue_insertsPlainValue() {
+        // filmRef sent as an explicit null is a missing reference: it contributes nothing to
+        // endorsed_film, so the plain writer's value is the only one there and it lands.
+        String note = "NULLREF-" + UUID.randomUUID();
+        try {
+            Map<String, Object> data = execute(
+                "mutation { insertEndorsementOverlap(in: {filmRef: null, endorsedFilm: 1, note: \""
+                + note + "\"}) { endorsedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("insertEndorsementOverlap");
+            assertThat(row).extractingByKey("endorsedFilm").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationInsert_explicitNullPlainBesideReferenceValue_stillConflicts() {
+        // A plain @field names the column itself, so its explicit null is a NULL for endorsed_film and
+        // conflicts with the reference's decoded 1; nothing is inserted.
+        String note = "NULLPLAIN-" + UUID.randomUUID();
+        String film1 = NodeIdEncoder.encode("Film", 1);
+        try {
+            ExecutionResult result = executeRaw(
+                "mutation { insertEndorsementOverlap(in: {filmRef: \"" + film1 + "\", endorsedFilm: null,"
+                + " note: \"" + note + "\"}) { endorsedFilm } }");
+            assertThat(result.getErrors())
+                .as("a plain field's explicit null still disagrees with a decoded value")
+                .isNotEmpty();
+            assertThat(dsl.fetchCount(DSL.table("film_endorsement"), DSL.field("note").eq(note)))
+                .as("nothing is inserted when the writers disagree").isZero();
         } finally {
             dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
         }

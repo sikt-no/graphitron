@@ -324,20 +324,26 @@ final class JooqRecordInstantiationEmitter {
      * writers' locals up front is what makes the plain-field value and the decode {@code String[]} slot
      * co-available for the per-column check. The shared {@link ColumnOverlap} plan keeps every column
      * (size-one included); the agreement check fires only on the {@code shared()} ones.
+     *
+     * <p>Each shared column's agreement list is recorded by the column's SQL name as it is emitted,
+     * so the load phase can tell whether a cleared reference has anything to defer to on that column.
      */
     private static void emitWithAgreement(MethodSpec.Builder b, List<Writer> writers,
             List<OverlapColumn> plan, ClassName tablesClass, String tableField) {
         for (var w : writers) {
             emitPrepare(b, w, tablesClass, tableField);
         }
+        var agreementLists = new java.util.HashMap<String, String>();
         int ci = 0;
         for (var oc : plan) {
             if (oc.shared()) {
-                emitAgreement(b, oc, tablesClass, tableField, "agree" + (ci++));
+                String listName = "agree" + (ci++);
+                agreementLists.put(oc.column().sqlName(), listName);
+                emitAgreement(b, oc, tablesClass, tableField, listName);
             }
         }
         for (var w : writers) {
-            emitLoadPrepared(b, w, tablesClass, tableField);
+            emitLoadPrepared(b, w, agreementLists, tablesClass, tableField);
         }
     }
 
@@ -414,9 +420,16 @@ final class JooqRecordInstantiationEmitter {
      * Load phase: writes a prepared writer onto the record from its locals, guarded on {@code <base>Present}.
      * Same record-write semantics as {@link #emitColumnBinding} / {@link #emitKeyDecode}: an explicit null
      * goes through {@code set(col, null)} (reliable changed-flag), a present value through {@code fromArray}
-     * (DataType coercion), and a nullable decode's present-null sets each target column to NULL.
+     * (DataType coercion), and a nullable decode's present-null sets its target columns to NULL.
+     *
+     * <p>A present-null decode is a missing reference, not a NULL for every column it names: a target
+     * column no other writer shares is set to NULL, and a shared one (keyed in {@code agreementLists}
+     * by SQL name) only when its agreement list is empty, that is when no other writer carries a value
+     * for it. Without that guard a cleared reference loading after one that carries the value would
+     * overwrite the shared column.
      */
-    private static void emitLoadPrepared(MethodSpec.Builder b, Writer w, ClassName tablesClass, String tableField) {
+    private static void emitLoadPrepared(MethodSpec.Builder b, Writer w, Map<String, String> agreementLists,
+            ClassName tablesClass, String tableField) {
         String base = w.base();
         if (!w.isDecode()) {
             emitPlainLoad(b, base, w.plain().column(), tablesClass, tableField);
@@ -430,7 +443,14 @@ final class JooqRecordInstantiationEmitter {
         } else {
             b.beginControlFlow("if ($LPresentNull)", base);
             for (var col : kd.targetColumns()) {
-                b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName());
+                String listName = agreementLists.get(col.sqlName());
+                if (listName == null) {
+                    b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName());
+                } else {
+                    b.beginControlFlow("if ($L.isEmpty())", listName)
+                        .addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName())
+                        .endControlFlow();
+                }
             }
             b.nextControlFlow("else");
             b.addStatement("rec.fromArray($LKeys, $L)", base, cols);
@@ -445,6 +465,11 @@ final class JooqRecordInstantiationEmitter {
      * {@code requireColumnAgreement} (coerced via the column's {@code DataType}). Presence-guarded: only
      * actually-present writers enter the list, so an omitted nullable writer cannot conflict, and the check
      * fires only when two or more are present. The label names the conflicting SDL fields, not the column.
+     *
+     * <p>A nullable decode sent as an explicit {@code null} contributes nothing: a {@code @nodeId}
+     * names a whole reference, and a missing reference says nothing about a column another reference
+     * on the input also writes. A plain field names the column itself, so its explicit {@code null}
+     * still enters the list and still conflicts with a value.
      */
     private static void emitAgreement(MethodSpec.Builder b, OverlapColumn oc,
             ClassName tablesClass, String tableField, String listName) {
@@ -466,7 +491,11 @@ final class JooqRecordInstantiationEmitter {
         b.addStatement("$T<$T> $L = new $T<>()", LIST, Object.class, listName, ARRAY_LIST);
         for (var c : oc.contributors()) {
             Writer w = ((WriterView) c.writer()).w();
-            b.beginControlFlow("if ($LPresent)", w.base());
+            if (w.isDecode() && !w.decode().nonNull()) {
+                b.beginControlFlow("if ($LPresent && !$LPresentNull)", w.base(), w.base());
+            } else {
+                b.beginControlFlow("if ($LPresent)", w.base());
+            }
             b.addStatement("$L.add($L)", listName, agreeValueExpr(w, c.slot()));
             b.endControlFlow();
         }
@@ -478,16 +507,14 @@ final class JooqRecordInstantiationEmitter {
     }
 
     /** The value a writer contributes to a shared column, read from its prepared locals: a plain field's
-     *  raw value, a non-null decode's slot, or a nullable decode's null (present-null) / slot. */
+     *  raw value or a decode's slot. A nullable decode is gathered only when it carries a value, so the
+     *  slot read never meets a present-null. */
     private static CodeBlock agreeValueExpr(Writer w, int slot) {
         String base = w.base();
         if (!w.isDecode()) {
             return CodeBlock.of("$LValue", base);
         }
-        if (w.decode().nonNull()) {
-            return CodeBlock.of("$LKeys[$L]", base, slot);
-        }
-        return CodeBlock.of("$LPresentNull ? null : $LKeys[$L]", base, base, slot);
+        return CodeBlock.of("$LKeys[$L]", base, slot);
     }
 
     /** Renders an access path as a dotted SDL field reference (e.g. {@code details.title}) for the

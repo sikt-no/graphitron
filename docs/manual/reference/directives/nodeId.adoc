@@ -83,6 +83,8 @@ When a `@service` method parameter is a generated jOOQ `TableRecord` (singular o
 * *Cross-table FK reference.* When the `@nodeId` type is a *different* table (the common status / history / junction-row shape), the decoded key loads into the foreign-key child columns on the record, resolved through the FK constraint between the two tables. The FK is deduced when exactly one connects them; when several do, name it with xref:reference.adoc[`@reference`]`(path: [{key: "<fk-name>"}])`. A record may carry several such FK-reference `@nodeId` fields.
 +
 On an xref:mutation.adoc[`@mutation`]`(typeName: UPDATE)` input those child columns can overlap the row's own key, which happens whenever the two tables share a qualifying column such as a tenant or institution number. The field then partitions per column: the columns outside the matched key are written, and the ones inside it are the row's identity, never written and checked against whatever else supplies them before the statement runs. A nullable (`ID`) reference can be cleared: an explicit `null` writes `NULL` to the columns the reference owns, leaving the identity columns as the rest of the input set them. A column the reference shares with another field that the statement also writes takes that field's value, so clearing one reference never conflicts with a value sent for the same column. Sending `null` never means "leave unchanged": to leave a reference alone, omit the field. A half-null foreign key imposes no referential obligation under PostgreSQL's default `MATCH SIMPLE`, so a cleared reference is an absent one rather than a dangling one. The build rejects one shape only: an optional reference that is the sole supplier of one of the matched key's columns, since an omitted value would leave nothing to find the row by. Give that column another contributor, or spell the reference `ID!`.
++
+On an INSERT input, a nullable (`ID`) reference can be sent as an explicit `null`. The row is inserted with the reference's own columns `NULL`. A column the reference shares with another field on the input, such as a tenant column several references include, takes that field's value instead, so a missing reference never conflicts with the references that are present. A value that is not a valid id of the right type is still rejected.
 
 [source,graphql]
 ----
@@ -95,7 +97,7 @@ input AssignFilmActorInput {
 }
 ----
 
-A nullable (`ID`) field follows jOOQ's changed-flag contract: an omitted key leaves its column unwritten (excluded from the service's INSERT/UPDATE), an explicit `null` writes `NULL`, and a value decodes and loads. A non-null (`ID!`) field always decodes and throws on a malformed or wrong-type id. A self-reference (an `@reference` on a same-table `@nodeId`) is rejected as out of scope.
+A nullable (`ID`) field follows jOOQ's changed-flag contract: an omitted key leaves its column unwritten (excluded from the service's INSERT/UPDATE), an explicit `null` writes `NULL`, and a value decodes and loads. Where the field shares a column with another field on the input, that column takes the other field's value. A non-null (`ID!`) field always decodes and throws on a malformed or wrong-type id.
 
 === Projecting one key column into an `argMapping` parameter
 

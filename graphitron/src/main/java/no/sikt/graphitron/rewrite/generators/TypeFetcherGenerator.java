@@ -2454,6 +2454,7 @@ public class TypeFetcherGenerator {
             String tableLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         var fieldCn = ClassName.get("org.jooq", "Field");
         var plan = insertColumnPlan(fields);
+        var leaves = flattenInsertLeaves(fields, List.of());
         var prep = CodeBlock.builder()
             .add(buildInsertDecodeLocals(fields, mapLocal, false, tablesOnly, tableRef))
             .addStatement("$T<$T<?>, $T<?>> insertCols = new $T<>()",
@@ -2462,7 +2463,7 @@ public class TypeFetcherGenerator {
             var oc = plan.get(ci);
             prep.beginControlFlow("if ($L)", insertColumnPresenceGate(oc, mapLocal, "ic" + ci))
                 .addStatement("insertCols.put($L, $L)", insertColumnRef(oc, tablesOnly, tableRef),
-                    insertPresentCell(oc, ci, mapLocal, tablesOnly, tableRef))
+                    insertPresentCell(oc, ci, leaves, mapLocal, tablesOnly, tableRef))
                 .endControlFlow();
         }
         var chain = CodeBlock.builder()
@@ -2491,6 +2492,7 @@ public class TypeFetcherGenerator {
         var fieldList = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(fieldCn, WildcardTypeName.subtypeOf(Object.class)));
         var plan = insertColumnPlan(fields);
+        var leaves = flattenInsertLeaves(fields, List.of());
         var prep = CodeBlock.builder();
         prep.addStatement("boolean[] insertInc = new boolean[$L]", plan.size());
         prep.beginControlFlow("for ($T<?, ?> row : in)", MAP);
@@ -2525,7 +2527,7 @@ public class TypeFetcherGenerator {
                 ? CodeBlock.of("$L", INSERT_KEY_PREFIX + "Cell" + ci)
                 : CodeBlock.of("$L ? $L : $T.defaultValue($L.getDataType())",
                     insertColumnPresenceGate(oc, "row", "ib" + ci),
-                    insertPresentCell(oc, ci, "row", tablesOnly, tableRef),
+                    insertPresentCell(oc, ci, leaves, "row", tablesOnly, tableRef),
                     DSL, insertColumnRef(oc, tablesOnly, tableRef));
             prep.beginControlFlow("if (insertInc[$L])", ci)
                 .addStatement("cells.add($L)", cell)
@@ -2559,18 +2561,29 @@ public class TypeFetcherGenerator {
      * nested) map value, a NodeId-decoded or reference field reads its decode local's slot
      * ({@code insertKey_<fi>.value<slot+1>()}), and a shared column reads the first present writer's
      * value, which {@link #emitInsertAgreementPrep} has checked the other present writers against.
+     *
+     * <p>A nullable ({@code ID}) decode sent as an explicit {@code null} leaves its local null, so
+     * its slot read is guarded and binds a typed {@code NULL}; the nullability is read off the
+     * flattened leaf the writer's index names, in {@code leaves}. A shared column whose present
+     * writers are all such nulls has nothing to agree on and binds {@code NULL} too.
      */
-    private static CodeBlock insertPresentCell(OverlapColumn oc, int ci, String mapLocal,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+    private static CodeBlock insertPresentCell(OverlapColumn oc, int ci, List<InsertLeaf> leaves,
+            String mapLocal, GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         CodeBlock value;
         if (oc.shared()) {
-            value = CodeBlock.of("$L.get(0)", INSERT_KEY_PREFIX + "Agree" + ci);
+            String listName = INSERT_KEY_PREFIX + "Agree" + ci;
+            value = CodeBlock.of("$L.isEmpty() ? null : $L.get(0)", listName, listName);
         } else {
             var c = oc.contributors().get(0);
             var v = (SetGroupWriter) c.writer();
-            value = c.writer().decode()
-                ? CodeBlock.of("$L_$L.value$L()", INSERT_KEY_PREFIX, v.index(), c.slot() + 1)
-                : ArgCallEmitter.nestedMapValueExpr(mapLocal, v.group().accessPath());
+            String recLocal = INSERT_KEY_PREFIX + "_" + v.index();
+            if (!c.writer().decode()) {
+                value = ArgCallEmitter.nestedMapValueExpr(mapLocal, v.group().accessPath());
+            } else if (insertLeafNonNull(leaves.get(v.index()).field())) {
+                value = CodeBlock.of("$L.value$L()", recLocal, c.slot() + 1);
+            } else {
+                value = CodeBlock.of("$L == null ? null : $L.value$L()", recLocal, recLocal, c.slot() + 1);
+            }
         }
         return CodeBlock.of("$T.val($L, $L.getDataType())", DSL, value, insertColumnRef(oc, tablesOnly, tableRef));
     }
@@ -2579,10 +2592,15 @@ public class TypeFetcherGenerator {
      * Builds the per-record NodeId decode locals for an INSERT/UPSERT INSERT-arm. For each
      * NodeId-bearing carrier ({@link InputField.ColumnBackedField} /
      * {@link InputField.ColumnBackedReferenceField} with {@link CallSiteExtraction.NodeIdDecodeKeys}),
-     * emits one {@code Record<N> insertKey_<fi> = ...} local reading from {@code mapLocal}.
-     * Locals are conditional on the source key's presence so an absent key (an omitted column on
-     * a single-row INSERT, a gap cell on a bulk one) does not force a decode; null returns on a
-     * present key throw {@code GraphqlErrorException}, mirroring the lookup-WHERE null handling.
+     * emits one {@code Record<N> insertKey_<fi> = ...} local reading from {@code mapLocal}, through
+     * {@link #appendSetDecodeLocal} with the leaf's presence expression, so an absent key (an omitted
+     * column on a single-row INSERT, a gap cell on a bulk one) never throws. The explicit-null rule
+     * is the leaf's SDL nullability: an {@code ID!} leaf cannot carry a null, so a null local on a
+     * present key is a wrong-type id and throws; an {@code ID} leaf sent as {@code null} leaves the
+     * local null (a missing reference, see {@link #insertPresentCell} and
+     * {@link #emitInsertAgreementPrep}), and only a value that fails to decode throws. There is no
+     * third answer: {@link OnExplicitNull.RefusedAsIdentity} guards a matched key, which an INSERT
+     * does not have.
      * {@code bulk} selects the shared-column prep's shape (see {@link #emitInsertAgreementPrep}).
      */
     private static CodeBlock buildInsertDecodeLocals(
@@ -2592,7 +2610,6 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         String localPrefix = INSERT_KEY_PREFIX;
         var locals = CodeBlock.builder();
-        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         // Flat leaf order matches insertSetGroupWriters so the decode-local index lines up with the
         // plan's writer index; a nested NodeId leaf reads its wire value via the null-safe descent
         // over its access path.
@@ -2606,19 +2623,12 @@ public class TypeFetcherGenerator {
                 default -> null;
             };
             if (nidk == null) continue;
-            String sourceField = f.name();
-            String recLocal = localPrefix + "_" + fi;
-            ClassName encoderClass = nidk.decodeMethod().encoderClass();
-            String methodName = nidk.decodeMethod().methodName();
-            TypeName recordType = nidk.decodeMethod().returnType();
-            locals.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
-                recordType, recLocal, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
-                String.class, recLocal, encoderClass, methodName, recLocal);
-            locals.beginControlFlow("if ($L && $L == null)",
-                    nestedContainsKeyExpr(mapLocal, path, "id" + fi), recLocal)
-                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                    "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
-                .endControlFlow();
+            OnExplicitNull rule = insertLeafNonNull(f)
+                ? new OnExplicitNull.CannotArrive()
+                : new OnExplicitNull.Clears();
+            appendSetDecodeLocal(locals, localPrefix + "_" + fi, nidk,
+                ArgCallEmitter.nestedMapValueExpr(mapLocal, path), f.name(), rule,
+                nestedContainsKeyExpr(mapLocal, path, "id" + fi));
         }
         // For any column written by more than one carrier, emit the value-agreement prep here (in
         // the same scope as the decode locals, before the VALUES cells read them). Empty when there is no
@@ -2662,10 +2672,17 @@ public class TypeFetcherGenerator {
      * cannot conflict), {@code requireColumnAgreement} pairwise-checks them against the first present
      * (coerced through the column's {@code DataType}).
      *
+     * <p>A nullable decode sent as an explicit {@code null} is a missing reference: it contributes
+     * nothing to the list, so the column takes the value of the writers that carry one. A plain
+     * writer's explicit {@code null} names the column and still enters the list. A present column can
+     * therefore have an empty list, when every present writer is a cleared reference, and then binds
+     * {@code NULL}.
+     *
      * <p>On the single-row path that is all: the column is put only when some writer is present, and its
-     * cell reads the first present value ({@link #insertPresentCell}). On the bulk path ({@code bulk}) a
-     * {@code Field<?> <prefix>Cell<ci>} local also coalesces to {@code DSL.val} of the first present value,
-     * or to a gap cell ({@code DSL.defaultValue}) when the row has no writer present, and
+     * cell reads the first present value, or {@code NULL} on an empty list ({@link #insertPresentCell}).
+     * On the bulk path ({@code bulk}) a {@code Field<?> <prefix>Cell<ci>} local also coalesces to
+     * {@code DSL.val} of the first present value; on an empty list, to a typed {@code NULL} when some
+     * writer is present and to a gap cell ({@code DSL.defaultValue}) when none is; and
      * {@link #buildBulkInsertValues} emits that one local as the column's cell. An overlap reaching here
      * always has at least one decode (the all-plain overlap is the validate-time reject), so a
      * {@code NodeIdEncoder} class is always available.
@@ -2696,9 +2713,9 @@ public class TypeFetcherGenerator {
                 ClassName.get(List.class), Object.class, listName, ClassName.get(ArrayList.class));
             int wi = 0;
             // The present-writer gather flows through the shared value-read seam
-            // (appendAgreementValue); the INSERT decode local <prefix>_<fi> is non-null whenever present
-            // (buildInsertDecodeLocals throws on a present-but-mismatched id before this prep runs), so the
-            // seam's extra `&& decodeLocal != null` guard is always-true here.
+            // (appendAgreementValue). A present INSERT decode local <prefix>_<fi> is null only for a
+            // cleared nullable reference (buildInsertDecodeLocals has already thrown on a wrong-type id),
+            // and the seam's `&& decodeLocal != null` guard drops exactly that writer out of the list.
             for (var c : oc.contributors()) {
                 var v = (SetGroupWriter) c.writer();
                 appendAgreementValue(locals, v.group(), c.slot(), mapLocal,
@@ -2715,8 +2732,10 @@ public class TypeFetcherGenerator {
             }
             locals.addStatement("$T<?> $L", fieldCn, cellName);
             locals.beginControlFlow("if ($L.isEmpty())", listName)
-                .addStatement("$L = $T.defaultValue($T.$L.$L.getDataType())",
-                    cellName, DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
+                .addStatement("$L = $L ? $T.val(null, $T.$L.$L.getDataType()) : $T.defaultValue($T.$L.$L.getDataType())",
+                    cellName, insertColumnPresenceGate(oc, mapLocal, "ig" + ci),
+                    DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
+                    DSL, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
                 .nextControlFlow("else")
                 .addStatement("$L = $T.val($L.get(0), $T.$L.$L.getDataType())",
                     cellName, DSL, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName())
@@ -2948,6 +2967,13 @@ public class TypeFetcherGenerator {
         return out;
     }
 
+    /** Whether an INSERT leaf that carries a decode local is spelled non-null ({@code ID!}) in the
+     *  SDL, so GraphQL rejects an explicit {@code null} for it before the fetcher runs. Only a
+     *  {@link InputField.SetField} carries a decode local, so every caller holds one. */
+    private static boolean insertLeafNonNull(InputField leaf) {
+        return ((InputField.SetField) leaf).nonNull();
+    }
+
     /**
  * Project the UPDATE carrier's flat {@link SetColumn} list back into per-field
      * {@link SetGroup}s, grouping by wire access path in encounter order. A composite-NodeId field
@@ -3168,27 +3194,40 @@ public class TypeFetcherGenerator {
      * Widening that single branch would turn a malformed request into a silent column clear.
      *
      * <ul>
-     *   <li><b>Cannot arrive</b> — GraphQL rejects a null before the fetcher runs, so this emits the
-     *       unchanged {@link #appendDecodeLocal} shape (byte-identical output).</li>
+     *   <li><b>Cannot arrive</b> — GraphQL rejects a null before the fetcher runs, so a null local means
+     *       a wrong-type id and throws. With no {@code presenceExpr} this is the unchanged
+     *       {@link #appendDecodeLocal} shape; with one, the throw is gated on it.</li>
      *   <li><b>Clears</b> — a null wire value leaves the local null and throws nothing; anything else
      *       that fails to decode still throws.</li>
      *   <li><b>Refused as identity</b> — a null wire value throws, naming the identity columns the
      *       clear would have nulled; a wrong-type id still throws its own message.</li>
      * </ul>
      *
-     * <p>{@code presenceExpr} gates the refusal on the bulk arm, where the local is declared
-     * unconditionally outside any presence guard and an omitted field must stay an omission rather
-     * than becoming a refused clear. The single-row arm declares its local inside the presence guard
-     * and passes {@code null}.
+     * <p>{@code presenceExpr} gates the throws where the local is declared unconditionally outside
+     * any presence guard: the bulk UPDATE SET arm ({@link #emitBulkSetDecodeLocals}) and the INSERT
+     * arms ({@link #buildInsertDecodeLocals}), single-row and bulk alike. There an omitted field, or a
+     * non-null leaf inside an omitted nullable grouping input, reads as a null wire value and must stay
+     * an omission rather than becoming a refused clear or a mismatch. The single-row UPDATE SET arm
+     * declares its local inside the presence guard and passes {@code null}.
      */
     private static void appendSetDecodeLocal(
             CodeBlock.Builder block, String recLocal, CallSiteExtraction.NodeIdDecodeKeys nidk,
             CodeBlock wireExpr, String sourceField, OnExplicitNull rule, CodeBlock presenceExpr) {
+        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         if (rule instanceof OnExplicitNull.CannotArrive) {
-            appendDecodeLocal(block, recLocal, nidk, wireExpr, sourceField);
+            if (presenceExpr == null) {
+                appendDecodeLocal(block, recLocal, nidk, wireExpr, sourceField);
+                return;
+            }
+            block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
+                nidk.decodeMethod().returnType(), recLocal, wireExpr, String.class, recLocal,
+                nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
+            block.beginControlFlow("if ($L && $L == null)", presenceExpr, recLocal)
+                .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
+                    "Decoded NodeId did not match the expected type for input field '" + sourceField + "'")
+                .endControlFlow();
             return;
         }
-        ClassName graphqlErr = ClassName.get("graphql", "GraphqlErrorException");
         String wireLocal = recLocal + "Wire";
         block.addStatement("$T $L = $L", Object.class, wireLocal, wireExpr);
         block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
@@ -3690,10 +3729,11 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the per-row decode locals for the bulk SET clause: one {@code Record<N>} per
-     * {@link SetGroup} carrying a {@code @nodeId}, declared once per row. Mirrors
-     * {@link #buildInsertDecodeLocals}: the local is declared unconditionally with an {@code instanceof
-     * String} guard (absent / non-string wire value → {@code null}) and a presence-gated null-check throw
-     * (a present-but-mismatched id surfaces the same {@code GraphqlErrorException} as the single-row path).
+     * {@link SetGroup} carrying a {@code @nodeId}, declared once per row. Like
+     * {@link #buildInsertDecodeLocals}, the local is declared unconditionally and goes through
+     * {@link #appendSetDecodeLocal} with the leaf's presence expression, so its throws are
+     * presence-gated (a present-but-mismatched id surfaces the same {@code GraphqlErrorException} as
+     * the single-row path).
      * Declaring it once at the top of the row body lets a composite group's several cells and a
      * shared column's gather all read one decode without re-decoding per writer.
      */
@@ -3721,21 +3761,9 @@ public class TypeFetcherGenerator {
                 continue;
             }
             String recLocal = decodeLocalPrefix + "_" + gi;
-            if (rule instanceof OnExplicitNull.CannotArrive) {
-                block.addStatement("$T $L = ($L instanceof $T _s$L) ? $T.$L(_s$L) : null",
-                    nidk.decodeMethod().returnType(), recLocal,
-                    ArgCallEmitter.nestedMapValueExpr("row", path), String.class, recLocal,
-                    nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), recLocal);
-                block.beginControlFlow("if ($L && $L == null)",
-                        nestedContainsKeyExpr("row", path, "bsid" + gi), recLocal)
-                    .addStatement("throw $T.newErrorException().message($S).build()", graphqlErr,
-                        "Decoded NodeId did not match the expected type for input field '" + sf.name() + "'")
-                    .endControlFlow();
-                continue;
-            }
-            // The local is declared outside any presence guard here, so the refusal needs the
+            // The local is declared outside any presence guard here, so every throw needs the
             // presence expression: an absent field reads as a null wire value and must stay an
-            // omission rather than becoming a refused clear.
+            // omission rather than becoming a mismatch or a refused clear.
             appendSetDecodeLocal(block, recLocal, nidk,
                 ArgCallEmitter.nestedMapValueExpr("row", path), sf.name(), rule,
                 nestedContainsKeyExpr("row", path, "bsid" + gi));

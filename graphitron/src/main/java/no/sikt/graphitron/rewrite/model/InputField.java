@@ -56,7 +56,11 @@ public sealed interface InputField extends GraphitronField
      * is writable only when its {@link FilterBinding} is {@link FilterBinding.Local}.
      */
     sealed interface SetField extends InputField permits ColumnBackedField,
-            ColumnBackedReferenceField {}
+            ColumnBackedReferenceField {
+        /** Whether the field is spelled non-null in the SDL, so GraphQL rejects an explicit
+         *  {@code null} for it before a fetcher runs. */
+        boolean nonNull();
+    }
 
     /**
      * An input field successfully resolved to one or more SQL columns on the consuming
