@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 3
 theme: error-channel
-depends-on: []
+depends-on: [unmatched-fetcher-exception-logging-hook]
 created: 2026-09-04
 last-updated: 2026-09-28
 ---
@@ -134,17 +134,18 @@ Doing it at `redact` rather than in each batch lambda is what makes it one chang
 emitter, and it also covers fan-out shapes that are not `@splitQuery`: `loadMany` dispatch, the
 polymorphic batched path, and the connection runtime.
 
-For the substitution seam, the same `GraphQLContext` can carry an optional sink the generated
-`redact` prefers over its own logger, falling back to `LOGGER` when absent. That keeps the default
-behaviour for consumers who configure nothing and gives the rest a supported override without a new
-dependency. Note the emitted code must compile at Java 17.
+For the substitution seam, R1048 supplies it: a generated `FetcherErrorLog` the consumer sets on
+`GraphitronRuntime`, published into the `GraphQLContext` and preferred by `redact` over its own
+logger. This item builds on that seam rather than adding a second one: the memo sits in front of the
+call, so a consumer's log also sees one call per failed batch, and the summary line below replaces
+only the default branch taken when no log is configured.
 
 For the SQL, `redact` logs a one-line summary at ERROR in place of the raw throwable when the cause
 chain holds a `java.sql.SQLException`: exception class, SQL state, vendor code, and the driver's
 message with whitespace collapsed and truncated to a fixed length. Without a driver exception it logs
 the jOOQ message truncated. The full throwable follows at DEBUG under the same reference id. The
-summary is what the consumer's sink receives by default, so a consumer who must keep row data out of
-the log entirely replaces it there rather than subclassing anything.
+summary is what the default branch logs; a consumer who must keep row data out of the log entirely
+configures a `FetcherErrorLog`, which receives the throwable instead.
 
 For the cap, the generated `GraphitronContext` gains a default method returning the maximum keys per
 batch for a field, reading the `DataFetchingEnvironment` so a consumer can vary it by field, with a
