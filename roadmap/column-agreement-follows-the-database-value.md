@@ -5,7 +5,7 @@ status: Backlog
 bucket: bug
 priority: 4
 theme: nodeid
-depends-on: [tenant-key-equality-follows-the-column]
+depends-on: []
 created: 2026-10-15
 last-updated: 2026-10-15
 ---
