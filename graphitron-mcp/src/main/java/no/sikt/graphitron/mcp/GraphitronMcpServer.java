@@ -36,6 +36,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 
+import static no.sikt.graphitron.model.Tables.BUILD_WARNING_STALE_MODULE;
+
 /**
  * The MCP server embedded in the {@code graphitron:dev} JVM: hosts the MCP Java SDK's
  * servlet-based Streamable HTTP transport in an embedded Jetty {@link Server} bound on a
@@ -370,7 +372,10 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "captured facts on two axes: availability (Built once anything has captured the "
                 + "graph, Unavailable before) and, when built, freshness (Current when the newest "
                 + "read of the schema refused nothing, Previous when it refused and the tools are "
-                + "answering from the last clean facts). Takes no arguments.")
+                + "answering from the last clean facts). Also lists, as staleModules, the workspace "
+                + "modules the run read stale: a module whose sources changed since it compiled, or "
+                + "one read from its installed copy for want of output, whose names then read as not "
+                + "found. Takes no arguments.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
@@ -412,12 +417,29 @@ public final class GraphitronMcpServer implements AutoCloseable {
         } else {
             gloss = ".";
         }
+        var stale = staleModules(storeHandle);
+        fields.put("staleModules", stale);
         String summary = "graphitron:dev MCP server live; schema " + lifecycle.availability()
-            + lifecycle.freshness().map(freshness -> "/" + freshness).orElse("") + gloss;
+            + lifecycle.freshness().map(freshness -> "/" + freshness).orElse("") + gloss
+            + (stale.isEmpty() ? "" : " " + stale.size() + " workspace module"
+                + (stale.size() == 1 ? " was" : "s were") + " read stale, see staleModules.");
         return McpSchema.CallToolResult.builder()
             .addTextContent(summary)
             .structuredContent(Map.copyOf(fields))
             .build();
+    }
+
+    /**
+     * The workspace modules the graph's run read stale, each with its reason and the one sentence
+     * every reader says for it; see {@code build_warning_stale_module}.
+     */
+    private static List<Map<String, Object>> staleModules(StoreHandle storeHandle) {
+        var w = BUILD_WARNING_STALE_MODULE;
+        return storeHandle.dsl().select(w.COORDINATE, w.REASON, w.MESSAGE).from(w)
+            .where(w.GRAPH_NAME.eq(storeHandle.graphName()))
+            .orderBy(w.COORDINATE)
+            .fetch(row -> Map.<String, Object>of("coordinate", row.value1(), "reason", row.value2(),
+                "message", row.value3()));
     }
 
     /** Default {@code catalog.tables} page size: well under MCP response limits, paged by cursor. */

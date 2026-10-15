@@ -312,6 +312,45 @@ class GraphitronMcpServerTest {
     }
 
     /**
+     * A workspace module the run read stale is in the status, so the first question an agent asks
+     * names what makes later names read as not found; and a clean graph lists none.
+     */
+    @Test
+    void statusToolListsTheModulesReadStale(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
+            assertThat(structured(GraphitronMcpServer.statusResult(fixture.handle())))
+                .containsEntry("staleModules", List.of());
+
+            var dsl = fixture.handle().dsl();
+            String graph = fixture.handle().graphName();
+            var at = java.time.LocalDateTime.of(2026, 10, 15, 12, 0);
+            var d = no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
+            dsl.insertInto(d, d.GRAPH_NAME, d.SOURCE_NAME, d.KIND, d.ORIGIN, d.COORDINATE, d.TOUCHED_AT)
+                .values(graph, "/repo/service-1.0-SNAPSHOT.jar", "SNAPSHOT", "REACTOR", "ex:service", at)
+                .execute();
+            var m = no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
+            dsl.insertInto(m, m.GRAPH_NAME, m.COORDINATE, m.BASE_DIRECTORY, m.CLASSES_DIRECTORY,
+                    m.BUILD_DIRECTORY, m.TOUCHED_AT)
+                .values(graph, "ex:service", "/w/service", "/w/service/target/classes",
+                    "/w/service/target", at)
+                .execute();
+            var e = no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
+            dsl.insertInto(e, e.GRAPH_NAME, e.SOURCE_NAME, e.COORDINATE, e.TOUCHED_AT)
+                .values(graph, "/repo/service-1.0-SNAPSHOT.jar", "ex:service", at)
+                .execute();
+
+            var result = GraphitronMcpServer.statusResult(fixture.handle());
+            var stale = (List<?>) structured(result).get("staleModules");
+            assertThat(stale).hasSize(1);
+            var module = (Map<?, ?>) stale.get(0);
+            assertThat(module.get("coordinate")).isEqualTo("ex:service");
+            assertThat(module.get("reason")).isEqualTo("NO_OUTPUT");
+            assertThat((String) module.get("message")).contains("mvn -pl :service compile");
+            assertThat(firstLine(result)).contains("1 workspace module was read stale");
+        }
+    }
+
+    /**
      * The handle-less arm, which every other store-backed surface answers with a refusal and this one
      * does not: the call itself settles liveness, so {@code toolsReady} stands and the axes are
      * omitted with the reason named. Reporting {@code Unavailable} would state a fact about a store
