@@ -1,7 +1,7 @@
 ---
 id: R1048
 title: "Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: error-channel
@@ -182,6 +182,18 @@ throw new IllegalStateException("@mutation(typeName: UPDATE) bulk row matched ze
 - **R1046** (In Progress) swaps the channel fall-through to `surfaceClientErrorOrRedact`, which still ends in `redact`. Either order works; they touch neighbouring methods of `ErrorRouterClassGenerator`.
 - **R1040** (In Review) edits `buildCarrierBulkPerRowUpdateBody` for empty patches and quotes "matched zero rows" in its user docs; the kept prefix leaves that prose true. A textual overlap only.
 - **R423** (Backlog) would change how the reference is minted; the `String reference` parameter absorbs that.
+
+## Implementation notes
+
+Landed as planned, in one commit (`R1048: consumers choose how an unmatched fetcher exception is logged`). Where it differs from or adds to the plan:
+
+- **The managed-runtime cases fail on a permission error, not the zero-row guard.** `SessionHookExecutionTest` builds its runtime over the RLS probe role, which holds no grant on `film`, so `updateFilmsPayload` there throws a permission-denied `DataAccessException`. It is as unmatched as the zero-row throw and exercises the same wiring (runtime holds the log, instrumentation publishes it, `redact` hands it over). The zero-row message itself is proven on the escape-hatch cases in `DmlBulkMutationsExecutionTest`.
+- **The zero-row cases run inside the class's rolled-back transaction.** Their seed film is never committed, so they add nothing to the shared-database race that `GraphQLQueryTest`'s full-table reads already hit (R1028; one verification build saw it as a sixth film in `filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`).
+- **Three generator-tier harnesses compile `ErrorRouter` beside the runtime.** In a `<tenantColumn>` build `TenantConnections.logFanOutFailure` calls `ErrorRouter.toConfiguredLog`, so `TenantScatterSubstrateTest`, `TenantAuthorizationSubstrateTest` and `SessionHookImplGeneratorTest`'s tenant arm now add it to the compiled unit set, as a real build always does.
+- **`ConnectionRuntimeClassGeneratorTest` also drives the compiled wither:** `withFetcherErrorLog_returnsACopyCarryingTheLog_andLeavesTheOriginalWithout` (copy carries the log, original stays empty, `null` refused), beside the structural pins the plan named.
+- **Rebased over R1038**, which reworked the runtime's canonical constructor to canonicalise tenant keys; the wither's private copy constructor takes the already-canonical map as-is, so no key is re-canonicalised and R1038's new fields (on the carrier, not the runtime) need no copying.
+- **Acceptance evidence:** `DmlBulkMutationsExecutionTest.updateFilmsPayload_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow` and `deleteFilmsIdCarrier_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow`; `SessionHookExecutionTest.runtimeFetcherErrorLog_receivesTheUnmatchedThrowWithTheClientsReference` and `runtimeFetcherErrorLog_thatThrows_stillLeavesTheClientTheRedactedError`; `TenantFanOutExecutionTest.downedTenant_reachesTheRuntimesFetcherErrorLogWithTheTenantAndTheClientsReference` and `timedOutTenant_reachesTheRuntimesFetcherErrorLogAsATimeoutException`.
+- **Verification-build note:** two runs lost `graphitron-lsp` to load (a 19 s request timeout, then a fork killed with exit 137 while the MCP, LSP and generator test JVMs ran in parallel on 15 GB). The covering build resumed from `graphitron-lsp` single-threaded on the same tree, after every module before it had passed.
 
 ## Other solutions we've considered
 
