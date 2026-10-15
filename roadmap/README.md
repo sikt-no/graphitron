@@ -31,11 +31,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Ready | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R1038` | A client-supplied tenant key routes by the tenant column database value, not its converted Java form | In Progress | 2026-10-15 | [plan](tenant-key-equality-follows-the-column.md) |
 | `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | In Progress | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
 | `R1048` | Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message | In Progress | 2026-10-15 | [plan](unmatched-fetcher-exception-logging-hook.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | In Review | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
+| `R1038` | A client-supplied tenant key routes by the tenant column database value, not its converted Java form | In Review | 2026-10-15 | [plan](tenant-key-equality-follows-the-column.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -604,7 +604,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### runtime-connection
 
-- `R1038` [**A client-supplied tenant key routes by the tenant column database value, not its converted Java form**](tenant-key-equality-follows-the-column.md) — In Progress, bug
+- `R1038` [**A client-supplied tenant key routes by the tenant column database value, not its converted Java form**](tenant-key-equality-follows-the-column.md) — In Review, bug
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture

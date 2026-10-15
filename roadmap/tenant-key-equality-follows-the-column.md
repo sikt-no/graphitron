@@ -1,7 +1,7 @@
 ---
 id: R1038
 title: "A client-supplied tenant key routes by the tenant column database value, not its converted Java form"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: runtime-connection
@@ -104,6 +104,16 @@ In `docs/manual/how-to/tenant-scoping.adoc` §1, the sentence "The tenant key's 
   - `filmsNarrowableByWireId(filmId: "abc")` is the same client error, not an empty list (pins the `null` check: without it the domain silently empties);
   - `filmsByWireId(filmId: "1.5")` returns film 1 and opens only tenant 1's source (a `NumberFormatException` server error today), pinning that the router follows the bind;
   - `filmsNarrowableByWireId(filmId: "1.5")` asks only tenant 1 and returns film 1.
+
+## Implementation notes
+
+- **Capture.** One private reduction, `JooqCatalog.columnEntry(String, Field)`, now builds every `ColumnEntry` (the `columnOf`, `allColumnsOf` and `findColumn` sites), so `databaseType` is read in one place. The one hand-built `ColumnEntry` in the test tree (`JooqCatalogNodeIdMetadataTest`) gained the fifth component.
+- **Classification.** `TenantScopes.Configured` carries the representative as `tenantTable` (`TableRef`) and `tenantColumn` (`ColumnRef`), both `null` exactly when no table carries the column (that state already carries the `UnknownName` rejection). The disagreement message renders each site as `<table> declared <bound> over database type <database>`.
+- **Emission.** `canonicalTenantKey` and a private generic `roundTrip(Converter<D, K>, K)` sit in `TenantConnections` beside two static fields, `TENANT_COLUMN_TYPE` and `TENANT_COLUMN_CONVERTER`, read from `<Tables>.<TABLE>.<COLUMN>`. The class-level `@SuppressWarnings({"deprecation", "removal"})` is emitted only in multi-tenant builds, the only ones that call `DataType.convert` there. `RequestTenants` canonicalises in its constructor, so `of` and `withDefault` are unchanged. The runtime's refusal of two keys naming one tenant reads "Tenant keys '<a>' and '<b>' name the same tenant '<canonical>': the tenant column stores them as one value."
+- **Unit-tier migration.** The four drivers take their column from a small test helper, `TenantColumnFixtures` (`FILM.TITLE` for `String`, `FILM.FILM_ID` for `Integer`, via the fixture catalog's `public_.Tables`). Their behavioural assertions are unchanged. `TenantRuntimeKeyTypeTest` lost one rendered-text line, the old `instanceof` body.
+- **Fixture.** `org_site` and `plain_org_permit` landed as specified, with `jooq.codegen.schema.version` bumped to 2.37. The mount assertion ("its mount receives `"186"`") needed a mount whose tenant slot is `Optional<String>`, so `graphitron-sakila-service` gained `OrgTenantSessionIdentity`, a handle-less mount that only records. The execution's `<sessionState combine.self="override">` keeps the plugin-level `<unmount>` from merging into it. The tenant databases recreate the `org_code_domain` domain so the generated binds resolve as they do on the main database.
+- **Test placement.** `sitesNarrowable(ownerOrg: "0186")` runs with both hosted tenants permitted, so "asks only 186" tells the narrowing apart from the request set. The four identity-path cases sit in `TenantDivinedRoutingExecutionTest` under "A wire-form tenant value". The "fails today" claims in Tests were read off the replaced bodies; the new tests were not run against the pre-change generator.
+- **Verification-build noise, not this change.** The full builds hit two load-related events, each resolved by rerunning the affected module on the same tree: `TextDocumentServiceTest` timeouts in `graphitron-lsp` (all ten pass in isolation), and a surefire fork killed with exit 137. One example-module run also hit `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` counting a transient film row that a concurrent mutation class had inserted into the shared database. It passed on rerun; the race is pre-existing.
 
 ## Other solutions we've considered
 
