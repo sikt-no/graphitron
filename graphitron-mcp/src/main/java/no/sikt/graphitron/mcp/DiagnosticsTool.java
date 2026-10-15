@@ -19,7 +19,7 @@ import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
  * its own diagnostics back). The view already unions the five arms (the rejection residue, the
  * store-native claim-conflict pilot, the lint and advisory arms, the compile oracle), so this
  * tool maps rows to the wire and never re-derives a classification; the {@code source}
- * discriminator ({@code "schema"} / {@code "compile"}) is the view's own column.
+ * discriminator ({@code "schema"} / {@code "compile"} / {@code "classpath"}) is the view's own column.
  *
  * <p>Filtering shares one null-safe {@code where} translation with {@code diagnostics.aggregate}
  * ({@link DiagnosticFacets#conditions}), which is what makes an aggregate group's key the exact

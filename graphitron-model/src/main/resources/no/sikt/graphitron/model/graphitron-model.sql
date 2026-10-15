@@ -13413,7 +13413,7 @@ COMMENT ON COLUMN build_warning_no_rule.source_line IS 'source line of the advis
 COMMENT ON COLUMN build_warning_no_rule.source_column IS 'source column of the advisory''s location, 1-based; NULL where unlocated';
 
 CREATE VIEW build_warning_stale_module
-  (graph_name, coordinate, reason, source_name, sources_modified, output_modified) AS
+  (graph_name, coordinate, reason, source_name, sources_modified, output_modified, message) AS
 -- What the run read for each module, and that output's newest class time: a classes directory's
 -- files, or a jar's entries, which carry their compile time.
 WITH read (graph_name, coordinate, base_directory, source_name, own, output_modified) AS (
@@ -13424,20 +13424,35 @@ WITH read (graph_name, coordinate, base_directory, source_name, own, output_modi
     FROM store_graph_module m
     JOIN store_graph_module_entry e
       ON e.graph_name = m.graph_name AND e.coordinate = m.coordinate
+),
+stale (graph_name, coordinate, reason, source_name, sources_modified, output_modified) AS (
+  -- The module had no output, so the run read a copy installed in a repository.
+  SELECT r.graph_name, r.coordinate, 'NO_OUTPUT', r.source_name, s.newest_modified,
+         r.output_modified
+    FROM read r
+    LEFT JOIN java_source_root s ON s.source_root = r.base_directory || '/src/main/java'
+   WHERE NOT r.own
+  UNION ALL
+  -- The module's own output, older than its newest source.
+  SELECT r.graph_name, r.coordinate, 'SOURCES_NEWER', r.source_name, s.newest_modified,
+         r.output_modified
+    FROM read r
+    JOIN java_source_root s ON s.source_root = r.base_directory || '/src/main/java'
+   WHERE r.own AND s.newest_modified > r.output_modified
 )
--- The module had no output, so the run read a copy installed in a repository, whatever it holds.
-SELECT r.graph_name, r.coordinate, 'NO_OUTPUT', r.source_name, s.newest_modified,
-       r.output_modified
-  FROM read r
-  LEFT JOIN java_source_root s ON s.source_root = r.base_directory || '/src/main/java'
- WHERE NOT r.own
-UNION ALL
--- The module's own output, older than its newest source.
-SELECT r.graph_name, r.coordinate, 'SOURCES_NEWER', r.source_name, s.newest_modified,
-       r.output_modified
-  FROM read r
-  JOIN java_source_root s ON s.source_root = r.base_directory || '/src/main/java'
- WHERE r.own AND s.newest_modified > r.output_modified;
+-- One sentence for every reader, naming the module, what is old, and the command that fixes it.
+SELECT graph_name, coordinate, reason, source_name, sources_modified, output_modified,
+       CASE reason
+         WHEN 'SOURCES_NEWER' THEN coordinate || ' was last compiled '
+           || TO_CHAR(output_modified, 'YYYY-MM-DD HH24:MI') || ' but its sources changed '
+           || TO_CHAR(sources_modified, 'YYYY-MM-DD HH24:MI')
+         ELSE coordinate || ' has no compiled output, so its installed copy'
+           || COALESCE(' from ' || TO_CHAR(output_modified, 'YYYY-MM-DD HH24:MI'), '')
+           || ' was read in its place'
+       END
+       || ', so anything added to it since reads as not found. Compile it from the reactor root: mvn -pl :'
+       || SUBSTRING(coordinate, POSITION(':' IN coordinate) + 1) || ' compile'
+  FROM stale;
 COMMENT ON VIEW build_warning_stale_module IS 'One workspace module a graph''s run read stale, with why and the two times that say so. For example a service module whose sources were saved after its target/classes was written, or a module with no output read from the copy last installed.';
 COMMENT ON COLUMN build_warning_stale_module.graph_name IS 'the graph whose run read the module';
 COMMENT ON COLUMN build_warning_stale_module.coordinate IS 'the module''s groupId:artifactId; with the graph, the grain';
@@ -13445,6 +13460,7 @@ COMMENT ON COLUMN build_warning_stale_module.reason IS 'NO_OUTPUT where the modu
 COMMENT ON COLUMN build_warning_stale_module.source_name IS 'the classpath entry the run read for the module';
 COMMENT ON COLUMN build_warning_stale_module.sources_modified IS 'when the newest .java file under the module''s src/main/java was modified; NULL where no source walk has measured it, which only a dev session runs';
 COMMENT ON COLUMN build_warning_stale_module.output_modified IS 'the newest class time in what the run read; NULL where that entry held no class';
+COMMENT ON COLUMN build_warning_stale_module.message IS 'the one sentence every reader says: the module, what is old, and the command that compiles it';
 
 CREATE VIEW diagnostic
   (graph_name, source, severity, actionable, kind, variant, lsp_code, attempt_kind, attempt,
@@ -13491,6 +13507,15 @@ SELECT w.graph_name, 'schema', 'warning', TRUE,
        w.file,
        w.source_line, w.source_column, w.message
   FROM build_warning_no_rule w
+UNION ALL
+SELECT m.graph_name, 'classpath', 'warning', TRUE,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR),
+       CAST(NULL AS INT), CAST(NULL AS INT), m.message
+  FROM build_warning_stale_module m
 UNION ALL
 SELECT p.graph_name, 'schema', 'error', TRUE,
        CAST(NULL AS VARCHAR), p.error_class, CAST(NULL AS VARCHAR),
@@ -13542,7 +13567,7 @@ SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
   JOIN graphitron_defect_type t ON t.code = d.code;
 COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
 COMMENT ON COLUMN diagnostic.graph_name IS 'the owning graph''s partition, carried through from every arm; the MCP read site filters to the reading session''s graph';
-COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm';
+COMMENT ON COLUMN diagnostic.source IS 'the closed channel taxonomy the shipped tool already speaks: schema for the six validator-side arms, compile for the javac arm, classpath for a workspace module the run read stale';
 COMMENT ON COLUMN diagnostic.severity IS 'error or warning, the wire''s closed pair: the rejection arms are error by the build''s own finality, lint and advisory rows warning by construction, compile rows javac''s verdict projected as the record''s severity() spells it';
 COMMENT ON COLUMN diagnostic.actionable IS 'the triage headline: FALSE exactly on DEFERRED rows (recognised but not yet generator-supported, a workaround rather than a schema fix), TRUE everywhere else including warnings and compile rows';
 COMMENT ON COLUMN diagnostic.kind IS 'RejectionKind.name() on rejection-bearing rows (residue and pilot); NULL on lint, advisory and compile rows, where the three-way fork does not apply';

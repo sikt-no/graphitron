@@ -13,6 +13,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_STALE_MODULE;
+import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.JAVA_SOURCE_ROOT;
 import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
@@ -59,6 +60,20 @@ class StaleModuleTest {
                 .containsExactly(
                     List.of("ex:edited", "SOURCES_NEWER", LATER.toString(), EARLIER.toString()),
                     List.of("ex:installed", "NO_OUTPUT", "null", EARLIER.toString()));
+
+            assertThat(dsl.select(DIAGNOSTIC.SOURCE, DIAGNOSTIC.SEVERITY, DIAGNOSTIC.MESSAGE)
+                .from(DIAGNOSTIC).where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH))
+                .and(DIAGNOSTIC.SOURCE.eq("classpath")).orderBy(DIAGNOSTIC.MESSAGE)
+                .fetch(r -> List.of(r.value1(), r.value2(), r.value3())))
+                .as("one sentence per module, naming what is old and the command that compiles it")
+                .containsExactly(
+                    List.of("classpath", "warning", "ex:edited was last compiled 2026-07-23 09:00 but"
+                        + " its sources changed 2026-10-05 09:00, so anything added to it since reads"
+                        + " as not found. Compile it from the reactor root: mvn -pl :edited compile"),
+                    List.of("classpath", "warning", "ex:installed has no compiled output, so its"
+                        + " installed copy from 2026-07-23 09:00 was read in its place, so anything"
+                        + " added to it since reads as not found. Compile it from the reactor root:"
+                        + " mvn -pl :installed compile"));
         });
     }
 
