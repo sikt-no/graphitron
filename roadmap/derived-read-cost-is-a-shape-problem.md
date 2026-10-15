@@ -1472,6 +1472,17 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
     (`ModulePlan`). A session that already compiled runs the round alone, and so does
     `graphitron.dev.compileModule` off. A goal that fails is a warning and the loop starts anyway,
     the loop being what shows the developer what is wrong.
+    * **The module's plan leaves the goal able to start its MCP server** `open`, first: a
+      regression. Reported 2026-10-15 from a live session on a consumer module: with
+      `compileModule` on, `bindServer` fails with "No McpJsonMapperSupplier available for creating
+      McpJsonMapper", the SDK's `ServiceLoader` lookup on the thread's context classloader finding
+      no `mcp-json-jackson3` provider although the plugin's classpath holds it; the warm threads'
+      `NoClassDefFoundError` and onnx "Stream closed" are Maven closing the realm on the way out.
+      `-Dgraphitron.dev.compileModule=false` starts cleanly, so the nested `executeMojo` run is the
+      trigger. Maven restores the context classloader after each nested goal, so the suspect is a
+      goal in the consumer's plan that changes JVM-wide classloading or jar caching, or closes a jar
+      the realm reads. Which goal is the node's first question; a sakila or fixture module whose plan
+      reproduces it is its test.
   * **The manual says where a sibling's classes come from** `done`. `dev-loop-internals.adoc`
     § Multi-module projects and the codegen classpath section and `compileModule` row of
     `mojo-configuration.adoc`.
