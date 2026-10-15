@@ -1,7 +1,7 @@
 ---
 id: R1042
 title: "What an explicit null on a @nodeId UPDATE input means, and whether it agrees with the INSERT rule"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: mutation-write
@@ -115,6 +115,16 @@ Whichever of this item and R1039 lands second merges the INSERT and UPDATE sente
 - **Treat an explicit `null` on an UPDATE reference as omitted.** This matches sis's `endreVeiledningsforhold` tests. It costs the 29 references R880 measured the ability to be cleared at all, and gives a reference a meaning different from a plain field's on the same input. See Decision.
 - **Choose by column nullability: clear over a nullable column, ignore over a NOT NULL one.** This also matches sis. But it reads the DDL to decide what the schema means, so two identically spelled fields behave differently for a reason the author cannot see. It also does not extend to plain fields, which have the same hazard. If column nullability becomes a write-path axis, R881 states it for every carrier.
 - **Key the shared SET put off the preamble's agreement list instead of guarding the cleared writer's put.** This keeps one source for the shared column's value. But the payload arms build no agreement list (R821), so it would either widen this item into R821 or leave those arms overwriting values with `NULL`. If R821 makes the walker state within-SET overlaps on the carrier, that is the natural point to move the put onto the agreed value.
+
+## Implementation notes
+
+Landed as planned. Three things a reviewer should know beyond the plan:
+
+- `emitSetAgreementPreamble` lost its `nullRules` parameter, which only fed the retired `nullAgrees` argument.
+- The guarded put is emitted as one condition, `if (<rec> != null || !sets.containsKey(col)) sets.put(col, <value>)`, which is the plan's two-branch form with the existing `<rec> == null ? null : ...` value expression reused.
+- The nested overlap fixture's comments in `schema.graphqls` (`EndorsementNestedRefGroup`, and the `*NestedOverlap` mutations) claimed the value-agreement preamble splices the nested wire descent into a `== null` comparison. That splice was the retired `nullAgrees` branch, so the comments now name only the `instanceof` operand. The descent is still parenthesised at its producer; the compile-tier pin on `== null` is the one this fixture no longer reaches.
+
+Evidence: `NodeIdValueAgreementExecutionTest` (`mutationUpdate_clearedReferenceBesideValue_updatesTheValue`, `mutationUpdate_plainNullBesideReferenceValue_throwsAndLeavesRowUnchanged`, the three `mutationUpdate_bookmark*` cases, `mutationUpdatePayload_bookmarkValueThenClearedReference_updatesTheValue`) and `BulkUpdateSetAgreementExecutionTest` (`bulkWithinSetOverlap_clearedReferenceBesideValue_updatesTheValues`, `bulkWithinSetOverlap_clearedReferenceAlone_writesNull`). With the `emitSetMapPuts` guard and the `isEmpty()` cell guard reverted, the two bookmark value-then-cleared cases and the bulk cleared-alone case fail; the rest pass either way.
 
 ## Retired vocabulary
 
