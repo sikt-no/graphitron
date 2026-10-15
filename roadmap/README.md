@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | In Review | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
 | `R1048` | Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message | In Review | 2026-10-15 | [plan](unmatched-fetcher-exception-logging-hook.md) |
 | `R1049` | @asFacet on a @reference-bound filter field: facet counts over a joined table | Spec | 2026-10-15 | [plan](reference-path-facets.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -575,7 +574,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### error-channel
 
-- `R1046` [**An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it**](error-channel-unmatched-client-error-is-redacted.md) — In Review, bug
 - `R1048` [**Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message**](unmatched-fetcher-exception-logging-hook.md) — In Review, feature
 - `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Backlog, bug, blocked by [unmatched-fetcher-exception-logging-hook](unmatched-fetcher-exception-logging-hook.md)
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
