@@ -130,10 +130,12 @@ value nullability, and the count key, always set. A carrier-column facet binds t
 as its source and an empty count key (`count(*)`); a reached facet binds the joined source and the
 carrier's primary key. The helper's arm reads them without branching on the facet kind, and the runtime
 name lookup (`ConnectionHelper.facetColumn`, which tries `Table.field(String)` and then a
-case-insensitive scan) retires: the carrier-column facet's column is resolved at plan time against the
-condition row's `TableRef`, by the same case-insensitive rule, and a miss is a production failure (the
-classifier has already resolved the `@field` column, so it is a backstop). Direct-facet output changes
-shape (a typed column reference in place of the lookup call) but not SQL.
+case-insensitive scan) retires. A carrier-column facet borrows its column from its own term too, the
+`ColumnRef` the classifier already resolved. The one carrier-column facet without a term is a direct
+facet under `@condition(override: true)` (below), and only that facet is resolved by name, through
+`TableRef.column` against the condition row's table; a miss there is a production failure, since the
+classifier has already resolved the `@field` column. Direct-facet output changes shape (a typed column
+reference in place of the lookup call) but not SQL.
 
 **The count is distinct over the root primary key.** A path that fans out (city to address, film to
 `film_actor` to actor) multiplies root rows in the join, so a reached arm counts
@@ -165,12 +167,11 @@ the carrier field or the filter argument suppresses the implicit predicate (`Fie
 (see Out of scope). For a reference facet there would be no reach to join along, and the planner could
 not tell it from a direct facet, so it would group a same-named column on the root table: wrong data,
 silently. `FacetSpec` therefore gains `referenceBound`, the definition-keyed fact that the field carries
-`@reference` (both producers already read that directive list: the promoter in
-`FacetFieldValidation`, the store in `graphitron_facet_binding`'s directive filter). The validator
-rejects a reference-bound facet under an override, and `facetPlanOf` throws on a reference-bound facet
-whose `Own` fragment has no term, so the rejection has an enforcer in the producer. The store view
-carries the same fact as a column, so when the facet misuse checks move to store detections the
-override rule has a relation to read.
+`@reference`, which the promoter already reads in `FacetFieldValidation`. The validator rejects a
+reference-bound facet under an override, and `facetPlanOf` throws on a reference-bound facet whose
+`Own` fragment has no term, so the rejection has an enforcer in the producer. The store's facet views
+do not carry the fact: nothing in the store asks for it yet, and it belongs with the store detection
+that will, when the facet misuse checks move there.
 
 A `@reference` that resolves on the root table itself (an empty path, `FilterBinding.Local`) produces a
 reach-less term and plans as `CarrierColumn`; it was refused only because the gate refused the
@@ -195,12 +196,10 @@ sees a located error rather than a facet that resolves wrong.
 - `FacetSpec` gains `boolean referenceBound`; `ConnectionPromoter.facetSpecsFor` sets it from
   `@reference` on the input field.
 - `graphitron-model.sql`: in `graphitron_facet_binding`, drop `'reference'` from the excluded-directive
-  list (so the store's definition-keyed predicate stays the promoter's) and add a `reference_bound`
-  column (whether the application's sibling directives include `@reference`, asked of the same
-  application-anchored directive entries the exclusion already reads); carry it through
-  `graphitron_connection_facet`. Comment both new columns, reword the view's comment and
-  `column_name`'s ("which table it resolves on" becomes the carrier's table, or the `@reference` path's
-  terminal table). The mint is untouched: it reads only value type and nullability.
+  list, so the store's definition-keyed predicate stays the promoter's and the two emitted surfaces
+  stay equal. No new column. Reword the view's comment and `column_name`'s ("which table it resolves
+  on" becomes the carrier's table, or the `@reference` path's terminal table). The mint is untouched:
+  it reads only value type and nullability.
 - `GraphitronSchemaBuilder`, the use-keyed facet reduction (beside `unsupportedFacetCarrierReason`):
   for a reference-bound `@asFacet` field, reject when a consuming carrier is `@routine`-sourced, when
   its element table has no primary key, or when the carrier field or the filter argument carries
@@ -215,10 +214,12 @@ sees a located error rather than a facet that resolves wrong.
   `Reached(ReachPath, ColumnRef)`, `Reached` requiring a non-empty reach); the plan gains
   `List<ColumnRef> distinctKey`, required non-empty when any entry is `Reached`.
 - `LauncherCommands.facetPlanOf`: per facet, join the row's `Own` fragment on the input field name.
-  Term with a non-empty reach: `Reached(term.reach(), term.columns().getFirst())`. Otherwise
-  `CarrierColumn` with `spec.columnName()` resolved against `row.table()`. Backstops: a
-  reference-bound spec whose `Own` has no term, a reached term with more than one column, and a
-  `Reached` entry on a routine-chain launch.
+  Term with a non-empty reach: `Reached(term.reach(), term.columns().getFirst())`. Term without a
+  reach: `CarrierColumn(term.columns().getFirst())`. No term (a direct facet under an override):
+  `CarrierColumn` with `spec.columnName()` resolved through `TableRef.column` against `row.table()`;
+  that method's javadoc drops its claim that no generator emits per column off `allColumns`.
+  Backstops: a reference-bound spec whose `Own` has no term, a term with more than one column, a
+  by-name miss, and a `Reached` entry on a routine-chain launch.
 - `ConnectionResultClassGenerator`, nested `FacetSpec`: components become label, `source`
   (`Table<?>`), `column` (`Field<?>`), `valueNullable`, `countKey` (`Field<?>[]`); `columnName` goes.
 - `ConnectionHelperClassGenerator`, the `facets` arm: `from(f.source())`, group and decode on
@@ -237,8 +238,7 @@ sees a located error rather than a facet that resolves wrong.
 ## Tests
 
 - **Store tier.** `facet-binding-refused.graphqls`: the `viaReference` field (a root-table path) becomes
-  a bound row with `reference_bound` true, `rating`'s row false, and the document's description names
-  two declines, not three.
+  a bound row beside `rating`'s, and the document's description names two declines, not three.
 - **Pipeline tier, `FacetedConnectionPipelineTest`.** `asFacetOnReferenceBoundField_rejected` becomes
   an acceptance: the carrier synthesises its facets field with a `StringFacetValue` entry. New
   rejections, each asserting the located message: a `@reference` facet on a `@routine` carrier; under
@@ -246,15 +246,21 @@ sees a located error rather than a facet that resolves wrong.
   co-occurrence rejection stays. `ConnectionPromoterTest` asserts `referenceBound` on both kinds.
 - **Plan tier.** `ConditionCommandsPipelineTest`: a faceted row's fragments are one `Base` and one `Own`
   per facet, keyed by input field name, the reference facet's `Own` term carrying the reach.
-  `LauncherCommandsPipelineTest`: a carrier with one direct and one two-hop reference facet plans
-  `CarrierColumn` (the resolved root column) and `Reached` (the same `ReachPath` value as the facet's own
-  term, the terminal column), with `distinctKey` the root primary key.
-- **Pipeline tier, generated code (`FacetEmitterTest` or a sibling).** A path with a `{key:, condition:}`
-  hop renders that hop's condition on the join's `ON`; a path with a `condition:` join hop renders
-  `.on(<method>(prev, hop))`; a root with a composite primary key binds a two-field count key; a direct
-  facet binds a typed column, and the helper no longer emits `facetColumn`.
-- **Execution tier, `GraphQLQueryTest`, against the sakila seed.** Two fixtures in
-  `graphitron-sakila-example`'s schema:
+  `LauncherCommandsPipelineTest`, asserting on plan data only:
+  - a carrier with one direct and one two-hop reference facet plans `CarrierColumn` (the column of the
+    direct facet's own term) and `Reached` (the same `ReachPath` value as the facet's own term, the
+    terminal column), with `distinctKey` the root primary key;
+  - a facet whose path joins on a `condition:` hop plans a `Reached` whose hop carries `On.Predicate`,
+    and one whose path has a `{key:, condition:}` hop plans a hop carrying that `filter()`;
+  - a carrier over `film_actor` plans a two-column `distinctKey`;
+  - a direct facet under `@condition(override: true)` on the carrier field plans `CarrierColumn` with
+    the column resolved by name.
+- **Unit tier, `FacetEmitterTest`.** Method surface only: the generated connection helper no longer
+  declares `facetColumn`. What the launcher and helper bodies say is left to the compilation and
+  execution tiers below, per the code-string ban in `development-principles.adoc`.
+- **Compilation and execution tiers, against the sakila seed.** The fixtures below go into
+  `graphitron-sakila-example`'s schema, so the sakila compile proves every rendered join shape and the
+  composite count key type-check, and `GraphQLQueryTest` pins the counts:
   - A new `citiesFaceted(filter: CityFacetFilter): [City!]! @asConnection @defaultOrder(primaryKey:
     true)` with the `CityFacetFilter` from the docs draft. The `district` facet is the distinct-count
     proof: Lethbridge has two Alberta addresses, so `count(*)` would say 2. Unfiltered: `country`
@@ -266,6 +272,27 @@ sees a located error rather than a facet that resolves wrong.
     `extra.lengthIs` bound: GUINESS 3, WAHLBERG 2, CHASE 2 (summing past the five films). Under
     `filter: {rating: [G]}`: GUINESS 1, CHASE 1, WAHLBERG 1. `filter: {actor: ["CHASE"]}` returns two
     films, and `rating` is G 1, PG 1.
+  - A `condition:` join hop, on `FilmFacetFilter`: `actorFirstName: [String!] @field(name:
+    "first_name") @asFacet @reference(path: [{key: "film_actor_film_id_fkey"}, {condition:
+    {className: "...ReferencePathConditionFixtures", method: "filmActorJunctionToActor"}}])`, the
+    path `Query.filmsByBridgedActorFirstName` already filters through. Under `extra.lengthIs`:
+    PENELOPE 3, NICK 2, ED 2. `filter: {actorFirstName: ["NICK"]}` returns two films (1 and 4), and
+    `rating` is G 1, PG 1.
+  - A `{key:, condition:}` hop, on `FilmFacetFilter`: `castExceptEd: [String!] @field(name:
+    "last_name") @asFacet @reference(path: [{key: "film_actor_film_id_fkey"}, {key:
+    "film_actor_actor_id_fkey", condition: {className: "...ReferencePathConditionFixtures", method:
+    "actorIsNotEd"}}])`, with a new fixture method `actorIsNotEd(FilmActor, Actor)` returning
+    `actor.FIRST_NAME.ne("ED")`. Under `extra.lengthIs`: GUINESS 3, WAHLBERG 2, and no CHASE bucket,
+    which is what shows the hop's condition reached the join (without it CHASE 2 would appear).
+    `filter: {castExceptEd: ["CHASE"]}` returns no films.
+  - A composite-key root: `filmActorsFaceted(filter: FilmActorFacetFilter): [FilmActor!]!
+    @asConnection @defaultOrder(primaryKey: true)`, with `input FilmActorFacetFilter { filmTitle:
+    [String!] @field(name: "title") @reference(path: [{key: "film_actor_film_id_fkey"}]) @asFacet }`.
+    `film_actor`'s key is `(actor_id, film_id)`, so this arm counts distinct over two columns; the
+    path is to-one, so the proof is that PostgreSQL accepts the rendered count, not that it
+    deduplicates (the `district` facet proves that). Unfiltered: ACADEMY DINOSAUR 2, ACE GOLDFINGER
+    2, ADAPTATION HOLES 1, AFFAIR PREJUDICE 1, AGENT TRUMAN 1. `filter: {filmTitle: ["ACE
+    GOLDFINGER"]}` returns two `film_actor` rows.
 
   The existing `filmsFaceted` tests select only their own facets, so their values are unchanged; they
   also pin that the move off the runtime column lookup kept direct-facet SQL as it was.
@@ -319,6 +346,16 @@ the fixtures cost little. Which fixtures to add, and whether the typed-column ch
 facets is already covered by the existing `filmsFaceted` execution tests, is the author's call.
 "The helper no longer emits `facetColumn`" is a method-surface assertion and may stay where it is.
 
+> Response: the generated-code bullet is gone. The plan facts behind the four behaviours are asserted
+> as plan data in `LauncherCommandsPipelineTest` (an `On.Predicate` hop, a hop `filter()`, a
+> two-column `distinctKey`, a by-name `CarrierColumn` under an override). Rendering and SQL moved to
+> three new sakila fixtures, so the compile and `GraphQLQueryTest` prove them: a `condition:` join hop
+> (`actorFirstName`, over `filmActorJunctionToActor`), a `{key:, condition:}` hop (`castExceptEd`,
+> over a new `actorIsNotEd` fixture method, where the missing CHASE bucket is the proof), and a
+> composite-key root (`filmActorsFaceted` over `film_actor`). The typed-column check for direct facets
+> rests on the existing `filmsFaceted` execution tests. `FacetEmitterTest` keeps only the
+> method-surface assertion that `facetColumn` is gone.
+
 **Non-blocking.**
 
 - The plan resolves a direct facet's column from `spec.columnName()` by name against `row.table()`,
@@ -328,6 +365,14 @@ facets is already covered by the existing `filmsFaceted` execution tests, is the
   note that `TableRef.column`'s javadoc says no generator emits per column off `allColumns`, and that
   hand-built `TableRef` fixtures leave `allColumns` empty, so the new backstop would trip on any test
   that plans a facet over one.
+
+  > Response: taken. A direct facet now borrows the `ColumnRef` from its own term, the same as a
+  > reference facet does. Only a direct facet under an override, which has no term, is resolved by
+  > name, and `TableRef.column`'s javadoc is updated to match.
 - No reader is named for the view's new `reference_bound` column before the misuse checks move to
   the store. Dropping `'reference'` from the view's exclusion is required to keep the two producers
   equal; the extra column is not.
+
+  > Response: taken. The store view keeps only the dropped exclusion. `FacetSpec.referenceBound` stays
+  > on the Java side, where the planner's backstop reads it, and the store column waits for the store
+  > detection that will read it.
