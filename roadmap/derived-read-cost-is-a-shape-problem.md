@@ -284,36 +284,67 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   refusals have no consumer and one moved to `graphitron_entry_defect` gains a reader rather than
   changing one; its `MutationRoutineSeatTest` case travels with it, being the only cover those
   thirteen have.
-* **Readings are stated at the entry grain** `open`. A reading is one way a written path element
-  can be read against the catalog, which depends on what was written and on the catalog and not on
-  the chain it ends up in: the readings by key, by table, by name match and by condition join the
-  spelling by its written position and nothing else, the target only carried along from `link`. So the reading is
-  keyed by the step entry, written once for every element of either directive at a field, an argument or an
-  input field alike, and the input-value step entries gain their first reader.
-  * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
-    `graphitron_ast_routine_entry` at its written position and folds the name against the catalog's
-    functions in parts, one candidate only; nothing about the target enters it, so no target check
-    moves into the walk. `graphitron_field_routine`, which held the same resolution once per target
-    keyed by an ordinal, and `FieldRoutines` go. Equal on sakila, 23 readings both ways; sis has no
-    `@routine`. The cases are `field-path-routine`.
-  * **A self-referencing key is oriented by the walk, not by the reading**, and how it is
-    oriented is R1037's. A key element has two readings, its constraint ridden from the table
-    declaring it and against, and keeps both, the cardinality of the field being the second thing
-    after the routine that ties a reading to its field today. Between two tables the walk takes the
-    one departing where the path stands. A self-reference departs and arrives at one table, so the
-    walk takes it from the field's cardinality as the generator does until R1037 gives the key
-    element `inverse:`, a self-reference riding forward unless it says so, and changes both; it
-    also brings the `@reference` reference page's account of keys up to date. Nothing in R876 waits
-    on it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
-* **Both walks are anchored** `blocked`, on the departure, under "`source` and `target` are stated
-  for every coordinate", and on readings stated at the entry grain above. The forward reach per field
-  from the departure, the backward reach per target from `graphitron_field_table`, the chain where
-  the two meet, and the arrival of a chain that has only a forward walk, which is what a scalar
-  `@reference` reads and what a bare `@nodeId` with `@reference` takes its type from. A producer
-  with neither a departure nor a target has nothing to run, which is the defect
-  `CHAIN_WITHOUT_TARGET` narrows to.
-* **Every field has a path, the written one or the one discovery implies** `open`, after both
-  walks are anchored. A table-backed field's path is the `@routine` and `@reference` elements it
+* **A path is resolved by two deterministic walks over what each element names** `open`. The
+  reading states every interpretation of every element, both directions of a key and every key into a
+  named table, and two walks keep the candidates that line up. That is a second algorithm beside the
+  generator's, which carries the table it stands at from element to element and reads each element
+  once from there, and it is the cost: on sakila the rule takes 942 ms against 70 ms for one
+  evaluation of the reading and 63 ms over a stored copy of it, the reading being expanded again in
+  every round of each recursive walk. Instead an element names one thing, and a walk reads it from
+  where it stands, one hop or a failure. There are two walks, each a relation of its own built and
+  tested alone: forward from the field's departures, and backward from each arriving type's table.
+  Each is deterministic or fails, so the backward walk fails more often, at any table with several
+  keys into it, and is never wrong. Where both reach a position they agree by construction; where
+  one reaches it, that one is the answer; where a path breaks, the positions the two stopped at
+  bracket the fault.
+  * **What an element names is stated at the entry grain** `open`. One row per written element of
+    either directive at a field, an argument or an input field, keyed by its written position: the
+    constraint a key spelling resolves to, by SQL name or `Keys` constant, qualified or not; the
+    table a table spelling resolves to; the method a condition names and the two tables its
+    signature declares; the result a routine arrives at. No direction, no departure and no target,
+    since none of them is a fact about what was written. The input-value step entries gain their
+    first reader.
+    * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
+      `graphitron_ast_routine_entry` at its written position and folds the name against the catalog's
+      functions in parts, one candidate only; nothing about the target enters it, so no target check
+      moves into the walk. `graphitron_field_routine`, which held the same resolution once per target
+      keyed by an ordinal, and `FieldRoutines` go. Equal on sakila, 23 readings both ways; sis has no
+      `@routine`. The cases are `field-path-routine`.
+  * **Each element kind has a step rule, in each direction** `open`. Small and separate, one per
+    kind, each the answer to "this element, from this table":
+    * a key, the direction departing where the walk stands forward or arriving there backward, one
+      only between two tables;
+    * a table, forward the one key between the table the walk stands at and the named one, backward
+      the one key into the named table, failing on none or several;
+    * a condition, the tables its method's signature declares, the departure admitting where the
+      walk stands;
+    * a routine, arriving at its result and departing from nothing, so it starts a forward walk and
+      ends a backward one.
+    * **A self-referencing key is oriented by R1037's rule**. Both its directions depart and arrive
+      at one table, so neither walk can say. It rides forward unless the element writes
+      `inverse: true`; until R1037 lands the step takes the field's cardinality as the generator
+      does, and R1037 changes both, with the `@reference` reference page. Nothing in R876 waits on
+      it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
+  * **The forward walk is a relation of its own** `open`, after the two above. From each of the
+    field's departures in `graphitron_field_source_table`, and from a leading `@routine`, which the
+    root-head rule makes the only start a root field has; one row per position reached, stopping at
+    the first element with no step from where it stands.
+  * **The backward walk is a relation of its own** `open`, after the step rules. From each arriving
+    type's table in `graphitron_field_target_table`, toward position zero, stopping where it cannot
+    step.
+  * **The walks agree, and a broken path is a defect at its positions** `open`, after both walks.
+    The resolved path toward an arriving type is the forward walk where it arrives there, and
+    otherwise the backward walk where it reaches the start; where both reach a position a test
+    holds them to one hop. A path neither completes is a defect naming the position each walk
+    stopped at, which is what `CHAIN_WITHOUT_TARGET` and the chain-break codes narrow to, and the
+    stored resolution's tail and head flags go.
+  * **The walks answer what today's resolution answers, measured first** `open`. Old against new
+    on the corpus, sakila, sis and the fs-plattform subgraphs before anything is deleted, and every
+    difference named. The one expected kind is a table element with several keys from where the
+    walk stands, which today's candidate filter can settle by elimination further down the path and
+    the step rule refuses, as the generator already does.
+* **Every field has a path, the written one or the one discovery implies** `open`, after the
+  walks agree. A table-backed field's path is the `@routine` and `@reference` elements it
   wrote, or where it wrote none the key discovery finds between its departure and its target type's
   table, or nothing at all for a leaf read on its departure's own table. Stated as links like the
   written ones, so the target table is always the arrival of a path and no reader falls back to
@@ -585,7 +616,7 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
       least one element. Where a path's last step lands and how many steps an application has are
       asked only to find a hop's target, and move with the hops.
     * **The field-site step resolution gives way to the path resolution** `blocked`, for the column
-      scope rule and the node-id instruction rule, on "Both walks are anchored": a scalar read
+      scope rule and the node-id instruction rule, on "The forward walk is a relation of its own": a scalar read
       through a path has no table its target type binds, so the path resolution, keyed by that
       table, never walks it. Two derivations
       resolve one path: `graphitron_field_reference_step_hop` and `_target`, from the decoded steps
