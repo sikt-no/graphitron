@@ -24,7 +24,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | Spec | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
-| `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Spec | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-09-25 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
@@ -34,6 +33,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | Ready | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
 | `R1041` | A mutation called with an empty input list returns an empty payload without routing to a tenant | Ready | 2026-10-15 | [plan](empty-input-list-skips-tenant-routing.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Ready | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R1043` | A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation | In Progress | 2026-10-15 | [plan](splitquery-same-row-null-correlation.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -564,7 +564,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R1040` [**A DML UPDATE row that sends only its key fields is a no-op that still returns the row**](update-empty-patch-is-a-no-op.md) — Ready, bug
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
-- `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — Spec, bug
+- `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — Ready, bug
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug
 - `R882` [**A nullable input field can be the sole supplier of a matched-key column on UPDATE, and an omitted value then has no diagnostic**](nullable-carrier-as-sole-row-identity.md) — Backlog, validation
