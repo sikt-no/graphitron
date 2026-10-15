@@ -5,9 +5,9 @@ status: Backlog
 bucket: bug
 priority: 3
 theme: error-channel
-depends-on: [unmatched-fetcher-exception-logging-hook]
+depends-on: []
 created: 2026-09-04
-last-updated: 2026-09-28
+last-updated: 2026-10-15
 ---
 
 # a failed batch logs once, without its SQL, and a consumer can cap batch size
