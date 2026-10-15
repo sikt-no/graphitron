@@ -47,6 +47,44 @@ class ModulePlanRunTest {
         assertThat(ran).containsExactly("jooq", "round");
     }
 
+    /**
+     * A goal that leaves another loader on the thread, as the module's project realm is left where
+     * the module declares a build extension, does not reach the round or what the goal does after
+     * the plan: the MCP server finds its JSON mapper through the context classloader.
+     */
+    @Test
+    @DisplayName("a goal that leaves another context classloader on the thread does not leave it for the goal")
+    void theGoalsOwnLoaderStaysOnTheThread() throws Exception {
+        var thread = Thread.currentThread();
+        var own = thread.getContextClassLoader();
+        var foreign = new java.net.URLClassLoader(new java.net.URL[0], null);
+        var ran = new ArrayList<String>();
+        var seenByRound = new ArrayList<ClassLoader>();
+        var manager = (BuildPluginManager) Proxy.newProxyInstance(
+            BuildPluginManager.class.getClassLoader(), new Class<?>[] {BuildPluginManager.class},
+            (proxy, method, args) -> {
+                ran.add(((MojoExecution) args[1]).getMojoDescriptor().getGoal());
+                thread.setContextClassLoader(foreign);
+                return null;
+            });
+        var mojo = new DevMojo(null, manager);
+        var project = new MavenProject();
+        project.setArtifactId("module");
+        mojo.project = project;
+
+        try {
+            mojo.runSteps(List.of(run("enforce"), new Step.DevRound<>(), run("compile")),
+                () -> seenByRound.add(thread.getContextClassLoader()));
+
+            assertThat(ran).containsExactly("enforce", "compile");
+            assertThat(seenByRound).containsExactly(own);
+            assertThat(thread.getContextClassLoader()).isSameAs(own);
+        } finally {
+            thread.setContextClassLoader(own);
+            foreign.close();
+        }
+    }
+
     /** A goal named {@code goal}, its execution carrying the name the stand-in records. */
     private static Step<MojoExecution> run(String goal) {
         var descriptor = new MojoDescriptor();

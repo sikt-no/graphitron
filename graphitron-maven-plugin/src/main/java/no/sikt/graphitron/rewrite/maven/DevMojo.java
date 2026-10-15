@@ -1213,15 +1213,41 @@ public class DevMojo extends AbstractRewriteMojo {
      * and a class that does not compile is often the one being edited.
      */
     void runModulePlan(FirstRound round) throws MojoExecutionException {
-        var goals = session == null || session.getGoals() == null ? List.<String>of() : session.getGoals();
-        runSteps(ModulePlan.of(boundGoals(), goals, compileModule), round);
+        var thread = Thread.currentThread();
+        var own = thread.getContextClassLoader();
+        try {
+            var goals = session == null || session.getGoals() == null ? List.<String>of() : session.getGoals();
+            var steps = ModulePlan.of(boundGoals(), goals, compileModule);
+            thread.setContextClassLoader(own);
+            runSteps(steps, round);
+        } finally {
+            thread.setContextClassLoader(own);
+        }
     }
 
-    /** {@code steps} in order, a goal that fails ending the goals but not the round. */
+    /**
+     * {@code steps} in order, a goal that fails ending the goals but not the round. Each step starts
+     * on this goal's own context classloader and the last leaves it there: running the module's plan
+     * leaves the module's project realm on the thread where the module declares a build extension,
+     * and what this goal does next, the MCP server's {@code ServiceLoader} lookups among it, reads
+     * the context classloader for this goal's own classes.
+     */
     void runSteps(List<ModulePlan.Step<MojoExecution>> steps, FirstRound round)
             throws MojoExecutionException {
+        var thread = Thread.currentThread();
+        var own = thread.getContextClassLoader();
+        try {
+            runInOrder(steps, round, own);
+        } finally {
+            thread.setContextClassLoader(own);
+        }
+    }
+
+    private void runInOrder(List<ModulePlan.Step<MojoExecution>> steps, FirstRound round,
+                            ClassLoader own) throws MojoExecutionException {
         boolean failed = false;
         for (var step : steps) {
+            Thread.currentThread().setContextClassLoader(own);
             if (step instanceof ModulePlan.Step.Run<MojoExecution> run) {
                 if (failed) {
                     continue;
