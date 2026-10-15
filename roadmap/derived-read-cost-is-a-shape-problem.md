@@ -1214,6 +1214,21 @@ reads nothing off the classpath that capture has already read, and builds no sch
       editor and the generator read one vocabulary; the sibling node above reads the same fact.
   * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
     to rename.
+* **The assembly is a step of the anchor** `open`. `graphql-assembly` is a gatherer by name only. It
+  captures no corpus: it reads the documents the source reading already holds, and what it writes,
+  the assembly rows of `graphql_schema_problem`, is graphql-java's and federation-jvm's verdict over
+  them, which is a derivation. It is downstream of the anchor already, the federation link it hands
+  federation-jvm importing what the anchor mints. Nothing found argues for a gatherer of its own.
+  * **The composition reads the anchored link** `open`, with "A configured link mints no key it
+    does not import". `LoadingRewrites` builds the federation link's imports from
+    `graphitron_federation_link_import` rather than from `TagLinkSynthesiser`'s own reading of the
+    registry.
+  * **The assembly runs as the anchor's last step** `open`, after. `GraphQLAssemblyCapture.gather`
+    becomes the step after `EmittedAnchor` in the graphitron-ast anchor, handing `ModelCapture` the
+    same reading. Its `store_graph_progress` row, its `meta_gatherer` row and the edges naming it
+    go, and `graphql_schema_problem`'s owner becomes the anchor's gatherer. The comment on the
+    `('graphitron', 'graphql-assembly')` edge is stale already: the configured opt-in reads
+    `graphql_source_input`, not the composition.
 * **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
   and `graphitron_inherited_directive` and builds the emitted schema, `graphitron:capture`
   alone included, and the dev loop's classpath-change and quiet-startup rounds now capture too. The
