@@ -37,7 +37,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1043` | A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation | In Review | 2026-10-15 | [plan](splitquery-same-row-null-correlation.md) |
 | `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | In Review | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
-| `R1041` | A mutation called with an empty input list returns an empty payload without routing to a tenant | In Review | 2026-10-15 | [plan](empty-input-list-skips-tenant-routing.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -609,7 +608,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R1038` [**A client-supplied tenant key routes by the tenant column database value, not its converted Java form**](tenant-key-equality-follows-the-column.md) — In Progress, bug
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
-- `R1041` [**A mutation called with an empty input list returns an empty payload without routing to a tenant**](empty-input-list-skips-tenant-routing.md) — In Review, bug
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
