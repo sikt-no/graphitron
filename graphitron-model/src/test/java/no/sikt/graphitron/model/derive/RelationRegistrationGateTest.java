@@ -343,7 +343,6 @@ class RelationRegistrationGateTest {
         registrations.put("sql_table_reference", Arm.DERIVED);
         registrations.put("graphitron_condition_method_route", Arm.DERIVED);
         registrations.put("graphitron_node_type", Arm.DERIVED);
-        registrations.put("graphitron_synthesized_federation_key", Arm.DERIVED);
         registrations.put("graphitron_synthesized_node_type_id", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_reference_step_target_keyed", Arm.DERIVED);

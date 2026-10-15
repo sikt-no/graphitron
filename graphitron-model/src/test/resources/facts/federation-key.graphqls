@@ -75,13 +75,26 @@ extend type Query {
   stores: [Store!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_synthesized_federation_key", rows: """
-  type_name, fields_sdl, resolvable
-  Address,   id,         TRUE
-  Category,  id,         TRUE
-  City,      id,         TRUE
-  Country,   id,         TRUE
-  Film,      id,         TRUE
+extend schema @expectEquals(relation: "graphitron_directive_application", where: """
+  directive_name = 'key' AND origin = 'MINTED'
+  """, rows: """
+  coordinate
+  Address
+  Category
+  City
+  Country
+  Film
+  """)
+
+# The key the rule mints is the node's id, resolvable. The values are SDL, quotes and all, which a
+# CSV cell would unquote, so they are stated in the predicate: a wrong value drops its row.
+extend schema @expectEquals(relation: "graphitron_directive_application_arg", where: """
+  coordinate = 'Film' AND directive_name = 'key'
+  AND (directive_argument_name, value_sdl) IN (('fields', '"id"'), ('resolvable', 'true'))
+  """, rows: """
+  directive_argument_name
+  fields
+  resolvable
   """)
 
 # Stated as containment rather than equality, the directive anchor holding every application the

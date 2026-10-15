@@ -28,7 +28,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLETYPE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_SYNTHESIZED_FEDERATION_KEY;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -37,10 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * write the capture walk performed.
  *
  * <p>What each case reads is the point. Nothing lands in the transcription or its decode for a
- * synthesized key, so those are asserted <em>empty</em> at the synthesized coordinate and the
- * membership is read from {@code graphitron_synthesized_federation_key}. What the documents say is
- * transcribed and nothing more, and a reader wanting every key the emitted schema carries reads the
- * {@code key} rows of {@code graphitron_directive_application}, authored and minted.
+ * minted key, so those are asserted <em>empty</em> at the minted coordinate and the membership is
+ * read from the {@code MINTED} {@code key} rows of {@code graphitron_directive_application}. What
+ * the documents say is transcribed and nothing more.
  *
  * <p>These are capture-driven cases rather than seeded ones, which is what the module boundary asks
  * for: the rule's own algebra is pinned row-in-verdict-out in {@code graphitron-model}, and what
@@ -59,6 +57,11 @@ class FederationKeyDerivationTest {
         directive @key(fields: String!, resolvable: Boolean) repeatable on OBJECT
         """;
 
+    /** The node type every federated case declares, the anchor its variations replace at. */
+    private static final String FILM = "type Film implements Node @table(name: \"film\") @node";
+
+    private static final CatalogInput JOOQ = CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE);
+
     private static final String LINK =
         "extend schema @link(url: \"https://specs.apollo.dev/federation/v2.10\", import: [\"@key\"])";
 
@@ -69,7 +72,7 @@ class FederationKeyDerivationTest {
 
         interface Node { id: ID! }
 
-        type Film implements Node @node {
+        type Film implements Node @table(name: "film") @node {
           id: ID!
           title: String
         }
@@ -95,15 +98,18 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("a node type without an id key gets one, and it is a derived row rather than a captured one")
     void federationKeyIsDerivedForNodes(@TempDir Path tmp) {
-        try (var store = CapturedStore.of(tmp, FEDERATED)) {
-            var synthesized = store.dsl()
-                .select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.FIELDS_SDL,
-                    GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.RESOLVABLE)
-                .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
-                .where(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))
-                .fetchSingle();
-            assertThat(synthesized.value1()).isEqualTo("id");
-            assertThat(synthesized.value2()).isTrue();
+        try (var store = CapturedStore.ofCatalog(tmp, FEDERATED, JOOQ)) {
+            var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
+            assertThat(store.dsl()
+                .select(a.DIRECTIVE_ARGUMENT_NAME, a.VALUE_SDL)
+                .from(a)
+                .where(a.COORDINATE.eq("Film"))
+                .and(a.DIRECTIVE_NAME.eq("key"))
+                .orderBy(a.DIRECTIVE_ARGUMENT_NAME)
+                .fetch()
+                .map(r -> r.value1() + ": " + r.value2()))
+                .as("the minted key is the node's id, resolvable")
+                .containsExactly("fields: \"id\"", "resolvable: true");
 
             assertThat(keyApplicationsOf(store.dsl(), "Film"))
                 .as("the SDL declares no @key, so the transcription holds none")
@@ -127,10 +133,10 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("an authored id key stands the derivation down, opt-out intact")
     void anAuthoredIdKeyStandsTheDerivationDown(@TempDir Path tmp) {
-        String sdl = FEDERATED.replace("type Film implements Node @node {",
-            "type Film implements Node @node @key(fields: \"id\", resolvable: false) {");
-        try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
+        String sdl = FEDERATED.replace(FILM + " {",
+            FILM + " @key(fields: \"id\", resolvable: false) {");
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl())).isEmpty();
             var a = GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
             assertThat(store.dsl()
                 .select(a.VALUE_SDL)
@@ -151,12 +157,10 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("an inferred node gets a key; with no catalog captured, it does not")
     void nodeInferenceDecidesWhetherAnInferredNodeGetsAKey(@TempDir Path tmp) {
-        try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), INFERRED,
-                CatalogInput.of(TestConfiguration.DEFAULT_JOOQ_PACKAGE))) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
-                GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Pairing")))
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("inferred"), INFERRED, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl()))
                 .as("film_actor publishes node metadata, so Pairing is a node without saying @node")
-                .isOne();
+                .containsExactly("Pairing");
 
             assertThat(store.dsl()
                 .select(GRAPHITRON_TABLETYPE.TABLE_SCHEMA, GRAPHITRON_TABLETYPE.TABLE_NAME)
@@ -172,9 +176,9 @@ class FederationKeyDerivationTest {
                 .containsExactly("public.film_actor");
         }
         try (var store = CapturedStore.of(tmp.resolve("bare"), INFERRED)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY))
+            assertThat(mintedKeysOf(store.dsl()))
                 .as("no catalog facts to conjoin, so nothing infers nodehood")
-                .isZero();
+                .isEmpty();
             assertThat(store.dsl().fetchCount(GRAPHITRON_NODE)).isZero();
         }
     }
@@ -187,9 +191,9 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("an authored non-id key and a derived key coexist on one type")
     void anOtherFieldKeyLeavesTheDerivedKeyBesideIt(@TempDir Path tmp) {
-        String sdl = FEDERATED.replace("type Film implements Node @node {",
-            "type Film implements Node @node @key(fields: \"title\") {");
-        try (var store = CapturedStore.of(tmp, sdl)) {
+        String sdl = FEDERATED.replace(FILM + " {",
+            FILM + " @key(fields: \"title\") {");
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
             assertThat(composedKeysOf(store.dsl(), "Film"))
                 .containsExactly("0:AUTHORED:title", "1:MINTED:id");
             assertThat(keyApplicationsOf(store.dsl(), "Film"))
@@ -207,22 +211,20 @@ class FederationKeyDerivationTest {
     @Test
     @DisplayName("a compound key and a nested path are both alternatives, not the id contract")
     void neitherACompoundKeyNorANestedPathStandsTheDerivationDown(@TempDir Path tmp) {
-        String compound = FEDERATED.replace("type Film implements Node @node {",
-            "type Film implements Node @node @key(fields: \"id title\") {");
-        try (var store = CapturedStore.of(tmp.resolve("compound"), compound)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
-                GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))).isOne();
+        String compound = FEDERATED.replace(FILM + " {",
+            FILM + " @key(fields: \"id title\") {");
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("compound"), compound, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl())).contains("Film");
         }
         String nested = FEDERATED.replace("title: String", "title: Title")
             + """
 
-            type Title implements Node @node { id: ID! }
+            type Title implements Node @table(name: "language") @node { id: ID! }
             """;
-        nested = nested.replace("type Film implements Node @node {",
-            "type Film implements Node @node @key(fields: \"title { id }\") {");
-        try (var store = CapturedStore.of(tmp.resolve("nested"), nested)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY,
-                GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME.eq("Film"))).isOne();
+        nested = nested.replace(FILM + " {",
+            FILM + " @key(fields: \"title { id }\") {");
+        try (var store = CapturedStore.ofCatalog(tmp.resolve("nested"), nested, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl())).contains("Film");
         }
     }
 
@@ -230,8 +232,8 @@ class FederationKeyDerivationTest {
     @DisplayName("no federation link, no derived key")
     void theDerivationNeedsAFederationLink(@TempDir Path tmp) {
         String sdl = DIRECTIVES + FEDERATED.replace(LINK, "");
-        try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl())).isEmpty();
             assertThat(store.dsl().fetchCount(GRAPHITRON_DIRECTIVE_APPLICATION,
                 GRAPHITRON_DIRECTIVE_APPLICATION.DIRECTIVE_NAME.eq("key"))).isZero();
         }
@@ -246,8 +248,8 @@ class FederationKeyDerivationTest {
     void aLinkToAnotherSpecIsNotTheOptIn(@TempDir Path tmp) {
         String sdl = DIRECTIVES + FEDERATED.replace(LINK,
             "extend schema @link(url: \"https://specs.apollo.dev/tag/v0.3\", import: [\"@tag\"])");
-        try (var store = CapturedStore.of(tmp, sdl)) {
-            assertThat(store.dsl().fetchCount(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)).isZero();
+        try (var store = CapturedStore.ofCatalog(tmp, sdl, JOOQ)) {
+            assertThat(mintedKeysOf(store.dsl())).isEmpty();
         }
     }
 
@@ -268,19 +270,19 @@ class FederationKeyDerivationTest {
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("tagged"), unlinked, "stable")).store()) {
             assertThat(originOf(store.dsl())).containsExactly("CONFIGURED");
-            assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
+            assertThat(mintedKeysOf(store.dsl())).containsExactly("Film");
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("untagged"), unlinked, null)).store()) {
             assertThat(originOf(store.dsl())).isEmpty();
-            assertThat(synthesizedKeysOf(store.dsl())).isEmpty();
+            assertThat(mintedKeysOf(store.dsl())).isEmpty();
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("linked"), linkedWithTag, "stable")).store()) {
             assertThat(originOf(store.dsl()))
                 .as("the author wrote the link, so the configuration adds none")
                 .containsExactly("AUTHORED");
-            assertThat(synthesizedKeysOf(store.dsl())).containsExactly("Film");
+            assertThat(mintedKeysOf(store.dsl())).containsExactly("Film");
         }
     }
 
@@ -301,12 +303,15 @@ class FederationKeyDerivationTest {
             TestConfiguration.DEFAULT_OUTPUT_PACKAGE, TestConfiguration.DEFAULT_JOOQ_PACKAGE);
     }
 
-    /** The types the rule synthesised a key for, by name. */
-    private static List<String> synthesizedKeysOf(DSLContext dsl) {
-        return dsl.select(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
-            .from(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY)
-            .orderBy(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME)
-            .fetch(GRAPHITRON_SYNTHESIZED_FEDERATION_KEY.TYPE_NAME);
+    /** The types the rule minted a key for, by name. */
+    private static List<String> mintedKeysOf(DSLContext dsl) {
+        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
+        return dsl.select(d.COORDINATE)
+            .from(d)
+            .where(d.DIRECTIVE_NAME.eq("key"))
+            .and(d.ORIGIN.eq("MINTED"))
+            .orderBy(d.COORDINATE)
+            .fetch(d.COORDINATE);
     }
 
     /** The ordinals of the {@code @key} applications transcribed for a type, in order. */

@@ -1191,10 +1191,11 @@ reads nothing off the classpath that capture has already read, and builds no sch
   capture derives is the emitted schema. `CapturedSchema.synthesised` becomes `emitted`, with the
   javadoc and tests that say "post-synthesis", and what is left of the old word goes with the code
   it names.
-  * **The federation key is one rule of the mint** `open`. `graphitron_synthesized_federation_key`
-    is a filter now that the opt-in is a relation: the node types of a federated graph with no
-    authored id key. It dissolves into `graphitron_directive_application_minted`, and its readers
-    read the minted applications.
+  * **The federation key is one rule of the mint** `done`. The synthesized-key view dissolved into
+    `graphitron_directive_application_minted`: the node types of a federated graph with no authored
+    id key, read from `graphitron_node`, so a `@node` that is an error is not keyed. Its constant
+    arguments are rows of `graphitron_directive_application_arg_minted`, and its readers read the
+    minted applications.
     * **A configured link mints no key it does not import** `open`, first: a regression. Reported
       2026-10-15 from a live session. With the author's federation `@link` and `@key`s removed and
       the inputs still tagged, `TagLinkSynthesiser`'s link imports `@tag` alone, yet the opt-in
@@ -1618,7 +1619,7 @@ resolved one.
   that changed is deleted first, taking that type's node and key columns with it; the rest are
   upserted on their keys and swept, and an unchanged binding keeps everything hanging off it.
 * **"Is a node" is the resolved node** `open`. The readers of `graphitron_node_type`,
-  `graphitron_node_id_instruction_rule`, `graphitron_synthesized_federation_key` and
+  `graphitron_node_id_instruction_rule` and
   `intent_node_container_member`, read `graphitron_node`, and the view goes. A `@node` on a type
   without `@table` is the anti-join between the entry and the node, and is reported, not counted.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, the legality

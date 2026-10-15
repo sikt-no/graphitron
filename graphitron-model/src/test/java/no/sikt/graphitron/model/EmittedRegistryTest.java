@@ -9,6 +9,9 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.test.CatalogInput;
+import no.sikt.graphitron.model.test.TestRunContext;
+import org.jooq.DSLContext;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -16,6 +19,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -133,7 +137,7 @@ class EmittedRegistryTest {
           film: Film
         }
 
-        type Film implements Node @node {
+        type Film implements Node @table(name: "film") @node {
           id: ID!
           title: String!
         }
@@ -150,7 +154,7 @@ class EmittedRegistryTest {
           film: Film
         }
 
-        type Film implements Node @node @key(fields: "id") {
+        type Film implements Node @table(name: "film") @node @key(fields: "id") {
           id: ID!
           title: String!
         }
@@ -164,7 +168,7 @@ class EmittedRegistryTest {
           film: Film
         }
 
-        type Film implements Node @node @key(fields: "id", resolvable: true) {
+        type Film implements Node @table(name: "film") @node @key(fields: "id", resolvable: true) {
           id: ID!
           title: String!
         }
@@ -384,12 +388,13 @@ class EmittedRegistryTest {
     @Test
     @DisplayName("a node type in a federation-linked graph gets the key the anchor minted")
     void theMintedKeyIsApplied() {
-        CapturedStore.withCapturedStore(tmp.resolve("minted-key"), LINKED_NODE_SCHEMA, dsl -> {
+        withCatalogStore(tmp.resolve("minted-key"), LINKED_NODE_SCHEMA, dsl -> {
             var emitted = emitted((parse(LINKED_NODE_SCHEMA)),
                 new StoreHandle(dsl, CapturedStore.GRAPH));
 
             assertThat(typeDirectives(emitted, "Film"))
-                .containsExactly("@node", "@key(fields: \"id\", resolvable: true)");
+                .containsExactly("@table(name: \"film\")", "@node",
+                    "@key(fields: \"id\", resolvable: true)");
         });
     }
 
@@ -397,11 +402,11 @@ class EmittedRegistryTest {
     @Test
     @DisplayName("an unlinked graph has no key to apply")
     void nothingIsAppliedWithoutTheOptIn() {
-        CapturedStore.withCapturedStore(tmp.resolve("unlinked"), UNLINKED_NODE_SCHEMA, dsl -> {
+        withCatalogStore(tmp.resolve("unlinked"), UNLINKED_NODE_SCHEMA, dsl -> {
             var emitted = emitted((parse(UNLINKED_NODE_SCHEMA)),
                 new StoreHandle(dsl, CapturedStore.GRAPH));
 
-            assertThat(typeDirectives(emitted, "Film")).containsExactly("@node");
+            assertThat(typeDirectives(emitted, "Film")).containsExactly("@table(name: \"film\")", "@node");
         });
     }
 
@@ -413,14 +418,14 @@ class EmittedRegistryTest {
     @Test
     @DisplayName("an authored key is not applied a second time")
     void theAuthoredKeyIsNotReapplied() {
-        CapturedStore.withCapturedStore(tmp.resolve("authored-key"), LINKED_AUTHORED_KEY_SCHEMA,
+        withCatalogStore(tmp.resolve("authored-key"), LINKED_AUTHORED_KEY_SCHEMA,
             dsl -> {
                 var emitted = emitted((parse(LINKED_AUTHORED_KEY_SCHEMA)),
                     new StoreHandle(dsl, CapturedStore.GRAPH));
 
                 assertThat(typeDirectives(emitted, "Film"))
                     .as("the author's own application, once")
-                    .containsExactly("@node", "@key(fields: \"id\")");
+                    .containsExactly("@table(name: \"film\")", "@node", "@key(fields: \"id\")");
             });
     }
 
@@ -432,7 +437,7 @@ class EmittedRegistryTest {
     @Test
     @DisplayName("a registry already carrying the minted key is refused as a generator defect")
     void aKeyAlreadyMintedIsRefused() {
-        CapturedStore.withCapturedStore(tmp.resolve("minted-twice"), LINKED_NODE_SCHEMA, dsl ->
+        withCatalogStore(tmp.resolve("minted-twice"), LINKED_NODE_SCHEMA, dsl ->
             assertThatThrownBy(() -> emitted((parse(MINTED_KEY_SCHEMA)),
                     new StoreHandle(dsl, CapturedStore.GRAPH)))
                 .isInstanceOf(IllegalStateException.class)
@@ -441,6 +446,14 @@ class EmittedRegistryTest {
     }
 
     // ---------------------------------------------------------------------------------------
+
+    /** A capture against the jOOQ catalog, which a node needs: it is a row of a table it resolves. */
+    private static void withCatalogStore(Path directory, String sdl, Consumer<DSLContext> body) {
+        try (var store = CapturedStore.ownStoreOfCatalog(directory, sdl,
+                CatalogInput.of(TestRunContext.of()))) {
+            body.accept(store.dsl());
+        }
+    }
 
     /** The emitted registry for the graph, derived from {@code registry}. */
     private static TypeDefinitionRegistry emitted(TypeDefinitionRegistry registry, StoreHandle store) {

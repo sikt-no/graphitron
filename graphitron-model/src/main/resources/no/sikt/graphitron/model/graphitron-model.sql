@@ -7819,37 +7819,6 @@ COMMENT ON COLUMN graphitron_federation_link_import_rule.ordinal IS 'the import'
 COMMENT ON COLUMN graphitron_federation_link_import_rule.name IS 'the name imported';
 COMMENT ON COLUMN graphitron_federation_link_import_rule.alias IS 'the authored alias, or NULL';
 
-CREATE VIEW graphitron_synthesized_federation_key
-  (graph_name, type_name, fields_sdl, resolvable) AS
-SELECT n.graph_name, n.type_name, 'id', TRUE
-  FROM graphitron_node_type n
- WHERE EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
-   -- An authored key states the id contract when it selects one path and that path is id. The
-   -- decode is reached through the application the corpus honours, at the at sign both share.
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
-                     JOIN graphitron_ast_federation_key_entry k
-                       ON k.graph_name = d.graph_name AND k.source_name = d.source_name
-                      AND k.source_line = d.source_line AND k.source_column = d.source_column
-                    WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
-                      AND d.directive_name = 'key'
-                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_selection_entry p
-                                WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
-                                  AND p.source_line = k.source_line
-                                  AND p.source_column = k.source_column)
-                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_segment_entry g
-                                WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
-                                  AND g.source_line = k.source_line
-                                  AND g.source_column = k.source_column)
-                      AND EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry g
-                                   WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
-                                     AND g.source_line = k.source_line
-                                     AND g.source_column = k.source_column
-                                     AND g.segment_name = 'id'));
-COMMENT ON VIEW graphitron_synthesized_federation_key IS 'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition. For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.';
-COMMENT ON COLUMN graphitron_synthesized_federation_key.graph_name IS 'the owning graph''s partition, carried from the membership relation';
-COMMENT ON COLUMN graphitron_synthesized_federation_key.type_name IS 'the node type the key is synthesized for; keyed with the graph, one row per type that gets one';
-COMMENT ON COLUMN graphitron_synthesized_federation_key.fields_sdl IS 'the field-set literal the rule states, always id; a column and not an implied constant, so a reader composing this arm with the authored one projects the same shape from both';
-COMMENT ON COLUMN graphitron_synthesized_federation_key.resolvable IS 'the resolvable: the rule states, always true; the synthesized entity is resolvable by construction, an opt-out being something only an author can write';
 
 CREATE VIEW graphitron_synthesized_node_type_id
   (graph_name, type_name, type_id) AS
@@ -8050,13 +8019,39 @@ COMMENT ON COLUMN graphitron_inherited_directive.value_sdl IS 'the tag''s name: 
 CREATE VIEW graphitron_directive_application_minted
   (graph_name, coordinate, directive_name, ordinal, origin,
    source_name, source_line, source_column) AS
-SELECT k.graph_name, k.type_name, 'key',
+-- Federation's entity rule: a node of a federated graph gets @key(fields: "id") unless an authored
+-- key already states that contract, federation needing the entity declaration in the emitted SDL and
+-- a node carrying a globally unique id by definition. A node is graphitron_node's, explicit or
+-- inferred from the table's node metadata alike, and a graph is federated however it opted in.
+SELECT n.graph_name, n.type_name, 'key',
        CAST((SELECT COUNT(*) FROM graphql_directive_application d
-              WHERE d.graph_name = k.graph_name AND d.coordinate = k.type_name
+              WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
                 AND d.directive_name = 'key') AS INT),
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
-  FROM graphitron_synthesized_federation_key k
-  JOIN graphitron_element e ON e.graph_name = k.graph_name AND e.coordinate = k.type_name
+  FROM graphitron_node n
+  JOIN graphitron_element e ON e.graph_name = n.graph_name AND e.coordinate = n.type_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_federation_link l WHERE l.graph_name = n.graph_name)
+   -- An authored key states the id contract when it selects one path and that path is id. The
+   -- decode is reached through the application the corpus honours, at the at sign both share.
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
+                     JOIN graphitron_ast_federation_key_entry k
+                       ON k.graph_name = d.graph_name AND k.source_name = d.source_name
+                      AND k.source_line = d.source_line AND k.source_column = d.source_column
+                    WHERE d.graph_name = n.graph_name AND d.coordinate = n.type_name
+                      AND d.directive_name = 'key'
+                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_selection_entry p
+                                WHERE p.graph_name = k.graph_name AND p.source_name = k.source_name
+                                  AND p.source_line = k.source_line
+                                  AND p.source_column = k.source_column)
+                      AND 1 = (SELECT COUNT(*) FROM graphitron_ast_federation_key_segment_entry g
+                                WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
+                                  AND g.source_line = k.source_line
+                                  AND g.source_column = k.source_column)
+                      AND EXISTS (SELECT 1 FROM graphitron_ast_federation_key_segment_entry g
+                                   WHERE g.graph_name = k.graph_name AND g.source_name = k.source_name
+                                     AND g.source_line = k.source_line
+                                     AND g.source_column = k.source_column
+                                     AND g.segment_name = 'id'))
 UNION ALL
 SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal,
        'MINTED', CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
@@ -8108,18 +8103,14 @@ COMMENT ON COLUMN graphitron_directive_application_arg_configured.value_sdl IS '
 
 CREATE VIEW graphitron_directive_application_arg_minted
   (graph_name, coordinate, directive_name, ordinal, directive_argument_name, value_sdl) AS
-SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'fields',
-       '"' || k.fields_sdl || '"'
+-- Every minted key is the entity rule's, and the rule states one key: the node's id, resolvable, an
+-- opt-out being something only an author can write.
+SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'fields', '"id"'
   FROM graphitron_directive_application_minted m
-  JOIN graphitron_synthesized_federation_key k
-    ON k.graph_name = m.graph_name AND k.type_name = m.coordinate
  WHERE m.directive_name = 'key'
 UNION ALL
-SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'resolvable',
-       CASE WHEN k.resolvable THEN 'true' ELSE 'false' END
+SELECT m.graph_name, m.coordinate, m.directive_name, m.ordinal, 'resolvable', 'true'
   FROM graphitron_directive_application_minted m
-  JOIN graphitron_synthesized_federation_key k
-    ON k.graph_name = m.graph_name AND k.type_name = m.coordinate
  WHERE m.directive_name = 'key'
 UNION ALL
 SELECT i.graph_name, i.type_name, i.directive_name, i.ordinal, 'name', i.value_sdl
@@ -13951,9 +13942,6 @@ INSERT INTO meta_grain VALUES
   ('connection-carrier',
    'one field @asConnection expands, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
-  ('synthesized-federation-key',
-   'one synthesized federation key, on one type, in one graph',
-   'graph_name, type_name', 'sdl'),
   ('synthesized-node-type-id',
    'one node type whose wire type id the emitted schema publishes, in one graph',
    'graph_name, type_name', 'sdl'),
@@ -14844,14 +14832,10 @@ INSERT INTO meta_relation VALUES
    'Which input types the emitted schema can reach from a field argument, directly or through the input fields of one it reaches.',
    'For example a FilmFilter named by Query.films(filter:) is one row, and a RatingFilter that FilmFilter declares a field of is another, while an input type nothing names is absent.',
    'A view because nothing in the model derives from it. A consumer''s query reads it and that is all it is for, so it carries the rule and no table carries the rows. The moment another derivation builds on it, it is an anchor and owes a table: an anchor is what other derivations stand on, and a table is what holds a key, a foreign key and a check so an illegal state is unwritable rather than merely unexpected. That is the condition to test when adding the second reader, and it is not a question of how many consumers ask: a hundred queries reading it directly leave it a view, and one derivation standing on it does not. Stated over the emitted family rather than the transcription, because a macro mints arguments and an input reached only through a minted one is reachable in the schema the generator emits and absent from the one the author wrote. The recursion carries a path and unions all, rather than unioning distinct, because an input type may declare a field of its own type and the cycle has to be stopped as it is walked; the path is what the recursion consumes and the grain reports neither it nor how many ways a type was reached. What is deliberately not here is any bound by classification: the Java fold this replaces closed through classified input types and stopped where classification had yielded none, which narrowed it on schemas that were failing for other reasons, and nothing states that bound as intended.'),
-  ('graphitron_synthesized_federation_key', 'synthesized-federation-key', 'graphitron',
-   'Federation''s node-entity rule as a relation: which node types get a @key(fields: "id") nobody wrote, federation needing the entity declaration visible in the emitted SDL and a node carrying a globally-unique id by definition.',
-   'For example a federation-linked graph whose Film is a node and declares no id key of its own gets one row.',
-   'Moved out of the intent_ family by the arc that owns macro expansion. That family has no owning gatherer and is being retired, and what this derives from is graphitron''s own vocabulary decoded, so this is where the fact belongs and the graphitron gatherer, which runs the expansion, is who answers for it. A derivation and not a capture: the rule reads the SDL claim rows and the node metadata a generated class publishes, so its inputs span two corpora and its output is computable from captured facts. Three conditions, all the live rule''s. The graph is federation-linked, which graphitron_federation_link states for both arms of the opt-in, the authored @link and the one a <schemaInput tag> asks for. The type is a node. And no authored key already states the id contract, meaning no @key whose decode is exactly the single path id. A malformed fields: argument decodes to no field rows and so does not count as the id key, which sends the misuse to its detection instead of suppressing synthesis on a parse failure. The application it states is anchored by graphitron_directive_application, whose minted set reads this; read from the ast_ decode and the anchored application, so every input is settled when the anchor runs.'),
   ('graphitron_synthesized_node_type_id', 'synthesized-node-type-id', 'graphitron',
    'Which node types publish their wire type id in the emitted schema as @nodeType, because the graph composes that directive.',
    'For example a graph whose schema applies @composeDirective(name: "@nodeType") gets one row per node type, Film''s carrying the id its @node declares, its class publishes, or its own name.',
-   'A derivation and not a capture, on graphitron_synthesized_federation_key''s terms: a node subgraph resolving Query.node(id) has to learn which type an id belongs to, and the supergraph can only carry that if the owning subgraph publishes it, so the emitted schema gains a directive no author wrote. The type id is graphitron_node.type_id as resolved, so nothing here restates the three-tier rule or the node population, which is that relation''s, table-bound by its key. The condition is the author''s own composition of the directive, read from graphitron_ast_compose_directive_entry: composing it is the opt-in, so no setting exists and a graph that does not compose it publishes what it published before. This relation is its own provenance, which is what lets the synthesized application stay out of the transcription families entirely.'),
+   'A derivation and not a capture, on the minted key''s terms: a node subgraph resolving Query.node(id) has to learn which type an id belongs to, and the supergraph can only carry that if the owning subgraph publishes it, so the emitted schema gains a directive no author wrote. The type id is graphitron_node.type_id as resolved, so nothing here restates the three-tier rule or the node population, which is that relation''s, table-bound by its key. The condition is the author''s own composition of the directive, read from graphitron_ast_compose_directive_entry: composing it is the opt-in, so no setting exists and a graph that does not compose it publishes what it published before. This relation is its own provenance, which is what lets the synthesized application stay out of the transcription families entirely.'),
 
   ('graphitron_element_authored', 'expanded-element', 'graphitron',
    'One of the four sets graphitron_element is the union of: an element an author declared, at the coordinate the transcription spells for it, of a kind this family anchors.',
