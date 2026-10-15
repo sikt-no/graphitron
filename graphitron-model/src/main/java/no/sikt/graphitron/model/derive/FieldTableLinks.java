@@ -19,12 +19,13 @@ import static org.jooq.impl.DSL.val;
  * {@code FieldTableLinksTest} runs it.
  *
  * <p>Called as a stage of the graphitron gatherer after {@link FieldPathResolutions}, whose
- * stored walk the rule narrows, and so after {@link FieldEndpoints}, whose rows that walk reads.
+ * stored walk the rule narrows, and so after {@link FieldTargetTables} and
+ * {@link FieldSourceTables}, whose rows that walk reads.
  * Neither the stage nor the rule filters those on this reading's instant, and neither needs to:
  * each of those stages sweeps its own stale rows before this one runs, so what the rule reads is
  * this reading's and nothing else.
  *
- * <p>Marked and swept, on {@link FieldEndpoints}' terms. One statement rather than five per position
+ * <p>Marked and swept on the reading's instant. One statement rather than five per position
  * of the deepest chain in the graph, and the resolution that used to be a loop is a walk stated in
  * the catalog where a parse can read what it reads.
  */

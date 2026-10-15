@@ -1,0 +1,32 @@
+# A path written at a field whose target could bind a table and lands on none. A scalar or an enum
+# read through a path takes its column from where the path arrives, and a @pivot reads its
+# projection from the path's last table, so neither is one.
+
+type Film @table(name: "film") {
+  languageName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+  rating: Rating @field(name: "rating") @reference(path: [{key: "film_language_id_fkey"}])
+  translations: Translations
+    @reference(path: [{table: "film_translation"}])
+    @pivot(on: "lang_code", value: "title_txt", vocabulary: "PivotLang")
+  # An object with no table of its own behind a path: nowhere to arrive.
+  summary: Summary @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+enum Rating { G PG }
+enum PivotLang { EN NO }
+type Translations { EN: String NO: String }
+type Summary { name: String }
+
+extend type Query { film: Film }
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                 coordinate
+  CHAIN_WITHOUT_TARGET, Film.summary
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                 coordinate
+  CHAIN_WITHOUT_TARGET, Film.languageName
+  CHAIN_WITHOUT_TARGET, Film.rating
+  CHAIN_WITHOUT_TARGET, Film.translations
+  """)

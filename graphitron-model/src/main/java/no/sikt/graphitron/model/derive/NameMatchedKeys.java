@@ -21,7 +21,7 @@ import static org.jooq.impl.DSL.selectOne;
  * <p>Runs as a stage of the catalog gatherer, after the tables, columns and keys it reads have
  * flushed. It reads nothing else: no graph, no directive, no derivation. That is why it is a
  * function of the store's catalog rather than of the run, and why clearing it whole and re-deriving
- * is right rather than merely convenient, on {@link FieldEndpoints}'s terms: two graphs sharing a
+ * is right rather than merely convenient: two graphs sharing a
  * store get the same answer from the same tables, and a capture that happens to be the one running
  * is not a fact about the result.
  *

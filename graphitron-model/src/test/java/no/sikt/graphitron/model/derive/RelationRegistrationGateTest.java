@@ -284,7 +284,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node", Arm.DERIVED);
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
         registrations.put("graphitron_node_id_candidate", Arm.DERIVED);
-        registrations.put("graphitron_field_table", Arm.DERIVED);
         registrations.put("graphitron_code_reference_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site_rule", Arm.DERIVED);

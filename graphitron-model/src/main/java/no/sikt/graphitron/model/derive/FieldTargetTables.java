@@ -14,7 +14,8 @@ import static org.jooq.impl.DSL.val;
  * field's statements land on. One statement over the rule view beside the table it fills.
  *
  * <p>Called as a stage of the graphitron gatherer after the target and the type bindings it reads.
- * Marked and swept, on {@link FieldEndpoints}' terms.
+ * Marked and swept: upserted on the reading's instant, then the rows this reading did not name are
+ * deleted, so a relation keyed into this one cascades only what is really gone.
  */
 public final class FieldTargetTables {
 

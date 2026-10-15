@@ -15,7 +15,8 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>Called as a stage of the graphitron gatherer after the targets and the type bindings it reads,
  * and before the path resolution, whose head walk departs from these rows.
- * Marked and swept, on {@link FieldEndpoints}' terms.
+ * Marked and swept: upserted on the reading's instant, then the rows this reading did not name are
+ * deleted, so a relation keyed into this one cascades only what is really gone.
  */
 public final class FieldSourceTables {
 

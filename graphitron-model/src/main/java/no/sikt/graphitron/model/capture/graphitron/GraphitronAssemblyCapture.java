@@ -3,7 +3,6 @@ package no.sikt.graphitron.model.capture.graphitron;
 import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.FieldPathApplications;
 import no.sikt.graphitron.model.derive.FieldPathResolutions;
-import no.sikt.graphitron.model.derive.FieldEndpoints;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
@@ -103,9 +102,6 @@ public final class GraphitronAssemblyCapture {
         FieldTargetTables.derive(dsl, graph, readAt);
         // And the tables their reads depart from, off the same bindings and the targets.
         FieldSourceTables.derive(dsl, graph, readAt);
-        // Then the endpoints, because their target rule reads the targets above and their
-        // departure reads the bindings above that.
-        FieldEndpoints.derive(dsl, graph, readAt);
         // Then walking the links of each chain against the stages above: a link's departure is the
         // previous link's arrival, and a routine link's arrival is the function its name resolves
         // to. Stored rather than left a view because two readers walk it, the line below and the

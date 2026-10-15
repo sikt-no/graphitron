@@ -212,13 +212,14 @@ are gone.
       reached from two parents on two tables has two departures, which `graphitron_field_table`'s
       key cannot hold, so the fix is `graphitron_field_source_table` under "The departure is
       stated", recursive through the types with no table, and the chain rules reading it.
-    * **A scalar `@reference` has a target** `open`. The path's last table is where a column read
+    * **A scalar `@reference` has a target** `done`, all 48 on sis and 14 on sakila gone, the cases
+      in `chain-without-target`; `column-unresolved` stops declaring the two it pinned. The path's last table is where a column read
       through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires: all 48
       on sis and 14 on sakila. The rule reads `graphitron_field_target` and
       `graphitron_field_target_table` instead of `graphitron_field_table`, and judges only a target
       that could bind a table, an object, an interface or a union, at a field carrying no `@routine`
       and no `@pivot`. Shares its question with "a routine resolving to nothing says so" below.
-    * **A `@pivot` projection has a target** `open`. Six sakila coordinates report
+    * **A `@pivot` projection has a target** `done`, by the same rule, the six gone. Six sakila coordinates report
       `CHAIN_WITHOUT_TARGET` (`Film.titleTranslations`, `Film.prices` and their siblings): the target
       is an object binding no table, `TranslatedTexts` or `PriceByCurrency`, read through `@reference`
       and `@pivot`, so the path's last table is where its rows come from.
@@ -763,7 +764,7 @@ and the emitters read, and it goes when nothing reads what it builds.
     * **The duplicate statements of a field's tables dissolve** `open`. A field's target and its
       departure are each stated several times at several grains, and each statement goes when its
       readers have moved:
-      * `graphitron_field_table` `open`, its target half to `graphitron_field_target_table` and its
+      * `graphitron_field_table` `done`, its target half to `graphitron_field_target_table` and its
         `from_` half to `graphitron_field_source_table`, each of which has taken over its readers.
         The path family is keyed by the arriving type: `graphitron_field_table_link`, the path
         reading, the resolution rule and its keyed, keyless, open and condition tables, with their
@@ -771,10 +772,9 @@ and the emitters read, and it goes when nothing reads what it builds.
         arrival against the arriving type's binding and the entry defects listing chains per
         arriving type. Old against new, by the arriving type's table: sis equal (778 links, 3310
         resolutions), sakila equal but for the six `@routine` payloads, whose target is a carrier
-        binding no table, and the defects unchanged on both. Left reading it: `CHAIN_WITHOUT_TARGET`,
-        `FieldEndpoints` writing it and `FieldEndpointsTest`. Its participant rows read
-        `graphitron_tabletype` with no ambiguity guard, where every other participant reading takes
-        the resolved binding with `candidates = 1`, a difference that leaves with it;
+        binding no table, and the defects unchanged on both. `CHAIN_WITHOUT_TARGET` moved last, under
+        "A scalar `@reference` has a target", and the relation went with `FieldEndpoints` and
+        `FieldEndpointsTest`, whose cases the target-table and source-table documents state;
       * `intent_field_participant_scope_table` `done`, to the target and its participants. The scope
         rule's participant rows, `intent_reference_for_application`, `ReferenceForParticipantDefects`
         and `UnlowerableOrderings` read `graphitron_field_target`, `graphql_poly_member` and
@@ -2028,6 +2028,10 @@ The two `@referenceFor` step relations, their one reader having moved to the ste
 `field-chain-link-reach` and its `keyed`, `keyless` and `open` siblings, and
 `field-chain-application`; the classes `FieldChainLinkResolutions` and `FieldChainApplications`, now
 `FieldPathResolutions` and `FieldPathApplications`.
+
+**Dissolved into the target, the source and the arriving type.** `graphitron_field_table`, its
+grain `field-target-table`, its `target_basis` values `NAMED_TYPE_TABLE`, `PARTICIPANT_TABLE` and
+`ROUTINE_RESULT`, `FieldEndpoints` and `FieldEndpointsTest`.
 
 **Dissolved into the reading.** `graphitron_field_routine`, its grain `field-routine-result`,
 `FieldRoutines` and `FieldRoutinesTest`.
