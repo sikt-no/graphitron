@@ -1,0 +1,43 @@
+# What makes a type a node, and the two ways @node can be written on a type that is not one.
+#
+# A node implements Node and is bound to a table, and either carries @node or is bound to a table
+# whose generated class publishes node metadata: the two are equivalent, the second taking its
+# identity from the catalog. film_actor's class publishes it, so InferredNode is a node with nothing
+# written. @node asks for a node and cannot make one where either half is missing: without the
+# interface there is no contract to publish, and without a table there is no row for the id to
+# encode. Each missing half is its own error at the @node, so a @node with neither is both.
+
+interface Node { id: ID! }
+
+type ExplicitNode implements Node @table(name: "film") @node { id: ID! }
+
+type InferredNode implements Node @table(name: "film_actor") { id: ID! }
+
+type NoInterface @table(name: "actor") @node { id: ID! }
+
+type NoTable implements Node @node { id: ID! }
+
+type Bare @node { id: ID! }
+
+extend type Query { e: ExplicitNode, i: InferredNode, a: NoInterface, t: NoTable, b: Bare }
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  type_name IN ('ExplicitNode', 'InferredNode', 'NoInterface', 'NoTable', 'Bare')
+  """, rows: """
+  type_name,   code
+  NoInterface, NODE_WITHOUT_NODE_INTERFACE
+  NoTable,     NODE_WITHOUT_TABLE
+  Bare,        NODE_WITHOUT_NODE_INTERFACE
+  Bare,        NODE_WITHOUT_TABLE
+  """)
+
+# Both ways of being a node are nodes, and a type with no table is not one, whatever it carries.
+extend schema @assertContains(relation: "graphitron_node", rows: """
+  type_name
+  ExplicitNode
+  InferredNode
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_node", where: """
+  type_name IN ('NoTable', 'Bare')
+  """)

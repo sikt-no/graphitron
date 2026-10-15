@@ -11,17 +11,17 @@ extend type Query { film: Film, language: Language, actor: Actor }
 
 interface Node { id: ID! }
 
-type Film implements Node @node @key(fields: "title") {
+type Film implements Node @table(name: "film") @node @key(fields: "title") {
   id: ID!
   title: String
 }
 
-type Language implements Node @node {
+type Language implements Node @table(name: "language") @node {
   id: ID!
   name: String
 }
 
-type Actor implements Node @node @key(fields: "id", resolvable: false) {
+type Actor implements Node @table(name: "actor") @node @key(fields: "id", resolvable: false) {
   id: ID!
   name: String
 }

@@ -9627,15 +9627,27 @@ UNION ALL
 -- A @node on a type that does not implement Node. The interface is the contract @node publishes to
 -- clients, so a type cannot be promoted to a node without it. Reported at the @node, which is where
 -- an author decides between adding the interface and dropping the directive. A root operation type
--- is a root before it is anything else, and a @table one is not judged here.
+-- is a root before it is anything else.
 SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
        'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
   FROM graphitron_node_entry n
-  JOIN graphitron_table_entry t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
  WHERE n.source_line IS NOT NULL
    AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
                     WHERE i.graph_name = n.graph_name AND i.type_name = n.type_name
                       AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
+UNION ALL
+-- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
+-- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
+-- root operation type is a root before it is anything else. A type that also lacks the interface
+-- is both defects, each its own decision for the author.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR)
+  FROM graphitron_node_entry n
+ WHERE n.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry t
+                    WHERE t.graph_name = n.graph_name AND t.type_name = n.type_name)
    AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
                     WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
 UNION ALL
@@ -14331,7 +14343,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('CODE_REFERENCE_METHOD_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_AMBIGUOUS',
    'A code reference names a method the classpath answers more than once, as overloads or as one class two entries declare, and nothing says which of them is meant.'),
   ('NODE_WITHOUT_NODE_INTERFACE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_NODE_INTERFACE',
-   'A @table type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node.'),
+   'A type carries @node and does not implement the Relay Node interface, which is the contract @node publishes to clients, so the type cannot be promoted to a node.'),
+  ('NODE_WITHOUT_TABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_TABLE',
+   'A type carries @node and no @table. A node is a row of a table, its id encoding that row''s key, so a type bound to no table has nothing to be a node of.'),
   ('NODE_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_KEY_COLUMN_UNRESOLVED',
    'A @node(keyColumns:) names a column the bound table does not have, or has twice under one name, so the node has no key the author can stand behind: a pinned key is a published wire format, and the generator will not quietly encode ids against another.'),
   ('NODE_WITHOUT_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_WITHOUT_KEY',
