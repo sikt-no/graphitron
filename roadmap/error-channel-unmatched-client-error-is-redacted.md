@@ -1,7 +1,7 @@
 ---
 id: R1046
 title: "An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: error-channel
@@ -73,6 +73,16 @@ Background for the reader: `GraphitronClientException` is a class graphitron gen
 - § Pitfalls, "Unmatched flows redact": qualify it to "Unmatched flows redact, except graphitron's own client errors", keeping the advice to check the redaction log for a correlation id.
 
 The first-client check reads simply: the rule is one sentence ("unclaimed client errors look the same with or without a channel"), and it removes a difference the manual never documented.
+
+## Implementation notes
+
+Landed as planned, in one commit (`R1046: an unclaimed GraphitronClientException surfaces on an @error-channel fetcher too`). Where it differs from or adds to the plan:
+
+- **The `PayloadClass` arm's test covers both branches.** `ErrorRouterDispatchUnmatchedTest` (`graphitron-sakila-example`, `@UnitTier`) calls the generated `ErrorRouter.dispatch` directly. Building a `DataFetchingEnvironment` took a few lines (`DataFetchingEnvironmentImpl` with a merged field and an execution step info), so it pins the unwrapped `IllegalStateException` redact branch as well as the wrapped client exception. A third case pins the ordering: an `ExceptionMapping` on `graphql.GraphqlErrorException` (the superclass sis matches today) still places the client exception into the payload.
+- **Acceptance evidence:** `TenantDivinedRoutingExecutionTest.dmlPayload_onTheErrorChannel_anUnclaimedClientErrorSurfacesAsOnAFieldWithoutAChannel` (`retitleFilmsChecked`, the reported shape) and `service_onTheErrorChannel_anUnclaimedClientErrorSurfacesAsOnAFieldWithoutAChannel` (`rateFilmsChecked`), both under the request tenant set `[1]` with a tenant-2 id.
+- **Manual:** the cross-reference from the pitfall to § "Unmatched exceptions" uses a new explicit anchor `[#unmatched-exceptions]` rather than the heading's generated id.
+- **Not changed:** `redact` keeps its body and visibility. A few comments elsewhere (`MethodRef.declaredExceptions`, some sakila-example test comments) still name `ErrorRouter.redact` for the no-channel path; each stays accurate, because `surfaceClientErrorOrRedact` still ends in `redact` for anything that is not a client exception.
+- **Verification-build note:** `GraphQLQueryTest.inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds` failed once with a transient `NestedInputDmlExecutionTest` row (`plnew`). That is R1028's cross-test race and unrelated to this change.
 
 ## Other solutions we've considered
 
