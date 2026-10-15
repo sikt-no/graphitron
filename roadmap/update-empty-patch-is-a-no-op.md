@@ -1,7 +1,7 @@
 ---
 id: R1040
 title: "A DML UPDATE row that sends only its key fields is a no-op that still returns the row"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: mutation-write
@@ -147,3 +147,14 @@ The two runtime messages `@mutation(typeName: UPDATE) call has no settable field
 - **Echo the key from the input with no statement at all.** What Graphitron 9 effectively did. Rejected: it cannot tell a missing row from a present one, so a no-op and a not-found would differ by nothing, and the returned keys are the primary key (or the reentry correlation's columns) while the matched key may be a unique key or a decoded `@nodeId`, so the key the payload needs is not always in the input.
 - **Decide emptiness from input presence instead of the SET map.** Would let a "client sent a field but the emitter dropped it" bug keep throwing. Rejected because presence alone does not decide what is written (a `null` nested group, a `CarrierNullRule` disposition), so the predicate would re-derive the SET walk's gating; the SET map already is that answer, and the per-arm execution tests above catch an emitter that drops a write.
 - **`SELECT ... FOR UPDATE` for the read.** Would serialize the empty patch against concurrent writers as an UPDATE does. Nothing the client sees depends on it, since the payload is re-read after the transaction either way, so the lock buys contention and nothing else.
+
+## Implementation notes
+
+Shipped as planned; the points below are where the code names or shapes something the plan left open.
+
+- **The statement type** is `TypeFetcherGenerator.KeyStatement`, sealed over `Chain` (INSERT, DELETE, UPSERT), `KeyedUpdate` and `ValuesJoinUpdate`. `renderKeyFetch` renders it given a lead (the consuming statement's head), a receiver and a fetch call; `renderTransactionalKeyFetch` wraps it in `dsl.transactionResult(...)`, keeping the expression lambda for `Chain` and taking a block lambda for the two UPDATE shapes. `DmlChainAndGuards` now carries a `KeyStatement` in place of its chain. The bulk payload arm's per-row INSERT and DELETE bodies still append their own `.returningResult(...)`: they were not among the four terminators and nothing in them changes.
+- **Byte-identity of the non-UPDATE emit** holds by construction (the `Chain` arm emits the same tokens in the same order as the four inline terminators did), and every `DmlSqlBaselineTest` pin passes unedited.
+- **Observing the transaction.** `EmptyPatchUpdateExecutionTest` adds a jOOQ `TransactionListener` that writes `begin` / `commit` / `rollback` markers into the same log the `ExecuteListener` fills, so "the key read is the only statement inside the write transaction" is an exact assertion, as is the mixed batch's key read, UPDATE, key read order and the missing-key cases' rollback. "No write" is also asserted as an unchanged PostgreSQL `xmin` (row version), which moves on any UPDATE, even one that rewrites the same values.
+- **Tenant cases** sit in `TenantDivinedRoutingExecutionTest` (`updateEmptyPatch_*`, `bulkUpdateEmptyPatch_*`). That runtime builds its own contexts over the counting `DataSource`s, so there is no listener to hang: routing is asserted through the per-tenant open counters and "no write" through the tenant row's `xmin`.
+- **Tests removed or renamed** as planned. `GraphQLQueryTest`'s section header above the remaining `@Disabled` UPSERT case now names UPSERT, and `DmlBulkMutationsExecutionTest`'s class javadoc attributes the no-set-fields guard to UPSERT only.
+- **One unplanned test edit.** `SingleRecordPayloadPipelineTest.directReturn_dmlFetcher_emitsTwoStepShape` asserted that the direct fetcher body carries no `.select(` at all, to pin that the follow-up SELECT lives in the reentry companion. The UPDATE body now legitimately carries the empty-patch key read inside the transaction lambda, so the assertion is narrowed to the text outside it (before the `transactionResult` call site and from the `rows<Name>(keys, env)` call on), which is what its claim is about.

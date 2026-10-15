@@ -31,11 +31,11 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Ready | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | In Progress | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
 | `R1038` | A client-supplied tenant key routes by the tenant column database value, not its converted Java form | In Progress | 2026-10-15 | [plan](tenant-key-equality-follows-the-column.md) |
 | `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | In Progress | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1043` | A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation | In Review | 2026-10-15 | [plan](splitquery-same-row-null-correlation.md) |
+| `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | In Review | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
 | `R1041` | A mutation called with an empty input list returns an empty payload without routing to a tenant | In Review | 2026-10-15 | [plan](empty-input-list-skips-tenant-routing.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -563,7 +563,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutation-write
 
-- `R1040` [**A DML UPDATE row that sends only its key fields is a no-op that still returns the row**](update-empty-patch-is-a-no-op.md) — In Progress, bug
+- `R1040` [**A DML UPDATE row that sends only its key fields is a no-op that still returns the row**](update-empty-patch-is-a-no-op.md) — In Review, bug
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
 - `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — Ready, bug
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
