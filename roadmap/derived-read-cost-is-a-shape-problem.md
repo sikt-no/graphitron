@@ -7,7 +7,7 @@ priority: 1
 theme: model-cleanup
 depends-on: []
 created: 2026-08-28
-last-updated: 2026-10-06
+last-updated: 2026-10-15
 ---
 
 # Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject
@@ -937,6 +937,12 @@ types and its formatter are already model-side, so what stands between here and 
       over `graphitron_type` so minted types count, at each authored type's base declaration.
 * **A consequential rejection is not a rule** `done`, by the defect model. A violation sits once,
   on the fact that broke, and an arm reads only coordinates whose upstream facts hold.
+* **A refusal of what capture injected reaches the author** `open`, first: a regression. Reported
+  2026-10-15. The emitted schema's assembly, `GraphQLRewriteGenerator.acceptedSchema`, throws
+  `ValidationFailedException` on declarations the mint and the configuration injected. The dev
+  log prints a count and a stack trace, and nothing reaches `graphql_schema_problem` or
+  `diagnostic`, so no surface lists the refusals. They are recorded where the written schema's
+  refusals are, and the log names each one.
 * **What the generator cannot emit is judged as the schema** `done`, by the defect model's basis. A
   generated name colliding is `GRAPHITRON`, an emission not written yet `UNSUPPORTED`; nothing is the
   generator's fault, the generator running only on a schema that validates.
@@ -1157,6 +1163,14 @@ reads nothing off the classpath that capture has already read, and builds no sch
     is a filter now that the opt-in is a relation: the node types of a federated graph with no
     authored id key. It dissolves into `graphitron_directive_application_minted`, and its readers
     read the minted applications.
+    * **A configured link mints no key it does not import** `open`, first: a regression. Reported
+      2026-10-15 from a live session. With the author's federation `@link` and `@key`s removed and
+      the inputs still tagged, `TagLinkSynthesiser`'s link imports `@tag` alone, yet the opt-in
+      reads it as `CONFIGURED` and the mint puts `@key(fields: "id")` on every `@node` type: twelve
+      "Federation directive '@key' is not declared" refusals of graphitron's own injection, which
+      the author cannot fix, so no author can leave federation while tags are configured. The mint
+      writes only what the graph's link imports, or the configured link imports what the mint
+      writes; which one is the node's first decision.
   * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
     to rename.
 * **Capture's added cost is measured** `open`. Capture now also derives `graphitron_configured_tag`
@@ -1950,6 +1964,24 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   has nothing to say about and wrong for a session that is not connected, and only the server can
   tell the two apart, so the two silent gates say so once per document where the budget already
   warns.
+
+* **A failed round's report rows say they are stale** `open`, a regression. Reported 2026-10-15.
+  `DevMojo.writeReportFacts` keeps the last successful round's lint findings and diagnostics when a
+  round fails, but they carry that file version's line numbers, so a warning lands on an unrelated
+  line, and the persisted store keeps it across a restart while `status` says `Current`. The rows
+  are of a reading, so a reading that did not happen either sweeps them or states them stale, and
+  the status reads that state.
+* **The dev executor runs on a federated schema** `open`. `execute` is off for every federated
+  subgraph: `EmitPlan` emits `DEV_EXECUTOR` only without a federation link, and
+  `GraphitronDevExecutorGenerator.generate` returns early, both for want of an entity fetcher the
+  schema class has since wired (`resolveEntityType` and `fetchEntities` inside
+  `Federation.transform`). The gate goes, and the tool's refusal names its real cause, a gate or a
+  failed regenerate, where it says "check compilation succeeded".
+* **The session's hovers and hints, as found** `open`, evidence for the nodes above, measured
+  2026-10-15 in a live session: a field hover takes about 2.8 s where directive, key and
+  declaration hovers take about 0.05 s; a hover on a type name written as a field's type answers
+  nothing; and a `@reference` field has a path but no classification claim, so it draws no
+  classification hint.
 
 ## Tests
 
