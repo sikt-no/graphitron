@@ -1,5 +1,7 @@
 package no.sikt.graphitron.lsp.server;
 
+import no.sikt.graphitron.model.diagnostics.StaleModules;
+import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.lsp.code_action.CodeActions;
 import no.sikt.graphitron.lsp.completions.Completions;
 import no.sikt.graphitron.lsp.definition.DeclarationDefinitions;
@@ -15,6 +17,8 @@ import no.sikt.graphitron.lsp.state.StoreRead;
 import no.sikt.graphitron.lsp.state.Workspace;
 import no.sikt.graphitron.lsp.trace.LspTrace;
 import no.sikt.graphitron.model.boot.StoreAnswer;
+import org.eclipse.lsp4j.MessageParams;
+import org.eclipse.lsp4j.MessageType;
 import org.eclipse.lsp4j.CodeAction;
 import org.eclipse.lsp4j.CodeActionParams;
 import org.eclipse.lsp4j.Command;
@@ -41,6 +45,8 @@ import org.eclipse.lsp4j.services.TextDocumentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -92,6 +98,8 @@ public class GraphitronTextDocumentService implements TextDocumentService {
     // passed a second evaluation would compare unequal and clear nothing.
     private final Runnable recalculateListener = this::publishDiagnosticsForRecalculate;
     private LanguageClient client;
+    // What this connection has said about stale workspace modules; see sayStaleModules.
+    private final StaleModules staleModules = new StaleModules();
 
     public GraphitronTextDocumentService(Workspace workspace) {
         this(workspace, uri -> {});
@@ -251,8 +259,10 @@ public class GraphitronTextDocumentService implements TextDocumentService {
             // One read transaction around the whole drain, so no two files are diagnosed from two
             // sides of a capture, and one statement per graph inside it rather than one per file.
             switch (workspace.answeringAll(StoreRead.DIAGNOSTICS, walked, batch::judgeAll)) {
-                case StoreAnswer.Answered<Map<String, List<Diagnostic>>> answered ->
+                case StoreAnswer.Answered<Map<String, List<Diagnostic>>> answered -> {
                     publish(walked, answered.value());
+                    sayStaleModules(walked);
+                }
                 // Nothing is published at all, which is not the same as publishing an empty list.
                 // An empty list would erase the squiggles the last drain put on screen, so a read
                 // that ran out of budget would clear the developer's warnings rather than leave
@@ -260,6 +270,31 @@ public class GraphitronTextDocumentService implements TextDocumentService {
                 // The store boundary has already warned, naming the read.
                 case StoreAnswer.OutOfBudget<Map<String, List<Diagnostic>>> ignored ->
                     drainSpan.detail("outOfBudget", true);
+            }
+        }
+    }
+
+    /**
+     * Tells the developer about each workspace module the walked files' graphs read stale, and
+     * once more when one is compiled again. A message rather than a diagnostic, a stale module
+     * being located in no schema file: it is what the editor shows for a problem with no place.
+     */
+    private void sayStaleModules(List<String> walked) {
+        var answer = workspace.answeringAll(StoreRead.DIAGNOSTICS, walked, handleFor -> {
+            var graphs = new LinkedHashSet<StoreHandle>();
+            for (String uri : walked) {
+                handleFor.apply(uri).ifPresent(graphs::add);
+            }
+            var stale = new LinkedHashMap<String, String>();
+            for (StoreHandle graph : graphs) {
+                stale.putAll(StaleModules.read(graph.dsl(), graph.graphName()));
+            }
+            return stale;
+        });
+        if (answer instanceof StoreAnswer.Answered<LinkedHashMap<String, String>> answered) {
+            for (var change : staleModules.update(answered.value())) {
+                client.showMessage(new MessageParams(
+                    change.stale() ? MessageType.Warning : MessageType.Info, change.message()));
             }
         }
     }

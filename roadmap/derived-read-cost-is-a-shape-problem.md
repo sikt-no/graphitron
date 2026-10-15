@@ -1498,6 +1498,18 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
     the dev loop's walk after a capture's derivations have run, so `SOURCES_NEWER` exists in a dev
     session and `NO_OUTPUT` in any capture. The derivation gatherer reads `classpath-source` for the
     class times.
+  * **A stale module is said where the developer looks** `done`. One sentence, the view's
+    `message`: the module, what is old, and `mvn -pl :<artifactId> compile` from the reactor root.
+    In the `diagnostic` union as a warning of a third source, `classpath`, which is MCP's
+    diagnostics; in MCP `status` as `staleModules`; in the dev goal's console after each source walk
+    and classpath round; and in the editor as a `window/showMessage`, LSP's channel for a problem
+    with no place, a stale module being located in no schema file. Each reader says a module once
+    when it goes stale and once when it is compiled again (`StaleModules`), which settles whether a
+    rebuild while dev runs clears the warning live: it does.
+  * **The not-found diagnostics point at their cause** `open`. A name that resolves to nothing
+    while a workspace module is read stale names the module beside its own complaint, so many read
+    as one cause. Each not-found row joined to the stale module that would have carried the name,
+    which is its own question.
   * **A catalog is compared with what generated it** `open`. The catalog module's sources are
     generated, so a stale catalog shows only against the migrations or DDL its codegen read, which
     only the codegen configuration names. Its own fact first, then a condition beside the module's.
@@ -2059,6 +2071,10 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   place of the module's `graphitron:generate`, and reports a goal that fails as a warning rather
   than stopping. `-Dgraphitron.dev.compileModule=false` turns it off; sibling modules are never
   compiled.
+* **Added: `graphitron:dev` says a workspace module it read stale** ("the dev goal says a module it
+  read stale"). A module whose sources changed since it compiled, or one read from its installed
+  copy for want of output, is named once with the command that compiles it: in the console, in MCP
+  `status` and diagnostics, and as an editor message.
 
 ## Retired vocabulary
 

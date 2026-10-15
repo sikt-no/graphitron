@@ -71,7 +71,11 @@ The caveat: `graphitron:dev` does not compile siblings. A sibling with no
 `target/classes` and no jar in `target` is read from its installed copy, and
 one with no installed copy either fails Maven's own dependency resolution before
 graphitron runs, so compile it once after a checkout
-(`mvn -pl <sibling> compile`), and again when its sources change. If the dev goal
+(`mvn -pl <sibling> compile`), and again when its sources change. The dev goal
+warns when it reads a sibling stale, one whose sources changed since it compiled or
+one read from its installed copy, naming the module and the command, in the console,
+in MCP `status` and as an editor message, and says so once more when it is compiled
+again. If the dev goal
 reports that it resolved a single module and found no siblings, check that the
 parent pom's `<modules>` lists the module you started from.
 ****

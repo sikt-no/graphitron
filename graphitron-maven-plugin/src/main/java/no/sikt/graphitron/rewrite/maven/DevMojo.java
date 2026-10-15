@@ -14,6 +14,7 @@ import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.boot.UserCacheRoot;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
+import no.sikt.graphitron.model.diagnostics.StaleModules;
 import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -69,6 +70,7 @@ import java.util.function.Consumer;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
+
 
 /**
  * Single user-facing entry point for editing graphitron schemas. Runs the
@@ -384,6 +386,9 @@ public class DevMojo extends AbstractRewriteMojo {
     // The walk itself, held across refreshes so its per-file cache stays warm. One instance per
     // session, which is what keeps the .java cadence from sharing state with anything else.
     private final SourceWalker sourceWalker = new SourceWalker();
+
+    // What the session has said about stale workspace modules; see reportStaleModules.
+    private final StaleModules staleModules = new StaleModules();
     // The diagnostics stratum's schema-side writers over the same handle, constructed beside
     // compileFacts and fed the pre-fuse lists wherever the build output is published: the
     // rejection residue off the walk's error stream, the warning arms off the
@@ -951,6 +956,27 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
+     * Says the workspace modules this graph's run read stale, through {@link #staleModules}:
+     * once when a module goes stale and once when it is compiled again. Store trouble says nothing.
+     */
+    private void reportStaleModules(String graphName) {
+        if (sessionStore == null) {
+            return;
+        }
+        try {
+            for (var change : staleModules.update(StaleModules.read(sessionStore.dsl(), graphName))) {
+                if (change.stale()) {
+                    getLog().warn("graphitron:dev: " + change.message());
+                } else {
+                    getLog().info("graphitron:dev: " + change.message());
+                }
+            }
+        } catch (org.jooq.exception.DataAccessException e) {
+            getLog().debug("graphitron:dev: stale modules not read: " + e.getMessage());
+        }
+    }
+
+    /**
      * One parse of the changed sources into the store's {@code java_} family, refreshed file by
      * file. That family is the standing record every reader asks, so there is one sink and no
      * second read of the same file to disagree with it.
@@ -980,6 +1006,7 @@ public class DevMojo extends AbstractRewriteMojo {
             if (announce && round != null) {
                 getLog().info("graphitron:dev: " + round.report());
             }
+            reportStaleModules(ctx.graphName());
         } catch (RuntimeException e) {
             getLog().warn("graphitron:dev: source-position refresh failed; keeping previous: "
                 + e.getMessage());
@@ -1056,6 +1083,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     var output = capturedGenerator(ctx).buildOutput();
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
+                    reportStaleModules(ctx.graphName());
                     // A consumer .class changed: a generated unit that compiles against it may now be
                     // stale. The compile graph carries only generated→generated edges (no
                     // generated→consumer edge to walk), so invalidate conservatively by recompiling the
