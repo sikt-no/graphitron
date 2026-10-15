@@ -3072,6 +3072,10 @@ public class TypeFetcherGenerator {
         // per-row "row" Map); the nested-descent walk uses that one Map local as both the
         // presence and value root, honoring absent-vs-null at every nesting layer.
         String root = valueMapLocal;
+        var sharedSqlNames = setColumnPlan(setFields).stream()
+            .filter(OverlapColumn::shared)
+            .map(oc -> oc.column().sqlName())
+            .collect(java.util.stream.Collectors.toSet());
         for (int sfi = 0; sfi < setFields.size(); sfi++) {
             var sf = setFields.get(sfi);
             var cols = sf.columns();
@@ -3097,12 +3101,26 @@ public class TypeFetcherGenerator {
                             var value = clears
                                 ? CodeBlock.of("$L == null ? null : $L.value$L()", recLocal, recLocal, sc.slot() + 1)
                                 : CodeBlock.of("$L.value$L()", recLocal, sc.slot() + 1);
+                            // A cleared reference carries no value for a column it shares with another
+                            // writer, so its NULL must not overwrite a value an earlier writer put; it
+                            // lands only while the column is still unset, and a later valued writer
+                            // overwrites it. The column comes out NULL only when no present writer
+                            // carries a value, whatever the emission order.
+                            boolean guarded = clears && sharedSqlNames.contains(col.sqlName());
+                            if (guarded) {
+                                block.beginControlFlow("if ($L != null || !$L.containsKey($T.$L.$L))",
+                                    recLocal, setsLocal,
+                                    tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                            }
                             block.addStatement(
                                 "$L.put($T.$L.$L, $T.val($L, $T.$L.$L.getDataType()))",
                                 setsLocal,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                                 DSL, value,
                                 tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                            if (guarded) {
+                                block.endControlFlow();
+                            }
                         } else {
                             block.addStatement(
                                 "$L.put($T.$L.$L, $T.val($L.get($S), $T.$L.$L.getDataType()))",
@@ -3230,7 +3248,7 @@ public class TypeFetcherGenerator {
      * against the first present through {@code requireColumnAgreement}, coerced via the column's DataType.
      */
     private static void emitSetAgreementPreamble(
-            CodeBlock.Builder block, List<SetGroup> setGroups, Map<List<String>, OnExplicitNull> nullRules,
+            CodeBlock.Builder block, List<SetGroup> setGroups,
             String mapLocal, String decodeLocalPrefix,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
         // The per-column grouping is the shared ColumnOverlap.groupByColumn; this site forks on
@@ -3271,8 +3289,7 @@ public class TypeFetcherGenerator {
             for (var c : oc.contributors()) {
                 var v = (SetGroupWriter) c.writer();
                 appendAgreementValue(block, v.group(), c.slot(), mapLocal,
-                    decodeLocalPrefix + "Agree_" + v.index(), listName, "sa" + ci + "w" + (wi++),
-                    requireNullRule(nullRules, v.group()) instanceof OnExplicitNull.Clears);
+                    decodeLocalPrefix + "Agree_" + v.index(), listName, "sa" + ci + "w" + (wi++));
             }
             String idx = listName + "Idx";
             block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -3427,50 +3444,26 @@ public class TypeFetcherGenerator {
             nidk.decodeMethod().encoderClass(), nidk.decodeMethod().methodName(), salt);
     }
 
-    /** {@link #appendAgreementValue(CodeBlock.Builder, SetGroup, int, String, String, String, String, boolean)}
-     *  with a decode local that is null only where there is nothing to compare: a cross-partition
-     *  check whose reference side was cleared, or a re-decode of a present-but-mismatched id whose
-     *  throw the SET emission surfaces. Either way the side drops out of the comparison. */
-    private static void appendAgreementValue(
-            CodeBlock.Builder block, SetGroup group, int slot, String mapLocal, String decodeLocal,
-            String listName, String salt) {
-        appendAgreementValue(block, group, slot, mapLocal, decodeLocal, listName, salt, false);
-    }
-
     /**
      * Append one side's present value for the shared column to the agreement list. A decode
      * group reads its record slot ({@code value<slot+1>()}) guarded on presence + a non-null decode;
      * a plain field reads the (possibly nested) wire value guarded on presence.
      *
-     * <p>{@code nullAgrees} decides what a null decode local means at this site, and the two readings
-     * are not interchangeable. Where the shared column is one <em>both</em> writers assign, a cleared
-     * writer is a contribution and not an absence: it adds an explicit null, so
-     * {@code requireColumnAgreement} sees null against a value and reports the conflict, one writer
-     * clearing while another sets being exactly that. Where the check is cross-partition, a cleared
-     * reference contributes nothing to the column at all and the side drops out instead. The wire
-     * value is tested directly rather than the decode local, so a cleared field and a wrong-type id
-     * stay distinguishable: only the first contributes a null, the second still drops out and lets
-     * the SET emission's own throw surface it.
+     * <p>A null decode local has one reading at every site: the side contributes nothing and drops
+     * out of the comparison. It is null for one of two reasons. Either the reference was sent as
+     * {@code null}, which means "no reference" and so carries no value for the column, leaving it to
+     * the writers that do; or the id is present but decodes to the wrong type, and the decode local
+     * at the SET or WHERE emission surfaces that throw. A plain field's {@code null} is different: a
+     * plain field names its column, so its {@code null} is a value for that column and is added.
      */
     private static void appendAgreementValue(
             CodeBlock.Builder block, SetGroup group, int slot, String mapLocal, String decodeLocal,
-            String listName, String salt, boolean nullAgrees) {
+            String listName, String salt) {
         var presence = nestedContainsKeyExpr(mapLocal, group.accessPath(), salt);
         if (group.nidk() != null) {
-            if (nullAgrees) {
-                block.beginControlFlow("if ($L)", presence)
-                    .beginControlFlow("if ($L == null)",
-                        ArgCallEmitter.nestedMapValueExpr(mapLocal, group.accessPath()))
-                    .addStatement("$L.add(null)", listName)
-                    .nextControlFlow("else if ($L != null)", decodeLocal)
-                    .addStatement("$L.add($L.value$L())", listName, decodeLocal, slot + 1)
-                    .endControlFlow()
-                    .endControlFlow();
-            } else {
-                block.beginControlFlow("if ($L && $L != null)", presence, decodeLocal)
-                    .addStatement("$L.add($L.value$L())", listName, decodeLocal, slot + 1)
-                    .endControlFlow();
-            }
+            block.beginControlFlow("if ($L && $L != null)", presence, decodeLocal)
+                .addStatement("$L.add($L.value$L())", listName, decodeLocal, slot + 1)
+                .endControlFlow();
         } else {
             block.beginControlFlow("if ($L)", presence)
                 .addStatement("$L.add($L)", listName, ArgCallEmitter.nestedMapValueExpr(mapLocal, group.accessPath()))
@@ -3611,8 +3604,9 @@ public class TypeFetcherGenerator {
      *       {@link #appendAgreementValue}), pairwise-checks them through
      *       {@code NodeIdEncoder.requireColumnAgreement}, and adds the single coalesced
      *       {@code DSL.val(firstPresent, col.getDataType())} cell — {@link #emitInsertAgreementPrep}'s
-     *       coalesced-cell shape transplanted into the row loop (no {@code DSL.defaultValue} branch, since
-     *       the conditional gate guarantees a present writer).</li>
+     *       coalesced-cell shape transplanted into the row loop. There is no {@code DSL.defaultValue}
+     *       branch, since the conditional gate guarantees a present writer, but not a value: a cleared
+     *       reference contributes none, so when every present writer is one the cell is {@code NULL}.</li>
      * </ol>
      *
      * <p>A column already supplied by the WHERE side ({@code lookupSqlNames}, the self-FK cross-partition
@@ -3657,8 +3651,7 @@ public class TypeFetcherGenerator {
                 for (var c : sc.contributors()) {
                     var v = (SetGroupWriter) c.writer();
                     appendAgreementValue(block, v.group(), c.slot(), "row",
-                        decodeLocalPrefix + "_" + v.index(), listName, "bsa" + ci + "w" + (wi++),
-                        requireNullRule(nullRules, v.group()) instanceof OnExplicitNull.Clears);
+                        decodeLocalPrefix + "_" + v.index(), listName, "bsa" + ci + "w" + (wi++));
                 }
                 String idx = listName + "Idx";
                 block.beginControlFlow("for (int $L = 1; $L < $L.size(); $L++)", idx, idx, listName, idx)
@@ -3666,8 +3659,10 @@ public class TypeFetcherGenerator {
                         encoderClass, label, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName(),
                         listName, listName, idx)
                     .endControlFlow();
-                block.addStatement("cells.add($T.val($L.get(0), $T.$L.$L.getDataType()))",
-                    DSL, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+                // The gate guarantees a present writer but not a value: when every present writer is
+                // a cleared reference the list is empty and the column is written NULL.
+                block.addStatement("cells.add($T.val($L.isEmpty() ? null : $L.get(0), $T.$L.$L.getDataType()))",
+                    DSL, listName, listName, tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
             } else {
                 var c = sc.contributors().get(0);
                 var v = (SetGroupWriter) c.writer();
@@ -3916,7 +3911,7 @@ public class TypeFetcherGenerator {
         // Value-agreement preamble for any SET column written by more than one carrier with a
         // @nodeId decode among them; the silent last-write-wins the Map.put below would otherwise allow.
         // No-op (byte-identical) when there is no such overlap.
-        emitSetAgreementPreamble(postInGuard, setGroups, setNullRules, "in", "setKey", tablesOnly, tableRef);
+        emitSetAgreementPreamble(postInGuard, setGroups, "in", "setKey", tablesOnly, tableRef);
         // Cross-partition (WHERE∩SET) value-agreement preamble. A self-FK @reference routes its
         // lifted columns wholly to SET while the row identity comes from the WHERE key, so a column the
         // self-FK shares with the identity field (e.g. email.mailbox_id) sits in both partitions; the FK

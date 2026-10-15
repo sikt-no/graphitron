@@ -38,6 +38,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code 1}); disagreement (distinct values) throws and nothing is written; agreeing writers materialize /
  * insert the agreed value; and the presence guard (an omitted nullable writer leaves the lone decode and
  * does not throw).
+ *
+ * <p>On UPDATE, a reference sent as {@code null} means "no reference": it carries no value for a SET
+ * column it shares, so the column takes the value of the writers that carry one, and is written
+ * {@code NULL} only when none does. A plain field's {@code null} is a value for its column and still
+ * conflicts with a reference's value. The {@code film_bookmark} cases cover a nullable shared column,
+ * on the single-row arm and the payload arm.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -215,6 +221,140 @@ class NodeIdValueAgreementExecutionTest {
         } finally {
             dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
         }
+    }
+
+    @Test
+    void mutationUpdate_clearedReferenceBesideValue_updatesTheValue() {
+        // filmRef is sent as null: no reference, so it carries no value for endorsed_film and takes no
+        // part in the agreement check. endorsedFilm's 2 is the column's value.
+        String note = "R1042-" + UUID.randomUUID();
+        int id = seedEndorsement(1, note);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { updateEndorsementOverlap(in: {endorsementId: " + id
+                + ", filmRef: null, endorsedFilm: 2}) { endorsedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("updateEndorsementOverlap");
+            assertThat(row).extractingByKey("endorsedFilm").isEqualTo(2);
+            assertThat(endorsedFilmOf(id)).isEqualTo(2);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationUpdate_plainNullBesideReferenceValue_throwsAndLeavesRowUnchanged() {
+        // A plain field names its column, so its null is a value for endorsed_film and conflicts with
+        // the reference's decoded 3. Only a reference's null means "no value".
+        String note = "R1042-" + UUID.randomUUID();
+        int id = seedEndorsement(1, note);
+        String film3 = NodeIdEncoder.encode("Film", 3);
+        try {
+            ExecutionResult result = executeRaw(
+                "mutation { updateEndorsementOverlap(in: {endorsementId: " + id + ", filmRef: \"" + film3
+                + "\", endorsedFilm: null}) { endorsedFilm } }");
+            assertThat(result.getErrors())
+                .as("a plain null against a reference value must surface a value-agreement error")
+                .isNotEmpty();
+            assertThat(endorsedFilmOf(id)).as("the row is unchanged when the writers disagree").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    // film_bookmark.bookmarked_film is nullable, so a cleared reference alone can land a row there.
+    // In UpdateBookmarkOverlapInput the cleared writer filmRef comes after the plain bookmarkedFilm,
+    // the order in which a cleared writer's NULL could overwrite the agreed value.
+
+    @Test
+    void mutationUpdate_bookmarkValueThenClearedReference_updatesTheValue() {
+        String note = "R1042-" + UUID.randomUUID();
+        int id = seedBookmark(5, note);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { updateBookmarkOverlap(in: {bookmarkId: " + id
+                + ", bookmarkedFilm: 2, filmRef: null}) { bookmarkedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("updateBookmarkOverlap");
+            assertThat(row).extractingByKey("bookmarkedFilm").isEqualTo(2);
+            assertThat(bookmarkedFilmOf(id)).isEqualTo(2);
+        } finally {
+            deleteBookmarks(note);
+        }
+    }
+
+    @Test
+    void mutationUpdate_bookmarkClearedReferenceAlone_writesNull() {
+        // The only present writer carries no value, so the column is written NULL.
+        String note = "R1042-" + UUID.randomUUID();
+        int id = seedBookmark(5, note);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { updateBookmarkOverlap(in: {bookmarkId: " + id
+                + ", filmRef: null}) { bookmarkedFilm } }");
+            Map<String, Object> row = (Map<String, Object>) data.get("updateBookmarkOverlap");
+            assertThat(row).containsEntry("bookmarkedFilm", null);
+            assertThat(bookmarkedFilmOf(id)).isNull();
+        } finally {
+            deleteBookmarks(note);
+        }
+    }
+
+    @Test
+    void mutationUpdate_bookmarkWritersAgree_updatesAgreedValue() {
+        String note = "R1042-" + UUID.randomUUID();
+        int id = seedBookmark(5, note);
+        String film3 = NodeIdEncoder.encode("Film", 3);
+        try {
+            execute(
+                "mutation { updateBookmarkOverlap(in: {bookmarkId: " + id
+                + ", bookmarkedFilm: 3, filmRef: \"" + film3 + "\"}) { bookmarkedFilm } }");
+            assertThat(bookmarkedFilmOf(id)).isEqualTo(3);
+        } finally {
+            deleteBookmarks(note);
+        }
+    }
+
+    @Test
+    void mutationUpdatePayload_bookmarkValueThenClearedReference_updatesTheValue() {
+        // The payload arm runs no within-SET agreement preamble, so only the SET emission's own guard
+        // keeps the cleared filmRef from putting NULL over bookmarkedFilm's 2.
+        String note = "R1042-" + UUID.randomUUID();
+        int id = seedBookmark(5, note);
+        try {
+            Map<String, Object> data = execute(
+                "mutation { updateBookmarkOverlapPayload(in: {bookmarkId: " + id
+                + ", bookmarkedFilm: 2, filmRef: null}) { bookmark { bookmarkedFilm } } }");
+            Map<String, Object> payload = (Map<String, Object>) data.get("updateBookmarkOverlapPayload");
+            assertThat((Map<String, Object>) payload.get("bookmark")).containsEntry("bookmarkedFilm", 2);
+            assertThat(bookmarkedFilmOf(id)).isEqualTo(2);
+        } finally {
+            deleteBookmarks(note);
+        }
+    }
+
+    private Integer endorsedFilmOf(int id) {
+        return dsl.select(DSL.field("endorsed_film", Integer.class))
+            .from(DSL.table("film_endorsement"))
+            .where(DSL.field("endorsement_id", Integer.class).eq(id))
+            .fetchOne().value1();
+    }
+
+    private int seedBookmark(int bookmarkedFilm, String note) {
+        return dsl.insertInto(DSL.table("film_bookmark"))
+            .set(DSL.field("bookmarked_film"), bookmarkedFilm)
+            .set(DSL.field("note"), note)
+            .returningResult(DSL.field("bookmark_id", Integer.class))
+            .fetchOne().value1();
+    }
+
+    private Integer bookmarkedFilmOf(int id) {
+        return dsl.select(DSL.field("bookmarked_film", Integer.class))
+            .from(DSL.table("film_bookmark"))
+            .where(DSL.field("bookmark_id", Integer.class).eq(id))
+            .fetchOne().value1();
+    }
+
+    private void deleteBookmarks(String note) {
+        dsl.deleteFrom(DSL.table("film_bookmark")).where(DSL.field("note").eq(note)).execute();
     }
 
     private int seedEndorsement(int endorsedFilm, String note) {

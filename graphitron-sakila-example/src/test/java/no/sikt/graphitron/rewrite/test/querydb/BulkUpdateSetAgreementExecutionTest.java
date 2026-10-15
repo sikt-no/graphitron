@@ -30,7 +30,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @nodeId(typeName: "Film")} FK reference ({@code filmRef}). Agreeing rows update the agreed value;
  * a disagreeing row throws before the DML and the batch rolls back; an asymmetric list (only one of the
  * two writers supplied, uniform across rows) still updates the column from the present writer — the
- * behavioural pin on the shared-column disjunction presence gate.
+ * behavioural pin on the shared-column disjunction presence gate. The nullable-column sibling
+ * ({@code updateBookmarksOverlap}, over {@code film_bookmark}) pins a reference sent as {@code null}:
+ * it carries no value, so the row's cell takes the other writer's value, or {@code NULL} when no
+ * present writer carries one.
  *
  * <p><b>WHERE∩SET overlap</b> ({@code updateEmailReplies}, the {@code email} self-FK fixture): {@code id}
  * pins the row (WHERE {@code (mailbox_id, message_no)}) while the self-FK {@code inReplyTo} routes
@@ -87,6 +90,9 @@ class BulkUpdateSetAgreementExecutionTest {
     @AfterEach
     void cleanUp() {
         dsl.deleteFrom(DSL.table("film_endorsement"))
+            .where(DSL.field("note", String.class).like(NOTE_PREFIX + "%"))
+            .execute();
+        dsl.deleteFrom(DSL.table("film_bookmark"))
             .where(DSL.field("note", String.class).like(NOTE_PREFIX + "%"))
             .execute();
         // Bounded at both ends: DmlSqlBaselineTest owns the 700 band in the same mailbox, so an
@@ -187,6 +193,40 @@ class BulkUpdateSetAgreementExecutionTest {
         assertThat(endorsedFilmOf(idB)).isEqualTo(3);
     }
 
+    @Test
+    void bulkWithinSetOverlap_clearedReferenceBesideValue_updatesTheValues() {
+        // Every row sends both writers. Row A's filmRef is null: no reference, so it carries no value for
+        // bookmarked_film and row A's cell takes bookmarkedFilm's 2. Row B's writers agree on 3.
+        String note = NOTE_PREFIX + UUID.randomUUID();
+        int idA = seedBookmark(5, note);
+        int idB = seedBookmark(5, note);
+        String film3 = NodeIdEncoder.encode("Film", 3);
+        execute(
+            "mutation { updateBookmarksOverlap(in: ["
+            + "{bookmarkId: " + idA + ", bookmarkedFilm: 2, filmRef: null}, "
+            + "{bookmarkId: " + idB + ", bookmarkedFilm: 3, filmRef: \"" + film3 + "\"}"
+            + "]) { bookmarkedFilm } }");
+        assertThat(bookmarkedFilmOf(idA)).isEqualTo(2);
+        assertThat(bookmarkedFilmOf(idB)).isEqualTo(3);
+    }
+
+    @Test
+    void bulkWithinSetOverlap_clearedReferenceAlone_writesNull() {
+        // Every row sends only filmRef, so the shared column is in v(...) by first-row presence. Row A's
+        // only writer is cleared and carries no value, so its cell is NULL; row B's decodes to 4.
+        String note = NOTE_PREFIX + UUID.randomUUID();
+        int idA = seedBookmark(5, note);
+        int idB = seedBookmark(5, note);
+        String film4 = NodeIdEncoder.encode("Film", 4);
+        execute(
+            "mutation { updateBookmarksOverlap(in: ["
+            + "{bookmarkId: " + idA + ", filmRef: null}, "
+            + "{bookmarkId: " + idB + ", filmRef: \"" + film4 + "\"}"
+            + "]) { bookmarkedFilm } }");
+        assertThat(bookmarkedFilmOf(idA)).isNull();
+        assertThat(bookmarkedFilmOf(idB)).isEqualTo(4);
+    }
+
     // ------------------------------------------------------------------ WHERE∩SET overlap (self-FK)
 
     @Test
@@ -268,6 +308,21 @@ class BulkUpdateSetAgreementExecutionTest {
             .from(DSL.table("film_endorsement"))
             .where(DSL.field("endorsement_id", Integer.class).eq(endorsementId))
             .fetchOne(DSL.field("endorsed_film", Integer.class));
+    }
+
+    private int seedBookmark(int bookmarkedFilm, String note) {
+        return dsl.insertInto(DSL.table("film_bookmark"))
+            .set(DSL.field("bookmarked_film"), bookmarkedFilm)
+            .set(DSL.field("note"), note)
+            .returningResult(DSL.field("bookmark_id", Integer.class))
+            .fetchOne().value1();
+    }
+
+    private Integer bookmarkedFilmOf(int bookmarkId) {
+        return dsl.select(DSL.field("bookmarked_film", Integer.class))
+            .from(DSL.table("film_bookmark"))
+            .where(DSL.field("bookmark_id", Integer.class).eq(bookmarkId))
+            .fetchOne(DSL.field("bookmarked_film", Integer.class));
     }
 
     private void seedEmail(int msgNo, String subject) {

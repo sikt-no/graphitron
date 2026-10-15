@@ -4179,10 +4179,27 @@ input FilmBookmarkOverlapInput {
     note: String @field(name: "note")
 }
 
+# UPDATE counterpart of FilmBookmarkOverlapInput, with the shared column nullable so a cleared
+# reference alone can land a row. An explicit null on filmRef means "no reference", so it carries no
+# value for bookmarked_film: the column takes bookmarkedFilm's value when that is sent, and is written
+# NULL only when no present writer carries one. filmRef comes after the plain writer on purpose: the
+# single-row SET emission puts columns in field order, and a cleared writer emitted last is the one
+# that could overwrite the agreed value.
+input UpdateBookmarkOverlapInput {
+    bookmarkId: Int! @field(name: "bookmark_id")
+    bookmarkedFilm: Int @field(name: "bookmarked_film")
+    filmRef: ID @nodeId(typeName: "Film")
+}
+
+type FilmBookmarkPayload {
+    bookmark: FilmBookmark
+}
+
 # R322 single-row UPDATE SET overlap: endorsementId (PK) is the matched-key WHERE; endorsed_film is the
 # SET column written by BOTH the plain @field (endorsedFilm) and the @nodeId FK reference (filmRef). The
 # single-row SET Map.put would silently last-write-wins; the value-agreement preamble throws on
-# disagreement instead. (Two plain @field's on one SET column reject at validate time in the walker.)
+# disagreement instead. A filmRef sent as null is no reference and takes no part in the check, so
+# endorsedFilm's value stands. (Two plain @field's on one SET column reject at validate time in the walker.)
 input UpdateEndorsementOverlapInput {
     endorsementId: Int! @field(name: "endorsement_id")
     filmRef: ID @nodeId(typeName: "Film")
@@ -4202,7 +4219,7 @@ input UpdateEndorsementOverlapInput {
 #
 # `ref` is a nullable group over `filmRef`, which reaches the INSERT and SET decode locals (the
 # `instanceof` operand); `endorsedFilm` beside it in the same group overlaps the column filmRef
-# writes, which reaches the value-agreement preamble (the `==` operand). The bulk carriers below
+# writes, which reaches the value-agreement preamble's nested reads. The bulk carriers below
 # reach the per-row arms of both. Kept off the flat overlap inputs above rather than folded into
 # them: those pin the R322 dedup at a top-level path, which is the control this pair is read
 # against.
@@ -5027,14 +5044,20 @@ type Mutation {
     # updates the column from the present writer.
     updateEndorsementsOverlap(in: [UpdateEndorsementOverlapInput!]!): [FilmEndorsement!]! @mutation(typeName: UPDATE)
 
+    # The nullable-column UPDATE siblings of the endorsement overlap pair, on all three SET emissions:
+    # single-row, bulk VALUES-join, and the payload arm. A cleared filmRef contributes nothing to
+    # bookmarked_film, so it never conflicts with a value bookmarkedFilm sends.
+    updateBookmarkOverlap(in: UpdateBookmarkOverlapInput!): FilmBookmark @mutation(typeName: UPDATE)
+    updateBookmarksOverlap(in: [UpdateBookmarkOverlapInput!]!): [FilmBookmark!]! @mutation(typeName: UPDATE)
+    updateBookmarkOverlapPayload(in: UpdateBookmarkOverlapInput!): FilmBookmarkPayload @mutation(typeName: UPDATE)
+
     # Compile-tier pins for the wire-map descent's primary-expression guarantee, one per DML arm that
     # splices the descent into an operand slot. `ref` nests the two overlapping writers one level
     # down, so every read of them is a nested descent rather than a single `get`: the INSERT and SET
-    # decode locals splice it into an `instanceof` pattern test, and the value-agreement preamble
-    # splices it into a `== null` comparison. Both operators bind tighter than `?:`, so before the
-    # descent was parenthesised at its producer these four fields emitted Java javac rejects (the
-    # ternary's own null arm was swallowed into the operand, leaving Object where boolean was
-    # required and the pattern variable not definitely matched). The compiler is the assertion: a
+    # decode locals splice it into an `instanceof` pattern test, an operator that binds tighter than
+    # `?:`, so before the descent was parenthesised at its producer these four fields emitted Java
+    # javac rejects (the ternary's own null arm was swallowed into the operand, leaving Object where
+    # boolean was required and the pattern variable not definitely matched). The compiler is the assertion: a
     # paren bug is invisible to a substring assertion on the emitted text and unmissable here.
     # No execution test: the flat overlap carriers above already pin the runtime semantics of this
     # shape, and what nesting changes is the emitted expression, not the SQL.

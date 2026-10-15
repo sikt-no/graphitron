@@ -54,8 +54,10 @@ public record CarrierNullRule(String sdlFieldName, CallSiteExtraction extraction
 
         /**
          * The field is nullable and no column it writes is a matched-key column. An explicit null
-         * writes {@code NULL} to every column the carrier contributes to SET, contributes no value
-         * to any cross-partition agreement check, and leaves the WHERE partition alone.
+         * means "no reference": it writes {@code NULL} to every column the carrier contributes to
+         * SET, contributes no value to any agreement check, and leaves the WHERE partition alone.
+         * A SET column the carrier shares with another writer on the input takes that writer's
+         * value, and is written {@code NULL} only when no present writer carries one.
          *
          * <p>A straddling cross-table reference admitted by the walker is always this: its SET half
          * is its out-of-key half by construction, so clearing it cannot touch the row's identity.
