@@ -1,7 +1,7 @@
 ---
 id: R1046
 title: "An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: error-channel
@@ -59,7 +59,7 @@ Background for the reader: `GraphitronClientException` is a class graphitron gen
 
 - **Execution tier, the `Mapped` arm, which is the reported shape.** In `TenantDivinedRoutingExecutionTest`, beside `dmlPayload_onTheErrorChannel_aDatabaseErrorRendersTheTypedError`: `retitleFilmsChecked` with a film id naming tenant 2, executed under the request tenant set `List.of(1)`. Assert the response's top-level errors carry `"'2' is not permitted for this request"`, none matches `An error occurred. Reference:`, `retitleFilmsChecked` is `null`, and `TENANT_2_OPENED` is zero. A second case on `rateFilmsChecked` (the root `@service` producer on the same transport) under the same set pins the service half of `Mapped`. These two tests are the item's acceptance evidence: the first is the sis report reproduced in the example schema.
 - **Execution tier, the `PayloadClass` arm.** No example-schema field on this transport can be made to throw a `GraphitronClientException` from client input, since its throw sites are the services' own code (`filmLookup`'s `FilmLookupService`) and the generated class is not nameable from `graphitron-sakila-service`. Instead call the generated `ErrorRouter.dispatch` directly from a sakila-example test, where the generated `ErrorRouter` and `GraphitronClientException` are on the test classpath: a `RuntimeException` wrapping a `GraphitronClientException`, a mapping array that does not match it, and a payload factory that fails the test if invoked. Assert the result has `data == null` and the client exception as its single error. A second call with an unwrapped `IllegalStateException` needs a `DataFetchingEnvironment` for `GraphqlErrorBuilder.newError(env)`; if building one is heavier than the assertion is worth, the generator-tier pin below covers that branch's unchanged body.
-- **Generator tier.** `ErrorRouterClassGeneratorTest.dispatch_unmatchedFallsThroughToRedact` becomes `dispatch_unmatchedFallsThroughToSurfaceClientErrorOrRedact`, asserting `return surfaceClientErrorOrRedact(thrown, env)`. Its current `contains("redact(thrown, env)")` matches the new text too, so tighten it to the full statement and assert the body no longer contains `return redact(thrown, env)`. Add the matching pin on `ErrorDispatchFragments.outcomeArm`'s output (the existing `TypeFetcherGeneratorTest` / `FetcherPipelineTest` channel-arm assertions are the place to look first): its tail is `ErrorRouter.surfaceClientErrorOrRedact(e, env)`.
+- **Generator tier.** `ErrorRouterClassGeneratorTest.dispatch_unmatchedFallsThroughToRedact` becomes `dispatch_unmatchedFallsThroughToSurfaceClientErrorOrRedact`, asserting `return surfaceClientErrorOrRedact(thrown, env)`. Its current `contains("redact(thrown, env)")` fails against the new text (the match is case-sensitive and the new call spells `OrRedact`), so replace it with the full statement and assert the body no longer contains `return redact(thrown, env)`. The matching pin on `ErrorDispatchFragments.outcomeArm`'s output already exists: `ChannelCatchArmEmitterTest.emit_mappedChannel_walksMappingsAndReturnsErrorList` asserts "unmapped fall-through stays a redact" with `contains("redact(e, env)")`, which fails on the new tail for the same reason; it becomes `ErrorRouter.surfaceClientErrorOrRedact(e, env)`.
 
 ## User documentation
 

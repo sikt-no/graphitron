@@ -22,7 +22,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
-| `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | Spec | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
 | `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-09-25 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
@@ -31,6 +30,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R1040` | A DML UPDATE row that sends only its key fields is a no-op that still returns the row | Ready | 2026-10-15 | [plan](update-empty-patch-is-a-no-op.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | Ready | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
 | `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Ready | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R1043` | A @splitQuery to the same table with no @reference is rejected with an author error, never reaching the emitter with a null correlation | In Progress | 2026-10-15 | [plan](splitquery-same-row-null-correlation.md) |
@@ -585,7 +585,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### error-channel
 
-- `R1046` [**An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it**](error-channel-unmatched-client-error-is-redacted.md) — Spec, bug
+- `R1046` [**An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it**](error-channel-unmatched-client-error-is-redacted.md) — Ready, bug
 - `R1048` [**Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message**](unmatched-fetcher-exception-logging-hook.md) — Backlog, feature
 - `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Backlog, bug
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
