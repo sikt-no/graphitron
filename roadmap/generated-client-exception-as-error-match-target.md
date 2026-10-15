@@ -1,7 +1,7 @@
 ---
 id: R1047
 title: "An @error GENERIC handler can name the generated GraphitronClientException on a clean build"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 4
 theme: error-channel
@@ -62,7 +62,7 @@ The classifier settles once whether a `GENERIC` className names the client excep
 
 This is a component on an existing record: no new `Handler` variant, no new leaf. It sits on the classified model, which is being drained into the fact store rather than extended, so it should stay that small. The store has no resolved-handler relation yet, only the as-written `graphitron_ast_error_generic_handler_entry`. The store-native form of this fact would join that entry with the configured output package. That join crosses two corpora, so it belongs in the anchoring (derivation) phase and must not run during capture. Building that relation is not this item's work.
 
-`ExceptionHandler` has nineteen construction sites, two in `TypeBuilder` and the rest in tests (`ErrorMappingsClassGeneratorTest`, `CheckedExceptionMatcherTest`, `MappingsConstantNameDedupTest`, `ChannelCatchArmEmitterTest`, `ErrorChannelWalkerTest`). The test sites migrate mechanically to `new ExceptionClass.ClasspathClass(fqn)`. A secondary constructor that defaults the arm is deliberately left out, since it would let a caller skip the decision this item makes explicit.
+`ExceptionHandler` has twenty-two construction sites, two in `TypeBuilder` and the rest in tests (`ErrorMappingsClassGeneratorTest`, `CheckedExceptionMatcherTest`, `MappingsConstantNameDedupTest`, `ChannelCatchArmEmitterTest`, `ErrorChannelWalkerTest`, `ServiceFieldValidationTest`, `MutationServiceTableFieldValidationTest`, `QueryServiceTableFieldValidationTest`). The test sites migrate mechanically to `new ExceptionClass.ClasspathClass(fqn)`. A secondary constructor that defaults the arm is deliberately left out, since it would let a caller skip the decision this item makes explicit.
 
 ## Tests
 
