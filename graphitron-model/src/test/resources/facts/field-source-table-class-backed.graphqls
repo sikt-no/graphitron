@@ -1,0 +1,44 @@
+# A type with no table of its own that a class backs still has fields that depart from a table. One
+# backed by a table's own record class is read on that table. A field carrying @sourceRow departs
+# from the table declaring its path's first key, whose source-side columns the lifter returns.
+
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") { name: String }
+type Address @table(name: "address") { address: String }
+
+# Backed by FilmRecord, the record class of film, through the service that produces it.
+type FilmDetailsCarrier {
+  filmId: Int @field(name: "film_id")
+  language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# Backed by a plain class; the lifter returns customer.address_id.
+type CustomerAddressSummary {
+  customerId: Int!
+  address: [Address!]!
+    @sourceRow(
+      className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+      method: "addressIdOf"
+    )
+    @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+extend type Query {
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  customerAddressSummary(customerId: Int!): CustomerAddressSummary
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryService", method: "lookup"})
+}
+
+extend schema @assertContains(relation: "graphitron_field_source_table", rows: """
+  type_name,              field_name, from_table, basis
+  FilmDetailsCarrier,     filmId,     film,       RECORD_CLASS
+  FilmDetailsCarrier,     language,   film,       RECORD_CLASS
+  CustomerAddressSummary, address,    customer,   SOURCE_ROW
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate
+  NO_ROUTE_FROM_DEPARTURE, FilmDetailsCarrier.language
+  NO_ROUTE_FROM_DEPARTURE, CustomerAddressSummary.address
+  """)

@@ -204,8 +204,8 @@ are gone.
       `NO_ROUTE_TO_TARGET` report nothing on the 2026-10-14 stores, nor does sis; which change
       cleared them was not traced.
     * **A source is inherited through a type with no table of its own** `done`, by
-      `graphitron_field_source_table` under "The source is stated"; 0 on sis and 3 on sakila
-      left, which are "A class-backed parent's source is stated". The endpoints
+      `graphitron_field_source_table` under "The source is stated", with the class-backed parents
+      beside it; 0 on sis and on sakila. The endpoints
       took the source from the enclosing type's own binding only, so a nested type had none and
       its chains reported `NO_ROUTE_FROM_DEPARTURE`: 99 rows over 60 types on sis, 11
       over 5 on sakila (`FilmDetails`, `FilmInfo`, `FilmInlineBundle` among them). A nested type
@@ -943,14 +943,22 @@ and the emitters read, and it goes when nothing reads what it builds.
         returned by `Query.mineTilganger @routine` with no `@table` and carrying three `@reference`
         fields, would take the function result as its fields' source, where today it has none; read
         off the rule and the SDL, not a capture. Sakila's `Tilgang` has no field with a path.
-      * **A class-backed parent's source is stated** `open`. The three sakila rows left,
-        `CustomerAddressSummary.address` through `@sourceRow` and `FilmDetailsCarrier.language` and
-        `.actorsByLookup` under a `@service` returning a record-backed carrier: the `TableRecord`
-        member, the key-matching members and `@sourceRow` rules, and the keys a write returned. The
-        forward walk waits on it. A consumer case beside them: tilgangsstyring's
-        `DeaktiverApplikasjonerPayload` and its two siblings, plain types a root `@service` returns,
-        whose `applikasjoner` member is a `List<SubjektRecord>`, so the `TableRecord` member rule
-        gives it `subjekt` as its source and each participant's one key reaches its own table.
+      * **A class-backed parent's source is stated** `open`. The forward walk waits on it.
+        * **A record-class carrier and a `@sourceRow` field have their source** `done`.
+          `RECORD_CLASS`: a type with no table of its own backed by a table's own record class has
+          that table as its fields' source, `FilmDetailsCarrier` from `film` through `FilmRecord`.
+          `SOURCE_ROW`: a field carrying `@sourceRow` has the table declaring its path's first key as
+          its source, whose source-side columns the lifter returns, which is the generator's
+          contract, `CustomerAddressSummary.address` from `customer`. `NO_ROUTE_FROM_DEPARTURE` went
+          from 3 to 0 on sakila; sis gained 195 `RECORD_CLASS` sources and still draws no entry
+          defect. The cases are `field-source-table-class-backed`.
+        * **The other class-backed rules are stated** `open`: a `TableRecord` member of a backing
+          class, members matching the primary key of the first link's table, and the keys a write
+          returned. No consumer schema regresses for want of them today, but the forward walk needs
+          them. A consumer case: tilgangsstyring's `DeaktiverApplikasjonerPayload` and its two
+          siblings, plain types a root `@service` returns, whose `applikasjoner` member is a
+          `List<SubjektRecord>`, so the `TableRecord` member rule gives it `subjekt` as its source
+          and each participant's one key reaches its own table.
   * **The candidates are one family** `open`. What a coordinate could have named, asked by the
     build error's message, the language server's completion and the MCP server, and answered today
     in as many shapes as there are askers: two stored relations, a jOOQ query, and completions in

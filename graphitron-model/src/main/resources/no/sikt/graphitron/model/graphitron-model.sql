@@ -5973,7 +5973,7 @@ CREATE TABLE graphitron_field_source_table (
     REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   FOREIGN KEY (from_source_name, from_schema, from_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (basis IN ('SOURCE_TYPE', 'INHERITED'))
+  CHECK (basis IN ('SOURCE_TYPE', 'INHERITED', 'RECORD_CLASS', 'SOURCE_ROW'))
 );
 COMMENT ON TABLE graphitron_field_source_table IS 'A table a field''s read departs from: one row per field and departing table, the parent type''s table, or where the parent type binds none, the departures of each field returning it. For example Film.language departs from film, and a field of a FilmDetails type with no table of its own, reached from Film.details, departs from film too.';
 COMMENT ON COLUMN graphitron_field_source_table.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -5982,7 +5982,7 @@ COMMENT ON COLUMN graphitron_field_source_table.field_name IS 'the field; with t
 COMMENT ON COLUMN graphitron_field_source_table.from_source_name IS 'the departing table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN graphitron_field_source_table.from_schema IS 'the departing table''s SQL schema';
 COMMENT ON COLUMN graphitron_field_source_table.from_table IS 'the departing table''s SQL name; in the key, so a type reached from parents on two tables departs from both';
-COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of two. SOURCE_TYPE: the parent type binds the table. INHERITED: the parent type binds none, so the field departs from wherever each field returning it does, through any number of such types. A root field has no row, a field whose path begins with a @routine departing from its result';
+COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of four. SOURCE_TYPE: the parent type binds the table. INHERITED: the parent type binds none, so the field departs from wherever each field returning it does, through any number of such types. RECORD_CLASS: the parent type binds none and is backed by the table''s own record class. SOURCE_ROW: the field carries @sourceRow, whose lifter returns the source-side columns of its path''s first key, so it departs from the table declaring that key. A root field has no row, a field whose path begins with a @routine departing from its result';
 COMMENT ON COLUMN graphitron_field_source_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphitron_field_table_link (
@@ -8842,60 +8842,6 @@ COMMENT ON COLUMN graphitron_field_target_table_rule.field_name IS 'the field';
 COMMENT ON COLUMN graphitron_field_target_table_rule.arriving_type_name IS 'the target where it binds a table unambiguously, or each member binding one where the target binds none';
 COMMENT ON COLUMN graphitron_field_target_table_rule.basis IS 'TARGET or PARTICIPANT, as graphitron_field_target_table.basis states';
 
-CREATE VIEW graphitron_field_source_table_rule
-  (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
--- An object type with no table of its own is read on the table the field reaching it departs from,
--- through any number of such types. Only where that field wrote no path: one that did arrives
--- somewhere else, which is the forward walk's to state. Walked at the type grain, carrying the
--- types visited, so a type reachable from itself stops rather than recursing forever.
-WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, from_table, visited) AS (
-  SELECT p.graph_name, p.target_type_name,
-         b.table_source_name, b.table_schema, b.table_name, ',' || p.target_type_name || ','
-    FROM graphitron_field_target p
-    JOIN graphitron_resolved_type_binding b
-      ON b.graph_name = p.graph_name AND b.type_name = p.type_name AND b.candidates = 1
-    JOIN graphitron_type t
-      ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
-                      WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
-                      WHERE cl.graph_name = p.graph_name AND cl.type_name = p.type_name
-                        AND cl.field_name = p.field_name)
-  UNION ALL
-  SELECT p.graph_name, p.target_type_name,
-         i.from_source_name, i.from_schema, i.from_table, i.visited || p.target_type_name || ','
-    FROM inherited i
-    JOIN graphitron_field_target p
-      ON p.graph_name = i.graph_name AND p.type_name = i.type_name
-    JOIN graphitron_type t
-      ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
-   WHERE POSITION(',' || p.target_type_name || ',' IN i.visited) = 0
-     AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
-                      WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
-                      WHERE cl.graph_name = p.graph_name AND cl.type_name = p.type_name
-                        AND cl.field_name = p.field_name)
-)
-SELECT f.graph_name, f.type_name, f.field_name,
-       b.table_source_name, b.table_schema, b.table_name, 'SOURCE_TYPE'
-  FROM graphitron_field f
-  JOIN graphitron_resolved_type_binding b
-    ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.candidates = 1
-UNION ALL
-SELECT f.graph_name, f.type_name, f.field_name,
-       i.from_source_name, i.from_schema, i.from_table, 'INHERITED'
-  FROM (SELECT DISTINCT graph_name, type_name, from_source_name, from_schema, from_table
-          FROM inherited) i
-  JOIN graphitron_field f
-    ON f.graph_name = i.graph_name AND f.type_name = i.type_name;
-COMMENT ON VIEW graphitron_field_source_table_rule IS 'One row the field source-table rule computes, in the shape graphitron_field_source_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_source_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
-COMMENT ON COLUMN graphitron_field_source_table_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
-COMMENT ON COLUMN graphitron_field_source_table_rule.type_name IS 'the type owning the field';
-COMMENT ON COLUMN graphitron_field_source_table_rule.field_name IS 'the field';
-COMMENT ON COLUMN graphitron_field_source_table_rule.from_source_name IS 'the departing table''s catalog partition';
-COMMENT ON COLUMN graphitron_field_source_table_rule.from_schema IS 'the departing table''s SQL schema';
-COMMENT ON COLUMN graphitron_field_source_table_rule.from_table IS 'the departing table''s SQL name';
-COMMENT ON COLUMN graphitron_field_source_table_rule.basis IS 'SOURCE_TYPE or INHERITED, as graphitron_field_source_table.basis states';
 
 CREATE VIEW intent_poly_member
   (graph_name, container_name, container_kind, member_type_name, position) AS
@@ -10318,6 +10264,85 @@ COMMENT ON COLUMN graphitron_type_backing.touched_at IS 'when the reading that l
 CREATE INDEX graphitron_type_backing_class_ix ON graphitron_type_backing (graph_name, class_name, type_name);
 COMMENT ON INDEX graphitron_type_backing_class_ix IS 'The class is a join key for the readers that go from a class to the types it backs: a generated record read back as its table, and the members a class offers. The primary key puts the type before the class and cannot serve that, so the planner probed the graph''s whole backing once per catalog column. The type closes the index because those readers also filter on it, and without it the planner preferred the primary key for its type list. Measured: the language server''s diagnostics statement over forty bound types scanned twelve thousand rows here through the primary key and eight hundred through this index.';
 COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answered, a closed three-value domain: BOUND_TABLE for the resolved table binding read through its table''s record class, PRODUCER for a class a @service or @externalField method delivers for the field''s type or takes for an argument''s, ACCESSOR for a class reached by reading a field off a class already backing its parent. Provenance, never a preference: a type the populations answer differently has a row from each, and a reader wanting one filters on this column';
+
+CREATE VIEW graphitron_field_source_table_rule
+  (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
+-- An object type with no table of its own is read on the table the field reaching it departs from,
+-- through any number of such types. Only where that field wrote no path: one that did arrives
+-- somewhere else, which is the forward walk's to state. Walked at the type grain, carrying the
+-- types visited, so a type reachable from itself stops rather than recursing forever.
+WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, from_table, visited) AS (
+  SELECT p.graph_name, p.target_type_name,
+         b.table_source_name, b.table_schema, b.table_name, ',' || p.target_type_name || ','
+    FROM graphitron_field_target p
+    JOIN graphitron_resolved_type_binding b
+      ON b.graph_name = p.graph_name AND b.type_name = p.type_name AND b.candidates = 1
+    JOIN graphitron_type t
+      ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
+                      WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
+                      WHERE cl.graph_name = p.graph_name AND cl.type_name = p.type_name
+                        AND cl.field_name = p.field_name)
+  UNION ALL
+  SELECT p.graph_name, p.target_type_name,
+         i.from_source_name, i.from_schema, i.from_table, i.visited || p.target_type_name || ','
+    FROM inherited i
+    JOIN graphitron_field_target p
+      ON p.graph_name = i.graph_name AND p.type_name = i.type_name
+    JOIN graphitron_type t
+      ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
+   WHERE POSITION(',' || p.target_type_name || ',' IN i.visited) = 0
+     AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
+                      WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
+                      WHERE cl.graph_name = p.graph_name AND cl.type_name = p.type_name
+                        AND cl.field_name = p.field_name)
+)
+SELECT f.graph_name, f.type_name, f.field_name,
+       b.table_source_name, b.table_schema, b.table_name, 'SOURCE_TYPE'
+  FROM graphitron_field f
+  JOIN graphitron_resolved_type_binding b
+    ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.candidates = 1
+UNION ALL
+SELECT f.graph_name, f.type_name, f.field_name,
+       i.from_source_name, i.from_schema, i.from_table, 'INHERITED'
+  FROM (SELECT DISTINCT graph_name, type_name, from_source_name, from_schema, from_table
+          FROM inherited) i
+  JOIN graphitron_field f
+    ON f.graph_name = i.graph_name AND f.type_name = i.type_name
+UNION ALL
+-- A type with no table of its own backed by a table's own record class is read on that table.
+SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema, st.table_name,
+       'RECORD_CLASS'
+  FROM graphitron_field f
+  JOIN graphitron_type_backing tb
+    ON tb.graph_name = f.graph_name AND tb.type_name = f.type_name
+  JOIN store_graph_source gs ON gs.graph_name = f.graph_name
+  JOIN sql_table st
+    ON st.source_name = gs.source_name AND st.record_class_fqn = tb.class_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
+                    WHERE nb.graph_name = f.graph_name AND nb.type_name = f.type_name)
+UNION ALL
+-- A field carrying @sourceRow departs from the table declaring its path's first key: the lifter
+-- returns that key's source-side columns, which is the generator's contract for it.
+SELECT DISTINCT r.graph_name, r.type_name, r.field_name,
+       r.constraint_source_name, r.constraint_schema, r.constraint_table, 'SOURCE_ROW'
+  FROM graphitron_field_path_reading r
+ WHERE r.position = 0 AND r.via = 'KEY'
+   AND EXISTS (SELECT 1 FROM graphql_directive_application da
+                 JOIN graphql_element_field ef
+                   ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
+                WHERE ef.graph_name = r.graph_name AND ef.type_name = r.type_name
+                  AND ef.field_name = r.field_name AND da.directive_name = 'sourceRow');
+COMMENT ON VIEW graphitron_field_source_table_rule IS 'One row the field source-table rule computes, in the shape graphitron_field_source_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_source_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_field_source_table_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
+COMMENT ON COLUMN graphitron_field_source_table_rule.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_source_table_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_field_source_table_rule.from_source_name IS 'the departing table''s catalog partition';
+COMMENT ON COLUMN graphitron_field_source_table_rule.from_schema IS 'the departing table''s SQL schema';
+COMMENT ON COLUMN graphitron_field_source_table_rule.from_table IS 'the departing table''s SQL name';
+COMMENT ON COLUMN graphitron_field_source_table_rule.basis IS 'SOURCE_TYPE, INHERITED, RECORD_CLASS or SOURCE_ROW, as graphitron_field_source_table.basis states';
 
 CREATE VIEW graphitron_type_backing_rule (graph_name, type_name, class_name, declared_via) AS
 -- What a producer grounds, two axes: the class a resolved @service or @externalField method returns
