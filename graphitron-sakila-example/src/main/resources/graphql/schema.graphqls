@@ -4037,8 +4037,8 @@ input FilmUpdateNestedDetails {
 input FilmUpdateNestedInput {
     filmId:  Int! @field(name: "film_id")
     # Nullable nested group: an absent (or explicit-null) `details` claims nothing about the group,
-    # so every leaf under it is skipped — the UPDATE then has no settable fields and the runtime
-    # empty-SET guard fires. A present `details` Map descends, each leaf's absent-vs-null deciding
+    # so every leaf under it is skipped: the row is then an empty patch, read back by key with no
+    # UPDATE issued. A present `details` Map descends, each leaf's absent-vs-null deciding
     # whether its column is written and whether the write is NULL or a value.
     details: FilmUpdateNestedDetails
 }
@@ -4548,8 +4548,9 @@ type Mutation {
 
     # R77 Phase F: bulk DML mutations. Each takes a list of @table inputs and dispatches
     # the per-verb bulk arm in TypeFetcherGenerator (INSERT: valuesOfRows over the columns some
-    # row supplies, gap cells for the rest; UPDATE: VALUES join with uniform-shape, no-set-fields, and
-    # duplicate-tuple guards; DELETE: row-tuple IN). Return shapes deliberately mix
+    # row supplies, gap cells for the rest; UPDATE: VALUES join with uniform-shape and
+    # duplicate-tuple guards, a key read joined to the same VALUES when every row is an empty patch;
+    # DELETE: row-tuple IN). Return shapes deliberately mix
     # [Film!]! (ProjectedList) and [ID!]! (EncodedList) to cover both terminator arms.
     # UPSERT retired under R144 (see above).
     createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)

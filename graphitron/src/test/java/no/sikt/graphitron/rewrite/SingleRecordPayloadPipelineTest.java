@@ -446,7 +446,10 @@ class SingleRecordPayloadPipelineTest {
         assertThat(rowsCallAfterTxn)
             .as("direct-@table " + kind + " fetcher calls the named reentry rows companion after the transactionResult call site")
             .isGreaterThan(firstTransactionResult);
-        assertThat(body)
+        // The only .select( the fetcher may carry is UPDATE's empty-patch key read, which sits
+        // inside the transaction lambda; outside it (before the call site, and from the rows call
+        // on) there is no follow-up SELECT.
+        assertThat(body.substring(0, firstTransactionResult) + body.substring(rowsCallAfterTxn))
             .as("the fetcher body no longer inlines the follow-up SELECT")
             .doesNotContain(".select(");
         var rowsMethod = mutationFetchers.methodSpecs().stream()

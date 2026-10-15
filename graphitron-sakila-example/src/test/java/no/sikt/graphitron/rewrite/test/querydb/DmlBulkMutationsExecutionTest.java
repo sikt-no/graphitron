@@ -36,8 +36,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * built from the columns the rows supply, with a gap cell ({@code DEFAULT})
  * only where a row leaves out a column another row supplies (INSERT, UPSERT
  * insert branch), observed on the rendered SQL; the dynamic SET walk (UPDATE,
- * UPSERT update branch); the uniform-shape / no-set-fields / duplicate-tuple
- * guards (UPDATE, UPSERT doUpdate); and the typed empty-list short-circuit.
+ * UPSERT update branch); the uniform-shape / duplicate-tuple guards (UPDATE,
+ * UPSERT doUpdate) and UPSERT's no-set-fields guard; and the typed empty-list
+ * short-circuit.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -781,27 +782,6 @@ class DmlBulkMutationsExecutionTest {
             """.formatted(id1, id2));
         assertThat(result.getErrors()).isNotEmpty();
         assertThat(QUERY_COUNT.get()).as("uniform-shape guard fires before SQL").isZero();
-    }
-
-    @Test
-    void updateFilms_onlyLookupKeyFields_raisesError() {
-        // No-set-fields-present guard: every input row carries only @lookupKey
-        // (filmId), so the dynamic SET walk produces an empty `sets` map. Guard fires
-        // before SQL.
-        String origTitle = randomMarker("R77F-UPD-LK");
-        Integer id = insertFilm(origTitle);
-        QUERY_COUNT.set(0);
-        try {
-            graphql.ExecutionResult result = executeRaw("""
-                mutation {
-                    updateFilms(in: [{ filmId: %d }, { filmId: %d }]) { filmId }
-                }
-                """.formatted(id, id + 1));
-            assertThat(result.getErrors()).isNotEmpty();
-            assertThat(QUERY_COUNT.get()).as("no-set-fields guard fires before SQL").isZero();
-        } finally {
-            deleteFilmById(id);
-        }
     }
 
     @Test

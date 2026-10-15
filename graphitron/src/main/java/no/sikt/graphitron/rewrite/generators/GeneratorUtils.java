@@ -37,6 +37,8 @@ class GeneratorUtils {
     static final ClassName ROW              = ClassName.get("org.jooq", "Row");
     /** {@code org.jooq.Result} */
     static final ClassName RESULT           = ClassName.get("org.jooq", "Result");
+    /** {@code org.jooq.ResultQuery} */
+    static final ClassName RESULT_QUERY     = ClassName.get("org.jooq", "ResultQuery");
     /** {@code org.jooq.Condition} */
     static final ClassName CONDITION        = ClassName.get("org.jooq", "Condition");
     /** {@code org.jooq.SortField} */

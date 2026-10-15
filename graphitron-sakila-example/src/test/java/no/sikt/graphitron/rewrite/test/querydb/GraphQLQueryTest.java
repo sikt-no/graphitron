@@ -8037,30 +8037,7 @@ class GraphQLQueryTest {
         }
     }
 
-    // ===== no-set-fields-present runtime check, single-row analogues =====
-
-    @Test
-    void updateFilm_onlyLookupKeyFields_raisesError() {
-        // Single-row analogue of updateFilms_onlyLookupKeyFields_raisesError. The dynamic
-        // SET walk gates each cf in tia.setFields() on in.containsKey(name); when the input
-        // carries only the @lookupKey field, sets is empty and the no-set-fields-present
-        // runtime check throws IllegalArgumentException before any SQL dispatch.
-        var filmTable = org.jooq.impl.DSL.table("film");
-        var filmIdCol = org.jooq.impl.DSL.field("film_id", Integer.class);
-        Integer filmId = dsl.insertInto(filmTable)
-            .set(org.jooq.impl.DSL.field("title"), "R77-PHASE-F-UPD-LK-" + java.util.UUID.randomUUID())
-            .set(org.jooq.impl.DSL.field("language_id"), (short) 1)
-            .returningResult(filmIdCol).fetchOne().value1();
-        try {
-            graphql.ExecutionResult result = executeRaw(
-                "mutation { updateFilm(in: { filmId: " + filmId + " }) { filmId } }");
-            assertThat(result.getErrors())
-                .as("no-set-fields-present guard surfaces via the routed error envelope")
-                .isNotEmpty();
-        } finally {
-            dsl.deleteFrom(filmTable).where(filmIdCol.eq(filmId)).execute();
-        }
-    }
+    // ===== UPSERT no-set-fields-present runtime check, single-row analogue =====
 
     @Test
     @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")

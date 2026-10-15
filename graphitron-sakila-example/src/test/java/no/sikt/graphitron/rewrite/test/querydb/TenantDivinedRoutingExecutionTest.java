@@ -1232,6 +1232,51 @@ class TenantDivinedRoutingExecutionTest {
         }
     }
 
+    // ===== An empty patch (only the key sent) reads the row back on the tenant the key names =====
+
+    /** A tenant-2 row's version: {@code xmin} moves on any UPDATE, so an unchanged one means no write. */
+    private static String tenant2RowVersion(String table, String where) {
+        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            return t2.fetchValue("select xmin::text from " + table + " where " + where).toString();
+        }
+    }
+
+    @Test
+    void updateEmptyPatch_readsTheRowBackOnTheDivinedTenant() {
+        String version = tenant2RowVersion("film", "film_id = 2");
+        var result = execute("mutation { updateFilmByNodeId(in: { id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\" }) { title } }");
+        assertThat((Map<String, Object>) data(result, "updateFilmByNodeId"))
+            .as("the row is echoed from the tenant its key names").containsEntry("title", "Tenant Two Film");
+        assertThat(TENANT_2_OPENED.get()).as("the key read ran on the divined tenant").isPositive();
+        assertThat(TENANT_1_OPENED.get()).as("the other tenant's database is never opened").isZero();
+        assertThat(tenant2RowVersion("film", "film_id = 2")).as("no UPDATE touched the row").isEqualTo(version);
+    }
+
+    @Test
+    void updateEmptyPatch_encodedReturn_echoesTheIdOnTheDivinedTenant() {
+        String id = NodeIdEncoder.encodeFilmActorNote(20, 2, "nob");
+        String version = tenant2RowVersion("film_actor_note", "actor_id = 20");
+        var result = execute("mutation { updateFilmActorNoteByNodeId(in: { id: \"" + id + "\" }) }");
+        assertThat(data(result, "updateFilmActorNoteByNodeId")).isEqualTo(id);
+        assertThat(TENANT_1_OPENED.get()).isZero();
+        assertThat(tenant2RowVersion("film_actor_note", "actor_id = 20")).isEqualTo(version);
+    }
+
+    @Test
+    void bulkUpdateEmptyPatch_encodedReturn_echoesEveryIdThroughTheValuesJoin() {
+        String scene2 = NodeIdEncoder.encodeFilmScene(2, 2);
+        String scene3 = NodeIdEncoder.encodeFilmScene(2, 3);
+        String version2 = tenant2RowVersion("film_scene", "film_id = 2 and scene_no = 2");
+        String version3 = tenant2RowVersion("film_scene", "film_id = 2 and scene_no = 3");
+        var result = execute("mutation { updateFilmSceneParents(in: ["
+            + "{ id: \"" + scene2 + "\" }, { id: \"" + scene3 + "\" }]) }");
+        assertThat((List<Object>) data(result, "updateFilmSceneParents")).containsExactlyInAnyOrder(scene2, scene3);
+        assertThat(TENANT_1_OPENED.get()).isZero();
+        assertThat(tenant2RowVersion("film_scene", "film_id = 2 and scene_no = 2")).isEqualTo(version2);
+        assertThat(tenant2RowVersion("film_scene", "film_id = 2 and scene_no = 3")).isEqualTo(version3);
+    }
+
     @Test
     void insertWithFkTargetNodeIdReference_routesOnTheLiftedColumn() {
         var result = execute("mutation { createInventoryByFilmRef(in: { filmRef: \""

@@ -149,27 +149,34 @@ class NestedInputDmlExecutionTest {
     }
 
     @Test
-    void updateNested_absentOuterGroup_skipsWholeGroup_emptySetGuardFires() {
-        int id = insertFilm("R186-empty-" + UUID.randomUUID(), "desc");
+    void updateNested_absentOuterGroup_skipsWholeGroup_isEmptyPatch() {
+        String title = "R186-empty-" + UUID.randomUUID();
+        int id = insertFilm(title, "desc");
         try {
-            // Outer key absent → no claim about the group → no settable fields → runtime empty-SET guard.
-            executeExpectingError("""
-                mutation { updateFilmNested(in: { filmId: %d }) { filmId } }
+            // Outer key absent → no claim about the group → no settable fields → empty patch: the
+            // row is read back by key and echoed, nothing is written.
+            Map<String, Object> data = execute("""
+                mutation { updateFilmNested(in: { filmId: %d }) { filmId title } }
                 """.formatted(id));
-            assertThat(dbDescription(id)).as("a guarded no-op writes nothing").isEqualTo("desc");
+            var film = (Map<String, Object>) data.get("updateFilmNested");
+            assertThat(film).containsEntry("filmId", id).containsEntry("title", title);
+            assertThat(dbDescription(id)).as("an empty patch writes nothing").isEqualTo("desc");
         } finally {
             deleteFilm(id);
         }
     }
 
     @Test
-    void updateNested_nullOuterGroup_skipsWholeGroup_emptySetGuardFires() {
-        int id = insertFilm("R186-null-" + UUID.randomUUID(), "desc");
+    void updateNested_nullOuterGroup_skipsWholeGroup_isEmptyPatch() {
+        String title = "R186-null-" + UUID.randomUUID();
+        int id = insertFilm(title, "desc");
         try {
-            // Outer key present with null value → no claim about the group (reading 1) → empty-SET guard.
-            executeExpectingError("""
-                mutation { updateFilmNested(in: { filmId: %d, details: null }) { filmId } }
+            // Outer key present with null value → no claim about the group (reading 1) → empty patch.
+            Map<String, Object> data = execute("""
+                mutation { updateFilmNested(in: { filmId: %d, details: null }) { filmId title } }
                 """.formatted(id));
+            var film = (Map<String, Object>) data.get("updateFilmNested");
+            assertThat(film).containsEntry("filmId", id).containsEntry("title", title);
             assertThat(dbDescription(id)).as("a present-null outer group writes nothing").isEqualTo("desc");
         } finally {
             deleteFilm(id);

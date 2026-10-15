@@ -2393,7 +2393,7 @@ public class TypeFetcherGenerator {
 
         return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(),
+            outputPackage, new KeyStatement.Chain(dmlChain.build()),
             f.dialectRequirement(), postInGuard.build(), inputArg.list(), row, carrierDsl);
     }
 
@@ -2425,7 +2425,7 @@ public class TypeFetcherGenerator {
 
         return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, values.chain(),
+            outputPackage, new KeyStatement.Chain(values.chain()),
             f.dialectRequirement(), values.prep(), tia.list(), row, carrierDsl);
     }
 
@@ -3753,9 +3753,9 @@ public class TypeFetcherGenerator {
      * emitters, this one does <em>not</em> skip a cross-partition column (one shared with the WHERE key,
      * the self-FK case): {@code v.field(t.col)} resolves to the lookup-key v-column the WHERE side added,
      * so the put is a no-op set of the column to its own joined value — matching the single-row SET-map
-     * semantics and keeping {@code sets} non-empty so the empty-SET runtime guard does not fire on a valid
-     * self-FK input. Do not "tidy up" this put; removing it reintroduces the empty-SET throw on the
-     * minimal self-FK shape.
+     * semantics and keeping {@code sets} non-empty so a valid self-FK input is not read as an empty
+     * patch. Do not "tidy up" this put; removing it turns the minimal self-FK shape into a silent
+     * key read that writes nothing, so a client's reference change would be dropped without an error.
      */
     private static void emitSetVFieldPuts(
             CodeBlock.Builder block,
@@ -3879,7 +3879,9 @@ public class TypeFetcherGenerator {
      * projection is non-empty. WHERE clause is the {@code @lookupKey} fieldBindings, chained
      * with {@code .and(...)} via the shared {@link #buildLookupWhereSingleRow} helper. Empty-match
      * semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause matches no
-     * row, same as DELETE.
+     * row, same as DELETE. A request whose SET map comes out empty is an empty patch: it runs
+     * the key read ({@link KeyStatement.KeyedUpdate}) instead of the UPDATE, with the same
+     * empty-match semantics.
      */
     private static MethodSpec buildMutationUpdateFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
                                                           OperationMember.Write.Update w,
@@ -3926,40 +3928,32 @@ public class TypeFetcherGenerator {
             w.updateRows().agreementObligations(), "in", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(postInGuard, setGroups, setNullRules, "sets", "in", "in",
             "setKey", tablesOnly, tableRef);
-        // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
-        // but a caller may omit every set-field value (sending only key columns); fail with a
-        // friendly message rather than letting jOOQ reject an empty SET map.
-        postInGuard.beginControlFlow("if (sets.isEmpty())")
-            .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                "@mutation(typeName: UPDATE) call has no settable fields present; "
-                    + "only key fields were provided")
-            .endControlFlow();
 
+        // An empty `sets` (the caller sent only key fields) is an empty patch: the statement
+        // renders as the key read over the same WHERE instead of the UPDATE.
         var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in");
         postInGuard.add(whereChunk.decodeLocals());
-        var dmlChain = CodeBlock.builder()
-            .add(".update($L)\n", tableLocal)
-            .add(".set(sets)\n")
-            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
-            .build();
+        var statement = new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr());
 
         return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, f.dialectRequirement(), postInGuard.build(), inputArg.list(),
+            outputPackage, statement, f.dialectRequirement(), postInGuard.build(), inputArg.list(),
             row, carrierDsl);
     }
 
     /**
      * Bulk UPDATE: emits a Postgres-only {@code UPDATE t SET c = v.c FROM (VALUES …) AS v(k, c…)
-     * WHERE t.k = v.k} statement. Three guards ride {@code postInGuard}:
+     * WHERE t.k = v.k} statement. Two guards ride {@code postInGuard}:
      * <ol>
-     *   <li><b>Uniform-shape</b> — every row's {@code keySet()} must equal the first row's;
+     *   <li><b>Uniform-shape</b>: every row's {@code keySet()} must equal the first row's;
      *       a divergent row would need its own SET clause, which one statement can't carry.</li>
-     *   <li><b>No-set-fields-present</b> — at least one {@code tia.setFields()} entry must be
-     *       in {@code firstKeys}; otherwise {@code SET} would be empty and jOOQ rejects.</li>
-     *   <li><b>Duplicate-lookup-key</b> — distinct lookup-key tuples per row, otherwise
+     *   <li><b>Duplicate-lookup-key</b>: distinct lookup-key tuples per row, otherwise
      *       Postgres' implementation-defined join silently drops one row's data.</li>
      * </ol>
+     * Because of the uniform-shape guard, a SET map with no entry means every row is an empty
+     * patch; the statement is then the key read {@code SELECT k FROM t JOIN (VALUES …) v ON t.k =
+     * v.k} ({@link KeyStatement.ValuesJoinUpdate}), which returns each matched row once as the
+     * UPDATE's {@code RETURNING} would.
      * A separate typed {@link DialectRequirement.RequiresFamily}({@code POSTGRES}) on the model
      * rejects non-Postgres dialects: only Postgres speaks the {@code UPDATE … FROM (VALUES …)} form
      * jOOQ renders here; {@link #emitDialectGuard} renders it.
@@ -4050,11 +4044,6 @@ public class TypeFetcherGenerator {
         // .set(Map<? extends Field<?>, ?>) call site.
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
         emitSetVFieldPuts(postInGuard, setGroups, tablesOnly, tableRef);
-        postInGuard.beginControlFlow("if (sets.isEmpty())")
-            .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                "@mutation(typeName: UPDATE) bulk call has no settable fields present in the input rows; "
-                    + "only key fields were provided")
-            .endControlFlow();
 
         // Duplicate-lookup-key guard: build a HashSet<List<Object>> over the per-row lookup-key
         // tuples; throw when set size differs from row count. The tuple identity comes from the
@@ -4105,16 +4094,13 @@ public class TypeFetcherGenerator {
             if (i > 0) whereExpr.add(")");
         }
 
-        var dmlChain = CodeBlock.builder()
-            .add(".update($L)\n", tableLocal)
-            .add(".set(sets)\n")
-            .add(".from(v)\n")
-            .add(".where(").add(whereExpr.build()).add(")\n")
-            .build();
+        // The uniform-shape guard means an empty `sets` is every row's empty patch: the statement
+        // renders as the key read joined to the same VALUES table instead of the UPDATE.
+        var statement = new KeyStatement.ValuesJoinUpdate(tableLocal, "v", whereExpr.build());
 
         return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             inputArg.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain, f.dialectRequirement(), postInGuard.build(), inputArg.list(),
+            outputPackage, statement, f.dialectRequirement(), postInGuard.build(), inputArg.list(),
             row, carrierDsl);
     }
 
@@ -4210,7 +4196,7 @@ public class TypeFetcherGenerator {
         // them all).
         return buildDmlFetcher(ctx, f, f.returnExpression(), f.errorChannel(),
             tia.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, dmlChain.build(), f.dialectRequirement(), postInGuard.build(), tia.list(),
+            outputPackage, new KeyStatement.Chain(dmlChain.build()), f.dialectRequirement(), postInGuard.build(), tia.list(),
             row, carrierDsl);
     }
 
@@ -4673,8 +4659,8 @@ public class TypeFetcherGenerator {
 
     /**
      * Common DML fetcher skeleton shared across the DML verbs. Wraps the verb-specific
-     * {@code dmlChain} (e.g. {@code .deleteFrom(...).where(...)} or
-     * {@code .insertInto(...).values(...)}) in the standard try/catch + {@code returnSyncSuccess}
+     * {@link KeyStatement} (e.g. {@code .deleteFrom(...).where(...)},
+     * {@code .insertInto(...).values(...)}, or an UPDATE with its empty-patch read) in the standard try/catch + {@code returnSyncSuccess}
      * envelope, then dispatches the {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression}
      * arm to the shared projection-terminator helper. Single point of contact for the
      * try/catch wrapper, the {@code env.getArgument} cast, and the {@code dsl} chain start.
@@ -4689,13 +4675,13 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             String outputPackage,
-            CodeBlock dmlChain,
+            KeyStatement statement,
             DialectRequirement dialectRequirement,
             boolean listInput,
             no.sikt.graphitron.command.LauncherCommand row,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         return buildDmlFetcher(ctx, field, rex, errorChannel, inputArgName, tableRef,
-            tablesOnly, tableLocal, outputPackage, dmlChain,
+            tablesOnly, tableLocal, outputPackage, statement,
             dialectRequirement, /*postInGuard=*/ CodeBlock.of(""), listInput, row, carrierDsl);
     }
 
@@ -4714,8 +4700,9 @@ public class TypeFetcherGenerator {
      *   <li>{@code postInGuard} — emitted immediately after the {@code in} cast and before
      *       {@code tableLocal} is bound (and after the empty-list short-circuit when
      *       {@code listInput}). Used by UPDATE / UPSERT to build the dynamic SET map from the
-     *       present-key set and run the no-set-fields-present runtime check, and by bulk UPDATE
-     *       to run the uniform-shape and duplicate-lookup-key guards before chain construction.</li>
+     *       present-key set (UPDATE reads an empty map as an empty patch, see
+     *       {@link KeyStatement}), and by bulk UPDATE to run the uniform-shape and
+     *       duplicate-lookup-key guards before chain construction.</li>
      *   <li>{@code listInput} — when {@code true}, the {@code in} cast lifts to
      *       {@code List<Map<?,?>>} and an empty-list short-circuit is emitted between the cast
      *       and {@code postInGuard}, returning a typed empty {@link DataFetcherResult} without
@@ -4734,7 +4721,7 @@ public class TypeFetcherGenerator {
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             String outputPackage,
-            CodeBlock dmlChain,
+            KeyStatement statement,
             DialectRequirement dialectRequirement,
             CodeBlock postInGuard,
             boolean listInput,
@@ -4786,7 +4773,7 @@ public class TypeFetcherGenerator {
             tablesOnly.tablesClass(), tableRef.javaFieldName());
 
         builder.addCode(emitDmlReturnExpression(ctx, field, rex, row, carrierDsl, valueType,
-            tableRef, tablesOnly, outputPackage, dmlChain));
+            tableRef, tablesOnly, outputPackage, statement));
         builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(catchArm(outputPackage, errorChannel));
@@ -4829,9 +4816,9 @@ public class TypeFetcherGenerator {
     /**
      * Emits the projection terminator and the {@code payload} local declaration, dispatched on
      * the pre-resolved {@link no.sikt.graphitron.rewrite.model.DmlReturnExpression} arm. Verb-
-     * neutral: takes a pre-built {@code dmlChain} (e.g. {@code .deleteFrom(filmTable).where(...)}
-     * or {@code .insertInto(filmTable, cols...).values(...)}) and appends
-     * {@code .returningResult(...).fetchOne(...)}. The {@code Projected*} / {@code Discriminated*}
+     * neutral: takes a pre-built {@link KeyStatement} (e.g. {@code .deleteFrom(filmTable).where(...)}
+     * or {@code .insertInto(filmTable, cols...).values(...)}) and fetches its key rows with
+     * {@code .fetchOne(...)} or {@code .fetch(...)}. The {@code Projected*} / {@code Discriminated*}
      * arms converge on {@link #emitReentry}: the write halves are identical, and the follow-up
      * SELECT's fork now lives in the launcher row's source arm.
      */
@@ -4845,20 +4832,20 @@ public class TypeFetcherGenerator {
             TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
             String outputPackage,
-            CodeBlock dmlChain) {
+            KeyStatement statement) {
         return switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es ->
-                emitEncoded(es.encode(), valueType, tableRef, tablesOnly, dmlChain, /*isList=*/ false);
+                emitEncoded(es.encode(), valueType, tableRef, tablesOnly, statement, /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
-                emitEncoded(el.encode(), valueType, tableRef, tablesOnly, dmlChain, /*isList=*/ true);
+                emitEncoded(el.encode(), valueType, tableRef, tablesOnly, statement, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ignored ->
-                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, dmlChain);
+                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, statement);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList ignored ->
-                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, dmlChain);
+                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, statement);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedSingle ignored ->
-                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, dmlChain);
+                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, statement);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.DiscriminatedList ignored ->
-                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, dmlChain);
+                emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, statement);
         };
     }
 
@@ -4866,20 +4853,18 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.rewrite.model.HelperRef.Encode encode,
             TypeName valueType, TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
-            CodeBlock dmlChain, boolean isList) {
+            KeyStatement statement, boolean isList) {
         // ID return: project the NodeType's key columns and call the per-type encoder helper
         // resolved by the classifier (encode<TypeName>(v0, v1, ...)). The typeId is baked into
         // the method name; no generic encode(typeId, ...) call is emitted from the rewrite.
         var keyCols = encode.paramSignature();
-        var body = CodeBlock.builder()
-            .add("$T payload = dsl\n", valueType).indent()
-            .add(dmlChain)
-            .add(".returningResult(");
+        var keyFields = CodeBlock.builder();
         for (int i = 0; i < keyCols.size(); i++) {
-            if (i > 0) body.add(", ");
-            body.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
+            if (i > 0) keyFields.add(", ");
+            keyFields.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
         }
-        body.add(")\n");
+        var keyRecordType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+            new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), keyCols);
 
         var lambda = CodeBlock.builder().add("r -> $T.$L(", encode.encoderClass(), encode.methodName());
         for (int i = 0; i < keyCols.size(); i++) {
@@ -4888,8 +4873,9 @@ public class TypeFetcherGenerator {
             lambda.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
         }
         lambda.add(")");
-        body.add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(");\n").unindent();
-        return body.build();
+        var fetch = CodeBlock.builder().add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(")").build();
+        return renderKeyFetch(statement, CodeBlock.of("$T payload = ", valueType), CodeBlock.of("dsl"),
+            keyFields.build(), keyRecordType, fetch);
     }
 
     /**
@@ -4920,7 +4906,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.command.CarrierDsl carrierDsl,
             TypeName valueType,
             String outputPackage,
-            CodeBlock dmlChain) {
+            KeyStatement statement) {
         if (row == null) {
             throw new IllegalStateException(
                 "Graphitron generator bug (DML reentry): coordinate '" + field.qualifiedName()
@@ -4938,7 +4924,7 @@ public class TypeFetcherGenerator {
             ctx.argPathHelpers(), ctx.projectedKeyHost()));
 
         var body = CodeBlock.builder()
-            .add(emitKeysTransaction(reentry.correlation(), dmlChain, isList));
+            .add(emitKeysTransaction(reentry.correlation(), statement, isList));
 
         if (!isList) {
             // Single-row UPDATE / DELETE with no match: keys is null. Skip the follow-up SELECT
@@ -4952,16 +4938,16 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Step 1 of the two-step DML re-projection ({@link #emitReentry}): runs the {@code dmlChain}
-     * inside {@code dsl.transactionResult(...)} with a {@code RETURNING} clause over the
+     * Step 1 of the two-step DML re-projection ({@link #emitReentry}): runs the {@code statement}
+     * inside {@code dsl.transactionResult(...)} returning the
      * reentry correlation's columns and declares a {@code keys} local holding the committed
      * keys ({@code RecordN<...>} for single, {@code Result<RecordN<...>>} for list). Requires
-     * {@code dsl} in scope; the caller supplies the verb-specific {@code dmlChain}. The column
+     * {@code dsl} in scope; the caller supplies the verb-specific {@code statement}. The column
      * list and the companion's keys parameter derive from the one correlation fact.
      */
     private static CodeBlock emitKeysTransaction(
             ParentCorrelation.OnLiftedSlots correlation,
-            CodeBlock dmlChain, boolean isList) {
+            KeyStatement statement, boolean isList) {
         var keyCols = correlation.columns();
         var owner = correlation.targetTable();
         var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
@@ -4970,18 +4956,14 @@ public class TypeFetcherGenerator {
             ? ParameterizedTypeName.get(RESULT, keyRowType)
             : keyRowType;
 
-        var body = CodeBlock.builder()
-            .add("$T keys = dsl.transactionResult(tx -> $T.using(tx)\n", keysType, DSL).indent()
-            .add(dmlChain)
-            .add(".returningResult(");
+        var keyFields = CodeBlock.builder();
         for (int i = 0; i < keyCols.size(); i++) {
-            if (i > 0) body.add(", ");
+            if (i > 0) keyFields.add(", ");
             var col = keyCols.get(i);
-            body.add("$T.$L.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
+            keyFields.add("$T.$L.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
         }
-        body.add(")\n")
-            .add(isList ? ".fetch());\n" : ".fetchOne());\n").unindent();
-        return body.build();
+        return renderTransactionalKeyFetch(statement, keysType, "keys", keyFields.build(), keyRowType,
+            isList ? ".fetch()" : ".fetchOne()");
     }
 
     /**
@@ -5388,17 +5370,8 @@ public class TypeFetcherGenerator {
         var chainAndGuards = chainFn.apply(tablesOnly, tableLocal);
         builder.addCode(chainAndGuards.preGuard());
 
-        var dmlEmit = CodeBlock.builder()
-            .add("$T payload = dsl.transactionResult(tx -> $T.using(tx)\n", payloadType, DSL).indent()
-            .add(chainAndGuards.chain())
-            .add(".returningResult(");
-        for (int i = 0; i < pkCols.size(); i++) {
-            if (i > 0) dmlEmit.add(", ");
-            dmlEmit.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), pkCols.get(i).javaName());
-        }
-        dmlEmit.add(")\n")
-            .add(".fetchOne());\n").unindent();
-        builder.addCode(dmlEmit.build());
+        builder.addCode(renderTransactionalKeyFetch(chainAndGuards.statement(), payloadType, "payload",
+            buildPkFieldList(pkCols, tablesOnly, tableRef), payloadType, ".fetchOne()"));
 
         if (wrap) {
             builder.addCode(CodeBlock.builder().add("if (payload == null) ")
@@ -5478,9 +5451,10 @@ public class TypeFetcherGenerator {
  * The carrier-driven single-row UPDATE chain for the payload-returning UPDATE fetcher.
      * Mirrors {@link #buildMutationUpdateFetcher}'s single-row body (the direct-return path): a
      * dynamic SET map built from the carrier's {@code setColumns()} so absent fields drop out
-     * (PATCH semantics), a runtime empty-SET guard, and the lookup-WHERE built from the carrier's
-     * {@code keyColumns()}. The enclosing {@link #buildSingleRecordTwoStepFetcher} appends
-     * {@code .returningResult(pkCols).fetchOne()} inside {@code transactionResult}.
+     * (PATCH semantics), and the lookup-WHERE built from the carrier's {@code keyColumns()}. An
+     * empty SET map is an empty patch, read back by key instead of updated
+     * ({@link KeyStatement.KeyedUpdate}). The enclosing {@link #buildSingleRecordTwoStepFetcher}
+     * fetches the PK columns with {@code .fetchOne()} inside {@code transactionResult}.
      */
     private static DmlChainAndGuards buildCarrierUpdateChainSingle(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
@@ -5498,26 +5472,121 @@ public class TypeFetcherGenerator {
         emitKeySetAgreementPreamble(preGuard, keySetGroups, setGroups, agreementObligations,
             "in", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(preGuard, setGroups, setNullRules, "sets", "in", "in", "setKey", tablesOnly, tableRef);
-        // Runtime PATCH guard: the carrier guarantees the schema has at least one settable column,
-        // but a caller may omit every set-field value (sending only key columns); fail with a
-        // friendly message rather than letting jOOQ reject an empty SET map.
-        preGuard.beginControlFlow("if (sets.isEmpty())")
-            .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                "@mutation(typeName: UPDATE) call has no settable fields present; "
-                    + "only key fields were provided")
-            .endControlFlow();
         var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "in");
         preGuard.add(whereChunk.decodeLocals());
-        var chain = CodeBlock.builder()
-            .add(".update($L)\n", tableLocal)
-            .add(".set(sets)\n")
-            .add(".where(").add(whereChunk.whereExpr()).add(")\n")
-            .build();
-        return new DmlChainAndGuards(chain, preGuard.build());
+        return new DmlChainAndGuards(new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr()),
+            preGuard.build());
     }
 
-    /** Pair: the DML chain (everything from {@code .insertInto(...)} through {@code .doUpdate()....}) plus any pre-DML guard statements (e.g. dynamic SET-map construction). */
-    private record DmlChainAndGuards(CodeBlock chain, CodeBlock preGuard) {}
+    /** Pair: the key-returning DML statement plus any pre-DML guard statements (e.g. dynamic SET-map construction). */
+    private record DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard) {}
+
+    /**
+     * The DML statement a terminator fetches its key rows from, before the terminator supplies the
+     * receiver ({@code dsl}, {@code DSL.using(tx)}, {@code txd}) and the key column list. One record
+     * per render shape, rendered by {@link #renderKeyFetch} and {@link #renderTransactionalKeyFetch}.
+     *
+     * <p>The two UPDATE shapes carry an empty patch: when the row's {@code sets} map is empty the
+     * statement is the key read over the same table and the same predicate, so the row is read
+     * back without a write, and every terminator's no-match outcome holds unchanged because both
+     * branches answer the same {@code RecordN} shape.
+     */
+    private sealed interface KeyStatement {
+
+        /** A verb with no empty-patch read (INSERT, DELETE, UPSERT): the chain plus {@code .returningResult(K)}. */
+        record Chain(CodeBlock chain) implements KeyStatement {}
+
+        /** Keyed UPDATE: {@code update(t).set(sets).where(W)}, read as {@code select(K).from(t).where(W)}. */
+        record KeyedUpdate(String tableLocal, CodeBlock where) implements KeyStatement {}
+
+        /**
+         * VALUES-join UPDATE: {@code update(t).set(sets).from(v).where(W)}, read as
+         * {@code select(K).from(t).join(v).on(W)}.
+         */
+        record ValuesJoinUpdate(String tableLocal, String valuesLocal, CodeBlock where) implements KeyStatement {}
+    }
+
+    /**
+     * Renders the statements that fetch {@code statement}'s key rows: {@code lead} opens the
+     * consuming statement (for example {@code "Record1<Integer> rec = "}), {@code receiver} is the
+     * {@code DSLContext} expression, {@code fetch} the fetch call that closes it. A {@link
+     * KeyStatement.Chain} renders as one expression statement; the UPDATE shapes assign a typed
+     * {@code ResultQuery} local in an {@code if} / {@code else} on {@code sets.isEmpty()} and fetch
+     * from the local, statement form so either branch can be breakpointed.
+     */
+    private static CodeBlock renderKeyFetch(KeyStatement statement, CodeBlock lead, CodeBlock receiver,
+            CodeBlock keyFields, TypeName keyRecordType, CodeBlock fetch) {
+        return switch (statement) {
+            case KeyStatement.Chain c -> CodeBlock.builder()
+                .add(lead).add(receiver).add("\n").indent()
+                .add(c.chain())
+                .add(".returningResult(").add(keyFields).add(")\n")
+                .add(fetch).add(";\n").unindent()
+                .build();
+            case KeyStatement.KeyedUpdate u -> emptyPatchBranch(lead, receiver, keyRecordType, fetch,
+                CodeBlock.builder()
+                    .add(".select(").add(keyFields).add(")\n")
+                    .add(".from($L)\n", u.tableLocal())
+                    .add(".where(").add(u.where()).add(")")
+                    .build(),
+                CodeBlock.builder()
+                    .add(".update($L)\n", u.tableLocal())
+                    .add(".set(sets)\n")
+                    .add(".where(").add(u.where()).add(")\n")
+                    .add(".returningResult(").add(keyFields).add(")")
+                    .build());
+            case KeyStatement.ValuesJoinUpdate u -> emptyPatchBranch(lead, receiver, keyRecordType, fetch,
+                CodeBlock.builder()
+                    .add(".select(").add(keyFields).add(")\n")
+                    .add(".from($L)\n", u.tableLocal())
+                    .add(".join($L)\n", u.valuesLocal())
+                    .add(".on(").add(u.where()).add(")")
+                    .build(),
+                CodeBlock.builder()
+                    .add(".update($L)\n", u.tableLocal())
+                    .add(".set(sets)\n")
+                    .add(".from($L)\n", u.valuesLocal())
+                    .add(".where(").add(u.where()).add(")\n")
+                    .add(".returningResult(").add(keyFields).add(")")
+                    .build());
+        };
+    }
+
+    private static CodeBlock emptyPatchBranch(CodeBlock lead, CodeBlock receiver, TypeName keyRecordType,
+            CodeBlock fetch, CodeBlock read, CodeBlock write) {
+        return CodeBlock.builder()
+            .addStatement("$T<$T> statement", RESULT_QUERY, keyRecordType)
+            .beginControlFlow("if (sets.isEmpty())")
+            .add("statement = ").add(receiver)
+            .add("$>$>").add(read).add(";\n$<$<")
+            .nextControlFlow("else")
+            .add("statement = ").add(receiver)
+            .add("$>$>").add(write).add(";\n$<$<")
+            .endControlFlow()
+            .add(lead).add("statement").add(fetch).add(";\n")
+            .build();
+    }
+
+    /**
+     * Renders {@code statement} inside {@code dsl.transactionResult(...)}, declaring {@code local}
+     * of {@code resultType} from the committed keys. A {@link KeyStatement.Chain} keeps the
+     * expression lambda; the UPDATE shapes take a block lambda to hold the statement local.
+     */
+    private static CodeBlock renderTransactionalKeyFetch(KeyStatement statement, TypeName resultType,
+            String local, CodeBlock keyFields, TypeName keyRecordType, String fetch) {
+        var receiver = CodeBlock.of("$T.using(tx)", DSL);
+        return switch (statement) {
+            case KeyStatement.Chain c -> renderKeyFetch(c,
+                CodeBlock.of("$T $L = dsl.transactionResult(tx -> ", resultType, local), receiver,
+                keyFields, keyRecordType, CodeBlock.of("$L)", fetch));
+            case KeyStatement.KeyedUpdate _, KeyStatement.ValuesJoinUpdate _ -> CodeBlock.builder()
+                .add("$T $L = dsl.transactionResult(tx -> {\n", resultType, local).indent()
+                .add(renderKeyFetch(statement, CodeBlock.of("return "), receiver,
+                    keyFields, keyRecordType, CodeBlock.of(fetch)))
+                .unindent().add("});\n")
+                .build();
+        };
+    }
 
     private static DmlChainAndGuards buildDmlChainForRecord(
             OperationMember.Write.Dml write,
@@ -5557,7 +5626,7 @@ public class TypeFetcherGenerator {
             .add(".deleteFrom($L)\n", tableLocal)
             .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
-        return new DmlChainAndGuards(chain, preGuard.build());
+        return new DmlChainAndGuards(new KeyStatement.Chain(chain), preGuard.build());
     }
 
     private static DmlChainAndGuards buildRecordInsertChain(
@@ -5566,7 +5635,7 @@ public class TypeFetcherGenerator {
         var values = tia.list()
             ? buildBulkInsertValues(tia.fields(), tableLocal, tablesOnly, tableRef)
             : buildSingleRowInsertValues(tia.fields(), "in", tableLocal, tablesOnly, tableRef);
-        return new DmlChainAndGuards(values.chain(), values.prep());
+        return new DmlChainAndGuards(new KeyStatement.Chain(values.chain()), values.prep());
     }
 
     private static DmlChainAndGuards buildRecordUpsertChain(
@@ -5609,7 +5678,7 @@ public class TypeFetcherGenerator {
         } else {
             chain.add(".doNothing()\n");
         }
-        return new DmlChainAndGuards(chain.build(), preGuard.build());
+        return new DmlChainAndGuards(new KeyStatement.Chain(chain.build()), preGuard.build());
     }
 
     /**
@@ -5788,7 +5857,9 @@ public class TypeFetcherGenerator {
  * The carrier-driven per-row UPDATE body for the bulk payload-returning UPDATE: a dynamic
      * SET map from the carrier's {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from
      * the carrier's {@code keyColumns()} ({@link #keyGroupsOf}); no {@code @value}-derived
-     * {@code tia} read. The no-match throw preserves the order-preservation invariant.
+     * {@code tia} read. A row whose SET map is empty is an empty patch and runs the key read in
+     * place of its UPDATE ({@link KeyStatement.KeyedUpdate}). The no-match throw, which covers both,
+     * preserves the order-preservation invariant.
      */
     private static CodeBlock buildCarrierBulkPerRowUpdateBody(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
@@ -5806,18 +5877,13 @@ public class TypeFetcherGenerator {
         emitKeySetAgreementPreamble(body, keySetGroups, setGroups, agreementObligations,
             "row", "keySet", tablesOnly, tableRef);
         emitSetMapPuts(body, setGroups, setNullRules, "sets", "row", "row", "setKey", tablesOnly, tableRef);
-        body.beginControlFlow("if (sets.isEmpty())")
-            .addStatement("throw new $T($S)", IllegalArgumentException.class,
-                "@mutation(typeName: UPDATE) call has no settable fields present; "
-                    + "only key fields were provided")
-            .endControlFlow();
+        // Each row decides on its own: a row whose `sets` is empty is an empty patch and runs the
+        // key read in place of its UPDATE, so mixed batches keep input order and per-row no-match.
         var whereChunk = buildLookupWhereSingleRow(keyGroups, tablesOnly, tableRef, "row");
         body.add(whereChunk.decodeLocals());
-        body.add("$T rec = txd.update($L)\n", recordRowType, tableLocal)
-            .add("    .set(sets)\n")
-            .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
-            .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
-            .add("    .fetchOne();\n");
+        body.add(renderKeyFetch(new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr()),
+            CodeBlock.of("$T rec = ", recordRowType), CodeBlock.of("txd"),
+            buildPkFieldList(pkCols, tablesOnly, tableRef), recordRowType, CodeBlock.of(".fetchOne()")));
         // UPDATE no-match preserves the order-preservation invariant by failing fast rather than
         // skewing acc.size() against in.size() with a silent skip; the catch arm routes the
         // exception through the carrier's error channel.

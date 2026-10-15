@@ -552,8 +552,6 @@ class FetcherPipelineTest {
             .as("SET map references v.field(t.col), not bound values directly")
             .contains("sets.put(")
             .contains("v.field(")
-            .as("no-set-fields-present runtime check")
-            .contains("if (sets.isEmpty())")
             .as("duplicate-lookup-key guard via HashSet<List<Object>>")
             .contains("seenKeys")
             .contains("java.util.List.of(row.get(\"filmId\"))")
@@ -609,10 +607,7 @@ class FetcherPipelineTest {
             .contains("if (in.containsKey(\"title\"))")
             .contains("if (in.containsKey(\"description\"))")
             .contains("sets.put(")
-            .contains("org.jooq.impl.DSL.val(in.get(")
-            .as("no-set-fields-present runtime check")
-            .contains("if (sets.isEmpty())")
-            .contains("@mutation(typeName: UPDATE) call has no settable fields present");
+            .contains("org.jooq.impl.DSL.val(in.get(");
     }
 
     // ===== single-table discriminated interface as a DML return =====
