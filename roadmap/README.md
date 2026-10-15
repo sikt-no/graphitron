@@ -29,9 +29,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | Ready | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
 | `R1046` | An @error-channel fetcher redacts a GraphitronClientException no mapping claims, where a channel-less fetcher surfaces it | In Progress | 2026-10-15 | [plan](error-channel-unmatched-client-error-is-redacted.md) |
+| `R1039` | An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode | In Progress | 2026-10-15 | [plan](nodeid-explicit-null-on-dml-inputs.md) |
 | `R1048` | Consumers choose how an unmatched fetcher exception is logged, and the zero-row guard keeps input values out of its message | In Progress | 2026-10-15 | [plan](unmatched-fetcher-exception-logging-hook.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -558,7 +558,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### mutation-write
 
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
-- `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — Ready, bug
+- `R1039` [**An explicit null on a nullable @nodeId input field writes NULL instead of failing the DML decode**](nodeid-explicit-null-on-dml-inputs.md) — In Progress, bug
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug
 - `R882` [**A nullable input field can be the sole supplier of a matched-key column on UPDATE, and an omitted value then has no diagnostic**](nullable-carrier-as-sole-row-identity.md) — Backlog, validation
