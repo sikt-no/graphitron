@@ -1858,6 +1858,28 @@ against its own corpus, filed here because the walk's fixtures were.
   class six times, and already credits it with `everyRelationIsRegistered`, which moved.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on all above.
 
+### The editor's answers are tested where the editor gets them
+
+Reported on 2026-10-15: in a real editor session, hover and inlay hints no longer show. Every test
+of both passes, and none of them goes where a session does. The provider tests hand `Hovers` and
+`InlayHints` a store handle directly; `TextDocumentServiceTest` makes one hover round trip over
+JSON-RPC against a fixture store; `DevServerTest`, the one test through the dev goal's socket,
+asks for goto-definition precisely because the workspace it builds has no store. So the path a
+session takes, the dev goal's own capture read through `Workspace`, is in no test. On that path
+hover and hints pass three gates, the file being open, the store naming a graph that read the file
+(`StoreAccess.sourceNameOf` and `store_graph_source`), and the read's budget, and each answers
+nothing when it fails: the budget warns, the other two say nothing at all.
+
+* **A dev round answers hover and inlay hints over the wire** `open`, first. A plugin-tier test
+  runs a real dev round over a schema file on disk, attaches a client to the dev server, opens that
+  file and asserts hover and inlay hints are not empty. It either reproduces the loss or shows the
+  session that lost them differs from it, and it is the guard either way.
+* **A read that answers nothing says why** `open`. No store, a document no graph read, and a read
+  out of budget each leave the editor blank. A blank answer is correct for a coordinate the store
+  has nothing to say about and wrong for a session that is not connected, and only the server can
+  tell the two apart, so the two silent gates say so once per document where the budget already
+  warns.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
