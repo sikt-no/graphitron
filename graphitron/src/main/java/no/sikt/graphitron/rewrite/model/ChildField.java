@@ -494,7 +494,12 @@ public sealed interface ChildField extends OutputField
             // (1) the lift is total and must agree with the key residue it derives.
             java.util.Objects.requireNonNull(lift, "lift");
             KeyLift.checkResidueAgreement(lift, sourceKey, "BatchedTableField");
-            // (2) carrier invariant.
+            // (2) carrier invariant. Stricter than the shared helper, which admits null on an
+            // empty path for the inline standalone shape: a batched child keys every batch on
+            // its parent correlation, on both arms, so the leaf refuses null outright.
+            java.util.Objects.requireNonNull(parentCorrelation, () ->
+                "BatchedTableField " + parentTypeName + "." + name + " needs a parent correlation; "
+                + "a batched child has nothing to key the batch on without one");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "BatchedTableField");
             java.util.Objects.requireNonNull(sourceShape, "sourceShape");
             if (sourceShape == SourceShape.Table) {

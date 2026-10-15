@@ -138,7 +138,8 @@ class BatchedTableFieldValidationTest {
         RECORD_SINGLE_NO_PATH("Record arm: single cardinality, empty joinPath — emittable post-R61 (single-record-per-key arm)",
             new BatchedTableField("FilmDetails", "film", null, R_RT_SINGLE, List.of(), List.of(), new OrderBySpec.None(), null,
                 SourceShape.Record, R_SOURCE_KEY_SINGLE, TestFixtures.fkColumnsLift(), R_LR_SINGLE, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null),
+                // The correlation the real record-sourced mints land on an empty path.
+                TestFixtures.liftedSlots(TestFixtures.filmTable(), List.of(TestFixtures.filmIdCol()))),
             List.of()),
 
         RECORD_SINGLE_WITH_FK_PATH("Record arm: single cardinality with FK path — emittable post-R61",

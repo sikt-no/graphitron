@@ -158,6 +158,7 @@ import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE_FOR;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SERVICE;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_SPLIT_QUERY;
+import static no.sikt.graphitron.rewrite.BuildContext.DIR_TENANT_FAN_OUT;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_ROUTINE;
 import static no.sikt.graphitron.rewrite.BuildContext.argString;
 import static no.sikt.graphitron.rewrite.BuildContext.argStringList;
@@ -1672,7 +1673,15 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(e.message()));
             }
             var tbtParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) tbtPcResolution).correlation();
-            var parentSplitSource = deriveSplitQuerySource(tbtParentCorrelation, parentTableType.table(), returnType);
+            // A same-table field with no @reference has an empty path and so no correlation: the
+            // batch a split anchor keys on each parent's correlation to the child has nothing to
+            // key on. Rejected ahead of the lookup gate so the plain and lookup reads share one
+            // diagnostic, and so the batched leaf never sees a null correlation.
+            if (hasSplitQuery && tbtParentCorrelation == null) {
+                return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
+                    uncorrelatedSameTableSplitMessage(fieldDef, parentTypeName, elementTypeName,
+                        returnType.table().tableName())));
+            }
             // The lookup gate routes and rejects (connection on either arm; single-cardinality
             // split); the mint below is the same fetch leaf either way, with the resolution
             // riding as payload.
@@ -1683,6 +1692,7 @@ class FieldBuilder {
                 }
             }
             if (hasSplitQuery) {
+                var parentSplitSource = deriveSplitQuerySource(tbtParentCorrelation, returnType);
                 return new no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField(
                     parentTypeName, name, location, returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                     SourceShape.Table,
@@ -1752,7 +1762,7 @@ class FieldBuilder {
                 var interfaceCorrelation =
                     ((BuildContext.ParentCorrelationResolution.Resolved) interfacePcResolution).correlation();
                 var interfaceSplitSource = deriveSplitQuerySource(
-                    interfaceCorrelation, parentTableType.table(), interfaceReturnType);
+                    interfaceCorrelation, interfaceReturnType);
                 return new no.sikt.graphitron.rewrite.model.ChildField.BatchedTableInterfaceField(
                     parentTypeName, name, location, interfaceReturnType,
                     tableInterfaceType.discriminatorColumn(), knownValues,
@@ -2105,7 +2115,7 @@ class FieldBuilder {
             tokenBySlot);
         var spec = new PivotSpec(elements, returnTypeName, slots);
         if (ctx.facts.delivery().splitQuery(fieldDef)) {
-            var split = deriveSplitQuerySource(correlation, parentTableType.table(), false);
+            var split = deriveSplitQuerySource(correlation, false);
             return new ChildField.BatchedPivotField(parentTypeName, name, location, pivot, spec,
                 split.sourceKey(), split.lift(), split.loaderRegistration(), correlation);
         }
@@ -4102,7 +4112,7 @@ class FieldBuilder {
                 }
                 var pc = ((BuildContext.ParentCorrelationResolution.Resolved) pcResolution).correlation();
                 var splitSource = hasSplitQuery
-                    ? deriveSplitQuerySource(pc, tbt.table(), walk.tb().returnType())
+                    ? deriveSplitQuerySource(pc, walk.tb().returnType())
                     : null;
                 if (hasSplitQuery && lateralHead && splitSource.sourceKey().columns().isEmpty()) {
                     yield new UnclassifiedField(parentTypeName, name, location,
@@ -7123,6 +7133,33 @@ class FieldBuilder {
     }
 
     /**
+     * The author error for a split-delivered field whose return type is bound to its parent's
+     * table with no {@code @reference}: the path is empty, so the batch has no parent key. Names
+     * the delivery markers the coordinate actually carries (the union {@link #forcesSplitDelivery}
+     * reads) and the three remedies with their preconditions; the validator prefixes the field
+     * coordinate.
+     */
+    private String uncorrelatedSameTableSplitMessage(GraphQLFieldDefinition fieldDef,
+            String parentTypeName, String returnTypeName, String tableName) {
+        var row = ctx.facts.delivery().rowFor(fieldDef).orElseThrow();
+        var markers = new ArrayList<String>();
+        if (row.splitQuery()) markers.add("@" + DIR_SPLIT_QUERY);
+        if (row.tenantFanOut()) markers.add("@" + DIR_TENANT_FAN_OUT);
+        String applied = String.join(" and ", markers);
+        String verb = markers.size() == 1 ? "fetches" : "fetch";
+        return applied + " " + verb
+            + " the child in a batch keyed on each parent's correlation to it, but '"
+            + returnTypeName + "' is bound to the same table as '" + parentTypeName + "' ('"
+            + tableName + "') and the field has no @reference, so there is no parent key to"
+            + " batch on. To return the parent's own row, state the correlation with"
+            + " @reference(path: [{condition: ...}]); or, if no other field needs '"
+            + returnTypeName + "' as a table type, drop @table from '" + returnTypeName
+            + "' and " + applied + " from this field so the type nests on the parent row. To"
+            + " read rows of '" + tableName + "' independent of the parent, narrowed by this"
+            + " field's @condition or @lookupKey arguments, drop " + applied + ".";
+    }
+
+    /**
      * Returns {@code true} when {@code @lookupKey} appears on any direct argument of the field,
      * or on any field within an input-type argument (transitively). This is the field-level
      * classification signal; which specific argument carries it has no semantic significance.
@@ -7885,9 +7922,8 @@ class FieldBuilder {
      * it is hop-count agnostic (a multi-hop single-cardinality path keys by the first hop and the
      * emitter bridges the rest) and cannot drift from the topology: adding a second
      * {@code filter() != null} branch here would be two producers evaluating one predicate with
-     * nothing binding them. The
-     * empty-joinPath standalone shape carries a {@code null} correlation and falls back to the
-     * parent PK.
+     * nothing binding them. The correlation is required: a split anchor with no correlation has
+     * nothing to key the batch on, and the classifier rejects that shape before reaching here.
      *
      * <p>The {@link SourceKey} projection is {@link SourceKey.Wrap.Row} (catalog-FK column
      * reads on the parent's own table row); the
@@ -7900,24 +7936,22 @@ class FieldBuilder {
      */
     private static SplitQuerySource deriveSplitQuerySource(
             no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
-            TableRef parentTable, ReturnTypeRef.TableBoundReturnType returnType) {
-        return deriveSplitQuerySource(correlation, parentTable, returnType.wrapper().isList());
+            ReturnTypeRef.TableBoundReturnType returnType) {
+        return deriveSplitQuerySource(correlation, returnType.wrapper().isList());
     }
 
     private static SplitQuerySource deriveSplitQuerySource(
-            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
-            TableRef parentTable, boolean isList) {
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation, boolean isList) {
+        java.util.Objects.requireNonNull(correlation,
+            "a split anchor needs a parent correlation to key the batch on");
         // The batch grain is a pure projection off the step-0 correlation arm
         // (ParentCorrelation.parentKeyColumns) — FK-slot columns for OnFkSlots, parent PK for the
         // parent-anchor OnParentJoin arm, routine inputs for OnLateralArgs. Reading it here rather
         // than re-deriving from the path makes "parent-PK grain iff parent-anchor topology"
         // structurally impossible to violate: a hop-0 filter lands OnParentJoin at the single
         // producer (buildParentCorrelation), which is exactly the column set the emitter's
-        // correlation predicate pairs against. The empty-joinPath standalone shape carries a null
-        // correlation and falls back to the parent PK.
-        List<ColumnRef> entryColumns = correlation != null
-            ? correlation.parentKeyColumns()
-            : parentTable.primaryKeyColumns();
+        // correlation predicate pairs against.
+        List<ColumnRef> entryColumns = correlation.parentKeyColumns();
         // The lift is total on the merged leaf. The table arm's mechanism is column
         // projection off the held jOOQ row (KeyLift.FkColumns), whose derived wrap is exactly
         // the Row residue stored below — checkResidueAgreement accepts the pair by construction.
