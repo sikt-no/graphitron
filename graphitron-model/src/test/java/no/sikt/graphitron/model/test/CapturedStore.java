@@ -356,12 +356,8 @@ public final class CapturedStore implements AutoCloseable {
     public static CapturedStore ofCatalogWith(Path directory, String graphName, String sdl,
                                               CatalogInput jooq, List<ClasspathEntry> classpath,
                                               SubjectConfig configuration) {
-        Path file = write(directory, graphName, sdl);
-        var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
-        var store = ThreadConfinedStore.borrow();
-        var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName,
-            Objects.requireNonNull(jooq, "jooq"), false, classpath, LocalDateTime.now(), configuration);
-        return new CapturedStore(store, graphName, directory, file, registry, schemas);
+        return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
+            classpath, configuration);
     }
 
     /**
@@ -417,11 +413,17 @@ public final class CapturedStore implements AutoCloseable {
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
                                                 CatalogInput jooq, List<ClasspathEntry> classpath) {
+        return openAndCapture(directory, graphName, sdl, jooq, classpath, SubjectConfig.none());
+    }
+
+    private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,
+                                                CatalogInput jooq, List<ClasspathEntry> classpath,
+                                                SubjectConfig configuration) {
         Path file = write(directory, graphName, sdl);
         var registry = SchemaLoader.load(List.of(SchemaSource.file(file)));
         var store = ThreadConfinedStore.borrow();
         var schemas = captureFiles(store.dsl(), List.of(file), directory, graphName, jooq, false,
-            classpath);
+            classpath, LocalDateTime.now(), configuration);
         return new CapturedStore(store, graphName, directory, file, registry, schemas);
     }
 
