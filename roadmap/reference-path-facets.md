@@ -287,3 +287,47 @@ Each its own follow-up: facets on non-root (`@splitQuery`) or polymorphic connec
 seen while planning, not fixed here: a direct-column facet under `@condition(override: true)` is
 accepted today, yet its own predicate lives inside the author's override method, which the facet
 fragments never mask, so its counts do not pivot on its own selection.
+
+## Reviewer findings
+
+### Round 1 (2026-10-15, Spec -> Ready, reviewer session 01QLhMxUpvCRDZUDPFxH1t4D)
+
+Verdict: withhold. One finding, on question two. The goal reads on its own: an author can put
+`@asFacet` on a `@reference` filter field and get per-value counts of root rows grouped on a column of
+the joined table, with the existing round-trip contract kept. The design extends the facet plan,
+the condition fragments and `PathFragments` instead of standing beside them. The claims the plan
+makes about the tree check out, and so do the seeded counts in the execution fixtures.
+
+**Finding 1 (question two: architecture fit). The proof for two of the promised path shapes is a
+test the project bans.** The "Pipeline tier, generated code (`FacetEmitterTest` or a sibling)"
+bullet asserts what the generated launcher body says: that a `{key:, condition:}` hop's condition
+lands on the join's `ON`, that a `condition:` join hop renders `.on(<method>(prev, hop))`, that a
+composite primary key "binds a two-field count key", and that a direct facet "binds a typed column".
+These are code-string assertions on generated method bodies. `development-principles.adoc` § "Behaviour
+is pinned at the pipeline tier and above" and `testing.adoc` ban them at every tier, and
+`FacetEmitterTest`'s own javadoc names the ban as the reason it stops at method names. Without that
+bullet, nothing in the plan proves at a sanctioned tier that `condition:` hops and composite-key roots
+are served. The execution fixtures (`citiesFaceted`, the `actor` facet) are FK-only paths over
+single-column keys, and the Who-asked section promises the requesters exactly those shapes.
+
+What would satisfy it: move each of these four behaviours to a tier that may assert it. The plan
+facts can be asserted structurally at the plan tier: a `Reached` entry whose hops carry
+`On.Predicate` or a `filter()`, and a two-column `distinctKey`. Rendering and SQL go in compilation
+and execution fixtures on the sakila schema. `ReferencePathConditionFixtures.filmActorJunctionToActor`
+already serves a `condition:` hop on the film→actor path, and `film_actor` has a composite key, so
+the fixtures cost little. Which fixtures to add, and whether the typed-column check for direct
+facets is already covered by the existing `filmsFaceted` execution tests, is the author's call.
+"The helper no longer emits `facetColumn`" is a method-surface assertion and may stay where it is.
+
+**Non-blocking.**
+
+- The plan resolves a direct facet's column from `spec.columnName()` by name against `row.table()`,
+  even when the facet's own term already holds that `ColumnRef`. This is the one place the plan
+  re-derives instead of borrowing ("Borrowed from the facet's own filter term"). By-name lookup is
+  needed only under `@condition(override: true)`, where the term is absent. Either form works, but
+  note that `TableRef.column`'s javadoc says no generator emits per column off `allColumns`, and that
+  hand-built `TableRef` fixtures leave `allColumns` empty, so the new backstop would trip on any test
+  that plans a facet over one.
+- No reader is named for the view's new `reference_bound` column before the misuse checks move to
+  the store. Dropping `'reference'` from the view's exclusion is required to keep the two producers
+  equal; the extra column is not.
