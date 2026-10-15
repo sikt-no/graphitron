@@ -6,6 +6,7 @@ import graphql.GraphQLContext;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import no.sikt.graphitron.generated.Graphitron;
+import no.sikt.graphitron.generated.schema.FetcherErrorLog;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -1316,6 +1317,102 @@ class DmlBulkMutationsExecutionTest {
             dsl.deleteFrom(DSL.table("film"))
                 .where(DSL.field("film_id", Integer.class).in(id1, id2)).execute();
         }
+    }
+
+    // ===== the zero-row guard, logged through a FetcherErrorLog =====
+    //
+    // A bulk row that matches nothing fails the whole list: the zero-row guard throws, the payload
+    // has no error channel, so the throw is unmatched and redacted. The escape-hatch engine has no
+    // runtime, so the log rides in the request's GraphQLContext under its class; graphql-java's
+    // graphQLContext(Consumer) merges into the entries the generated factory already wrote. The
+    // second row's title is the sentinel: the guard's message names the row by index and the field
+    // by coordinate, so the client's input never reaches the log. Each case seeds and runs inside
+    // one rolled-back transaction, so no reader in another class sees the seeded film.
+
+    /** One {@link FetcherErrorLog#unmatched} call. */
+    private record LoggedUnmatched(Throwable thrown, String reference) {}
+
+    private graphql.ExecutionResult runWithLog(DSLContext ctx, String query, FetcherErrorLog log) {
+        var input = Graphitron.newExecutionInput(ctx, "{}", "test-user")
+            .query(query)
+            .graphQLContext(b -> b.put(FetcherErrorLog.class, log))
+            .build();
+        return graphql.execute(input);
+    }
+
+    private static Integer insertFilm(DSLContext tx, String title) {
+        return tx.insertInto(DSL.table("film"))
+            .set(DSL.field("title"), title)
+            .set(DSL.field("language_id"), (short) 1)
+            .returningResult(DSL.field("film_id", Integer.class))
+            .fetchOne().value1();
+    }
+
+    private static String referenceOf(graphql.ExecutionResult result) {
+        assertThat(result.getErrors()).hasSize(1);
+        String message = result.getErrors().get(0).getMessage();
+        assertThat(message).matches("An error occurred\\. Reference: [0-9a-f-]{36}\\.");
+        return message.substring("An error occurred. Reference: ".length(), message.length() - 1);
+    }
+
+    @Test
+    void updateFilmsPayload_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow() {
+        inRolledBackTransaction(tx -> {
+            String marker = randomMarker("R1048-UPDATE");
+            Integer existing = insertFilm(tx, marker);
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    updateFilmsPayload(in: [
+                        { filmId: %d, title: "%s" },
+                        { filmId: 2147483000, title: "sentinel-title-7f3a" }
+                    ]) { films { filmId } }
+                }
+                """.formatted(existing, marker + "-renamed"),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            String reference = referenceOf(result);
+            assertThat(logged).hasSize(1);
+            assertThat(logged.get(0).reference()).isEqualTo(reference);
+            assertThat(logged.get(0).thrown()).isInstanceOf(IllegalStateException.class);
+            assertThat(logged.get(0).thrown().getMessage())
+                .contains("matched zero rows")
+                .contains("at index 1")
+                .contains("Mutation.updateFilmsPayload")
+                .doesNotContain("sentinel-title-7f3a");
+            assertThat(tx.fetchValue(DSL.select(DSL.field("title", String.class)).from(DSL.table("film"))
+                    .where(DSL.field("film_id", Integer.class).eq(existing))))
+                .as("the failed row rolls the whole list back")
+                .isEqualTo(marker);
+        });
+    }
+
+    @Test
+    void deleteFilmsIdCarrier_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow() {
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("R1048-DELETE"));
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    deleteFilmsIdCarrier(in: [
+                        { filmId: %d },
+                        { filmId: 2147483000 }
+                    ]) { deletedIds }
+                }
+                """.formatted(existing),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            String reference = referenceOf(result);
+            assertThat(logged).hasSize(1);
+            assertThat(logged.get(0).reference()).isEqualTo(reference);
+            assertThat(logged.get(0).thrown().getMessage())
+                .contains("matched zero rows")
+                .contains("at index 1")
+                .contains("Mutation.deleteFilmsIdCarrier")
+                .doesNotContain("2147483000");
+        });
     }
 
     // ===== UK-covering single-row DELETE =====

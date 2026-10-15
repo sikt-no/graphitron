@@ -14,6 +14,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import javax.lang.model.element.Modifier;
 import java.util.List;
 import java.util.UUID;
+import java.util.function.Consumer;
 import java.util.function.Function;
 
 
@@ -21,8 +22,9 @@ import java.util.function.Function;
  * Generates the {@code ErrorRouter} class emitted at
  * {@code <outputPackage>.schema.ErrorRouter}, once per code-generation run: the runtime
  * entry points the per-fetcher try/catch wrappers call ({@code redact},
- * {@code surfaceClientErrorOrRedact}, {@code dispatch})
- * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
+ * {@code surfaceClientErrorOrRedact}, {@code dispatch}), the {@code toConfiguredLog} guard
+ * every unmatched-exception log site hands its throw through, plus the nested {@code Mapping}
+ * taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
  * <p>Dispatch is source-direct: the matched throwable itself goes into the errors list,
@@ -49,6 +51,8 @@ public final class ErrorRouterClassGenerator {
     private static final ClassName LIST_CN                    = ClassName.get(List.class);
     private static final ClassName STRING_CN                  = ClassName.get(String.class);
     private static final ClassName OBJECT_CN                  = ClassName.get(Object.class);
+    private static final ClassName GRAPHQL_CONTEXT            = ClassName.get("graphql", "GraphQLContext");
+    private static final ClassName CONSUMER_CN                = ClassName.get(Consumer.class);
 
     private ErrorRouterClassGenerator() {}
 
@@ -60,6 +64,17 @@ public final class ErrorRouterClassGenerator {
      */
     public static ClassName routerClass(String outputPackage) {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).errorRouter();
+        return ClassName.get(unit.packageName(), unit.simpleName());
+    }
+
+    /**
+     * The emitted {@code FetcherErrorLog} interface, a {@code CONNECTION_RUNTIME} unit that
+     * {@code toConfiguredLog} names; resolved through the plan's naming vocabulary like the router.
+     */
+    public static ClassName fetcherErrorLogClass(String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
+            .singleton(no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA,
+                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
         return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
@@ -89,9 +104,10 @@ public final class ErrorRouterClassGenerator {
             .returns(resultOfP)
             .addParameter(THROWABLE, "thrown")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addJavadoc("No-channel disposition: logs the original throw at ERROR with a fresh\n"
-                + "UUID correlation ID and returns a {@link $T} with {@code data=null} plus a\n"
-                + "single redacted error carrying only the correlation ID. Generic on {@code P},\n"
+            .addJavadoc("No-channel disposition: mints a fresh UUID correlation ID, hands the original\n"
+                + "throw to the configured {@code FetcherErrorLog} (else logs it at ERROR), and returns\n"
+                + "a {@link $T} with {@code data=null} plus a single redacted error carrying only the\n"
+                + "correlation ID. Generic on {@code P},\n"
                 + "the field's data type; the call site infers {@code P} from its target type so\n"
                 + "the catch arm fits the fetcher's declared return type without a witness.\n"
                 + "\n"
@@ -101,6 +117,8 @@ public final class ErrorRouterClassGenerator {
                 DATA_FETCHER_RESULT)
             .addCode(redactBody())
             .build();
+
+        var toConfiguredLog = buildToConfiguredLogMethod(fetcherErrorLogClass(outputPackage));
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
         var dispatch = buildDispatchMethod(typeP, resultOfP);
@@ -126,6 +144,7 @@ public final class ErrorRouterClassGenerator {
             .addType(sqlStateMapping)
             .addType(vendorCodeMapping)
             .addMethod(redact)
+            .addMethod(toConfiguredLog)
             .addMethod(surfaceClientErrorOrRedact)
             .addMethod(dispatch)
             .build();
@@ -403,10 +422,59 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
+    /**
+     * {@code static boolean toConfiguredLog(env, reference, call)}: the one spelling of the
+     * {@code FetcherErrorLog} contract (look the log up, call it, contain its failure), shared by
+     * {@code redact} and the tenant fan-out's failure logging. A {@code false} return means no
+     * log is configured and the caller writes its own default line. The failure line passes no
+     * throwable, so neither the log's exception nor the original reaches the log through it;
+     * only JVM-fatal errors escape, since anything else escaping {@code redact} would reach
+     * graphql-java's default handler, which puts its message in the response.
+     */
+    private static MethodSpec buildToConfiguredLogMethod(ClassName fetcherErrorLog) {
+        return MethodSpec.methodBuilder("toConfiguredLog")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(STRING_CN, "reference")
+            .addParameter(ParameterizedTypeName.get(CONSUMER_CN, fetcherErrorLog), "call")
+            .addJavadoc("Hands an unmatched throw to the {@link $T} configured for this request (the\n"
+                + "{@code GraphQLContext} entry under its class, which the owned-connection runtime\n"
+                + "publishes and an escape-hatch caller puts there); {@code false} when none is\n"
+                + "configured, and the caller then logs its own default line. If the log throws, one\n"
+                + "ERROR line names the log's class, the class of what it threw and the reference,\n"
+                + "without either exception's message or stack trace; only a {@link VirtualMachineError}\n"
+                + "propagates.\n"
+                + "@param env the failing field's environment\n"
+                + "@param reference the reference the client receives for this failure\n"
+                + "@param call the log method to invoke\n"
+                + "@return whether a configured log took the throw\n",
+                fetcherErrorLog)
+            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .addStatement("$T log = context == null ? null : context.get($T.class)", fetcherErrorLog, fetcherErrorLog)
+            .beginControlFlow("if (log == null)")
+            .addStatement("return false")
+            .endControlFlow()
+            .beginControlFlow("try")
+            .addStatement("call.accept(log)")
+            .nextControlFlow("catch ($T logFailure)", THROWABLE)
+            .beginControlFlow("if (logFailure instanceof $T fatal)", VirtualMachineError.class)
+            .addStatement("throw fatal")
+            .endControlFlow()
+            .addStatement("LOGGER.error($S, log.getClass().getName(), logFailure.getClass().getName(), reference)",
+                fetcherErrorLog.simpleName() + " {} threw {}; reference = {}")
+            .endControlFlow()
+            .addStatement("return true")
+            .build();
+    }
+
     private static CodeBlock redactBody() {
         return CodeBlock.builder()
             .addStatement("$T correlationId = $T.randomUUID()", UUID_CN, UUID_CN)
+            .addStatement("$T reference = correlationId.toString()", STRING_CN)
+            .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
             .addStatement("LOGGER.error(\"Unmatched exception in fetcher; correlation id = {}\", correlationId, thrown)")
+            .endControlFlow()
             .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
             .add("    .data(null)\n")
             .add("    .error($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)

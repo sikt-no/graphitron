@@ -5764,7 +5764,7 @@ public class TypeFetcherGenerator {
                         setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
                         nullRulesByPath(w.updateRows().nullRules()),
                         w.updateRows().agreementObligations(),
-                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
+                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType, f.qualifiedName()),
                     outputPackage);
             }
             case OperationMember.Write.Delete w -> {
@@ -5772,7 +5772,8 @@ public class TypeFetcherGenerator {
                 yield buildBulkRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
-                        whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
+                        whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType,
+                        f.qualifiedName()),
                     outputPackage);
             }
             case OperationMember.Write.Upsert _ -> throw new IllegalStateException(
@@ -5882,14 +5883,16 @@ public class TypeFetcherGenerator {
      * the carrier's {@code keyColumns()} ({@link #keyGroupsOf}); no {@code @value}-derived
      * {@code tia} read. A row whose SET map is empty is an empty patch and runs the key read in
      * place of its UPDATE ({@link KeyStatement.KeyedUpdate}). The no-match throw, which covers both,
-     * preserves the order-preservation invariant.
+     * preserves the order-preservation invariant; its message names the row by index and the field
+     * by {@code fieldCoordinate}, never by the input's content, so client data stays out of logs.
      */
     private static CodeBlock buildCarrierBulkPerRowUpdateBody(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
             List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
             List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
-            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType) {
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType,
+            String fieldCoordinate) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
@@ -5909,11 +5912,13 @@ public class TypeFetcherGenerator {
             buildPkFieldList(pkCols, tablesOnly, tableRef), recordRowType, CodeBlock.of(".fetchOne()")));
         // UPDATE no-match preserves the order-preservation invariant by failing fast rather than
         // skewing acc.size() against in.size() with a silent skip; the catch arm routes the
-        // exception through the carrier's error channel.
+        // exception through the carrier's error channel. acc holds exactly the rows already
+        // written, so its size is this row's zero-based index.
         body.beginControlFlow("if (rec == null)")
-            .addStatement("throw new $T($S + row)", IllegalStateException.class,
+            .addStatement("throw new $T($S + acc.size() + $S)", IllegalStateException.class,
                 "@mutation(typeName: UPDATE) bulk row matched zero rows; key filter "
-                    + "found no target for input row: ")
+                    + "found no target for input row at index ",
+                " of " + fieldCoordinate)
             .endControlFlow();
         body.add("acc.add(rec);\n");
         return body.build();
@@ -5956,14 +5961,15 @@ public class TypeFetcherGenerator {
      * no-match path — input-order preservation is a contract of the bulk-DML emit, and silent
      * skipping would break it. The per-row WHERE columns are sourced from the
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows}
-     * carrier ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}.
+     * carrier ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}. Like the UPDATE
+     * twin, the no-match message names the row by index and the field by {@code fieldCoordinate}.
      */
     private static CodeBlock buildBulkRecordPerRowDeleteBody(
             List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
-            TypeName recordRowType) {
+            TypeName recordRowType, String fieldCoordinate) {
         var body = CodeBlock.builder();
         var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "row");
         body.add(whereChunk.decodeLocals());
@@ -5972,9 +5978,10 @@ public class TypeFetcherGenerator {
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
             .add("    .fetchOne();\n");
         body.beginControlFlow("if (rec == null)")
-            .addStatement("throw new $T($S + row)", IllegalStateException.class,
+            .addStatement("throw new $T($S + acc.size() + $S)", IllegalStateException.class,
                 "@mutation(typeName: DELETE) bulk row matched zero rows; @lookupKey filter "
-                    + "found no target for input row: ")
+                    + "found no target for input row at index ",
+                " of " + fieldCoordinate)
             .endControlFlow();
         body.add("acc.add(rec);\n");
         return body.build();

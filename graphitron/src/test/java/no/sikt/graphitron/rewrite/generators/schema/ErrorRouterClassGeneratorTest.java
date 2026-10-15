@@ -138,6 +138,18 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
+    void toConfiguredLog_signature_takesTheEnvironmentTheReferenceAndTheLogCall() {
+        var router = generate();
+        var toConfiguredLog = method(router, "toConfiguredLog");
+        assertThat(toConfiguredLog.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(toConfiguredLog.returnType().toString()).isEqualTo("boolean");
+        assertThat(toConfiguredLog.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "graphql.schema.DataFetchingEnvironment",
+            "java.lang.String",
+            "java.util.function.Consumer<com.example.schema.FetcherErrorLog>");
+    }
+
+    @Test
     void surfaceClientErrorOrRedact_surfacesClientErrorElseFallsThroughToRedact() {
         // The no-channel disposition surfaces a GraphitronClientException's real message and
         // otherwise reuses redact unchanged (the privacy contract for internal faults).

@@ -131,6 +131,11 @@ public final class ConnectionRuntimeClassGenerator {
     public static final String REQUEST_TENANTS_CLASS_NAME = "RequestTenants";
     /** The runtime's nested source triple ({@code DataSource}, dialect, jOOQ {@code Settings}). */
     public static final String SOURCE_CLASS_NAME = "Source";
+    /**
+     * The consumer-implemented callback that decides how a fetcher exception no {@code @error}
+     * mapping claims is logged, held by the runtime and read by {@code ErrorRouter.toConfiguredLog}.
+     */
+    public static final String FETCHER_ERROR_LOG_CLASS_NAME = "FetcherErrorLog";
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
@@ -240,6 +245,9 @@ public final class ConnectionRuntimeClassGenerator {
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, TENANT_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
+        var fetcherErrorLog = ClassName.get(schemaPackage, FETCHER_ERROR_LOG_CLASS_NAME);
+        var errorRouter = ClassName.get(schemaPackage,
+            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
         var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
@@ -248,13 +256,14 @@ public final class ConnectionRuntimeClassGenerator {
 
         var units = new ArrayList<TypeSpec>();
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, tenantKey, multiTenant));
-        units.add(runtime(runtime, pinnedConnection, instrumentation, sessionHooks, tenantKey, multiTenant,
-            tenantConnections));
+        units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, sessionHooks, tenantKey,
+            multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, sessionHooks, requestTenants, tenantColumn));
+            multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
+        units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
         if (sessionHooks.emitsHookImplementation()) {
             units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
         }
@@ -610,11 +619,13 @@ public final class ConnectionRuntimeClassGenerator {
      * delegating conveniences wrapping default settings, so no consumer call site breaks.
      * Multi-tenant builds additionally carry the fan-out execution configuration (the bounded
      * scatter executor and the scatter deadline); deployment-time values, so they never touch the
-     * Mojo. No hook state lives here: the mount/unmount choice is emitted, not held.
+     * Mojo. No hook state lives here: the mount/unmount choice is emitted, not held. The one held
+     * callback is the consumer's optional {@code FetcherErrorLog}, set through a wither rather than
+     * a constructor parameter so it composes with every constructor form instead of doubling them.
      */
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
-                                    SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant,
-                                    ClassName tenantConnections) {
+                                    ClassName fetcherErrorLog, SessionHooks sessionHooks, TypeName tenantKey,
+                                    boolean multiTenant, ClassName tenantConnections) {
         var payload = payloadParams(sessionHooks);
         var source = runtime.nestedClass(SOURCE_CLASS_NAME);
 
@@ -653,6 +664,10 @@ public final class ConnectionRuntimeClassGenerator {
         var fanOutTimeoutField = FieldSpec.builder(DURATION, "fanOutTimeout", Modifier.PRIVATE, Modifier.FINAL)
             .addJavadoc("The per-scatter deadline, enforced by the scatter join whichever executor runs the\n"
                 + "workers.\n")
+            .build();
+        var fetcherErrorLogField = FieldSpec.builder(fetcherErrorLog, "fetcherErrorLog", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The consumer's log for unmatched fetcher exceptions, or {@code null} for Graphitron's\n"
+                + "default line. Application-scoped like the sources; set by {@link #withFetcherErrorLog}.\n")
             .build();
 
         var sourceMapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), source);
@@ -705,6 +720,52 @@ public final class ConnectionRuntimeClassGenerator {
                     "fanOutTimeout must be positive, got: ")
                 .endControlFlow();
         }
+        canonicalBuilder.addStatement("this.fetcherErrorLog = null");
+
+        // The wither's copy constructor: every field as-is, so a multi-tenant runtime's fan-out
+        // executor is shared rather than a second pool created, and the source map is not
+        // re-copied (neither runtime ever mutates it).
+        var copyBuilder = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PRIVATE)
+            .addParameter(source, "defaultSource")
+            .addParameter(ParameterizedTypeName.get(MAP, tenantKey, source), "sourcesByTenant");
+        if (multiTenant) {
+            copyBuilder
+                .addParameter(EXECUTOR, "fanOutExecutor")
+                .addParameter(DURATION, "fanOutTimeout");
+        }
+        copyBuilder.addParameter(fetcherErrorLog, "fetcherErrorLog")
+            .addStatement("this.defaultSource = defaultSource")
+            .addStatement("this.sourcesByTenant = sourcesByTenant");
+        if (multiTenant) {
+            copyBuilder
+                .addStatement("this.fanOutExecutor = fanOutExecutor")
+                .addStatement("this.fanOutTimeout = fanOutTimeout");
+        }
+        var copyConstructor = copyBuilder
+            .addStatement("this.fetcherErrorLog = fetcherErrorLog")
+            .build();
+
+        var withFetcherErrorLog = MethodSpec.methodBuilder("withFetcherErrorLog")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(runtime)
+            .addParameter(fetcherErrorLog, "log")
+            .addStatement("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S))",
+                runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "log")
+            .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
+                + "claims to {@code log} instead of Graphitron's own ERROR line. The client's response does\n"
+                + "not change: it still carries only the redacted error and its reference. The copy shares\n"
+                + "this runtime's sources"
+                + (multiTenant ? " and fan-out executor" : "") + "; this runtime is unchanged.\n"
+                + "@param log the consumer's log; must not be {@code null}\n"
+                + "@return a runtime carrying {@code log}\n")
+            .build();
+        var fetcherErrorLogAccessor = MethodSpec.methodBuilder("fetcherErrorLog")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(OPTIONAL, fetcherErrorLog))
+            .addStatement("return $T.ofNullable(fetcherErrorLog)", OPTIONAL)
+            .addJavadoc("The log set by {@link #withFetcherErrorLog}, or empty for Graphitron's default line.\n")
+            .build();
         var canonicalConstructor = canonicalBuilder
             .addJavadoc("Builds the runtime over a default source (untenanted / single-tenant SQL) and a\n"
                 + "per-tenant source map for database-per-tenant routing. Each {@link Source} carries its\n"
@@ -954,7 +1015,8 @@ public final class ConnectionRuntimeClassGenerator {
                 + "and unmounts per-request identity through the generated hook's static methods, and\n"
                 + "demarcates operation-typed transactions (via the instrumentation {@link #newGraphQL}\n"
                 + "attaches). Holds no per-request state and no hook state: the mount choice is emitted\n"
-                + "code, never a held value.\n");
+                + "code, never a held value. The one callback it holds is the consumer's application-scoped\n"
+                + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}).\n");
         if (multiTenant) {
             builder.addField(defaultFanOutConcurrencyField)
                 .addField(defaultFanOutTimeoutField);
@@ -966,7 +1028,9 @@ public final class ConnectionRuntimeClassGenerator {
             builder.addField(fanOutExecutorField)
                 .addField(fanOutTimeoutField);
         }
-        builder.addMethod(canonicalConstructor);
+        builder.addField(fetcherErrorLogField);
+        builder.addMethod(canonicalConstructor)
+            .addMethod(copyConstructor);
         if (multiTenant) {
             builder.addMethod(sourceOnlyDelegating)
                 .addMethod(executorFormConstructor)
@@ -980,6 +1044,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(acquire)
             .addMethod(acquireForTenant)
             .addMethod(newGraphQL)
+            .addMethod(withFetcherErrorLog)
+            .addMethod(fetcherErrorLogAccessor)
             .addMethod(wrapSources);
         if (multiTenant) {
             builder.addMethod(fanOutExecutorAccessor)
@@ -1070,7 +1136,8 @@ public final class ConnectionRuntimeClassGenerator {
     private static TypeSpec tenantConnections(ClassName self, ClassName runtime, ClassName pinnedConnection,
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionHooks sessionHooks,
-                                              ClassName requestTenants, CodeBlock tenantColumn) {
+                                              ClassName requestTenants, CodeBlock tenantColumn,
+                                              ClassName errorRouter) {
         var payload = payloadParams(sessionHooks);
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
         boolean handled = handleType != null;
@@ -1462,7 +1529,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(fanOutRows(self, tenantKey))
                 .addMethod(fanOutBatchRows(self, tenantKey))
                 .addMethod(collapseFanOut(self))
-                .addMethod(logFanOutFailure(self))
+                .addMethod(logFanOutFailure(self, errorRouter))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(dslGlobal)
                 .addMethod(staticDslGlobal(self))
@@ -1699,7 +1766,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("many rows they would have returned), one marker each.")
             .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfR)
             .beginControlFlow("if (!(outcome instanceof Outcome.Success))")
-            .addStatement("elements.add(logFanOutFailure(outcome))")
+            .addStatement("elements.add(logFanOutFailure(outcome, env))")
             .endControlFlow()
             .endControlFlow()
             .addStatement("return elements")
@@ -1752,7 +1819,7 @@ public final class ConnectionRuntimeClassGenerator {
             .endControlFlow()
             .beginControlFlow("for ($T<$T> outcome : outcomes)", outcome, listOfListOfR)
             .beginControlFlow("if (!(outcome instanceof Outcome.Success))")
-            .addStatement("$T failure = logFanOutFailure(outcome)", self.nestedClass("FanOutFailure"))
+            .addStatement("$T failure = logFanOutFailure(outcome, env)", self.nestedClass("FanOutFailure"))
             .beginControlFlow("for (int i = 0; i < keyCount; i++)")
             .addStatement("merged.get(i).add(failure)")
             .endControlFlow()
@@ -1810,24 +1877,38 @@ public final class ConnectionRuntimeClassGenerator {
             .build();
     }
 
-    /** Logs one failure with a fresh correlation id and returns its in-band marker. */
-    private static MethodSpec logFanOutFailure(ClassName self) {
+    /**
+     * Logs one failure with a fresh correlation id and returns its in-band marker. A configured
+     * {@code FetcherErrorLog} takes the failure through its {@code tenantFailed} (a timeout as a
+     * synthesized {@code TimeoutException}, so the consumer's damping sees outages too); without
+     * one, the default line for the arm is written.
+     */
+    private static MethodSpec logFanOutFailure(ClassName self, ClassName errorRouter) {
         var outcome = self.nestedClass("Outcome");
         var failureType = self.nestedClass("FanOutFailure");
         return MethodSpec.methodBuilder("logFanOutFailure")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(failureType)
             .addParameter(ParameterizedTypeName.get(outcome, WildcardTypeName.subtypeOf(Object.class)), "outcome")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addStatement("$T correlationId = $T.randomUUID()", UUID_CLASS, UUID_CLASS)
+            .addStatement("String reference = correlationId.toString()")
             .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)")
+            .beginControlFlow("if (!$T.toConfiguredLog(env, reference,"
+                + " log -> log.tenantFailed(failed.key(), failed.cause(), reference, env)))", errorRouter)
             .addStatement("LOGGER.error($S, failed.key(), correlationId, failed.cause())",
                 "Tenant fan-out failed for tenant {}; correlation id = {}")
-            .addStatement("return new FanOutFailure(correlationId.toString(), FanOutFailure.FAILED)")
+            .endControlFlow()
+            .addStatement("return new FanOutFailure(reference, FanOutFailure.FAILED)")
             .endControlFlow()
             .beginControlFlow("if (outcome instanceof Outcome.TimedOut)")
+            .beginControlFlow("if (!$T.toConfiguredLog(env, reference,"
+                + " log -> log.tenantFailed(outcome.key(), new $T($S), reference, env)))",
+                errorRouter, TIMEOUT_EXCEPTION, "tenant fan-out passed its deadline")
             .addStatement("LOGGER.error($S, outcome.key(), correlationId)",
                 "Tenant fan-out timed out for tenant {}; correlation id = {}")
-            .addStatement("return new FanOutFailure(correlationId.toString(), FanOutFailure.TIMED_OUT)")
+            .endControlFlow()
+            .addStatement("return new FanOutFailure(reference, FanOutFailure.TIMED_OUT)")
             .endControlFlow()
             .addComment("Callers guard out Success, and Java 17 offers no sealed-switch exhaustiveness here:")
             .addComment("fail loud so a future Outcome arm cannot silently misclassify as a timeout.")
@@ -1837,6 +1918,64 @@ public final class ConnectionRuntimeClassGenerator {
                 + "under a fresh correlation id; only the id and a machine-readable classification\n"
                 + "travel to the client, on the marker.\n")
             .build();
+    }
+
+    /**
+     * The consumer-implemented {@code FetcherErrorLog}: one abstract method, so it stays a
+     * functional interface and a later hook point slots in as a further default method without
+     * breaking any implementor. {@code tenantFailed} exists only when {@code tenantKey} is
+     * non-null (a {@code <tenantColumn>} build), typed with that key, so a single-tenant build
+     * exposes no method that can never fire.
+     */
+    private static TypeSpec fetcherErrorLog(ClassName self, TypeName tenantKey) {
+        var unmatched = MethodSpec.methodBuilder("unmatched")
+            .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
+            .addParameter(Throwable.class, "thrown")
+            .addParameter(String.class, "reference")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("Called once per fetcher exception no {@code @error} mapping claims, in place of\n"
+                + "Graphitron's own log line. Graphitron logs nothing else about the exception, so the\n"
+                + "reference is the only thing that joins a client's report to this log line.\n"
+                + "@param thrown the exception the fetcher threw, message and cause chain intact\n"
+                + "@param reference the text the client received after {@code \"Reference:\"}\n"
+                + "@param env the failing field's environment (its path, field definition and arguments)\n")
+            .build();
+        var builder = TypeSpec.interfaceBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .addAnnotation(FunctionalInterface.class)
+            .addJavadoc("Decides how a fetcher exception no {@code @error} mapping claims is logged. By default\n"
+                + "Graphitron logs such an exception at ERROR through the {@code ErrorRouter} logger,\n"
+                + "message and cause chain included; an exception message can carry row data. Give the\n"
+                + "runtime one of these ({@code GraphitronRuntime.withFetcherErrorLog}) to decide yourself\n"
+                + "what reaches your logs: levels, sanitising and rate limiting are yours to build here.\n"
+                + "The client's response does not change either way: it carries only the redacted error\n"
+                + "and its reference.\n"
+                + "\n"
+                + "<p>On the escape-hatch engine, which has no runtime, put the log into each request's\n"
+                + "{@code GraphQLContext} under this class. A request without that entry gets the default\n"
+                + "line. If the log throws, the client still gets the redacted error and Graphitron logs\n"
+                + "one ERROR line naming the log's class, the class of what it threw and the reference;\n"
+                + "only JVM-fatal errors propagate.\n")
+            .addMethod(unmatched);
+        if (tenantKey != null) {
+            builder.addMethod(MethodSpec.methodBuilder("tenantFailed")
+                .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+                .addParameter(tenantKey, "tenantKey")
+                .addParameter(Throwable.class, "cause")
+                .addParameter(String.class, "reference")
+                .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+                .addStatement("unmatched(cause, reference, env)")
+                .addJavadoc("Called once per tenant that failed or timed out in a field fanned out across\n"
+                    + "tenants, in place of Graphitron's own log line. Defaults to {@link #unmatched};\n"
+                    + "override it to log the tenant too.\n"
+                    + "@param tenantKey the tenant whose part of the field did not arrive\n"
+                    + "@param cause what the tenant's worker threw, or a\n"
+                    + "{@link java.util.concurrent.TimeoutException} when it passed the fan-out deadline\n"
+                    + "@param reference the text the client received after {@code \"Reference:\"}\n"
+                    + "@param env the fanned field's environment\n")
+                .build());
+        }
+        return builder.build();
     }
 
     /** The in-band per-tenant failure marker {@code collapseFanOut} turns into a null element + error. */

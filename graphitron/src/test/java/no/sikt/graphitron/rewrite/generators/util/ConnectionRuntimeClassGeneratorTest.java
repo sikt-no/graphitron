@@ -1,6 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.ParameterSpec;
+import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
@@ -14,6 +17,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import javax.lang.model.element.Modifier;
 import javax.sql.DataSource;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
@@ -226,6 +230,92 @@ class ConnectionRuntimeClassGeneratorTest {
         release(pinned);
         assertThat(events).last().isEqualTo("close");
         assertThat(events).contains("disconnect:H1");
+    }
+
+    // --- the unmatched-exception log ----------------------------------------------------------
+
+    @Test
+    void fetcherErrorLog_isAFunctionalInterfaceWithNoTenantArmInASingleTenantBuild() {
+        TypeSpec log = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),
+            ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+
+        assertThat(log.kind()).isEqualTo(TypeSpec.Kind.INTERFACE);
+        assertThat(log.annotations()).extracting(a -> a.type().toString())
+            .containsExactly(FunctionalInterface.class.getName());
+        assertThat(abstractMethodNames(log))
+            .as("exactly one abstract method, so a later hook point can arrive as a default method")
+            .containsExactly("unmatched");
+        assertThat(log.methodSpecs()).extracting(MethodSpec::name).doesNotContain("tenantFailed");
+        assertThat(parameterTypes(method(log, "unmatched"))).containsExactly(
+            "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void fetcherErrorLog_tenantFailedIsADefaultTypedWithTheTenantKey() {
+        TypeSpec log = unit(
+            ConnectionRuntimeClassGenerator.generate(PACKAGE, SessionHooks.NotConfigured.INSTANCE,
+                ClassName.get(Integer.class), TenantColumnFixtures.INTEGER_KEY_COLUMN),
+            ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+
+        assertThat(abstractMethodNames(log)).containsExactly("unmatched");
+        MethodSpec tenantFailed = method(log, "tenantFailed");
+        assertThat(tenantFailed.modifiers()).contains(Modifier.DEFAULT);
+        assertThat(parameterTypes(tenantFailed)).containsExactly(
+            "java.lang.Integer", "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void runtime_carriesTheLogThroughAWitherAndAnOptionalAccessor() {
+        TypeSpec runtime = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),
+            ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
+        var logType = ClassName.get(SCHEMA_PACKAGE, ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+
+        MethodSpec wither = method(runtime, "withFetcherErrorLog");
+        assertThat(wither.returnType()).isEqualTo(ClassName.get(SCHEMA_PACKAGE, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME));
+        assertThat(wither.parameters()).extracting(ParameterSpec::type).containsExactly(logType);
+        assertThat(method(runtime, "fetcherErrorLog").returnType())
+            .isEqualTo(ParameterizedTypeName.get(ClassName.get(Optional.class), logType));
+    }
+
+    @Test
+    void withFetcherErrorLog_returnsACopyCarryingTheLog_andLeavesTheOriginalWithout() throws Throwable {
+        Class<?> logClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+        Object log = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{logClass},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLog"));
+        Object original = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
+            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+
+        Object copy = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(original, log);
+
+        assertThat(runtimeClass.getMethod("fetcherErrorLog").invoke(copy)).isEqualTo(Optional.of(log));
+        assertThat(runtimeClass.getMethod("fetcherErrorLog").invoke(original)).isEqualTo(Optional.empty());
+        assertThat(runtimeClass.getMethod("dialect").invoke(copy)).isEqualTo(SQLDialect.POSTGRES);
+        assertThatThrownBy(() -> {
+            try {
+                runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(original, (Object) null);
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        }).isInstanceOf(NullPointerException.class);
+    }
+
+    private static TypeSpec unit(List<TypeSpec> units, String name) {
+        return units.stream().filter(u -> u.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    private static MethodSpec method(TypeSpec type, String name) {
+        return type.methodSpecs().stream().filter(m -> m.name().equals(name)).findFirst().orElseThrow();
+    }
+
+    private static List<String> abstractMethodNames(TypeSpec type) {
+        return type.methodSpecs().stream()
+            .filter(m -> m.modifiers().contains(Modifier.ABSTRACT))
+            .map(MethodSpec::name)
+            .toList();
+    }
+
+    private static List<String> parameterTypes(MethodSpec method) {
+        return method.parameters().stream().map(p -> p.type().toString()).toList();
     }
 
     // --- driving helpers -----------------------------------------------------------------------

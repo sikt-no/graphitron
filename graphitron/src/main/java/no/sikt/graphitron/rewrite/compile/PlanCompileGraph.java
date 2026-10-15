@@ -262,15 +262,21 @@ public final class PlanCompileGraph {
                     var tenantConnections = runtimeUnit("TenantConnections");
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
                     var requestTenants = runtimeUnit("RequestTenants");
+                    var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
+                        fetcherErrorLog.ifPresent(l -> declared(r, l));
                         refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> declared(r, i));
                     });
                     tenantConnections.ifPresent(t -> {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
                         requestTenants.ifPresent(rt -> declared(t, rt));
+                        // The fan-out failure path hands its throw to the consumer's log through
+                        // the router's shared guard.
+                        fetcherErrorLog.ifPresent(l -> declared(t, l));
+                        refOf(GlobalUnitKind.ERROR_ROUTER).ifPresent(er -> declared(t, er));
                         refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(t, tp));
                     });
                 }
@@ -284,6 +290,7 @@ public final class PlanCompileGraph {
                     // per-operation carrier on both topologies.
                     runtimeUnit("TenantConnections").ifPresent(t -> declared(instrumentation, t));
                     runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
+                    runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
                 }
                 case SCHEMA_CLASS -> {

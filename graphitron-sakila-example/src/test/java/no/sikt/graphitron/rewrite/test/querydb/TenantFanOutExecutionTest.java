@@ -3,6 +3,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
+import no.sikt.graphitron.generated.multitenant.schema.FetcherErrorLog;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
@@ -360,6 +361,74 @@ class TenantFanOutExecutionTest {
         assertThat(result.getErrors())
             .anyMatch(e -> e.getExtensions() != null
                 && "TenantFanOutTimedOut".equals(e.getExtensions().get("classification")));
+    }
+
+    /** One {@link FetcherErrorLog#tenantFailed} call. */
+    private record LoggedTenantFailure(Integer tenantKey, Throwable cause, String reference) {}
+
+    /** Records tenant failures; an {@code unmatched} call outside a fan-out fails the test loudly. */
+    private static FetcherErrorLog recordingTenantLog(List<LoggedTenantFailure> logged) {
+        return new FetcherErrorLog() {
+            @Override
+            public void unmatched(Throwable thrown, String reference, graphql.schema.DataFetchingEnvironment env) {
+                throw new AssertionError("expected only tenant failures, got " + thrown);
+            }
+
+            @Override
+            public void tenantFailed(Integer tenantKey, Throwable cause, String reference,
+                                     graphql.schema.DataFetchingEnvironment env) {
+                logged.add(new LoggedTenantFailure(tenantKey, cause, reference));
+            }
+        };
+    }
+
+    private static String referenceOf(graphql.GraphQLError error) {
+        String message = error.getMessage();
+        return message.substring(message.indexOf("Reference: ") + "Reference: ".length(), message.length() - 1);
+    }
+
+    @Test
+    void downedTenant_reachesTheRuntimesFetcherErrorLogWithTheTenantAndTheClientsReference() {
+        TENANT_2_DOWN.set(true);
+        var logged = new java.util.concurrent.CopyOnWriteArrayList<LoggedTenantFailure>();
+        Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
+        byTenant.put(1, tenantDataSource("fanout_t1", null, null, null));
+        byTenant.put(2, tenantDataSource("fanout_t2", null, TENANT_2_DOWN, null));
+        var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES)
+            .withFetcherErrorLog(recordingTenantLog(logged))
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{}")
+            .query("{ filmsEverywhere { title } }")
+            .build());
+
+        assertThat(result.getErrors()).hasSize(1);
+        assertThat(logged).hasSize(1);
+        assertThat(logged.get(0).tenantKey()).isEqualTo(2);
+        assertThat(logged.get(0).cause()).isNotInstanceOf(java.util.concurrent.TimeoutException.class);
+        assertThat(logged.get(0).reference()).isEqualTo(referenceOf(result.getErrors().get(0)));
+    }
+
+    @Test
+    void timedOutTenant_reachesTheRuntimesFetcherErrorLogAsATimeoutException() {
+        var logged = new java.util.concurrent.CopyOnWriteArrayList<LoggedTenantFailure>();
+        Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
+        byTenant.put(1, tenantDataSource("fanout_t1", null, null, null));
+        byTenant.put(2, hangingDataSource("fanout_t2", 5_000));
+        var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES,
+                4, java.time.Duration.ofMillis(500))
+            .withFetcherErrorLog(recordingTenantLog(logged))
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{}")
+            .query("{ filmsEverywhere { title } }")
+            .build());
+
+        assertThat(result.getErrors()).hasSize(1);
+        assertThat(logged).hasSize(1);
+        assertThat(logged.get(0).tenantKey()).isEqualTo(2);
+        assertThat(logged.get(0).cause()).isInstanceOf(java.util.concurrent.TimeoutException.class);
+        assertThat(logged.get(0).reference()).isEqualTo(referenceOf(result.getErrors().get(0)));
     }
 
     @Test

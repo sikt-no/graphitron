@@ -79,6 +79,10 @@ class TenantScatterSubstrateTest {
         for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
+        // The fan-out failure path hands its throw to the router's log guard.
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.generate(PACKAGE)) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");

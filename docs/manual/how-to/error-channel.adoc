@@ -156,7 +156,10 @@ When no handler matches, the router first walks the exception's cause chain for 
 [source,java]
 ----
 UUID correlationId = UUID.randomUUID();
-LOGGER.error("Unmatched exception in fetcher; correlation id = {}", correlationId, thrown);
+String reference = correlationId.toString();
+if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env))) {
+    LOGGER.error("Unmatched exception in fetcher; correlation id = {}", correlationId, thrown);
+}
 return DataFetcherResult.<P>newResult()
     .data(null)
     .error(GraphqlErrorBuilder.newError(env)
@@ -172,6 +175,30 @@ Two consequences:
 
 Add a typed channel slot when an untyped fallthrough turns out to be a regular, expected condition (not a bug). Leave it as a fallthrough when it really is a bug: the redacted shape is exactly what you want for a 500-class condition.
 
+[[fetcher-error-log]]
+=== Choosing how unmatched exceptions are logged
+
+By default the redact path logs the whole exception at ERROR through the `ErrorRouter` logger, message and cause chain included. An exception message can carry row data: Oracle's unique-constraint message spells out the conflicting column values, for instance. To decide yourself what reaches your logs, give the runtime a `FetcherErrorLog`:
+
+[source,java]
+----
+var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
+    .withFetcherErrorLog((thrown, reference, env) ->
+        LOG.error("Unmatched exception at {}; reference = {}; {}",
+            env.getExecutionStepInfo().getPath(), reference, Sanitiser.describe(thrown)));
+var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+----
+
+`FetcherErrorLog` is generated into your schema package next to `GraphitronRuntime`. Graphitron calls it once per unmatched exception, in place of its own log line, with the exception, the reference the client receives, and the field's `DataFetchingEnvironment` (its path, field definition and arguments). The client's response does not change: it is still "An error occurred. Reference: <reference>." Graphitron then logs nothing about the exception, so the reference is the only thing that joins a client's report to your log line; log it.
+
+Levels, sanitising and rate limiting are yours to build inside the callback. A common shape logs the exception class chain plus `SQLException.getSQLState()` and `getErrorCode()` and never `getMessage()`, picks WARN for exceptions that mean the client sent bad data, and rate-limits stack traces for connection failures so an outage does not flood the log.
+
+If your log throws, the client still gets the redacted error, and Graphitron logs one ERROR line naming your log's class, the class of what it threw and the reference, without either exception's message or stack trace. Only JVM-fatal errors (`VirtualMachineError`, such as `OutOfMemoryError`) propagate.
+
+The escape-hatch engine (`Graphitron.newGraphQL()`) has no runtime, so `withFetcherErrorLog` cannot reach it. There, put the log into each request's context under its class: `Graphitron.newExecutionInput(dsl, ...).graphQLContext(b -> b.put(FetcherErrorLog.class, log))`. A request built without that entry gets the default line, exception message included; nothing warns you, so build every request through one helper of your own.
+
+In a `<tenantColumn>` build, a field fanned out across tenants that fails or times out for one tenant reaches `tenantFailed(tenantKey, cause, reference, env)`, where a timeout arrives as a `java.util.concurrent.TimeoutException`. Its default calls `unmatched(cause, reference, env)`; override it to log the tenant too.
+
 [[pitfalls]]
 == Pitfalls
 
@@ -180,7 +207,7 @@ Add a typed channel slot when an untyped fallthrough turns out to be a regular, 
 * *`path:` is the response path.* If you need to point at an input argument, encode it in the exception or in a custom field on the error type. The synthesised fetcher reads `env.getExecutionStepInfo().getPath()` and can't distinguish argument positions.
 * *`VALIDATION` runs pre-execution.* The Bean-Validation handler intercepts before the service method runs, and the <<column-length-check,column-length check>> before a payload-returning `@mutation` writes; their results bypass the dispatch loop and route straight into the errors slot. There's at most one `VALIDATION` handler per channel.
 * *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
-* *Unmatched flows redact, except graphitron's own client errors.* A `GraphitronClientException` no handler claims surfaces as a top-level error with its own message, as described under <<unmatched-exceptions,unmatched exceptions>>. If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log for a correlation ID, then add the handler.
+* *Unmatched flows redact, except graphitron's own client errors.* A `GraphitronClientException` no handler claims surfaces as a top-level error with its own message, as described under <<unmatched-exceptions,unmatched exceptions>>. If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log (or your `FetcherErrorLog`) for a correlation ID, then add the handler.
 * *An error payload from a `@service` field says the call failed, not that nothing was written.* Graphitron opens no transaction around a `@service` invocation (see xref:../reference/directives/service.adoc#transaction-demarcation[the `@service` constraint]), so a method that threw partway through a batch may already have committed the rows it got to, and the payload is well-formed either way. A payload-returning DML xref:../reference/directives/mutation.adoc[`@mutation`] carrier does carry the rollback promise: its per-row writes run inside one transaction graphitron opens, so an error payload from one means nothing was written. A payload-returning xref:../reference/directives/routine.adoc[`@routine`] Mutation write carries it for statement 1 only, the caveat that page already publishes. A service that needs the promise must open the transaction itself; the trap is a service whose own javadoc claims all-or-nothing, since believing the contract is satisfied somewhere is what makes a partial commit invisible rather than merely surprising.
 * *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload one of the three producer families returns: a `@service` field, a payload-returning DML `@mutation`, or a payload-returning `@routine` Mutation write. A standalone `@error` type with no carrier is rejected at classify time.
 

@@ -293,6 +293,54 @@ class SessionHookExecutionTest {
     }
 
     @Test
+    void runtimeFetcherErrorLog_receivesTheUnmatchedThrowWithTheClientsReference() throws Exception {
+        // The managed path's wiring: the runtime holds the log and the instrumentation publishes
+        // it per operation, with nothing on the request. The probe role holds no grant on film, so
+        // the UPDATE fails with a permission error: as unmatched as any, and a payload without an
+        // error channel redacts it.
+        var references = new java.util.concurrent.CopyOnWriteArrayList<String>();
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+                singleConnectionDataSource(probeConnection()), SQLDialect.POSTGRES)
+            .withFetcherErrorLog((thrown, reference, env) -> references.add(reference));
+        var engine = runtime.newGraphQL(
+            no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .query("mutation { updateFilmsPayload(in: [{ filmId: 2147483000, title: \"x\" }]) { films { filmId } } }")
+            .build());
+
+        assertThat(result.getErrors()).hasSize(1);
+        String message = result.getErrors().get(0).getMessage();
+        assertThat(message).matches("An error occurred\\. Reference: [0-9a-f-]{36}\\.");
+        assertThat(references).containsExactly(
+            message.substring("An error occurred. Reference: ".length(), message.length() - 1));
+    }
+
+    @Test
+    void runtimeFetcherErrorLog_thatThrows_stillLeavesTheClientTheRedactedError() throws Exception {
+        // An Error, not an Exception, so the guard's catch must be wide enough: anything escaping
+        // the redact path would reach graphql-java's default handler, which puts its message in
+        // the response.
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+                singleConnectionDataSource(probeConnection()), SQLDialect.POSTGRES)
+            .withFetcherErrorLog((thrown, reference, env) -> {
+                throw new AssertionError("the consumer's log is broken");
+            });
+        var engine = runtime.newGraphQL(
+            no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .query("mutation { updateFilmsPayload(in: [{ filmId: 2147483000, title: \"x\" }]) { films { filmId } } }")
+            .build());
+
+        assertThat(result.getErrors()).hasSize(1);
+        assertThat(result.getErrors().get(0).getMessage())
+            .matches("An error occurred\\. Reference: [0-9a-f-]{36}\\.");
+    }
+
+    @Test
     void claimsContextArgumentAtAServiceSite_unifiesWithTheMountPayloadSlot() throws Exception {
         // The payload/contextArgument unification end to end: `claims` names both the mount's
         // payload parameter and a @service contextArguments entry, the factory carries one slot,
