@@ -7736,6 +7736,19 @@ COMMENT ON TABLE federation_version IS 'One federation specification version the
 COMMENT ON COLUMN federation_version.source_name IS 'the library, by its group and artifact, anchored by store_source, whose stamp is the content of the jar these rows were read from; the jar carries no Maven metadata naming its release, so a changed stamp is read whole, the old rows going first';
 COMMENT ON COLUMN federation_version.version IS 'the version as a link''s url spells it after the federation specification''s prefix, for example v2.10, which is how graphitron_ast_federation_link_entry spells the version a link names';
 
+CREATE TABLE federation_written_version (
+  source_name VARCHAR NOT NULL,
+  version     VARCHAR NOT NULL,
+  PRIMARY KEY (source_name),
+  -- A version the library supports, so a generator naming one the library dropped fails at capture,
+  -- saying so, rather than at the assembly.
+  FOREIGN KEY (source_name, version) REFERENCES federation_version (source_name, version)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE federation_written_version IS 'The federation version a link graphitron adds names, under the library it is read against. For example v2.10, which a graph federated only through a configured tag links to.';
+COMMENT ON COLUMN federation_written_version.source_name IS 'the library, on federation_version''s terms; the whole key, graphitron writing one version';
+COMMENT ON COLUMN federation_written_version.version IS 'the version, as FederationSpec.URL names it after the specification''s prefix';
+
 CREATE TABLE federation_version_import (
   source_name VARCHAR NOT NULL,
   version     VARCHAR NOT NULL,
@@ -7805,10 +7818,13 @@ SELECT graph_name, 'AUTHORED', version, source_name, source_line, source_column
   FROM authored
  WHERE rank = 1
 UNION ALL
--- The configured link names the version the generator writes, FederationSpec.URL's, pinned to it by
--- FederationLinkTest since a view cannot bind a parameter.
-SELECT g.graph_name, 'CONFIGURED', 'v2.10', CAST(NULL AS VARCHAR),
-       CAST(NULL AS INT), CAST(NULL AS INT)
+-- The configured link names the version graphitron writes, as the federation gatherer recorded it
+-- under the library the graph claims.
+SELECT g.graph_name, 'CONFIGURED',
+       (SELECT w.version FROM federation_written_version w
+          JOIN store_graph_source m ON m.source_name = w.source_name
+         WHERE m.graph_name = g.graph_name),
+       CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
   FROM (SELECT DISTINCT graph_name FROM graphql_source_input WHERE tag IS NOT NULL) g
  WHERE NOT EXISTS (SELECT 1 FROM authored a WHERE a.graph_name = g.graph_name);
 COMMENT ON VIEW graphitron_federation_link_rule IS 'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.';
@@ -13894,8 +13910,9 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- ModelCapture runs CodeCapture before this gatherer for that reason, and the chain resolution
   -- has read the signature across that boundary for as long as the arm has existed.
   ('graphitron', 'code'),
-  -- A link's added imports are the ones its federation version allows, which the federation
-  -- gatherer reads from the library, scoped by the graph's claim on it. ModelCapture runs it first.
+  -- A link's added imports are the ones its federation version allows, and a configured link names
+  -- the version graphitron writes; the federation gatherer records both, scoped by the graph's claim
+  -- on the library. ModelCapture runs it first.
   ('graphitron', 'federation'),
   ('graphitron', 'store'),
   -- The composition hands federation-jvm the link with the imports the anchor settled, so
@@ -13981,6 +13998,9 @@ INSERT INTO meta_grain VALUES
   ('graph-module-entry',
    'one classpath entry of one graph''s run that a workspace module provides',
    'graph_name, source_name', 'configuration'),
+  ('federation-written-version',
+   'the federation version a link graphitron adds names, under one library',
+   'source_name', 'federation'),
   ('federation-version',
    'one federation specification version the federation library supports',
    'source_name, version', 'federation'),
@@ -14439,6 +14459,10 @@ INSERT INTO meta_relation VALUES
    'One classpath entry of this graph''s run, and the workspace module it is a form of.',
    'For example the installed service-1.0-SNAPSHOT.jar Maven resolved for the service module, or that module''s target/classes read in its place.',
    'The link between the two identities a module has in a run, the path the classpath holds and the coordinate the module is, held apart so that neither relation carries a column empty on most of its rows: most entries are no module''s, and a module is told by its coordinate whatever form it arrived in.'),
+  ('federation_written_version', 'federation-written-version', 'federation',
+   'The federation version a link graphitron adds names, under the library it is read against.',
+   'For example v2.10, which a graph federated only through a configured tag links to.',
+   'Graphitron''s own choice rather than the author''s or the library''s, recorded beside the versions so the configured link reads a row rather than a literal, and so the database refuses a version the library does not support. Not the newest version the library offers, which would change whenever the library did.'),
   ('federation_version', 'federation-version', 'federation',
    'One federation specification version the federation library supports.',
    'For example v2.10, a link whose url ends in v2.10 being one the library on graphitron''s classpath accepts.',

@@ -23,6 +23,7 @@ import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION;
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
+import static no.sikt.graphitron.model.Tables.FEDERATION_WRITTEN_VERSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
@@ -36,6 +37,10 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
  * identity: a stamp the store already holds is not read again, and a changed one is read whole,
  * the old rows going first. Where the classes come from no jar the stamp is null, which reads as
  * changed, on {@code store_source}'s terms.
+ *
+ * <p>Beside them, the version graphitron writes when it adds a link of its own, from
+ * {@link FederationSpec#URL}: graphitron's choice rather than the library's, recorded under the
+ * library so the database refuses a version the library does not support.
  *
  * <p>Both readings go through the library's public API. The versions are probed upward from v2.0
  * until it refuses one. A version's imports are the names its definitions carry, each tried as an
@@ -63,11 +68,13 @@ public final class FederationCapture {
      */
     public static void capture(DSLContext dsl, String graphName, LocalDateTime readAt) {
         Progress.started(dsl, graphName, GATHERER);
-        dsl.transaction(tx -> gather(tx.dsl(), graphName, stamp(), readAt));
+        dsl.transaction(tx -> gather(tx.dsl(), graphName, stamp(),
+            FederationSpec.URL.substring(FederationSpec.SPEC_PREFIX.length()), readAt));
         Progress.completed(dsl, graphName, GATHERER);
     }
 
-    static void gather(DSLContext dsl, String graphName, String stamp, LocalDateTime readAt) {
+    static void gather(DSLContext dsl, String graphName, String stamp, String writtenVersion,
+                       LocalDateTime readAt) {
         var s = STORE_SOURCE;
         String held = dsl.select(s.STAMP).from(s).where(s.SOURCE_NAME.eq(SOURCE_NAME)).fetchOne(s.STAMP);
         dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN)
@@ -81,15 +88,27 @@ public final class FederationCapture {
             .onDuplicateKeyIgnore()
             .execute();
 
-        if (stamp != null && stamp.equals(held)) {
-            return;
+        if (stamp == null || !stamp.equals(held)) {
+            read(dsl, stamp, readAt);
         }
-        // Read whole: the old versions go first, their imports by cascade, and the stamp is set
-        // only once the new rows are in.
+        // Every reading, the library unchanged or not: a graphitron upgrade can change the version
+        // it writes without the library changing at all.
+        var w = FEDERATION_WRITTEN_VERSION;
+        dsl.insertInto(w, w.SOURCE_NAME, w.VERSION)
+            .values(SOURCE_NAME, writtenVersion)
+            .onDuplicateKeyUpdate()
+            .set(w.VERSION, writtenVersion)
+            .execute();
+    }
+
+    /** Reads the library whole, the old rows going first, and stamps it once the new rows are in. */
+    private static void read(DSLContext dsl, String stamp, LocalDateTime readAt) {
+        var s = STORE_SOURCE;
+        // The old versions go first, their imports and the written version by cascade.
         var v = FEDERATION_VERSION;
         var i = FEDERATION_VERSION_IMPORT;
         dsl.deleteFrom(v).where(v.SOURCE_NAME.eq(SOURCE_NAME)).execute();
-        for (var entry : read().entrySet()) {
+        for (var entry : versions().entrySet()) {
             dsl.insertInto(v, v.SOURCE_NAME, v.VERSION).values(SOURCE_NAME, entry.getKey()).execute();
             for (String name : entry.getValue()) {
                 dsl.insertInto(i, i.SOURCE_NAME, i.VERSION, i.NAME)
@@ -105,7 +124,7 @@ public final class FederationCapture {
     }
 
     /** Every version the library supports, in order, with the names its link may import. */
-    static Map<String, Set<String>> read() {
+    static Map<String, Set<String>> versions() {
         var versions = new LinkedHashMap<String, Set<String>>();
         for (int minor = 0; ; minor++) {
             String version = "v2." + minor;

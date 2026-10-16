@@ -16,8 +16,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The configured opt-in: a graph whose input carries a tag and whose documents apply no federation
  * {@code @link} is federated by its configuration, at the version the generator writes, and imports
  * what graphitron applies, here the tag alone; an authored link stands the configured one down. The
- * version is pinned here because the view spells it as a literal, a view binding no parameter. The
- * authored opt-in and its sweep are the {@code federation-link} fact documents'.
+ * configured version is the one the federation gatherer records graphitron writing, which is
+ * {@link FederationSpec#URL}'s. The authored opt-in and its sweep are the {@code federation-link}
+ * fact documents'.
  */
 class FederationLinkTest {
 

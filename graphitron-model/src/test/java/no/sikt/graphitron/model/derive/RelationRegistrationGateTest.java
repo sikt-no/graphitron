@@ -124,7 +124,7 @@ class RelationRegistrationGateTest {
             "java_field_declaration",
             // The federation_ family: what the library answers, pinned by the federation-versions
             // fact document. Nothing GraphitronSchema holds is federation's vocabulary.
-            "federation_version", "federation_version_import")) {
+            "federation_version", "federation_version_import", "federation_written_version")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         // The SDL node entries: one relation per node kind and site, read per document and keyed by the

@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
+import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -11,8 +12,10 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 
 import static no.sikt.graphitron.model.Tables.FEDERATION_VERSION_IMPORT;
+import static no.sikt.graphitron.model.Tables.FEDERATION_WRITTEN_VERSION;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The federation gatherer's mark and sweep, at the library's grain: a jar the store holds the
@@ -30,11 +33,11 @@ class FederationCaptureTest {
     void anUnchangedJarIsReadOnce() {
         ThreadConfinedStore.run(dsl -> {
             ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
-            FederationCapture.gather(dsl, "g", "sha256:a", FIRST);
+            FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
             int imports = dsl.fetchCount(FEDERATION_VERSION_IMPORT);
             assertThat(imports).as("the library answers something").isPositive();
 
-            FederationCapture.gather(dsl, "g", "sha256:a", SECOND);
+            FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", SECOND);
             assertThat(dsl.fetchCount(FEDERATION_VERSION_IMPORT)).isEqualTo(imports);
             assertThat(readAt(dsl))
                 .as("dated by the reading that read it, not by the one that found it current")
@@ -47,18 +50,33 @@ class FederationCaptureTest {
     void aChangedJarIsReadAgain() {
         ThreadConfinedStore.run(dsl -> {
             ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
-            FederationCapture.gather(dsl, "g", "sha256:a", FIRST);
+            FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
             int imports = dsl.fetchCount(FEDERATION_VERSION_IMPORT);
 
-            FederationCapture.gather(dsl, "g", "sha256:b", SECOND);
+            FederationCapture.gather(dsl, "g", "sha256:b", "v2.10", SECOND);
             assertThat(readAt(dsl)).isEqualTo(SECOND);
             assertThat(dsl.fetchCount(FEDERATION_VERSION_IMPORT))
                 .as("the old rows went first, so the same library reads to the same rows")
                 .isEqualTo(imports);
 
-            FederationCapture.gather(dsl, "g", null, SECOND.plusMinutes(1));
-            FederationCapture.gather(dsl, "g", null, SECOND.plusMinutes(2));
+            FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(1));
+            FederationCapture.gather(dsl, "g", null, "v2.10", SECOND.plusMinutes(2));
             assertThat(readAt(dsl)).isEqualTo(SECOND.plusMinutes(2));
+        });
+    }
+
+    @Test
+    @DisplayName("the version graphitron writes is one the library supports, or capture refuses it")
+    void theWrittenVersionIsOneTheLibrarySupports() {
+        ThreadConfinedStore.run(dsl -> {
+            ModelCapture.writeGraph(dsl, new GraphIdentity("g", Path.of(".")), FIRST);
+            FederationCapture.gather(dsl, "g", "sha256:a", "v2.10", FIRST);
+            assertThat(dsl.select(FEDERATION_WRITTEN_VERSION.VERSION).from(FEDERATION_WRITTEN_VERSION)
+                    .fetch(FEDERATION_WRITTEN_VERSION.VERSION))
+                .containsExactly("v2.10");
+
+            assertThatThrownBy(() -> FederationCapture.gather(dsl, "g", "sha256:a", "v9.0", SECOND))
+                .isInstanceOf(DataAccessException.class);
         });
     }
 
