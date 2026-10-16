@@ -2082,11 +2082,37 @@ nothing when it fails: the budget warns, the other two say nothing at all.
     queued one runs rather than being dropped, its publish landing on a client that is gone.
     `DevServerTest` holds a drain in flight across the teardown and fails if it is interrupted. The
     comment that said an interrupted store read runs to its budget is corrected.
-  * **The store survives an interrupt anywhere else** `open`. Another thread interrupted inside H2's
-    file I/O closes the channel the same way; H2's `async:` file system is one guard, and needs a
-    timing check against the store's current one before it is taken.
+  * **The store survives an interrupt anywhere else** `done`. The store opens through H2's
+    `retry:` file system, which keeps the plain `FileChannel` and reopens it when an interrupt closed
+    it, so an interrupt reaching a thread inside the store's I/O costs that thread nothing and the
+    rest of the store nothing. `GraphitronModelStoreTest` reopens a captured store cold and reads
+    `graphql_directive`, the relation the live session failed on, with the thread's interrupt flag
+    set. Under `file:` that read fails with `ClosedByInterruptException` and the next one with
+    `ClosedChannelException`; under `retry:` both answer. `DebounceExecutor.close()` lets a
+    regeneration in flight finish rather than interrupting it, and `DebounceExecutorTest` fails if it
+    is interrupted.
+
+    Read 2026-10-15 against the dev goal's threads, nothing interrupts a thread inside the store
+    while a session runs, so the guard is for shutdown and for code the session hosts:
+    * LSP requests run on `CompletableFuture.supplyAsync`, and lsp4j's `$/cancelRequest` cancels
+      the future, which never interrupts.
+    * A read's budget is `SET QUERY_TIMEOUT`, H2's own cancel rather than an interrupt.
+    * An MCP tool runs on a Reactor `boundedElastic` worker while a Jetty thread blocks on its
+      response, and Reactor's `WorkerTask.dispose()` interrupts that worker. Nothing disposes it
+      during a call: SDK 2.0's one timeout is on requests the server sends the client, and it does
+      not handle `notifications/cancelled`. It is disposed only when Jetty stops.
+    * `DevServer.close()` calls `shutdownNow()` on its connection threads at shutdown.
+
+    Timed 2026-10-16 on sakila, a fresh file store per run, `file:`, `retry:` and `async:`
+    interleaved over eight rounds. The machine was at load 17 to 32, so thread CPU time is the
+    measure: a capture took 3.7 to 4.5 s of it on the quiet rounds, and `retry:` was at or below
+    `file:` in every quiet round, medians 4,049 ms against 4,483 ms, inside the noise. Cold reads
+    were 3 ms under both. `async:` survives the interrupt too and timed the same, but puts every read
+    through `AsynchronousFileChannel` to guard against something `retry:` already covers.
   * **A store whose file is gone fails loudly** `open`, rather than answering from page cache until
-    a read misses it.
+    a read misses it. `retry:` reopens a file that is still there, not one deleted or moved. The
+    read path treats `ClosedChannelException` as a dead store, closing it and reopening cold, keyed
+    on H2's error code the way `StoreReader` already recognises the query timeout.
 
 ## Tests
 

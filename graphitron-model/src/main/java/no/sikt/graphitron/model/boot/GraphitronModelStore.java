@@ -666,11 +666,20 @@ public final class GraphitronModelStore implements AutoCloseable {
     }
 
     /**
-     * A lock budget, and deliberately nothing else. {@code DB_CLOSE_ON_EXIT=FALSE} is absent
-     * because it suppressed H2's shutdown hook, and the only store that needs its database to
-     * outlive a handle is the in-memory one, held open by {@code DB_CLOSE_DELAY=-1} on a different
-     * URL. A file-backed store is meant to be left on disk, so H2 closing it at JVM exit is what
-     * it wanted anyway.
+     * A file system that survives an interrupt, a lock budget, and deliberately nothing else.
+     *
+     * <p>The file is opened through H2's {@code retry:} file system rather than plain
+     * {@code file:}. A plain file is a {@code FileChannel}, and an interrupt that reaches any thread
+     * inside its I/O closes it for every user of the in-process store: the session then answers from
+     * H2's page cache until a read misses it and fails with a {@code ClosedChannelException}, and
+     * stays dead until it is reopened. {@code retry:} keeps the same channel and reopens it when an
+     * interrupt closed it, so it costs nothing until one arrives. The store's own threads do not
+     * interrupt each other, but a dev session's shutdown and the libraries it hosts may.
+     *
+     * <p>{@code DB_CLOSE_ON_EXIT=FALSE} is absent because it suppressed H2's shutdown hook, and the
+     * only store that needs its database to outlive a handle is the in-memory one, held open by
+     * {@code DB_CLOSE_DELAY=-1} on a different URL. A file-backed store is meant to be left on disk,
+     * so H2 closing it at JVM exit is what it wanted anyway.
      *
      * <p>{@code AUTO_SERVER=TRUE} is absent for a stronger reason than preference: in mixed mode
      * the holding process records the port of an embedded server in a {@code store.lock.db} beside
@@ -697,7 +706,7 @@ public final class GraphitronModelStore implements AutoCloseable {
      * which rows are worth waiting out. None of them are.
      */
     private static String fileUrl(Path directory) {
-        return "jdbc:h2:file:" + directory.toAbsolutePath().resolve(DATABASE)
+        return "jdbc:h2:retry:" + directory.toAbsolutePath().resolve(DATABASE)
             + ";LOCK_TIMEOUT=" + LOCK_TIMEOUT_MILLIS + ";ANALYZE_AUTO=0";
     }
 

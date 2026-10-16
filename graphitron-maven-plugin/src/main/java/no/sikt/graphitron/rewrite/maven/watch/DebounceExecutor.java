@@ -41,13 +41,18 @@ public final class DebounceExecutor implements AutoCloseable {
         pending = executor.schedule(task, windowMs, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * Drops a pending task and lets one already running finish rather than interrupting it. The
+     * task regenerates, writing the fact store, and an interrupt that reaches a thread inside the
+     * store's file I/O is the store's to survive, not this executor's to send.
+     */
     @Override
     public synchronized void close() {
         if (pending != null) {
             pending.cancel(false);
             pending = null;
         }
-        executor.shutdownNow();
+        executor.shutdown();
         try {
             executor.awaitTermination(1, TimeUnit.SECONDS);
         } catch (InterruptedException e) {

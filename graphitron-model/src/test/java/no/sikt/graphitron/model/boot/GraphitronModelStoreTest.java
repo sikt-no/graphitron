@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.boot;
 
+import no.sikt.graphitron.model.test.CapturedStore;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -11,7 +12,9 @@ import java.nio.file.attribute.FileTime;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.STORE_STAMP;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
@@ -20,7 +23,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * The sweep's call site, as opposed to the sweep itself: that {@link GraphitronModelStore#openAt}
  * runs it once per home per JVM, that it runs in the arms that fall back to an in-memory store, and
  * that the recency marker is written strictly after a successful open. And the stamp a booted store
- * carries, which names the DDL it ran.
+ * carries, which names the DDL it ran, and the file system it opens, which an interrupted read
+ * leaves answering.
  *
  * <p>These belong beside the class rather than in a module that consumes it, being assertions about
  * what opening the store does rather than about what capture writes. The policy the sweep applies
@@ -140,6 +144,45 @@ class GraphitronModelStoreTest {
             assertThat(stamps).as("at most one row, and a booted store has it").hasSize(1);
             assertThat(stamps.getFirst().getDdlHash()).isEqualTo(expected);
         }
+    }
+
+    /**
+     * An interrupt that reaches a thread inside the store's file I/O closes a plain
+     * {@code FileChannel} for every user of the store, which then fails until it is reopened. The
+     * store is reopened cold and read on a thread whose interrupt flag is set: the read answers, and
+     * so does the next one. The directives are what is read because a fresh open leaves them on
+     * disk, where a smaller relation is already in H2's cache and never reaches the file; they are
+     * also the relation a live session was found failing on.
+     */
+    @Test
+    @DisplayName("a read interrupted inside the store's file leaves the store answering")
+    void anInterruptedReadLeavesTheStoreAnswering(@TempDir Path tmp) {
+        Path home = tmp.resolve("home");
+        Path sources = tmp.resolve("sources");
+        CapturedStore.writeSource(sources, "type Query { films: [Film!]! }\ntype Film { title: String }\n");
+        List<String> captured;
+        try (var store = GraphitronModelStore.openAt(home)) {
+            CapturedStore.capture(store.dsl(), CapturedStore.graph(sources), CapturedStore.corpusOf(sources), null);
+            captured = directiveNames(store);
+        }
+
+        try (var store = GraphitronModelStore.openAt(home)) {
+            List<String> interrupted;
+            Thread.currentThread().interrupt();
+            try {
+                interrupted = directiveNames(store);
+            } finally {
+                Thread.interrupted();
+            }
+            assertThat(interrupted).as("the interrupted read").isEqualTo(captured);
+            assertThat(directiveNames(store)).as("the read after it").isEqualTo(captured);
+        }
+    }
+
+    /** The rows themselves rather than a count, which H2 answers without reading the file. */
+    private static List<String> directiveNames(GraphitronModelStore store) {
+        return store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).from(GRAPHQL_DIRECTIVE)
+            .orderBy(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME).fetch(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME);
     }
 
     /**
