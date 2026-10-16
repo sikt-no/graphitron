@@ -466,6 +466,7 @@ class RelationRegistrationGateTest {
         // A rule over the configuration, the classpath reading and the source walk, evaluated when
         // read; StaleModuleTest states it.
         registrations.put("build_warning_stale_module", Arm.DERIVED);
+        registrations.put("build_warning_stale_module_hint", Arm.DERIVED);
         // The schema self-description stratum: views over row values authored in the DDL itself,
         // so capture never writes them and agreement with the walk is vacuous by construction.
         // Their anchors are the roster gates in FactSchemaGateTest, which close the family rows

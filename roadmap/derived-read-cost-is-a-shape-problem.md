@@ -1546,10 +1546,18 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
     with no place, a stale module being located in no schema file. Each reader says a module once
     when it goes stale and once when it is compiled again (`StaleModules`), which settles whether a
     rebuild while dev runs clears the warning live: it does.
-  * **The not-found diagnostics point at their cause** `open`. A name that resolves to nothing
-    while a workspace module is read stale names the module beside its own complaint, so many read
-    as one cause. Each not-found row joined to the stale module that would have carried the name,
-    which is its own question.
+  * **The not-found diagnostics point at their cause** `done`. While a graph reads a workspace
+    module stale, each error it may have caused, a rejection, a claim conflict or an entry defect,
+    ends with `build_warning_stale_module_hint`'s clause: how many modules were read stale, that
+    this may be why, and where the warnings naming them are, so many errors read as one cause; the
+    count rather than the names, the schema folding no set into one string; the clause goes when the
+    modules
+    compile. Per graph and not per error, because which module an error needed is not recorded: an
+    unknown class or condition reaches the store as a sentence, and an unknown method names no class.
+    Joining an error to the one module that would carry its name needs the rejections to say what
+    they looked for, which is its own capture. Cost on sis with four stale modules and a thousand
+    error rows: the LSP's read of `diagnostic` 456 ms with the message against 366 to 396 ms
+    without, the clause's view 0.6 ms.
   * **A catalog is compared with what generated it** `open`. The catalog module's sources are
     generated, so a stale catalog shows only against the migrations or DDL its codegen read, which
     only the codegen configuration names. Its own fact first, then a condition beside the module's.

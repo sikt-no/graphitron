@@ -13465,6 +13465,17 @@ COMMENT ON COLUMN build_warning_stale_module.sources_modified IS 'when the newes
 COMMENT ON COLUMN build_warning_stale_module.output_modified IS 'the newest class time in what the run read; NULL where that entry held no class';
 COMMENT ON COLUMN build_warning_stale_module.message IS 'the one sentence every reader says: the module, what is old, and the command that compiles it';
 
+CREATE VIEW build_warning_stale_module_hint (graph_name, hint) AS
+SELECT graph_name,
+       ' (' || COUNT(*) || ' workspace module'
+       || CASE WHEN COUNT(*) = 1 THEN ' was' ELSE 's were' END
+       || ' read stale; this may be why. See the stale-module warning or status.)'
+  FROM build_warning_stale_module
+ GROUP BY graph_name;
+COMMENT ON VIEW build_warning_stale_module_hint IS 'One graph whose run read a workspace module stale, and the clause its errors carry for it. For example a graph whose run read opptak-service stale, whose errors then end saying that one module was read stale and may be why.';
+COMMENT ON COLUMN build_warning_stale_module_hint.graph_name IS 'the graph whose run read the modules stale; the grain';
+COMMENT ON COLUMN build_warning_stale_module_hint.hint IS 'the clause appended to the graph''s error diagnostics: how many modules were read stale and where the warnings naming them are, one per module';
+
 CREATE VIEW diagnostic
   (graph_name, source, severity, actionable, kind, variant, lsp_code, attempt_kind, attempt,
    stub_key, lint_rule, type_name, field_name, coordinate, file,
@@ -13477,7 +13488,7 @@ SELECT r.graph_name, 'schema', 'error', r.kind <> 'DEFERRED', r.kind, r.variant,
             WHEN r.field_name IS NULL THEN r.type_name
             ELSE r.type_name || '.' || r.field_name END,
        r.file,
-       r.source_line, r.source_column, r.message
+       r.source_line, r.source_column, r.message || COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = r.graph_name), '')
   FROM rejection_validation_error r
 UNION ALL
 SELECT c.graph_name, 'schema', 'error', m.kind <> 'DEFERRED', m.kind, m.variant,
@@ -13487,7 +13498,7 @@ SELECT c.graph_name, 'schema', 'error', m.kind <> 'DEFERRED', m.kind, m.variant,
        CASE WHEN c.field_name IS NULL THEN c.type_name
             ELSE c.type_name || '.' || c.field_name END,
        c.source_name,
-       c.source_line, c.source_column, m.message
+       c.source_line, c.source_column, m.message || COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = c.graph_name), '')
   FROM intent_authored_claim_conflict c
   JOIN intent_authored_claim_rejection m
     ON m.graph_name = c.graph_name AND m.type_name = c.type_name
@@ -13566,6 +13577,7 @@ SELECT d.graph_name, 'schema', t.severity, t.basis <> 'UNSUPPORTED',
        d.source_line, d.source_column,
        CASE WHEN d.detail IS NULL THEN t.statement
             ELSE t.statement || ' (' || d.detail || ')' END
+       || CASE WHEN t.severity = 'error' THEN COALESCE((SELECT h.hint FROM build_warning_stale_module_hint h WHERE h.graph_name = d.graph_name), '') ELSE '' END
   FROM graphitron_entry_defect_site d
   JOIN graphitron_defect_type t ON t.code = d.code;
 COMMENT ON VIEW diagnostic IS 'The diagnostics stratum''s one read surface: the union of all seven arms (the rejection residue, the store-native claim-conflict pilot, the lint arm, the advisory arm, the SDL toolchain''s three reading stages, the compile oracle, the written-entry arm), which the MCP diagnostics tools read and no consumer bypasses. Prefix-less on purpose: a read-side union across vocabularies has no family, and no naming gate says so mechanically, so this comment does. Derived columns live here rather than in the base relations: actionable is the deferred-versus-rest CASE over kind (the same predicate the LSP severity projection documents, pinned by a one-row parity assertion); severity for compile rows mirrors CompileDiagnostic.severity() (ERROR to error, every other javac kind to warning, same parity discipline); coordinate is the rendering of the stored pair, and it is the one composite here because its atoms ride the same row (type_name is a dimension of its own, field_name beside it), so every question the parts answer stays answerable from the row; the compile arm''s sentinels ("(no source)", -1) normalise to the uniform NULL absent bucket by comparing against the sentinel values, never IS NULL. lsp_code carries the producing oracle''s stable machine code in both namespaces (the rejection sub-seals'' lspCode(), javac''s Diagnostic.getCode()), which cannot collide. Two axes are deliberately absent, both for the same reason and neither recoverable from a column that carried them: the claiming directives of a conflict, which are rows on the claim views and the residue''s own directive child under each arm''s key, so a consumer asks membership by joining rather than set equality against a joined string; and the directory of file, which is one segment of a path kept while the rest are discarded, so a consumer truncates the stored path at whatever depth its own question needs. Every dimension is single-valued at one row per diagnostic, so group counts sum to the row count.';
@@ -13586,7 +13598,7 @@ COMMENT ON COLUMN diagnostic.coordinate IS 'the rendered coordinate (a type name
 COMMENT ON COLUMN diagnostic.file IS 'path of the row''s source (SDL file on schema rows, generated .java on compile rows), one spelling across both channels and the one every arm stores, so this column derives from its arm rather than converting it; NULL in the stated absent bucket (whole-build findings, unlocated rejections, javac''s no-source sentinel)';
 COMMENT ON COLUMN diagnostic.source_line IS 'the location''s line, 1-based in both channels; NULL in the absent bucket (javac''s NOPOS normalised here)';
 COMMENT ON COLUMN diagnostic.source_column IS 'the location''s column, on the same terms as source_line';
-COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever oracle authored it; display material, never a dimension, never an agreement anchor';
+COMMENT ON COLUMN diagnostic.message IS 'the row''s rendered message, whichever oracle authored it; display material, never a dimension, never an agreement anchor. An error a stale workspace module may have caused, a rejection, a claim conflict or an entry defect, ends with build_warning_stale_module_hint''s clause while its graph reads a module stale';
 
 -- ==== Schema self-description (meta_) =============================================
 -- The schema describing itself: the family roster with each family's headline relations and
@@ -13900,6 +13912,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('stale-module-hint',
+   'one graph whose run read a workspace module stale',
+   'graph_name', 'classpath'),
   ('stale-module',
    'one workspace module one graph''s run read stale',
    'graph_name, coordinate', 'classpath'),
@@ -14345,6 +14360,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
 
 INSERT INTO meta_relation VALUES
+  ('build_warning_stale_module_hint', 'stale-module-hint', 'derivation',
+   'One graph whose run read a workspace module stale, and the clause its errors carry for it.',
+   'For example a graph whose run read opptak-service stale, whose errors then end saying that one module was read stale and may be why.',
+   'Every error a stale module may have caused says so, because a name added to a module since it compiled reads as an author error at every site that names it, and one cause behind many errors is what a developer reading the errors one at a time cannot see. Per graph and not per error: which module a given error needed is not something the errors record, so the clause counts the stale modules, says may, and points at the warnings that name them one row each. Its own relation rather than written into each arm, so the diagnostic union spells the clause once.'),
   ('build_warning_stale_module', 'stale-module', 'derivation',
    'One workspace module a graph''s run read stale, with why and the two times that say so.',
    'For example a service module whose sources were saved after its target/classes was written, or a module with no output read from the copy last installed.',

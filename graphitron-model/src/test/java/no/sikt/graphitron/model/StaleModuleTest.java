@@ -15,6 +15,8 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.BUILD_WARNING_STALE_MODULE;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.JAVA_SOURCE_ROOT;
+import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
@@ -74,6 +76,34 @@ class StaleModuleTest {
                         + " installed copy from 2026-07-23 09:00 was read in its place, so anything"
                         + " added to it since reads as not found. Compile it from the reactor root:"
                         + " mvn -pl :installed compile"));
+        });
+    }
+
+    @Test
+    @DisplayName("an error in a graph that read a module stale says the module may be why")
+    void anErrorNamesTheStaleModules() {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var installed = module("installed");
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), List.of(
+                entry(Path.of("/repo/installed-1.0-SNAPSHOT.jar"), installed)), READ);
+            var r = REJECTION_VALIDATION_ERROR;
+            dsl.insertInto(r, r.GRAPH_NAME, r.ORDINAL, r.KIND, r.VARIANT, r.MESSAGE)
+                .values(GRAPH, 0, "AUTHOR_ERROR", "UnknownName", "service method could not be resolved")
+                .execute();
+
+            assertThat(dsl.select(DIAGNOSTIC.MESSAGE).from(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).and(DIAGNOSTIC.SOURCE.eq("schema"))
+                .fetchOne(DIAGNOSTIC.MESSAGE))
+                .isEqualTo("service method could not be resolved (1 workspace module was read stale;"
+                    + " this may be why. See the stale-module warning or status.)");
+
+            dsl.deleteFrom(STORE_GRAPH_MODULE_ENTRY).execute();
+            assertThat(dsl.select(DIAGNOSTIC.MESSAGE).from(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH)).and(DIAGNOSTIC.SOURCE.eq("schema"))
+                .fetchOne(DIAGNOSTIC.MESSAGE))
+                .as("once no module is read stale the error says only itself")
+                .isEqualTo("service method could not be resolved");
         });
     }
 
