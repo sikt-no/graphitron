@@ -56,7 +56,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R1054` | GraphitronTransactionProvider fails a nested commit on drivers without releaseSavepoint (Oracle) | Ready | 2026-10-16 | [plan](transaction-provider-tolerate-unsupported-release-savepoint.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1051` | Name the @defaultTenant entity tenant apart from the global-read default, including none | In Review | 2026-10-16 | [plan](default-tenant-entity-tenant-separate-from-global-default.md) |
 | `R1053` | Validation pre-check casts a list input argument to Map and crashes outside the error channel | In Review | 2026-10-16 | [plan](validator-prestep-list-input-arg.md) |
 
 ---
@@ -831,7 +830,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1054` [**GraphitronTransactionProvider fails a nested commit on drivers without releaseSavepoint (Oracle)**](transaction-provider-tolerate-unsupported-release-savepoint.md)
 - `R862` [**Input-field @condition rewrap drops the enum leaf extraction**](preserve-enum-extraction-through-condition-rewrap.md)
 - `R786` [**MCP issue.report tool: dedup search over issues, roadmap and changelog, plus a draft report**](mcp-issue-report-tool.md)
-- `R1051` [**Name the @defaultTenant entity tenant apart from the global-read default, including none**](default-tenant-entity-tenant-separate-from-global-default.md)
 - `R788` [**Publish stops when the verification build did not cover HEAD**](publish-build-coverage-guard.md)
 - `R599` [**Remove the stray @notGenerated and @experimental_constructType declarations**](remove-stray-directive-declarations.md)
 - `R547` [**Retire transient roadmap-ID citations from pom.xml comments**](pom-comment-roadmap-citations.md)
