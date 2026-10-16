@@ -55,7 +55,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1054` | GraphitronTransactionProvider fails a nested commit on drivers without releaseSavepoint (Oracle) | In Review | 2026-10-16 | [plan](transaction-provider-tolerate-unsupported-release-savepoint.md) |
 | `R1053` | Validation pre-check casts a list input argument to Map and crashes outside the error channel | In Review | 2026-10-16 | [plan](validator-prestep-list-input-arg.md) |
 
 ---
@@ -826,7 +825,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R825` [**A mutation test seeds film_actor rows a query test asserts the absence of**](film-actor-fixture-mutated-and-read-concurrently.md)
 - `R887` [**ColumnComparison's CatalogColumn overload has no caller, and a doc implies one**](column-comparison-catalog-column-overload-has-no-caller.md)
 - `R1055` [**GraphitronTransactionProvider closes the enclosing scope when a begin fails**](transaction-provider-failed-begin-closes-enclosing-scope.md)
-- `R1054` [**GraphitronTransactionProvider fails a nested commit on drivers without releaseSavepoint (Oracle)**](transaction-provider-tolerate-unsupported-release-savepoint.md)
 - `R862` [**Input-field @condition rewrap drops the enum leaf extraction**](preserve-enum-extraction-through-condition-rewrap.md)
 - `R786` [**MCP issue.report tool: dedup search over issues, roadmap and changelog, plus a draft report**](mcp-issue-report-tool.md)
 - `R788` [**Publish stops when the verification build did not cover HEAD**](publish-build-coverage-guard.md)
