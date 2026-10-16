@@ -1,7 +1,7 @@
 ---
 id: R1057
 title: "A filter field typed as a list of input objects is read as one Map, so the filter is silently dropped"
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-10-16
@@ -184,6 +184,22 @@ The draft below goes into `docs/manual/reference/directives/field.adoc`, after t
 > ```
 >
 > `pairs: [{actorId: 1, filmId: 1}, {actorId: 3, filmId: 2}]` produces `(actor_id, film_id) IN ((1, 1), (3, 2))`, not two separate `IN`s. An absent, null or empty list applies no filter; a `null` element matches nothing. Every field of the element type must be non-null and bound to a column; `@nodeId`, `@reference`, list-typed fields and `@condition` are not accepted inside a list-of-input filter, and the build says which field is at fault. To filter on anything else, put `@condition(override: true)` on the list field: your method receives the whole list and owns the predicate.
+
+## Implementation notes
+
+Landed as planned. Where the code settled a detail the plan left open, or departed from it:
+
+- **A `@condition` inside an element is refused even when the list level is suppressed.** The plan said none of the rejections apply under an enclosing `@condition(override: true)` or one on the list field. That holds for every case but this one: an element field's own `@condition` (either override value) is still refused there, because its parameters would be read through the list as one object, so the method could only receive `null`. Dropping it instead would silently discard an authored predicate. The nullable, list-typed, `@nodeId`, `@reference` and unbound cases are admitted under suppression as planned.
+- **Condition reads that reach a list from further up are refused too.** The invariant check found one the plan did not list: a field-level `@condition` with `argMapping: "filmId: filter.pairs.actorId"` classified, and would have read `null`. `FieldBuilder.conditionReadThroughList` now refuses, at the consuming field, any authored condition parameter whose read descends into a list of input objects, walking the GraphQL types along the path. It covers field-level, argument-level and nested dotted paths alike. The list field's own `@condition` reaching below it keeps its located diagnostic at the list field, as planned.
+- **A nullable non-list nested input inside an element is refused**, the non-null rule applied one level down: a left-out nested object would leave its cells null.
+- **At most 22 cells**, the widest typed `Row` jOOQ offers; a wider element is a consequence rejection on the consuming field.
+- **The ledger cross-check covers a row-`IN` per cell.** `ColumnBindingLedger.requireCovers` matched each predicate against one slot of the same name, columns and extraction, which a row-`IN` over element fields never has. It now expects one slot per cell, at the cell's own path below the list, which is exactly what the walk records. The slots themselves are unchanged.
+- **Model helpers.** `CallSiteExtraction.ElementRows.of` reads the arm bare or as a nested leaf, and `ElementRows.disagrees` is the column-agreement check the `In` and `RowIn` compact constructors run.
+- **`typedRow`** moved to `CatalogRefs.typedRow`, where `CompositeDecodeHelperRegistry` and `ElementRowsHelperRegistry` both read it.
+- **Depth 0.** The list-typed argument's own `@condition` is added by the list walk (unchanged when it binds the argument, refused when it reaches below it), and its diagnostics anchor at the argument's definition.
+- **Multi-table roots** carry the arm through without change: `isBranchSafeExtraction` answers `true`, since each participant's conditions class hosts the helper. `MultiTableFilterLoweringTest.listOfInputFilter_lowersPerParticipantAsRowIn` pins the per-participant `RowIn`.
+- **Tests.** `ListOfInputFilterPipelineTest` (20 cases, the invariant as an `@AfterAll` over every schema the class builds) and five `GraphQLQueryTest.listOfInputFilter_*` execution cases over `film_actor`. The `[null]` case pins that a list of only null elements matches nothing rather than filtering nothing.
+- **User doc.** The `field.adoc` paragraph also names the `List<Map<String, Object>>` carrier the overriding method receives, which the override test binds.
 
 ## Other solutions we've considered
 
