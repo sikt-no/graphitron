@@ -1,7 +1,7 @@
 ---
 id: R1053
 title: "Validation pre-check casts a list input argument to Map and crashes outside the error channel"
-status: In Review
+status: Ready
 bucket: bug
 depends-on: []
 created: 2026-10-16
@@ -115,3 +115,14 @@ Landed as planned. Where the code settled a detail the plan left open, or depart
 - **Read list-ness off the binding's `ValueShape.ListOf`.** The `FromArg` the pre-step already walks carries `ListOf` for a list bound to a bean or jOOQ-record parameter. But a `ValueShape` describes one parameter binding, not the argument's wire value: a `List`- or `Map`-typed parameter bound directly is a `Scalar` leaf, and a nested-field binding reaches the argument only through `outerArgOfValueShape`. It also keeps the per-binding grain that double-validates. If R747 takes its route 2 (validate the consumer's bound instance instead of the generated input), that is a new `ValidatedArgument` arm for which the binding's `ListOf` is the right list source; it does not redefine the arms above.
 - **Keep the emit-time schema read and stop discarding the wrappers.** The smallest diff: have `resolveInputArgClass` return the wrapper depth along with the class. It deepens the generator's one emit-time read of the assembled schema for a fact classification already holds, and keeps the model-only-build fallback that validated a raw list and passed, the untested fork this bug shipped through.
 - **Validate a list of lists by nesting loops.** Supportable, but no bean binding of such an argument exists on a `@service` field today, so the extra emitter branch would have no fixture; a classification rejection is loud and loses nothing that works.
+
+## Reviewer findings
+
+### Round 1: In Review → Ready, rework (session_01E1uQcG2ou5DeumtFr7MEsL, 2026-10-16)
+
+Question 1 holds: the delivered model, walker, classification rejection with its validator mirror, emitter, helper signature and user-doc sentence are the change the spec approved, and the generated `MutationFetchers.countFilmDrafts` reads the list by index inside the `try` as planned. The three departures are recorded under Implementation notes. The retirement sweep is clean. `mvn install -Plocal-db` is green.
+
+1. **Code-string assertions on generated method bodies (approval precondition; question 2).** `TypeFetcherGeneratorTest`'s `mutationServiceRecordField_withValidationHandler_emitsValidatorPreStep`, `..._listInputArgument_validatesEachElement` and `..._twoBindingsIntoOneArgument_validateItOnce` assert on `method(spec, "createSak").code().toString()` (`contains`, `doesNotContain`, `indexOf`, a `split` count). `development-principles.adoc` bans this at every tier, and this gate does not approve a delivery whose tests add or rewrite such assertions, even though the plan asked for them. Two of the three facts already have evidence the rule allows: the dedupe is `ServiceMethodCallWalkerTest.walk_validatedArguments_twoBindingsIntoOneArgumentShareOneTarget` (the emitter loops `validatedArguments()` once per target), and the list read is the `countFilmDrafts_*` execution cases, which fail on the old `Map` read. The third fact has no other pin: the Goal's clause "anything that goes wrong inside the validation pass is handled by the field's error channel" is shown only by `body.indexOf("getValidator(env)") > body.indexOf("try")`.
+   *What satisfies it:* drop the body-text assertions from the three cases, deleting a case that has nothing left to check, and pin the in-`try` placement with behaviour. One cheap route is an execution-tier case that makes the validation pass itself fail on `countFilmDrafts`, for example an `ExecutionInput` built without the `GraphitronContext` entry so `graphitronContext(env).getValidator(env)` throws. Assert that the field resolves through the channel's catch arm (the redacted `ErrorRouter` shape, no raw exception message). Before this item, the same failure escaped the fetcher. If the implementer finds no behavioural pin worth its code, the Goal's clause has to stop claiming demonstrated delivery, and that change goes back through Spec, not a silent drop.
+
+Non-blocking: the implementation notes leave `assembled` unread on `TypeFetcherGenerator.generate` / `generateTypeSpec` "for a follow-up", but no Backlog item names it. File one so the follow-up has a number.
