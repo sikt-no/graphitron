@@ -1,7 +1,7 @@
 ---
 id: R1057
 title: "A filter field typed as a list of input objects is read as one Map, so the filter is silently dropped"
-status: Ready
+status: In Progress
 bucket: bug
 depends-on: []
 created: 2026-10-16
