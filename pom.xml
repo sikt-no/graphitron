@@ -57,7 +57,8 @@
         <!--
           Jackson, both lines, graphitron-mcp only and only transitively: langchain4j pulls 2.x and
           the MCP SDK's mcp-json-jackson3 pulls 3.x. The lines release independently, hence two
-          properties. See the BOM imports in dependencyManagement.
+          properties. See the BOM imports in dependencyManagement. graphitron-sakila-example
+          re-imports the 2.x BOM ahead of quarkus-bom so the platform cannot pull 2.x back down.
         -->
         <version.com.fasterxml.jackson>2.22.3</version.com.fasterxml.jackson>
         <version.tools.jackson>3.2.3</version.tools.jackson>

@@ -32,6 +32,19 @@
 
     <dependencyManagement>
         <dependencies>
+            <!--
+              Jackson 2.x ahead of the platform BOM: among imports the first declaration wins, and
+              quarkus-bom pins the whole 2.x family at a release the root's jackson-bom import has
+              already moved past for security fixes. Re-importing it here keeps this module on the
+              root's version.com.fasterxml.jackson instead of the platform's.
+            -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>${version.com.fasterxml.jackson}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>${quarkus.platform.artifact-id}</artifactId>

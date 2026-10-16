@@ -20,7 +20,6 @@ export default defineConfig({
     emptyOutDir: true,
     assetsDir: '',
     sourcemap: false,
-    minify: 'esbuild',
     // Bundle all CSS into one file so the shell can reference a single fixed graphiql.css;
     // otherwise Vite emits per-chunk CSS (graphiql.css + graphiql2.css + ...) and the shell
     // would have to track a moving set of stylesheet names.
