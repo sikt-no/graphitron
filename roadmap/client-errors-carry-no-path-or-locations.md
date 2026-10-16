@@ -20,31 +20,36 @@ A client error here is graphitron's own report of a mistake in the request, rais
 { filmsConnection(first: 2, after: "not-base64!!!") { nodes { title } } }
 ```
 
-answers today with
+answers today with two errors, because `filmsConnection` is `FilmsConnection!` and its null bubbles to the root:
 
 ```json
 {"errors": [{"message": "cursor is not valid (was: \"not-base64!!!\")",
-             "extensions": {"classification": "DataFetchingException"}}],
- "data": {"filmsConnection": null}}
+             "extensions": {"classification": "DataFetchingException"}},
+            {"message": "The field at path '/filmsConnection' was declared as a non null type, but the code involved in retrieving data has wrongly returned a null value. ...",
+             "path": ["filmsConnection"],
+             "extensions": {"classification": "NullValueInNonNullableField"}}],
+ "data": null}
 ```
 
-and after this item with
+and after this item with one:
 
 ```json
 {"errors": [{"message": "cursor is not valid (was: \"not-base64!!!\")",
              "locations": [{"line": 1, "column": 3}],
              "path": ["filmsConnection"],
              "extensions": {"classification": "DataFetchingException"}}],
- "data": {"filmsConnection": null}}
+ "data": null}
 ```
 
-The message and the classification do not change. On a field fetched once per parent (a `@splitQuery` field, batched through a DataLoader), each parent's error names that parent's path, so a client sees which element failed.
+Two things change for a consumer. The client error carries `path` and `locations`. And on a non-null field, graphql-java's `NullValueInNonNullableField` error at the same path no longer appears beside it. graphql-java keeps at most one error per field path, and today the client error has no path to claim one. This matches what a redacted error already gets: it carries the path, so no non-null error appears beside it either. Nullability still bubbles as before (`data` is `null` in both responses). Only the duplicate error goes. The client error's message and classification do not change. On a field fetched once per parent (a `@splitQuery` field, batched through a DataLoader), each parent's error names that parent's path, so a client sees which element failed.
 
 ## Cause
 
 Confirmed against graphql-java 25.0 bytecode and the generator.
 
 Every generated fetcher (the graphql-java `DataFetcher` graphitron emits for a field) wraps its body in a catch arm that hands the throw to the generated `ErrorRouter`; async fetchers do the same from an `.exceptionally` arm. When no authored `@error` mapping claims the throw, the router's `surfaceClientErrorOrRedact` walks the cause chain for a `GraphitronClientException` and, on a hit, returns `DataFetcherResult.newResult().data(null).error(clientError)`: the exception instance itself is the error. `GraphitronClientExceptionClassGenerator` builds that class with a message only, so the instance has no path and no locations, and its classification is `GraphqlErrorException`'s default, `DataFetchingException`. graphql-java's `ExecutionStrategy.unboxPossibleDataFetcherResult` adds a `DataFetcherResult`'s errors to the response unchanged, so nothing fills them in.
+
+The same missing path explains the extra non-null error. `ExecutionContext.addErrors`, which `unboxPossibleDataFetcherResult` reaches through `addErrorsToRightContext`, records the path of each error that has one. `NonNullableFieldValidator` adds its `NonNullableFieldWasNullError` through `ExecutionContext.addError(error, path)`, which returns without adding when that path is already recorded. A pathless client error records nothing, so the non-null error is added beside it. A client error that carries the field's path suppresses it.
 
 The redact arm beside it does not have the defect: `ErrorRouterClassGenerator.redactBody` builds its error with `GraphqlErrorBuilder.newError(env)`, which reads `env.getField().getSourceLocation()` and `env.getExecutionStepInfo().getPath()`. Nor does an exception that escapes a fetcher entirely: graphql-java's `SimpleDataFetcherExceptionHandler` always wraps it in `ExceptionWhileDataFetching(path, exception, sourceLocation)`. The router is the one place path and locations are lost.
 
@@ -68,7 +73,8 @@ Because every disposition funnels through this one method, the change covers eve
 Prose that describes the surfaced error as the exception instance is updated in the same change:
 
 - The javadoc `buildSurfaceClientErrorOrRedactMethod` emits ("returns a `DataFetcherResult` with `data=null` and that error"), the generated `ErrorRouter` class javadoc, and `GraphitronClientExceptionClassGenerator`'s class javadoc and emitted javadoc ("surfaces an instance of this type as a real `GraphQLError`"): the router surfaces the exception's message as a field error carrying the field's path and locations. The class stays a `GraphqlErrorException` subclass; it is still what an authored `GENERIC` handler matches, and an authored mapping still places the instance itself into a payload.
-- `docs/manual/how-to/error-channel.adoc`, § Unmatched exceptions: redact and correlate. The sentence "that error reaches the response's top-level `errors` with its own message and the field resolves to `null`" becomes: "that error reaches the response's top-level `errors` with its own message and with the failing field's `path` and `locations`, and the field resolves to `null`". The § Catching Graphitron's own client errors section needs no change.
+- `docs/manual/how-to/error-channel.adoc`, § Unmatched exceptions: redact and correlate. The sentence "that error reaches the response's top-level `errors` with its own message and the field resolves to `null`" becomes: "that error reaches the response's top-level `errors` with its own message and with the failing field's `path` and `locations`, and the field resolves to `null`; on a non-null field it is the only error at that path, as with a redacted error, and the null bubbles to the nearest nullable parent". The § Catching Graphitron's own client errors section needs no change.
+- Two `TenantDivinedRoutingExecutionTest` comments that say graphql-java adds its non-null bubbling error beside the refusal become false: the `.as(...)` description in `argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened` ("films is [Film!]!, so graphql-java adds its non-null bubbling error beside it") and the line comment in `emptyList_listFilter_isRefusedReadably`. Their `anySatisfy` / `contains` assertions keep passing, so no build step flags the comments. Rewrite them to state the new fact, and tighten both assertions to `singleElement()` (see Tests).
 
 ### Every site that raises a client error
 
@@ -93,9 +99,9 @@ Out of scope, a different defect: client mistakes thrown as a raw `graphql.Graph
 
 Execution tier (`graphitron-sakila-example`, real PostgreSQL), the acceptance evidence for the goal:
 
-- `GraphQLQueryTest.filmsConnection_malformedBase64AfterCursor_surfacesClientError` also asserts the error's `getPath()` is `["filmsConnection"]` and its `getLocations()` is the single location of the `filmsConnection` selection (line 1, column 3 in the test's query). The sync catch arm.
-- A new `GraphQLQueryTest` case selecting `actorsConnection(first: 1, after: "not-base64!!!")` (the `@splitQuery` connection on `Film`) under a root query returning two films: two errors, each with the cursor message and a path naming its own film element, `[<root>, 0, "actorsConnection"]` and `[<root>, 1, "actorsConnection"]`. The DataLoader `.exceptionally` arm, and the per-parent claim in the goal.
-- `TenantDivinedRoutingExecutionTest.argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened` also asserts the refusal's path and locations: the tenant refusal named in the report.
+- `GraphQLQueryTest.filmsConnection_malformedBase64AfterCursor_surfacesClientError` asserts `singleElement()` on the errors (today it asserts `get(0)`, and a second, non-null error sits at index 1). That one error carries the cursor message, `getPath()` is `["filmsConnection"]`, and `getLocations()` is the single location of the `filmsConnection` selection (line 1, column 3 in the test's query). `getData()` is `null`. This covers the sync catch arm, and the single-element assertion pins the suppressed non-null error.
+- A new `GraphQLQueryTest` case selecting `actorsConnection(first: 1, after: "not-base64!!!")` (the `@splitQuery` connection on `Film`, `ActorsConnection!`) under `filmById(film_id: ["1", "2"])` (`[Film]!`, nullable elements). Exactly two errors, each with the cursor message and a path naming its own film element: `["filmById", 0, "actorsConnection"]` and `["filmById", 1, "actorsConnection"]`. `data.filmById` is `[null, null]`, because each non-null `actorsConnection` null bubbles to its nullable `Film` element. The count is two because each element's non-null error is suppressed by the client error at the same path; today the same query yields four errors. This covers the DataLoader `.exceptionally` arm and the per-parent claim in the goal.
+- `TenantDivinedRoutingExecutionTest.argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened` tightens `anySatisfy` to `singleElement()` and also asserts the refusal's path and locations: the tenant refusal named in the report. `emptyList_listFilter_isRefusedReadably` tightens to a single error the same way.
 - `TenantDivinedRoutingExecutionTest`'s `assertUnclaimedClientErrorSurfaced` helper also asserts a non-empty path, so the field-with-an-`@error`-channel arms (`ErrorRouter.dispatch`'s unmatched tail) are pinned end to end.
 
 Unit tier:
@@ -126,3 +132,5 @@ The second error disappears once the fix lands, for this reason. In graphql-java
 - The `error-channel.adoc` sentence that changes should mention the dropped error too, if the author decides the manual should describe it.
 
 To satisfy this finding: correct both JSON examples, state the deduplication as part of what changes for a consumer (or argue that it should not count), and add the two comments to the change list.
+
+> Author response (round 1): The Goal now shows today's response as two errors with `data: null` and the response after this item as one error with `data: null`. It says the suppressed non-null error is the second thing a consumer sees change, and accepts it rather than arguing it away: it matches what a redacted error already gets, and nullability still bubbles. Cause gains a paragraph on the `addErrors` / `addError(error, path)` mechanism. The `error-channel.adoc` sentence now says the client error is the only error at its path on a non-null field. The two `TenantDivinedRoutingExecutionTest` comments are in the change list, and their assertions tighten to `singleElement()` so the deduplication is pinned rather than tolerated; both refusals are raised inside the fetcher's `try` and go through `surfaceClientErrorOrRedact`, as the generated `multitenant` `QueryFetchers.films` and `filmActorsByNodeId` show. The `actorsConnection` test names its root (`filmById(film_id: ["1", "2"])`, `[Film]!`), gives the `[null, null]` data shape, and gives the deduplication as the reason the count is two, against four today. `filmsConnection_malformedBase64AfterCursor_surfacesClientError` tightens from `get(0)` to `singleElement()` for the same reason.
