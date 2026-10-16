@@ -54,8 +54,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R697` | Name matching is a stratum: side relations, match views, and folds nowhere else <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-09-17 <sub>created 2026-08-17</sub> | [plan](name-matching-stratum.md) |
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
+| `R1053` | Validation pre-check casts a list input argument to Map and crashes outside the error channel | Ready | 2026-10-16 | [plan](validator-prestep-list-input-arg.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1053` | Validation pre-check casts a list input argument to Map and crashes outside the error channel | In Review | 2026-10-16 | [plan](validator-prestep-list-input-arg.md) |
 
 ---
 

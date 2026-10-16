@@ -1,7 +1,7 @@
 ---
 id: R1053
 title: "Validation pre-check casts a list input argument to Map and crashes outside the error channel"
-status: In Review
+status: Ready
 bucket: bug
 depends-on: []
 created: 2026-10-16
@@ -131,3 +131,15 @@ Question 1 holds: the delivered model, walker, classification rejection with its
 Non-blocking: the implementation notes leave `assembled` unread on `TypeFetcherGenerator.generate` / `generateTypeSpec` "for a follow-up", but no Backlog item names it. File one so the follow-up has a number.
 
 *Response:* filed as R1056 (Backlog).
+
+### Round 2: In Review → Ready, rework (session_01AKzgd5A5s5eoYdw5wu1DZq, 2026-10-16)
+
+Question 1 holds: the delivered model, walker, classification rejection and validator mirror, emitter, helper signature and user-doc sentence are the change the spec approved, and the generated `MutationFetchers.countFilmDrafts` reads `in` by index inside the `try`, with `List.of("in", i)` as the path prefix. Question 2 holds: the in-`try` placement is pinned by behaviour (`countFilmDrafts_failureInsideValidation_isHandledByTheFetchersCatchArm`), the list read and empty list by the other two `countFilmDrafts_*` cases, the dedupe and arm mapping by `ServiceMethodCallWalkerTest`, the per-element path by `ConstraintViolationsWireShapeTest`, the rejection by the `ErrorChannelClassificationTest` and `MutationServiceRecordFieldValidationTest` pairs. The round-1 body-text cases are gone. `mvn install -Plocal-db` is green on `eb7fb154` (rebased onto trunk at `8594784b`, roadmap-only delta).
+
+1. **Retirement sweep: two surfaces this item touched still describe the retired mechanism (gate obligation, `roadmap/workflow.adoc` "Retirement sweep").** The sweep includes "prose paraphrasing the retired mechanism", and both of these restate the defects this item fixed:
+   - `TypeFetcherGenerator.buildServiceFetcherCommon`'s javadoc (the paragraph opening "When the channel carries any `ValidationHandler`") still says the wrapper "inserts a pre-execution Jakarta validation step ahead of the try block: walks every `ParamSource.Arg` parameter". That is defect 2 (placement) and defect 3 (per-binding walk), on the method whose in-body comment this item rewrote. The Context lists "The comment beside the call claims the opposite" as part of the bug, so a javadoc making the same false claim one screen up is the same defect, not a nit.
+   - `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`, the comment above `filmLookupValidated`: "the wrapper emits the Jakarta validation pre-step ahead of the try block".
+
+   *What satisfies it:* rewrite both to say what is now true: the pass is the first statement inside the `try`, it walks `ServiceMethodCall.validatedArguments()` (one target per argument), and a failure in it reaches the catch arm. Or have the javadoc defer to `validatorPreStep`'s own. Re-run the sweep over the touched files for any other "ahead of the try" / "every Arg parameter" paraphrase. No code or test change is needed. This is two comments, so it is cheap. It still bounces because the sweep is a precondition of approval, and a reviewer patching it would make the reviewer an implementer.
+
+Non-blocking: `FetcherPipelineTest.inputRecord_validatorPreStep_receivesTypedRecordNotMap` asserts on generated body text (`contains(".fromMap(")`, `doesNotContain("Object arg_input = env.getArgument")`). It predates this item, and the delivery only edited a comment in it, so it is not this gate's to block on. Its facts are now pinned by behaviour (the `countFilmDrafts_*` execution cases materialise through `fromMap`), so it is a candidate for deletion under the test-tier rule, in a separate item.
