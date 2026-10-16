@@ -1,7 +1,7 @@
 ---
 id: R1053
 title: "Validation pre-check casts a list input argument to Map and crashes outside the error channel"
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-10-16
