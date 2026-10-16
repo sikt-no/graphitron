@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.jooq.TransactionContext;
+import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
@@ -13,12 +14,16 @@ import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
+import java.sql.SQLException;
+import java.sql.SQLFeatureNotSupportedException;
+import java.sql.Savepoint;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Unit-tier behavioural coverage of {@link GraphitronTransactionProviderGenerator}. The provider is
@@ -45,6 +50,10 @@ class GraphitronTransactionProviderGeneratorTest {
     private static Object commitPolicyRollbackOnly;
 
     private final List<String> events = new ArrayList<>();
+    /** When set, the fake connection throws this from {@code releaseSavepoint}, after recording it. */
+    private SQLException releaseFailure;
+    /** When set, the fake connection throws this from {@code commit}, after recording it. */
+    private SQLException commitFailure;
 
     @BeforeAll
     static void compileEmittedProvider() throws Exception {
@@ -69,6 +78,8 @@ class GraphitronTransactionProviderGeneratorTest {
     @BeforeEach
     void resetEvents() {
         events.clear();
+        releaseFailure = null;
+        commitFailure = null;
     }
 
     @Test
@@ -93,7 +104,7 @@ class GraphitronTransactionProviderGeneratorTest {
         commit(provider);
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false", "setSavepoint", "releaseSavepoint");
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1");
     }
 
     @Test
@@ -107,8 +118,8 @@ class GraphitronTransactionProviderGeneratorTest {
         commit(provider);
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false", "setSavepoint", "releaseSavepoint",
-            "getAutoCommit", "setSavepoint", "releaseSavepoint");
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1",
+            "getAutoCommit", "setSavepoint:sp2", "releaseSavepoint:sp2");
     }
 
     @Test
@@ -120,7 +131,7 @@ class GraphitronTransactionProviderGeneratorTest {
         rollback(provider);
 
         assertThat(events).containsExactly(
-            "getAutoCommit", "setAutoCommit:false", "setSavepoint", "rollbackToSavepoint");
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "rollbackToSavepoint:sp1");
     }
 
     @Test
@@ -160,8 +171,8 @@ class GraphitronTransactionProviderGeneratorTest {
 
         assertThat(events).containsExactly(
             "setAutoCommit:false",
-            "setSavepoint",
-            "releaseSavepoint",
+            "setSavepoint:sp1",
+            "releaseSavepoint:sp1",
             "commit", "setAutoCommit:true");
     }
 
@@ -175,8 +186,8 @@ class GraphitronTransactionProviderGeneratorTest {
 
         assertThat(events).containsExactly(
             "setAutoCommit:false",
-            "setSavepoint",
-            "rollbackToSavepoint",
+            "setSavepoint:sp1",
+            "rollbackToSavepoint:sp1",
             "commit", "setAutoCommit:true");
     }
 
@@ -193,6 +204,105 @@ class GraphitronTransactionProviderGeneratorTest {
         assertThat(events).containsExactly(
             "setAutoCommit:false", "commit", "setAutoCommit:true",
             "setAutoCommit:false", "rollback", "setAutoCommit:true");
+    }
+
+    @Test
+    void nested_commit_toleratesUnsupportedReleaseSavepoint() throws Throwable {
+        // Oracle's driver does not implement releaseSavepoint. Releasing only frees the marker,
+        // which dies with the enclosing transaction anyway, so the nested commit succeeds.
+        releaseFailure = new SQLFeatureNotSupportedException("Unsupported feature");
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        begin(provider);
+        begin(provider);
+        commit(provider);
+        commit(provider);
+
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void nested_commit_toleratesSqlState0A() throws Throwable {
+        // SQLState class 0A is "feature not supported", for drivers raising a plain SQLException.
+        releaseFailure = new SQLException("Unsupported feature", "0A000");
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        begin(provider);
+        begin(provider);
+        commit(provider);
+        commit(provider);
+
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void rollbackOnly_fieldSettle_toleratesUnsupportedReleaseSavepoint() throws Throwable {
+        // The dev-mode field settle is the second release site; it tolerates the same failure, and
+        // the second field still joins the open transaction under its own savepoint.
+        releaseFailure = new SQLFeatureNotSupportedException("Unsupported feature");
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
+        begin(provider);
+        commit(provider);
+        begin(provider);
+        commit(provider);
+
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1",
+            "getAutoCommit", "setSavepoint:sp2", "releaseSavepoint:sp2");
+    }
+
+    @Test
+    void nested_releaseFailure_propagates_andTheFollowingRollbackClosesTheSameScope() throws Throwable {
+        // Postgres refuses the release over an aborted transaction (25P02). That failure must
+        // surface: swallowed, the enclosing COMMIT would silently roll back and report success.
+        // jOOQ follows the failed commit with a rollback of the same scope, which must land on the
+        // nested savepoint, not on the enclosing transaction.
+        var aborted = new SQLException("current transaction is aborted", "25P02");
+        releaseFailure = aborted;
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        begin(provider);
+        begin(provider);
+        assertThatThrownBy(() -> commit(provider))
+            .isInstanceOf(DataAccessException.class)
+            .hasCause(aborted);
+        rollback(provider);
+
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "rollbackToSavepoint:sp1");
+
+        // depth and the savepoint stack came back consistent: a further nested scope and the
+        // top-level commit behave as on a fresh provider.
+        releaseFailure = null;
+        events.clear();
+        begin(provider);
+        commit(provider);
+        commit(provider);
+
+        assertThat(events).containsExactly(
+            "setSavepoint:sp2", "releaseSavepoint:sp2", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void topLevel_commitFailure_isFollowedByASingleTopLevelRollback() throws Throwable {
+        // A failing connection.commit() (a deferred constraint, say) leaves the scope open, so
+        // jOOQ's follow-up rollback settles it as failed exactly once.
+        var deferred = new SQLException("deferred constraint violated", "23503");
+        commitFailure = deferred;
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        begin(provider);
+        assertThatThrownBy(() -> commit(provider))
+            .isInstanceOf(DataAccessException.class)
+            .hasCause(deferred);
+        rollback(provider);
+
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "rollback", "setAutoCommit:true");
+
+        commitFailure = null;
+        events.clear();
+        begin(provider);
+        commit(provider);
+
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
     // --- driving helpers -------------------------------------------------------------------------
@@ -217,9 +327,9 @@ class GraphitronTransactionProviderGeneratorTest {
     // --- recording fakes -------------------------------------------------------------------------
 
     private Connection fakeConnection() {
-        Object savepoint = Proxy.newProxyInstance(
-            harness.classLoader(), new Class<?>[]{java.sql.Savepoint.class},
-            (p, m, a) -> objectMethodOrDefault(p, m, a, "savepoint"));
+        // Each setSavepoint mints a distinct labelled savepoint, and release / rollback-to record
+        // their target, so the log shows which scope each call closed.
+        var savepointCount = new java.util.concurrent.atomic.AtomicInteger();
         // Stateful autocommit so the deferred-rollback arm's reuse of an already-open transaction
         // is observable (a second field's begin must not re-open it).
         var autoCommit = new java.util.concurrent.atomic.AtomicBoolean(true);
@@ -231,15 +341,33 @@ class GraphitronTransactionProviderGeneratorTest {
                     autoCommit.set((Boolean) args[0]);
                     yield null;
                 }
-                case "commit" -> { events.add("commit"); yield null; }
-                case "rollback" -> {
-                    events.add(args != null && args.length == 1 ? "rollbackToSavepoint" : "rollback");
+                case "commit" -> {
+                    events.add("commit");
+                    if (commitFailure != null) throw commitFailure;
                     yield null;
                 }
-                case "setSavepoint" -> { events.add("setSavepoint"); yield savepoint; }
-                case "releaseSavepoint" -> { events.add("releaseSavepoint"); yield null; }
+                case "rollback" -> {
+                    events.add(args != null && args.length == 1 ? "rollbackToSavepoint:" + args[0] : "rollback");
+                    yield null;
+                }
+                case "setSavepoint" -> {
+                    var label = "sp" + savepointCount.incrementAndGet();
+                    events.add("setSavepoint:" + label);
+                    yield savepoint(label);
+                }
+                case "releaseSavepoint" -> {
+                    events.add("releaseSavepoint:" + args[0]);
+                    if (releaseFailure != null) throw releaseFailure;
+                    yield null;
+                }
                 default -> objectMethodOrDefault(proxy, method, args, "connection");
             });
+    }
+
+    private static Savepoint savepoint(String label) {
+        return (Savepoint) Proxy.newProxyInstance(
+            harness.classLoader(), new Class<?>[]{Savepoint.class},
+            (p, m, a) -> objectMethodOrDefault(p, m, a, label));
     }
 
     private static Object objectMethodOrDefault(Object proxy, Method method, Object[] args, String label) {

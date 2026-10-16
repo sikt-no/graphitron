@@ -77,3 +77,12 @@ There is no Oracle in the build, so the Oracle path is pinned by the unit fakes.
 * **Skip the release per dialect** (the reporter's alternative): consult `SQLDialect` and never call `releaseSavepoint` on Oracle. It needs a dialect list graphitron maintains and misses drivers nobody listed, and the provider holds a bare `Connection`, not a dialect, so the constructor would widen. The SQLState-class check is the standard's own definition of "not supported" and needs no list.
 * **Leave the commit-failure bookkeeping to its own item.** Narrowing the release catch deliberately keeps a rethrow path live, and that path is the one that corrupts `depth`; specifying the narrow catch without fixing what follows the rethrow would ship a known-broken failure path. Both changes are in the same emitted method.
 * **Remember that release is unsupported** after the first failure and stop calling it. Saves one thrown exception per nested commit on Oracle, far below the cost of the statements around it, at the price of state on the provider. Not worth it.
+
+## Implementation notes
+
+Landed as planned, all in `GraphitronTransactionProviderGenerator`. `commit` now branches on `depth == 1` (top-level and deferred-rollback arms) versus nested, releases `savepoints.peek()` through the new private `releaseSavepoint(Savepoint)` helper, and only then pops and decrements, so jOOQ's follow-up `rollback` after a failed commit closes the same scope once. The helper returns on `SQLFeatureNotSupportedException` or SQLState class `0A` and rethrows everything else; the class javadoc gained a "A failed commit leaves its scope open" section stating both rules.
+
+Where the goal is demonstrated:
+
+* `GraphitronTransactionProviderGeneratorTest`: the fake connection now mints labelled savepoints and records each release / rollback-to target, and can throw from `releaseSavepoint` or `commit`. The five new cases are the ones the plan names (`nested_commit_toleratesUnsupportedReleaseSavepoint` is the sis failure in miniature); existing expected logs gained the labels only.
+* `TransactionProviderExecutionTest` (`graphitron-sakila-example`, `querydb`): against real Postgres, a nested commit over an aborted transaction surfaces as `DataAccessException` with a `25P02` cause, the enclosing write commits, and a second top-level transaction on the same provider commits with autocommit restored. It writes to a throwaway `tx_provider.marker` table dropped after the class, rather than a Sakila table.

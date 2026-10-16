@@ -47,6 +47,16 @@ import java.util.List;
  * graphitron itself asserted ({@code begin}'s deferred-rollback reopen guard, and
  * {@code PinnedConnection.release}'s open-transaction detection), never a mode to preserve.
  *
+ * <h2>A failed commit leaves its scope open</h2>
+ * jOOQ follows a {@code commit} that throws with a {@code rollback} for the same scope, so
+ * {@code commit} pops the savepoint and decrements {@code depth} only after the arm succeeded: the
+ * follow-up rollback then closes the scope exactly once (a nested scope rolls back to its
+ * savepoint, a top-level one settles as failed), and the provider stays consistent for the rest
+ * of the operation. Savepoint release is skipped where the driver does not implement it (Oracle),
+ * since an unreleased marker dies with the enclosing transaction; no other release failure is
+ * hidden, because a swallowed release over an aborted transaction turns into a silent rollback at
+ * the enclosing commit.
+ *
  * <h2>Single-connection safety</h2>
  * The provider instance is built once per pinned connection, inside the carrier entry that owns
  * the connection's one cached {@code DSLContext}, and holds that connection's only nesting depth
@@ -63,6 +73,8 @@ public final class GraphitronTransactionProviderGenerator {
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
     private static final ClassName SAVEPOINT = ClassName.get("java.sql", "Savepoint");
+    private static final ClassName SQL_FEATURE_NOT_SUPPORTED_EXCEPTION =
+        ClassName.get("java.sql", "SQLFeatureNotSupportedException");
     private static final ClassName DEQUE = ClassName.get("java.util", "Deque");
     private static final ClassName ARRAY_DEQUE = ClassName.get("java.util", "ArrayDeque");
     private static final ClassName TRANSACTION_PROVIDER = ClassName.get("org.jooq", "TransactionProvider");
@@ -139,22 +151,49 @@ public final class GraphitronTransactionProviderGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
             .addParameter(TRANSACTION_CONTEXT, "ctx")
+            .addComment("The scope closes (pop, depth--) only once its commit succeeded: when anything here")
+            .addComment("throws, depth and the savepoint stack stay as begin left them, so the rollback jOOQ")
+            .addComment("issues next for the same scope closes it exactly once.")
             .beginControlFlow("try")
-            .addStatement("depth--")
-            .beginControlFlow("if (depth == 0 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
+            .beginControlFlow("if (depth == 1 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
             .addComment("Deferred-rollback: the field settles by releasing its savepoint; the operation")
             .addComment("transaction stays open so later read-backs observe the writes, and nothing settles")
             .addComment("until release discards the whole transaction.")
-            .addStatement("connection.releaseSavepoint(savepoints.pop())")
-            .nextControlFlow("else if (depth == 0)")
+            .addStatement("releaseSavepoint(savepoints.peek())")
+            .addStatement("savepoints.pop()")
+            .nextControlFlow("else if (depth == 1)")
             .addComment("Top-level: the commit policy decides persist-vs-discard.")
             .addStatement("settle(false)")
             .nextControlFlow("else")
-            .addStatement("connection.releaseSavepoint(savepoints.pop())")
+            .addStatement("releaseSavepoint(savepoints.peek())")
+            .addStatement("savepoints.pop()")
             .endControlFlow()
+            .addStatement("depth--")
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
             .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION, "Could not commit transaction")
             .endControlFlow()
+            .build();
+
+        var releaseSavepoint = MethodSpec.methodBuilder("releaseSavepoint")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(void.class)
+            .addParameter(SAVEPOINT, "savepoint")
+            .addException(SQL_EXCEPTION)
+            .beginControlFlow("try")
+            .addStatement("connection.releaseSavepoint(savepoint)")
+            .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
+            .beginControlFlow("if (e instanceof $T || (e.getSQLState() != null && e.getSQLState().startsWith($S)))",
+                SQL_FEATURE_NOT_SUPPORTED_EXCEPTION, "0A")
+            .addComment("The driver does not implement release (Oracle: ORA-17023). Releasing only frees the")
+            .addComment("marker; an unreleased savepoint dies with the enclosing transaction anyway.")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("throw e")
+            .endControlFlow()
+            .addJavadoc("Releases {@code savepoint}, skipping the release where the driver does not implement\n"
+                + "it ({@link $T}, or SQLState class {@code 0A}). Every other failure is rethrown: over\n"
+                + "an aborted transaction a swallowed release would let the enclosing commit report\n"
+                + "success while the database silently rolls back.\n", SQL_FEATURE_NOT_SUPPORTED_EXCEPTION)
             .build();
 
         var rollback = MethodSpec.methodBuilder("rollback")
@@ -229,6 +268,7 @@ public final class GraphitronTransactionProviderGenerator {
             .addMethod(begin)
             .addMethod(commit)
             .addMethod(rollback)
+            .addMethod(releaseSavepoint)
             .addMethod(settle)
             .build();
     }
