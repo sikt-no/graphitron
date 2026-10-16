@@ -260,6 +260,9 @@ class HierarchyKindRegistryTest {
 
         // Minted at emit grain: these describe what the emit does. The commands-in-waiting.
         Map.entry(no.sikt.graphitron.command.Predicate.class, HierarchyKind.COMMAND),
+        // A condition row's masked glue variants for a faceted carrier, minted by the condition
+        // producer beside the row's predicates.
+        Map.entry(no.sikt.graphitron.command.FacetFragment.class, HierarchyKind.COMMAND),
         // When an authored predicate contributes its conjunct. A decision about the emit, taken
         // where the wrapper it gates is minted, not a fact the schema states: the same SDL field
         // yields no guard where the author's method is the whole predicate and a field-presence
