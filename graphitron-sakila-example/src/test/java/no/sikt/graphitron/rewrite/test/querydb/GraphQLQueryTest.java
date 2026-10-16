@@ -8422,6 +8422,28 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void countFilmDrafts_failureInsideValidation_isHandledByTheFetchersCatchArm() {
+        // The validation pre-step is the only reader of the GraphitronContext in this fetcher (the
+        // service is static and takes no DSLContext), so an input carrying none fails inside the
+        // pass and nowhere else. The pass runs inside the fetcher's try, so the throw reaches the
+        // channel's catch arm and is redacted behind a correlation id; were it ahead of the try, it
+        // would escape the fetcher and graphql-java would surface the raw exception message.
+        ExecutionInput input = ExecutionInput.newExecutionInput()
+            .query("mutation { countFilmDrafts(in: [{ title: \"DRAFT ONE\" }]) { count } }")
+            .graphQLContext(b -> b.put(DSLContext.class, dsl))
+            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
+            .build();
+
+        var result = graphql.execute(input);
+
+        assertThat(result.getErrors()).singleElement().satisfies(error -> assertThat(error.getMessage())
+            .as("the catch arm's redaction, not the raw exception")
+            .startsWith("An error occurred. Reference: ")
+            .doesNotContain("NullPointerException"));
+        assertThat(result.<Map<String, Object>>getData()).extractingByKey("countFilmDrafts").isNull();
+    }
+
+    @Test
     @SuppressWarnings("unchecked")
     void filmLookup_zeroId_routesThroughNotFoundErrorType() {
         // The second handler in source order: FilmLookupNotFoundException → FilmLookupNotFound.
