@@ -191,7 +191,7 @@ are gone.
   * **The defects agree with the generator on a consumer schema** `open`. A defect on a schema the
     generator accepts is a regression, and the editor shows each one to the author as an error. On
     the 2026-10-14 stores they are 147 coordinates on sis and 34 on sakila, every code but the
-    departure's and the target's at zero on sis. Each child is a reading that is wrong rather than a
+    source's and the target's at zero on sis. Each child is a reading that is wrong rather than a
     rule that is, and evidence is in
     `roadmap/audits/2026-10-01-sis-entry-defect-false-positives.md`.
     * **The reactor's own example is the check** `open`. The sakila example reproduces it in tree:
@@ -200,21 +200,21 @@ are gone.
       This node is done when that example draws no error-severity entry defect, which a build can
       check where sis cannot. Evidence in
       `roadmap/audits/2026-10-02-sakila-entry-defect-false-positives.md`.
-    * **A chain arrives where its field says** `done`. The eight sakila coordinates reporting
+    * **A chain reaches its field's target** `done`. The eight sakila coordinates reporting
       `NO_ROUTE_TO_TARGET` report nothing on the 2026-10-14 stores, nor does sis; which change
       cleared them was not traced.
-    * **A departure is inherited through a type with no table of its own** `done`, by
-      `graphitron_field_source_table` under "The departure is stated"; 0 on sis and 3 on sakila
-      left, which are "A class-backed parent's departure is stated". The endpoints
-      take the departure from the enclosing type's own binding only, so a nested type departs from
-      nowhere and its chains report `NO_ROUTE_FROM_DEPARTURE`: 99 rows over 60 types on sis, 11
+    * **A source is inherited through a type with no table of its own** `done`, by
+      `graphitron_field_source_table` under "The source is stated"; 0 on sis and 3 on sakila
+      left, which are "A class-backed parent's source is stated". The endpoints
+      took the source from the enclosing type's own binding only, so a nested type had none and
+      its chains reported `NO_ROUTE_FROM_DEPARTURE`: 99 rows over 60 types on sis, 11
       over 5 on sakila (`FilmDetails`, `FilmInfo`, `FilmInlineBundle` among them). A nested type
-      reached from two parents on two tables has two departures, which `graphitron_field_table`'s
-      key cannot hold, so the fix is `graphitron_field_source_table` under "The departure is
+      reached from two parents on two tables has two sources, which `graphitron_field_table`'s
+      key cannot hold, so the fix is `graphitron_field_source_table` under "The source is
       stated", recursive through the types with no table, and the chain rules reading it.
     * **A scalar `@reference` has a target** `done`, all 48 on sis and 14 on sakila gone, the cases
       in `chain-without-target`; `column-unresolved` stops declaring the two it pinned. The path's last table is where a column read
-      through a chain arrives, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires: all 48
+      through a chain is read, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires: all 48
       on sis and 14 on sakila. The rule reads `graphitron_field_target` and
       `graphitron_field_target_table` instead of `graphitron_field_table`, and judges only a target
       that could bind a table, an object, an interface or a union, at a field carrying no `@routine`
@@ -226,7 +226,7 @@ are gone.
     * **A condition method over untyped tables resolves** `open`. Two sakila coordinates report
       `ELEMENT_UNRESOLVED`, `Customer.addressByCondition` and `Film.actorsByCondition`: a
       condition-only element whose method takes `Table<?>` names no table in its signature, so the
-      reading has no route, where the generator calls it positionally between the departure and the
+      reading has no route, where the generator calls it positionally between the source and the
       field's target.
     * **Overloads per participant are one reference** `open`. Two sakila coordinates report
       `CODE_REFERENCE_METHOD_AMBIGUOUS`, `Query.occupantsByTypedNamePrefix(firstName:)` and
@@ -251,7 +251,7 @@ this one, and the read-time relations neither of them has displaced yet.
 applications concatenate, with `@routine`, into one path for a coordinate. Repeated
 `@referenceFor` applications are independent, one per participant of a union- or interface-typed
 coordinate, each its participant's complete path; a participant not named keeps auto-discovery. So
-the model has one reading of an element, where it departs and where it arrives, keyed by where it was
+the model has one reading of an element, the table it joins from and the table it joins to, keyed by where it was
 written whichever directive wrote it, and two groupings of elements with the grain the vocabulary
 gives each: a coordinate's path keyed by the coordinate and a position, and a participant's path
 keyed by the coordinate, the participant and a position. A target is read along its participant's
@@ -269,7 +269,7 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   paths and one left to discovery beside a `@reference` chain. On the sakila store the ten
   chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. Its
   reader is the walk, under "A path is resolved by a deterministic forward walk": a walk toward a
-  participant's arriving type reads that participant's own path where it has one. Until then those
+  participant's target type reads that participant's own path where it has one. Until then those
   ten fields get no chain at all, so the walk's first reading of them may surface real defects.
 * **Writing `@reference` and `@referenceFor` at one coordinate is a defect** `open`, as is a
   `@referenceFor` on a coordinate whose type is neither a union nor an interface. Both are rejections
@@ -283,41 +283,47 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   refusals have no consumer and one moved to `graphitron_entry_defect` gains a reader rather than
   changing one; its `MutationRoutineSeatTest` case travels with it, being the only cover those
   thirteen have.
-* **A path is resolved by a deterministic forward walk over what each element names** `open`. The
-  reading states every interpretation of every element, both directions of a key and every key into a
-  named table, and two walks keep the candidates that line up. That is a second algorithm beside the
-  generator's, which carries the table it stands at from element to element and reads each element
-  once from there, and it is the cost: on sakila the rule takes 942 ms against 70 ms for one
-  evaluation of the reading and 63 ms over a stored copy of it, the reading being expanded again in
-  every round of each recursive walk. Instead an element names one thing, and the walk reads it from
-  where it stands, one hop or a failure, starting from the field's stated departures or from a
-  leading `@routine`'s result. The path walked toward an arriving type is that participant's own
-  `@referenceFor` path where it has one, and the coordinate's `@routine` and `@reference` path
-  otherwise; a coordinate writing both is a defect, so no walk mixes them.
+* **A path is resolved by a deterministic forward walk over what each element names** `open`. A
+  field's source is its parent type's table and its target is its field type's table; its path is
+  the join from source to target, and its arguments condition the target. Three shapes:
+  ```
+  SELECT … FROM T1                                   -- root: no source, the query starts on the target
+  SELECT …, multiset(SELECT … FROM T2) FROM T1       -- child in an existing query: the source is T1
+  SELECT …, multiset(…) FROM (VALUES …) T1           -- child in a new query: the source's keys as values
+  ```
+  The reading states every interpretation of every element, both directions of a key and every key
+  into a named table, and two walks keep the candidates that line up. That is a second algorithm
+  beside the generator's, which carries the table it stands at from element to element and reads
+  each element once from there, and it is the cost: on sakila the rule takes 942 ms against 70 ms
+  for one evaluation of the reading and 63 ms over a stored copy of it, the reading being expanded
+  again in every round of each recursive walk. Instead an element names one thing, and the walk
+  reads it from where it stands, one hop or a failure, starting from the field's source. The path
+  walked toward a target type is that participant's own `@referenceFor` path where it has one, and
+  the coordinate's `@reference` path otherwise; a coordinate writing both is a defect, so no walk
+  mixes them. `@routine` and `@service` are left out of this branch.
 
-  There is one walk, forward. Read 2026-10-16: a walk from the arriving type's table back toward the
-  start answers nothing the forward walk does not. Given a departure each step has the same inputs
-  either way, where it stands and what the element names, except that a backward step at a `table`
-  element does not yet know the table before it and can only take the one key into the named table
-  from anywhere, which ignores the departure; so where both walks complete they agree, and where only
-  the backward one does it has answered for a field that disregards its source. Nothing needs it for
-  want of a departure either. No field on sakila or in the seven fs-plattform subgraphs at
+  There is one walk, from source to target. Read 2026-10-16: a walk from the target back toward the
+  source answers nothing the forward walk does not. Each step has the same inputs either way, where
+  the walk stands and what the element names, except that a backward step at a `table` element does
+  not yet know the table before it and can only take the one key into the named table from
+  anywhere, which ignores the source; so where both walks complete they agree, and where only the
+  backward one does it has answered for a field that disregards its source. Nothing needs it for
+  want of a source either. No field on sakila or in the seven fs-plattform subgraphs at
   `4d2f79280b` writes `@reference` or `@referenceFor` on a root field without a leading `@routine`,
-  and the generator itself only walks forward, a `key` with no start departing the table that
+  and the generator itself only walks forward, a `key` with no source riding from the table that
   declares it and a `table` with none refused. Every child field with a path has a source context;
-  the ones `graphitron_field_source_table` misses are under "A class-backed parent's departure is
+  the ones `graphitron_field_source_table` misses are under "A class-backed parent's source is
   stated": a `TableRecord`-backed carrier (`FilmDetailsCarrier` on `FilmRecord`), a `@sourceRow`
   lift (`CustomerAddressSummary.address`), and a service result's `TableRecord` member
-  (tilgangsstyring's `DeaktiverApplikasjonerPayload.applikasjoner`, a `List<SubjektRecord>`). A
-  root field's path argument or input field is a filter and walks forward from the field's own
-  target table.
+  (tilgangsstyring's `DeaktiverApplikasjonerPayload.applikasjoner`, a `List<SubjektRecord>`). A root
+  field's argument or input field with a path is a filter and walks from the field's target.
   * **What an element names is stated at the entry grain** `open`. One row per written element of
     either directive at a field, an argument or an input field, keyed by its written position: the
     constraint a key spelling resolves to, by SQL name or `Keys` constant, qualified or not; the
     table a table spelling resolves to; the method a condition names and the two tables its
-    signature declares; the result a routine arrives at. No direction, no departure and no target,
-    since none of them is a fact about what was written. The input-value step entries gain their
-    first reader.
+    signature declares; the result a routine reads. No direction, no source and no target, since
+    none of them is a fact about what was written. The input-value step entries gain their first
+    reader.
     * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
       `graphitron_ast_routine_entry` at its written position and folds the name against the catalog's
       functions in parts, one candidate only; nothing about the target enters it, so no target check
@@ -326,63 +332,99 @@ running from the participant's table toward a `@nodeId` target in key hops alone
       `@routine`. The cases are `field-path-routine`.
   * **Each element kind has a step rule** `open`. Small and separate, one per kind, each the answer
     to "this element, from this table":
-    * a key, the direction departing where the walk stands, one only between two tables;
+    * a key, ridden from the table the walk stands at to its other end, one direction only between
+      two tables;
     * a table, the one key between the table the walk stands at and the named one, failing on none
       or several;
-    * a condition, the tables its method's signature declares, the departure admitting where the
-      walk stands;
-    * a routine, arriving at its result and departing from nothing, so it starts a walk.
-    * **A self-referencing key is oriented by R1037's rule**. Both its directions depart and arrive
-      at one table, so where the walk stands cannot say. It rides forward unless the element writes
-      `inverse: true`; until R1037 lands the step takes the field's cardinality as the generator
-      does, and R1037 changes both, with the `@reference` reference page. Nothing in R876 waits on
-      it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
+    * a condition, the two tables its method's signature declares, the first admitting the table
+      the walk stands at.
+
+    One step relation for every site. Today an argument steps over
+    `intent_argument_reference_step_hop`, from the dissolving `intent_` family, while a field and an
+    input field step over `graphitron_field_reference_step_hop`; an element names the same thing
+    whichever site it is written at, so the step is one relation and the sites differ only in where
+    the walk starts.
+    * **A self-referencing key is oriented by R1037's rule**. Both ends of the key are one table, so
+      where the walk stands cannot say which way it rides. It rides forward unless the element
+      writes `inverse: true`; until R1037 lands the step takes the field's cardinality as the
+      generator does, and R1037 changes both, with the `@reference` reference page. Nothing in R876
+      waits on it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
   * **The forward walk is a relation of its own** `open`, after the two above and "A class-backed
-    parent's departure is stated", so every child field the walk reads has its departure. From each
-    of the field's departures in `graphitron_field_source_table`, and from a leading `@routine`,
-    which the root-head rule makes the only start a root field has; one row per position reached,
-    stopping at the first element with no step from where it stands.
+    parent's source is stated", so every child field the walk reads has its source. From each of
+    the field's sources in `graphitron_field_source_table` and nothing else; one row per position
+    reached, stopping at the first element with no step from where it stands. It exists already in
+    part: `FieldReferenceStepTargets` is a forward walk at the field grain over `ReferenceStepWalk`,
+    the builder the argument and input-field walks share, read by the editor's `ClaimFacts` and the
+    MCP server's `SchemaQueries`. It starts from the parent type's own table only, so on sakila it
+    misses 38 fields with a path, read 2026-10-16: the 21 led by `@routine`, the fields under types
+    with no table of their own (`FilmDetails`, `FilmInfo`, `FilmInlineBundle`,
+    `FilmProjectedLeaves`, `HostOrigin`, `OccupantLocation`), the three class-backed ones, and two
+    condition-only paths; the two-sided `graphitron_field_path_resolution` misses a different 28.
+    This node starts that walk from the sources, and its readers then see every field.
   * **A broken path is a defect at the position the walk stopped** `open`, after the walk. The
-    resolved path toward an arriving type is the walk where it arrives at that type's table; a path
-    that stops short is a defect naming the position it stopped at, and one that completes
-    somewhere else is a defect naming its arrival. A field with a written path and no departure is a
-    defect of its own, nothing stating where it reads from. These are what `CHAIN_WITHOUT_TARGET`
-    and the chain-break codes narrow to, and the stored resolution's tail and head flags go.
-  * **A root field's `@reference` without a leading `@routine` is rejected** `open`. Today a root
+    resolved path toward a target type is the walk where it reaches that type's table; a path that
+    stops short is a defect naming the position it stopped at, and one that completes at another
+    table is a defect naming that table. A field with a written path and no source is a defect of
+    its own, nothing stating where it reads from, and that one covers a root field's path, a root
+    having no source to join from. These are what `CHAIN_WITHOUT_TARGET` and the chain-break codes
+    narrow to, and the stored resolution's tail and head flags go.
+  * **A root field's `@reference` without a leading `@routine` is rejected** `open`. A root has no
+    source, so its query starts on its target and a path there has nothing to join. Today a root
     field with one `@reference` and no `@routine` classifies as `QueryTableField`,
     `QueryServiceTableField` or `MutationServiceTableField` with the path dropped, so it reads as a
     constraint and does nothing; found 2026-10-16 by classifying the shapes. A root `@referenceFor`
     and a root chain of two directives not led by `@routine` are refused already. No consumer schema
-    writes one. The classifier refuses it, the validator mirrors it and the editor shows it, as the
-    root-head rule does for a chain.
+    writes one. The classifier refuses it, the validator mirrors it and the editor shows it. In the
+    store it is no rule of its own: such a field has a path and no source, the defect above.
+  * **An argument or input field's path starts at its field's target** `open`. An argument is a
+    condition on the field's target, so its path is a filter walked from the target, at a root and
+    at a child alike. Generator and manual agree (`FieldBuilder` parses an argument's path from the
+    return table, an input field's from the table its consuming argument resolves against, and
+    `join-with-references.adoc` says the input is bound to the field's table for the argument site).
+    Today the argument and input-field walks start from `graphitron_field_scope_table`, which reads
+    `intent_field_navigated_type` and is dissolving; on sakila it holds every target of
+    `graphitron_field_target_table` and 22 rows more, the tables of mutation and payload fields like
+    `Mutation.deleteFilms`. Both filter walks start from the target relation instead; a mutation
+    returning `ID` has a table its rows come from and no target type for that relation to name,
+    which this node settles.
+    * **Whether a nested input field's path moves its children** `open`, a question. A nested input
+      field resolves against its root argument's table at every depth, in the store
+      (`graphitron_input_field_resolving_table` reads the root argument's scope) and in the
+      generator, which classifies nested fields against the same table and reads a `@reference` on
+      an input-object-typed field as a column. If a path moved the table a filter stands at, an input
+      field with a path would hand the table it reaches to the fields under it. Nothing asks for it
+      yet.
+    * **The manual says where hop 0 starts for each site** `open`. `join-with-references.adoc` says
+      a condition hop's source is "the field's own table at hop 0"; that holds for a filter, which
+      starts at the field's target, while an output field's path starts at its source, the parent
+      type's table.
   * **The walk answers what today's resolution answers, measured first** `open`. Old against new
     on the corpus, sakila, sis and the fs-plattform subgraphs before anything is deleted, and every
     difference named. The one expected kind is a table element with several keys from where the
     walk stands, which today's candidate filter can settle by elimination further down the path and
     the step rule refuses, as the generator already does.
   * **The backward walk leaves nothing behind** `open`, after the walk answers what today's
-    resolution answers. What the two-sided resolution built for walking from the arriving type
-    goes with it: the tail walk in `graphitron_field_path_resolution_rule` and the `reach` it tags;
+    resolution answers. What the two-sided resolution built for walking from the target goes with
+    it: the tail walk in `graphitron_field_path_resolution_rule` and the `reach` it tags;
     `reached_by_tail` and `reached_by_head` on the four arm tables under
     `graphitron_field_path_resolution` and their writes in `FieldPathResolutions`; the arms of
     `graphitron_entry_defect_rule` that read how far each walk got; `arriving_type_name` on
     `graphitron_field_path_reading` and the reading's statement of both directions of a key and
-    every key into a named table, which only a walk that could stand at either end needed; and
-    the comments, javadoc and test cases that speak of two walks. A sweep for `tail walk`,
-    `head walk`, `reached_by_tail` and `reached_by_head` across the reactor finds none left.
-    What stays is the reason, once, where an author reads it: the `@reference` reference page
-    says a path is read forward from where its field stands, from a leading `@routine` at a root,
-    and that nothing reads it back from the target, because a backward step at a `table` element
-    could only take the one key into the named table from anywhere, which ignores where the path
-    stands.
+    every key into a named table, which only a walk that could stand at either end needed; and the
+    comments, javadoc and test cases that speak of two walks. A sweep for `tail walk`, `head walk`,
+    `reached_by_tail` and `reached_by_head` across the reactor finds none left. What stays is the
+    reason, once, where an author reads it: the `@reference` reference page says a path is read
+    from the field's source to its target, that a root has no source, and that nothing reads a path
+    back from the target, because a backward step at a `table` element could only take the one key
+    into the named table from anywhere, which ignores the source.
 
 * **Every field has a path, the written one or the one discovery implies** `open`, after the
   walks agree. A table-backed field's path is the `@routine` and `@reference` elements it
-  wrote, or where it wrote none the key discovery finds between its departure and its target type's
-  table, or nothing at all for a leaf read on its departure's own table. Stated as links like the
-  written ones, so the target table is always the arrival of a path and no reader falls back to
+  wrote, or where it wrote none the key discovery finds between its source and its target type's
+  table, or nothing at all for a leaf read on its source's own table. Stated as links like the
+  written ones, so the target table is always where a path ends and no reader falls back to
   discovery for itself. The target type's binding is then the anchor discovery reads, and for a
-  written path a check: a written path arriving anywhere else is a defect.
+  written path a check: a written path ending anywhere else is a defect.
 * **The path is stated at the argument and input-field grains** `open`, after the two relations at
   the field grain. `@reference` and `@referenceFor` are written at three coordinates and only the
   field grain has a chain relation; both groupings are stated at the other two.
@@ -391,8 +433,8 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   `graphitron_field_path_reading` from a decode its own comment calls deprecated; measured on a
   fixture reaching every arm the two agree exactly, so what is left is choosing which survives. The
   stored resolution is keyed in the hop's own arm shapes and adds the routine arm and the target
-  grain the hop lacks, which is a vote for retiring the hop. A condition step's departure and
-  arrival tables then come from the field path's reading alone, which states them per written
+  grain the hop lacks, which is a vote for retiring the hop. A condition step's from and
+  to tables then come from the field path's reading alone, which states them per written
   element off the method's signature, so `graphitron_condition_method_route`, keyed by the class and
   method as spelled and read only by the two hops, dissolves with them. Two things move into the
   reading first: the route keeps a step only where every overload's second parameter names one
@@ -540,7 +582,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   * **Each consumer is answered from the new model** `open`, waits on the resolution. The views were
     designed before the discipline, so none is flipped: a consumer's query is rewritten against the
     new relations and the view goes with its tests. The oracle is the consumer's own test, stated
-    as SDL, which passes before and after; a consumer with none gets one first, and a departure is
+    as SDL, which passes before and after; a consumer with none gets one first, and a deviation is
     an edit to that test. One child per consumer, grown as each is tried.
   * **The old shape is gone** `blocked`, on each consumer being answered from the new model and on
     the seeding branch's code-reference subject. The
@@ -566,7 +608,7 @@ a derivation over either corpus alone, and `graphitron_` already does this again
       directive and is regenerated.
   * **The pairing is the anchor's, where a field joins a routine result** `open`. Matched once, by
     `graphitron`'s anchor, for each join a field asks of a routine result: an authored reference
-    departing one, and a routine write's payload re-reading the rows it returned. Stored at that
+    joining from one, and a routine write's payload re-reading the rows it returned. Stored at that
     join's grain, keyed to the element and to both `sql_column` rows.
   * **The anchored pairs agree with the walk's** `blocked`, on the pairing. An oracle only this
     order affords, while the walk still synthesizes its own.
@@ -826,15 +868,15 @@ and the emitters read, and it goes when nothing reads what it builds.
       mutation does is the carrier's own fact, `graphitron_carrier_data_field`, whose data field
       has a target of its own; it is not folded in here.
     * **The duplicate statements of a field's tables dissolve** `open`. A field's target and its
-      departure are each stated several times at several grains, and each statement goes when its
+      source are each stated several times at several grains, and each statement goes when its
       readers have moved:
       * `graphitron_field_table` `done`, its target half to `graphitron_field_target_table` and its
         `from_` half to `graphitron_field_source_table`, each of which has taken over its readers.
-        The path family is keyed by the arriving type: `graphitron_field_table_link`, the path
+        The path family is keyed by the target type: `graphitron_field_table_link`, the path
         reading, the resolution rule and its keyed, keyless, open and condition tables, with their
         foreign keys into `graphitron_field_target_table`, the tail walk checking the last link's
-        arrival against the arriving type's binding and the entry defects listing chains per
-        arriving type. Old against new, by the arriving type's table: sis equal (778 links, 3310
+        table against the target type's binding and the entry defects listing chains per
+        target type. Old against new, by the target type's table: sis equal (778 links, 3310
         resolutions), sakila equal but for the six `@routine` payloads, whose target is a carrier
         binding no table, and the defects unchanged on both. `CHAIN_WITHOUT_TARGET` moved last, under
         "A scalar `@reference` has a target", and the relation went with `FieldEndpoints` and
@@ -850,10 +892,10 @@ and the emitters read, and it goes when nothing reads what it builds.
         `graphql_poly_member`, and its table is the member's binding. What is left is the input-field
         pairing through `intent_input_occurrence_path`, which goes with the `@referenceFor` entries;
       * `graphitron_field_scope_table`, the table a field's SQL binds against, checked against the
-        departure and the targets it restates. Its participant rows go with the move to the source
+        source and the targets it restates; it is dissolving. Its participant rows go with the move to the source
         and the target;
-      * `graphitron_field_column_scope` and `intent_field_path_terminus`, which state a path's or a
-        routine's arrival, to the path read toward a target;
+      * `graphitron_field_column_scope` and `intent_field_path_terminus`, which state where a path or a
+        routine ends, to the path read toward a target;
       * `intent_bound_table`, to `graphitron_resolved_type_binding`.
 
       Each is measured old against new on sakila and sis before it goes, the rules reading it keep
@@ -877,28 +919,38 @@ and the emitters read, and it goes when nothing reads what it builds.
       defect. It becomes a defect, or the re-read sorts, and the example builds either way.
     * **The source's shape and the target's shape** `blocked`, on the node above. A record is a
       class-backed type, and a column read differs from a field read by the source's shape.
-    * **The departure is stated** `open`. The consume phase: which keys a producer reads from its
+    * **The source is stated** `open`. The consume phase: which keys a producer reads from its
       parent's source object and which table they match, one row per field and table with the rule
       that answered: the source type's table; the keys a write returned; or, below a type
       `graphitron_type_backing` backs with a class, a `TableRecord` member, members matching the
       primary key of the first link's table, or `@sourceRow`, which is a forced choice. A root field
-      has none.
-      * **A field departs from its parent's table, or its parent's departures** `done`.
-        `graphitron_field_source_table`, keyed by the field and the departing table: `SOURCE_TYPE`
+      has no source: nothing encloses it, so its query starts on its target.
+      * **A field's source is its parent's table, or its parent's sources** `done`.
+        `graphitron_field_source_table`, keyed by the field and the source table: `SOURCE_TYPE`
         where the parent type binds a table, `INHERITED` through object types with no table of their
         own, from each field reaching them that wrote no path, walked at the type grain with a cycle
-        guard. The head walk seeds from it, its only reader of a departure, so
-        `graphitron_field_table.from_*` has none left. Every departure that relation held is here,
+        guard. The head walk seeds from it, its only reader of a source, so
+        `graphitron_field_table.from_*` has none left. Every source that relation held is here,
         and `NO_ROUTE_FROM_DEPARTURE` went from 99 to 0 on sis and from 11 to 3 on sakila. The cases
         are `field-source-table`.
-      * **A class-backed parent's departure is stated** `open`. The three sakila rows left,
+      * **A root field led by `@routine` reads from the routine's result** `open`, set aside while
+        `@routine` and `@service` are left out of the path branch. A root has no source, and a
+        leading routine is where its query starts instead of its target: a `ROUTINE` row in
+        `graphitron_field_source_table` naming the routine's result, a `sql_table` row of type
+        `FUNCTION`, so the foreign key holds. `INHERITED` would narrow with it: it skips a field
+        that wrote a path because such a field ends somewhere else, and a field whose only element
+        is its leading routine ends at the routine's result. So tilgangsstyring's `Brukertilgang`,
+        returned by `Query.mineTilganger @routine` with no `@table` and carrying three `@reference`
+        fields, would take the function result as its fields' source, where today it has none; read
+        off the rule and the SDL, not a capture. Sakila's `Tilgang` has no field with a path.
+      * **A class-backed parent's source is stated** `open`. The three sakila rows left,
         `CustomerAddressSummary.address` through `@sourceRow` and `FilmDetailsCarrier.language` and
         `.actorsByLookup` under a `@service` returning a record-backed carrier: the `TableRecord`
         member, the key-matching members and `@sourceRow` rules, and the keys a write returned. The
         forward walk waits on it. A consumer case beside them: tilgangsstyring's
         `DeaktiverApplikasjonerPayload` and its two siblings, plain types a root `@service` returns,
         whose `applikasjoner` member is a `List<SubjektRecord>`, so the `TableRecord` member rule
-        departs it from `subjekt` and each participant's one key arrives at its own table.
+        gives it `subjekt` as its source and each participant's one key reaches its own table.
   * **The candidates are one family** `open`. What a coordinate could have named, asked by the
     build error's message, the language server's completion and the MCP server, and answered today
     in as many shapes as there are askers: two stored relations, a jOOQ query, and completions in
@@ -1120,21 +1172,21 @@ reads nothing off the classpath that capture has already read, and builds no sch
     projected against its owner's table. Such a type is still one class named for it, its
     `$project` overloaded once per table it is projected against, so the grain stays the type and a
     row names the table as well; for a table-bound type that table is its own. Beside them, the key
-    columns each producer field below the type needs, which is the producer's departure read from
+    columns each producer field below the type needs, which is the producer's source read from
     the parent's side.
   * **The field grain: a field's datafetcher.** Whether it executes or reads. A reading field names
     the column, the computed value or the property it reads. A producer names its kind, whether it
-    mutates, the type it lands on and the cardinality, its departure, and the conditions, ordering
+    mutates, the type it lands on and the cardinality, its source, and the conditions, ordering
     and paging its arguments give.
   * **The keyed selection: a type's projection for a list of keys.** The one shape behind
     `@splitQuery`, `@lookupKey`, `node` and `nodes`, the re-read after a service or a write, a
     payload's data field and the second stage of a polymorphic query. What differs is the key
     source: the parent row's columns, the arguments, decoded node ids, the records a service
     returned, the keys a write returned, a payload's carried record through an accessor or
-    `@sourceRow`, or the first stage's keys; which is the departure.
+    `@sourceRow`, or the first stage's keys; which is the source.
   * **How a field projects is stated** `blocked`, on the producers, a projection field being any
     field that is not one.
-  * **Flip: the generator reads the three queries** `blocked`, on the producers, the departure, how a
+  * **Flip: the generator reads the three queries** `blocked`, on the producers, the source, how a
     field projects, and key forwarding in the node-id branch, whose readers the catalogue found: a
     `@nodeId` through a foreign key reads the key column without a join, a batched single object
     forwards the parent's foreign key, and a path of several hops forwards the first hop's. A nested
@@ -1145,7 +1197,7 @@ reads nothing off the classpath that capture has already read, and builds no sch
     read the replacement:
     * `intent_field_separate_fetch`, replaced by `graphitron_producer`, read by the editor's
       `ClaimFacts` and `InlayFacts`;
-    * the `from_` columns of `graphitron_field_table`, replaced by the departure, read by the chain;
+    * the `from_` columns of `graphitron_field_table`, replaced by the source, read by the chain;
     * whatever the generator's own classification stops being asked.
 
     The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
@@ -1799,12 +1851,12 @@ fields one target, the interface's.
   holds it today only as an `intent_` view, so it is modelled here rather than read.
 * **The chain reaches the target type** `blocked`, on the forward walk being anchored and the
   argument and input-field grains in the chain branch. A `@nodeId` field returns `ID`, so its chain is the
-  forward walk from its departure. Where its target type is written or bound, the arrival is checked
-  against it, keeps its losing readings and reports its route defects like any field's; where it is
-  bare, the arrival is what the candidate is read from. A multitable bare `@nodeId` is one chain per
+  forward walk from its source. Where its target type is written or bound, the table the walk ends at
+  is checked against it, keeps its losing readings and reports its route defects like any field's;
+  where it is bare, that table is what the candidate is read from. A multitable bare `@nodeId` is one chain per
   candidate, to that member's own type.
 * **Key forwarding over the chain** `blocked`, on the chain reaching the target. One row per key
-  column of the target and position along the winning chain where a departure column already
+  column of the target and position along the winning chain where a source column already
   carries it, so encoding reads the key from the earliest table that has it and decoding compares
   or fills there, with no further join. General to every chain rather than a node-id relation, and
   the first reader of `graphitron_field_table_link`. It replaces the `lifted` CTE in
@@ -2017,7 +2069,7 @@ conversion frees one.
   * **`ConditionMethodRouteTest` is two fact documents** `done`. `condition-method-route` and
     `condition-method-route-departures` write each case as a condition-only path element naming a
     method of `ConditionMethodRouteFixtures` in the sakila service, a real signature per case. A
-    wildcard departure reaches the whole catalog, so its document states a sample and the arrivals
+    wildcard source reaches the whole catalog, so its document states a sample and the targets
     it must not have rather than the list; the sibling-graph case is the harness's own.
   * **The old resolution's tests go with it** `open`. `ReferenceStepHopArmConstraintTest`,
     `ReferenceStepTargetTest` and `ReferenceStepFanoutTest` pin the step hop, the step target and the
@@ -2298,14 +2350,14 @@ The two `@referenceFor` step relations, their one reader having moved to the ste
 `field-chain-application`; the classes `FieldChainLinkResolutions` and `FieldChainApplications`, now
 `FieldPathResolutions` and `FieldPathApplications`.
 
-**Dissolved into the target, the source and the arriving type.** `graphitron_field_table`, its
+**Dissolved into the target, the source and the target type.** `graphitron_field_table`, its
 grain `field-target-table`, its `target_basis` values `NAMED_TYPE_TABLE`, `PARTICIPANT_TABLE` and
 `ROUTINE_RESULT`, `FieldEndpoints` and `FieldEndpointsTest`.
 
 **Dissolved into the reading.** `graphitron_field_routine`, its grain `field-routine-result`,
 `FieldRoutines` and `FieldRoutinesTest`.
 
-**Re-keyed, target table to arriving type.** The `target_source_name`, `target_schema` and
+**Re-keyed, target table to target type.** The `target_source_name`, `target_schema` and
 `target_table` columns of `graphitron_field_table_link`, `graphitron_field_table_link_rule`,
 `graphitron_field_path_reading`, `graphitron_field_path_resolution`, its `_rule` and its `_keyed`,
 `_keyless`, `_open` and `_condition` tables, now `arriving_type_name`.
