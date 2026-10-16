@@ -5,6 +5,8 @@ import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
 import graphql.schema.GraphQLInputObjectType;
+import graphql.schema.GraphQLList;
+import graphql.schema.GraphQLNonNull;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -24,6 +26,7 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Walker unit-tier tests. Exercises the {@link ServiceMethodCallWalker#walk} translator
@@ -134,7 +137,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("title", stringType, arg));
 
-        var call = ok(walker.walk("Query", STUB_FIELD, method));
+        var call = ok(walker.walk("Query", fieldWith(argument("title", Scalars.GraphQLString)), method));
 
         var fromArg = (MappingEntry.FromArg) call.methodArgs().getFirst();
         assertThat(fromArg.javaName()).isEqualTo("title");
@@ -155,7 +158,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("genre", enumType, arg));
 
-        var call = ok(walker.walk("Query", STUB_FIELD, method));
+        var call = ok(walker.walk("Query", fieldWith(argument("genre", Scalars.GraphQLString)), method));
 
         var scalar = (ValueShape.Scalar) ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(scalar.leafTransform()).isInstanceOf(CallSiteExtraction.EnumValueOf.class);
@@ -177,7 +180,8 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("beans", listOfBean, arg));
 
-        var call = ok(walker.walk("Query", STUB_FIELD, method));
+        var call = ok(walker.walk("Query",
+            fieldWith(argument("beans", GraphQLList.list(GraphQLNonNull.nonNull(BEAN_INPUT)))), method));
 
         var shape = ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(shape).isInstanceOf(ValueShape.ListOf.class);
@@ -197,7 +201,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("input", beanClass, arg));
 
-        var call = ok(walker.walk("Query", STUB_FIELD, method));
+        var call = ok(walker.walk("Query", fieldWith(argument("input", BEAN_INPUT)), method));
 
         var shape = ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(shape).isInstanceOf(ValueShape.RecordInput.class);
@@ -217,7 +221,7 @@ class ServiceMethodCallWalkerTest {
             new MethodRef.CallShape.Static(false),
             param("input", beanClass, arg));
 
-        var call = ok(walker.walk("Query", STUB_FIELD, method));
+        var call = ok(walker.walk("Query", fieldWith(argument("input", BEAN_INPUT)), method));
 
         var shape = ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
         assertThat(shape).isInstanceOf(ValueShape.JavaBeanInput.class);
@@ -304,7 +308,8 @@ class ServiceMethodCallWalkerTest {
                 new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head("id"))),
             param("input", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))));
 
-        var call = ok(walker.walk("Mutation", STUB_FIELD, method));
+        var call = ok(walker.walk("Mutation",
+            fieldWith(argument("id", Scalars.GraphQLID), argument("input", BEAN_INPUT)), method));
 
         var top = (ValueShape.Scalar) ((MappingEntry.FromArg) call.methodArgs().get(0)).shape();
         assertThat(top.definition()).isEqualTo("Mutation.doThing(id:)");
@@ -314,7 +319,93 @@ class ServiceMethodCallWalkerTest {
             .isEqualTo("BeanInput.name");
     }
 
+    @Test
+    void walk_validatedArguments_classifyEachArgumentByItsDeclaredType() {
+        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+            new MethodRef.CallShape.Static(false),
+            param("title", ClassName.get(String.class), directArg("title")),
+            param("tags", ClassName.OBJECT, directArg("tags")),
+            param("input", ClassName.OBJECT, directArg("input")),
+            param("beans", ClassName.OBJECT, directArg("beans")),
+            param("grid", ClassName.OBJECT, directArg("grid")));
+        var fieldDef = fieldWith(
+            argument("title", Scalars.GraphQLString),
+            argument("tags", GraphQLList.list(GraphQLNonNull.nonNull(Scalars.GraphQLString))),
+            argument("input", GraphQLNonNull.nonNull(BEAN_INPUT)),
+            argument("beans", GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(BEAN_INPUT)))),
+            argument("grid", GraphQLNonNull.nonNull(GraphQLList.list(
+                GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(BEAN_INPUT)))))));
+
+        var call = ok(walker.walk("Mutation", fieldDef, method));
+
+        assertThat(call.validatedArguments()).containsExactly(
+            new ServiceMethodCall.ValidatedArgument.Raw("title"),
+            new ServiceMethodCall.ValidatedArgument.Raw("tags"),
+            new ServiceMethodCall.ValidatedArgument.InputObject("input", "BeanInput"),
+            new ServiceMethodCall.ValidatedArgument.InputObjectList("beans", "BeanInput"),
+            new ServiceMethodCall.ValidatedArgument.InputObjectNestedList("grid", "BeanInput"));
+    }
+
+    @Test
+    void walk_validatedArguments_twoBindingsIntoOneArgumentShareOneTarget() {
+        // A bean parameter for `input` and a scalar parameter for `input.name` read one argument;
+        // validating per binding would report each of its violations twice.
+        var beanClass = ClassName.get("com.example", "Bean");
+        var bean = new CallSiteExtraction.InputBean(beanClass,
+            CallSiteExtraction.InputBean.Target.RECORD,
+            List.of(new CallSiteExtraction.FieldBinding(
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
+                "BeanInput.name")));
+        var nested = new CallSiteExtraction.NestedInputField("input", List.of("name"),
+            new CallSiteExtraction.Direct());
+        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+            new MethodRef.CallShape.Static(false),
+            param("input", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))),
+            param("name", ClassName.get(String.class), new ParamSource.Arg(nested,
+                new PathExpr.Step(new PathExpr.Head("input"), "name", false))),
+            param("title", ClassName.get(String.class), directArg("title")));
+
+        var call = ok(walker.walk("Mutation",
+            fieldWith(argument("input", BEAN_INPUT), argument("title", Scalars.GraphQLString)), method));
+
+        assertThat(call.methodArgs()).hasSize(3);
+        assertThat(call.validatedArguments()).containsExactly(
+            new ServiceMethodCall.ValidatedArgument.InputObject("input", "BeanInput"),
+            new ServiceMethodCall.ValidatedArgument.Raw("title"));
+    }
+
+    @Test
+    void walk_argumentTheFieldDoesNotDeclare_isAnInvariantFailure() {
+        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+            new MethodRef.CallShape.Static(false),
+            param("title", ClassName.get(String.class), directArg("title")));
+
+        assertThatThrownBy(() -> walker.walk("Query", STUB_FIELD, method))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("'title'");
+    }
+
     // ===== helpers =====
+
+    /** The input type the bean-shaped fixtures bind: {@code input BeanInput { name: String }}. */
+    private static final GraphQLInputObjectType BEAN_INPUT = GraphQLInputObjectType.newInputObject()
+        .name("BeanInput")
+        .field(GraphQLInputObjectField.newInputObjectField().name("name").type(Scalars.GraphQLString))
+        .build();
+
+    /** {@code Query.doThing} declaring {@code arguments}, which the walker reads each binding against. */
+    private static GraphQLFieldDefinition fieldWith(GraphQLArgument... arguments) {
+        return GraphQLFieldDefinition.newFieldDefinition().name("doThing").type(Scalars.GraphQLString)
+            .arguments(List.of(arguments)).build();
+    }
+
+    private static GraphQLArgument argument(String name, graphql.schema.GraphQLInputType type) {
+        return GraphQLArgument.newArgument().name(name).type(type).build();
+    }
+
+    private static ParamSource.Arg directArg(String name) {
+        return new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head(name));
+    }
 
     private static ServiceMethodCall ok(WalkerResult<ServiceMethodCall> r) {
         assertThat(r).isInstanceOf(WalkerResult.Ok.class);

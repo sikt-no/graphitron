@@ -8389,6 +8389,40 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void countFilmDrafts_listInputUnderValidationChannel_runsTheService() {
+        // A list of input objects on a @service field whose channel carries {handler: VALIDATION}.
+        // The validation pre-step reads the argument as a list and validates each element; it once
+        // read it as one input object, so every call failed with a ClassCastException before the
+        // service ran.
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmDrafts(in: [{ title: "DRAFT ONE" }, { title: "DRAFT TWO" }]) {
+                    count
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmDrafts", as(MAP));
+        payload.containsEntry("count", 2);
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmDrafts_emptyList_runsTheServiceWithNoErrors() {
+        // An empty list has no element to validate, so the pre-step finds nothing and the service runs.
+        var rawResult = executeRaw("mutation { countFilmDrafts(in: []) { count errors { __typename } } }");
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmDrafts", as(MAP));
+        payload.containsEntry("count", 0);
+        payload.extractingByKey("errors", as(LIST)).isEmpty();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void filmLookup_zeroId_routesThroughNotFoundErrorType() {
         // The second handler in source order: FilmLookupNotFoundException → FilmLookupNotFound.
         // Confirms the TypeResolver's instanceof ladder dispatches to the right branch, and that

@@ -1647,6 +1647,19 @@ type FilmWriteInvalid @error(handlers: [{handler: VALIDATION}]) {
 
 union FilmCreateError = FilmCreateConstraintViolation | FilmWriteInvalid
 
+# The errors union of Mutation.countFilmDrafts, sharing the VALIDATION-handled FilmWriteInvalid with
+# FilmCreateError.
+union FilmDraftError = FilmWriteInvalid
+
+input FilmDraftInput {
+    title: String!
+}
+
+type FilmDraftsCountedPayload {
+    count: Int
+    errors: [FilmDraftError]
+}
+
 type FilmCreateCheckedPayload {
     film: Film
     errors: [FilmCreateError]
@@ -4735,6 +4748,17 @@ type Mutation {
     createFilmWithErrors(in: FilmCreateInput!): FilmCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
     createFilmsWithErrors(in: [FilmCreateInput!]!): FilmsCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
     updateFilmWithErrors(in: FilmUpdateInput!): FilmUpdateCheckedPayload @mutation(typeName: UPDATE)
+
+    # A @service mutation over a list of input objects whose errors union shares FilmWriteInvalid, a
+    # {handler: VALIDATION} type, with the DML carriers above: the shape a consumer reaches by putting
+    # VALIDATION on an error type its mutations share. The handler turns on the Jakarta validation
+    # pre-step, which reads the list argument element by element. Pinned by GraphQLQueryTest's
+    # countFilmDrafts_* cases; see FilmDraftService.
+    countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
+            method: "count", argMapping: "drafts: in"
+        })
 
     # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.
     # Bulk DELETE returning [ID!] of encoded NodeIds. Classifies as a MutationBulkDmlRecordField carrying a Delete write arm,

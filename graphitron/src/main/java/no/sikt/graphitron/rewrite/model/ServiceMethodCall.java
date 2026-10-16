@@ -27,6 +27,11 @@ import java.util.function.Function;
  * permit's existing {@code ReturnTypeRef} component; the two classifications are orthogonal.
  * {@code returnContainer} is the container that return type is, read once where the return is
  * reflected so no consumer inspects a type name.
+ *
+ * <p>{@code validatedArguments} names each field argument the call reads, once, in the order the
+ * method's parameters first reach it, classified by the shape the pre-execution validation pass
+ * materialises it in. It is a fact about the arguments, not about the parameter bindings: two
+ * parameters binding into one argument yield one target.
  */
 public sealed interface ServiceMethodCall permits ServiceMethodCall.Static, ServiceMethodCall.Instance {
 
@@ -35,17 +40,20 @@ public sealed interface ServiceMethodCall permits ServiceMethodCall.Static, Serv
     List<MappingEntry> methodArgs();
     TypeName javaReturnType();
     ReturnContainer returnContainer();
+    List<ValidatedArgument> validatedArguments();
 
     record Static(
         String fqClassName,
         String methodName,
         List<MappingEntry> methodArgs,
         TypeName javaReturnType,
-        ReturnContainer returnContainer
+        ReturnContainer returnContainer,
+        List<ValidatedArgument> validatedArguments
     ) implements ServiceMethodCall {
         public Static {
             methodArgs = List.copyOf(methodArgs);
             Objects.requireNonNull(returnContainer, "returnContainer");
+            validatedArguments = List.copyOf(validatedArguments);
         }
     }
 
@@ -55,12 +63,61 @@ public sealed interface ServiceMethodCall permits ServiceMethodCall.Static, Serv
         String methodName,
         List<MappingEntry> methodArgs,
         TypeName javaReturnType,
-        ReturnContainer returnContainer
+        ReturnContainer returnContainer,
+        List<ValidatedArgument> validatedArguments
     ) implements ServiceMethodCall {
         public Instance {
             ctorArgs = List.copyOf(ctorArgs);
             methodArgs = List.copyOf(methodArgs);
             Objects.requireNonNull(returnContainer, "returnContainer");
+            validatedArguments = List.copyOf(validatedArguments);
+        }
+    }
+
+    /**
+     * One field argument the call reads, as the pre-execution validation pass materialises it.
+     * The arm is decided from the argument's declared SDL type: whether it unwraps to an input
+     * object, and under how many list wrappers. An input-object arm names the SDL input type; the
+     * generated class that type renders to is emit vocabulary.
+     */
+    sealed interface ValidatedArgument {
+
+        /** The argument's name on the field. */
+        String argName();
+
+        /** A scalar or enum argument, at any list depth; validated as its raw value. */
+        record Raw(String argName) implements ValidatedArgument {
+            public Raw {
+                Objects.requireNonNull(argName, "argName");
+            }
+        }
+
+        /** An input-object argument under no list wrapper. */
+        record InputObject(String argName, String inputTypeName) implements ValidatedArgument {
+            public InputObject {
+                Objects.requireNonNull(argName, "argName");
+                Objects.requireNonNull(inputTypeName, "inputTypeName");
+            }
+        }
+
+        /** An input-object argument under exactly one list wrapper; validated element by element. */
+        record InputObjectList(String argName, String inputTypeName) implements ValidatedArgument {
+            public InputObjectList {
+                Objects.requireNonNull(argName, "argName");
+                Objects.requireNonNull(inputTypeName, "inputTypeName");
+            }
+        }
+
+        /**
+         * An input-object argument under two or more list wrappers. The validation pass cannot
+         * materialise it, so classification rejects it on a field whose error channel carries a
+         * {@code VALIDATION} handler.
+         */
+        record InputObjectNestedList(String argName, String inputTypeName) implements ValidatedArgument {
+            public InputObjectNestedList {
+                Objects.requireNonNull(argName, "argName");
+                Objects.requireNonNull(inputTypeName, "inputTypeName");
+            }
         }
     }
 

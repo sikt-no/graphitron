@@ -423,7 +423,7 @@ public class TypeFetcherGenerator {
 
     /**
      * Backward-compat overload for unit-tier tests that built the model only (no assembled
-     * schema). The validator pre-step falls back to its legacy Map-walk shape.
+     * schema).
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
             GraphitronType.ResultType resultType, List<GraphitronField> fields,
@@ -490,7 +490,7 @@ public class TypeFetcherGenerator {
         // graphitronContext(env) call obtains the CodeBlock through ctx.graphitronContextCall(),
         // which records the dependency; class assembly drains the set below to decide which
         // helper methods to materialise.
-        var ctx = new TypeFetcherEmissionContext(assembled, typeName, graphitronSchema);
+        var ctx = new TypeFetcherEmissionContext(typeName, graphitronSchema);
         ctx.setKeyProjections(keyProjections);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
@@ -1656,15 +1656,15 @@ public class TypeFetcherGenerator {
             .returns(syncResultType(payloadType))
             .addParameter(ENV, "env");
 
-        // Pre-execution Jakarta validation. Emitted ahead of the try block so a Validator-side
-        // throw still propagates to the wrapper's catch arm uniformly with the body's exceptions;
-        // the body is never invoked when violations exist. The early return wraps the violation
-        // list in Outcome.ErrorList (channel-agnostic under the wrapper).
-        if (wrap && errorChannel.get().hasValidationHandler()) {
-            builder.addCode(validatorPreStep(ctx, carrier, fieldName, payloadType, outputPackage));
-        }
-
         builder.beginControlFlow("try");
+        // Pre-execution Jakarta validation, the first statement inside the try: a failure in the
+        // pass (a Validator throw, an input that will not materialise) reaches the channel's catch
+        // arm like the body's own exceptions. It runs before tenant resolution and the service
+        // call, neither of which is reached when violations exist; the early return wraps the
+        // violation list in Outcome.ErrorList (channel-agnostic under the wrapper).
+        if (wrap && errorChannel.get().hasValidationHandler()) {
+            builder.addCode(validatorPreStep(ctx, carrier, payloadType, outputPackage));
+        }
         // Register the same-class graphitronContext(env) helper before the emitter expands; the
         // emitter generates unqualified calls and relies on the *Fetchers-class helper that
         // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
@@ -1879,75 +1879,100 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits the wrapper's pre-execution Jakarta validation block. Walks every
-     * {@link ParamSource.Arg} parameter on the service method, validates each non-null arg via
-     * the {@code GraphitronContext}-supplied {@code Validator}, accumulates each violation as a
-     * {@code GraphQLError} via the generated {@code ConstraintViolations.toGraphQLError}, and
-     * short-circuits with the payload's errors-arm filled by the violations list when the
-     * accumulator is non-empty.
+     * Emits the wrapper's pre-execution Jakarta validation block. Walks
+     * {@link ServiceMethodCall#validatedArguments()}, one target per field argument the call reads,
+     * validates each non-null value via the {@code GraphitronContext}-supplied {@code Validator},
+     * accumulates each violation as a {@code GraphQLError} via the generated
+     * {@code ConstraintViolations.toGraphQLError}, and short-circuits with the payload's errors-arm
+     * filled by the violations list when the accumulator is non-empty.
      *
-     * <p>Input-typed SDL args materialise through the graphitron-emitted class's
-     * {@code fromMap(Map<String,Object>)} factory before the validator walks them. The
-     * fetcher boundary feeds the typed instance into
-     * {@code validator.validate(<typed>)}; the walk produces zero violations when no
-     * programmatic {@code ConstraintMapping} entries are attached. Scalar / enum SDL args stay
-     * on the raw value path. When the assembled schema is unavailable (some unit-tier tests
-     * build the model only), the pre-step falls back to validating the raw value for every arg.
+     * <p>An input-object argument materialises through the graphitron-emitted class's
+     * {@code fromMap(Map<String,Object>)} factory before the validator walks it; a list of input
+     * objects is walked element by element, skipping null elements, with the element's index in the
+     * error path after the argument name. A scalar or enum argument is validated as its raw value.
+     * The walk produces zero violations when no programmatic {@code ConstraintMapping} entries are
+     * attached. A list of lists of input objects is rejected at classification
+     * ({@code FieldBuilder.unvalidatableArgumentReason}), so its arm here only throws.
      *
-     * <p>Walks {@link ServiceMethodCall#methodArgs()} for
-     * {@link no.sikt.graphitron.rewrite.model.MappingEntry.FromArg}
-     * entries. The {@link no.sikt.graphitron.rewrite.model.ValueShape} carries each top-level
-     * arg's outer arg name on its data-bearing leaves; {@link #outerArgOfValueShape} descends
-     * to the first available leaf to extract it. Ctor args are not walked (the walker forbids
-     * {@code FromArg} entries in {@code ctorArgs} structurally).
+     * <p>The caller places the block inside the fetcher's {@code try}, so the early return is a
+     * return from inside it, as the DML column-length pre-step's is.
      */
     private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, ServiceMethodCall carrier,
-                                              String fieldName,
                                               TypeName outcomeType, String outputPackage) {
         var validator = ClassName.get("jakarta.validation", "Validator");
-        var constraintViolation = ClassName.get("jakarta.validation", "ConstraintViolation");
         // List<Object> so the violations feed straight into Outcome.ErrorList(List<Object>) on the
         // early return; each element is a GraphQLError from ConstraintViolations.toGraphQLError.
         var listOfErrors = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
         var arrayList = ClassName.get("java.util", "ArrayList");
-        var constraintViolations = ClassName.get(outputPackage + ".schema",
-            ConstraintViolationsClassGenerator.CLASS_NAME);
-        var violationWildcard = ParameterizedTypeName.get(constraintViolation,
-            WildcardTypeName.subtypeOf(Object.class));
         var mapStringObject = ParameterizedTypeName.get(
             ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         var b = CodeBlock.builder();
         b.addStatement("$T validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
         b.addStatement("$T violations = new $T<>()", listOfErrors, arrayList);
-        for (var entry : carrier.methodArgs()) {
-            if (!(entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg)) continue;
-            String argName = outerArgOfValueShape(fromArg.shape());
+        for (var target : carrier.validatedArguments()) {
+            String argName = target.argName();
             String local = "arg_" + sanitizeIdent(argName);
-            ClassName inputClass = resolveInputArgClass(ctx, fieldName, argName, outputPackage);
-            if (inputClass != null) {
-                // Input-typed SDL arg: materialise the graphitron-emitted class via fromMap
-                // and walk the typed instance. The local is the validator's target (typed),
-                // not the raw Map. The class goes out of scope after the pre-step; downstream
-                // value reads route through the bean path or the existing Map.get pattern.
-                b.addStatement("$T $L_raw = env.getArgument($S)",
-                    mapStringObject, local, argName);
-                b.addStatement("$T $L = $L_raw == null ? null : $T.fromMap($L_raw)",
-                    inputClass, local, local, inputClass, local);
-            } else {
-                b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
+            switch (target) {
+                case ServiceMethodCall.ValidatedArgument.Raw ignored -> {
+                    b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
+                    b.beginControlFlow("if ($L != null)", local);
+                    b.add(validateInto(local, CodeBlock.of("$T.of($S)", LIST, argName), outputPackage));
+                    b.endControlFlow();
+                }
+                case ServiceMethodCall.ValidatedArgument.InputObject in -> {
+                    // The local is the validator's target (typed), not the raw Map. The class goes
+                    // out of scope after the pre-step; the call's own argument reads are separate.
+                    var inputClass = ClassName.get(outputPackage + ".inputs", in.inputTypeName());
+                    b.addStatement("$T $L_raw = env.getArgument($S)", mapStringObject, local, argName);
+                    b.beginControlFlow("if ($L_raw != null)", local);
+                    b.addStatement("$T $L = $T.fromMap($L_raw)", inputClass, local, inputClass, local);
+                    b.add(validateInto(local, CodeBlock.of("$T.of($S)", LIST, argName), outputPackage));
+                    b.endControlFlow();
+                }
+                case ServiceMethodCall.ValidatedArgument.InputObjectList list -> {
+                    // The element type is carried by getArgument's inference, so neither the list nor
+                    // an element takes a cast.
+                    var inputClass = ClassName.get(outputPackage + ".inputs", list.inputTypeName());
+                    b.addStatement("$T $L_raw = env.getArgument($S)",
+                        ParameterizedTypeName.get(LIST, mapStringObject), local, argName);
+                    b.beginControlFlow("if ($L_raw != null)", local);
+                    b.beginControlFlow("for (int i = 0; i < $L_raw.size(); i++)", local);
+                    b.addStatement("$T $L_element = $L_raw.get(i)", mapStringObject, local, local);
+                    b.beginControlFlow("if ($L_element != null)", local);
+                    b.addStatement("$T $L = $T.fromMap($L_element)", inputClass, local, inputClass, local);
+                    b.add(validateInto(local, CodeBlock.of("$T.of($S, i)", LIST, argName), outputPackage));
+                    b.endControlFlow();
+                    b.endControlFlow();
+                    b.endControlFlow();
+                }
+                case ServiceMethodCall.ValidatedArgument.InputObjectNestedList nested ->
+                    throw new IllegalStateException("@service argument '" + argName + "' is a list of"
+                        + " lists of input type '" + nested.inputTypeName() + "' under a VALIDATION"
+                        + " channel; classification rejects that shape, so the field should not have"
+                        + " reached emission");
             }
-            b.beginControlFlow("if ($L != null)", local);
-            b.beginControlFlow("for ($T violation : validator.validate($L))", violationWildcard, local);
-            b.addStatement("violations.add($T.toGraphQLError(violation, env, $S))",
-                constraintViolations, argName);
-            b.endControlFlow();
-            b.endControlFlow();
         }
         b.beginControlFlow("if (!violations.isEmpty())");
         b.add(ChannelEarlyReturnEmitter.emit(outcomeType, "violations", outputPackage));
         b.endControlFlow();
         return b.build();
+    }
+
+    /**
+     * Validates the local {@code target} and adds each violation to {@code violations}, under the
+     * argument path {@code argPath} evaluates to.
+     */
+    private static CodeBlock validateInto(String target, CodeBlock argPath, String outputPackage) {
+        var violationWildcard = ParameterizedTypeName.get(
+            ClassName.get("jakarta.validation", "ConstraintViolation"), WildcardTypeName.subtypeOf(Object.class));
+        var constraintViolations = ClassName.get(outputPackage + ".schema",
+            ConstraintViolationsClassGenerator.CLASS_NAME);
+        return CodeBlock.builder()
+            .beginControlFlow("for ($T violation : validator.validate($L))", violationWildcard, target)
+            .addStatement("violations.add($T.toGraphQLError(violation, env, $L))", constraintViolations, argPath)
+            .endControlFlow()
+            .build();
     }
 
     /**
@@ -2282,48 +2307,6 @@ public class TypeFetcherGenerator {
             // but the record class is the trivially-correct inner element type if ever reached.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> CatalogRefs.recordClass(jr.carrier().table()).toString();
         };
-    }
-
-    /**
-     * Descends into a {@link no.sikt.graphitron.rewrite.model.ValueShape} until a data-bearing
-     * leaf ({@code Scalar} / {@code ListOf}) is found, then returns its outer-arg name. The
-     * walker emits every {@link no.sikt.graphitron.rewrite.model.ValueShape.RecordInput} /
-     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput} with siblings that
-     * share the same outer arg as a prefix, so descending to any leaf is sufficient.
-     */
-    private static String outerArgOfValueShape(no.sikt.graphitron.rewrite.model.ValueShape shape) {
-        return switch (shape) {
-            case no.sikt.graphitron.rewrite.model.ValueShape.Scalar s -> s.sdlPath().outerArgName();
-            case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> l.sdlPath().outerArgName();
-            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput r ->
-                r.fields().isEmpty() ? "" : outerArgOfValueShape(r.fields().getFirst().shape());
-            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
-                jb.fields().isEmpty() ? "" : outerArgOfValueShape(jb.fields().getFirst().shape());
-            // A JooqRecordInput carries its own path; defensive read for the forced arm.
-            case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> jr.sdlPath().outerArgName();
-        };
-    }
-
-    /**
-     * Resolves an SDL arg name to the graphitron-emitted input-class {@link ClassName} when the
-     * arg's SDL type unwraps to an {@code GraphQLInputObjectType}. Returns {@code null} for
-     * scalar / enum args, for unresolved fields, and when the assembled schema isn't available
-     * (model-only build path).
-     */
-    private static ClassName resolveInputArgClass(TypeFetcherEmissionContext ctx,
-                                                  String fieldName, String argName,
-                                                  String outputPackage) {
-        var assembled = ctx.assembledSchema();
-        if (assembled == null) return null;
-        var parent = assembled.getType(ctx.parentTypeName());
-        if (!(parent instanceof graphql.schema.GraphQLObjectType obj)) return null;
-        var field = obj.getFieldDefinition(fieldName);
-        if (field == null) return null;
-        var argument = field.getArgument(argName);
-        if (argument == null) return null;
-        var base = graphql.schema.GraphQLTypeUtil.unwrapAll(argument.getType());
-        if (!(base instanceof graphql.schema.GraphQLInputObjectType in)) return null;
-        return ClassName.get(outputPackage + ".inputs", in.getName());
     }
 
     /**

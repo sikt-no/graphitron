@@ -1080,8 +1080,8 @@ class FetcherPipelineTest {
             .contains(".fromMap(")
             .contains("validator.validate");
         // Negative half of the regression guard: the typed local feeds validate, not the raw
-        // Map. The "Object arg_input = env.getArgument(...)" raw-coerce shape belongs to the
-        // fallback pre-step used only when the assembled schema is missing.
+        // Map. The "Object arg_input = env.getArgument(...)" raw shape belongs to the scalar and
+        // enum arm.
         assertThat(body)
             .doesNotContain("Object arg_input = env.getArgument");
     }

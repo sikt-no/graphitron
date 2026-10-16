@@ -16,7 +16,8 @@ import java.util.List;
  * <p>The generated method translates one {@code jakarta.validation.ConstraintViolation} into a
  * {@link graphql.GraphQLError} for the wrapper's pre-execution validator step: the violation's
  * message (already interpolated by Jakarta's {@code MessageInterpolator}), a {@code path} that
- * splices the field's execution path, the bound argument name, and the bean property path, and
+ * splices the field's execution path, the argument path (the argument name, then the element index
+ * when the argument is a list validated element by element), and the bean property path, and
  * an {@code extensions} map carrying the violated constraint annotation's simple name under
  * {@code "constraint"}. Schema authors opt into client visibility of the constraint name by
  * declaring an {@code extensions}-shaped field on their VALIDATION-handled {@code @error} type;
@@ -57,29 +58,29 @@ public final class ConstraintViolationsClassGenerator {
             .returns(GRAPHQL_ERROR)
             .addParameter(violationWildcard, "violation")
             .addParameter(ENV, "env")
-            .addParameter(String.class, "argName")
+            .addParameter(listOfObject, "argPath")
             .addJavadoc("Translates a single {@link $T} into a {@link $T} carrying the\n"
                 + "violation's localised message, a response-path prefix that splices the\n"
-                + "field's execution path, the bound argument name, and the violation's bean\n"
-                + "property path, and an {@code extensions} map keyed by {@code \"constraint\"}\n"
-                + "with the violated annotation's simple name (e.g. {@code \"NotBlank\"}). The\n"
-                + "wrapper emits this call once per violation produced by the pre-execution\n"
-                + "validator step.\n", CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
-            .addStatement("$T argPath = new $T<>()", listOfObject, ARRAY_LIST)
-            .addStatement("argPath.add(argName)")
+                + "field's execution path, {@code argPath}, and the violation's bean property\n"
+                + "path, and an {@code extensions} map keyed by {@code \"constraint\"} with the\n"
+                + "violated annotation's simple name (e.g. {@code \"NotBlank\"}). {@code argPath}\n"
+                + "is the argument name, followed by the element index when a list argument is\n"
+                + "validated element by element. The wrapper emits this call once per violation\n"
+                + "produced by the pre-execution validator step.\n", CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
+            .addStatement("$T path = new $T<>(argPath)", listOfObject, ARRAY_LIST)
             .beginControlFlow("for ($T node : violation.getPropertyPath())", PATH.nestedClass("Node"))
             .addStatement("$T kind = node.getKind()", ELEMENT_KIND)
             .beginControlFlow("if (kind == $T.CONTAINER_ELEMENT)", ELEMENT_KIND)
             .beginControlFlow("if (node.getIndex() != null)")
-            .addStatement("argPath.add(node.getIndex())")
+            .addStatement("path.add(node.getIndex())")
             .nextControlFlow("else if (node.getKey() != null)")
-            .addStatement("argPath.add(node.getKey())")
+            .addStatement("path.add(node.getKey())")
             .endControlFlow()
             .nextControlFlow("else if (node.getName() != null)")
-            .addStatement("argPath.add(node.getName())")
+            .addStatement("path.add(node.getName())")
             .endControlFlow()
             .endControlFlow()
-            .addStatement("return validationError(env, argPath, violation.getMessage(), violation.getConstraintDescriptor()"
+            .addStatement("return validationError(env, path, violation.getMessage(), violation.getConstraintDescriptor()"
                 + ".getAnnotation().annotationType().getSimpleName())")
             .build();
 

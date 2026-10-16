@@ -84,6 +84,53 @@ class ErrorChannelClassificationTest {
             .containsExactly("ValidationErr", "DbErr");
     }
 
+    private static final String INPUT_GRID_SDL = """
+            enum TestInputBeanEnum { LOW HIGH }
+            input TestInputNested { key: String, value: String }
+            input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
+            type Query { x: String }
+            type Mutation {
+                runWithInputGrid(grid: [[TestInputBean!]!]!): SakPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithInputGrid"})
+            }
+            """;
+
+    @Test
+    void serviceField_listOfListsOfInputObjects_underValidationChannel_isRejected() {
+        // The pre-execution validation pass a VALIDATION handler turns on materialises an input
+        // object at no list wrapper or one; a list of lists is beyond it, so classification
+        // refuses the field rather than emitting a pass that fails on every request.
+        var schema = build(UNION_ERROR_PAYLOAD_SDL + INPUT_GRID_SDL);
+
+        var f = schema.field("Mutation", "runWithInputGrid");
+        assertThat(f).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) f).reason())
+            .contains("argument 'grid'")
+            .contains("list of lists of input type 'TestInputBean'")
+            .contains("VALIDATION");
+    }
+
+    @Test
+    void serviceField_listOfListsOfInputObjects_withoutValidationHandler_classifies() {
+        var schema = build("""
+            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = DbErr
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            """ + INPUT_GRID_SDL);
+
+        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputGrid");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.serviceMethodCall().validatedArguments()).containsExactly(
+            new no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidatedArgument.InputObjectNestedList(
+                "grid", "TestInputBean"));
+    }
+
     @Test
     void payloadWithoutErrorsField_producesNoChannel() {
         var schema = build("""

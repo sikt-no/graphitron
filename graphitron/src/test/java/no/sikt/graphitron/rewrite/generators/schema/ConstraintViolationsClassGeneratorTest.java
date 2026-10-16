@@ -33,7 +33,10 @@ class ConstraintViolationsClassGeneratorTest {
         var m = method(helper, "toGraphQLError");
         assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("violation", "env", "argName");
+            .containsExactly("violation", "env", "argPath");
+        assertThat(m.parameters().get(2).type().toString())
+            .as("the argument path, the same parameter shape sizeExceeded takes")
+            .isEqualTo("java.util.List<java.lang.Object>");
         assertThat(m.returnType().toString()).isEqualTo("graphql.GraphQLError");
     }
 

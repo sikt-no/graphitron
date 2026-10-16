@@ -542,7 +542,7 @@ class TenantRoutedFetcherPipelineTest {
     @Test
     void aRoutingSiteForACoordinateTheFoldMissedFailsNamingIt() {
         var schema = multiTenant(FILM_STOCK);
-        var ctx = new TypeFetcherEmissionContext(null, "FilmStock", schema);
+        var ctx = new TypeFetcherEmissionContext("FilmStock", schema);
 
         org.assertj.core.api.Assertions.assertThatThrownBy(
                 () -> TenantDslEmitter.resolveByName(ctx, "unassigned", DEFAULT_OUTPUT_PACKAGE))

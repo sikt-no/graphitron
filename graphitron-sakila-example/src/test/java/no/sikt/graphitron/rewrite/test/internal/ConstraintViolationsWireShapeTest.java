@@ -69,7 +69,7 @@ class ConstraintViolationsWireShapeTest {
         var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
             .validate(new TitleBean("toolong")).iterator().next();
 
-        var jakarta = ConstraintViolations.toGraphQLError(violation, env, "in");
+        var jakarta = ConstraintViolations.toGraphQLError(violation, env, List.of("in"));
         var length = ConstraintViolations.sizeExceeded(env, List.of("in", "title"), 3);
 
         assertThat(jakarta.getPath()).containsExactly(FIELD, "in", "title").isEqualTo(length.getPath());
@@ -84,8 +84,22 @@ class ConstraintViolationsWireShapeTest {
         var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
             .validate(new TitlesBean(List.of("ok", "toolong"))).iterator().next();
 
-        assertThat(ConstraintViolations.toGraphQLError(violation, env, "in").getPath())
+        assertThat(ConstraintViolations.toGraphQLError(violation, env, List.of("in")).getPath())
             .containsExactly(FIELD, "in", "titles", 1);
+    }
+
+    @Test
+    void aListElementsViolation_carriesTheElementIndexAfterTheArgumentName() {
+        // A list of input objects is validated element by element, the element's index following the
+        // argument name, so a violation lands under the element it belongs to.
+        var env = env();
+        var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
+            .validate(new TitleBean("toolong")).iterator().next();
+
+        var error = ConstraintViolations.toGraphQLError(violation, env, List.of("in", 1));
+        var length = ConstraintViolations.sizeExceeded(env, List.of("in", 1, "title"), 3);
+
+        assertThat(error.getPath()).containsExactly(FIELD, "in", 1, "title").isEqualTo(length.getPath());
     }
 
     private static DataFetchingEnvironment env() {

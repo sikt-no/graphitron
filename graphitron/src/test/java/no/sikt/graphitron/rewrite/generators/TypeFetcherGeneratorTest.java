@@ -642,7 +642,10 @@ class TypeFetcherGeneratorTest {
                 new MethodRef.Param.Typed("ids", "java.util.List<java.lang.Integer>",
                     new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("ids")))));
         var field = new QueryField.QueryServiceTableField("Query", "filmsByService", null,
-            TestFixtures.tableBoundFilmWithPk(nonNullList()), TestFixtures.stubServiceCall(method), Optional.empty());
+            TestFixtures.tableBoundFilmWithPk(nonNullList()),
+            TestFixtures.stubServiceCall(method, List.of(graphql.schema.GraphQLArgument.newArgument()
+                .name("ids").type(graphql.schema.GraphQLList.list(graphql.Scalars.GraphQLInt)).build())),
+            Optional.empty());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
 
@@ -999,13 +1002,80 @@ class TypeFetcherGeneratorTest {
     void mutationServiceRecordField_withValidationHandler_emitsValidatorPreStep() {
         // Validation wrapper integration on the mutation side: when the channel carries any
         // ValidationHandler, the shared helper inserts the pre-execution Jakarta validation
-        // block. The block is emitted ahead of the try, walks every Arg-sourced parameter, and
-        // short-circuits with the payload's errors-arm filled by the violations.
+        // block. The block is the first thing inside the try, so a failure in it reaches the
+        // channel's catch arm, and short-circuits with the payload's errors-arm filled by the
+        // violations.
+        var body = validatedServiceBody(
+            List.of(new MethodRef.Param.Typed("input", "com.example.SakInput",
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("input")))),
+            List.of(argument("input", SAK_INPUT)));
+
+        assertThat(body).contains("graphitronContext(env).getValidator(env)");
+        assertThat(body).contains("SakInput.fromMap(arg_input_raw)");
+        assertThat(body).contains("ConstraintViolations.toGraphQLError(violation, env, java.util.List.of(\"input\"))");
+        assertThat(body.indexOf("getValidator(env)")).isGreaterThan(body.indexOf("try"));
+        assertThat(body.indexOf("getValidator(env)"))
+            .as("validation runs ahead of the service call")
+            .isLessThan(body.indexOf("TestServiceStub.createSak("));
+    }
+
+    @Test
+    void mutationServiceRecordField_withValidationHandler_listInputArgument_validatesEachElement() {
+        // A list of input objects is read as a list, never cast to one Map, and each element is
+        // validated under its own index in the error path.
+        var body = validatedServiceBody(
+            List.of(new MethodRef.Param.Typed("input", "java.util.List<com.example.SakInput>",
+                new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("input")))),
+            List.of(argument("input", graphql.schema.GraphQLNonNull.nonNull(graphql.schema.GraphQLList.list(
+                graphql.schema.GraphQLNonNull.nonNull(SAK_INPUT))))));
+
+        assertThat(body).contains(
+            "java.util.List<java.util.Map<java.lang.String, java.lang.Object>> arg_input_raw = env.getArgument(\"input\")");
+        assertThat(body).contains("for (int i = 0; i < arg_input_raw.size(); i++)");
+        assertThat(body).contains("SakInput.fromMap(arg_input_element)");
+        assertThat(body).contains("ConstraintViolations.toGraphQLError(violation, env, java.util.List.of(\"input\", i))");
+        assertThat(body).doesNotContain("java.util.Map<java.lang.String, java.lang.Object> arg_input_raw");
+    }
+
+    @Test
+    void mutationServiceRecordField_withValidationHandler_twoBindingsIntoOneArgument_validateItOnce() {
+        // A whole-input parameter and a nested-field parameter read one argument; it is validated
+        // once, so no violation is reported twice.
+        var body = validatedServiceBody(
+            List.of(
+                new MethodRef.Param.Typed("input", "java.lang.Object",
+                    new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("input"))),
+                new MethodRef.Param.Typed("title", "java.lang.String",
+                    new ParamSource.Arg(new CallSiteExtraction.NestedInputField("input", List.of("title"),
+                        new CallSiteExtraction.Direct()),
+                        new no.sikt.graphitron.rewrite.PathExpr.Step(
+                            no.sikt.graphitron.rewrite.PathExpr.head("input"), "title", false)))),
+            List.of(argument("input", SAK_INPUT)));
+
+        assertThat(body.split("validator\\.validate\\(", -1)).hasSize(2);
+        assertThat(body).contains("SakInput.fromMap(arg_input_raw)");
+    }
+
+    /** {@code input SakInput { title: String }}, the input type the validated service fixtures bind. */
+    private static final graphql.schema.GraphQLInputObjectType SAK_INPUT =
+        graphql.schema.GraphQLInputObjectType.newInputObject().name("SakInput")
+            .field(graphql.schema.GraphQLInputObjectField.newInputObjectField().name("title")
+                .type(graphql.Scalars.GraphQLString))
+            .build();
+
+    private static graphql.schema.GraphQLArgument argument(String name, graphql.schema.GraphQLInputType type) {
+        return graphql.schema.GraphQLArgument.newArgument().name(name).type(type).build();
+    }
+
+    /**
+     * The fetcher body of {@code Mutation.createSak}, a {@code @service} field over {@code params}
+     * declaring {@code arguments}, whose payload's error channel carries a VALIDATION handler.
+     */
+    private static String validatedServiceBody(List<MethodRef.Param> params,
+                                               List<graphql.schema.GraphQLArgument> arguments) {
         var method = TestFixtures.staticServiceMethodRef(
             "no.sikt.graphitron.rewrite.TestServiceStub", "createSak",
-            ClassName.bestGuess("com.example.SakPayload"),
-            List.of(new MethodRef.Param.Typed("input", "com.example.SakInput",
-                new ParamSource.Arg(new CallSiteExtraction.Direct(), no.sikt.graphitron.rewrite.PathExpr.head("input")))));
+            ClassName.bestGuess("com.example.SakPayload"), params);
         var validationErr = new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType(
             "SakValidationErr",
             null,
@@ -1015,15 +1085,12 @@ class TypeFetcherGeneratorTest {
         // on Mapped and emits the Outcome.ErrorList early return.
         var channel = new ErrorChannel.Mapped(List.of(validationErr), "SAK_PAYLOAD");
         var field = new MutationField.MutationServiceRecordField("Mutation", "createSak", null,
-            new ReturnTypeRef.ScalarReturnType("SakPayload", single()),             TestFixtures.stubServiceCall(method),
+            new ReturnTypeRef.ScalarReturnType("SakPayload", single()),
+            TestFixtures.stubServiceCall(method, arguments),
             Optional.of(channel));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(field), DEFAULT_OUTPUT_PACKAGE);
-
-        var body = method(spec, "createSak").code().toString();
-        assertThat(body).contains("graphitronContext(env).getValidator(env)");
-        assertThat(body).contains("ConstraintViolations.toGraphQLError");
-        assertThat(body.indexOf("getValidator(env)")).isLessThan(body.indexOf("try"));
+        return method(spec, "createSak").code().toString();
     }
 
     // ===== QueryTableInterfaceField =====

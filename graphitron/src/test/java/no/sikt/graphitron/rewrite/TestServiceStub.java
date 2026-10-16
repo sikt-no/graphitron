@@ -562,6 +562,16 @@ class TestServiceStub {
     }
 
     /**
+     * Returns the dummy {@code SakPayload} from a list of lists of {@link TestInputBean} inputs,
+     * bound whole. Used by the classification test pinning that such an argument is rejected under
+     * a {@code VALIDATION} channel and admitted without one.
+     */
+    public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithInputGrid(
+            java.util.List<java.util.List<java.util.Map<String, Object>>> grid) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Returns the multi-ctor variant of the dummy payload. Used by the test that exercises
      * canonical-constructor selection on hand-rolled record-backed POJOs that declare extra
      * constructors alongside the canonical (all-fields) one.
