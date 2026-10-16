@@ -854,7 +854,9 @@ and the emitters read, and it goes when nothing reads what it builds.
         test compiles where the case is the classpath.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
-      * **A field's source object is stated** `open`. `graphitron_field_source_object`, one row per
+      * **A field's source object is stated** `blocked`, on "The code family reads the generated
+        jOOQ classes", a record backing a type being a class the reading skips today.
+        `graphitron_field_source_object`, one row per
         field whose parent arrives as a Java object rather than a row, keyed by the field with the
         class a foreign key into the code family: the parent type's backing, passed down through
         nesting types with neither a table nor a backing of their own. Only the class; its kind, its
@@ -1551,9 +1553,9 @@ then what resolves the documents against the rest.
   does not reference the dependency: the reading already lets go of an entry the build stopped
   declaring, so a cascade would replace a delete that works and buy nothing.
 * **Code does not depend on jOOQ** `done`. The two families are parallel: each reads its own
-  corpus under the configuration, and neither keys the other. The reading skips the generated jOOQ
-  package, and that is right, the generated classes being the catalog's to describe and no part of
-  the service layer. Two reads cross today, one child each.
+  corpus under the configuration, and neither keys the other. The reading skipped the generated
+  jOOQ package as the catalog's to describe, which "The code family reads the generated jOOQ
+  classes" reverses. Two reads cross today, one child each.
   * **The table a parameter is bound to is the graphitron anchor's** `done`. No relation states
     it: the resolution that needs it joins the parameter's erased class to `sql_table.class_fqn`
     among the graph's own sources, and stores what it resolved keyed to both sides. A chain link a
@@ -1577,15 +1579,21 @@ then what resolves the documents against the rest.
     loads is a scalar constant's coercing, which only running its initialiser can say. Fixtures
     whose loader had been answering from the test JVM's classpath now carry what a run's
     classpath carries: the generated catalog and the jOOQ runtime, as transitive entries.
-* **The jOOQ exclusion is pinned where services share its package** `open`. Services are commonly
-  written in the module jOOQ generates into, so one directory holds both, and the exclusion is the
-  package and every package under it. A service package beneath the generated one is dropped
-  silently, every arm reading as a classpath that does not carry it. A case first, then either the
-  exclusion stops at the package or the layout is refused out loud.
-  * **The manual says what the jOOQ package keeps out of the reading** `open`, lands with the node
-    above. The `jooqPackage` row of `mojo-configuration.adoc` says the catalog is rooted there and
-    not that the classpath reading leaves it out, which is what an author whose services share the
-    module needs to know.
+* **The code family reads the generated jOOQ classes** `open`. The reading's skip of the generated
+  package was the wrong call: a class the model reasons about, a record backing a type or a table
+  class a parameter takes, has to be a `code_class` fact a graphitron relation can key into, and
+  describing it only through the catalog's name columns leaves no key to hold. The two families
+  stay parallel and complete each: the catalog keeps `record_class_fqn`, `class_fqn` and the record
+  supertype closure as names, the code family captures the classes from its own corpus, and
+  neither keys the other. Measured on sis first, the generated package's class count and the
+  capture's time before and after.
+  * **A service beside the generated classes is read** `open`, with the node above. Services are
+    commonly written in the module jOOQ generates into, and the exclusion took the package and
+    every package under it, so a service package beneath the generated one was dropped silently.
+    With no exclusion there is nothing to pin; a case states that such a service is read.
+  * **The manual stops saying the reading leaves the jOOQ package out** `open`, with the node
+    above, if it says so anywhere; the `jooqPackage` row of `mojo-configuration.adoc` roots the
+    catalog there and nothing more.
 * **A gate holds the call order to the roster** `open`. Nothing checks that `ModelCapture` calls a
   gatherer after every gatherer it declares, which is how the two drifted apart. `java-source` and
   `compile` run in the dev loop on their own cadence rather than in this sequence, and `sdl` names a
