@@ -1201,9 +1201,10 @@ reads nothing off the classpath that capture has already read, and builds no sch
       the inputs still tagged, `TagLinkSynthesiser`'s link imports `@tag` alone, yet the opt-in
       reads it as `CONFIGURED` and the mint puts `@key(fields: "id")` on every `@node` type: twelve
       "Federation directive '@key' is not declared" refusals of graphitron's own injection, which
-      the author cannot fix, so no author can leave federation while tags are configured. The mint
-      writes only what the graph's link imports, or the configured link imports what the mint
-      writes; which one is the node's first decision.
+      the author cannot fix, so no author can leave federation while tags are configured. Decided:
+      the link imports what the mint writes, authored and configured alike, and an author's own
+      declaration of an imported directive collides as it does today. Closed by "The effective
+      imports are graphitron's rule".
     * **A link's imported definitions are captured where the link is** `open`, a regression.
       Reported 2026-10-15 from a live session. With the authored federation `@link` in place,
       generate accepts `@tag` and `@key` but the editor flags each as "Unknown directive":
@@ -1212,18 +1213,47 @@ reads nothing off the classpath that capture has already read, and builds no sch
       generator's registry alone. The store has the link (`graphitron_federation_link`) and not what
       it imports. The imported definitions are captured as base facts, sourced to the link, so the
       editor and the generator read one vocabulary; the sibling node above reads the same fact.
+      Federation's side is "Federation is a gatherer of its own"; the editor reading the effective
+      vocabulary is the emitted directive anchors, after it.
   * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
     to rename.
+* **Federation is a gatherer of its own** `open`. Federation's facts are neither the SDL's nor
+  graphitron's: what a federation version defines is federation-jvm's, and what a document's `@link`
+  and `@key` say is decoded today by graphitron's walk. A `federation` gatherer runs between the
+  graphql gatherers and graphitron, in a `federation_` family, reading `graphql-source` and
+  `graphql-ast`; `graphitron-ast` reads it. What depends on graphitron's mint, the imports a link
+  ends up with, stays graphitron's.
+  * **Federation's versions and their imports are captured** `open`, first. `federation_version`
+    is one row per spec version the library supports, keyed by its url; `federation_version_import`
+    one row per name that version's link may import, spelled as imports spell it (`@key`,
+    `FieldSet`). Read through the library's public API: versions probed upward from v2.0 until
+    `loadFederationSpecDefinitions` refuses, a test pinning the set, and each name in a version's
+    definitions tried as an import, since several versions share one definition file and the
+    library gates some of a file below a directive's minimum version. Marked and swept under one
+    `store_source` row for the library, kind `LIBRARY`, named by its coordinate, so a library
+    upgrade re-reads and sweeps the old. Needs no SDL, so it moves nothing.
+  * **The effective imports are graphitron's rule** `open`, after. `graphitron_federation_link_import`
+    becomes the authored imports plus each MINTED or CONFIGURED directive the link's version may
+    import and the link does not, written after `EmittedAnchor`; a minted directive the version
+    cannot import is a defect, graphitron's own. The configured link's hard-coded `@tag` goes.
+    `LoadingRewrites` builds the federation link's `import:` from the relation for authored and
+    configured links alike, and `TagNotImported` goes with "add @tag to the import array". The
+    assembly reads the anchor now, so `ModelCapture` runs it after `GraphitronAstCapture`. Closes
+    "A configured link mints no key it does not import".
+  * **The link decode and the opt-in are federation's** `open`, after. The `@link` and import
+    entries leave `GraphitronSchemaEntries` for the gatherer, `graphitron_federation_link` becomes
+    `federation_link` in its anchor, and the configured opt-in keeps reading
+    `graphql_source_input`.
+  * **The key decode is federation's** `open`, after. The three `@key` entries leave
+    `GraphitronTypeEntries`; the mint's authored-id-key condition reads them from upstream.
 * **The assembly is a step of the anchor** `open`. `graphql-assembly` is a gatherer by name only. It
   captures no corpus: it reads the documents the source reading already holds, and what it writes,
   the assembly rows of `graphql_schema_problem`, is graphql-java's and federation-jvm's verdict over
-  them, which is a derivation. It is downstream of the anchor already, the federation link it hands
-  federation-jvm importing what the anchor mints. Nothing found argues for a gatherer of its own.
-  * **The composition reads the anchored link** `open`, with "A configured link mints no key it
-    does not import". `LoadingRewrites` builds the federation link's imports from
-    `graphitron_federation_link_import` rather than from `TagLinkSynthesiser`'s own reading of the
-    registry.
-  * **The assembly runs as the anchor's last step** `open`, after. `GraphQLAssemblyCapture.gather`
+  them, which is a derivation. `ModelCapture` runs it before the graphitron decode, but nothing in
+  between reads it, and once the link it hands federation-jvm imports what the anchor mints it reads
+  the anchor. Nothing found argues for a gatherer of its own.
+  * **The assembly runs as the anchor's last step** `open`, after "The effective imports are
+    graphitron's rule", which makes the composition read the anchored link. `GraphQLAssemblyCapture.gather`
     becomes the step after `EmittedAnchor` in the graphitron-ast anchor, handing `ModelCapture` the
     same reading. Its `store_graph_progress` row, its `meta_gatherer` row and the edges naming it
     go, and `graphql_schema_problem`'s owner becomes the anchor's gatherer. The comment on the
