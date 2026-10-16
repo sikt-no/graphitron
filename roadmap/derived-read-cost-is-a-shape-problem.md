@@ -996,6 +996,59 @@ and the emitters read, and it goes when nothing reads what it builds.
     * **The askers read the family** `blocked`, on the nodes above: the rejections' lists of valid
       names, the language server's completions and an MCP surface for them, each named on the
       commit that moves it.
+  * **A field's target is a type, and a table or a column beneath it** `open`. `graphitron_field_target`
+    is the supertype, one row per field carrying its target type and the wrapper where there is one;
+    the subtypes say what the target is. `graphitron_field_target_table` is where the target binds a
+    table, or each table-bound participant where it does not, as now. `graphitron_field_target_column`
+    is new: where the target is a scalar or an enum, the column the value is read from, keyed to
+    `sql_column` so the row carries its table, with how the spelling matched, `@field(name:)` or the
+    field's own name, by jOOQ name or SQL name. It is the fact `intent_column_match_claim` picks with
+    a window function every time anyone asks. A spelling matching no column or several is a defect at
+    the field and no row here: no column is `COLUMN_UNRESOLVED`, which "A field reading a column its
+    table lacks is a defect" states over the column scope today and which moves onto this, and
+    several is a defect of its own.
+    * **A scalar without a path reads its source table** `open`. The column is on the field's
+      source table, one row per table, so the relation is keyed by the field and the table. A
+      nesting type, an object type with no table of its own projected against its owner's, retains
+      its owner's source table and source object, which is `graphitron_field_source_table`'s
+      `INHERITED` departure: a scalar on it has a target column of its own on each table it retains,
+      two where two owners on two tables reach the type. A field has a source object, a source
+      table, both or neither. Where the source object is a table's own record, its scalars are that
+      table's columns, read as `rec.get(TABLE.COLUMN)`: a `CONSUMED` departure whose
+      `graphitron_field_source_key` rule is `RECORD` gives target columns on the record's table, as
+      `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as `film.film_id`. A `SOURCE_ROW`
+      departure gives none: a `@sourceRow` parent is a plain class whose scalars are read off the
+      object, the departure saying only where its batched query starts. A scalar whose type has no
+      source table at all reads from its source object, which is no column and no row here.
+    * **A scalar through a path reads where the path lands** `blocked`, on "The forward walk is a
+      relation of its own": the path resolution is keyed by a target table, which a scalar does not
+      have, so the landing is read off the forward walk once it exists.
+    * **The editor shows information, not a classification** `open`, after the target column. A
+      field's hover is a block of the facts a user wants, each a key lookup in a stored relation:
+      what produces it, read from `graphitron_producer`, its source and the table its read departs
+      from, its target type, wrapper and target table or column, its walked `@reference` links, its
+      node identity from "The editor and the MCP read the resolved node", and its defects. A type's
+      is its binding, its nodehood with type id and key columns, its backing class and its defects.
+      The inlay hints, through `InlayFacts`, show the same facts in place of a classification, which
+      is also why a `@reference` field drawing no classification hint stops being a question. Found
+      2026-10-15: a field hover cost about 2.8 s in a live session over sis, and 224 ms a field over
+      a copy of its store, against 18 ms over opptak and 0.05 s for the other hovers, because the
+      classification block reads `intent_resolved_field_claim` and `intent_column_match_claim`. The
+      column match ends in a `ROW_NUMBER()` that H2 cannot push the hover's coordinate into, the
+      authored claim opens with a recursive CTE, and the resolved claim unions them under a
+      correlated `NOT EXISTS`; whole, on sis, the two cost 306 ms and 376 ms, and the resolved claim
+      43 s. A cost gate holds the block's statement to a bound over a large capture.
+    * **The claims go** `open`, after the editor. A claim is a field's row in the walk's classified
+      vocabulary and its classifier the variant, whose precedence is the fetcher's fact under "Every
+      field has one fetcher": `intent_authored_field_claim` restates the producing entries,
+      `intent_column_match_claim` is the target column picked at read time, and
+      `intent_resolved_field_claim` unions the two. Their readers, `ClaimFacts`, `InlayFacts`,
+      `BindingUsages`, `SchemaQueries`, `DiagnosticFacets`, `AuthoredClaimConflicts` and the
+      conflict rule, move onto the entries, the producers, the target and its subtypes, which drops
+      the authored claim from "The readers move to the twin, the path and the applications"; the
+      three go as retired vocabulary, and `AuthoredClaimTest` and `ColumnMatchClaimTest` go with
+      what they pin rather than converting. The scope relations go under "The duplicate statements
+      of a field's tables dissolve", which already holds them.
   * **The hand-built model tests dissolve** `open`. About fifty-five classes build the walk's
     classified model by hand through `TestFixtures`' made-up table and key refs, a `TableType` over
     `filmTable()` holding a `ColumnBackedField`, and run the walk's validator, renderers or plan
@@ -2130,6 +2183,8 @@ conversion frees one.
       case did not convert: a table-valued function whose generated model exposes no call
       surface, which jOOQ does not produce for any fixture the catalog can hold; capture's null
       reading for it stands untested.
+    * **Claims** `open`, not by converting: `AuthoredClaimTest` and `ColumnMatchClaimTest` pin the
+      claim relations, which go under "The claims go", and they go with them.
 * **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
   converted, which is what the caller count measures and why it is the right count. A case that
   fabricates a state no capture reaches is not a case the fixture has to be kept for: it is either
