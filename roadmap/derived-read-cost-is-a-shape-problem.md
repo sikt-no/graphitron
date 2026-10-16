@@ -2175,6 +2175,17 @@ conversion frees one.
   argument the directive no longer has on a `Mutation` nothing declared, so the spelling it claims
   to show was never captured. Four state the problem they are about: `base-less-extension` and the
   three `federation-key` documents.
+* **A definition a document repeats within itself is recorded** `open`, a regression found
+  2026-10-15. A plain document is captured as one source with the prelude before it, so a
+  `type Query` beside the prelude's is a definition that one source repeats, and that refusal is
+  recorded nowhere: `SchemaLoader.parsePerSource` keeps it on the source's own reading, source
+  capture writes only syntax failures, and assembly merges the readings again, the repeat already
+  gone, so `graphql_schema_problem` holds nothing and the runner's refusal check passes a document
+  whose own definition was never captured. The generator's own load throws on it, so a build fails;
+  the editor shows nothing. Each source's own refusals are written as `REGISTRY` problems, and a
+  fact document repeating a type within itself states the row it gets. The prelude's assertion that
+  every document's graph derives the prelude's own field guards the case of a graph deriving
+  nothing at all, which this is not.
 * **A fresh store per test stops being the only shape** `open`, and it is not tidiness: every
   `sql_` and `code_` relation is store-wide, so one store holds many graphs against one reading of
   the catalog and the classpath, and varying which SDL loads into a warm store is the only thing

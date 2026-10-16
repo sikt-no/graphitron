@@ -51,3 +51,10 @@ directive @withConfiguration(
 ) on SCHEMA
 
 type Query { ping: String }
+
+# Every document's graph derives its facts, the prelude's own field among them. A document that
+# parses but whose graph derives nothing would otherwise pass every claim it states about absence.
+extend schema @assertContains(relation: "graphitron_field", rows: """
+  type_name, field_name
+  Query,     ping
+  """)
