@@ -85,6 +85,16 @@ Docs: the two manual pages and the SDL description, as drafted above.
 - `graphitron`, `TenantRuntimeKeyTypeTest`: the existing `RequestTenants` shape assertions extend to the three-argument constructor, `entityDefaultTenant()`, and the two instance withers with their parameter lists; the carrier assertions name `entityDefaultTenant(DataFetchingEnvironment)` and assert `defaultTenant(DataFetchingEnvironment)` is gone.
 - Classification tests change only by the rename; no new classification case, since no verdict changes.
 
+## Implementation notes
+
+Landed as planned. Where the code settled a detail the plan left open:
+
+- The public two-argument constructor delegates `this(tenants, defaultTenant, defaultTenant)`, so the canonical constructor is the only place either membership check runs; `of` and `withDefault` reach it through the two-argument form unchanged.
+- The instrumentation checks the default tenant before the entity default tenant, so a request naming two unhosted roles reports the default tenant's message.
+- The "does not carry tenant column" fix text in `TenantBindingIndex` (and the `TenantBindingClassificationTest` assertion matching it) now says "resolve it on the request's entity default tenant"; the `@defaultTenant` ladder's javadoc and the `DispatchFact.Routed` javadoc follow the same wording.
+- Beyond the two pages the plan drafted, `federation-keys.adoc`'s `@defaultTenant` sentence and the closing paragraph of `tenant-scoping.adoc` § 2 point at the entity default tenant, and `multitenant.graphqls`' `Inventory` comment and `SplitQuerySameTableRejectionPipelineTest`'s comment take the new phrasing (retirement sweep).
+- `TenantRuntimeKeyTypeTest` asserts both constructors' parameter lists, the withers as non-static instance methods returning `RequestTenants`, the carrier's `entityDefaultTenant` field and static reader, and the absence of a `defaultTenant` method on the carrier.
+
 ## Retired vocabulary
 
 - `TenantConnections.defaultTenant(DataFetchingEnvironment)` (the static accessor; the carrier's `defaultTenant` field and `RequestTenants.defaultTenant()` stay)
