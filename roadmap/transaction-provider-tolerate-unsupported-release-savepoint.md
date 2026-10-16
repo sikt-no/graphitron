@@ -1,7 +1,7 @@
 ---
 id: R1054
 title: "GraphitronTransactionProvider fails a nested commit on drivers without releaseSavepoint (Oracle)"
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-10-16
