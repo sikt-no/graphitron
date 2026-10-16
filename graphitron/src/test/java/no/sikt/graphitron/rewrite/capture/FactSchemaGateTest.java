@@ -611,7 +611,7 @@ class FactSchemaGateTest {
     /**
      * The graph partition dimension, in exemption polarity: every base relation leads its primary
      * key with {@code graph_name} unless its family is deliberately graph-free, so a new family is
-     * covered by default and its exemption has to be argued in. Four prefixes are exempt, each
+     * covered by default and its exemption has to be argued in. Five prefixes are exempt, each
      * for a stated reason. {@code sql_} and {@code code_} partition by <em>source</em>
      * rather than by graph (a jar or a generated package is shared between graphs, and which
      * sources make up a graph is a membership question deferred with its first consumer), so the
@@ -620,6 +620,8 @@ class FactSchemaGateTest {
      * declares is true of the entry whoever reads it, so a second graph reading the same entry
      * reads the same rows rather than a copy of them, and a reading replaces the rows of the
      * entries it read and no others.
+     * {@code federation_} leads with {@code source_name} on the same terms: the federation library
+     * is one source every graph claims, and what it supports is true of it whoever reads it.
      * {@code java_} partitions by source too, at the grain its refresh runs at, and its dimension
      * is spelled {@code file} rather than {@code source_name} on purpose: a source file is not a
      * {@code store_source} row, and two columns with one name that never join would read as though
@@ -657,7 +659,8 @@ class FactSchemaGateTest {
                     continue;
                 }
                 if (table.startsWith("sql_")
-                    || table.startsWith("code_")) {
+                    || table.startsWith("code_")
+                    || table.startsWith("federation_")) {
                     expected = "source_name";
                 } else if (table.startsWith("java_")) {
                     expected = "java_source_root".equals(table) ? "source_root" : "file";

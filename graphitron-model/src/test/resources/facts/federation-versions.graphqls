@@ -1,0 +1,51 @@
+"The federation versions the library supports and what each lets a link import, read from federation-jvm rather than listed by graphitron. The rows are store-wide, a library being one source every graph claims, so they hold whatever the document says; this one says nothing federated. The version set is pinned whole, so a library upgrade that adds a version, or breaks the upward probe that finds them, fails here first."
+type Query {
+  film: String
+}
+
+extend schema @expectEquals(relation: "federation_version", rows: """
+  version
+  v2.0
+  v2.1
+  v2.2
+  v2.3
+  v2.4
+  v2.5
+  v2.6
+  v2.7
+  v2.8
+  v2.9
+  v2.10
+  v2.11
+  v2.12
+  v2.13
+  v2.14
+  v2.15
+  """)
+
+# What graphitron mints is importable from the first version on.
+extend schema @assertContains(relation: "federation_version_import", rows: """
+  version, name
+  v2.0,    @key
+  v2.0,    @tag
+  v2.0,    @shareable
+  v2.0,    FieldSet
+  v2.10,   @key
+  v2.10,   @tag
+  """)
+
+# A directive is importable from the version that introduced it, not from every version whose
+# definition file carries it.
+extend schema @assertAbsent(relation: "federation_version_import", rows: """
+  version, name
+  v2.0,    @composeDirective
+  v2.0,    @interfaceObject
+  v2.7,    @context
+  """)
+
+extend schema @assertContains(relation: "federation_version_import", rows: """
+  version, name
+  v2.1,    @composeDirective
+  v2.3,    @interfaceObject
+  v2.8,    @context
+  """)

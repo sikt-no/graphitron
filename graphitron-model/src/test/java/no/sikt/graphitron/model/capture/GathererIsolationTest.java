@@ -83,6 +83,8 @@ class GathererIsolationTest {
         // the decode the walk drives one application at a time, which goes with the walk.
         roll.put("capture/graphitron", Set.of("GraphitronAssemblyCapture",
             "GraphitronFactCapture"));
+        // The federation library's versions and what each lets a link import.
+        roll.put("capture/federation", Set.of("FederationCapture"));
         roll.put("capture/java", Set.of("JavaSourceFacts"));
         roll.put("capture/compile", Set.of("CompileFacts"));
         return Map.copyOf(roll);

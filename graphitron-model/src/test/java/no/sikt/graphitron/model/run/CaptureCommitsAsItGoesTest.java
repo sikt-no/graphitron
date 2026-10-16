@@ -36,7 +36,7 @@ class CaptureCommitsAsItGoesTest {
     /** Every gatherer a capture runs, in the order it runs them, and the capture as a whole. */
     private static final List<String> GATHERERS = List.of("capture", "store", "jooq",
         "classpath-source", "code", "graphql-source", "graphql-ast", "graphql-assembly",
-        "graphitron-ast", "sdl", "graphitron", "derivation");
+        "federation", "graphitron-ast", "sdl", "graphitron", "derivation");
 
     @Test
     @DisplayName("a reading that runs to its end completes every gatherer's row and the capture's")

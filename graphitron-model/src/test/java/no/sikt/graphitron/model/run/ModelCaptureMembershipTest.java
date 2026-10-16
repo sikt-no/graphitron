@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.run;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.schema.SchemaLoader;
@@ -47,14 +48,18 @@ class ModelCaptureMembershipTest {
                 expectedA.add(entry.table().getSchema().getClass().getPackageName());
             }
             expectedA.addAll(declaredEntries(classpath));
+            expectedA.add(FederationCapture.SOURCE_NAME);
             assertThat(membership(store.dsl(), "a")).isEqualTo(expectedA);
 
             // The second graph is SDL alone: no catalog and no classpath, so a source in its
             // membership that is not its own file is one it inherited.
             store.andGraph("b", bSdl);
+            var expectedB = new LinkedHashSet<>(sdlSourceNames(CapturedStore.registryOf(tmp, "b", bSdl)));
+            expectedB.add(FederationCapture.SOURCE_NAME);
             assertThat(membership(store.dsl(), "b"))
-                .as("an SDL-only capture's membership is its own file census, no inherited catalog")
-                .isEqualTo(new LinkedHashSet<>(sdlSourceNames(CapturedStore.registryOf(tmp, "b", bSdl))));
+                .as("an SDL-only capture's membership is its own file census and the federation"
+                    + " library every capture reads, no inherited catalog")
+                .isEqualTo(expectedB);
             assertThat(membership(store.dsl(), "a"))
                 .as("a sibling's capture leaves this graph's membership standing")
                 .isEqualTo(expectedA);

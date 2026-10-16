@@ -121,7 +121,10 @@ class RelationRegistrationGateTest {
             // lifecycle anchor. Nothing in this class's fixtures reaches them, capture never
             // writing a .java file's declarations.
             "java_file", "java_source_root", "java_class_declaration", "java_method_declaration",
-            "java_field_declaration")) {
+            "java_field_declaration",
+            // The federation_ family: what the library answers, pinned by the federation-versions
+            // fact document. Nothing GraphitronSchema holds is federation's vocabulary.
+            "federation_version", "federation_version_import")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         // The SDL node entries: one relation per node kind and site, read per document and keyed by the

@@ -1223,15 +1223,18 @@ reads nothing off the classpath that capture has already read, and builds no sch
   graphql gatherers and graphitron, in a `federation_` family, reading `graphql-source` and
   `graphql-ast`; `graphitron-ast` reads it. What depends on graphitron's mint, the imports a link
   ends up with, stays graphitron's.
-  * **Federation's versions and their imports are captured** `open`, first. `federation_version`
+  * **Federation's versions and their imports are captured** `done`. `federation_version`
     is one row per spec version the library supports, keyed by its url; `federation_version_import`
     one row per name that version's link may import, spelled as imports spell it (`@key`,
     `FieldSet`). Read through the library's public API: versions probed upward from v2.0 until
     `loadFederationSpecDefinitions` refuses, a test pinning the set, and each name in a version's
     definitions tried as an import, since several versions share one definition file and the
     library gates some of a file below a directive's minimum version. Marked and swept under one
-    `store_source` row for the library, kind `LIBRARY`, named by its coordinate, so a library
-    upgrade re-reads and sweeps the old. Needs no SDL, so it moves nothing.
+    `store_source` row for the library, kind `LIBRARY`, named by group and artifact and stamped by
+    the jar's content, the jar carrying no Maven metadata to name its release by; a changed stamp
+    is read whole. Needs no SDL, so it moves nothing. `FederationCapture` runs after the graphql
+    gatherers; federation-versions pins v2.0 to v2.15 and the imports graphitron mints, and
+    `FederationCaptureTest` the read-once and the re-read.
   * **The effective imports are graphitron's rule** `open`, after. `graphitron_federation_link_import`
     becomes the authored imports plus each MINTED or CONFIGURED directive the link's version may
     import and the link does not, written after `EmittedAnchor`; a minted directive the version

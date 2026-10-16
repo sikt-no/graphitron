@@ -295,7 +295,7 @@ CREATE TABLE store_source (
   last_seen   TIMESTAMP NOT NULL,
   read_at     TIMESTAMP,
   PRIMARY KEY (source_name),
-  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA'))
+  CHECK (source_kind IN ('SCHEMA_FILE', 'DIRECTORY', 'JAR', 'JOOQ_SCHEMA', 'LIBRARY'))
 );
 -- One class file under a classpath entry, which is the unit the reading opens and therefore the
 -- unit it can decline to open again. The entry above it is too coarse to invalidate on: in a
@@ -346,8 +346,8 @@ COMMENT ON COLUMN store_graph_source.source_name IS 'a source the graph''s run r
 COMMENT ON COLUMN store_graph_source.stamp IS 'what this graph''s rows of this source were derived from, or null where it holds a claim but no transcription it may trust. Per graph rather than per source: the stamp on store_source says what the file last hashed to for whoever read it, which answers nothing about whether a given graph has transcribed those bytes, so only this column can tell a reading that a scope is already current and may be left alone';
 COMMENT ON COLUMN store_graph_source.read_at IS 'when this graph last transcribed this source, which is the instant its rows of it carry. The stamp says what the bytes were and this says when they were read, and a reading deciding whether it may leave a scope alone needs both. Not advanced by a reading that skipped the source: the rows still date from the reading that wrote them, and a column claiming otherwise would describe a transcription that never ran';
 COMMENT ON TABLE store_source IS 'A source the store read, store-global rather than graph-keyed: it can say what a file hashed to, never which graph read it. Every base relation is partitionable by the source that produced it: a refresh deletes exactly the rows one source wrote and re-walks it, so a relation unreachable from a source row is one the store can only ever discard wholesale.';
-COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, or the generated package a jOOQ schema lives in, as the reader spelled it';
-COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, or a generated jOOQ schema package. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
+COMMENT ON COLUMN store_source.source_name IS 'the schema file path, the classpath entry path, the generated package a jOOQ schema lives in, as the reader spelled it, or a library graphitron itself depends on, by its group and artifact';
+COMMENT ON COLUMN store_source.source_kind IS 'a closed taxonomy: a schema file, a directory root, a jar, a generated jOOQ schema package, or a library on graphitron''s own classpath whose content the store reads, federation-jvm''s federation versions being the one. The last names jOOQ deliberately, unlike the sql_ family: a family is named for whose vocabulary its rows are written in and jOOQ owns none of SQL''s, but a source is named for what it is, and a generated package is jOOQ''s artefact';
 COMMENT ON COLUMN store_source.stamp IS 'the source''s content identity, spelled <scheme>:<hex> by SourceStamp, so an unchanged source is read once and a currency check can re-hash a cold graph''s files without building its module. Two schemes: sha256: is a hash of bytes this store read, and sha1: is an identity the resolver already established for an artifact it downloaded, supplied by whoever resolved the classpath and never recomputed here, which is what lets a jar whose coordinate cannot be republished under new bytes go unhashed. The tag is load-bearing rather than decorative, comparison being string equality: two schemes never compare equal, so a source whose scheme changed reads as changed and is re-walked once. Schema files are stamped at capture time (one file re-read per schema file, priced against exactly that reader); NULL where nothing resolves to a regular file to hash: a directory root changes on every compile, the bundled directives.graphqls is a resource name, a programmatic caller may hand a bare name, and a jOOQ schema is a package spread across the classpath whose walk is cheap enough not to need one. Also NULL while the source''s rows are being written, and set only once they are all in, so a run that dies mid-load leaves a partition that is re-walked rather than one that claims to be complete';
 COMMENT ON COLUMN store_source.mtime IS 'the filesystem''s last-modified time for this source, read when the source was read. Not a currency signal and deliberately not one: stamp answers whether the bytes changed, and this column exists because a modification time answers a question a hash cannot, which of two sources was written later. That is what orders candidates when several documents declare one coordinate, so a report can say which declaration is the incumbent and which is the incursion rather than naming whichever the reader happened to walk first. Null where the source is not a regular file, a generated jOOQ package and a programmatic label having no modification time to read.';
 COMMENT ON COLUMN store_source.last_seen IS 'when a run last named this source in its input set; the age half of the age/currency distinction, and the bookkeeping a future eviction surface reads';
@@ -7726,6 +7726,29 @@ COMMENT ON COLUMN graphitron_defect_type.basis IS 'what the verdict rests on, wh
 COMMENT ON COLUMN graphitron_defect_type.lsp_code IS 'the diagnostic code an editor shows and filters by, null where none is published. The one part of a defect''s name a consumer reads as data rather than as prose, which is what keeps the code column load-bearing rather than a label';
 COMMENT ON COLUMN graphitron_defect_type.statement IS 'the rule, as one author-facing sentence. The message a consumer renders quotes this and the finding''s detail; neither is stored per row';
 
+CREATE TABLE federation_version (
+  source_name VARCHAR NOT NULL,
+  version     VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, version),
+  FOREIGN KEY (source_name) REFERENCES store_source (source_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE federation_version IS 'One federation specification version the federation library supports. For example v2.10, a link whose url ends in v2.10 being one the library on graphitron''s classpath accepts.';
+COMMENT ON COLUMN federation_version.source_name IS 'the library, by its group and artifact, anchored by store_source, whose stamp is the content of the jar these rows were read from; the jar carries no Maven metadata naming its release, so a changed stamp is read whole, the old rows going first';
+COMMENT ON COLUMN federation_version.version IS 'the version as a link''s url spells it after the federation specification''s prefix, for example v2.10, which is how graphitron_ast_federation_link_entry spells the version a link names';
+
+CREATE TABLE federation_version_import (
+  source_name VARCHAR NOT NULL,
+  version     VARCHAR NOT NULL,
+  name        VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, version, name),
+  FOREIGN KEY (source_name, version) REFERENCES federation_version (source_name, version)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE federation_version_import IS 'One name a federation version''s link may import. For example @key and FieldSet under v2.10, and @context only from the version that introduced it.';
+COMMENT ON COLUMN federation_version_import.source_name IS 'the library, on federation_version''s terms';
+COMMENT ON COLUMN federation_version_import.version IS 'the version, anchored by federation_version';
+COMMENT ON COLUMN federation_version_import.name IS 'the name as a link''s import list spells it, a directive''s with its at sign and a type''s bare, so the list as written joins it by equality. What the library accepts as an import at this version rather than what its definition file holds, the two differing where versions share a file and a directive is younger than the file''s first version';
+
 CREATE TABLE graphitron_federation_link (
   graph_name    VARCHAR   NOT NULL,
   origin        VARCHAR   NOT NULL,
@@ -13626,7 +13649,8 @@ CREATE VIEW meta_family (prefix, title, ordinal, introduction, definition) AS VA
   ('rejection_', 'The legacy walk''s verdicts', 8, 'The legacy walk''s error verdicts, in the sealed rejection hierarchy''s own vocabulary. Transitional by construction: each kind of verdict moves out as its detection is rebuilt store-native, and the family empties as that migration completes.', 'The legacy walk''s verdicts, transcribed in the sealed Rejection hierarchy''s own spellings (kind, variant, lsp_code, attempt_kind and stub_key are all that hierarchy''s words) and carrying the same retirement clock as the classification walk itself: transitional by construction, drained family by family as detections migrate store-native. Deliberately not validator_, both because that names a role and because the validation phase outlives the hierarchy and may one day want its own name.'),
   ('lint_', 'The linter''s findings', 9, 'The linter''s findings: one row per finding, plus the corrections a rule can compute for its own findings, and the rules themselves. A correction here is a suggestion an editor may offer, never a rewrite the build performs. The family speaks the linter''s vocabulary, where severity follows from the rule, which is why the rules are a relation here and severity is a column of it.', 'The linter''s vocabulary (lint_finding.lint_rule is LintRule.id(), and lint_rule states the set those ids are drawn from), its own family because a lint finding''s severity is a function of its rule, never a rejection kind, and because lint rules are predicates over classified facts that should be free to migrate store-native without contending for another family''s relation.'),
   ('build_warning_', 'The advisory arm', 10, 'The advisory arm of build feedback: warnings that point at nothing rule-shaped, just a message and a location worth a human''s attention. Small on purpose.', 'The sealed BuildWarning hierarchy''s advisory arm in that hierarchy''s own words (message and location are NoRule''s entire component list), with the arm selector in the relation name per the code_scalar_constant precedent, since the sibling arm lives in lint_. Not graphitron_, whose decoded-directives-and-macro-provenance charter an advisory is neither of, and not a family named for the classification walk, because a family may not be named for its producer and both of the arm''s producers outlive that walk.'),
-  ('meta_', 'The schema describing itself', 11, 'The schema describing itself: which families exist, where the exceptions live, and how the roster closes against the relations actually observed. These rows are versioned with the schema definition and never change at run time. The reference pages you are reading are rendered from this family''s rows and the comments beside them.', 'The schema''s own description: the family roster, each family''s headline relations and its sanctioned normalization crossings, the placement of relations no prefix covers, the census that closes both rosters against the observed schema, the declared key edges resolved out of the engine''s catalog, the corpus, gatherer and grain rosters with the per-relation declarations binding each declared relation to them, and the roster of relations this file supplies the rows of rather than any gatherer. Rows that are a function of this file alone, versioned with the DDL they describe and never refreshable apart from it, which is the property that matters and which every form in the family keeps: a roster stated as a VALUES view has rows that are part of the definition, and a roster stated as a table has rows an INSERT in this same file supplies before any run opens the store. A resident whose rows a constraint should defend takes the table form, a key, a foreign key and a CHECK being nothing a view can carry: the declaration rosters around meta_relation are tables whose rows an INSERT in this same file supplies; the two older rosters keep the view form until an item converts them.');
+  ('meta_', 'The schema describing itself', 11, 'The schema describing itself: which families exist, where the exceptions live, and how the roster closes against the relations actually observed. These rows are versioned with the schema definition and never change at run time. The reference pages you are reading are rendered from this family''s rows and the comments beside them.', 'The schema''s own description: the family roster, each family''s headline relations and its sanctioned normalization crossings, the placement of relations no prefix covers, the census that closes both rosters against the observed schema, the declared key edges resolved out of the engine''s catalog, the corpus, gatherer and grain rosters with the per-relation declarations binding each declared relation to them, and the roster of relations this file supplies the rows of rather than any gatherer. Rows that are a function of this file alone, versioned with the DDL they describe and never refreshable apart from it, which is the property that matters and which every form in the family keeps: a roster stated as a VALUES view has rows that are part of the definition, and a roster stated as a table has rows an INSERT in this same file supplies before any run opens the store. A resident whose rows a constraint should defend takes the table form, a key, a foreign key and a CHECK being nothing a view can carry: the declaration rosters around meta_relation are tables whose rows an INSERT in this same file supplies; the two older rosters keep the view form until an item converts them.'),
+  ('federation_', 'Apollo Federation', 12, 'What Apollo Federation itself says, as the federation library graphitron builds with answers it: which specification versions a link may name, and what each version lets a link import. Graphitron reads these rather than listing them, so the imports it adds to a link are ones the library will accept.', 'Federation''s own vocabulary, read from federation-jvm through its public API and written in federation''s spellings: versions as a link''s url names them, imports as a link''s import list spells them. Partitioned by source rather than by graph, the library being one source every graph claims, on sql_''s terms. What a graph''s own link says, and what graphitron makes it import, are not here: the first is the SDL decode''s and the second graphitron''s rule over the mint.');
 COMMENT ON VIEW meta_family IS 'The family roster: one row per relation-name prefix, keyed by the prefix under the schema''s naming discipline (a family is named for whose vocabulary its rows are written in, never for its reader or its role). The introduction column presents each family to a first-time reader and the definition column carries its charter, the latter migrated out of this file''s header so the roster has one home; the generated schema reference renders one page per row, ordered by ordinal, and the schema gates close the roster against the observed relations in both directions.';
 COMMENT ON COLUMN meta_family.prefix IS 'the family''s relation-name prefix, trailing underscore included; the roster''s key, unique by gate since a view carries no PRIMARY KEY, and no prefix may be a prefix of another (gated), which is what lets the census match exactly';
 COMMENT ON COLUMN meta_family.title IS 'the family''s rendered page title in the generated schema reference; plain prose, display material only';
@@ -13648,7 +13672,8 @@ CREATE VIEW meta_family_headline (relation_name, ordinal) AS VALUES
   ('rejection_validation_error', 0),
   ('lint_finding', 0), ('lint_finding_fix', 1),
   ('build_warning_no_rule', 0),
-  ('meta_family', 0), ('meta_relation_family', 1), ('meta_relation', 2);
+  ('meta_family', 0), ('meta_relation_family', 1), ('meta_relation', 2),
+  ('federation_version', 0), ('federation_version_import', 1);
 COMMENT ON VIEW meta_family_headline IS 'The headline roster: the relations a reader should meet first in each family, typically its central grain plus the derivations that make the grain useful. Curation is judgment, which is why membership is authored here and nothing else about a row is: the family comes from the meta_relation_family census by join rather than being stored beside the name, and what each headline means comes from the relation''s own comment, so there is no second blurb to drift from the first. The generated schema reference renders the roster as the family page''s starting point, each entry the relation name linked to its own entry further down the page plus the first sentence of that comment. Not named for the store glossary''s word grain, which this roster does not mean: a reader of the reference must never have to disambiguate a load-bearing word.';
 COMMENT ON COLUMN meta_family_headline.relation_name IS 'the headline relation''s name as declared; the roster''s subject, and it must resolve to an observed relation that the census places in a family (gated). The family follows from that census row, so a relation moving between families moves its headline with it and no second copy can disagree.';
 COMMENT ON COLUMN meta_family_headline.ordinal IS 'the headline''s position within its own family''s roster, 0-based; dense from zero within each family (gated), which is the schema-gate convention here because uniqueness alone would let a gap through and a gap is how a dropped row hides. Every family carries at least one row, single-relation families listing their one resident.';
@@ -13733,7 +13758,8 @@ INSERT INTO meta_corpus VALUES
   ('catalog', 'The consumer database catalog, read through the generated jOOQ model.'),
   ('classpath', 'The classfiles on the declared compile classpath.'),
   ('java-source', 'The consumer''s own .java source files, as a plain parse reads them.'),
-  ('javac', 'The JDK compiler''s diagnostic stream from compiling the emitted sources.');
+  ('javac', 'The JDK compiler''s diagnostic stream from compiling the emitted sources.'),
+  ('federation', 'The federation specification versions graphitron''s federation library supports, and what each lets a link import.');
 
 CREATE TABLE meta_gatherer (
   gatherer_name  VARCHAR NOT NULL,
@@ -13754,6 +13780,7 @@ INSERT INTO meta_gatherer VALUES
   ('graphql-ast', 'no.sikt.graphitron.model.capture.document.GraphQLAstCapture'),
   ('graphitron-ast', 'no.sikt.graphitron.model.capture.document.GraphitronAstCapture'),
   ('graphql-assembly', 'no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture'),
+  ('federation', 'no.sikt.graphitron.model.capture.federation.FederationCapture'),
   ('jooq', 'no.sikt.graphitron.model.capture.jooq.JooqFactCapture'),
   ('store', 'no.sikt.graphitron.model.capture.store.StoreEntries'),
   ('java-source', 'no.sikt.graphitron.model.capture.java.JavaSourceFacts'),
@@ -13816,7 +13843,8 @@ INSERT INTO meta_gatherer_corpus VALUES
   ('jooq', 'catalog'),
   ('store', 'configuration'),
   ('java-source', 'java-source'),
-  ('compile', 'javac');
+  ('compile', 'javac'),
+  ('federation', 'federation');
 
 CREATE TABLE meta_gatherer_dependency (
   gatherer_name VARCHAR NOT NULL,
@@ -13874,7 +13902,8 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('derivation', 'jooq'),
   ('derivation', 'java-source'),
   ('derivation', 'compile'),
-  ('derivation', 'code');
+  ('derivation', 'code'),
+  ('derivation', 'federation');
 
 CREATE TABLE meta_grain (
   grain_name    VARCHAR NOT NULL,
@@ -13930,6 +13959,12 @@ INSERT INTO meta_grain VALUES
   ('graph-module-entry',
    'one classpath entry of one graph''s run that a workspace module provides',
    'graph_name, source_name', 'configuration'),
+  ('federation-version',
+   'one federation specification version the federation library supports',
+   'source_name, version', 'federation'),
+  ('federation-version-import',
+   'one name one federation version''s link may import',
+   'source_name, version, name', 'federation'),
   ('graph-dependency',
    'one entry of the compile classpath one graph''s build declares, as the build resolved it',
    'graph_name, source_name', 'configuration'),
@@ -14382,6 +14417,14 @@ INSERT INTO meta_relation VALUES
    'One classpath entry of this graph''s run, and the workspace module it is a form of.',
    'For example the installed service-1.0-SNAPSHOT.jar Maven resolved for the service module, or that module''s target/classes read in its place.',
    'The link between the two identities a module has in a run, the path the classpath holds and the coordinate the module is, held apart so that neither relation carries a column empty on most of its rows: most entries are no module''s, and a module is told by its coordinate whatever form it arrived in.'),
+  ('federation_version', 'federation-version', 'federation',
+   'One federation specification version the federation library supports.',
+   'For example v2.10, a link whose url ends in v2.10 being one the library on graphitron''s classpath accepts.',
+   'Which versions a link may name is federation-jvm''s to say, and it says so only by accepting or refusing one. Read once per library jar rather than per link, so a graph''s link is checked against a captured fact and a version no graph names yet is there for the editor to offer.'),
+  ('federation_version_import', 'federation-version-import', 'federation',
+   'One name a federation version''s link may import.',
+   'For example @key and FieldSet under v2.10, and @context only from the version that introduced it.',
+   'What graphitron may add to a link''s imports, and what an author may write there, is the library''s to decide, a directive being importable from its own minimum version whatever file its definition sits in. Captured as the library answers, by trying each name as an import, so nothing graphitron maintains lists federation''s vocabulary.'),
   ('store_graph_progress', 'gatherer-progress', 'capture',
    'How far a capture of one graph got: one row per gatherer that reads it, and one for the capture as a whole.',
    'For example a capture that hung in the graphitron gatherer leaves its row started after it last completed, every gatherer before it completed with this reading''s instants, and the capture row incomplete.',

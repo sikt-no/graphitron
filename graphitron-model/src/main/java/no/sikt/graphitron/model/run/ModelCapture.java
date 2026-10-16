@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
+import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
@@ -78,6 +79,7 @@ public final class ModelCapture {
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
         GraphQLSourceCapture.reclaim(dsl, documents);
+        FederationCapture.capture(dsl, graph.name(), readAt);
 
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
