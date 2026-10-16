@@ -8406,7 +8406,7 @@ class GraphQLQueryTest {
         Map<String, Object> data = rawResult.getData();
         var payload = assertThat(data).extractingByKey("countFilmDrafts", as(MAP));
         payload.containsEntry("count", 2);
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
     }
 
     @Test
@@ -8418,7 +8418,7 @@ class GraphQLQueryTest {
         Map<String, Object> data = rawResult.getData();
         var payload = assertThat(data).extractingByKey("countFilmDrafts", as(MAP));
         payload.containsEntry("count", 0);
-        payload.extractingByKey("errors", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
     }
 
     @Test
