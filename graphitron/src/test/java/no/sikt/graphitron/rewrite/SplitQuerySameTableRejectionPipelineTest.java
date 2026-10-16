@@ -85,8 +85,8 @@ class SplitQuerySameTableRejectionPipelineTest {
 
     @Test
     void keyedDefaultTenantParent_rejectedTheSameWay() {
-        // The reported shape: a federation entity routed by the request's default tenant. Tenancy
-        // feeds launch only, so classification takes the same arm and the same rejection.
+        // The reported shape: a federation entity routed by the request's entity default tenant.
+        // Tenancy feeds launch only, so classification takes the same arm and the same rejection.
         var schema = TestSchemaHelper.buildSchema(KEY_DIRECTIVE + DETAILS + """
             type Film @table(name: "film") @key(fields: "title") @defaultTenant {
                 title: String

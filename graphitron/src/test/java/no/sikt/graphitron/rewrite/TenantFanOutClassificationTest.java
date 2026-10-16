@@ -435,8 +435,8 @@ class TenantFanOutClassificationTest {
     }
 
     @Test
-    void markerOnAnEntityRoutedByTheRequestDefaultRejects() {
-        // _entities resolves every Film representation on the request's default tenant, so a
+    void markerOnAnEntityRoutedByTheRequestEntityDefaultRejects() {
+        // _entities resolves every Film representation on the request's entity default tenant, so a
         // Film row has one tenant here too.
         var schema = build(KEY_DIRECTIVE + """
             type Film @table(name: "film") @key(fields: "title") @defaultTenant {

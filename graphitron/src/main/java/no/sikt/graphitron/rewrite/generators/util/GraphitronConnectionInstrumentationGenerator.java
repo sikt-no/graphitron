@@ -164,8 +164,8 @@ public final class GraphitronConnectionInstrumentationGenerator {
         if (tenantKey != null) {
             beginExecuteOperationBuilder
                 .addComment("The request's tenancy, written by the generated factory as one RequestTenants value,")
-                .addComment("whose constructor already copied the set and checked that a default tenant is a")
-                .addComment("member; the carrier owns it from here on. Absent means the ExecutionInput was not")
+                .addComment("whose constructor already copied the set and checked that a default tenant and an")
+                .addComment("entity default tenant are members; the carrier owns it from here on. Absent means the ExecutionInput was not")
                 .addComment("built by the generated factory, and the set has no unrestricted meaning, so fail")
                 .addComment("before any fetcher runs.")
                 .addStatement("$T requestTenants = graphQLContext.get($T.$L)", requestTenants,
@@ -176,14 +176,20 @@ public final class GraphitronConnectionInstrumentationGenerator {
                         + " factories (newOwnedExecutionInput / newExecutionInput) take the set of tenants"
                         + " the request may touch; build the request through one of them.")
                 .endControlFlow()
-                .addComment("The default tenant is the consumer's choice, never the client's, so there is no")
-                .addComment("hosting probe to hide: refuse an unhosted one before any fetcher runs rather than")
-                .addComment("fail every global read in the request one by one.")
+                .addComment("The default and entity default tenants are the consumer's choice, never the")
+                .addComment("client's, so there is no hosting probe to hide: refuse an unhosted one before any")
+                .addComment("fetcher runs rather than fail every read in the request that routes on it one by one.")
                 .beginControlFlow("if (requestTenants.defaultTenant().isPresent()"
                     + " && !runtime.tenantKeys().contains(requestTenants.defaultTenant().get()))")
                 .addStatement("throw new $T($S + requestTenants.defaultTenant().get() + $S)",
                     IllegalStateException.class, "Default tenant '",
                     "' has no DataSource in this runtime; name a default tenant this runtime hosts.")
+                .endControlFlow()
+                .beginControlFlow("if (requestTenants.entityDefaultTenant().isPresent()"
+                    + " && !runtime.tenantKeys().contains(requestTenants.entityDefaultTenant().get()))")
+                .addStatement("throw new $T($S + requestTenants.entityDefaultTenant().get() + $S)",
+                    IllegalStateException.class, "Entity default tenant '",
+                    "' has no DataSource in this runtime; name an entity default tenant this runtime hosts.")
                 .endControlFlow()
                 .addCode("\n");
         }

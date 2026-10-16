@@ -3265,7 +3265,7 @@ class TenantBindingClassificationTest {
                     assertThat(r.detail()).contains("federation key alternative #0")
                         .endsWith("Add a field mapped to tenant column 'film_id' to the key's"
                             + " fields, mark the alternative resolvable: false, or mark the type"
-                            + " @defaultTenant to resolve it on the request's default tenant.");
+                            + " @defaultTenant to resolve it on the request's entity default tenant.");
                 }));
         assertInherited(schema, "Film", "inventories");
     }
@@ -3360,15 +3360,15 @@ class TenantBindingClassificationTest {
                 && conflict.message().contains(detail));
     }
 
-    private static TenantBinding.EntityRepBound.TenantSource.RequestDefault requestDefault(
+    private static TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault requestEntityDefault(
             TenantBinding.EntityRepBound.AlternativeSlot slot) {
         assertThat(slot.source())
-            .isInstanceOf(TenantBinding.EntityRepBound.TenantSource.RequestDefault.class);
-        return (TenantBinding.EntityRepBound.TenantSource.RequestDefault) slot.source();
+            .isInstanceOf(TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault.class);
+        return (TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault) slot.source();
     }
 
     @Test
-    void aMarkedEntityRoutesItsTenantLessKeyByTheRequestDefaultAndItsSubtreeInherits() {
+    void aMarkedEntityRoutesItsTenantLessKeyByTheRequestEntityDefaultAndItsSubtreeInherits() {
         var schema = build(KEY_DIRECTIVE + """
             type Film @table(name: "film") @key(fields: "title") @defaultTenant {
                 title: String
@@ -3382,7 +3382,7 @@ class TenantBindingClassificationTest {
         var slots = schema.tenantBindings().byEntityType().get("Film").alternatives();
         assertThat(slots).singleElement().satisfies(slot -> {
             assertThat(slot.alternativeIndex()).isZero();
-            assertThat(requestDefault(slot).tenantColumn().sqlName()).isEqualToIgnoringCase("film_id");
+            assertThat(requestEntityDefault(slot).tenantColumn().sqlName()).isEqualToIgnoringCase("film_id");
         });
         assertInherited(schema, "Film", "inventories");
     }
@@ -3403,11 +3403,11 @@ class TenantBindingClassificationTest {
         assertThat(slots.get(0)).isEqualTo(new TenantBinding.EntityRepBound.AlternativeSlot(0,
             new TenantBinding.EntityRepBound.TenantSource.KeyColumn(0)));
         assertThat(slots.get(1).alternativeIndex()).isEqualTo(1);
-        assertThat(requestDefault(slots.get(1)).tenantColumn().sqlName()).isEqualToIgnoringCase("film_id");
+        assertThat(requestEntityDefault(slots.get(1)).tenantColumn().sqlName()).isEqualToIgnoringCase("film_id");
     }
 
     @Test
-    void aMarkedNodeTypeRoutesItsNodeIdByTheIdAndItsKeyByTheRequestDefault() {
+    void aMarkedNodeTypeRoutesItsNodeIdByTheIdAndItsKeyByTheRequestEntityDefault() {
         var schema = build(KEY_DIRECTIVE + """
             type FilmActor implements Node @table(name: "film_actor")
                     @node(keyColumns: ["actor_id", "film_id"])
@@ -3427,7 +3427,7 @@ class TenantBindingClassificationTest {
                 assertThat(slot.source())
                     .isEqualTo(new TenantBinding.EntityRepBound.TenantSource.KeyColumn(1));
             } else {
-                requestDefault(slot);
+                requestEntityDefault(slot);
             }
         });
         assertThat(schema.tenantBindingOf("Query", "node")).isEqualTo(TenantBinding.NodeIdBound.INSTANCE);

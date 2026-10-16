@@ -65,8 +65,8 @@ type FilmStock {
 input FilmSceneFilter { scene: ID @nodeId(typeName: "FilmScene") }
 
 # A federation entity whose key cannot name the tenant (inventory_id is unique within one tenant's
-# database only), so _entities resolves it on the request's default tenant, matching only rows whose
-# film_id is that tenant. film is a tenant-scoped batched child the resolved row hands its tenant.
+# database only), so _entities resolves it on the request's entity default tenant, matching only rows
+# whose film_id is that tenant. film is a tenant-scoped batched child the resolved row hands its tenant.
 type Inventory @table(name: "inventory") @key(fields: "inventoryId") @defaultTenant {
     inventoryId: Int @field(name: "inventory_id")
     film: Film @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])

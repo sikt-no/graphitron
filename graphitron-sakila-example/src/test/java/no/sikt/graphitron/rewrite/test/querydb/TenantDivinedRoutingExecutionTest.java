@@ -1465,7 +1465,7 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(tenant2SceneParent(3)).isEqualTo(1);
     }
 
-    // ===== @defaultTenant: an entity whose key names no tenant resolves on the request default =====
+    // ===== @defaultTenant: an entity whose key names no tenant resolves on the request's entity default =====
 
     private static final String INVENTORY_ENTITIES = "query Q($reps: [_Any!]!) {"
         + " _entities(representations: $reps) { __typename"
@@ -1523,6 +1523,114 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(entities).singleElement().as("inventory 1 lives in tenant 1's database").isNull();
         assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
         assertThat(TENANT_1_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    // ===== The entity default tenant: named apart from the default tenant, or not at all =====
+
+    /** One operation reading a global root beside {@code _entities}, so both roles are visible. */
+    private static final String ENTITIES_AND_LANGUAGES = "query Q($reps: [_Any!]!) {"
+        + " languages { name }"
+        + " _entities(representations: $reps) { __typename"
+        + " ... on Inventory { inventoryId film { title } store { storeId } }"
+        + " ... on FilmActor { actorId } } }";
+
+    private static ExecutionResult entitiesAndLanguages(RequestTenants tenants, List<Map<String, Object>> reps) {
+        return graphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"test-user\"}")
+            .query(ENTITIES_AND_LANGUAGES).variables(Map.of("reps", reps)).build());
+    }
+
+    private static List<Object> languageNames(ExecutionResult result) {
+        return ((List<Map<String, Object>>) data(result, "languages")).stream()
+            .map(m -> m.get("name"))
+            .toList();
+    }
+
+    @Test
+    void defaultTenantEntity_withoutEntityDefault_answersNull_whileGlobalReadsKeepTheDefault() {
+        var result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2), 1).withoutEntityDefault(),
+            List.of(
+                inventoryRep(1),
+                Map.of("__typename", "FilmActor", "id", NodeIdEncoder.encodeFilmActor(20, 2)),
+                inventoryRep(2)));
+        var entities = (List<Map<String, Object>>) data(result, "_entities");
+        assertThat(entities).hasSize(3);
+        assertThat(entities.get(0)).as("no entity default tenant names a database to look in").isNull();
+        assertThat(entities.get(1))
+            .as("a key-routed representation resolves on the tenant its key names")
+            .containsEntry("actorId", 20);
+        assertThat(entities.get(2)).isNull();
+        assertThat(languageNames(result)).as("global reads still use the default tenant").containsExactly("tenant_1");
+        assertThat(TENANT_1_OPENED.get()).as("tenant 1 is opened for languages alone").isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
+        assertThat(DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenantEntity_namedEntityDefault_resolvesThere_andItsGlobalChildReadsTheDefault() {
+        var result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2), 2).withEntityDefault(1),
+            List.of(inventoryRep(1), inventoryRep(foreignInventoryId)));
+        var entities = (List<Map<String, Object>>) data(result, "_entities");
+        assertThat(entities).hasSize(2);
+        assertThat(entities.get(0)).containsEntry("inventoryId", 1);
+        assertThat((Map<String, Object>) entities.get(0).get("film"))
+            .as("the tenant-scoped child reads the entity default tenant")
+            .containsEntry("title", "Tenant One Film");
+        assertThat((Map<String, Object>) entities.get(0).get("store"))
+            .as("the global child reads the default tenant, which holds store 1")
+            .containsEntry("storeId", 1);
+        assertThat(entities.get(1))
+            .as("tenant 1's database holds the row, but it names film 2, so it is not tenant 1's")
+            .isNull();
+        assertThat(languageNames(result)).containsExactly("tenant_2", "tenant_2");
+        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).isEqualTo(1);
+        assertThat(DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void entityDefaultTenant_outsideTheSet_isRefusedWhereTheValueIsBuilt() {
+        org.assertj.core.api.Assertions.assertThatThrownBy(
+                () -> RequestTenants.withDefault(List.of(1), 1).withEntityDefault(2))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("Entity default tenant '2' is not in the request tenant set");
+    }
+
+    @Test
+    void entityDefaultTenant_notHostedByThisRuntime_failsBeforeAnyDatabaseIsOpened() {
+        Throwable failure = null;
+        ExecutionResult result = null;
+        try {
+            result = entitiesAndLanguages(RequestTenants.withDefault(List.of(1, 2, 99), 1).withEntityDefault(99),
+                List.of(inventoryRep(1)));
+        } catch (RuntimeException e) {
+            failure = e;
+        }
+        if (failure != null) {
+            assertThat(failure).hasStackTraceContaining("Entity default tenant '99' has no DataSource");
+        } else {
+            assertThat(result.getErrors().toString()).contains("Entity default tenant '99' has no DataSource");
+        }
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void defaultTenantEntity_entityDefaultWithoutADefaultTenant_globalReadsTakeTheDefaultSource() {
+        var result = entitiesAndLanguages(RequestTenants.of(List.of(1, 2)).withEntityDefault(1),
+            List.of(inventoryRep(1)));
+        var entities = (List<Map<String, Object>>) data(result, "_entities");
+        assertThat(entities).singleElement().satisfies(inventory -> {
+            assertThat(inventory).containsEntry("inventoryId", 1);
+            assertThat((Map<String, Object>) inventory.get("store"))
+                .as("the global child reads the default source, which holds store 1")
+                .containsEntry("storeId", 1);
+        });
+        assertThat(languageNames(result))
+            .as("the default source's languages, not a tenant database's")
+            .isNotEmpty()
+            .doesNotContain("tenant_1", "tenant_2");
+        assertThat(TENANT_1_OPENED.get()).isEqualTo(1);
+        assertThat(DEFAULT_OPENED.get()).isEqualTo(1);
+        assertThat(TENANT_2_OPENED.get()).isZero();
     }
 
     // ===== An empty list names no tenant: an empty answer, or a readable refusal =====

@@ -118,7 +118,7 @@ Two distinct uses:
 
 == Keys without the tenant column
 
-In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. When the key cannot carry it, mark the type xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] to resolve its representations on the request's default tenant instead.
+In a database-per-tenant build (`<tenantColumn>`), `_entities` reads each representation's tenant out of its key, so a resolvable `@key` on a tenant-scoped type must include the tenant column. When the key cannot carry it, mark the type xref:../reference/directives/defaultTenant.adoc[`@defaultTenant`] to resolve its representations on the request's entity default tenant instead, which is the default tenant unless the request names one separately.
 
 == Wiring federation: `@link`, `<schemaInput tag>`, custom fetchers
 

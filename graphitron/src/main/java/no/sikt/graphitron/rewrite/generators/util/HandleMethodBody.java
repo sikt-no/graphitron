@@ -29,10 +29,10 @@ import java.util.List;
  *       multi-tenant build over a tenant-scoped entity ({@link TenantRouting#bound()}), the
  *       grouping widens to {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's
  *       tenant is read from its alternative's classified source, the decoded key at the tenant
- *       column's position or the request's default tenant, so one batch spanning tenants splits
- *       into tenant-homogeneous groups instead of erroring or leaking. A rep whose alternative
- *       reads the default tenant, in a request naming none, is not grouped: its slot stays
- *       {@code null}.</li>
+ *       column's position or the request's entity default tenant, so one batch spanning tenants
+ *       splits into tenant-homogeneous groups instead of erroring or leaking. A rep whose
+ *       alternative reads the entity default tenant, in a request naming none, is not grouped:
+ *       its slot stays {@code null}.</li>
  *   <li>For each group, dispatch to {@code select<TypeName>Alt<N>(bindings, groupEnv, dsl, result)}
  *       with the group's own {@code DSLContext}: per-tenant acquisition through
  *       {@code TenantConnections.dslFor} for a bound entity, the default source for a global
@@ -81,9 +81,9 @@ final class HandleMethodBody {
         boolean perTenant = routing != null && routing.bound() != null;
         emitGroupingMaps(b, perTenant);
         if (perTenant && routing.bound().alternatives().stream()
-                .anyMatch(slot -> slot.source() instanceof TenantBinding.EntityRepBound.TenantSource.RequestDefault)) {
+                .anyMatch(slot -> slot.source() instanceof TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault)) {
             // Read once per call: every rep of an alternative routed by the request groups on it.
-            b.addStatement("$T defaultTenant = $T.defaultTenant(env).orElse(null)",
+            b.addStatement("$T entityDefaultTenant = $T.entityDefaultTenant(env).orElse(null)",
                 routing.tenantKey(), routing.tenantConnections());
         }
         emitPerRepLoop(b, entity, nodeIdEncoder, routing);
@@ -153,9 +153,9 @@ final class HandleMethodBody {
         // error at this fork rather than a silent runtime gap.
         switch (alt) {
             case KeyAlternative.NodeId nodeId -> {
-                if (source instanceof TenantBinding.EntityRepBound.TenantSource.RequestDefault) {
+                if (source instanceof TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault) {
                     throw new IllegalStateException("Entity '" + entity.typeName() + "' routes its"
-                        + " node id alternative #" + altIndex + " by the request's default tenant;"
+                        + " node id alternative #" + altIndex + " by the request's entity default tenant;"
                         + " node ids route by the tenant inside the id, so classification and"
                         + " emission disagree.");
                 }
@@ -178,21 +178,21 @@ final class HandleMethodBody {
             }
             case KeyAlternative.Direct direct -> {
                 var bindings = direct.bindings();
-                boolean requestDefault =
-                    source instanceof TenantBinding.EntityRepBound.TenantSource.RequestDefault;
-                if (requestDefault) {
-                    // No default tenant: the rep is left ungrouped, so its slot stays null and
-                    // no connection is taken for it.
-                    b.addStatement("if (defaultTenant == null) continue");
+                boolean requestEntityDefault =
+                    source instanceof TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault;
+                if (requestEntityDefault) {
+                    // No entity default tenant: the rep is left ungrouped, so its slot stays null
+                    // and no connection is taken for it.
+                    b.addStatement("if (entityDefaultTenant == null) continue");
                 }
-                // A rep routed by the request carries the default tenant as one more cell, which
-                // select<Type>Alt<N> joins against the tenant column like a key column.
-                b.addStatement("Object[] cols = new Object[$L]", bindings.size() + (requestDefault ? 1 : 0));
+                // A rep routed by the request carries the entity default tenant as one more cell,
+                // which select<Type>Alt<N> joins against the tenant column like a key column.
+                b.addStatement("Object[] cols = new Object[$L]", bindings.size() + (requestEntityDefault ? 1 : 0));
                 for (int i = 0; i < bindings.size(); i++) {
                     b.addStatement("cols[$L] = rep.get($S)", i, bindings.get(i).repField());
                 }
-                if (requestDefault) {
-                    b.addStatement("cols[$L] = defaultTenant", bindings.size());
+                if (requestEntityDefault) {
+                    b.addStatement("cols[$L] = entityDefaultTenant", bindings.size());
                 }
             }
         }
@@ -203,13 +203,13 @@ final class HandleMethodBody {
             ENV, ENV_IMPL);
         if (source != null) {
             // Each rep's tenant comes from the alternative's classified source: its own decoded
-            // key, or the request's default tenant. Grouping per (alternative, tenant) keeps every
+            // key, or the request's entity default tenant. Grouping per (alternative, tenant) keeps every
             // dispatched SELECT tenant-homogeneous.
             CodeBlock tenantOfRep = switch (source) {
                 case TenantBinding.EntityRepBound.TenantSource.KeyColumn key ->
                     CodeBlock.of("cols[$L]", key.decodedPosition());
-                case TenantBinding.EntityRepBound.TenantSource.RequestDefault ignored ->
-                    CodeBlock.of("defaultTenant");
+                case TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault ignored ->
+                    CodeBlock.of("entityDefaultTenant");
             };
             b.addStatement("groups.computeIfAbsent($L, k -> new $T<>())"
                 + ".computeIfAbsent($L, k -> new $T<>())"

@@ -2309,7 +2309,8 @@ public record TenantBindingIndex(
 
             /**
              * The entry routes each representation by its alternative's tenant source: the tenant
-             * column of its key, or the request's default tenant for a {@code @defaultTenant} type.
+             * column of its key, or the request's entity default tenant for a {@code @defaultTenant}
+             * type.
              */
             record Routed(TenantBinding.EntityRepBound binding) implements DispatchFact {}
 
@@ -2397,7 +2398,7 @@ public record TenantBindingIndex(
          * {@link KeyAlternative.NodeId} alternative of a node type
          * {@link #classifyNodeDispatch} already rejected is not rejected twice. A
          * {@link KeyAlternative.Direct} alternative lacking the tenant column routes by the
-         * request's default tenant when the type is marked {@code @defaultTenant} and
+         * request's entity default tenant when the type is marked {@code @defaultTenant} and
          * {@link #defaultTenantVerdict} accepts the marker; that is still {@link DispatchFact.Routed},
          * since the entry hands its subtree a tenant either way.
          */
@@ -2426,7 +2427,7 @@ public record TenantBindingIndex(
                     }
                     if (byDefault && alt instanceof KeyAlternative.Direct) {
                         alternatives.add(new TenantBinding.EntityRepBound.AlternativeSlot(i,
-                            new TenantBinding.EntityRepBound.TenantSource.RequestDefault(
+                            new TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault(
                                 tenantColumnOf(res.table()))));
                         continue;
                     }
@@ -2446,7 +2447,7 @@ public record TenantBindingIndex(
                                     : "Add a field mapped to tenant column '" + scopes.columnName()
                                         + "' to the key's fields, mark the alternative"
                                         + " resolvable: false, or mark the type @defaultTenant"
-                                        + " to resolve it on the request's default tenant.")),
+                                        + " to resolve it on the request's entity default tenant.")),
                         graphql.language.SourceLocation.EMPTY));
                 }
                 dispatchFacts.put(typeName, routable
@@ -2465,7 +2466,7 @@ public record TenantBindingIndex(
 
         /**
          * The {@code @defaultTenant} ladder for one resolvable entity: whether its tenant-less
-         * {@link KeyAlternative.Direct} alternatives route by the request's default tenant. False
+         * {@link KeyAlternative.Direct} alternatives route by the request's entity default tenant. False
          * for an unmarked type. A marked type records its verdict and either is accepted or
          * rejects at the first rung that applies, and a rejected type classifies as if unmarked:
          * <ol>

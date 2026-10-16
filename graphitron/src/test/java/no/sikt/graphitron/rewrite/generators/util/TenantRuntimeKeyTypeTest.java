@@ -140,25 +140,34 @@ class TenantRuntimeKeyTypeTest {
             TenantColumnFixtures.INTEGER_KEY_COLUMN);
         var requestTenants = type(units, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
 
-        // Record-shaped: the two components, the canonical constructor over them, and accessors.
-        // The membership refusal is pinned where it runs, in TenantAuthorizationSubstrateTest.
+        // Record-shaped: the three components, the canonical constructor over them, the
+        // two-role constructor that names the default for both roles, and accessors. The
+        // membership refusals are pinned where they run, in TenantAuthorizationSubstrateTest and
+        // TenantDivinedRoutingExecutionTest.
         assertThat(requestTenants.modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
         assertThat(requestTenants.fieldSpecs())
             .extracting(f -> f.type() + " " + f.name())
             .containsExactly(
                 "java.util.Set<java.lang.Integer> tenants",
-                "java.util.Optional<java.lang.Integer> defaultTenant");
-        var constructor = requestTenants.methodSpecs().stream()
+                "java.util.Optional<java.lang.Integer> defaultTenant",
+                "java.util.Optional<java.lang.Integer> entityDefaultTenant");
+        var constructors = requestTenants.methodSpecs().stream()
             .filter(MethodSpec::isConstructor)
-            .findFirst()
-            .orElseThrow();
-        assertThat(constructor.modifiers()).contains(Modifier.PUBLIC);
-        assertThat(parameters(constructor)).containsExactly(
-            "java.util.Set<java.lang.Integer> tenants",
-            "java.util.Optional<java.lang.Integer> defaultTenant");
+            .toList();
+        assertThat(constructors).allSatisfy(c -> assertThat(c.modifiers()).contains(Modifier.PUBLIC));
+        assertThat(constructors).extracting(TenantRuntimeKeyTypeTest::parameters).containsExactlyInAnyOrder(
+            List.of(
+                "java.util.Set<java.lang.Integer> tenants",
+                "java.util.Optional<java.lang.Integer> defaultTenant",
+                "java.util.Optional<java.lang.Integer> entityDefaultTenant"),
+            List.of(
+                "java.util.Set<java.lang.Integer> tenants",
+                "java.util.Optional<java.lang.Integer> defaultTenant"));
         assertThat(method(requestTenants, "tenants").returnType().toString())
             .isEqualTo("java.util.Set<java.lang.Integer>");
         assertThat(method(requestTenants, "defaultTenant").returnType().toString())
+            .isEqualTo("java.util.Optional<java.lang.Integer>");
+        assertThat(method(requestTenants, "entityDefaultTenant").returnType().toString())
             .isEqualTo("java.util.Optional<java.lang.Integer>");
 
         var of = method(requestTenants, "of");
@@ -169,6 +178,17 @@ class TenantRuntimeKeyTypeTest {
         assertThat(parameters(withDefault)).containsExactly(
             "java.util.Collection<java.lang.Integer> tenants",
             "java.lang.Integer defaultTenant");
+
+        // The entity role's withers: instance methods that keep the set and the default tenant.
+        var withEntityDefault = method(requestTenants, "withEntityDefault");
+        assertThat(withEntityDefault.modifiers()).contains(Modifier.PUBLIC).doesNotContain(Modifier.STATIC);
+        assertThat(withEntityDefault.returnType().toString()).isEqualTo("fake.code.generated.schema.RequestTenants");
+        assertThat(parameters(withEntityDefault)).containsExactly("java.lang.Integer tenant");
+        var withoutEntityDefault = method(requestTenants, "withoutEntityDefault");
+        assertThat(withoutEntityDefault.modifiers()).contains(Modifier.PUBLIC).doesNotContain(Modifier.STATIC);
+        assertThat(withoutEntityDefault.returnType().toString())
+            .isEqualTo("fake.code.generated.schema.RequestTenants");
+        assertThat(parameters(withoutEntityDefault)).isEmpty();
     }
 
     @Test
@@ -183,6 +203,18 @@ class TenantRuntimeKeyTypeTest {
             .findFirst()
             .orElseThrow();
         assertThat(defaultTenant.type().toString()).isEqualTo("java.util.Optional<java.lang.Integer>");
+        var entityDefaultTenant = carrier.fieldSpecs().stream()
+            .filter(f -> "entityDefaultTenant".equals(f.name()))
+            .findFirst()
+            .orElseThrow();
+        assertThat(entityDefaultTenant.type().toString()).isEqualTo("java.util.Optional<java.lang.Integer>");
+
+        // The entity dispatcher reads the entity role; the default tenant has no static reader.
+        var entityDefaultReader = method(carrier, "entityDefaultTenant");
+        assertThat(entityDefaultReader.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(parameters(entityDefaultReader)).containsExactly("graphql.schema.DataFetchingEnvironment env");
+        assertThat(entityDefaultReader.returnType().toString()).isEqualTo("java.util.Optional<java.lang.Integer>");
+        assertThat(carrier.methodSpecs()).extracting(MethodSpec::name).doesNotContain("defaultTenant");
 
         var globals = carrier.methodSpecs().stream().filter(m -> "dslGlobal".equals(m.name())).toList();
         assertThat(globals).hasSize(2);

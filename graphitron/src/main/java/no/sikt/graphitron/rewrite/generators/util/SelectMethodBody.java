@@ -89,9 +89,9 @@ final class SelectMethodBody {
             // The key names no tenant, so the dispatcher appends the routed tenant as one more
             // cell of each binding, and the join matches it against the tenant column: the
             // lookup resolves exactly as a key carrying the tenant would.
-            case TenantBinding.EntityRepBound.TenantSource.RequestDefault requestDefault -> {
+            case TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault requestEntityDefault -> {
                 var withTenant = new java.util.ArrayList<>(alt.columns());
-                withTenant.add(requestDefault.tenantColumn());
+                withTenant.add(requestEntityDefault.tenantColumn());
                 yield List.copyOf(withTenant);
             }
         };

@@ -1196,6 +1196,12 @@ public final class ConnectionRuntimeClassGenerator {
                 + "({@link #dslGlobal()}), or empty when the request names none and global reads take the\n"
                 + "default source.\n")
             .build();
+        var entityDefaultTenantField = FieldSpec.builder(optionalKey, "entityDefaultTenant",
+                Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The request's entity default tenant, the member of {@link #tenants} on which the\n"
+                + "entity dispatcher looks up a {@code @defaultTenant} type's representations, or empty when\n"
+                + "the request names none and every such representation answers {@code null}.\n")
+            .build();
         var constructorBuilder = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(runtime, "runtime")
@@ -1213,7 +1219,8 @@ public final class ConnectionRuntimeClassGenerator {
             constructorBuilder
                 .addStatement("$T.requireNonNull(requestTenants, $S)", OBJECTS, "requestTenants")
                 .addStatement("this.tenants = requestTenants.tenants()")
-                .addStatement("this.defaultTenant = requestTenants.defaultTenant()");
+                .addStatement("this.defaultTenant = requestTenants.defaultTenant()")
+                .addStatement("this.entityDefaultTenant = requestTenants.entityDefaultTenant()");
         }
         for (var p : payload) {
             constructorBuilder.addStatement("this.$L = $L", p.name(), p.name());
@@ -1225,8 +1232,9 @@ public final class ConnectionRuntimeClassGenerator {
                     + "one keyed connection single-threaded through {@link #dslFor}, with the dispatch thread\n"
                     + "blocked on the join for the scatter's whole duration; every other access runs serially\n"
                     + "on the dispatch thread. {@code requestTenants} carries the request tenant set, the\n"
-                    + "only tenants this carrier will acquire a connection for, and the default tenant that\n"
-                    + "serves global reads when the request names one.\n"
+                    + "only tenants this carrier will acquire a connection for, the default tenant that\n"
+                    + "serves global reads when the request names one, and the entity default tenant the\n"
+                    + "entity dispatcher resolves {@code @defaultTenant} types on.\n"
                 : "Builds a per-operation carrier over {@code runtime} for one request. One instance per\n"
                     + "operation; entries are pinned on first demand.\n")
                 + (payload.isEmpty() ? ""
@@ -1482,7 +1490,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addField(policyField);
         if (multiTenant) {
             carrier.addField(tenantsField)
-                .addField(defaultTenantField);
+                .addField(defaultTenantField)
+                .addField(entityDefaultTenantField);
         }
         for (var p : payload) {
             carrier.addField(FieldSpec.builder(p.javaType(), p.name(), Modifier.PRIVATE, Modifier.FINAL)
@@ -1540,7 +1549,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(tenantKeyOf(tenantKey, clientException))
                 .addMethod(divinedTenantAgree(tenantKey, clientException))
                 .addMethod(permits(self, tenantKey))
-                .addMethod(staticDefaultTenant(tenantKey))
+                .addMethod(staticEntityDefaultTenant(tenantKey))
                 .addMethod(tenantSlot())
                 .addMethod(loaderName())
                 .addMethod(tenantLoaderName())
@@ -1688,18 +1697,19 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static Optional<K> defaultTenant(DataFetchingEnvironment env)}: the request's default
-     * tenant, as the carrier holds it. Read by the entity dispatcher for a {@code @defaultTenant}
-     * type, whose representations group on it; empty when the request names none.
+     * {@code static Optional<K> entityDefaultTenant(DataFetchingEnvironment env)}: the request's
+     * entity default tenant, as the carrier holds it. Read by the entity dispatcher for a
+     * {@code @defaultTenant} type, whose representations group on it; empty when the request names
+     * none, and then every such representation answers {@code null}.
      */
-    private static MethodSpec staticDefaultTenant(TypeName tenantKey) {
-        return MethodSpec.methodBuilder("defaultTenant")
+    private static MethodSpec staticEntityDefaultTenant(TypeName tenantKey) {
+        return MethodSpec.methodBuilder("entityDefaultTenant")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(ParameterizedTypeName.get(OPTIONAL, tenantKey))
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("return of(env).defaultTenant")
-            .addJavadoc("The request's default tenant, or empty when the request names none. The entity\n"
-                + "dispatcher resolves a {@code @defaultTenant} type's representations on it.\n"
+            .addStatement("return of(env).entityDefaultTenant")
+            .addJavadoc("The request's entity default tenant, or empty when the request names none. The\n"
+                + "entity dispatcher resolves a {@code @defaultTenant} type's representations on it.\n"
                 + "@param env the field's {@code DataFetchingEnvironment}\n")
             .build();
     }
@@ -2293,13 +2303,15 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code RequestTenants}: the request tenant set and an optional default tenant, one value so
-     * the membership invariant lives in its constructor rather than spread over the factory, the
-     * instrumentation and the carrier. A final value class with record-style accessors rather than
-     * a Java record, because the project's JavaPoet fork does not expose a record builder; the
-     * consumer-facing surface (canonical constructor, {@code tenants()}, {@code defaultTenant()},
-     * value equality) is the same. {@code tenantKey} is the boxed tenant key type, so the class is
-     * not generic. Valid Java 17.
+     * {@code RequestTenants}: the request tenant set, an optional default tenant and an optional
+     * entity default tenant, one value so the membership invariant lives in its constructor rather
+     * than spread over the factory, the instrumentation and the carrier. A final value class with
+     * record-style accessors rather than a Java record, because the project's JavaPoet fork does not
+     * expose a record builder; the consumer-facing surface (canonical constructor, {@code tenants()},
+     * {@code defaultTenant()}, {@code entityDefaultTenant()}, value equality) is the same. The entity
+     * default tenant is held resolved: the factories and withers decide what naming nothing
+     * separately means, so the stored value needs no "inherit" marker. {@code tenantKey} is the boxed
+     * tenant key type, so the class is not generic. Valid Java 17.
      */
     private static TypeSpec requestTenants(ClassName self, ClassName tenantConnections, TypeName tenantKey) {
         var setType = ParameterizedTypeName.get(SET, tenantKey);
@@ -2309,6 +2321,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .addParameter(setType, "tenants")
             .addParameter(optionalKey, "defaultTenant")
+            .addParameter(optionalKey, "entityDefaultTenant")
             .addStatement("$T<$T> canonical = new $T<>()", LIST, tenantKey, ARRAY_LIST)
             .beginControlFlow("for ($T tenant : $T.requireNonNull(tenants, $S))", tenantKey, OBJECTS, "tenants")
             .addStatement("canonical.add($T.canonicalTenantKey($T.requireNonNull(tenant, $S)))",
@@ -2321,14 +2334,39 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("throw new $T($S + defaultTenant.get() + $S)", IllegalArgumentException.class,
                 "Default tenant '", "' is not in the request tenant set.")
             .endControlFlow()
+            .addStatement("$T<$T> canonicalEntityDefault = $T.requireNonNull(entityDefaultTenant, $S)"
+                + ".map($T::canonicalTenantKey)", OPTIONAL, tenantKey, OBJECTS, "entityDefaultTenant",
+                tenantConnections)
+            .beginControlFlow("if (canonicalEntityDefault.isPresent() && !copy.contains(canonicalEntityDefault.get()))")
+            .addStatement("throw new $T($S + entityDefaultTenant.get() + $S)", IllegalArgumentException.class,
+                "Entity default tenant '", "' is not in the request tenant set.")
+            .endControlFlow()
             .addStatement("this.tenants = copy")
             .addStatement("this.defaultTenant = canonicalDefault")
+            .addStatement("this.entityDefaultTenant = canonicalEntityDefault")
             .addJavadoc("Every tenant is reduced to the tenant column's form ({@link "
                 + tenantConnections.simpleName() + "#canonicalTenantKey})\n"
                 + "before the membership check, so two spellings the column stores as one value are one\n"
-                + "tenant, and {@link #tenants()} and {@link #defaultTenant()} report that form.\n"
+                + "tenant, and {@link #tenants()}, {@link #defaultTenant()} and\n"
+                + "{@link #entityDefaultTenant()} report that form.\n"
                 + "@param tenants the tenants this request may touch in this deployment; copied\n"
                 + "@param defaultTenant the member of {@code tenants} that serves global reads, or empty\n"
+                + "@param entityDefaultTenant the member of {@code tenants} on which {@code _entities}\n"
+                + "looks up a {@code @defaultTenant} type's representations, or empty, in which case\n"
+                + "every such representation answers {@code null}\n"
+                + "@throws IllegalArgumentException when {@code defaultTenant} or\n"
+                + "{@code entityDefaultTenant} is present and not in {@code tenants}, or a tenant is not\n"
+                + "a value of the tenant column\n")
+            .build();
+        var twoRoleConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(setType, "tenants")
+            .addParameter(optionalKey, "defaultTenant")
+            .addStatement("this(tenants, defaultTenant, defaultTenant)")
+            .addJavadoc("A request whose entity default tenant is its default tenant.\n"
+                + "@param tenants the tenants this request may touch in this deployment; copied\n"
+                + "@param defaultTenant the member of {@code tenants} that serves global reads and\n"
+                + "{@code @defaultTenant} entities, or empty\n"
                 + "@throws IllegalArgumentException when {@code defaultTenant} is present and not in\n"
                 + "{@code tenants}, or a tenant is not a value of the tenant column\n")
             .build();
@@ -2339,7 +2377,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return new $T($T.copyOf($T.requireNonNull(tenants, $S)), $T.empty())",
                 self, SET, OBJECTS, "tenants", OPTIONAL)
             .addJavadoc("A request tenant set with no default tenant: global tables read the default\n"
-                + "source.\n"
+                + "source, and {@code @defaultTenant} entities answer {@code null} unless\n"
+                + "{@link #withEntityDefault} names a tenant for them.\n"
                 + "@param tenants the tenants this request may touch in this deployment\n")
             .build();
         var withDefault = MethodSpec.methodBuilder("withDefault")
@@ -2350,11 +2389,33 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return new $T($T.copyOf($T.requireNonNull(tenants, $S)), $T.of(defaultTenant))",
                 self, SET, OBJECTS, "tenants", OPTIONAL)
             .addJavadoc("A request tenant set whose member {@code defaultTenant} serves graphitron's reads\n"
-                + "of global tables, on that tenant's connection and under its session mount.\n"
+                + "of global tables, on that tenant's connection and under its session mount, and is also\n"
+                + "the entity default tenant unless {@link #withEntityDefault} or\n"
+                + "{@link #withoutEntityDefault} says otherwise.\n"
                 + "@param tenants the tenants this request may touch in this deployment\n"
                 + "@param defaultTenant the tenant whose database answers global reads; must be in\n"
                 + "{@code tenants}\n"
                 + "@throws IllegalArgumentException when {@code defaultTenant} is not in {@code tenants}\n")
+            .build();
+        var withEntityDefault = MethodSpec.methodBuilder("withEntityDefault")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(self)
+            .addParameter(tenantKey, "tenant")
+            .addStatement("return new $T(tenants, defaultTenant, $T.of(tenant))", self, OPTIONAL)
+            .addJavadoc("This request with {@code tenant} as its entity default tenant: {@code _entities}\n"
+                + "looks up a {@code @defaultTenant} type's representations on it. The tenant set and the\n"
+                + "default tenant are unchanged.\n"
+                + "@param tenant the entity default tenant; must be in {@link #tenants()}\n"
+                + "@throws IllegalArgumentException when {@code tenant} is not in the tenant set\n")
+            .build();
+        var withoutEntityDefault = MethodSpec.methodBuilder("withoutEntityDefault")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(self)
+            .addStatement("return new $T(tenants, defaultTenant, $T.empty())", self, OPTIONAL)
+            .addJavadoc("This request with no entity default tenant: every representation of a\n"
+                + "{@code @defaultTenant} type answers {@code null}, without an error and without opening a\n"
+                + "connection for it. The tenant set and the default tenant are unchanged, so global reads\n"
+                + "still use the default tenant.\n")
             .build();
         var tenantsAccessor = MethodSpec.methodBuilder("tenants")
             .addModifiers(Modifier.PUBLIC)
@@ -2368,26 +2429,34 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return defaultTenant")
             .addJavadoc("The default tenant, or empty when the request names none.\n")
             .build();
+        var entityDefaultTenantAccessor = MethodSpec.methodBuilder("entityDefaultTenant")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(optionalKey)
+            .addStatement("return entityDefaultTenant")
+            .addJavadoc("The entity default tenant, on which {@code _entities} looks up a\n"
+                + "{@code @defaultTenant} type's representations, or empty when the request names none.\n")
+            .build();
         var equals = MethodSpec.methodBuilder("equals")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
             .returns(boolean.class)
             .addParameter(Object.class, "other")
             .addStatement("return other instanceof $T that && tenants.equals(that.tenants)"
-                + " && defaultTenant.equals(that.defaultTenant)", self)
+                + " && defaultTenant.equals(that.defaultTenant)"
+                + " && entityDefaultTenant.equals(that.entityDefaultTenant)", self)
             .build();
         var hashCode = MethodSpec.methodBuilder("hashCode")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
             .returns(int.class)
-            .addStatement("return $T.hash(tenants, defaultTenant)", OBJECTS)
+            .addStatement("return $T.hash(tenants, defaultTenant, entityDefaultTenant)", OBJECTS)
             .build();
         var toString = MethodSpec.methodBuilder("toString")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
             .returns(String.class)
-            .addStatement("return $S + tenants + $S + defaultTenant + $S",
-                REQUEST_TENANTS_CLASS_NAME + "[tenants=", ", defaultTenant=", "]")
+            .addStatement("return $S + tenants + $S + defaultTenant + $S + entityDefaultTenant + $S",
+                REQUEST_TENANTS_CLASS_NAME + "[tenants=", ", defaultTenant=", ", entityDefaultTenant=", "]")
             .build();
         return TypeSpec.classBuilder(self)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -2396,15 +2465,25 @@ public final class ConnectionRuntimeClassGenerator {
                 + "<em>default tenant</em>, one member of the set whose database answers graphitron's reads\n"
                 + "of global tables (tables without the tenant column) on that tenant's connection and\n"
                 + "under its session mount. Writes to global tables and {@code @service} calls keep the\n"
-                + "runtime's default source either way. Build one with {@link #of} or\n"
-                + "{@link #withDefault}; a default tenant outside the set is refused here.\n")
+                + "runtime's default source either way. A second role, the <em>entity default tenant</em>,\n"
+                + "is the optional member on which {@code _entities} looks up the representations of a\n"
+                + "{@code @defaultTenant} type; it is the default tenant unless {@link #withEntityDefault}\n"
+                + "or {@link #withoutEntityDefault} names another or none, and with none every such\n"
+                + "representation answers {@code null}. Build one with {@link #of} or\n"
+                + "{@link #withDefault}; a default or entity default tenant outside the set is refused\n"
+                + "here.\n")
             .addField(FieldSpec.builder(setType, "tenants", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(optionalKey, "defaultTenant", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(optionalKey, "entityDefaultTenant", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(constructor)
+            .addMethod(twoRoleConstructor)
             .addMethod(of)
             .addMethod(withDefault)
+            .addMethod(withEntityDefault)
+            .addMethod(withoutEntityDefault)
             .addMethod(tenantsAccessor)
             .addMethod(defaultTenantAccessor)
+            .addMethod(entityDefaultTenantAccessor)
             .addMethod(equals)
             .addMethod(hashCode)
             .addMethod(toString)

@@ -20,7 +20,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * key, never a reference into the raw id string or representation map (wire format stays a
  * boundary concern): node ids and federation representations both decode at the DataFetcher
  * boundary. An entity alternative whose key cannot name the tenant reads it from the request
- * instead ({@link EntityRepBound.TenantSource.RequestDefault}).
+ * instead ({@link EntityRepBound.TenantSource.RequestEntityDefault}).
  *
  * <p>{@link ParentRowBound} reads the tenant off the parent row: the field's first join hop
  * lands on the tenant column, so the paired parent column names the tenant that holds the child
@@ -341,13 +341,14 @@ public sealed interface TenantBinding {
 
             /**
              * The key cannot carry the tenant column and the type is marked
-             * {@code @defaultTenant}: every representation resolves on the request's default
-             * tenant, and the lookup also matches {@code tenantColumn} (the tenant column of the
-             * type's table) against it, so a representation resolves exactly as if its key had
-             * named that tenant. A request naming no default tenant resolves none of them.
+             * {@code @defaultTenant}: every representation resolves on the request's entity
+             * default tenant, and the lookup also matches {@code tenantColumn} (the tenant column
+             * of the type's table) against it, so a representation resolves exactly as if its key
+             * had named that tenant. A request naming no entity default tenant resolves none of
+             * them.
              */
-            record RequestDefault(ColumnRef tenantColumn) implements TenantSource {
-                public RequestDefault {
+            record RequestEntityDefault(ColumnRef tenantColumn) implements TenantSource {
+                public RequestEntityDefault {
                     java.util.Objects.requireNonNull(tenantColumn, "tenantColumn");
                 }
             }
