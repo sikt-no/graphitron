@@ -57,7 +57,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
 | `R1057` | A filter field typed as a list of input objects is read as one Map, so the filter is silently dropped | In Progress | 2026-10-16 | [plan](filter-list-of-input-field-silently-dropped.md) |
 | `R1058` | Client errors thrown from generated fetchers carry no path or locations | In Review | 2026-10-16 | [plan](client-errors-carry-no-path-or-locations.md) |
-| `R1053` | Validation pre-check casts a list input argument to Map and crashes outside the error channel | In Review | 2026-10-16 | [plan](validator-prestep-list-input-arg.md) |
 
 ---
 
@@ -838,7 +837,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R833` [**The execution tier fails under its own parallel run**](execution-tier-cross-class-state.md)
 - `R810` [**Transitional surfaces say so where a reader arrives, and say why**](transitional-surfaces-say-so.md)
 - `R1056` [**TypeFetcherGenerator threads an assembled schema that no emit step reads**](type-fetcher-generator-unread-assembled-parameter.md)
-- `R1053` [**Validation pre-check casts a list input argument to Map and crashes outside the error channel**](validator-prestep-list-input-arg.md)
 - `R801` [**View-read census and closure of the declared family bridges**](view-read-census-and-bridge-closure.md)
 
 
