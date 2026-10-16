@@ -1,13 +1,13 @@
 ---
 id: R1049
 title: "@asFacet on a @reference-bound filter field: facet counts over a joined table"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: search
 depends-on: []
 created: 2026-10-15
-last-updated: 2026-10-15
+last-updated: 2026-10-16
 ---
 
 # @asFacet on a @reference-bound filter field: facet counts over a joined table
