@@ -34,7 +34,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1049` | @asFacet on a @reference-bound filter field: facet counts over a joined table | In Review | 2026-10-16 <sub>created 2026-10-15</sub> | [plan](reference-path-facets.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -608,7 +607,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### search
 
-- `R1049` [**@asFacet on a @reference-bound filter field: facet counts over a joined table**](reference-path-facets.md) — In Review, feature
 - `R427` [**Type-ahead search backed by native database indexes**](relevance-ranked-search.md) — Ready, architecture
 
 ### lsp
