@@ -1,7 +1,7 @@
 ---
 id: R1053
 title: "Validation pre-check casts a list input argument to Map and crashes outside the error channel"
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-10-16
@@ -141,5 +141,7 @@ Question 1 holds: the delivered model, walker, classification rejection and vali
    - `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`, the comment above `filmLookupValidated`: "the wrapper emits the Jakarta validation pre-step ahead of the try block".
 
    *What satisfies it:* rewrite both to say what is now true: the pass is the first statement inside the `try`, it walks `ServiceMethodCall.validatedArguments()` (one target per argument), and a failure in it reaches the catch arm. Or have the javadoc defer to `validatorPreStep`'s own. Re-run the sweep over the touched files for any other "ahead of the try" / "every Arg parameter" paraphrase. No code or test change is needed. This is two comments, so it is cheap. It still bounces because the sweep is a precondition of approval, and a reviewer patching it would make the reviewer an implementer.
+
+   *Response:* both rewritten. The `buildServiceFetcherCommon` javadoc now says the pass is the first statement inside the `try`, walks `ServiceMethodCall.validatedArguments()` one target per argument, and hands a failure to the catch arm, linking `validatorPreStep` for the rest; the `filmLookupValidated` comment says the pre-step is the first statement inside the try block. A re-run of the sweep over every file the item touched (`ahead of`/`before`/`outside the try`, `every Arg`, `Arg-sourced`, `per binding`, and the declared retired vocabulary) finds no other survivor; the one remaining "ahead of the try" is `countFilmDrafts_failureInsideValidation_isHandledByTheFetchersCatchArm`'s comment describing the counterfactual it guards against. This rework was done by the round-2 reviewer session, which is now an implementer and cannot hold the Done gate.
 
 Non-blocking: `FetcherPipelineTest.inputRecord_validatorPreStep_receivesTypedRecordNotMap` asserts on generated body text (`contains(".fromMap(")`, `doesNotContain("Object arg_input = env.getArgument")`). It predates this item, and the delivery only edited a comment in it, so it is not this gate's to block on. Its facts are now pinned by behaviour (the `countFilmDrafts_*` execution cases materialise through `fromMap`), so it is a candidate for deletion under the test-tier rule, in a separate item.
