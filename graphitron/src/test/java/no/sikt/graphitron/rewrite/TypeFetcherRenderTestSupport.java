@@ -43,8 +43,7 @@ public final class TypeFetcherRenderTestSupport {
     }
 
     /**
-     * For a fixture that builds only the model and no assembled schema. The validator pre-step
-     * falls back to its legacy Map-based walk when the assembled schema is absent.
+     * For a fixture that builds only the model and no assembled schema.
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         return generate(schema, null, outputPackage);

@@ -21,8 +21,8 @@ through it, turns each `ConstraintViolation` into a `GraphQLError` through the g
 compiles, all of it runs, and it can never produce a violation.
 
 The reason is that nothing puts a constraint on the object being validated. For an input-typed SDL
-argument, `TypeFetcherGenerator.resolveInputArgClass` resolves the *graphitron-emitted* input record
-and the pre-step validates that (`<Input>.fromMap(rawMap)`, then
+argument, the pre-step materialises the *graphitron-emitted* input record (one per element, for a
+list argument) and validates that (`<Input>.fromMap(rawMap)`, then
 `validator.validate(typedInstance)`); for a scalar or enum argument the pre-step validates the raw
 value. Graphitron emits no `jakarta.validation.constraints` annotations onto the generated record,
 and a boxed `Integer` carries none either, so the walk is empty by construction. The one remaining

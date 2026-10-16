@@ -1089,9 +1089,7 @@ class FetcherPipelineTest {
     /**
      * Helper for the SDL → input-class pipeline cases: produces the {@code TypeSpec}
      * the input-class generator emits for {@code typeName}, asserting the class is present in the
-     * emitted set. The model-only build path is enough for the input-class shape; the
-     * regression-guard case above uses {@code buildBundle} because the validator pre-step
-     * resolution needs the assembled graphql-java schema.
+     * emitted set.
      */
     private TypeSpec inputRecordSpec(String typeName, String sdl) {
         var bundle = TestSchemaHelper.buildBundle(sdl);

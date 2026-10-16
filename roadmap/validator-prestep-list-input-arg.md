@@ -90,6 +90,26 @@ Both carrier records gain a `List<ValidatedArgument> validatedArguments()` compo
 - **Walker, unit tier.** `ServiceMethodCallWalker` cases: scalar, list-of-scalar, input object, list of input objects and list of lists of input objects map to the four arms; duplicate bindings dedupe.
 - **Classification.** A `GraphitronSchemaBuilderTest` (or classified-corpus) case: a `[[X!]!]!` input-object argument on a `@service` field under a `VALIDATION` channel is rejected with the message above; the same field without `VALIDATION` classifies.
 
+## Implementation notes
+
+Landed as planned. Where the code settled a detail the plan left open, or departed from it:
+
+- **The list read carries no cast.** The plan read `List<?>` and cast each element to `Map<String, Object>`. Generated sources compile under `-Xlint:all -Werror` at release 17 in `graphitron-sakila-example`, where that unchecked cast is a build failure, so the pre-step declares `List<Map<String, Object>> arg_<n>_raw = env.getArgument(...)` and lets `getArgument`'s inference carry the element type; neither the list nor an element is cast. The index local is `i`, as in the column-length pre-step.
+- **`TypeFetcherEmissionContext.assembledSchema()` is gone with its field and constructor parameter**, since the pre-step was its only reader. The `assembled` parameter on `TypeFetcherGenerator.generate` and `generateTypeSpec` is now unread there; retiring it ripples through roughly a hundred test call sites, so it is left for a follow-up rather than widening this diff.
+- **The classifier verdict and its validator mirror share one function**, `FieldBuilder.unvalidatableArgumentReason(channel, carrier)`; `GraphitronSchemaValidator` calls it from all four root `@service` record and table arms, which are the four that emit through `buildServiceFetcherCommon`.
+- **The walker classifies from the method's `ParamSource.Arg` params**, reading each one's head through the existing `toArgPath`, and fails with `IllegalStateException` on an argument the field does not declare. That turned up two generator fixtures and six walker fixtures that bound arguments their stub field never declared; they now declare them, through the new `TestFixtures.stubServiceCall(method, arguments)` overload.
+- **Classification test home.** The nested-list rejection and its no-`VALIDATION` counterpart live in `ErrorChannelClassificationTest`, which already builds `@service` fields over `SakPayload` channels from SDL, with a `TestServiceStub.runSakWithInputGrid` stub binding `List<List<Map<String, Object>>>`. A validator-tier pair in `MutationServiceRecordFieldValidationTest` pins the mirror on a hand-built carrier.
+- **The execution fixture** is `Mutation.countFilmDrafts(in: [FilmDraftInput!]!)` over `FilmDraftService.count(List<FilmDraft>)`, whose errors union shares `FilmWriteInvalid` (the DML carriers' `VALIDATION` type), which is the sis shape. Two `GraphQLQueryTest` cases: two elements and an empty list, each returning the count with no errors.
+- **Pipeline cases read generated bodies.** The three `TypeFetcherGeneratorTest` validation cases assert on body text (the `List` read, the index loop, the two-element path, one `validator.validate` per argument, and the pre-step following `try`), as the plan asked. `development-principles.adoc` bans code-string assertions on generated bodies; the plan's cases were kept because the in-`try` placement and the dedupe have no cheap behavioural pin at a higher tier. The reviewer may prefer to drop them in favour of the walker-tier dedupe case and the execution-tier list case.
+- **User doc.** The `VALIDATION` paragraph's new sentence uses the string-index form (`["createThings", "in", "1", "name"]`) the column-length example uses, since an `@error` type's `path: [String!]!` renders indices as strings, and also names the build failure for a list of lists.
+
+## Retired vocabulary
+
+- `TypeFetcherGenerator.resolveInputArgClass` and `TypeFetcherGenerator.outerArgOfValueShape`
+- `TypeFetcherEmissionContext.assembledSchema()`
+- `ConstraintViolations.toGraphQLError(violation, env, String argName)`: the third parameter is now `List<Object> argPath`
+- the validator pre-step's "model-only build" / "legacy Map-based walk" fallback
+
 ## Other solutions we've considered
 
 - **Read list-ness off the binding's `ValueShape.ListOf`.** The `FromArg` the pre-step already walks carries `ListOf` for a list bound to a bean or jOOQ-record parameter. But a `ValueShape` describes one parameter binding, not the argument's wire value: a `List`- or `Map`-typed parameter bound directly is a `Scalar` leaf, and a nested-field binding reaches the argument only through `outerArgOfValueShape`. It also keeps the per-binding grain that double-validates. If R747 takes its route 2 (validate the consumer's bound instance instead of the generated input), that is a new `ValidatedArgument` arm for which the binding's `ListOf` is the right list source; it does not redefine the arms above.
