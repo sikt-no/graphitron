@@ -360,6 +360,22 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     difference named. The one expected kind is a table element with several keys from where the
     walk stands, which today's candidate filter can settle by elimination further down the path and
     the step rule refuses, as the generator already does.
+  * **The backward walk leaves nothing behind** `open`, after the walk answers what today's
+    resolution answers. What the two-sided resolution built for walking from the arriving type
+    goes with it: the tail walk in `graphitron_field_path_resolution_rule` and the `reach` it tags;
+    `reached_by_tail` and `reached_by_head` on the four arm tables under
+    `graphitron_field_path_resolution` and their writes in `FieldPathResolutions`; the arms of
+    `graphitron_entry_defect_rule` that read how far each walk got; `arriving_type_name` on
+    `graphitron_field_path_reading` and the reading's statement of both directions of a key and
+    every key into a named table, which only a walk that could stand at either end needed; and
+    the comments, javadoc and test cases that speak of two walks. A sweep for `tail walk`,
+    `head walk`, `reached_by_tail` and `reached_by_head` across the reactor finds none left.
+    What stays is the reason, once, where an author reads it: the `@reference` reference page
+    says a path is read forward from where its field stands, from a leading `@routine` at a root,
+    and that nothing reads it back from the target, because a backward step at a `table` element
+    could only take the one key into the named table from anywhere, which ignores where the path
+    stands.
+
 * **Every field has a path, the written one or the one discovery implies** `open`, after the
   walks agree. A table-backed field's path is the `@routine` and `@reference` elements it
   wrote, or where it wrote none the key discovery finds between its departure and its target type's
