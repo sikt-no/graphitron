@@ -312,8 +312,7 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   `4d2f79280b` writes `@reference` or `@referenceFor` on a root field without a leading `@routine`,
   and the generator itself only walks forward, a `key` with no source riding from the table that
   declares it and a `table` with none refused. Every child field with a path has a source context;
-  the ones `graphitron_field_source_table` misses are under "A class-backed parent's source is
-  stated": a `TableRecord`-backed carrier (`FilmDetailsCarrier` on `FilmRecord`), a `@sourceRow`
+  the ones `graphitron_field_source_table` misses are under "A consumed key is a source": a `TableRecord`-backed carrier (`FilmDetailsCarrier` on `FilmRecord`), a `@sourceRow`
   lift (`CustomerAddressSummary.address`), and a service result's `TableRecord` member
   (tilgangsstyring's `DeaktiverApplikasjonerPayload.applikasjoner`, a `List<SubjektRecord>`). A root
   field's argument or input field with a path is a filter and walks from the field's target.
@@ -349,8 +348,8 @@ running from the participant's table toward a `@nodeId` target in key hops alone
       writes `inverse: true`; until R1037 lands the step takes the field's cardinality as the
       generator does, and R1037 changes both, with the `@reference` reference page. Nothing in R876
       waits on it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
-  * **The forward walk is a relation of its own** `open`, after the two above and "A class-backed
-    parent's source is stated", so every child field the walk reads has its source. From each of
+  * **The forward walk is a relation of its own** `open`, after the two above and "A consumed key
+    is a source", so every child field the walk reads has its source. From each of
     the field's sources in `graphitron_field_source_table` and nothing else; one row per position
     reached, stopping at the first element with no step from where it stands. It exists already in
     part: `FieldReferenceStepTargets` is a forward walk at the field grain over `ReferenceStepWalk`,
@@ -855,6 +854,12 @@ and the emitters read, and it goes when nothing reads what it builds.
         test compiles where the case is the classpath.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
+      * **A field's source object is stated** `open`. `graphitron_field_source_object`, one row per
+        field whose parent arrives as a Java object rather than a row, keyed by the field with the
+        class a foreign key into the code family: the parent type's backing, passed down through
+        nesting types with neither a table nor a backing of their own. Only the class; its kind, its
+        members and whether it is a jOOQ record are joins. A row is
+        `graphitron_field_source_table`'s, so the source object says nothing about tables.
     * **A field's target is its target type** `done`. A field has a target type, and a target type
       is what is bound to a table. `graphitron_field_target` holds one row per field: the target
       type unwrapped, the element where the field returns a connection and the named type
@@ -943,22 +948,25 @@ and the emitters read, and it goes when nothing reads what it builds.
         returned by `Query.mineTilganger @routine` with no `@table` and carrying three `@reference`
         fields, would take the function result as its fields' source, where today it has none; read
         off the rule and the SDL, not a capture. Sakila's `Tilgang` has no field with a path.
-      * **A class-backed parent's source is stated** `open`. The forward walk waits on it.
-        * **A record-class carrier and a `@sourceRow` field have their source** `done`.
-          `RECORD_CLASS`: a type with no table of its own backed by a table's own record class has
-          that table as its fields' source, `FilmDetailsCarrier` from `film` through `FilmRecord`.
-          `SOURCE_ROW`: a field carrying `@sourceRow` has the table declaring its path's first key as
-          its source, whose source-side columns the lifter returns, which is the generator's
-          contract, `CustomerAddressSummary.address` from `customer`. `NO_ROUTE_FROM_DEPARTURE` went
-          from 3 to 0 on sakila; sis gained 195 `RECORD_CLASS` sources and still draws no entry
-          defect. The cases are `field-source-table-class-backed`.
-        * **The other class-backed rules are stated** `open`: a `TableRecord` member of a backing
-          class, members matching the primary key of the first link's table, and the keys a write
-          returned. No consumer schema regresses for want of them today, but the forward walk needs
-          them. A consumer case: tilgangsstyring's `DeaktiverApplikasjonerPayload` and its two
-          siblings, plain types a root `@service` returns, whose `applikasjoner` member is a
-          `List<SubjektRecord>`, so the `TableRecord` member rule gives it `subjekt` as its source
-          and each participant's one key reaches its own table.
+      * **A producer's consume step is stated** `open`, after the source object.
+        `graphitron_field_source_key`, one row per field that takes keys from its source object,
+        keyed by the field with a foreign key into `graphitron_field_source_object`: how it takes
+        them and the table they match. `SOURCE_ROW`: `@sourceRow`'s method, called on the object,
+        returns the source-side columns of the path's first key, the method a reference into the code
+        family. `RECORD`: the object is the table's own record, its key read straight off it. Later a
+        `TableRecord` member and members matching the first link's primary key; a consumer case for
+        the first is tilgangsstyring's `DeaktiverApplikasjonerPayload` and its two siblings, plain
+        types a root `@service` returns, whose `applikasjoner` member is a `List<SubjektRecord>`, so
+        `subjekt` is its source and each participant's one key reaches its own table. It is the
+        consume phase a `_select` producer reads its keys by, so the fetcher's DataLoader is
+        generated from it, and once `graphitron_producer` is stated its field references that.
+      * **A consumed key is a source** `open`, after the consume step. The forward walk waits on it.
+        `graphitron_field_source_table` gains `CONSUMED`, read off `graphitron_field_source_key`'s
+        table, and holds no fact about a record class or a method. Until then the two regressions are
+        held by an interim, the rules `RECORD_CLASS` and `SOURCE_ROW` stated in the source table's
+        own rule, which go here: `FilmDetailsCarrier` from `film` through `FilmRecord`, and
+        `CustomerAddressSummary.address` from `customer`. `NO_ROUTE_FROM_DEPARTURE` is 0 on sakila
+        and sis with the interim, and stays 0; the cases are `field-source-table-class-backed`.
   * **The candidates are one family** `open`. What a coordinate could have named, asked by the
     build error's message, the language server's completion and the MCP server, and answered today
     in as many shapes as there are askers: two stored relations, a jOOQ query, and completions in
