@@ -108,3 +108,21 @@ Unit tier:
 - **Attach path and locations at each throw site.** The throw sites are mostly static runtime helpers (`decodeCursor`, `TenantConnections.entryFor`) that hold no `DataFetchingEnvironment`, and a DataLoader batch serves many parents at once, so no throw site knows the one path. Threading `env` through would touch a dozen emitters to fix what one method decides.
 - **Keep the error a `GraphitronClientException` by giving the generated class a second constructor taking the environment.** It would keep `instanceof GraphitronClientException` true on `ExecutionResult.getErrors()` elements, but no documented contract offers that: the documented anchor is the `@error` handler match, which happens before the router builds the response error and is untouched. A plain `GraphQLError` matches what `redact` already returns, and the generated class stays a constructor-only subclass, which the classify-time accessor check on `@error` types relies on.
 - **Let client errors escape to graphql-java's default handler.** That handler fills path and locations, but prefixes the message with "Exception while fetching data (/path) : ", which changes every surfaced message and bypasses the router's single disposition.
+
+## Reviewer findings
+
+### Round 1 (2026-10-16, Spec -> Ready, reviewer session 0164XNbiNhgYZJuvSuDtaFxk)
+
+Verdict: withhold. One finding, on question one. Question two passes: building the surfaced error with `GraphqlErrorBuilder.newError(env)` in the one router method copies the shape `redactBody` already has, every disposition reaches that method, and every symbol, test and throw site the spec names exists under that name. The cause section is right as far as it goes.
+
+**Finding 1 (question one: what changes for a consumer). The worked example gets today's response wrong, and the plan leaves out a second change consumers will see: the non-null error next to the client error goes away.**
+
+`Query.filmsConnection` is `FilmsConnection!`. Today the query in the Goal returns two errors with `data: null`: the client error with no path, then graphql-java's `NonNullableFieldWasNullError` at `/filmsConnection`. The spec shows one error and `data: {"filmsConnection": null}`. The "after" example has `data` wrong as well.
+
+The second error disappears once the fix lands, for this reason. In graphql-java 25.0, `ExecutionContext.addErrors`, which `unboxPossibleDataFetcherResult` reaches through `addErrorsToRightContext`, records the path of each error that has one in `errorPaths`. `NonNullableFieldValidator` then adds its error with `addError(error, path)`, and that call returns early when the path is already in `errorPaths`. So a surfaced client error that carries the field's path suppresses the null-bubbling error at the same path, the same way the redacted error already does. Any consumer that counts errors or matches on that error will notice this, so the Goal has to say it. Three parts of the spec depend on it:
+
+- The `actorsConnection` test expects "two errors". That count holds only because of this deduplication: `Film.actorsConnection` is `ActorsConnection!` and `filmById` is `[Film]!`, so today each element also gets its own non-null error and the total is four. The expectation needs to give that reason, or the implementer reads the result as a coincidence.
+- Two test comments in `TenantDivinedRoutingExecutionTest` say graphql-java adds its non-null bubbling error next to the refusal (in `argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened` and `emptyList_listFilter_isRefusedReadably`). They become false and belong in the change. Their `anySatisfy` / `contains` assertions keep passing, so the build will not catch the stale comments.
+- The `error-channel.adoc` sentence that changes should mention the dropped error too, if the author decides the manual should describe it.
+
+To satisfy this finding: correct both JSON examples, state the deduplication as part of what changes for a consumer (or argue that it should not count), and add the two comments to the change list.
