@@ -1,7 +1,7 @@
 ---
 id: R1058
 title: "Client errors thrown from generated fetchers carry no path or locations"
-status: Spec
+status: Ready
 bucket: bug
 depends-on: []
 created: 2026-10-16
