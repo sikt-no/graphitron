@@ -90,6 +90,7 @@ public final class ConditionGlueRenderer {
             CompositeDecodeHelperRegistry.collectInto(classBuilder, outputPackage, registry ->
                 RecordDecodeHelperRegistry.collectInto(classBuilder, outputPackage, decodes ->
                 InputBeanHelperRegistry.collectInto(classBuilder, outputPackage, decodes, beans ->
+                ElementRowsHelperRegistry.collectInto(classBuilder, elementRows ->
                 RequestContextHelper.collectInto(classBuilder, outputPackage, contextHelper -> {
                     // One projection host per class: the relation is the graph's, and reaching a decode
                     // registers its body here, so a called helper cannot go un-emitted.
@@ -97,7 +98,7 @@ public final class ConditionGlueRenderer {
                         projection -> decodes.register(NodeIdEncoderRef.of(outputPackage),
                             projection.typeId(), projection.nodeTypeName(),
                             projection.keyColumns(), projection.nodeTable()));
-                    var hosts = new Hosts(registry, contextHelper, beans);
+                    var hosts = new Hosts(registry, contextHelper, beans, elementRows);
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
                         classBuilder.addMethod(buildGlueMethod(
@@ -111,7 +112,7 @@ public final class ConditionGlueRenderer {
                                 keyHost.at(row.coordinate())));
                         }
                     }
-                }))));
+                })))));
             out.add(classBuilder.build());
         }
         return out;
@@ -123,11 +124,12 @@ public final class ConditionGlueRenderer {
 
     /**
      * The class-scoped helper hosts a glue method's binding locals register with: the node-id key
-     * decodes, the request-context reader, and the input-bean builders. One value per conditions
-     * class, so every glue method on it registers with the same three.
+     * decodes, the request-context reader, the input-bean builders, and the list-of-input row
+     * reads. One value per conditions class, so every glue method on it registers with the same
+     * four.
      */
     private record Hosts(CompositeDecodeHelperRegistry decodes, RequestContextHelper contextHelper,
-                         InputBeanHelperRegistry beans) {}
+                         InputBeanHelperRegistry beans, ElementRowsHelperRegistry elementRows) {}
 
     private static MethodSpec buildGlueMethod(String methodName, TypeName jooqTableClass,
             List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv, Hosts hosts,
@@ -159,7 +161,7 @@ public final class ConditionGlueRenderer {
         // projection the sink contributes nothing and this emits exactly what the loop used to.
         var bindingLocals = new ArrayList<CodeBlock>();
         for (var binding : bindings) {
-            bindingLocals.add(extractionExpr(binding.param(), liftLocals, hosts, keys));
+            bindingLocals.add(extractionExpr(binding.param(), jooqTableClass, liftLocals, hosts, keys));
         }
         builder.addCode(keys.declarations());
         for (int i = 0; i < bindings.size(); i++) {
@@ -477,7 +479,8 @@ public final class ConditionGlueRenderer {
      * reads ({@code List<X>}) and generically-typed authored parameters
      * ({@code Map<String, Object>}). The {@code JooqConvert} form is carved out (its
      * {@code instanceof} pattern plus {@code DSL.val} coercion own the runtime shape without a
-     * cast), as are a NodeId decode and an input bean (each helper takes the uncast wire value).
+     * cast), as are a NodeId decode, an input bean and a list-of-input row read (each helper takes
+     * the uncast wire value).
      */
     private static boolean emitsUncheckedLocalCast(CallParam param) {
         return switch (param.extraction()) {
@@ -487,6 +490,7 @@ public final class ConditionGlueRenderer {
                 !(nif.leaf() instanceof CallSiteExtraction.JooqConvert)
                     && !(nif.leaf() instanceof CallSiteExtraction.NodeIdDecodeKeys)
                     && !(nif.leaf() instanceof CallSiteExtraction.InputBean)
+                    && !(nif.leaf() instanceof CallSiteExtraction.ElementRows)
                     && localType(param) instanceof ParameterizedTypeName;
             default -> false;
         };
@@ -498,11 +502,20 @@ public final class ConditionGlueRenderer {
      * {@code Map<String, Object>}, and a raw-typed local would trip the consumer's
      * {@code -Xlint:rawtypes -Werror} compile), with the list axis wrapping the element type
      * exactly as the retired entity signatures did.
+     *
+     * <p>A list-of-input row read derives its type from its cells' columns and never from
+     * {@link CallParam#typeName()}, whose row-shaped value is the bare {@code org.jooq.Row<N>}
+     * string: falling through would declare a raw {@code List<Row2>}, which a consumer compiling
+     * under {@code -Xlint:rawtypes -Werror} rejects.
      */
     private static TypeName localType(CallParam param) {
         var decode = decodeLeafOf(param.extraction());
         if (decode != null) {
             return CompositeDecodeHelperRegistry.decodedType(decode.decodeMethod(), decodesList(param));
+        }
+        var elementRows = CallSiteExtraction.ElementRows.of(param.extraction());
+        if (elementRows != null) {
+            return ElementRowsHelperRegistry.rowsType(elementRows);
         }
         if (!param.list() && param.javaType() instanceof ParameterizedTypeName full) {
             return full;
@@ -539,8 +552,8 @@ public final class ConditionGlueRenderer {
         return null;
     }
 
-    private static CodeBlock extractionExpr(CallParam param, Map<String, String> liftLocals,
-            Hosts hosts, ProjectedKeyReads keys) {
+    private static CodeBlock extractionExpr(CallParam param, TypeName jooqTableClass,
+            Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("($T) args.get($S)", localType(param), param.name());
@@ -558,7 +571,10 @@ public final class ConditionGlueRenderer {
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 decodeCall(hosts.decodes(), nidk, decodesList(param), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
-                nestedExtraction(nif, param, liftLocals, hosts, keys);
+                nestedExtraction(nif, param, jooqTableClass, liftLocals, hosts, keys);
+            case CallSiteExtraction.ElementRows rows ->
+                rowsCall(hosts.elementRows(), rows, param, jooqTableClass,
+                    CodeBlock.of("args.get($S)", param.name()));
             // Request context is not in the args map: the local reads through the class's own
             // graphitronContext(env) helper, whose need the collector records so the drain and
             // the call cannot separate (the shipped-twice missing-helper bug class).
@@ -601,6 +617,18 @@ public final class ConditionGlueRenderer {
     }
 
     /**
+     * The row-read helper call for a filter field typed as a list of input objects: the helper takes
+     * the uncast wire list and the aliased table, as the decode arm hands its descent to the decode
+     * helper.
+     */
+    private static CodeBlock rowsCall(ElementRowsHelperRegistry registry,
+            CallSiteExtraction.ElementRows rows, CallParam param, TypeName jooqTableClass,
+            CodeBlock wireExpr) {
+        return CodeBlock.of("$L($L, table)", registry.register(param.name(), jooqTableClass, rows),
+            wireExpr);
+    }
+
+    /**
      * The decode helper call for one NodeId binding. Exhaustive over the seal rather than a
      * two-valued test, so a third failure mode has to state its mode here instead of silently
      * inheriting a neighbour's.
@@ -623,7 +651,7 @@ public final class ConditionGlueRenderer {
      * casts to the declared type.
      */
     private static CodeBlock nestedExtraction(CallSiteExtraction.NestedInputField nif, CallParam param,
-            Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
+            TypeName jooqTableClass, Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
         if (nif.leaf() instanceof CallSiteExtraction.ContextArg) {
             // The resolver keeps context params bare when it rewraps a nested condition's value
             // params (ConditionResolver.rewrapForNested), so this leaf shape is unconstructable;
@@ -651,6 +679,12 @@ public final class ConditionGlueRenderer {
         // object, so the sink below has nothing to say about this leaf.
         if (nif.leaf() instanceof CallSiteExtraction.InputBean ib) {
             return beanBuild(hosts.beans(), ib, param, WireMapChain.of(root, nif.path(), null, lifted));
+        }
+        // A list of input objects at the end of the descent: the row helper takes the uncast list
+        // the descent finds. A projected key names a column below a @nodeId, never a list level.
+        if (nif.leaf() instanceof CallSiteExtraction.ElementRows rows) {
+            return rowsCall(hosts.elementRows(), rows, param, jooqTableClass,
+                WireMapChain.of(root, nif.path(), null, lifted));
         }
 
         // Row presence decides, ahead of every remaining leaf special case: a path that opens a

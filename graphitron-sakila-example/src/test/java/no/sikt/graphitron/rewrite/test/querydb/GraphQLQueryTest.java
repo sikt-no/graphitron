@@ -4526,6 +4526,54 @@ class GraphQLQueryTest {
         assertThat(films).extracting(f -> f.get("filmId")).containsExactly(3);
     }
 
+    // ===== Filter field typed as a list of input objects =====
+
+    @SuppressWarnings("unchecked")
+    private List<String> filmActorPairs(String field, String argument) {
+        Map<String, Object> data = execute("{ " + field + argument + " { actorId filmId } }");
+        var rows = (List<Map<String, Object>>) data.get(field);
+        return rows.stream().map(r -> r.get("actorId") + "/" + r.get("filmId")).sorted().toList();
+    }
+
+    @Test
+    void listOfInputFilter_matchesRowsEqualToAnElement() {
+        // (actor_id, film_id) IN ((1, 1), (3, 2)). Two independent IN lists would also admit
+        // (1, 2), which is a seed row no element names.
+        assertThat(filmActorPairs("filmActorsByPairs",
+            "(filter: {pairs: [{actorId: 1, filmId: 1}, {actorId: 3, filmId: 2}]})"))
+            .containsExactly("1/1", "3/2");
+    }
+
+    @Test
+    void listOfInputFilter_singleObjectIsCoercedToOneElement() {
+        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {pairs: {actorId: 2, filmId: 4}})"))
+            .containsExactly("2/4");
+    }
+
+    @Test
+    void listOfInputFilter_emptyNullOrAbsentListAppliesNoFilter() {
+        var all = List.of("1/1", "1/2", "1/3", "2/1", "2/4", "3/2", "3/5");
+        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {pairs: []})")).isEqualTo(all);
+        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {pairs: null})")).isEqualTo(all);
+        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {})")).isEqualTo(all);
+        assertThat(filmActorPairs("filmActorsByPairs", "")).isEqualTo(all);
+    }
+
+    @Test
+    void listOfInputFilter_nullElementMatchesNothing() {
+        assertThat(filmActorPairs("filmActorsByPairs",
+            "(filter: {pairs: [{actorId: 1, filmId: 1}, null]})")).containsExactly("1/1");
+        // Not dropped: [null] is a filter that matches nothing, not an empty list.
+        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {pairs: [null]})")).isEmpty();
+    }
+
+    @Test
+    void listOfInputFilter_asTheArgumentItself() {
+        assertThat(filmActorPairs("filmActorsByPairList",
+            "(pairs: [{actorId: 1, filmId: 1}, {actorId: 3, filmId: 2}])"))
+            .containsExactly("1/1", "3/2");
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod() {

@@ -86,6 +86,17 @@ public final class CatalogRefs {
     }
 
     /**
+     * The typed jOOQ row of a column tuple: {@code Row2<Integer, String>} for two columns, and so
+     * on. What a row-valued comparison's right-hand side is declared as, whether the rows come from
+     * a composite node-id decode or from a list-of-input filter's elements.
+     */
+    public static TypeName typedRow(List<ColumnRef> columns) {
+        var container = ClassName.get("org.jooq", "Row" + columns.size());
+        return ParameterizedTypeName.get(container,
+            columns.stream().map(CatalogRefs::columnType).toArray(TypeName[]::new));
+    }
+
+    /**
      * The jOOQ record type of a captured key tuple: {@code Record1<Integer>} for one column,
      * {@code Record2<Integer, String>} for two, and so on. What a write's key capture is declared
      * as, the capture being a projection of exactly these columns.

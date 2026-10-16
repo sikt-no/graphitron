@@ -444,6 +444,12 @@ type Query {
     # → typed `DSL.row(table.c1, table.c2).eq(decoded_row)`. The classifier's choice is the
     # SDL → emitted-source loop for R131's same-table half.
     filmActorBySingularCompositeNodeId(filter: FilmActorSingularNodeIdFilter): [FilmActor!]!
+    # A filter field typed as a list of input objects matches rows equal to any one element,
+    # its element fields compared together as one row: (actor_id, film_id) IN ((..), (..)).
+    # Two independent IN lists would also return the pairs no element names, which the seed
+    # rows separate. Nested in a filter input, and as the argument itself.
+    filmActorsByPairs(filter: FilmActorPairFilter): [FilmActor!]!
+    filmActorsByPairList(pairs: [FilmActorPairInput]): [FilmActor!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
     # synthesises QueryStoresConnectionType, QueryStoresConnectionEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
@@ -3062,6 +3068,15 @@ input ActorByFilmFilter {
 # R79 fixture (paired with `filmActorsByCompositeNodeIds`). The implicit-condition path
 # routes `ids` to BodyParam.RowIn over the FilmActor PK columns (actor_id, film_id),
 # generating a typed `Row2<Integer, Integer>` in the condition method.
+input FilmActorPairInput {
+    actorId: Int! @field(name: "actor_id")
+    filmId: Int! @field(name: "film_id")
+}
+
+input FilmActorPairFilter {
+    pairs: [FilmActorPairInput]
+}
+
 input FilmActorCompositeNodeIdFilter {
     ids: [ID!] @nodeId(typeName: "FilmActor")
 }

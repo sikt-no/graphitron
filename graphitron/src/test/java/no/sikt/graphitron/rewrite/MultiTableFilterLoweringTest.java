@@ -111,6 +111,40 @@ class MultiTableFilterLoweringTest {
     }
 
     @Test
+    void listOfInputFilter_lowersPerParticipantAsRowIn() {
+        // A filter field typed as a list of input objects lowers to one row-IN per participant,
+        // each over that participant's own columns, with the element-rows read as the leaf of the
+        // descent to the list. The participant's conditions class hosts the row helper, so the
+        // branch call site needs nothing beyond the args map.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input NameInput {
+                first: String! @field(name: "first_name")
+                last: String! @field(name: "last_name")
+            }
+            input OccupantFilter { names: [NameInput!] }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        var union = (QueryField.QueryUnionField) schema.field("Query", "occupants");
+        assertThat(union.participantFilters()).hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var gcf = pf.filters().stream()
+                .filter(GeneratedConditionFilter.class::isInstance)
+                .map(GeneratedConditionFilter.class::cast)
+                .findFirst().orElseThrow();
+            assertThat(gcf.tableRef().tableName()).isEqualTo(pf.participant().table().tableName());
+            assertThat(gcf.bodyParams()).singleElement().satisfies(bp -> {
+                var rowIn = (BodyParam.RowIn) bp;
+                assertThat(rowIn.columns()).extracting(c -> c.sqlName())
+                    .containsExactly("first_name", "last_name");
+                assertThat(CallSiteExtraction.ElementRows.of(rowIn.extraction())).isNotNull();
+            });
+        }
+    }
+
+    @Test
     void nestedInputFieldFilter_lowersPerParticipantWithNestedExtraction() {
         // The same first_name filter delivered through an input object (`filter`) rather than
         // as a top-level argument. The implicit column-equality predicate carries a

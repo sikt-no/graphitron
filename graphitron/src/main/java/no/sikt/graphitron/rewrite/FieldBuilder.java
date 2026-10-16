@@ -1609,6 +1609,9 @@ class FieldBuilder {
             case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
             case CallSiteExtraction.JooqRecord ignored -> false;
+            // Branch-safe: the row read is built by a helper the participant's own conditions
+            // class hosts, and the call site passes only the args map, as for any other glue.
+            case CallSiteExtraction.ElementRows ignored -> true;
         };
     }
 
@@ -2905,6 +2908,11 @@ class FieldBuilder {
             withField.add(fieldCondition);
             filters = List.copyOf(withField);
         }
+        var throughList = conditionReadThroughList(filters, fieldDef);
+        if (throughList != null) {
+            errors.add(throughList);
+            return new TableFieldComponents.Rejected(foldRejections(errors));
+        }
         var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt.tableName());
         if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
             errors.add(r.rejection());
@@ -2968,7 +2976,65 @@ class FieldBuilder {
             // JooqRecord is a top-level @service param extraction, never a column-bound BodyParam;
             // unreached here, same trivially-correct answer as the NodeIdDecodeRecord arm above.
             case CallSiteExtraction.JooqRecord ignored -> column.columnClass();
+            // A list-of-input filter's row read carries its cell columns itself; unreached here.
+            case CallSiteExtraction.ElementRows ignored -> column.columnClass();
         };
+    }
+
+    /**
+     * Refuses an authored condition parameter whose read descends into a list of input objects,
+     * at any directive site: the descent reads the list as one object and the parameter would
+     * receive {@code null}. The list-of-input walk already refuses a condition inside an element
+     * and one on the list field reaching below it, each at its own coordinate; this gate catches
+     * the paths that reach a list from further up (a field-level or argument-level
+     * {@code argMapping}, or a nested field's dotted path), which only the GraphQL types along the
+     * path can answer. Null when every read stops at or above each list it meets.
+     */
+    private static Rejection conditionReadThroughList(List<WhereFilter> filters, GraphQLFieldDefinition fieldDef) {
+        for (var filter : filters) {
+            ConditionFilter condition = switch (filter) {
+                case ConditionFilter cf -> cf;
+                case FkTargetConditionFilter fk -> fk.delegate();
+                default -> null;
+            };
+            if (condition == null) continue;
+            for (var param : condition.params()) {
+                if (!(param.source() instanceof ParamSource.Arg arg)
+                        || !(arg.callSiteExtraction() instanceof CallSiteExtraction.NestedInputField nif)) {
+                    continue;
+                }
+                String list = listLevelOnPath(fieldDef, nif.outerArgName(), nif.path());
+                if (list != null) {
+                    return Rejection.structural("field '" + fieldDef.getName() + "' @condition method '"
+                        + condition.methodName() + "': parameter '" + param.name() + "' reads '"
+                        + nif.outerArgName() + "." + String.join(".", nif.path()) + "', which descends"
+                        + " into '" + list + "', a list of input objects with no single value below it;"
+                        + " bind the whole list instead");
+                }
+            }
+        }
+        return null;
+    }
+
+    /**
+     * The first list level the descent from argument {@code outerArgName} down {@code path} steps
+     * into (the name of the slot typed as a list, with the path continuing below it), or null.
+     */
+    private static String listLevelOnPath(GraphQLFieldDefinition fieldDef, String outerArgName, List<String> path) {
+        var argument = fieldDef.getArgument(outerArgName);
+        if (argument == null) return null;
+        GraphQLType current = argument.getType();
+        String name = outerArgName;
+        for (var segment : path) {
+            var unwrapped = GraphQLTypeUtil.unwrapNonNull(current);
+            if (GraphQLTypeUtil.isList(unwrapped)) return name;
+            if (!(unwrapped instanceof GraphQLInputObjectType input)) return null;
+            var next = input.getField(segment);
+            if (next == null) return null;
+            current = next.getType();
+            name = segment;
+        }
+        return null;
     }
 
     /**
@@ -3031,6 +3097,20 @@ class FieldBuilder {
                         enclosingOverride, tia.nonNull(),
                         lookupBoundNames, implicitParams, columnSlots, argConditions, errors,
                         tia.inputTable(), tiaSummary);
+                    if (errors.size() > errorsBefore) hadError = true;
+                    bodyParams.addAll(implicitParams);
+                }
+                case ArgumentRef.InputTypeArg.PlainInputArg pia when pia.list() -> {
+                    // The argument is itself a list of input objects: the list level at depth 0,
+                    // whose own @condition is the argument's, so the list walk owns adding it.
+                    var argDef = fieldDef.getArgument(pia.name());
+                    var listLevel = new ListLevel(pia.name(), List.of(), pia.argCondition(),
+                        useSiteCoordinate, argDef != null ? locationOf(argDef) : locationOf(fieldDef));
+                    var implicitParams = new ArrayList<BodyParam>();
+                    int errorsBefore = errors.size();
+                    walkListLevel(listLevel, pia.fields(), useSiteCoordinate, pia.name(), List.of(),
+                        fieldOverride, pia.nonNull(), Set.of(), implicitParams, columnSlots,
+                        argConditions, errors, rt, "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3285,6 +3365,16 @@ class FieldBuilder {
                         implicitBodyParams.add(wrapIfRemote(inner, rf.binding(), rf.joinPath()));
                     }
                 }
+                case InputField.NestingField nf when nf.list() -> {
+                    // A list of input objects is not one object to descend into: its elements are
+                    // compared as rows, so the walk hands the list level to its own walk.
+                    var listLevel = new ListLevel(nf.name(), leafPath, nf.condition(), nf.qualifiedName(),
+                        nf.location());
+                    walkListLevel(listLevel, nf.fields(), useSiteCoordinate, outerArgName, pathPrefix,
+                        enclosingOverride, effectiveNonNull && nf.nonNull(), lookupBoundNames,
+                        implicitBodyParams, columnSlots, out, walkRejections, resolvingTable,
+                        containerSummary);
+                }
                 case InputField.NestingField nf -> {
                     nf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
                     boolean nestOverride = enclosingOverride
@@ -3324,6 +3414,221 @@ class FieldBuilder {
                 }
             }
         }
+    }
+
+    /**
+     * A filter field typed as a list of input objects, at one use site: the list field's own
+     * {@code name}, the {@code listPath} from the outer argument down to it (empty when the list is
+     * the argument itself), its own {@code @condition}, and the coordinate and location its
+     * diagnostics anchor at.
+     */
+    private record ListLevel(String name, List<String> listPath, Optional<ArgConditionRef> condition,
+                             String coordinate, SourceLocation location) {}
+
+    /**
+     * Classifies one list level: the element's fields become the cells of one row-{@code IN}
+     * ({@link BodyParam.RowIn} at two or more cells, {@link BodyParam.In} at one) over a
+     * {@link CallSiteExtraction.ElementRows} read, so a row matches when it equals any one element.
+     *
+     * <p>Every element field's column slot is recorded exactly as the plain walk records it, ahead
+     * of every decision below, so the tenant fold reads the same ledger whatever happens here.
+     *
+     * <p>An element field the row cannot express is a located diagnostic at that field's own
+     * coordinate, carrying the occurrence path; the consuming field keeps one consequence rejection
+     * per list level. A suppressed list level (an enclosing {@code @condition(override: true)}, or
+     * one on the list field itself, which receives the whole list) emits no predicate and owes no
+     * cell, so only an authored {@code @condition} inside the element is still refused there: its
+     * value would be read through the list as one object, and it cannot be honoured.
+     *
+     * <p>The list field's own {@code @condition} runs as it does on any other field, rewrapped onto
+     * the list field's value, unless one of its parameters descends past the list.
+     */
+    private void walkListLevel(ListLevel level, List<InputField> elementFields,
+            String useSiteCoordinate, String outerArgName, List<String> pathPrefix,
+            boolean enclosingOverride, boolean listNonNull, Set<String> lookupBoundNames,
+            List<BodyParam> implicitBodyParams,
+            List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
+            List<WhereFilter> out,
+            List<Rejection> walkRejections,
+            TableRef resolvingTable,
+            String containerSummary) {
+        boolean suppressed = enclosingOverride
+            || level.condition().map(ArgConditionRef::override).orElse(false);
+        int offending = 0;
+        if (level.condition().isPresent()) {
+            var filter = level.condition().get().filter();
+            if (descendsPastList(filter)) {
+                offending++;
+                ctx.addDiagnostic(new ValidationError(level.coordinate(), Rejection.structural(
+                    listLevelMessage(containerSummary, level.name(), useSiteCoordinate, outerArgName,
+                        level.listPath())
+                    + ": its @condition binds a parameter below the list field, which a list of input"
+                    + " objects has no single value for; bind the whole list instead"),
+                    level.location()));
+            } else {
+                // At depth 0 the condition already binds the argument itself; nested, it is
+                // rewrapped onto the list field's value, the way a non-list field's is.
+                out.add(level.listPath().isEmpty()
+                    ? filter
+                    : conditionResolver.rewrapForNested(filter, outerArgName, level.listPath()));
+            }
+        }
+        var cells = new ArrayList<CallSiteExtraction.Cell>();
+        offending += collectCells(level, elementFields, List.of(), useSiteCoordinate, outerArgName,
+            level.listPath(), suppressed, lookupBoundNames, columnSlots, cells, resolvingTable,
+            containerSummary);
+        if (offending > 0) {
+            walkRejections.add(Rejection.structural(listLevelMessage(containerSummary, level.name(),
+                useSiteCoordinate, outerArgName, level.listPath())
+                + " has " + offending + " element field" + (offending == 1 ? "" : "s")
+                + " that cannot be compared as a row"));
+            return;
+        }
+        if (suppressed) {
+            return;
+        }
+        if (cells.size() > MAX_ROW_DEGREE) {
+            walkRejections.add(Rejection.structural(listLevelMessage(containerSummary, level.name(),
+                useSiteCoordinate, outerArgName, level.listPath())
+                + " has " + cells.size() + " element fields; a row compares at most "
+                + MAX_ROW_DEGREE + " columns"));
+            return;
+        }
+        var rows = new CallSiteExtraction.ElementRows(cells);
+        CallSiteExtraction extraction = level.listPath().isEmpty()
+            ? rows
+            : new CallSiteExtraction.NestedInputField(outerArgName, level.listPath(), rows);
+        var columns = rows.columns();
+        implicitBodyParams.add(columns.size() == 1
+            ? new BodyParam.In(level.name(), columns.get(0), columns.get(0).columnClass(), listNonNull,
+                extraction)
+            : new BodyParam.RowIn(level.name(), columns, listNonNull, extraction));
+    }
+
+    /**
+     * Walks one element's fields (recursing through non-list nested inputs) into {@code cells},
+     * minting a located diagnostic for every field a row cannot express. Returns the number of
+     * offending fields. {@code elementPrefix} is the descent from the element's {@code Map};
+     * {@code slotPrefix} the same position from the outer argument, which is where the column slots
+     * and the cascade verdict address the field.
+     */
+    private int collectCells(ListLevel level, List<InputField> fields, List<String> elementPrefix,
+            String useSiteCoordinate, String outerArgName, List<String> slotPrefix,
+            boolean suppressed, Set<String> lookupBoundNames,
+            List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
+            List<CallSiteExtraction.Cell> cells,
+            TableRef resolvingTable, String containerSummary) {
+        int offending = 0;
+        for (var f : fields) {
+            var leafPath = new ArrayList<>(slotPrefix);
+            leafPath.add(f.name());
+            var cellPath = new ArrayList<>(elementPrefix);
+            cellPath.add(f.name());
+            if (!lookupBoundNames.contains(f.name())) {
+                columnBindingOf(f, outerArgName, leafPath).ifPresent(columnSlots::add);
+            }
+            String refusal = switch (f) {
+                case InputField.ColumnBackedField cf when cf.condition().isPresent() -> CONDITION_IN_ELEMENT;
+                case InputField.ColumnBackedField cf when suppressed -> null;
+                case InputField.ColumnBackedField cf -> {
+                    var column = cf.columns().get(0);
+                    var leaf = implicitLeaf(cf.extraction(), cf.typeName(), column);
+                    if (cf.isComposite() || leaf instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                        yield "it carries @nodeId, whose decoded key a row of plain values cannot hold";
+                    }
+                    if (cf.list()) {
+                        yield "it is itself a list, and one cell of a row holds one value";
+                    }
+                    if (!cf.nonNull()) {
+                        yield "it is nullable; a left-out cell would compare as null and the element"
+                            + " would match no row, so declare it non-null";
+                    }
+                    if (!(leaf instanceof CallSiteExtraction.Direct
+                            || leaf instanceof CallSiteExtraction.JooqConvert
+                            || leaf instanceof CallSiteExtraction.EnumValueOf)) {
+                        yield "its value is read as " + leaf.getClass().getSimpleName()
+                            + ", which a row cell does not take";
+                    }
+                    cells.add(new CallSiteExtraction.Cell(cellPath, column, leaf));
+                    yield null;
+                }
+                case InputField.ColumnBackedReferenceField rf when rf.condition().isPresent() -> CONDITION_IN_ELEMENT;
+                case InputField.ColumnBackedReferenceField rf when suppressed -> null;
+                case InputField.ColumnBackedReferenceField rf ->
+                    "it carries @nodeId or @reference, whose column is reached through a key or a join"
+                        + " a row of plain values cannot express";
+                case InputField.ConditionOwnedField cof -> CONDITION_IN_ELEMENT;
+                case InputField.NestingField nf when nf.condition().isPresent() -> CONDITION_IN_ELEMENT;
+                case InputField.NestingField nf when nf.list() && suppressed -> null;
+                case InputField.NestingField nf when nf.list() ->
+                    "it is a list of input objects inside a list of input objects, which one row"
+                        + " cannot express";
+                case InputField.NestingField nf -> {
+                    if (!suppressed && !nf.nonNull()) {
+                        offending += collectCells(level, nf.fields(), cellPath, useSiteCoordinate,
+                            outerArgName, leafPath, true, lookupBoundNames, columnSlots, cells,
+                            resolvingTable, containerSummary);
+                        yield "it is nullable; a left-out nested input would leave its cells null and the"
+                            + " element would match no row, so declare it non-null";
+                    }
+                    offending += collectCells(level, nf.fields(), cellPath, useSiteCoordinate,
+                        outerArgName, leafPath, suppressed, lookupBoundNames, columnSlots, cells,
+                        resolvingTable, containerSummary);
+                    yield null;
+                }
+                case InputField.UnboundField uf when uf.condition().isPresent() -> CONDITION_IN_ELEMENT;
+                case InputField.UnboundField uf -> {
+                    if (!suppressed) {
+                        // The cascade verdict already states this fact at this field's coordinate;
+                        // the list level only counts it toward its consequence.
+                        mintCascadeVerdict(uf, resolvingTable, containerSummary, useSiteCoordinate,
+                            outerArgName, leafPath);
+                        offending++;
+                    }
+                    yield null;
+                }
+            };
+            if (refusal != null) {
+                offending++;
+                ctx.addDiagnostic(new ValidationError(f.qualifiedName(), Rejection.structural(
+                    containerSummary + ": input field '" + f.name() + "' at occurrence '"
+                    + occurrencePath(useSiteCoordinate, outerArgName, leafPath)
+                    + "' is an element field of list-of-input filter field '" + level.name()
+                    + "', whose elements are compared as rows: " + refusal),
+                    f.location()));
+            }
+        }
+        return offending;
+    }
+
+    /** The widest typed row jOOQ offers ({@code Row22}). */
+    private static final int MAX_ROW_DEGREE = 22;
+
+    private static final String CONDITION_IN_ELEMENT =
+        "it carries @condition, whose value would be read through the list as one object; put"
+        + " @condition(override: true) on the list field to receive the whole list instead";
+
+    private static String listLevelMessage(String containerSummary, String listName,
+            String useSiteCoordinate, String outerArgName, List<String> listPath) {
+        String path = listPath.isEmpty()
+            ? useSiteCoordinate + "(" + outerArgName + ")"
+            : occurrencePath(useSiteCoordinate, outerArgName, listPath);
+        return containerSummary + ": list-of-input filter field '" + listName + "' at occurrence '"
+            + path + "'";
+    }
+
+    /** The {@code <Type>.<field>(<argument>)/<nested>/.../<leaf>} occurrence path of one input field. */
+    private static String occurrencePath(String useSiteCoordinate, String outerArgName, List<String> leafPath) {
+        return useSiteCoordinate + "(" + outerArgName + ")/" + String.join("/", leafPath);
+    }
+
+    /**
+     * Whether a list field's own {@code @condition} binds a parameter below the list field, which
+     * has no single value: any argument parameter whose path continues past its head segment.
+     */
+    private static boolean descendsPastList(ConditionFilter filter) {
+        return filter.params().stream().anyMatch(p ->
+            p.source() instanceof ParamSource.Arg arg && !arg.path().isHead());
     }
 
     /**

@@ -171,7 +171,38 @@ public final class ColumnBindingLedger {
 
     private static void requireSlot(FieldCoordinates coordinate, TableRef table,
                                     List<ColumnBoundSlot> row, BodyParam.ColumnPredicate predicate) {
-        var expected = new ColumnBoundSlot(predicate.name(), columnsOf(predicate), predicate.extraction());
+        for (var expected : expectedSlots(predicate)) {
+            requireSlot(coordinate, table, row, predicate, expected);
+        }
+    }
+
+    /**
+     * The slots a predicate's columns are recorded under. One, the predicate's own, except for a
+     * list-of-input filter's row read: its element fields are recorded one slot each, at their own
+     * path below the list, and the row-IN compares exactly those cells.
+     */
+    private static List<ColumnBoundSlot> expectedSlots(BodyParam.ColumnPredicate predicate) {
+        var rows = CallSiteExtraction.ElementRows.of(predicate.extraction());
+        if (rows == null) {
+            return List.of(new ColumnBoundSlot(predicate.name(), columnsOf(predicate), predicate.extraction()));
+        }
+        String outer = predicate.extraction() instanceof CallSiteExtraction.NestedInputField nif
+            ? nif.outerArgName() : predicate.name();
+        List<String> listPath = predicate.extraction() instanceof CallSiteExtraction.NestedInputField nif
+            ? nif.path() : List.of();
+        var out = new java.util.ArrayList<ColumnBoundSlot>(rows.cells().size());
+        for (var cell : rows.cells()) {
+            var path = new java.util.ArrayList<>(listPath);
+            path.addAll(cell.path());
+            out.add(new ColumnBoundSlot(cell.path().get(cell.path().size() - 1), List.of(cell.column()),
+                new CallSiteExtraction.NestedInputField(outer, path, cell.leaf())));
+        }
+        return out;
+    }
+
+    private static void requireSlot(FieldCoordinates coordinate, TableRef table,
+                                    List<ColumnBoundSlot> row, BodyParam.ColumnPredicate predicate,
+                                    ColumnBoundSlot expected) {
         if (!row.contains(expected)) {
             throw new IllegalStateException("generator invariant failure: '" + render(coordinate)
                 + "' on table '" + table.tableName() + "' emits a predicate for slot '"

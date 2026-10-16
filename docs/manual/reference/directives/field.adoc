@@ -61,6 +61,23 @@ type Mutation {
 ----
 
 The `INSERT` writes `title` and `language_id`; the GraphQL camelCase never reaches SQL.
+The `INSERT` writes `title` and `language_id`; the GraphQL camelCase never reaches SQL.
+
+[[list-of-input-filter]]
+On a filter input, a field typed as a *list of input objects* matches rows equal to any one element, comparing the element's fields together:
+
+[source,graphql]
+----
+input FilmActorPairInput {
+    actorId: Int! @field(name: "actor_id")
+    filmId:  Int! @field(name: "film_id")
+}
+input FilmActorPairFilter { pairs: [FilmActorPairInput] }
+----
+
+`pairs: [{actorId: 1, filmId: 1}, {actorId: 3, filmId: 2}]` produces `(actor_id, film_id) IN ((1, 1), (3, 2))`, not two separate `IN` lists, which would also match `(1, 2)`. An element type with one field produces a plain `IN` on its column. An absent, null or empty list applies no filter; a single object in place of the list filters by that object; a `null` element matches nothing. The list may also be the argument itself (`filmActors(pairs: [FilmActorPairInput])`).
+
+Every field of the element type must be non-null and bound to a column; `@nodeId`, `@reference`, list-typed fields and `@condition` are not accepted inside a list-of-input filter, and the build names the field at fault (see xref:../diagnostics-glossary.adoc#list-of-input-filter[the diagnostics glossary]). To filter on anything else, put `@condition(override: true)` on the list field: your method receives the whole list (as a `List<Map<String, Object>>`) and owns the predicate.
 
 On an *enum value*, `@field` maps the GraphQL value to the database string the value should encode as. See xref:../../how-to/map-types-to-tables.adoc[the mapping how-to] for the enum case.
 

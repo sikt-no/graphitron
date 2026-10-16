@@ -210,6 +210,11 @@ public final class ArgCallEmitter {
                     "CallSiteExtraction.JooqConvert reached the service-call argument emitter for"
                     + " param '" + param.name() + "'; column coercion is a condition-binding"
                     + " concept rendered inside the condition glue");
+            case CallSiteExtraction.ElementRows ignored ->
+                throw new IllegalStateException(
+                    "CallSiteExtraction.ElementRows reached the service-call argument emitter for"
+                    + " param '" + param.name() + "'; a list-of-input filter's rows are never a"
+                    + " service binding and render only inside the condition glue");
             // The @nodeId slot arms, at the child coordinate. A decoding argument is not only a
             // condition-binding concept: where a producer parameter is named for a @nodeId
             // argument, the value that parameter receives is the decoded key and never the wire id,

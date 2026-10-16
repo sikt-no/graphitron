@@ -27,7 +27,8 @@ public sealed interface CallSiteExtraction
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
                 CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.NodeIdDecodeRecord,
                 CallSiteExtraction.NodeIdDecodePolymorphicRecord,
-                CallSiteExtraction.InputBean, CallSiteExtraction.JooqRecord {
+                CallSiteExtraction.InputBean, CallSiteExtraction.JooqRecord,
+                CallSiteExtraction.ElementRows {
 
     /** Pass the argument directly: {@code env.getArgument("name")}. */
     record Direct() implements CallSiteExtraction {}
@@ -110,6 +111,83 @@ public sealed interface CallSiteExtraction
         /** Convenience constructor that defaults {@code leaf} to {@link Direct}. */
         public NestedInputField(String outerArgName, List<String> path) {
             this(outerArgName, path, new Direct());
+        }
+    }
+
+    /**
+     * Read a filter field typed as a list of input objects as one row per element. Each element
+     * is a {@code Map} whose {@link #cells()} are the scalar leaves the element binds onto columns
+     * of the resolving table; the binding local is {@code List<Row<N><T1, ..., TN>>} built by a
+     * per-class helper ({@code ElementRowsHelperRegistry}), or {@code List<T>} for a one-cell
+     * element, so the predicate is {@code DSL.row(c1, ..., cN).in(rows)} or {@code c1.in(values)}.
+     *
+     * <p>Rides {@link BodyParam.RowIn} at two or more cells and {@link BodyParam.In} at one. When
+     * the list is the argument itself the arm is the extraction directly; when the list sits inside
+     * an input object it is the leaf of a {@link NestedInputField} whose path is the descent to the
+     * list. Both predicates pin their columns to {@link #columns()} in their compact constructors.
+     *
+     * <p>A {@code null} element contributes a row of typed nulls, which no row matches; it is not
+     * dropped, so {@code [null]} is a filter that matches nothing rather than an empty list that
+     * filters nothing.
+     *
+     * <p>Only the condition glue reads this arm. Every other exhaustive switch over
+     * {@link CallSiteExtraction} treats it as unreachable by construction.
+     */
+    record ElementRows(List<Cell> cells) implements CallSiteExtraction {
+        public ElementRows {
+            if (cells == null || cells.isEmpty()) {
+                throw new IllegalArgumentException("ElementRows requires at least one cell");
+            }
+            cells = List.copyOf(cells);
+        }
+
+        /** The cells' columns in cell order: the tuple the predicate compares. */
+        public List<ColumnRef> columns() {
+            return cells.stream().map(Cell::column).toList();
+        }
+
+        /**
+         * True when {@code extraction} is an {@link ElementRows}, bare or as a
+         * {@link NestedInputField}'s leaf, whose {@link #columns()} differ from {@code columns}.
+         * The check {@link BodyParam.In} and {@link BodyParam.RowIn} run on their own columns.
+         */
+        public static boolean disagrees(CallSiteExtraction extraction, List<ColumnRef> columns) {
+            ElementRows rows = of(extraction);
+            return rows != null && !rows.columns().equals(columns);
+        }
+
+        /** The {@link ElementRows} {@code extraction} carries, bare or as a nested leaf; else null. */
+        public static ElementRows of(CallSiteExtraction extraction) {
+            if (extraction instanceof ElementRows rows) {
+                return rows;
+            }
+            if (extraction instanceof NestedInputField nif && nif.leaf() instanceof ElementRows rows) {
+                return rows;
+            }
+            return null;
+        }
+    }
+
+    /**
+     * One cell of an {@link ElementRows} element: the descent {@code path} from the element's own
+     * {@code Map} down to a scalar leaf (longer than one segment when the leaf sits inside a
+     * non-list nested input), the {@code column} the cell compares against, and the {@code leaf}
+     * transform reading the wire value, which is the one a scalar field at that position takes:
+     * {@link Direct}, {@link JooqConvert} for an {@code ID}, or {@link EnumValueOf}.
+     */
+    record Cell(List<String> path, ColumnRef column, CallSiteExtraction leaf) {
+        public Cell {
+            if (path == null || path.isEmpty()) {
+                throw new IllegalArgumentException("ElementRows.Cell path must be non-empty");
+            }
+            path = List.copyOf(path);
+            if (column == null) {
+                throw new IllegalArgumentException("ElementRows.Cell column must be non-null");
+            }
+            if (!(leaf instanceof Direct || leaf instanceof JooqConvert || leaf instanceof EnumValueOf)) {
+                throw new IllegalArgumentException(
+                    "ElementRows.Cell leaf must be Direct, JooqConvert or EnumValueOf; got " + leaf);
+            }
         }
     }
 

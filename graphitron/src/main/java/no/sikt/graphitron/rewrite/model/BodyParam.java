@@ -71,6 +71,13 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
         boolean nonNull,
         CallSiteExtraction extraction
     ) implements ColumnPredicate {
+        public In {
+            if (CallSiteExtraction.ElementRows.disagrees(extraction, List.of(column))) {
+                throw new IllegalArgumentException("BodyParam.In '" + name + "' reads element rows"
+                    + " whose cells do not name exactly its column " + column.javaName());
+            }
+        }
+
         @Override public boolean list() { return true; }
     }
 
@@ -99,7 +106,9 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
     }
 
     /**
-     * Composite-key row-IN. Emits {@code DSL.row(c1, ..., cN).in(rows)}.
+     * Composite-key row-IN. Emits {@code DSL.row(c1, ..., cN).in(rows)}. Two extractions feed it: a
+     * composite {@code @nodeId} list decode, and {@link CallSiteExtraction.ElementRows} for a
+     * filter field typed as a list of input objects, whose cell columns must be these columns.
      * {@code columns.size() >= 2}; the arity-1 case routes to {@link In}. The method parameter
      * type is {@code List<Row<N><T1, ..., TN>>} computed from {@code columns} at emit time.
      */
@@ -115,6 +124,10 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
             if (columns.size() < 2) {
                 throw new IllegalArgumentException(
                     "BodyParam.RowIn requires arity >= 2 (got " + columns.size() + "); arity-1 routes to In");
+            }
+            if (CallSiteExtraction.ElementRows.disagrees(extraction, columns)) {
+                throw new IllegalArgumentException("BodyParam.RowIn '" + name + "' reads element rows"
+                    + " whose cell columns are not its columns in order");
             }
         }
 

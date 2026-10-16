@@ -164,6 +164,7 @@ public final class NodeIdDecodeLedger {
             case CallSiteExtraction.ContextArg ignored -> false;
             case CallSiteExtraction.JooqConvert ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
+            case CallSiteExtraction.ElementRows ignored -> false;
         };
     }
 

@@ -142,7 +142,7 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 == Named structural errors
 
-Structural `[author-error]` messages are written at the classifier site and are mostly not enumerable, as the kind entry above says. The one below is listed anyway because it is the error a schema meets by writing the *obvious* thing rather than a wrong thing, and because both of its remedies are fixed directives rather than a rename you have to work out.
+Structural `[author-error]` messages are written at the classifier site and are mostly not enumerable, as the kind entry above says. The ones below are listed anyway because each is the error a schema meets by writing the *obvious* thing rather than a wrong thing, and because its remedies are fixed directives or declarations rather than a rename you have to work out.
 
 [#arg-mapping-path]
 === An `argMapping` path that does not resolve
@@ -169,6 +169,15 @@ database catalog rather than by reflection:
 * `@routine parameter 'pEnv' binds to 'input', whose GraphQL type 'RentFilmInput' is not a scalar
   or enum`: the path stopped on an input object. A routine IN parameter takes one value; bind a
   scalar field inside it.
+
+[#list-of-input-filter]
+=== An element field a list-of-input filter cannot compare
+
+*Sample line.* `[author-error] plain input type 'PairFilter': input field 'actorId' at occurrence 'Query.filmActors(filter)/pairs/actorId' is an element field of list-of-input filter field 'pairs', whose elements are compared as rows: it is nullable; a left-out cell would compare as null and the element would match no row, so declare it non-null`.
+
+*Cause.* A filter field typed as a list of input objects matches rows equal to any one element, comparing the element's fields together as one row (`(c1, c2) IN ((..), (..))`). That reading holds only when every element field is one non-null value bound to a column, so the build refuses an element field that is nullable, itself a list or a list of input objects, carries `@nodeId` or `@reference`, carries `@condition`, or binds no column. The message is located at the element field and names the occurrence, because the same input type is fine elsewhere (as a non-list nested input, or as a `@service` parameter); the consuming field adds one line counting the element fields at fault. A `@condition` on the list field itself whose `argMapping` reaches below the list is refused the same way, at the list field.
+
+*Next step.* Declare the field non-null, or move it out of the element type. To filter on a shape the row cannot express, put `@condition(override: true)` on the list field; the method receives the whole list and owns the predicate. xref:directives/field.adoc#list-of-input-filter[`@field` on a list-of-input filter] describes the semantics.
 
 [#shadowed-node-id]
 === A node's `id` field shadowing a column named `id`

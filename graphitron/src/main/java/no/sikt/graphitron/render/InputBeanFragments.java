@@ -275,6 +275,8 @@ public final class InputBeanFragments {
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> throw notALeaf(fb);
             // JooqRecord is a top-level @service param extraction, never an InputBean field leaf.
             case CallSiteExtraction.JooqRecord ignored -> throw notALeaf(fb);
+            // A list-of-input filter's row read is a condition binding, never a bean field leaf.
+            case CallSiteExtraction.ElementRows ignored -> throw notALeaf(fb);
         };
     }
 
