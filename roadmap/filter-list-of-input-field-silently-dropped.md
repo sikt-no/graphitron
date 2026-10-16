@@ -1,7 +1,7 @@
 ---
 id: R1057
 title: "A filter field typed as a list of input objects is read as one Map, so the filter is silently dropped"
-status: Spec
+status: Ready
 bucket: bug
 depends-on: []
 created: 2026-10-16
@@ -122,7 +122,7 @@ A `@condition` with `override: false` on the list field runs alongside the row-`
   - a `null` element yields a row of typed nulls. This is one branch, keyed on the element not being a `Map`, rather than a separate semantic for non-map elements, which graphql-java's coercion already excludes.
 - The helper takes the aliased `Table` as a parameter, per helper locality in `docs/architecture/reference/emitter-conventions.adoc`.
 - At the call site, `nestedExtraction` gets an arm for an `ElementRows` leaf. It hands the uncast `WireMapChain` descent to the list (or `args.get(name)` at depth 0) to the helper, as the decode arm hands its descent to the decode helper. `extractionExpr` gets the bare arm.
-- `localType` must derive the local's type from the cells' columns: `List<Row<N><T1, ..., TN>>`, or `List<T>` at one cell. It must never derive it from `param.typeName()`. `FieldBuilder.bodyParamCallTypeName` gives `RowIn` the raw string `"org.jooq.RowN"`, which today goes unused only because the decode path bypasses `localType`. Falling through to the `rawComponent` branch would emit a raw `List<Row2>`, which fails consumer compiles under `-Xlint:rawtypes -Werror`.
+- `localType` must derive the local's type from the cells' columns: `List<Row<N><T1, ..., TN>>`, or `List<T>` at one cell. It must never derive it from `param.typeName()`. `FieldBuilder.bodyParamCallTypeName` gives `RowIn` the raw string `"org.jooq.Row" + columns().size()` (for example `"org.jooq.Row2"`), which today goes unused only because the decode path bypasses `localType`. Falling through to the `rawComponent` branch would emit a raw `List<Row2>`, which fails consumer compiles under `-Xlint:rawtypes -Werror`.
 - The typed row is computed by `CompositeDecodeHelperRegistry.typedRow(List<ColumnRef>)`, which is private today. Lift it beside `CatalogRefs.columnType`, where `localType` and both registries reach it, rather than having one render-side registry call into another.
 - `ConditionCommands.termOf` and `columnCompare` need no change: `RowIn` already lowers to `DSL.row(...).in(local)`, and `In` to `.in(local)`.
 
