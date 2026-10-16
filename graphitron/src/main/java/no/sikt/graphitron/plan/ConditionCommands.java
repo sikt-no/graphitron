@@ -276,7 +276,9 @@ public final class ConditionCommands {
      * and no mask vocabulary exists. Masking is decided per generated term: a facet owns a term
      * when the term's binding is the facet's own ({@link #isFacetBinding}). The base fragment
      * keeps every term no facet owns plus every authored predicate <em>unmasked</em>; a per-facet
-     * fragment keeps exactly its own term. Static omission of a masked term renders the same SQL
+     * fragment keeps exactly its own term, keyed by the facet's input field name so the launcher
+     * planner reads the term's reach and column as the facet's grouping by key rather than by
+     * search. Static omission of a masked term renders the same SQL
      * as the runtime null-guard because facet bindings are guaranteed nullable
      * ({@code GraphitronSchemaBuilder}'s facet-misuse rejection); authored predicates are never
      * masked, a deliberate carry-over of the emitter behaviour this data replaces.
@@ -298,7 +300,7 @@ public final class ConditionCommands {
                 case Predicate.Authored authored -> basePredicates.add(authored);
             }
         }
-        fragments.add(new FacetFragment(
+        fragments.add(new FacetFragment.Base(
             units.facetBaseConditionMethod(parentTypeName, fieldName),
             basePredicates, liftsOf(bindingsOf(basePredicates))));
         for (var facet : facetSpecs) {
@@ -307,10 +309,16 @@ public final class ConditionCommands {
                 .flatMap(p -> ((Predicate.Generated) p).terms().stream())
                 .filter(t -> isFacetBinding(t.binding().param(), facet))
                 .toList();
-            fragments.add(new FacetFragment(
+            if (own.size() > 1) {
+                throw new IllegalStateException(
+                    "facet '" + facet.inputFieldName() + "' on '" + parentTypeName + "." + fieldName
+                    + "' owns " + own.size() + " generated terms; a facet field binds one filter"
+                    + " value, so it owns at most one term");
+            }
+            var term = own.stream().findFirst();
+            fragments.add(new FacetFragment.Own(facet.inputFieldName(),
                 units.facetConditionMethod(parentTypeName, fieldName, facet.inputFieldName()),
-                own.isEmpty() ? List.of() : List.of(new Predicate.Generated(own)),
-                liftsOf(own.stream().map(ColumnTerm::binding).toList())));
+                term, liftsOf(own.stream().map(ColumnTerm::binding).toList())));
         }
         return fragments;
     }

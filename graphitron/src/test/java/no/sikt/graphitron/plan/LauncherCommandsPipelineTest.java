@@ -518,4 +518,125 @@ class LauncherCommandsPipelineTest {
             .orElseThrow().result();
         assertThat(nonFaceted.facets()).isNull();
     }
+
+    // ===== Facet plan groupings =====
+
+    private static no.sikt.graphitron.command.FacetPlan facetPlanOf(String sdl, String field) {
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var relation = LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
+        return ((ResultShape.Connection) relation.rowFor("Query", field).orElseThrow().result()).facets();
+    }
+
+    private static no.sikt.graphitron.command.ColumnTerm ownTerm(String sdl, String facet) {
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        return ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE).rows().get(0).facets().stream()
+            .filter(f -> f instanceof no.sikt.graphitron.command.FacetFragment.Own own
+                && own.inputFieldName().equals(facet))
+            .map(f -> ((no.sikt.graphitron.command.FacetFragment.Own) f).term().orElseThrow())
+            .findFirst().orElseThrow();
+    }
+
+    @Test
+    void facetPlan_directAndReferenceFacets_borrowTheirGroupingFromTheirOwnTerms() {
+        var sdl = """
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                rating: [String!] @field(name: "rating") @asFacet
+                actor: [String!] @field(name: "last_name") @asFacet
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """;
+
+        var plan = facetPlanOf(sdl, "films");
+
+        assertThat(plan.facets()).extracting(e -> e.spec().inputFieldName()).containsExactly("rating", "actor");
+        assertThat(plan.facets().get(0).grouping())
+            .isEqualTo(new no.sikt.graphitron.command.FacetPlan.Grouping.CarrierColumn(
+                ownTerm(sdl, "rating").columns().getFirst()));
+        var actorTerm = ownTerm(sdl, "actor");
+        assertThat(plan.facets().get(1).grouping())
+            .isEqualTo(new no.sikt.graphitron.command.FacetPlan.Grouping.Reached(
+                actorTerm.reach(), actorTerm.columns().getFirst()));
+        assertThat(plan.facets().get(1).grouping().column().sqlName()).isEqualTo("last_name");
+        assertThat(plan.distinctKey()).extracting(c -> c.sqlName()).containsExactly("film_id");
+    }
+
+    @Test
+    void facetPlan_conditionJoinHopAndHopFilter_rideTheReachedHops() {
+        var plan = facetPlanOf("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                joined: [String!] @field(name: "first_name") @asFacet
+                    @reference(path: [{key: "film_actor_film_id_fkey"},
+                                      {condition: {className: "%1$s", method: "junctionToActor"}}])
+                filtered: [String!] @field(name: "last_name") @asFacet
+                    @reference(path: [{key: "film_actor_film_id_fkey"},
+                                      {key: "film_actor_actor_id_fkey",
+                                       condition: {className: "%1$s", method: "junctionToActor"}}])
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """.formatted(STUB), "films");
+
+        var joined = (no.sikt.graphitron.command.FacetPlan.Grouping.Reached) plan.facets().get(0).grouping();
+        assertThat(joined.reach().hop(1).on()).isInstanceOf(no.sikt.graphitron.rewrite.model.On.Predicate.class);
+        assertThat(joined.column().sqlName()).isEqualTo("first_name");
+        var filtered = (no.sikt.graphitron.command.FacetPlan.Grouping.Reached) plan.facets().get(1).grouping();
+        assertThat(filtered.reach().hop(1).on()).isInstanceOf(no.sikt.graphitron.rewrite.model.On.ColumnPairs.class);
+        assertThat(filtered.reach().hop(1).filter()).isNotNull();
+        assertThat(filtered.reach().hop(1).filter().method().methodName()).isEqualTo("junctionToActor");
+    }
+
+    @Test
+    void facetPlan_compositeKeyCarrier_distinctKeyIsTheWholePrimaryKey() {
+        var plan = facetPlanOf("""
+            type FilmActor @table(name: "film_actor") { actorId: Int @field(name: "actor_id") }
+            input FilmActorFilter {
+                filmTitle: [String!] @field(name: "title") @asFacet
+                    @reference(path: [{key: "film_actor_film_id_fkey"}])
+            }
+            type Query {
+                filmActors(filter: FilmActorFilter): [FilmActor!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """, "filmActors");
+
+        assertThat(plan.facets().getFirst().grouping())
+            .isInstanceOf(no.sikt.graphitron.command.FacetPlan.Grouping.Reached.class);
+        assertThat(plan.distinctKey()).extracting(c -> c.sqlName())
+            .containsExactlyInAnyOrder("actor_id", "film_id")
+            .hasSize(2);
+    }
+
+    @Test
+    void facetPlan_directFacetUnderFieldOverride_resolvesItsColumnByName() {
+        // The override suppresses the facet's own term, so there is nothing to borrow from; a
+        // direct facet's @field column resolves by name on the carrier's table.
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                rating: [String!] @field(name: "rating") @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+                    @condition(condition: {className: "%s", method: "lifterFieldCondition"}, override: true)
+            }
+            """.formatted(STUB));
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var own = conditions.rows().get(0).facets().stream()
+            .filter(f -> f instanceof no.sikt.graphitron.command.FacetFragment.Own)
+            .map(f -> (no.sikt.graphitron.command.FacetFragment.Own) f)
+            .findFirst().orElseThrow();
+        assertThat(own.term()).isEmpty();
+
+        var plan = ((ResultShape.Connection) LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Query", "films").orElseThrow().result()).facets();
+        assertThat(plan.facets().getFirst().grouping())
+            .isInstanceOfSatisfying(no.sikt.graphitron.command.FacetPlan.Grouping.CarrierColumn.class,
+                c -> assertThat(c.column().sqlName()).isEqualTo("rating"));
+    }
 }

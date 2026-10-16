@@ -1193,9 +1193,10 @@ public class GraphitronSchemaBuilder {
     /**
      * Rejects every misused {@code @asFacet} application. The rejection split follows a
      * definition-keyed / use-keyed axis: the binding checks (a facet must be a plain
-     * {@code @field}-bound scalar/enum column; {@code @reference} / {@code @condition} /
-     * {@code @nodeId} bindings and {@code ID} fields are v1-unsupported) are authored-directive
-     * facts at the input type's member coordinate, while the reachability check (the enclosing
+     * {@code @field}-bound scalar/enum column, optionally through {@code @reference};
+     * {@code @condition} / {@code @nodeId} bindings and {@code ID} fields are unsupported) are
+     * authored-directive facts at the input type's member coordinate, while the reachability
+     * check (the enclosing
      * input type must be a filter input on at least one {@code @asConnection} field, else the
      * {@code facets} expansion would be dead schema) is a derived join over the consuming
      * coordinates. An input type shared by connection and non-connection consumers is fine:
@@ -1203,9 +1204,14 @@ public class GraphitronSchemaBuilder {
      *
      * <p>Rejecting {@code ID} fields outright, rather than only {@code @nodeId} co-occurrence,
      * keeps the rule readable off the SDL: an {@code ID} field is where a node-id reading can arise
-     * without a directive to point at, and the v1 direct-column facet emitter serves only plain
-     * columns. A narrower rule would have to re-derive which readings are node ids to say which
-     * {@code ID} fields are admissible.
+     * without a directive to point at, and a facet groups on a plain column. A narrower rule
+     * would have to re-derive which readings are node ids to say which {@code ID} fields are
+     * admissible.
+     *
+     * <p>A {@code @reference} facet adds three use-keyed checks per consuming carrier
+     * ({@link #unsupportedReferenceFacetReason}): the carrier must read from a table, not a
+     * {@code @routine}, that table must have a primary key, and no {@code @condition(override: true)}
+     * may suppress the facet's own filter, whose join path the facet's counts follow.
      *
      * <p>The carrier scan is sourced off the connection-synthesis relation's directive-driven
      * rows (the validator mirrors the classifier: exactly the carriers the walk promoted are the
@@ -1254,6 +1260,17 @@ public class GraphitronSchemaBuilder {
                         for (var inputField : in.getFieldDefinitions()) {
                             filterParamNameCounts.merge(inputField.getName(), 1, Integer::sum);
                             if (!inputField.hasAppliedDirective(DIR_AS_FACET)) continue;
+                            if (unsupportedReason == null) {
+                                String referenceReason = unsupportedReferenceFacetReason(
+                                    ctx, field, arg, inputField, carrierCoordinate);
+                                if (referenceReason != null) {
+                                    String coordinate = in.getName() + "." + inputField.getName();
+                                    ctx.addDiagnostic(ValidationError.forField(coordinate,
+                                        Rejection.invalidSchema("Field '" + coordinate + "': "
+                                            + referenceReason),
+                                        locationOf(inputField)));
+                                }
+                            }
                             if (!facetNamesOnCarrier.add(inputField.getName())) {
                                 duplicateFacetNames.add(inputField.getName());
                                 ctx.addDiagnostic(ValidationError.forField(carrierCoordinate,
@@ -1323,6 +1340,48 @@ public class GraphitronSchemaBuilder {
                         instanceof GraphitronType.TableBackedType)) {
             return "consumer '" + carrierCoordinate
                 + "' does not return a table-backed object element";
+        }
+        return null;
+    }
+
+    /**
+     * Why a served carrier cannot count a {@code @reference}-bound facet on its filter argument
+     * {@code arg}, or {@code null} when it can (or the field is not a well-formed reference facet;
+     * a malformed one is reported by {@link #facetMisuseReason}). The facet's counts join its path
+     * onto the carrier's table and count distinct carrier rows by its primary key, along the join
+     * path its own filter term carries; a carrier lacking any of the three cannot serve it.
+     */
+    private static String unsupportedReferenceFacetReason(BuildContext ctx,
+            GraphQLFieldDefinition carrier, GraphQLArgument arg,
+            graphql.schema.GraphQLInputObjectField inputField, String carrierCoordinate) {
+        if (!inputField.hasAppliedDirective(DIR_REFERENCE)
+                || FacetFieldValidation.definitionKeyedRejection(inputField) != null) {
+            return null;
+        }
+        String prefix = "a @reference facet joins its path onto the connection's table and counts "
+            + "distinct rows by that table's primary key; ";
+        if (carrier.hasAppliedDirective(DIR_ROUTINE)) {
+            return prefix + "consumer '" + carrierCoordinate + "' reads from a @routine, whose "
+                + "result has no primary key to join from or count by. Facets over a related "
+                + "table on @routine connections are a follow-up; remove @reference or @asFacet";
+        }
+        var element = GraphQLTypeUtil.unwrapAll(carrier.getType());
+        if (element instanceof GraphQLObjectType elementObj
+                && ctx.lookAheadVerdict(elementObj.getName()) instanceof GraphitronType.TableBackedType tb
+                && !tb.table().hasPrimaryKey()) {
+            return prefix + "consumer '" + carrierCoordinate + "' returns rows of table '"
+                + tb.table().tableName() + "', which has no primary key. Remove @reference or "
+                + "@asFacet, or declare a primary key on the table";
+        }
+        var fieldCondition = ctx.readConditionDirective(carrier);
+        var argCondition = ctx.readConditionDirective(arg);
+        if ((fieldCondition != null && fieldCondition.override())
+                || (argCondition != null && argCondition.override())) {
+            String where = fieldCondition != null && fieldCondition.override()
+                ? "on the field" : "on its argument '" + arg.getName() + "'";
+            return "a @reference facet takes its join path from its own generated filter; consumer '"
+                + carrierCoordinate + "' carries @condition(override: true) " + where + ", which "
+                + "replaces that filter. Remove @reference or @asFacet, or the override";
         }
         return null;
     }

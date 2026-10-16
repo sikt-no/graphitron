@@ -1,6 +1,7 @@
 package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.CarrierDsl;
+import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.Invocation;
 import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
@@ -55,6 +56,8 @@ public final class RootLauncherRenderer {
     private static final TypeName RESULT_OF_RECORD = ParameterizedTypeName.get(RESULT, RECORD);
     private static final TypeName TABLE_WILDCARD = ParameterizedTypeName.get(
         ClassName.get("org.jooq", "Table"),
+        no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+    private static final TypeName FIELD_WILDCARD = ParameterizedTypeName.get(FIELD,
         no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
     private static final TypeName SORT_FIELD_LIST = ParameterizedTypeName.get(
         LIST, ParameterizedTypeName.get(SORT_FIELD,
@@ -346,8 +349,8 @@ public final class RootLauncherRenderer {
      * (names fixed by the slot; the classifier rejects custom names), the page request, the
      * seek/limit page query, and the carrier construction over the same
      * {@code (result, page, table, condition)} the query ran under. A faceted plan additionally
-     * binds the base fragment, the per-facet condition map, and the decode specs through the
-     * carrier's facet-carrying constructor.
+     * binds the base fragment, the per-facet condition map, and the per-facet runtime specs
+     * (source, typed group column, count key) through the carrier's facet-carrying constructor.
      *
      * <p>Two locals, not one, because a source whose FROM is composite has a different answer to
      * "what does the statement read from" than to "what do the columns hang off". {@code
@@ -387,7 +390,7 @@ public final class RootLauncherRenderer {
             code.addStatement("return new $T(result, page, $L, condition$L)",
                 className(connection.carrier()), fromLocal, dslTail);
         } else {
-            code.add(facetBindings(connection, aliasLocal));
+            code.add(facetBindings(connection, fromLocal, aliasLocal));
             code.addStatement(
                 "return new $T(result, page, $L, condition, facetBase, facetConditions, facetSpecs$L)",
                 className(connection.carrier()), fromLocal, dslTail);
@@ -441,8 +444,17 @@ public final class RootLauncherRenderer {
         return code.build();
     }
 
-    /** The faceted carrier's bindings: the base fragment, the per-facet map, the decode specs. */
-    private static CodeBlock facetBindings(ResultShape.Connection connection, String tableLocal) {
+    /**
+     * The faceted carrier's bindings: the base fragment, the per-facet map, and one runtime spec
+     * per facet naming its arm's source, typed group column and count key. A carrier-column facet
+     * reads the carrier's FROM ({@code fromLocal}) and groups on its column off the carrier's table
+     * local ({@code tableLocal}), counting rows. A reached facet declares one aliased table local
+     * per hop, joins them onto the carrier's table local forward along the reach with each hop's
+     * own filter ANDed onto that hop's {@code ON}, groups on the terminal alias's column and counts
+     * distinct over the plan's key on the carrier's table local.
+     */
+    private static CodeBlock facetBindings(ResultShape.Connection connection, String fromLocal,
+            String tableLocal) {
         var plan = connection.facets();
         var code = CodeBlock.builder();
         code.addStatement("$T facetBase = $L", CONDITION, glueExpression(plan.base(), tableLocal));
@@ -454,17 +466,69 @@ public final class RootLauncherRenderer {
         }
         var facetSpecRuntime = className(connection.carrier()).nestedClass("FacetSpec");
         var specsArgs = CodeBlock.builder();
-        boolean firstSpec = true;
-        for (var facet : plan.facets()) {
-            if (!firstSpec) {
+        for (int i = 0; i < plan.facets().size(); i++) {
+            var facet = plan.facets().get(i);
+            if (i > 0) {
                 specsArgs.add(",\n    ");
             }
-            firstSpec = false;
-            specsArgs.add("new $T($S, $S, $L)", facetSpecRuntime,
-                facet.spec().inputFieldName(), facet.spec().columnName(), facet.spec().valueNullable());
+            CodeBlock source;
+            CodeBlock column;
+            CodeBlock countKey;
+            switch (facet.grouping()) {
+                case FacetPlan.Grouping.CarrierColumn carrier -> {
+                    source = CodeBlock.of("$L", fromLocal);
+                    column = CodeBlock.of("$L.$L", tableLocal, carrier.column().javaName());
+                    countKey = CodeBlock.of("new $T[0]", FIELD_WILDCARD);
+                }
+                case FacetPlan.Grouping.Reached reached -> {
+                    String sourceLocal = "facet" + i + "Source";
+                    code.add(reachedSource(reached.reach(), "facet" + i + "Hop", tableLocal, sourceLocal));
+                    source = CodeBlock.of("$L", sourceLocal);
+                    column = CodeBlock.of("$L.$L", "facet" + i + "Hop" + (reached.reach().size() - 1),
+                        reached.column().javaName());
+                    var keys = CodeBlock.builder();
+                    for (int k = 0; k < plan.distinctKey().size(); k++) {
+                        keys.add(k == 0 ? "$L.$L" : ", $L.$L", tableLocal, plan.distinctKey().get(k).javaName());
+                    }
+                    countKey = CodeBlock.of("new $T[] { $L }", FIELD_WILDCARD, keys.build());
+                }
+            }
+            specsArgs.add("new $T($S, $L, $L, $L, $L)", facetSpecRuntime,
+                facet.spec().inputFieldName(), source, column, facet.spec().valueNullable(), countKey);
         }
         code.addStatement("$T<$T> facetSpecs = $T.of($L)",
             LIST, facetSpecRuntime, LIST, specsArgs.build());
+        return code.build();
+    }
+
+    /**
+     * A reached facet's joined source: one aliased table local per hop (named
+     * {@code <hopPrefix><index>}, aliased in SQL by the same name so two facets crossing one table
+     * do not collide), then {@code <tableLocal>} inner-joined forward along the hops through
+     * {@link PathFragments#emitForwardBridging}, with a hop's own {@code filter()} ANDed onto that
+     * hop's {@code ON}: for an inner join that is the predicate the filter's {@code EXISTS} puts in
+     * its {@code WHERE}.
+     */
+    private static CodeBlock reachedSource(no.sikt.graphitron.command.ReachPath reach, String hopPrefix,
+            String tableLocal, String sourceLocal) {
+        var code = CodeBlock.builder();
+        for (int h = 0; h < reach.size(); h++) {
+            var target = reach.hop(h).targetTable();
+            code.addStatement("$T $L = $T.$L.as($S)",
+                CatalogRefs.tableClass(target), hopPrefix + h,
+                CatalogRefs.constantsClass(target), target.javaFieldName(), hopPrefix + h);
+        }
+        var joined = CodeBlock.builder().add("$L", tableLocal).indent();
+        for (int h = 0; h < reach.size(); h++) {
+            var hop = reach.hop(h);
+            String prev = h == 0 ? tableLocal : hopPrefix + (h - 1);
+            String alias = hopPrefix + h;
+            joined.add("\n$L", PathFragments.emitForwardBridging(hop, prev, alias));
+            if (hop.filter() != null) {
+                joined.add(".and($L)", PathFragments.emitTwoArgMethodCall(hop.filter(), prev, alias));
+            }
+        }
+        code.addStatement("$T $L = $L", TABLE_WILDCARD, sourceLocal, joined.unindent().build());
         return code.build();
     }
 

@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ConditionCommand;
+import no.sikt.graphitron.command.FacetFragment;
 import no.sikt.graphitron.command.FacetPlan;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.Invocation;
@@ -18,6 +19,7 @@ import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeliveryFact;
+import no.sikt.graphitron.rewrite.model.FacetSpec;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -642,6 +644,12 @@ public final class LauncherCommands {
      */
     private static LauncherCommand routineRow(QueryField.QueryTableField qtf,
             RoutineResolution.Chain chain, GlueCall where, FacetPlan facets, GeneratedUnits units) {
+        if (facets != null && facets.hasReachedGrouping()) {
+            throw new IllegalStateException(
+                "routine-sourced coordinate '" + qtf.qualifiedName() + "' carries a @reference"
+                + " facet; a routine result has no primary key to anchor the facet join or count"
+                + " by, and the validator rejects the pair");
+        }
         var hops = chain.chain().hops().stream()
             .map(step -> (no.sikt.graphitron.rewrite.model.JoinStep.Hop) step)
             .toList();
@@ -1119,7 +1127,9 @@ public final class LauncherCommands {
      * derivation the condition producer's fragment builder reads), the fragment refs are minted
      * through the naming vocabulary and cross-checked against the condition row's own fragment
      * set, so the two families cannot drift on which methods exist, and the env-appending fork
-     * is the row-grained fact copied off the same row.
+     * is the row-grained fact copied off the same row. Each facet's grouping is joined from the
+     * row's own fragment on the facet's input field name ({@link #groupingOf}), and the distinct
+     * key is the row's table's primary key.
      */
     private static FacetPlan facetPlanOf(GraphitronSchema schema, QueryField.QueryTableField qtf,
             ConditionRelation conditions, GeneratedUnits units) {
@@ -1131,6 +1141,12 @@ public final class LauncherCommands {
             "faceted coordinate '" + qtf.qualifiedName() + "' has no condition row; facet inputs"
             + " are filters, so a faceted coordinate always has one"));
         var fragmentRefs = row.facets().stream().map(f -> f.method()).toList();
+        var ownByField = new java.util.HashMap<String, FacetFragment.Own>();
+        for (var fragment : row.facets()) {
+            if (fragment instanceof FacetFragment.Own own) {
+                ownByField.put(own.inputFieldName(), own);
+            }
+        }
         boolean takesEnv = row.readsRequestContext();
         var base = units.facetBaseConditionMethod(qtf.parentTypeName(), qtf.name());
         requireFragment(fragmentRefs, base, qtf);
@@ -1138,9 +1154,50 @@ public final class LauncherCommands {
         for (var spec : specs) {
             var fragment = units.facetConditionMethod(qtf.parentTypeName(), qtf.name(), spec.inputFieldName());
             requireFragment(fragmentRefs, fragment, qtf);
-            entries.add(new FacetPlan.Entry(spec, new GlueCall(fragment, takesEnv)));
+            var own = ownByField.get(spec.inputFieldName());
+            if (own == null) {
+                throw new IllegalStateException(
+                    "faceted coordinate '" + qtf.qualifiedName() + "': facet '" + spec.inputFieldName()
+                    + "' has no own fragment on the condition row; the fragment producer builds one"
+                    + " per facet spec");
+            }
+            entries.add(new FacetPlan.Entry(spec, new GlueCall(fragment, takesEnv),
+                groupingOf(spec, own, row.table(), qtf)));
         }
-        return new FacetPlan(new GlueCall(base, takesEnv), entries);
+        return new FacetPlan(new GlueCall(base, takesEnv), entries, row.table().primaryKeyColumns());
+    }
+
+    /**
+     * A facet's grouping, borrowed off its own filter term: a term with a reach groups on the
+     * column at the reach's end, one without groups on the carrier's own column. Only a facet whose
+     * term was suppressed ({@code @condition(override: true)} on the carrier field or its filter
+     * argument) has no term to borrow from; a direct one resolves its {@code @field(name:)} column
+     * by name on the carrier's table, a reference-bound one has no reach to join along and is
+     * refused at the validator, so reaching here is a production defect.
+     */
+    private static FacetPlan.Grouping groupingOf(FacetSpec spec, FacetFragment.Own own,
+            no.sikt.graphitron.model.jooq.TableRef table, QueryField.QueryTableField qtf) {
+        String facet = "faceted coordinate '" + qtf.qualifiedName() + "': facet '"
+            + spec.inputFieldName() + "'";
+        if (own.term().isEmpty()) {
+            if (spec.referenceBound()) {
+                throw new IllegalStateException(facet + " is @reference-bound but has no own filter"
+                    + " term to take its join path from; the validator rejects a @reference facet"
+                    + " under @condition(override: true)");
+            }
+            return new FacetPlan.Grouping.CarrierColumn(table.column(spec.columnName())
+                .orElseThrow(() -> new IllegalStateException(facet + " names column '"
+                    + spec.columnName() + "', which table '" + table.tableName() + "' does not"
+                    + " carry; the classifier resolved the @field column before production")));
+        }
+        var term = own.term().get();
+        if (term.columns().size() != 1) {
+            throw new IllegalStateException(facet + "'s own filter term compares "
+                + term.columns().size() + " columns; a facet groups on exactly one");
+        }
+        return term.reach().isEmpty()
+            ? new FacetPlan.Grouping.CarrierColumn(term.columns().getFirst())
+            : new FacetPlan.Grouping.Reached(term.reach(), term.columns().getFirst());
     }
 
     private static void requireFragment(List<no.sikt.graphitron.command.UnitMethodRef> fragmentRefs,

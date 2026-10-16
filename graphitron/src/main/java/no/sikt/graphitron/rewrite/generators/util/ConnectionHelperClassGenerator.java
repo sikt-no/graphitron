@@ -334,7 +334,11 @@ public class ConnectionHelperClassGenerator {
         // The facet sibling of totalCount. One UNION ALL of per-facet GROUP BY arms, each
         // under the connection filter minus that facet's own predicate (base AND every other
         // facet's predicate), value cast to TEXT to unify the arms and decoded back through the
-        // column's DataType. Lazy on selection like totalCount (this resolver only runs when the
+        // column's DataType. Each arm reads its source, typed group column and count key off its
+        // FacetSpec as the launcher bound them: a facet on the carrier's own table counts rows of
+        // the carrier's FROM, a @reference facet counts distinct carrier keys over that FROM
+        // inner-joined along its path, since a path that fans out repeats a carrier row once per
+        // related row and the filter's EXISTS selects it once. Lazy on selection like totalCount (this resolver only runs when the
         // client selects facets; unselected facet fields contribute no arm). Returns null on a
         // carrier with no facet plan (the scatter / non-faceted contract, mirroring totalCount's
         // null-(table, condition) gate) and an empty map when no facet field is selected.
@@ -375,20 +379,19 @@ public class ConnectionHelperClassGenerator {
             .addCode("if (specs.isEmpty()) return $T.of();\n", MAP)
             .addCode(lazyDslDeclaration)
             .addStatement("$T union = null", orderByStepOfRecord3)
-            .addStatement("$T<String, $T> colByLabel = new $T<>()",
-                ClassName.get("java.util", "Map"), jooqFieldWildcard, hashMap)
             .addCode("for ($T f : specs) {\n", facetSpecClass)
             .addCode("    $T cond = cr.facetBaseCondition();\n", conditionClass)
             .addCode("    for ($T<String, $T> e : cr.facetConditions().entrySet()) {\n",
                 ClassName.get("java.util", "Map", "Entry"), conditionClass)
             .addCode("        if (!e.getKey().equals(f.label())) cond = cond.and(e.getValue());\n")
             .addCode("    }\n")
-            .addCode("    $T col = facetColumn(cr.table(), f.columnName());\n", jooqFieldWildcard)
-            .addCode("    colByLabel.put(f.label(), col);\n")
+            .addCode("    $T col = f.column();\n", jooqFieldWildcard)
             .addCode("    if (!f.valueNullable()) cond = cond.and(col.isNotNull());\n")
+            .addCode("    $T cnt = f.countKey().length == 0 ? $T.count() : $T.countDistinct(f.countKey());\n",
+                ParameterizedTypeName.get(JOOQ_FIELD, ClassName.get(Integer.class)), DSL, DSL)
             .addCode("    $T arm = dsl.select($T.inline(f.label()).as(\"facet\"),"
-                + " col.cast(String.class).as(\"value\"), $T.count().as(\"cnt\"))\n", orderByStepOfRecord3, DSL, DSL)
-            .addCode("        .from(cr.table()).where(cond).groupBy(col);\n")
+                + " col.cast(String.class).as(\"value\"), cnt.as(\"cnt\"))\n", orderByStepOfRecord3, DSL)
+            .addCode("        .from(f.source()).where(cond).groupBy(col);\n")
             .addCode("    union = union == null ? arm : union.unionAll(arm);\n")
             .addCode("}\n")
             .addStatement("$T<$T> rows = union.fetch()", RESULT, record3)
@@ -403,7 +406,7 @@ public class ConnectionHelperClassGenerator {
             .addCode("for ($T row : rows) {\n", record3)
             .addCode("    $T f = byLabel.get(row.value1());\n", facetSpecClass)
             .addCode("    if (f == null) continue;\n")
-            .addCode("    $T col = colByLabel.get(f.label());\n", jooqFieldWildcard)
+            .addCode("    $T col = f.column();\n", jooqFieldWildcard)
             // DSL.val(Object, DataType<T>).getValue() is the non-deprecated wire→typed coercion,
             // the same form decodeCursor's replacement uses: the column's Converter applies,
             // null in, null out (a preserved NULL bucket stays null).
@@ -449,24 +452,6 @@ public class ConnectionHelperClassGenerator {
             .addCode("    return ((Comparable) a).compareTo(b);\n")
             .addCode("}\n")
             .addStatement("return String.valueOf(a).compareTo(String.valueOf(b))")
-            .build();
-
-        // Runtime column resolution for a facet's @field(name:) value: jOOQ's Table.field(String)
-        // is case-sensitive, while directive values may differ in case from the generated names,
-        // so fall back to a case-insensitive scan before failing loudly.
-        var facetColumnHelper = MethodSpec.methodBuilder("facetColumn")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .returns(jooqFieldWildcard)
-            .addParameter(ParameterizedTypeName.get(ClassName.get("org.jooq", "Table"),
-                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)), "table")
-            .addParameter(String.class, "columnName")
-            .addStatement("$T col = table.field(columnName)", jooqFieldWildcard)
-            .addCode("if (col != null) return col;\n")
-            .addCode("for ($T f : table.fields()) {\n", jooqFieldWildcard)
-            .addCode("    if (f.getName().equalsIgnoreCase(columnName)) return f;\n")
-            .addCode("}\n")
-            .addStatement("throw new IllegalStateException(\"facet column '\" + columnName"
-                + " + \"' not found on table '\" + table.getName() + \"'\")")
             .build();
 
         // Mirrors TypeFetcherGenerator.buildGraphitronContextHelper. Emitted on this helper so
@@ -517,7 +502,6 @@ public class ConnectionHelperClassGenerator {
             .addMethod(facetsMethod)
             .addMethod(compareFacetEntries)
             .addMethod(compareFacetValues)
-            .addMethod(facetColumnHelper)
             .addMethod(graphitronContextShim)
             .addMethod(edgeNodeMethod)
             .addMethod(edgeCursorMethod);

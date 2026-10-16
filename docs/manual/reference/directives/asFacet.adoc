@@ -45,6 +45,24 @@ type IntFacetValue        { value: Int!        count: Int! }
 
 A query selecting any facet field issues exactly one extra SQL statement per request: a `UNION ALL` of per-facet `GROUP BY` arms, one arm per *selected* facet, each under its filter-minus-self predicate. When no facet field is selected, the aggregate is skipped entirely. Each facet's entries are ordered count descending, then within equal counts by the decoded value's natural order (integers numerically, enums in declaration order), a preserved NULL bucket sorting after non-null values.
 
+== Facets over a related table
+
+A facet field may reach its column through `@reference`, the same way a filter field does. The counts group on the column at the end of the path and count rows of the connection, not rows of the joined table:
+
+[source,graphql]
+----
+input CityFacetFilter {
+    country:  [String!] @reference(path: [{table: "country"}]) @field(name: "country") @asFacet
+    district: [String!] @reference(path: [{table: "address"}]) @field(name: "district") @asFacet
+}
+----
+
+`district` counts cities, not addresses: a city with two addresses in the same district counts once in that district's bucket. A city with addresses in two districts counts once in each, so the counts of a facet whose path fans out can add up to more than the connection's `totalCount`; each count is still exactly the number of cities `filter: { district: [value] }` returns.
+
+A row with no related row at the end of the path appears in no bucket, just as no filter value selects it. A related row whose column is NULL follows the nullable-element rule above.
+
+Every path shape a `@reference` filter field accepts is served: one hop or several, a junction table, a path that fans out, and hops that join or narrow with `condition:`.
+
 == Failure semantics
 
 Facets are a best-effort aggregate, never a structural guarantee. The `facets` object and each per-facet field are nullable, so a facet query failure or timeout degrades to `null` (plus an entry in the GraphQL `errors` array) without propagating through non-null bubbling to the connection or the request; the page of results still returns.
@@ -52,7 +70,9 @@ Facets are a best-effort aggregate, never a structural guarantee. The `facets` o
 == Constraints
 
 * Valid only on fields of an input type used as the filter input of at least one `@asConnection`-bearing field; an input type no connection consumes is rejected at build time (the expansion would be dead schema). An input shared by connection and non-connection consumers is fine: the directive surfaces facets at the connection use sites and is inert at the others.
-* The field must be a plain `@field(name:)`-bound scalar or enum column. `@reference` / `@condition` / `@nodeId` bindings, `ID`-typed fields, and input-object fields are rejected (join-mediated and node-ID facets are a follow-up).
+* The field must be bound to a column with `@field(name:)`, either on the connection's own table or, with `@reference(path:)`, on the table the path ends at. `@condition` / `@nodeId` bindings, `ID`-typed fields, and input-object fields are rejected (node-ID and condition facets are a follow-up).
+* A `@reference` facet counts distinct rows by the connection's primary key, so it needs a connection over a table that has one. A `@routine`-sourced connection, or one over a table with no primary key, rejects a `@reference` facet at build time.
+* A `@reference` facet cannot sit under `@condition(override: true)` on the connection field or its filter argument: the override replaces the generated filter the facet's join is taken from.
 * The field must be nullable (optional): an always-active filter value could never show unfiltered pivot counts, and the generated filter-minus-self fragments suppress a facet's own predicate by leaving it unset.
 * v1 serves facets only on root `Query` connections over a `@table`-backed object element. A faceted child (`@splitQuery`) or interface/union connection is rejected at build time (its facets would resolve to null); lifting this is a follow-up.
 * A facet's name must be unique across the carrier's whole filter surface (every filter input's fields and every top-level argument): the facet fragments and the generated condition method key parameters by name, so any same-named sibling filter is rejected at build time.
@@ -63,6 +83,7 @@ Facets are a best-effort aggregate, never a structural guarantee. The `facets` o
 
 * xref:asConnection.adoc[`@asConnection`] owns the Connection synthesis the facets ride on.
 * xref:field.adoc[`@field`] binds the facet to its column.
+* xref:reference.adoc[`@reference`] reaches that column on a related table.
 * xref:defaultOrder.adoc[`@defaultOrder`] anchors the connection's pagination; facets do not affect it.
 
 xref:../index.adoc[← Reference index]

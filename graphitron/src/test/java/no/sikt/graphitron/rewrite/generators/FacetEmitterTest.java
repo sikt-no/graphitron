@@ -71,6 +71,15 @@ class FacetEmitterTest {
             .doesNotContain("facets");
     }
 
+    @Test
+    void connectionHelper_resolvesNoFacetColumnByNameAtRuntime() {
+        // The launcher binds each facet's typed column, source and count key; the helper keeps its
+        // facets arm and no longer declares a runtime by-name column lookup.
+        var helper = no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator
+            .generate(DEFAULT_OUTPUT_PACKAGE).getFirst();
+        assertThat(methodNames(helper)).contains("facets").doesNotContain("facetColumn");
+    }
+
     private static TypeSpec queryConditions(GraphitronSchema schema) {
         return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
             .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()

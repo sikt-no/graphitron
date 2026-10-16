@@ -1,4 +1,4 @@
-"The applications @asFacet declines to bind, stated as the rows that are absent. A facet counts by reading one column directly, so a field that also carries @reference, @condition or @nodeId is asking for something else: a join-mediated reach, an authored predicate, or the node-id machinery. Each of the three declines and the clean field beside them is the control, an empty binding relation being something this document would otherwise pass whether the rule worked or not."
+"The applications @asFacet declines to bind, stated as the rows that are absent. A facet counts by reading one column, so a field that also carries @condition or @nodeId is asking for something else: an authored predicate, or the node-id machinery. @reference is not a decline: it names the table the @field column is on, so its field binds like the clean one. Each of the two declines and the two bound fields beside them is the control, an empty binding relation being something this document would otherwise pass whether the rule worked or not."
 type Film @table(name: "film") { id: ID rating: String }
 
 input FilmFilter {
@@ -14,6 +14,7 @@ extend type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_facet_binding", rows: """
-  type_name,  field_name, column_name
-  FilmFilter, rating,     rating
+  type_name,  field_name,   column_name
+  FilmFilter, rating,       rating
+  FilmFilter, viaReference, rating
   """)

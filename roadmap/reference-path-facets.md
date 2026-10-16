@@ -297,6 +297,25 @@ sees a located error rather than a facet that resolves wrong.
   The existing `filmsFaceted` tests select only their own facets, so their values are unchanged; they
   also pin that the move off the runtime column lookup kept direct-facet SQL as it was.
 
+## Implementation notes
+
+Landed as planned. Where the code settled a detail the plan left open:
+
+- A hop's `filter()` rides the facet join as `.and(<filter call>)` appended to the hop's
+  `PathFragments.emitForwardBridging` output, so it narrows that hop's `ON` for both the keyed
+  (`onKey`) and the predicate (`on`) arms.
+- Hop aliases are `facet<i>Hop<h>`, used as both the Java local and the SQL alias, so two reference
+  facets crossing one table get distinct aliases and none collides with the condition glue's
+  `<table>_fkt<r>_<h>` `EXISTS` aliases that share the arm's `WHERE`.
+- `FacetPlan` carries `distinctKey` unconditionally (the condition row's table's primary key); only
+  `Reached` entries bind it, so a carrier-column arm still counts `count(*)`. `hasReachedGrouping()`
+  is what the routine-chain backstop in `LauncherCommands.routineRow` reads.
+- The no-primary-key limit has its own pipeline rejection test
+  (`referenceFacetOnCarrierWithoutPrimaryKey_rejected`, over `role_assignment`), beside the three the
+  Tests section names.
+- The generated helper's decode loop reads `f.column()` too, so its per-label column map went with
+  `facetColumn`.
+
 ## Retired vocabulary
 
 - `ConnectionHelper.facetColumn` and the runtime `FacetSpec.columnName` component: the generator, the

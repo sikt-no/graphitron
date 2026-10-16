@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -195,32 +196,49 @@ public class ConnectionResultClassGenerator {
                 + " page.backward(), page.extraFields(), table, condition," + facetPlanTail)
             .build();
 
-        // FacetSpec — the runtime decode entry for one facet: the GraphQL-facing label (the
-        // facets field name), the GROUP BY column, and whether the facet value is nullable (a
-        // non-null value appends an IS NOT NULL scrub to its arm).
+        // FacetSpec: the runtime entry for one facet arm. The GraphQL-facing label (the facets
+        // field name), the arm's source (the carrier's FROM, or that FROM inner-joined along a
+        // @reference path), the typed GROUP BY column on that source, whether the facet value is
+        // nullable (a non-null value appends an IS NOT NULL scrub to its arm), and the count key:
+        // empty counts rows, non-empty counts distinct carrier keys (a joined source can repeat
+        // a carrier row). All resolved by the launcher; the helper reads them without branching
+        // on what kind of facet it is.
+        var fieldArray = ArrayTypeName.of(fieldWildcard);
         var facetSpecClass = TypeSpec.classBuilder("FacetSpec")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .addField(FieldSpec.builder(String.class, "label", Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(String.class, "columnName", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(tableWildcard, "source", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(fieldWildcard, "column", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(boolean.class, "valueNullable", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(fieldArray, "countKey", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
                 .addParameter(String.class, "label")
-                .addParameter(String.class, "columnName")
+                .addParameter(tableWildcard, "source")
+                .addParameter(fieldWildcard, "column")
                 .addParameter(boolean.class, "valueNullable")
+                .addParameter(fieldArray, "countKey")
                 .addStatement("this.label = label")
-                .addStatement("this.columnName = columnName")
+                .addStatement("this.source = source")
+                .addStatement("this.column = column")
                 .addStatement("this.valueNullable = valueNullable")
+                .addStatement("this.countKey = countKey")
                 .build())
             .addMethod(MethodSpec.methodBuilder("label")
                 .addModifiers(Modifier.PUBLIC).returns(String.class)
                 .addStatement("return label").build())
-            .addMethod(MethodSpec.methodBuilder("columnName")
-                .addModifiers(Modifier.PUBLIC).returns(String.class)
-                .addStatement("return columnName").build())
+            .addMethod(MethodSpec.methodBuilder("source")
+                .addModifiers(Modifier.PUBLIC).returns(tableWildcard)
+                .addStatement("return source").build())
+            .addMethod(MethodSpec.methodBuilder("column")
+                .addModifiers(Modifier.PUBLIC).returns(fieldWildcard)
+                .addStatement("return column").build())
             .addMethod(MethodSpec.methodBuilder("valueNullable")
                 .addModifiers(Modifier.PUBLIC).returns(boolean.class)
                 .addStatement("return valueNullable").build())
+            .addMethod(MethodSpec.methodBuilder("countKey")
+                .addModifiers(Modifier.PUBLIC).returns(fieldArray)
+                .addStatement("return countKey").build())
             .build();
 
         // Accessors

@@ -594,11 +594,36 @@ class ConnectionPromoterTest {
 
         var conn = (ConnectionType) bctx.types.get("QueryFilmsConnection");
         assertThat(conn.facets()).containsExactly(
-            new FacetSpec("filter", "rating", "rating", "Rating", false, "RatingFacetValue"),
-            new FacetSpec("filter", "length", "length", "Int", true, "IntFacetValueOrNull"));
+            new FacetSpec("filter", "rating", "rating", "Rating", false, "RatingFacetValue", false),
+            new FacetSpec("filter", "length", "length", "Int", true, "IntFacetValueOrNull", false));
         assertThat(bctx.types.get("QueryFilmsConnectionFacets")).isInstanceOf(FacetsType.class);
         assertThat(bctx.types.get("RatingFacetValue")).isInstanceOf(FacetValueType.class);
         assertThat(bctx.types.get("IntFacetValueOrNull")).isInstanceOf(FacetValueType.class);
+    }
+
+    @Test
+    void asFacetThroughReference_isSynthesisedAndFlaggedReferenceBound() {
+        // A direct facet and a reference facet side by side: both synthesise, and only the one
+        // carrying @reference is flagged, the definition-keyed fact the planner's backstop reads.
+        String sdl = """
+            type Film { id: ID! }
+            input FilmFilter {
+                title: [String!] @field(name: "title") @asFacet
+                languageName: [String!] @field(name: "name")
+                    @reference(path: [{key: "film_language_id_fkey"}]) @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection
+            }
+            """;
+        var bctx = buildBuildContext(sdl);
+
+        promoteAll(bctx);
+
+        var conn = (ConnectionType) bctx.types.get("QueryFilmsConnection");
+        assertThat(conn.facets()).containsExactly(
+            new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue", false),
+            new FacetSpec("filter", "languageName", "name", "String", false, "StringFacetValue", true));
     }
 
     @Test

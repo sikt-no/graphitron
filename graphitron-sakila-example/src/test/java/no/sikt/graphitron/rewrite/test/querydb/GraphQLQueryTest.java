@@ -2230,6 +2230,194 @@ class GraphQLQueryTest {
             .noneMatch(s -> s.contains("length"));
     }
 
+    // ===== @asFacet through @reference: facet counts over a joined table =====
+    //
+    // Seed: Lethbridge (United States; addresses 1 and 3 in Alberta, 4 in Tasmania), Rome
+    // (Italy; address 2 in Lazio), Tokyo (Japan; no address). Film casts: film 1 GUINESS and
+    // WAHLBERG, film 2 GUINESS and CHASE, film 3 GUINESS, film 4 WAHLBERG, film 5 CHASE (first
+    // names PENELOPE GUINESS, NICK WAHLBERG, ED CHASE). film_actor holds seven rows. Each count is
+    // the number of root rows selecting that value alone returns, so a path that fans out counts
+    // distinct roots, and a facet's counts may sum past the root count.
+
+    @SuppressWarnings("unchecked")
+    private static List<Map<String, Object>> facetValues(Map<String, Object> data, String connection,
+            String facetField) {
+        var conn = (Map<String, Object>) data.get(connection);
+        var facets = (Map<String, Object>) conn.get("facets");
+        return (List<Map<String, Object>>) facets.get(facetField);
+    }
+
+    private static List<org.assertj.core.groups.Tuple> buckets(List<Map<String, Object>> values) {
+        return values.stream()
+            .map(v -> org.assertj.core.groups.Tuple.tuple(v.get("value"), v.get("count")))
+            .toList();
+    }
+
+    /**
+     * The district buckets over the seeded addresses only. {@code AddressRecordService.upsertAddress},
+     * exercised elsewhere in this class, inserts a Lethbridge address in "fixture district" that
+     * outlives its test, so whether that bucket exists depends on test order; each seeded bucket's
+     * count is unaffected by it.
+     */
+    private static List<org.assertj.core.groups.Tuple> seededDistricts(Map<String, Object> data) {
+        return buckets(facetValues(data, "citiesFaceted", "district").stream()
+            .filter(v -> List.of("Alberta", "Lazio", "Tasmania").contains(v.get("value")))
+            .toList());
+    }
+
+    @Test
+    void citiesFaceted_referenceFacets_countDistinctCities() {
+        // district crosses city -> address, which fans out: Lethbridge's two Alberta addresses
+        // count it once, where count(*) over the join would say 2. Tokyo has no address, so it
+        // sits in no district bucket, just as no district filter value selects it.
+        Map<String, Object> data = execute(
+            "{ citiesFaceted { facets { country { value count } district { value count } } } }");
+        assertThat(buckets(facetValues(data, "citiesFaceted", "country"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("Italy", 1),
+            org.assertj.core.groups.Tuple.tuple("Japan", 1),
+            org.assertj.core.groups.Tuple.tuple("United States", 1));
+        assertThat(seededDistricts(data)).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("Alberta", 1),
+            org.assertj.core.groups.Tuple.tuple("Lazio", 1),
+            org.assertj.core.groups.Tuple.tuple("Tasmania", 1));
+    }
+
+    @Test
+    void citiesFaceted_filterOnOneReferenceFacet_ownCountsUnchanged_siblingRestricted() {
+        Map<String, Object> data = execute("""
+            { citiesFaceted(filter: { country: ["United States"] }) {
+                facets { country { value count } district { value count } }
+            } }""");
+        assertThat(buckets(facetValues(data, "citiesFaceted", "country"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("Italy", 1),
+            org.assertj.core.groups.Tuple.tuple("Japan", 1),
+            org.assertj.core.groups.Tuple.tuple("United States", 1));
+        assertThat(seededDistricts(data)).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("Alberta", 1),
+            org.assertj.core.groups.Tuple.tuple("Tasmania", 1));
+    }
+
+    @Test
+    void citiesFaceted_bucketValueRoundTrips_toExactlyItsCount() {
+        Map<String, Object> data = execute("""
+            { citiesFaceted(filter: { district: ["Alberta"] }) {
+                facets { country { value count } }
+                nodes { cityName }
+            } }""");
+        assertThat(data).extractingByKey("citiesFaceted", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("cityName"))
+            .containsExactly("Lethbridge");
+        assertThat(buckets(facetValues(data, "citiesFaceted", "country"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("United States", 1));
+    }
+
+    @Test
+    void filmsFaceted_junctionReferenceFacet_countsFilmsPerActor() {
+        // Bounded to the seeded films (see filmsFaceted_noFacetFilter_countsMatchPlainAggregates).
+        // The counts sum to seven over five films: a film with two actors is in two buckets.
+        Map<String, Object> data = execute(
+            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            + "{ facets { actor { value count } } } }");
+        assertThat(buckets(facetValues(data, "filmsFaceted", "actor"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("GUINESS", 3),
+            org.assertj.core.groups.Tuple.tuple("CHASE", 2),
+            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 2));
+    }
+
+    @Test
+    void filmsFaceted_junctionReferenceFacet_restrictedBySiblingFacet() {
+        Map<String, Object> data = execute("""
+            { filmsFaceted(filter: { rating: [G] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+                facets { actor { value count } }
+            } }""");
+        assertThat(buckets(facetValues(data, "filmsFaceted", "actor"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("CHASE", 1),
+            org.assertj.core.groups.Tuple.tuple("GUINESS", 1),
+            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 1));
+    }
+
+    @Test
+    void filmsFaceted_junctionReferenceFacet_bucketValueRoundTrips() {
+        Map<String, Object> data = execute("""
+            { filmsFaceted(filter: { actor: ["CHASE"] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+                facets { rating { value count } }
+                nodes { title }
+            } }""");
+        assertThat(data).extractingByKey("filmsFaceted", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"))
+            .containsExactly("ACE GOLDFINGER", "AGENT TRUMAN");
+        assertThat(buckets(facetValues(data, "filmsFaceted", "rating"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("G", 1),
+            org.assertj.core.groups.Tuple.tuple("PG", 1));
+    }
+
+    @Test
+    void filmsFaceted_conditionJoinHopFacet_countsAndRoundTrips() {
+        Map<String, Object> data = execute(
+            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            + "{ facets { actorFirstName { value count } } } }");
+        assertThat(buckets(facetValues(data, "filmsFaceted", "actorFirstName"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("PENELOPE", 3),
+            org.assertj.core.groups.Tuple.tuple("ED", 2),
+            org.assertj.core.groups.Tuple.tuple("NICK", 2));
+
+        Map<String, Object> picked = execute("""
+            { filmsFaceted(filter: { actorFirstName: ["NICK"] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+                facets { rating { value count } }
+                nodes { filmId }
+            } }""");
+        assertThat(picked).extractingByKey("filmsFaceted", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("filmId"))
+            .containsExactly(1, 4);
+        assertThat(buckets(facetValues(picked, "filmsFaceted", "rating"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("G", 1),
+            org.assertj.core.groups.Tuple.tuple("PG", 1));
+    }
+
+    @Test
+    void filmsFaceted_hopConditionFacet_conditionNarrowsTheJoin() {
+        // The hop's condition keeps actors not named ED, so ED CHASE never joins and no CHASE
+        // bucket appears; without it CHASE 2 would. The filter honours the same condition.
+        Map<String, Object> data = execute(
+            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            + "{ facets { castExceptEd { value count } } } }");
+        assertThat(buckets(facetValues(data, "filmsFaceted", "castExceptEd"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("GUINESS", 3),
+            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 2));
+
+        Map<String, Object> picked = execute("""
+            { filmsFaceted(filter: { castExceptEd: ["CHASE"] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+                nodes { title }
+            } }""");
+        assertThat(picked).extractingByKey("filmsFaceted", as(MAP))
+            .extractingByKey("nodes", as(LIST))
+            .isEmpty();
+    }
+
+    @Test
+    void filmActorsFaceted_compositeKeyRoot_countsDistinctOverBothKeyColumns() {
+        Map<String, Object> data = execute(
+            "{ filmActorsFaceted { facets { filmTitle { value count } } } }");
+        assertThat(buckets(facetValues(data, "filmActorsFaceted", "filmTitle"))).containsExactly(
+            org.assertj.core.groups.Tuple.tuple("ACADEMY DINOSAUR", 2),
+            org.assertj.core.groups.Tuple.tuple("ACE GOLDFINGER", 2),
+            org.assertj.core.groups.Tuple.tuple("ADAPTATION HOLES", 1),
+            org.assertj.core.groups.Tuple.tuple("AFFAIR PREJUDICE", 1),
+            org.assertj.core.groups.Tuple.tuple("AGENT TRUMAN", 1));
+
+        Map<String, Object> picked = execute("""
+            { filmActorsFaceted(filter: { filmTitle: ["ACE GOLDFINGER"] }) {
+                nodes { filmId actorId }
+            } }""");
+        assertThat(picked).extractingByKey("filmActorsFaceted", as(MAP))
+            .extractingByKey("nodes", as(list(Map.class)))
+            .hasSize(2)
+            .allSatisfy(n -> assertThat(n.get("filmId")).isEqualTo(2));
+    }
+
     // ===== filmsOrderedConnection — dynamic ordering pagination =====
 
     @Test

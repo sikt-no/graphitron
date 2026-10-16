@@ -80,6 +80,16 @@ public final class ReferencePathConditionFixtures {
     }
 
     /**
+     * Hop-filter fixture: the {@code condition:} half of a {@code {key:, condition:}} hop from the
+     * {@code film_actor} junction to {@code actor}, keeping every actor but ED. The key still joins
+     * the hop; this narrows it. Used by {@code FilmFacetFilter.castExceptEd}, where the missing
+     * CHASE bucket (ED CHASE is the only CHASE) shows the condition reached the facet's join.
+     */
+    public static Condition actorIsNotEd(FilmActor filmActor, Actor actor) {
+        return actor.FIRST_NAME.ne("ED");
+    }
+
+    /**
      * Filter-path fixture: the natural {@code customer.address_id = address.address_id} FK as a
      * predicate, with <em>concrete</em> parameter types. A filter site carries no return-type
      * {@code @table} binding, so the target table is read off this signature; the wildcard-typed

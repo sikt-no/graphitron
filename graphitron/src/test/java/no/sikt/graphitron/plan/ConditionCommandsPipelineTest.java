@@ -5,6 +5,7 @@ import no.sikt.graphitron.command.AuthoredMethodRef;
 import no.sikt.graphitron.command.ColumnTerm;
 import no.sikt.graphitron.command.ConditionCommand;
 import no.sikt.graphitron.command.MatchKind;
+import no.sikt.graphitron.command.FacetFragment;
 import no.sikt.graphitron.command.OuterLift;
 import no.sikt.graphitron.command.Predicate;
 import no.sikt.graphitron.command.PresenceGuard;
@@ -124,6 +125,39 @@ class ConditionCommandsPipelineTest {
         assertThat(base.lifts()).isEmpty();
         assertThat(generatedTermLocals(row.facets().get(1).predicates())).containsExactly("title");
         assertThat(generatedTermLocals(row.facets().get(2).predicates())).containsExactly("length");
+    }
+
+    @Test
+    void facetedCoordinate_ownFragmentsKeyedByInputFieldName_referenceTermCarriesTheReach() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                title: [String!] @field(name: "title") @asFacet
+                actor: [String!] @field(name: "last_name") @asFacet
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        var row = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE).rows().get(0);
+
+        // One base, then one own fragment per facet keyed by its input field name; the own
+        // fragment carries the facet's term, the reference facet's with the narrowed reach.
+        assertThat(row.facets()).hasSize(3);
+        assertThat(row.facets().get(0)).isInstanceOf(FacetFragment.Base.class);
+        assertThat(row.facets().subList(1, 3))
+            .allSatisfy(f -> assertThat(f).isInstanceOf(FacetFragment.Own.class))
+            .extracting(f -> ((FacetFragment.Own) f).inputFieldName())
+            .containsExactly("title", "actor");
+        var title = ((FacetFragment.Own) row.facets().get(1)).term().orElseThrow();
+        assertThat(title.reach().isEmpty()).isTrue();
+        assertThat(title.columns()).extracting(c -> c.sqlName()).containsExactly("title");
+        var actor = ((FacetFragment.Own) row.facets().get(2)).term().orElseThrow();
+        assertThat(actor.reach().hops()).extracting(h -> h.targetTable().tableName())
+            .containsExactly("film_actor", "actor");
+        assertThat(actor.columns()).extracting(c -> c.sqlName()).containsExactly("last_name");
     }
 
     @Test

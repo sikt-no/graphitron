@@ -39,10 +39,12 @@ import java.util.Optional;
  * <p>{@code allColumns} is the ordered list of every column on the table (each a fully resolved
  * {@link ColumnRef}), populated in the same catalog traversal that fixes
  * {@code primaryKeyColumns}. It answers "what columns does this table have?" for classification,
- * which runs after the catalog is closed and so cannot reach back for the answer. Every reader is
- * classification-time; no generator drives a per-column emit off it, because a key extraction
- * takes the columns it needs from the field's own {@code SourceKey}. Empty only when constructed
- * outside the catalog flow (test fixtures that do not exercise those paths).
+ * which runs after the catalog is closed and so cannot reach back for the answer, and for the
+ * planner where a fact arrives as an authored name with no resolved column to borrow (a facet
+ * whose own filter term an override suppressed resolves its column through {@link #column}).
+ * No generator iterates it to drive a per-column emit, because a key extraction takes the
+ * columns it needs from the field's own {@code SourceKey}. Empty only when constructed outside
+ * the catalog flow (test fixtures that do not exercise those paths).
  *
  * <p>A type carrying both {@code @table} and {@code @node} is classified as
  * {@code GraphitronType.NodeType} rather than {@code GraphitronType.TableType}.

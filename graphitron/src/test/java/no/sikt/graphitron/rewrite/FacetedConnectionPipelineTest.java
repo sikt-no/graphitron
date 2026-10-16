@@ -47,8 +47,8 @@ class FacetedConnectionPipelineTest {
         assertThat(schema.types().get("QueryFilmsConnection"))
             .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
                 assertThat(conn.facets()).containsExactly(
-                    new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue"),
-                    new FacetSpec("filter", "length", "length", "Int", true, "IntFacetValueOrNull")));
+                    new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue", false),
+                    new FacetSpec("filter", "length", "length", "Int", true, "IntFacetValueOrNull", false)));
         assertThat(schema.types().get("QueryFilmsConnectionFacets"))
             .isInstanceOfSatisfying(GraphitronType.FacetsType.class, ft ->
                 assertThat(ft.connectionName()).isEqualTo("QueryFilmsConnection"));
@@ -82,7 +82,7 @@ class FacetedConnectionPipelineTest {
         assertThat(schema.types().get("QueryFilmsConnection"))
             .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
                 assertThat(conn.facets()).containsExactly(
-                    new FacetSpec("filter", "title", "title", "String", true, "StringFacetValueOrNull")));
+                    new FacetSpec("filter", "title", "title", "String", true, "StringFacetValueOrNull", false)));
     }
 
     @Test
@@ -139,11 +139,14 @@ class FacetedConnectionPipelineTest {
         assertThat(schema.diagnostics())
             .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
                 && e.message().contains("FilmFilter.title")
-                && e.message().contains("@asFacet supports only direct-column bindings"));
+                && e.message().contains("remove @condition / @nodeId from the facet field"));
     }
 
     @Test
-    void asFacetOnReferenceBoundField_rejected() {
+    void asFacetOnReferenceBoundField_synthesisesTheFacet() {
+        // @reference names the table the @field column is on; the facet surface depends only on
+        // the value type and nullability, so the carrier synthesises the facet like a direct one,
+        // flagged reference-bound for the planner.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmFilter {
@@ -155,17 +158,21 @@ class FacetedConnectionPipelineTest {
             }
             """);
 
-        assertThat(schema.diagnostics())
-            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
-                && e.message().contains("FilmFilter.languageName")
-                && e.message().contains("@asFacet supports only direct-column bindings"));
+        assertThat(schema.diagnostics()).noneMatch(e -> e.message().contains("@asFacet")
+            || e.message().contains("@reference facet"));
+        assertThat(schema.types().get("QueryFilmsConnection"))
+            .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
+                assertThat(conn.facets()).containsExactly(
+                    new FacetSpec("filter", "languageName", "name", "String", false, "StringFacetValue", true)));
+        assertThat(schema.types().get("StringFacetValue"))
+            .isInstanceOf(GraphitronType.FacetValueType.class);
     }
 
     @Test
     void asFacetOnIdField_rejected() {
         // Rejecting the ID type outright, not just @nodeId co-occurrence, keeps the rule readable
         // off the SDL: ID is where a node-id reading can arise without a directive to point at, and
-        // the v1 direct-column facet emitter serves only plain columns.
+        // a facet groups on a plain column.
         var schema = TestSchemaHelper.buildSchema("""
             type Film @table(name: "film") { title: String }
             input FilmFilter {
@@ -197,7 +204,7 @@ class FacetedConnectionPipelineTest {
         assertThat(schema.diagnostics())
             .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
                 && e.message().contains("FilmFilter.ids")
-                && e.message().contains("@asFacet supports only direct-column bindings"));
+                && e.message().contains("remove @condition / @nodeId from the facet field"));
     }
 
     @Test
@@ -310,13 +317,13 @@ class FacetedConnectionPipelineTest {
         assertThat(schema.types().get("LegacyFilmsConnection"))
             .isInstanceOfSatisfying(GraphitronType.ConnectionType.class, conn ->
                 assertThat(conn.facets()).containsExactly(
-                    new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue")));
+                    new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue", false)));
         assertThat(schema.types().get("LegacyFilmsConnectionFacets"))
             .isInstanceOfSatisfying(GraphitronType.FacetsType.class, ft ->
                 assertThat(ft.connectionName()).isEqualTo("LegacyFilmsConnection"));
         // The plan-side lookup is coordinate-keyed, so the overridden name resolves identically.
         assertThat(schema.connectionSynthesis().facetsAt("Query", "films"))
-            .containsExactly(new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue"));
+            .containsExactly(new FacetSpec("filter", "title", "title", "String", false, "StringFacetValue", false));
     }
 
     @Test
@@ -431,5 +438,89 @@ class FacetedConnectionPipelineTest {
 
         assertThat(schema.diagnostics())
             .noneMatch(e -> e.message().contains("@asFacet"));
+    }
+
+    // ===== Rejections (use-keyed, @reference facets) =====
+
+    @Test
+    void referenceFacetOnRoutineCarrier_rejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                languageName: [String!] @field(name: "name")
+                    @reference(path: [{key: "film_language_id_fkey"}]) @asFacet
+            }
+            type Query {
+                recent(actorId: Int!, minLength: Int!, filter: FilmFilter): [Film!]! @asConnection
+                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                    @reference(path: [{table: "film"}])
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.languageName")
+                && e.message().contains("consumer 'Query.recent' reads from a @routine"));
+    }
+
+    @Test
+    void referenceFacetOnCarrierWithoutPrimaryKey_rejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type RoleAssignment @table(name: "role_assignment") { roleCode: String @field(name: "role_code") }
+            input RoleAssignmentFilter {
+                holderName: [String!] @field(name: "holder_name")
+                    @reference(path: [{table: "role_holder"}]) @asFacet
+            }
+            type Query {
+                assignments(filter: RoleAssignmentFilter): [RoleAssignment!]! @asConnection
+                    @defaultOrder(fields: [{name: "role_code"}])
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("RoleAssignmentFilter.holderName")
+                && e.message().contains("returns rows of table 'role_assignment', which has no primary key"));
+    }
+
+    @Test
+    void referenceFacetUnderFieldOverride_rejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                languageName: [String!] @field(name: "name")
+                    @reference(path: [{key: "film_language_id_fkey"}]) @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+                    @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.languageName")
+                && e.message().contains("carries @condition(override: true) on the field"));
+    }
+
+    @Test
+    void referenceFacetUnderArgumentOverride_rejected() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            input FilmFilter {
+                languageName: [String!] @field(name: "name")
+                    @reference(path: [{key: "film_language_id_fkey"}]) @asFacet
+            }
+            type Query {
+                films(filter: FilmFilter
+                        @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "inputColumnCondition"}, override: true)
+                ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+            }
+            """);
+
+        assertThat(schema.diagnostics())
+            .anyMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA
+                && e.message().contains("FilmFilter.languageName")
+                && e.message().contains("carries @condition(override: true) on its argument 'filter'"));
     }
 }

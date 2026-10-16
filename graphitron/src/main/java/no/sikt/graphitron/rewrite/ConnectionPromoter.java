@@ -577,7 +577,8 @@ final class ConnectionPromoter {
                 if (!seenNames.add(inputField.getName())) continue;
                 specs.add(new FacetSpec(arg.getName(), inputField.getName(), columnName,
                     named.getName(), valueNullable,
-                    FacetNaming.facetValueTypeName(named.getName(), valueNullable)));
+                    FacetNaming.facetValueTypeName(named.getName(), valueNullable),
+                    inputField.hasAppliedDirective(DIR_REFERENCE)));
             }
         }
         return List.copyOf(specs);

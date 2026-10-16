@@ -4749,7 +4749,7 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
    AND NOT EXISTS (SELECT 1 FROM graphql_type leaf
                     WHERE leaf.graph_name = f.graph_name AND leaf.type_name = f.named_type
                       AND leaf.kind = 'INPUT_OBJECT')
-   -- The three applications that make a facet field something else instead, asked of the
+   -- The two applications that make a facet field something else instead, asked of the
    -- applications rather than of their decodes. What excludes the field is that one of them was
    -- written on it, which is a fact about the document; the decode of what it says is a later
    -- reading, and asking it here would make this view answer differently depending on how far the
@@ -4760,6 +4760,9 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
    -- contribute no directives to the merged field; anchoring the search on the position the facet
    -- marker won at is what keeps a losing declaration's @reference from disqualifying a facet the
    -- author never wrote it on.
+   --
+   -- @reference is not among them: it does not replace the column binding, it says which table the
+   -- @field(name:) column is on, so a reference-bound facet is a row here like any other.
    AND NOT EXISTS (SELECT 1
                      FROM graphql_ast_input_value_directive_entry mark
                      JOIN graphql_ast_input_value_directive_entry d
@@ -4771,13 +4774,13 @@ SELECT f.graph_name, f.type_name, f.field_name, f.ordinal,
                       AND mark.source_name = fc.source_name
                       AND mark.source_line = fc.source_line
                       AND mark.source_column = fc.source_column
-                      AND d.name IN ('reference', 'condition', 'nodeId'));
+                      AND d.name IN ('condition', 'nodeId'));
 COMMENT ON VIEW graphitron_facet_binding IS 'What one @asFacet application binds, at the applications that are well formed: the column its counts group by, the named type those counts are keyed on, and whether such a key may be null. For example @asFacet on FilmFilter.rating is one row naming the rating column and the type its values carry.';
 COMMENT ON COLUMN graphitron_facet_binding.graph_name IS 'the owning graph''s partition, carried from graphitron_facet_entry';
 COMMENT ON COLUMN graphitron_facet_binding.type_name IS 'the input object type the facet field is declared on';
 COMMENT ON COLUMN graphitron_facet_binding.field_name IS 'the facet field''s name within that input type; with the two columns above, the grain';
 COMMENT ON COLUMN graphitron_facet_binding.ordinal IS 'the field''s declaration order within its input type, carried from graphql_field; the inner half of the order one carrier''s facets surface in';
-COMMENT ON COLUMN graphitron_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on is the consuming carrier''s element binding and not a fact about the application, so it is not here';
+COMMENT ON COLUMN graphitron_facet_binding.column_name IS 'the @field(name:) binding as written: the column the counts group by. Which table it resolves on, the consuming carrier''s table or the table a @reference path on the field ends at, is resolved against the catalog at the use site and is not here';
 COMMENT ON COLUMN graphitron_facet_binding.value_type_name IS 'the named type a facet key carries, the filter field''s leaf; a scalar or an enum, an input object being a decline above';
 COMMENT ON COLUMN graphitron_facet_binding.value_nullable IS 'whether a facet key may be null: the list element''s nullability where the filter field is a list, TRUE otherwise. With value_type_name it decides both the synthesized FacetValue type the counts surface through and whether the aggregate scrubs a null key';
 COMMENT ON COLUMN graphitron_facet_binding.source_name IS 'the @asFacet application''s own file; the position a diagnostic would carry';

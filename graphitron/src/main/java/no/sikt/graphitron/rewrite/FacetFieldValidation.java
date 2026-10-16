@@ -9,7 +9,6 @@ import graphql.schema.GraphQLTypeUtil;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_CONDITION;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_FIELD;
 import static no.sikt.graphitron.rewrite.BuildContext.DIR_NODE_ID;
-import static no.sikt.graphitron.rewrite.BuildContext.DIR_REFERENCE;
 
 /**
  * The single home of the definition-keyed {@code @asFacet} well-formedness predicate. The
@@ -28,20 +27,18 @@ final class FacetFieldValidation {
 
     /**
      * The definition-keyed rejection reason for one {@code @asFacet} application, or {@code null}
-     * when the binding is a well-formed direct-column facet (plain {@code @field}-bound, optional,
-     * scalar/enum-valued, non-{@code ID}).
+     * when the binding is a well-formed column facet ({@code @field}-bound, optionally through
+     * {@code @reference}, optional, scalar/enum-valued, non-{@code ID}).
      */
     static String definitionKeyedRejection(GraphQLInputObjectField field) {
-        if (field.hasAppliedDirective(DIR_REFERENCE)
-                || field.hasAppliedDirective(DIR_CONDITION)
-                || field.hasAppliedDirective(DIR_NODE_ID)) {
-            return "@asFacet supports only direct-column bindings in v1; remove @reference / "
-                + "@condition / @nodeId from the facet field or drop @asFacet (join-mediated and "
-                + "node-ID facets are a follow-up)";
+        if (field.hasAppliedDirective(DIR_CONDITION) || field.hasAppliedDirective(DIR_NODE_ID)) {
+            return "@asFacet groups by one column, on the connection's table or on the table a "
+                + "@reference path ends at; remove @condition / @nodeId from the facet field or "
+                + "drop @asFacet (condition and node-ID facets are a follow-up)";
         }
         if (!field.hasAppliedDirective(DIR_FIELD)) {
-            return "@asFacet requires @field(name:) naming the facet's column; the v1 facet "
-                + "emitter only understands direct-column facet values";
+            return "@asFacet requires @field(name:) naming the facet's column, on the connection's "
+                + "table or on the table a @reference path ends at";
         }
         if (field.getType() instanceof GraphQLNonNull) {
             return "@asFacet requires a nullable (optional) filter field; a non-null filter value "
@@ -53,7 +50,7 @@ final class FacetFieldValidation {
         String unwrapped = leaf instanceof GraphQLNamedType named ? named.getName() : String.valueOf(leaf);
         if ("ID".equals(unwrapped)) {
             return "@asFacet on an ID field is not supported in v1; ID fields route through the "
-                + "node-ID machinery, which the direct-column facet emitter cannot serve";
+                + "node-ID machinery, which a column facet cannot serve";
         }
         if (leaf instanceof GraphQLInputObjectType) {
             return "@asFacet must mark a scalar or enum field; '" + unwrapped + "' is an input "

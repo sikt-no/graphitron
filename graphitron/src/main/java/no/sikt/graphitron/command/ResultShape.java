@@ -59,7 +59,7 @@ public sealed interface ResultShape {
      * the same handshake shape the WHERE slot uses against the condition relation.
      *
      * <p>{@link #facets} is the faceted carrier's plan (the base and per-facet fragment refs
-     * plus decode specs), absent exactly when the coordinate carries no facets; the carrier
+     * plus decode specs and groupings), absent exactly when the coordinate carries no facets; the carrier
      * construction forks on that absence, matching the runtime's two constructor shapes.
      */
     record Connection(Ordering ordering, int defaultPageSize, UnitRef helper, UnitRef carrier,

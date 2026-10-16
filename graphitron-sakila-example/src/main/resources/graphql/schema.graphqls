@@ -519,6 +519,13 @@ type Query {
     # predicate (one UNION ALL aggregate per request, lazy on selection). Both filter elements
     # are non-null, so the facet values are non-null and each arm carries the IS NOT NULL scrub.
     filmsFaceted(filter: FilmFacetFilter, extra: FilmExtraFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+    # Facets over a related table: CityFacetFilter's facets reach their columns through
+    # @reference. country is a to-one hop; district crosses the reverse FK to address, a path
+    # that fans out (Lethbridge has two Alberta addresses), so its counts are distinct cities.
+    citiesFaceted(filter: CityFacetFilter): [City!]! @asConnection @defaultOrder(primaryKey: true)
+    # A @reference facet over a composite-key root: film_actor's key is (actor_id, film_id), so
+    # the facet counts distinct over both columns.
+    filmActorsFaceted(filter: FilmActorFacetFilter): [FilmActor!]! @asConnection @defaultOrder(primaryKey: true)
     # R243: per-field direction on @defaultOrder. Heterogeneous spec — rental_rate DESC
     # then title ASC. The seed gives the five films distinct rental_rate values with a
     # three-way tie at 2.99, so the DESC primary is visible in the row order *and* the
@@ -3601,6 +3608,40 @@ input FilmFacetFilter {
     # compilation tier).
     title: [String!] @field(name: "TITLE")
     releaseYear: [Int!] @field(name: "RELEASE_YEAR")
+    # Facets over a related table, each counting films. actor crosses the film_actor junction
+    # (a film has several actors, so its counts can sum past the film count).
+    actor: [String!] @field(name: "last_name") @asFacet
+        @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    # A condition: join hop, the path Query.filmsByBridgedActorFirstName filters through.
+    actorFirstName: [String!] @field(name: "first_name") @asFacet
+        @reference(path: [
+            {key: "film_actor_film_id_fkey"},
+            {condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                method: "filmActorJunctionToActor"
+            }}
+        ])
+    # A {key:, condition:} hop: the key joins, the condition narrows the hop to actors not named
+    # ED, so no CHASE bucket appears (ED CHASE is the only CHASE).
+    castExceptEd: [String!] @field(name: "last_name") @asFacet
+        @reference(path: [
+            {key: "film_actor_film_id_fkey"},
+            {key: "film_actor_actor_id_fkey", condition: {
+                className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+                method: "actorIsNotEd"
+            }}
+        ])
+}
+
+# Facets over related tables for Query.citiesFaceted.
+input CityFacetFilter {
+    country:  [String!] @reference(path: [{table: "country"}]) @field(name: "country") @asFacet
+    district: [String!] @reference(path: [{table: "address"}]) @field(name: "district") @asFacet
+}
+
+# A to-one @reference facet over film_actor's composite key, for Query.filmActorsFaceted.
+input FilmActorFacetFilter {
+    filmTitle: [String!] @field(name: "title") @reference(path: [{key: "film_actor_film_id_fkey"}]) @asFacet
 }
 
 # Sibling-arg filter over the SAME column as the length facet (R13 review, finding 2 family):
