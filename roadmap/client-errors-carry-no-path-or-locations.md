@@ -1,7 +1,7 @@
 ---
 id: R1058
 title: "Client errors thrown from generated fetchers carry no path or locations"
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-10-16
@@ -108,6 +108,19 @@ Unit tier:
 
 - `ErrorRouterDispatchUnmatchedTest.unclaimedClientException_inTheCauseChain_surfacesItsOwnMessage` asserts `containsExactly(clientError)`, the instance identity this item removes. It asserts instead that the single error carries the client error's message, `ErrorType.DataFetchingException`, the environment's path and the field's source location (its `environment()` helper's `Field` gains a `SourceLocation`, which it lacks today).
 - `ErrorRouterClassGeneratorTest.surfaceClientErrorOrRedact_surfacesClientErrorElseFallsThroughToRedact` pins `.data(null).error(clientError)` as a substring of the generated body. Code-string body matching is banned (`docs/architecture/how-to/testing.adoc`), so that `contains` is deleted, not rewritten; the two tiers above pin the behaviour.
+
+## Implementation notes
+
+Landed as planned, in `ErrorRouterClassGenerator.buildSurfaceClientErrorOrRedactMethod`. The extensions are carried over unconditionally with `.extensions(clientError.getExtensions())`: in graphql-java 25.0 `GraphqlErrorBuilder.extensions` stores its argument as is and the builder's own default is `null`, so a client error without extensions builds the same error as before and no null guard is needed. The emitted javadoc on the router method and class, both javadocs in `GraphitronClientExceptionClassGenerator`, and the `error-channel.adoc` sentence now say the message surfaces as a field error with the field's path and locations.
+
+Acceptance evidence, all passing in the verification build:
+
+- `GraphQLQueryTest.filmsConnection_malformedBase64AfterCursor_surfacesClientError`: one error, path `["filmsConnection"]`, location line 1 column 3, `data` null (sync catch arm, suppressed non-null error).
+- `GraphQLQueryTest.splitQueryConnection_malformedAfterCursor_surfacesOneClientErrorPerParentPath`: two errors at `["filmById", 0, "actorsConnection"]` and `["filmById", 1, "actorsConnection"]`, `data.filmById` is `[null, null]` (DataLoader `.exceptionally` arm, per-parent paths).
+- `TenantDivinedRoutingExecutionTest.argumentRoutedTenantOutsideTheSet_isRefused_andItsDatabaseNeverOpened` and `emptyList_listFilter_isRefusedReadably`: one error each, the first also with its path and location; `assertUnclaimedClientErrorSurfaced` pins the field's path on the `@error`-channel fall-through.
+- `ErrorRouterDispatchUnmatchedTest.unclaimedClientException_inTheCauseChain_surfacesItsOwnMessage`: message, `DataFetchingException`, path and source location, replacing the instance-identity assertion.
+
+The `.data(null).error(clientError)` substring assertion in `ErrorRouterClassGeneratorTest` is deleted, not rewritten.
 
 ## Other solutions we've considered
 
