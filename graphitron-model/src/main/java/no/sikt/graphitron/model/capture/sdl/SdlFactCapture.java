@@ -33,7 +33,6 @@ import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.model.sink.FactSink;
 
 import java.nio.file.Path;

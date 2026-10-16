@@ -77,11 +77,12 @@ public final class ModelCapture {
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
-        var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
-        GraphQLSourceCapture.reclaim(dsl, documents);
         FederationCapture.capture(dsl, graph.name(), readAt);
 
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
+        // The composition hands federation-jvm the link the anchor just settled.
+        var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
+        GraphQLSourceCapture.reclaim(dsl, documents);
         // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
         var schemas = schemas(dsl, graph, assembled);
         SdlFactCapture.decode(dsl, graph.name(), assembled.merged(), readAt);

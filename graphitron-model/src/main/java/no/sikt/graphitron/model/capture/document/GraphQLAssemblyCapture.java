@@ -5,12 +5,16 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.SchemaLoader;
+import no.sikt.graphitron.model.schema.input.FederationLinkComposer;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
+
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK_IMPORT;
 
 
 /**
@@ -133,16 +137,27 @@ public final class GraphQLAssemblyCapture {
                                           LocalDateTime readAt) {
         var merged = merge(reading.documents());
         var composition = merge(reading.documents()).registry();
-        var outcome = LoadingRewrites.apply(composition, reading.inputs());
+        var outcome = LoadingRewrites.apply(composition, reading.inputs(), link(dsl, graph.name()));
         var refusal = switch (outcome) {
             case LoadingRewrites.Outcome.Applied ignored -> null;
             case LoadingRewrites.Outcome.Refused refused -> refused.refusal();
         };
-        var assembly = SchemaAssembly.of(refusal == null ? composition : merged.registry());
+        var assembly = SchemaAssembly.of(outcome instanceof LoadingRewrites.Outcome.Applied applied
+            ? applied.registry() : merged.registry());
         GraphQLSchemaProblems.writeAssembled(dsl, graph.name(), merged.registryErrors(),
             Optional.ofNullable(refusal), assembly.errors(), readAt);
         var read = new SchemaLoader.PerSourceParse(merged.registry(), reading.failures(),
             merged.registryErrors());
         return new AssemblyReading(read, outcome, assembly);
+    }
+
+    /** The federation link the graphitron anchor settled on for {@code graph}, if it opts in. */
+    private static Optional<FederationLinkComposer.Link> link(DSLContext dsl, String graph) {
+        var l = GRAPHITRON_FEDERATION_LINK;
+        var i = GRAPHITRON_FEDERATION_LINK_IMPORT;
+        return dsl.select(l.ORIGIN).from(l).where(l.GRAPH_NAME.eq(graph)).fetchOptional(l.ORIGIN)
+            .map(origin -> new FederationLinkComposer.Link("CONFIGURED".equals(origin),
+                dsl.select(i.NAME, i.ALIAS).from(i).where(i.GRAPH_NAME.eq(graph)).orderBy(i.ORDINAL)
+                    .fetch(row -> new FederationLinkComposer.Import(row.value1(), row.value2()))));
     }
 }

@@ -6,11 +6,10 @@ import java.util.Map;
 
 /**
  * Converts a list of {@link SchemaInput} entries into a source-name-keyed
- * map consumed by {@link TagLinkSynthesiser}.
+ * map, which {@link LoadingRewrites#apply} builds for its one check.
  *
  * <p>The map is a {@link LinkedHashMap} so iteration order matches the
- * caller's input-list order; this keeps the link synthesis reproducible
- * across builds and lets overlap error messages name entries
+ * caller's input-list order, which lets overlap error messages name entries
  * deterministically.
  *
  * <p>One fail-fast check: the same {@code sourceName} appearing in two

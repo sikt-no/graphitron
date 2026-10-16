@@ -13,11 +13,8 @@ import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.run.GraphitronStore;
-import no.sikt.graphitron.model.schema.SchemaLoader;
-import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
@@ -28,14 +25,12 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_JOOQ_PACKAGE;
 import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -77,10 +72,6 @@ class StoreEmittedFederationSchemaPipelineTest {
           id: ID! @nodeId
           title: String
         }
-        """;
-
-    private static final String KEY_DECLARATION = """
-        directive @key(fields: String!, resolvable: Boolean = true) repeatable on OBJECT | INTERFACE
         """;
 
     private static final String DECLARED_PAGE_INFO = """
@@ -356,55 +347,31 @@ class StoreEmittedFederationSchemaPipelineTest {
     }
 
     /**
-     * The synthesised {@code @link} imports {@code @tag} alone, so a graph with no {@code @link}
-     * of its own declares {@code @key} itself, which is what the build's refusal tells an author
-     * without it to do. Its node type then gets its key from the store's second opt-in arm, and
-     * from nowhere else: no document states the link that federates it.
+     * A graph federated only through a configured tag, its author having written no link and
+     * declared no federation directive. The link graphitron adds imports what graphitron applies,
+     * the key its node type is minted and the tags its configuration applies, so the build refuses
+     * none of graphitron's own output and no author has to declare {@code @key} to leave federation
+     * while tags are configured.
      */
     @Test
-    @DisplayName("a graph federated only through a configured tag keeps its one synthesised key")
-    void aTagOnlyGraphKeepsItsKey(@TempDir Path tmp) throws IOException {
-        var ctx = context(tmp, input(tmp, "stable.graphqls", KEY_DECLARATION + NODE, "stable"));
+    @DisplayName("a graph federated only through a configured tag imports the key it is minted")
+    void aTagOnlyGraphImportsItsKey(@TempDir Path tmp) throws IOException {
+        var ctx = context(tmp, input(tmp, "stable.graphqls", NODE, "stable"));
 
         var emitted = generate(ctx);
 
         assertThat(keys(emitted, "Film"))
             .containsExactly("@key(fields: \"id\", resolvable: true)");
-    }
-
-    /**
-     * The store's tag arm and the generator's are one function, {@code TagLinkSynthesiser} inside
-     * {@link LoadingRewrites#apply}, run by capture over the recipe's inputs and by the generator over
-     * the context's. What this pins is that the two are handed the same inputs, so the row is
-     * present exactly when the generator's own composition says it synthesised the link.
-     */
-    @Test
-    @DisplayName("the store records the synthesised link exactly when the generator's composition adds it")
-    void theStoreAgreesWithTheGeneratorsComposition(@TempDir Path tmp) throws IOException {
-        var fixtures = List.of(
-            context(tmp.resolve("tag-only"),
-                input(tmp.resolve("tag-only"), "stable.graphqls", KEY_DECLARATION + NODE,
-                    "stable")),
-            context(tmp.resolve("tagged-and-linked"),
-                input(tmp.resolve("tagged-and-linked"), "stable.graphqls", LINK + NODE, "stable"),
-                input(tmp.resolve("tagged-and-linked"), "experimental.graphqls", CONNECTION,
-                    "experimental")),
-            context(tmp.resolve("untagged"),
-                input(tmp.resolve("untagged"), "plain.graphqls", NODE, null)));
-
-        var recorded = new ArrayList<Boolean>();
-        for (var ctx : fixtures) {
-            boolean stored;
-            try (var store = GraphitronStore.captured(ctx).store()) {
-                stored = store.dsl().fetchExists(GRAPHITRON_FEDERATION_LINK,
-                    GRAPHITRON_FEDERATION_LINK.GRAPH_NAME.eq(ctx.graphName())
-                        .and(GRAPHITRON_FEDERATION_LINK.ORIGIN.eq("CONFIGURED")));
-            }
-            assertThat(stored).as("%s", ctx.basedir().getFileName())
-                .isEqualTo(generatorSynthesises(ctx));
-            recorded.add(stored);
-        }
-        assertThat(recorded).as("the fixtures cover both answers").containsExactly(true, false, false);
+        // The printer puts the link on the schema definition, however the composition held it.
+        var links = java.util.stream.Stream.concat(
+                emitted.schemaDefinition().stream().flatMap(d -> d.getDirectives("link").stream()),
+                emitted.getSchemaExtensionDefinitions().stream()
+                    .flatMap(e -> e.getDirectives("link").stream()))
+            .filter(link -> AstPrinter.printAst(link.getArgument("url").getValue()).contains("federation"))
+            .toList();
+        assertThat(links).singleElement()
+            .satisfies(link -> assertThat(AstPrinter.printAst(link.getArgument("import").getValue()))
+                .isEqualTo("[\"@key\", \"@tag\"]"));
     }
 
     // ---------------------------------------------------------------------------------------
@@ -420,19 +387,6 @@ class StoreEmittedFederationSchemaPipelineTest {
         Files.createDirectories(dir);
         return new RunContext(List.of(inputs), dir, "StoreEmittedFederationSchemaPipelineTest",
             dir.resolve("out"), DEFAULT_OUTPUT_PACKAGE, DEFAULT_JOOQ_PACKAGE);
-    }
-
-    /** The generator's own composition over the context's inputs, as its registry load runs it. */
-    private static boolean generatorSynthesises(RunContext ctx) {
-        var sources = ctx.schemaInputs().stream()
-            .map(input -> (SchemaSource.File) input.source()).toList();
-        var registry = SchemaLoader.parsePerSource(sources).registry();
-        return LoadingRewrites.apply(registry, ctx.schemaInputs())
-            instanceof LoadingRewrites.Outcome.Applied applied
-            && applied.registry().getSchemaExtensionDefinitions().stream()
-                .anyMatch(extension -> extension.getSourceLocation() != null
-                    && TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME.equals(
-                        extension.getSourceLocation().getSourceName()));
     }
 
     /** Runs the generator over a store captured from {@code ctx} and parses the schema it wrote. */

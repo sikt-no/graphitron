@@ -85,9 +85,12 @@ Custom fetchers must return entities the default `resolveEntityType` recognises,
 
 The Maven plugin's `<schemaInput><tag>...</tag></schemaInput>` configuration emits `@tag(name: "...")` directives on schema types. `@tag` is meaningful only to a federation gateway, so the plugin treats the configuration as an *implicit* opt-in to Federation 2:
 
-* If you have *not* declared `@link`, the plugin synthesises one with `import: ["@tag"]` for you. Nothing else changes; you can still author `@key` / `@shareable` / etc. with manual declarations if you want.
-* If you *have* declared `@link` but `"@tag"` is missing from the `import:` list, the build fails with a fatal error pointing at your `@link`. Add `"@tag"` to the `import:` list to clear it.
+* If you have *not* declared `@link`, the plugin adds one, at the federation version it writes, importing what the generator applies: `@tag`, and `@key` where your schema has node types.
+* If you *have* declared `@link`, the generator adds to its `import:` list whatever it applies that you did not import, `"@tag"` among them. Your own imports, their order and their aliases stay as you wrote them.
+* If you declare one of those directives yourself, for example `directive @tag(...)`, it collides with the imported one and the build points at your declaration. Remove it and let the link import it.
 * If `<schemaInput tag>` is unset, the plugin makes no federation choice on your behalf; the `@link` (or its absence) is the only signal.
+
+The same holds without tags: wherever the generator applies a federation directive, such as the `@key` it gives a node type in a federated graph, the published schema's `@link` imports it.
 
 This is the one place where federation-relevant state lives outside the SDL itself; the rest of the federation surface is SDL-driven.
 
@@ -125,7 +128,7 @@ Keep `typeId` values unique across subgraphs. Composition checks neither that tw
 * Don't wrap the result in `Federation.transform(...)` yourself. Graphitron has already done it; a second wrap double-adds `_Service` / `_Entity` and breaks composition.
 * The `federation-graphql-java-support` dependency is compile-scope on the *consumer* module (not the plugin), the symbols appear in generated source the consumer compiles. xref:external-code.adoc[How-to: Wire external Java code] covers the plugin-scope dependency layout for the *other* external-code directives; federation is the exception.
 * Custom `fetchEntities` implementations must return entities the default `resolveEntityType` recognises (jOOQ `Record`s with a `__typename` column, or a `DataFetcherResult` wrapping one). Richer shapes (domain objects without jOOQ backing) are not currently supported.
-* `<schemaInput tag>` triggers an implicit `@link(import: ["@tag"])` synthesis when no `@link` is present, and a fatal build error when `@link` is present without `"@tag"` in `import:`. The error spells out the fix.
+* `<schemaInput tag>` opts the graph in to federation: without a `@link` the plugin adds one, and with one it adds `"@tag"` to the imports. Either way the link imports every federation directive the generator applies.
 * Mixing `@link` import and manual directive declaration on the same directive fails validation. Pick one per directive.
 * The `@link` URL pins the Federation 2 minor version (`v2.10` in the canonical example). Pick whichever version covers the directives you import; the generator delegates the version gate to `federation-graphql-java-support`.
 

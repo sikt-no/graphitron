@@ -1196,7 +1196,7 @@ reads nothing off the classpath that capture has already read, and builds no sch
     id key, read from `graphitron_node`, so a `@node` that is an error is not keyed. Its constant
     arguments are rows of `graphitron_directive_application_arg_minted`, and its readers read the
     minted applications.
-    * **A configured link mints no key it does not import** `open`, first: a regression. Reported
+    * **A configured link mints no key it does not import** `done`, a regression. Reported
       2026-10-15 from a live session. With the author's federation `@link` and `@key`s removed and
       the inputs still tagged, `TagLinkSynthesiser`'s link imports `@tag` alone, yet the opt-in
       reads it as `CONFIGURED` and the mint puts `@key(fields: "id")` on every `@node` type: twelve
@@ -1235,14 +1235,18 @@ reads nothing off the classpath that capture has already read, and builds no sch
     is read whole. Needs no SDL, so it moves nothing. `FederationCapture` runs after the graphql
     gatherers; federation-versions pins v2.0 to v2.15 and the imports graphitron mints, and
     `FederationCaptureTest` the read-once and the re-read.
-  * **The effective imports are graphitron's rule** `open`, after. `graphitron_federation_link_import`
-    becomes the authored imports plus each MINTED or CONFIGURED directive the link's version may
-    import and the link does not, written after `EmittedAnchor`; a minted directive the version
-    cannot import is a defect, graphitron's own. The configured link's hard-coded `@tag` goes.
-    `LoadingRewrites` builds the federation link's `import:` from the relation for authored and
-    configured links alike, and `TagNotImported` goes with "add @tag to the import array". The
-    assembly reads the anchor now, so `ModelCapture` runs it after `GraphitronAstCapture`. Closes
-    "A configured link mints no key it does not import".
+  * **The effective imports are graphitron's rule** `done`. `graphitron_federation_link_import`
+    is the authored imports plus each MINTED or CONFIGURED directive the link's version may import
+    and the link does not, written after `EmittedAnchor`; the configured link names the generator's
+    version and its hard-coded `@tag` is gone. `FederationLinkComposer` replaces
+    `TagLinkSynthesiser`: `LoadingRewrites` takes the settled link and rewrites the author's
+    `@link` in place, or adds graphitron's own, and `TagNotImported` is gone. The assembly reads
+    the anchor, so `ModelCapture` runs it after `GraphitronAstCapture`. An author's own declaration
+    of an imported directive collides at the declaration. Closed "A configured link mints no key it
+    does not import"; the manual's tag sections say so.
+    * **A minted directive its version cannot import is a defect** `open`. The rule leaves such a
+      directive out of the imports, so the assembly reports it undeclared, which reads as the
+      author's fault. It is graphitron's own: a defect row naming the directive and the version.
   * **The link decode and the opt-in are federation's** `open`, after. The `@link` and import
     entries leave `GraphitronSchemaEntries` for the gatherer, `graphitron_federation_link` becomes
     `federation_link` in its anchor, and the configured opt-in keeps reading

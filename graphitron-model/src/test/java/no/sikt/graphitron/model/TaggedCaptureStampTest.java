@@ -1,7 +1,7 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.schema.input.TagLinkSynthesiser;
+import no.sikt.graphitron.model.schema.input.FederationLinkComposer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -62,7 +62,7 @@ class TaggedCaptureStampTest {
                         if (!row.value1().equals(CapturedStore.fixtureFile(tmp)
                             .toAbsolutePath().normalize().toString())) {
                             assertThat(row.value1()).isIn(
-                                TagLinkSynthesiser.SYNTHESISED_SOURCE_NAME,
+                                FederationLinkComposer.CONFIGURED_SOURCE_NAME,
                                 no.sikt.graphitron.model.schema.SchemaLoader.DIRECTIVES_SOURCE_NAME,
                                 no.sikt.graphitron.model.schema.SchemaLoader.SPECIFICATION_SOURCE_NAME);
                             assertThat(row.value2()).isNull();

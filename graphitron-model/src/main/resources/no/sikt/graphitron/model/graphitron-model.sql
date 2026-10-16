@@ -7752,7 +7752,7 @@ COMMENT ON COLUMN federation_version_import.name IS 'the name as a link''s impor
 CREATE TABLE graphitron_federation_link (
   graph_name    VARCHAR   NOT NULL,
   origin        VARCHAR   NOT NULL,
-  version       VARCHAR,
+  version       VARCHAR   NOT NULL,
   source_name   VARCHAR,
   source_line   INT,
   source_column INT,
@@ -7765,15 +7765,14 @@ CREATE TABLE graphitron_federation_link (
     REFERENCES graphitron_ast_federation_link_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
   CHECK (origin IN ('AUTHORED', 'CONFIGURED')),
-  -- An authored link is the application it names and its version; a configured one has neither,
-  -- the version being the generator's to name.
-  CHECK ((origin = 'AUTHORED') = (source_name IS NOT NULL)),
-  CHECK ((origin = 'AUTHORED') = (version IS NOT NULL))
+  -- An authored link is the application it names; a configured one names none. Both name a
+  -- version, the configured one the generator's.
+  CHECK ((origin = 'AUTHORED') = (source_name IS NOT NULL))
 );
 COMMENT ON TABLE graphitron_federation_link IS 'A graph opts in to Apollo Federation, and how: one row per federated graph. For example a schema extension applying @link with a federation url is one AUTHORED row naming that application, and a graph whose only opt-in is a <schemaInput tag> is one CONFIGURED row naming none.';
 COMMENT ON COLUMN graphitron_federation_link.graph_name IS 'the owning graph''s partition and the whole key: a graph is federated or it is not';
 COMMENT ON COLUMN graphitron_federation_link.origin IS 'AUTHORED where a document applies a federation @link, CONFIGURED where none does and a <schemaInput tag> asks for the @link that declares @tag';
-COMMENT ON COLUMN graphitron_federation_link.version IS 'the federation version the authored link names; NULL on a configured link, whose version is the generator''s own';
+COMMENT ON COLUMN graphitron_federation_link.version IS 'the federation version the link names: the authored link''s as written, and on a configured link the version the generator writes, which is what the link''s imports are read against';
 COMMENT ON COLUMN graphitron_federation_link.source_name IS 'the file holding the authored application; NULL on a configured link, which no document states';
 COMMENT ON COLUMN graphitron_federation_link.source_line IS 'source line of the authored application''s at sign';
 COMMENT ON COLUMN graphitron_federation_link.source_column IS 'source column of the same';
@@ -7788,9 +7787,9 @@ CREATE TABLE graphitron_federation_link_import (
   PRIMARY KEY (graph_name, ordinal),
   FOREIGN KEY (graph_name) REFERENCES graphitron_federation_link (graph_name) ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_federation_link_import IS 'One name a graph''s federation link imports, in the order it is written: one row per import. For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, and a configured link one row importing @tag.';
+COMMENT ON TABLE graphitron_federation_link_import IS 'One name a graph''s federation link imports, in the order it is written: one row per import. For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, and a third importing @tag where a tag is configured.';
 COMMENT ON COLUMN graphitron_federation_link_import.graph_name IS 'the federated graph, anchored by graphitron_federation_link';
-COMMENT ON COLUMN graphitron_federation_link_import.ordinal IS 'the import''s index in the list as written, from 0';
+COMMENT ON COLUMN graphitron_federation_link_import.ordinal IS 'the import''s index in the list as written, from 0, and after it what graphitron adds';
 COMMENT ON COLUMN graphitron_federation_link_import.name IS 'the name imported, a directive''s with its at sign';
 COMMENT ON COLUMN graphitron_federation_link_import.alias IS 'the local name an authored import binds it to, NULL where it keeps its own';
 COMMENT ON COLUMN graphitron_federation_link_import.touched_at IS 'the reading that last wrote this row, on graphitron_federation_link''s terms';
@@ -7806,19 +7805,22 @@ SELECT graph_name, 'AUTHORED', version, source_name, source_line, source_column
   FROM authored
  WHERE rank = 1
 UNION ALL
-SELECT g.graph_name, 'CONFIGURED', CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+-- The configured link names the version the generator writes, FederationSpec.URL's, pinned to it by
+-- FederationLinkTest since a view cannot bind a parameter.
+SELECT g.graph_name, 'CONFIGURED', 'v2.10', CAST(NULL AS VARCHAR),
        CAST(NULL AS INT), CAST(NULL AS INT)
   FROM (SELECT DISTINCT graph_name FROM graphql_source_input WHERE tag IS NOT NULL) g
  WHERE NOT EXISTS (SELECT 1 FROM authored a WHERE a.graph_name = g.graph_name);
 COMMENT ON VIEW graphitron_federation_link_rule IS 'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.';
 COMMENT ON COLUMN graphitron_federation_link_rule.graph_name IS 'the graph opting in';
 COMMENT ON COLUMN graphitron_federation_link_rule.origin IS 'AUTHORED or CONFIGURED, on graphitron_federation_link''s terms';
-COMMENT ON COLUMN graphitron_federation_link_rule.version IS 'the authored version, NULL on a configured link';
+COMMENT ON COLUMN graphitron_federation_link_rule.version IS 'the authored version, or the generator''s on a configured link';
 COMMENT ON COLUMN graphitron_federation_link_rule.source_name IS 'the authored application''s file, NULL on a configured link';
 COMMENT ON COLUMN graphitron_federation_link_rule.source_line IS 'the authored application''s line';
 COMMENT ON COLUMN graphitron_federation_link_rule.source_column IS 'the authored application''s column';
 
 CREATE VIEW graphitron_federation_link_import_rule (graph_name, ordinal, name, alias) AS
+WITH authored (graph_name, ordinal, name, alias) AS (
 SELECT l.graph_name, v.position, i.name, i.alias
   FROM graphitron_federation_link l
   JOIN graphql_ast_applied_argument_entry a
@@ -7831,16 +7833,33 @@ SELECT l.graph_name, v.position, i.name, i.alias
   JOIN graphitron_ast_link_import_entry i
     ON i.graph_name = v.graph_name AND i.source_name = v.source_name
    AND i.source_line = v.source_line AND i.source_column = v.source_column
- WHERE l.origin = 'AUTHORED'
+ WHERE l.origin = 'AUTHORED'),
+-- What graphitron applies itself, the mint and the configuration, that the link's version lets it
+-- import and the link does not import already. The library is the one the graph claims.
+added (graph_name, name) AS (
+  SELECT DISTINCT a.graph_name, '@' || a.directive_name
+    FROM graphitron_directive_application a
+    JOIN graphitron_federation_link l ON l.graph_name = a.graph_name
+    JOIN store_graph_source m ON m.graph_name = l.graph_name
+    JOIN federation_version_import f
+      ON f.source_name = m.source_name AND f.version = l.version
+     AND f.name = '@' || a.directive_name
+   WHERE a.origin IN ('MINTED', 'CONFIGURED')
+     AND NOT EXISTS (SELECT 1 FROM authored w
+                      WHERE w.graph_name = a.graph_name AND w.name = '@' || a.directive_name))
+SELECT graph_name, ordinal, name, alias FROM authored
 UNION ALL
-SELECT graph_name, 0, '@tag', CAST(NULL AS VARCHAR)
-  FROM graphitron_federation_link
- WHERE origin = 'CONFIGURED';
-COMMENT ON VIEW graphitron_federation_link_import_rule IS 'The rule graphitron_federation_link_import stores: one row per name a graph''s federation link imports. For example an authored link''s imports come across in the order written, and a configured link imports @tag alone.';
+-- After every authored import, in name order.
+SELECT d.graph_name,
+       CAST(COALESCE((SELECT MAX(w.ordinal) + 1 FROM authored w WHERE w.graph_name = d.graph_name), 0)
+            + ROW_NUMBER() OVER (PARTITION BY d.graph_name ORDER BY d.name) - 1 AS INT),
+       d.name, CAST(NULL AS VARCHAR)
+  FROM added d;
+COMMENT ON VIEW graphitron_federation_link_import_rule IS 'The rule graphitron_federation_link_import stores: one row per name a graph''s federation link imports. For example an authored link''s imports come across in the order written, and after them each directive graphitron applies that the link''s version lets it import.';
 COMMENT ON COLUMN graphitron_federation_link_import_rule.graph_name IS 'the federated graph';
-COMMENT ON COLUMN graphitron_federation_link_import_rule.ordinal IS 'the import''s index in the written list, 0 on a configured link''s one import';
+COMMENT ON COLUMN graphitron_federation_link_import_rule.ordinal IS 'the import''s index in the written list, and after it the added ones in name order';
 COMMENT ON COLUMN graphitron_federation_link_import_rule.name IS 'the name imported';
-COMMENT ON COLUMN graphitron_federation_link_import_rule.alias IS 'the authored alias, or NULL';
+COMMENT ON COLUMN graphitron_federation_link_import_rule.alias IS 'the authored alias, or NULL, an added import keeping its own name';
 
 
 CREATE VIEW graphitron_synthesized_node_type_id
@@ -13184,12 +13203,12 @@ CREATE VIEW lint_violation
    subject, subject_parent, subject_kind, subject_at_position) AS
 WITH
 -- Positions the author owns: the source names the generator injects itself are the bundled
--- directive vocabulary, the specification's own document and the tag-link synthesiser's, and an
--- author can neither rename nor document what any of them wrote.
+-- directive vocabulary, the specification's own document and the link the configuration opts in
+-- with, and an author can neither rename nor document what any of them wrote.
 authored (source_name) AS (
   SELECT source_name FROM store_source
    WHERE source_name NOT IN ('directives.graphqls', 'specification.graphqls',
-                             '<graphitron-synthesised:tag-link>')
+                             '<graphitron-configured:federation-link>')
 ),
 -- The consumer's excludedTypes globs as LIKE patterns. The escape runs before the translation, so
 -- a glob writing a literal % means that character rather than becoming a wildcard nobody asked for.
@@ -13875,10 +13894,13 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- ModelCapture runs CodeCapture before this gatherer for that reason, and the chain resolution
   -- has read the signature across that boundary for as long as the arm has existed.
   ('graphitron', 'code'),
-  -- Federation's opt-in has two arms and one of them, the link a configured tag synthesised, is
-  -- stated by no document, so the synthesised key reads it from the composition that added it.
-  -- ModelCapture runs the assembly before the graphitron decode.
-  ('graphitron', 'graphql-assembly'),
+  -- A link's added imports are the ones its federation version allows, which the federation
+  -- gatherer reads from the library, scoped by the graph's claim on it. ModelCapture runs it first.
+  ('graphitron', 'federation'),
+  ('graphitron', 'store'),
+  -- The composition hands federation-jvm the link with the imports the anchor settled, so
+  -- ModelCapture runs the assembly after the graphitron decode.
+  ('graphql-assembly', 'graphitron'),
   -- The tags the configuration applies are a rule over what each file's entry configures, which the
   -- source reading records. ModelCapture runs it first.
   ('graphitron', 'graphql-source'),
@@ -15010,16 +15032,16 @@ INSERT INTO meta_relation VALUES
    'The one place the opt-in is stated. It came to a reader two ways, an authored link read from the decode and a link the composition synthesised for a configured tag, which the assembly recorded as a fact about the composition rather than about the corpus. Here both are a rule over what capture read: the authored link graphitron_ast_federation_link_entry decodes, the first by position where several do, and the configured one where none does and an input carries a tag.'),
   ('graphitron_federation_link_import', 'federation-link-import', 'graphitron',
    'One name a graph''s federation link imports, in the order it is written: one row per import.',
-   'For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, and a configured link one row importing @tag.',
-   'What a link brings into scope, which is what decides whether a name the schema uses is declared. An authored link''s imports come from its decode; a configured link imports @tag and nothing else, that being the one name it exists to declare.'),
+   'For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, and a third importing @tag where a tag is configured.',
+   'What a link brings into scope, which is what decides whether a name the schema uses is declared. The authored imports come from the decode, and graphitron adds what it applies itself, its mint and the configured tags, as the link''s version allows, so its own output is never undeclared. The composition builds the link it hands federation-jvm from these rows, authored and configured alike.'),
   ('graphitron_federation_link_rule', 'federation-link', 'graphitron',
    'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the anchor step that runs it, on graphitron_argmapping_site_rule''s terms: the table is what readers join, and the rule stays runnable beside it.'),
   ('graphitron_federation_link_import_rule', 'federation-link-import', 'graphitron',
    'The rule graphitron_federation_link_import stores: one row per name a graph''s federation link imports.',
-   'For example an authored link''s imports come across in the order written, and a configured link imports @tag alone.',
-   'The rule, on graphitron_federation_link_rule''s terms. It reads the stored opt-in, which the writer fills first, rather than its rule, so no view is evaluated inside another. The order is the list''s as written, reached from the import through the value it is and the argument holding it to the application.'),
+   'For example an authored link''s imports come across in the order written, and after them each directive graphitron applies that the link''s version lets it import.',
+   'The rule, on graphitron_federation_link_rule''s terms. It reads the stored opt-in and the stored applications, which the anchor fills first, rather than their rules, so no view is evaluated inside another. The order is the list''s as written, reached from the import through the value it is and the argument holding it to the application.'),
   ('graphitron_carrier_directive', 'carrier-directive', 'graphitron',
    'The federation directives on the fields that coined a minted type: one row per @tag or @shareable a carrier carries, authored or configured.',
    'For example films: [Film!]! @asConnection @tag(name: "public") gives QueryFilmsConnection a row naming the public tag on Query.films.',

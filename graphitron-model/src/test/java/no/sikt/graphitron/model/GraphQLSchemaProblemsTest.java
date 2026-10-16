@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
+import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
@@ -33,6 +34,7 @@ import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK_IMPORT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -328,10 +330,14 @@ class GraphQLSchemaProblemsTest {
         });
     }
 
+    /**
+     * A configured tag the author's link does not import is imported for them: the link carries what
+     * graphitron applies, so the composition refuses nothing and the assembly declares the tag.
+     */
     @Test
-    @DisplayName("a configured tag the author's @link does not import is a rewrite refusal")
-    void aTagTheLinkDoesNotImportIsRefused(@TempDir Path tmp) {
-        Path file = write(tmp, "untagged.graphqls", """
+    @DisplayName("a configured tag the author's @link does not import is imported, not refused")
+    void aTagTheLinkDoesNotImportIsImported(@TempDir Path tmp) {
+        write(tmp, "untagged.graphqls", """
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
 
             type Query { film: Film }
@@ -340,7 +346,14 @@ class GraphQLSchemaProblemsTest {
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, tmp, List.of(tagged("*.graphqls")), LocalDateTime.now());
-            assertRefusedOnce(dsl, "TagNotImported", file);
+            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM)
+                    .fetch(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS))
+                .isEmpty();
+            assertThat(dsl.select(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME)
+                    .from(GRAPHITRON_FEDERATION_LINK_IMPORT)
+                    .orderBy(GRAPHITRON_FEDERATION_LINK_IMPORT.ORDINAL)
+                    .fetch(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME))
+                .containsExactly("@key", "@tag");
         });
     }
 
@@ -428,12 +441,32 @@ class GraphQLSchemaProblemsTest {
     }
 
     /**
-     * The attribution reaches the assembly through the whole pass, not only when a case drives the
-     * gatherers one at a time. A pass that dropped the reading's inputs between the source gatherer
-     * and the assembly would compose this corpus untagged, which refuses nothing.
+     * An author who declares a directive graphitron imports meets the imported one: the link still
+     * imports what graphitron applies, and the collision is refused at the author's declaration,
+     * which is the one to remove.
      */
     @Test
-    @DisplayName("the pass hands the recipe's tags to the assembly")
+    @DisplayName("an author's own @tag beside a configured tag collides with the imported one")
+    void anAuthorsOwnTagCollides(@TempDir Path tmp) {
+        Path file = write(tmp, "declared.graphqls", """
+            directive @tag(name: String!) repeatable on FIELD_DEFINITION | OBJECT
+
+            type Query { film: String }
+            """);
+
+        withSeededStore(GRAPH, dsl -> {
+            read(dsl, tmp, List.of(tagged("*.graphqls")), LocalDateTime.now());
+            assertRefusedOnce(dsl, "DeclarationCollision", file);
+        });
+    }
+
+    /**
+     * The attribution reaches the link through the whole pass, not only when a case drives the
+     * gatherers one at a time. A pass that dropped the tags on the way would leave the link
+     * importing the author's @key alone, and the composition would refuse the tags it applies.
+     */
+    @Test
+    @DisplayName("the pass carries the recipe's tags into the link the assembly composes")
     void thePassCarriesTheAttribution(@TempDir Path tmp) {
         write(tmp, "untagged.graphqls", """
             extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
@@ -444,11 +477,14 @@ class GraphQLSchemaProblemsTest {
 
         withSeededStore(GRAPH, dsl -> {
             capture(dsl, tmp, tagged("*.graphqls"), LocalDateTime.now());
+            assertThat(dsl.select(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME)
+                    .from(GRAPHITRON_FEDERATION_LINK_IMPORT)
+                    .orderBy(GRAPHITRON_FEDERATION_LINK_IMPORT.ORDINAL)
+                    .fetch(GRAPHITRON_FEDERATION_LINK_IMPORT.NAME))
+                .containsExactly("@key", "@tag");
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM)
-                    .where(GRAPHQL_SCHEMA_PROBLEM.STAGE.eq("REWRITE"))
                     .fetch(GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS))
-                .as("the tag is configured and the @link does not import @tag")
-                .containsExactly("TagNotImported");
+                .isEmpty();
         });
     }
 
@@ -544,6 +580,7 @@ class GraphQLSchemaProblemsTest {
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        FederationCapture.capture(dsl, graphName, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
     }

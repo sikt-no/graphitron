@@ -34,8 +34,8 @@ import no.sikt.graphitron.model.schema.AttributedRegistry;
  *
  * <p>Runs in the {@link LoadingRewrites#apply} composition, so the injected declarations are
  * available when {@code SchemaGenerator.makeExecutableSchema} validates directive uses, the
- * configured {@code @tag}s the emitted schema applies among them. Must run after any schema-extension synthesiser (e.g. {@link TagLinkSynthesiser})
- * that injects a {@code @link} the author omitted.
+ * configured {@code @tag}s the emitted schema applies among them. Must run after {@link FederationLinkComposer}, which puts in the link
+ * this reads.
  *
  * <p>The canonical {@code @link} URL lives on
  * {@link no.sikt.graphitron.model.schema.federation.FederationSpec#URL FederationSpec.URL}; this

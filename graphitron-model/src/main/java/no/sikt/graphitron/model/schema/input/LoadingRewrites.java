@@ -5,13 +5,12 @@ import com.apollographql.federation.graphqljava.exceptions.UnsupportedLinkImport
 import com.apollographql.federation.graphqljava.exceptions.UnsupportedRenameException;
 import graphql.language.SourceLocation;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 
 import java.util.Collections;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
+import java.util.Optional;
 import java.util.Objects;
 import java.util.Set;
 
@@ -19,23 +18,17 @@ import java.util.Set;
  * The loading rewrites, composed once: the in-place edits that stand between the documents an
  * author wrote and the registry the rest of a run sees.
  *
- * <p>Two of them, in this order. {@link TagLinkSynthesiser} adds an {@code @link} importing
- * {@code @tag} where a tag is configured and the author wrote none, and
- * {@link FederationLinkApplier} adds the definitions the federation {@code @link} imports. The
- * order is a dependency: the federation library reads the {@code @link} the first may have
- * written. The configured tags and notes are not here: {@code graphitron_configured_tag} states
+ * <p>Two of them, in this order. {@link FederationLinkComposer} puts in the federation link the
+ * store settled on, the author's with the imports the anchor states or one of graphitron's own
+ * where only the configuration opts in, and {@link FederationLinkApplier} adds the definitions that
+ * link imports. The order is a dependency: the federation library reads the link the first wrote. The configured tags and notes are not here: {@code graphitron_configured_tag} states
  * the tags, the part relations carry the descriptions the notes mint, and the emitted schema applies
  * both.
  *
- * <p>Two callers, which is the reason this is one function: the generator's load and the store's
- * assembly. Composed twice, the two would assemble different schemas from one corpus, and a
- * directive the generator accepts could be reported undeclared by the store with nothing comparing
- * the two readings. Synthesis is not here. It is graphitron's own macro expansion rather than a
- * reading of the author's schema, and it stays with the generator.
- *
- * <p>The registry handed in belongs to the call. The rewrites run in place and the federation
- * injection adds definitions one at a time, so a refusal can leave it half rewritten; a caller that
- * wants the registry as written reads one of its own rather than this one.
+ * <p>The registry handed in belongs to the call. The rewrites run in place, or rebuild it around a
+ * rewritten link, and the federation injection adds definitions one at a time, so a refusal can
+ * leave it half rewritten; a caller reads the registry an {@link Outcome.Applied} hands back, and
+ * one that wants the registry as written reads one of its own.
  */
 public final class LoadingRewrites {
 
@@ -47,7 +40,7 @@ public final class LoadingRewrites {
         /**
          * Every rewrite ran.
          *
-         * @param registry        the registry handed in, rewritten
+         * @param registry        the registry composed from the one handed in
          * @param injectedNames   the names of the definitions the federation {@code @link} injected,
          *                        in the order it injected them, empty where there is no federation
          *                        {@code @link}
@@ -149,23 +142,20 @@ public final class LoadingRewrites {
         record LibraryDuplicateDeclaration(String message, SourceLocation location,
                                            IllegalStateException exception) implements Refusal {}
 
-        /** A tag is configured and the author's federation {@code @link} does not import {@code @tag}. */
-        record TagNotImported(String message, SourceLocation location,
-                              ValidationFailedException exception) implements Refusal {}
-
         /**
-         * The registry refused the {@code @link} extension synthesised for a configured tag. It
-         * re-checks the schema's operation types on every schema extension it admits, so a corpus
-         * whose own extensions already redefine one refuses the synthesised extension for it.
+         * The registry refused the {@code @link} extension added where only the configuration opts
+         * in. It re-checks the schema's operation types on every schema extension it admits, so a
+         * corpus whose own extensions already redefine one refuses the added extension for it.
          */
-        record SynthesisedLinkRefused(String message, IllegalStateException exception)
+        record ConfiguredLinkRefused(String message, IllegalStateException exception)
             implements Refusal {
             @Override public SourceLocation location() { return null; }
         }
     }
 
     /**
-     * Runs the two rewrites over {@code registry}, attributing its sources by {@code inputs}.
+     * Runs the two rewrites over {@code registry}, attributing its sources by {@code inputs} and
+     * composing with {@code link}, the federation link the store settled on, if there is one.
      *
      * <p>{@code inputs} is the run's whole input list in recipe order, the shape a
      * {@link no.sikt.graphitron.model.config.RunContext} holds, rather than one input per document:
@@ -175,22 +165,18 @@ public final class LoadingRewrites {
      *
      * <p>Never throws on a refusal; the caller decides whether a refusal fails anything.
      */
-    public static Outcome apply(TypeDefinitionRegistry registry, List<SchemaInput> inputs) {
-        Map<String, SchemaInput> bySource;
+    public static Outcome apply(TypeDefinitionRegistry registry, List<SchemaInput> inputs,
+                                Optional<FederationLinkComposer.Link> link) {
         try {
-            bySource = SchemaInputAttribution.build(inputs);
+            SchemaInputAttribution.build(inputs);
         } catch (SchemaInputException e) {
             return new Outcome.Refused(new Refusal.SourceInTwoInputs(firstClaimedTwice(inputs), e));
         }
-        var tagLink = TagLinkSynthesiser.synthesise(registry, bySource);
-        if (tagLink instanceof TagLinkSynthesiser.Result.Refused refused) {
-            return new Outcome.Refused(refused.refusal());
-        }
-        var injected = FederationLinkApplier.inject(registry);
-        if (!(injected instanceof Outcome.Applied applied)) {
-            return injected;
-        }
-        return new Outcome.Applied(registry, applied.injectedNames());
+        return switch (FederationLinkComposer.compose(registry, link)) {
+            case FederationLinkComposer.Result.Composed composed ->
+                FederationLinkApplier.inject(composed.registry());
+            case FederationLinkComposer.Result.Refused refused -> new Outcome.Refused(refused.refusal());
+        };
     }
 
     private static String firstClaimedTwice(List<SchemaInput> inputs) {

@@ -127,12 +127,14 @@ public final class GraphitronAstCapture {
         TableTypes.derive(dsl, graph.name());
         Nodes.derive(dsl, graph.name());
         // Whether the graph opts in to federation, which the key mint below reads.
-        FederationLinks.write(dsl, graph.name(), readAt);
+        FederationLinks.link(dsl, graph.name(), readAt);
         // Then what the applications just anchored mint. Second by our choice rather than by
         // necessity of the entries: at the entry grain an @asConnection and an @asFacet are
         // siblings, each decoded from its own position and reading nothing of the other. It is
         // here that one depends on the other, the emitted population being resolved out of the
         // applications this gatherer settled a statement earlier.
         EmittedAnchor.derive(dsl, graph.name(), readAt);
+        // What the link imports, which is what the author wrote plus what was just applied.
+        FederationLinks.imports(dsl, graph.name(), readAt);
     }
 }

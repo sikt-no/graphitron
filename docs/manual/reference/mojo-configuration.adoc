@@ -231,7 +231,7 @@ Each `<schemaInput>` carries three optional children. The `pattern` is the only 
 
 | `tag`
 | `String`
-| Optional tag applied to every type, field, argument, and enum value defined in matched files. Emitted as a `@tag(name: "...")` directive on each element. The plugin treats this as an implicit Federation 2 opt-in: when set without an `@link` in the SDL, the plugin synthesises one with `import: ["@tag"]`; when set with an `@link` whose import list omits `"@tag"`, the build fails with a fatal error pointing at the `@link`. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation transport] covers the federation interaction.
+| Optional tag applied to every type, field, argument, and enum value defined in matched files. Emitted as a `@tag(name: "...")` directive on each element. The plugin treats this as an implicit Federation 2 opt-in: when set without an `@link` in the SDL, the plugin adds one importing what the generator applies; when set with an `@link`, the generator adds `"@tag"` to its imports if you left it out. xref:../how-to/apollo-federation.adoc[How-to: Apollo Federation transport] covers the federation interaction.
 
 | `descriptionNote`
 | `String`

@@ -22,6 +22,8 @@ import java.util.List;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK_IMPORT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
@@ -254,13 +256,13 @@ class FederationKeyDerivationTest {
     }
 
     /**
-     * The opt-in's second arm: a configured tag with no {@code @link} in any document. The loading
-     * rewrites synthesise the federation {@code @link}, the generator federates on it, and the
-     * store has to agree although no document states it. Driven both ways and with an authored link
-     * beside the tag, which federates through the first arm and records no synthesis.
+     * The opt-in's second arm: a configured tag with no {@code @link} in any document federates the
+     * graph through a link of graphitron's own, which imports what graphitron applies, the key it
+     * mints and the tag it configures. Driven both ways, with an authored link importing both, and
+     * with one importing the key alone, which graphitron completes rather than refuses.
      */
     @Test
-    @DisplayName("a configured tag with no authored link federates through the synthesised link")
+    @DisplayName("a configured tag with no authored link federates through a link importing what is applied")
     void aConfiguredTagIsTheOptInsSecondArm(@TempDir Path tmp) throws IOException {
         String unlinked = FEDERATED.replace(LINK, "");
         String linkedWithTag = FEDERATED.replace(LINK,
@@ -271,6 +273,8 @@ class FederationKeyDerivationTest {
                 context(tmp.resolve("tagged"), unlinked, "stable")).store()) {
             assertThat(originOf(store.dsl())).containsExactly("CONFIGURED");
             assertThat(mintedKeysOf(store.dsl())).containsExactly("Film");
+            assertThat(importsOf(store.dsl())).containsExactly("@key", "@tag");
+            assertThat(problemsOf(store.dsl())).isEmpty();
         }
         try (var store = GraphitronStore.captured(
                 context(tmp.resolve("untagged"), unlinked, null)).store()) {
@@ -283,7 +287,27 @@ class FederationKeyDerivationTest {
                 .as("the author wrote the link, so the configuration adds none")
                 .containsExactly("AUTHORED");
             assertThat(mintedKeysOf(store.dsl())).containsExactly("Film");
+            assertThat(importsOf(store.dsl())).containsExactly("@key", "@tag");
         }
+        try (var store = GraphitronStore.captured(
+                context(tmp.resolve("linked-key-only"), FEDERATED, "stable")).store()) {
+            assertThat(importsOf(store.dsl()))
+                .as("the author imported the key; graphitron adds the tag it configures")
+                .containsExactly("@key", "@tag");
+            assertThat(problemsOf(store.dsl())).isEmpty();
+        }
+    }
+
+    /** What the graph's link imports, in order. */
+    private static List<String> importsOf(DSLContext dsl) {
+        var i = GRAPHITRON_FEDERATION_LINK_IMPORT;
+        return dsl.select(i.NAME).from(i).orderBy(i.ORDINAL).fetch(i.NAME);
+    }
+
+    /** What the toolchain refused, by error class. */
+    private static List<String> problemsOf(DSLContext dsl) {
+        var p = GRAPHQL_SCHEMA_PROBLEM;
+        return dsl.select(p.ERROR_CLASS).from(p).fetch(p.ERROR_CLASS);
     }
 
     /** How the graph opts in to federation, if it does. */
