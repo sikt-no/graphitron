@@ -1,10 +1,12 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
+import graphql.ErrorType;
 import graphql.Scalars;
 import graphql.execution.ExecutionStepInfo;
 import graphql.execution.MergedField;
 import graphql.execution.ResultPath;
 import graphql.language.Field;
+import graphql.language.SourceLocation;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
 import no.sikt.graphitron.generated.schema.ErrorRouter;
@@ -25,8 +27,9 @@ import static org.assertj.core.api.Assertions.fail;
  * so the router is called here with hand-built throwables and mapping tables.
  *
  * <p>The contract: authored mappings are tried first; when none claims the throw, a client
- * exception anywhere in the cause chain surfaces as the field's error, exactly as on a fetcher
- * without a channel, and anything else redacts to a correlation id.
+ * exception anywhere in the cause chain surfaces its message as the field's error, at the field's
+ * path and location, exactly as on a fetcher without a channel, and anything else redacts to a
+ * correlation id.
  */
 @UnitTier
 class ErrorRouterDispatchUnmatchedTest {
@@ -34,6 +37,8 @@ class ErrorRouterDispatchUnmatchedTest {
     private static final ErrorRouter.Mapping[] UNRELATED_MAPPINGS = {
         new ErrorRouter.ExceptionMapping(UnsupportedOperationException.class, null, null)
     };
+
+    private static final SourceLocation FIELD_LOCATION = new SourceLocation(3, 5);
 
     private static final Function<List<?>, Object> PAYLOAD_FACTORY_MUST_NOT_RUN =
         errors -> fail("no mapping claims the throw, so no payload is built: " + errors);
@@ -46,7 +51,14 @@ class ErrorRouterDispatchUnmatchedTest {
             UNRELATED_MAPPINGS, environment(), PAYLOAD_FACTORY_MUST_NOT_RUN);
 
         assertThat(result.getData()).isNull();
-        assertThat(result.getErrors()).containsExactly(clientError);
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(error -> {
+                assertThat(error.getMessage()).isEqualTo(clientError.getMessage());
+                assertThat(error.getErrorType()).isEqualTo(ErrorType.DataFetchingException);
+                assertThat(error.getPath()).containsExactly("film");
+                assertThat(error.getLocations()).containsExactly(FIELD_LOCATION);
+            });
     }
 
     @Test
@@ -78,7 +90,7 @@ class ErrorRouterDispatchUnmatchedTest {
 
     private static DataFetchingEnvironment environment() {
         return DataFetchingEnvironmentImpl.newDataFetchingEnvironment()
-            .mergedField(MergedField.newMergedField(Field.newField("film").build()).build())
+            .mergedField(MergedField.newMergedField(Field.newField("film").sourceLocation(FIELD_LOCATION).build()).build())
             .executionStepInfo(ExecutionStepInfo.newExecutionStepInfo()
                 .type(Scalars.GraphQLString)
                 .path(ResultPath.rootPath().segment("film"))

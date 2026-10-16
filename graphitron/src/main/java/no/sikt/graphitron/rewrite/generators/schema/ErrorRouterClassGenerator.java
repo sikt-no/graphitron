@@ -131,8 +131,9 @@ public final class ErrorRouterClassGenerator {
                 + "through this class: either to a channel-mapped typed payload\n"
                 + "({@code dispatch}, with a {@code Mapping[]} constant from {@code ErrorMappings})\n"
                 + "or, when there is no channel or no mapping claims the throw, to\n"
-                + "{@code surfaceClientErrorOrRedact}: a client exception surfaces as a top-level\n"
-                + "error, anything else becomes a redacted {@code DataFetcherResult} carrying only\n"
+                + "{@code surfaceClientErrorOrRedact}: a client exception's message surfaces as a\n"
+                + "field error carrying the field's path and locations, anything else becomes a\n"
+                + "redacted {@code DataFetcherResult} carrying only\n"
                 + "a correlation ID ({@code redact}).\n"
                 + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
@@ -348,9 +349,11 @@ public final class ErrorRouterClassGenerator {
             .addJavadoc("Unmatched disposition for every fetcher: the whole catch arm when the field\n"
                 + "has no {@code @error} channel, and the fall-through after the channel's mappings\n"
                 + "when it has one and none claims the throw. Walks the cause chain\n"
-                + "outermost-first; if a {@link $T} (itself a {@code GraphQLError}) is found,\n"
-                + "returns a {@link $T} with {@code data=null} and that error, so the real\n"
-                + "client-facing message reaches the response {@code errors} array. On no match\n"
+                + "outermost-first; if a {@link $T} is found, returns a {@link $T} with\n"
+                + "{@code data=null} and one error carrying that exception's message, classification\n"
+                + "and extensions plus the failing field's path and locations, read from {@code env}\n"
+                + "as {@link #redact} does, so the real client-facing message reaches the response\n"
+                + "{@code errors} array at the field it belongs to. On no match\n"
                 + "falls through to {@link #redact}: genuine internal faults keep the privacy\n"
                 + "contract (logged + correlation id only).\n"
                 + "\n"
@@ -361,7 +364,14 @@ public final class ErrorRouterClassGenerator {
             .addCode(CodeBlock.builder()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
                 .beginControlFlow("if (t instanceof $T clientError)", clientException)
-                .addStatement("return $T.<P>newResult().data(null).error(clientError).build()", DATA_FETCHER_RESULT)
+                .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
+                .add("    .data(null)\n")
+                .add("    .error($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
+                .add("        .message(clientError.getMessage())\n")
+                .add("        .errorType(clientError.getErrorType())\n")
+                .add("        .extensions(clientError.getExtensions())\n")
+                .add("        .build())\n")
+                .addStatement("    .build()")
                 .endControlFlow()
                 .endControlFlow()
                 .addStatement("return redact(thrown, env)")

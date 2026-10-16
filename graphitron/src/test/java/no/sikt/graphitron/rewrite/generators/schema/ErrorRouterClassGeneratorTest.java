@@ -159,7 +159,6 @@ class ErrorRouterClassGeneratorTest {
         assertThat(body)
             .contains("t = t.getCause()")
             .contains("instanceof com.example.schema.GraphitronClientException")
-            .contains(".data(null).error(clientError)")
             .contains("return redact(thrown, env)");
     }
 

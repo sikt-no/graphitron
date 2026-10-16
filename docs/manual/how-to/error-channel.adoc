@@ -151,7 +151,7 @@ If you want a localised or sanitised message and `description:` is too static fo
 [#unmatched-exceptions]
 == Unmatched exceptions: redact and correlate
 
-When no handler matches, the router first walks the exception's cause chain for a `GraphitronClientException`, the error graphitron itself raises for a client mistake: a tenant outside the request's tenant set, a malformed or wrong-type node id, an out-of-range page size or an invalid cursor. If it finds one, that error reaches the response's top-level `errors` with its own message and the field resolves to `null`, exactly as on a field without an error channel; nothing is logged. A handler you declare still wins, because handlers are tried first. Every other unmatched exception runs the redact path (`ErrorRouterClassGenerator.redactBody`):
+When no handler matches, the router first walks the exception's cause chain for a `GraphitronClientException`, the error graphitron itself raises for a client mistake: a tenant outside the request's tenant set, a malformed or wrong-type node id, an out-of-range page size or an invalid cursor. If it finds one, that error reaches the response's top-level `errors` with its own message and with the failing field's `path` and `locations`, and the field resolves to `null`; on a non-null field it is the only error at that path, as with a redacted error, and the null bubbles to the nearest nullable parent. All of this is exactly as on a field without an error channel, and nothing is logged. A handler you declare still wins, because handlers are tried first. Every other unmatched exception runs the redact path (`ErrorRouterClassGenerator.redactBody`):
 
 [source,java]
 ----

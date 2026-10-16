@@ -17,14 +17,14 @@ import java.util.List;
  * malformed or wrong-type {@code @nodeId} filter value throws it carrying a human-readable
  * message. The no-channel fetcher catch arm routes it through the generated
  * {@code ErrorRouter.surfaceClientErrorOrRedact} (see {@link ErrorRouterClassGenerator}), which
- * surfaces an instance of this type as a real {@code GraphQLError} instead of redacting it to a
- * correlation id; genuine internal faults still redact. The stable name is also the
+ * surfaces its message as a field error carrying the failing field's path and locations instead of
+ * redacting it to a correlation id; genuine internal faults still redact. The stable name is also the
  * {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches with zero change at
  * the throw site: the classifier recognises the name before the class has ever compiled and
  * records it as a {@link GeneratedClientException}.
  *
  * <p>Subclasses {@link graphql.GraphqlErrorException} so it <em>is</em> a {@link graphql.GraphQLError}
- * (channel-matchable, natively serialisable into the response {@code errors} array). Generated as
+ * (channel-matchable, and an authored mapping places the instance itself into a payload). Generated as
  * a source file rather than shipped in a runtime jar, preserving the rewrite's no-runtime-jar
  * invariant.
  *
@@ -56,9 +56,10 @@ public final class GraphitronClientExceptionClassGenerator {
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .superclass(GRAPHQL_ERROR_EXCEPTION)
             .addJavadoc("Marker for a client-side input mistake surfaced from a generated fetcher\n"
-                + "(e.g. a malformed or wrong-type {@code @nodeId} filter value). Surfaced raw by\n"
-                + "{@code ErrorRouter.surfaceClientErrorOrRedact} rather than redacted; the stable\n"
-                + "{@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches.\n")
+                + "(e.g. a malformed or wrong-type {@code @nodeId} filter value).\n"
+                + "{@code ErrorRouter.surfaceClientErrorOrRedact} surfaces its message as a field\n"
+                + "error carrying the field's path and locations rather than redacting it; the\n"
+                + "stable {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches.\n")
             .addField(serialVersionUID)
             .addMethod(ctor)
             .build();

@@ -531,7 +531,10 @@ class TenantDivinedRoutingExecutionTest {
     private static void assertUnclaimedClientErrorSurfaced(ExecutionResult result, String field, String message) {
         assertThat(result.getErrors())
             .as("errors: " + result.getErrors())
-            .anySatisfy(e -> assertThat(e.getMessage()).contains(message))
+            .anySatisfy(e -> {
+                assertThat(e.getMessage()).contains(message);
+                assertThat(e.getPath()).as("the surfaced error names its field").containsExactly(field);
+            })
             .noneSatisfy(e -> assertThat(e.getMessage()).contains("An error occurred. Reference:"));
         assertThat((Map<String, Object>) result.getData()).containsEntry(field, null);
     }
@@ -1026,8 +1029,16 @@ class TenantDivinedRoutingExecutionTest {
         var result = execute("{ films(filmId: 2) { title } }", List.of(1));
         assertThat(result.getErrors())
             .as("the caller named a tenant explicitly, so the refusal is an error, surfaced to the client"
-                + " (films is [Film!]!, so graphql-java adds its non-null bubbling error beside it)")
-            .anySatisfy(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
+                + " at the field's path (films is [Film!]!, and the refusal at that path is its only error)")
+            .singleElement()
+            .satisfies(e -> {
+                assertThat(e.getMessage()).contains("'2' is not permitted for this request");
+                assertThat(e.getPath()).containsExactly("films");
+                assertThat(e.getLocations()).singleElement().satisfies(location -> {
+                    assertThat(location.getLine()).isEqualTo(1);
+                    assertThat(location.getColumn()).isEqualTo(3);
+                });
+            });
         assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
     }
 
@@ -1736,9 +1747,10 @@ class TenantDivinedRoutingExecutionTest {
     @Test
     void emptyList_listFilter_isRefusedReadably() {
         var result = execute("{ filmActorsByNodeId(ids: []) { actorId } }");
-        // The field is non-null, so graphql-java adds its null-bubbling error beside the refusal.
+        // The field is non-null; the refusal carries its path, so graphql-java adds no null-bubbling
+        // error beside it.
         assertThat(result.getErrors()).extracting(GraphQLError::getMessage)
-            .contains("Query.filmActorsByNodeId names no tenant: its tenant is read from the"
+            .containsExactly("Query.filmActorsByNodeId names no tenant: its tenant is read from the"
                 + " elements of 'ids', which is empty.");
         assertNoTenantOpened();
     }

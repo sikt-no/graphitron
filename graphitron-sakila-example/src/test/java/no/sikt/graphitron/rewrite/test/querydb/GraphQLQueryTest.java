@@ -1811,12 +1811,43 @@ class GraphQLQueryTest {
     void filmsConnection_malformedBase64AfterCursor_surfacesClientError() {
         // Failure mode 1: Base64.getDecoder().decode throws IllegalArgumentException on a token
         // that is not valid Base64.
+        // The surfaced error carries the field's path and location, so it is the only error at
+        // that path: graphql-java adds no non-null error beside it, though FilmsConnection! still
+        // bubbles its null to the root.
         var result = executeRaw(
             "{ filmsConnection(first: 2, after: \"not-base64!!!\") { nodes { title } } }");
-        assertThat(result.getErrors()).isNotEmpty();
-        assertThat(result.getErrors().get(0).getMessage())
-            .isEqualTo("cursor is not valid (was: \"not-base64!!!\")")
-            .doesNotContain("An error occurred. Reference:");
+        assertThat(result.getErrors()).singleElement().satisfies(error -> {
+            assertThat(error.getMessage())
+                .isEqualTo("cursor is not valid (was: \"not-base64!!!\")")
+                .doesNotContain("An error occurred. Reference:");
+            assertThat(error.getPath()).containsExactly("filmsConnection");
+            assertThat(error.getLocations()).singleElement().satisfies(location -> {
+                assertThat(location.getLine()).isEqualTo(1);
+                assertThat(location.getColumn()).isEqualTo(3);
+            });
+        });
+        Object data = result.getData();
+        assertThat(data).isNull();
+    }
+
+    @Test
+    void splitQueryConnection_malformedAfterCursor_surfacesOneClientErrorPerParentPath() {
+        // The @splitQuery connection fails per parent through the DataLoader's .exceptionally arm;
+        // each parent's error names that parent's element. Each non-null actorsConnection null
+        // bubbles to its nullable Film element, and the client error at the same path suppresses
+        // graphql-java's non-null error, so two errors rather than four.
+        var result = executeRaw(
+            "{ filmById(film_id: [\"1\", \"2\"]) { actorsConnection(first: 1, after: \"not-base64!!!\") "
+                + "{ nodes { actorId } } } }");
+        assertThat(result.getErrors()).hasSize(2).allSatisfy(error ->
+            assertThat(error.getMessage()).isEqualTo("cursor is not valid (was: \"not-base64!!!\")"));
+        assertThat(result.getErrors()).extracting(error -> error.getPath())
+            .containsExactlyInAnyOrder(
+                List.of("filmById", 0, "actorsConnection"),
+                List.of("filmById", 1, "actorsConnection"));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsKey("filmById");
+        assertThat((List<?>) data.get("filmById")).containsExactly(null, null);
     }
 
     @Test
