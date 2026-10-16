@@ -1,7 +1,7 @@
 ---
 id: R1051
 title: "Name the @defaultTenant entity tenant apart from the global-read default, including none"
-status: Ready
+status: In Progress
 bucket: feature
 depends-on: []
 created: 2026-10-16
