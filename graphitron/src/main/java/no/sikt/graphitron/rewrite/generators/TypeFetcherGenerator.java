@@ -1588,10 +1588,10 @@ public class TypeFetcherGenerator {
      * parent-batching context, and the developer-supplied method owns the transaction scope.
      *
      * <p>When the channel carries any {@link no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler},
-     * the wrapper inserts a pre-execution Jakarta validation step ahead of the try block:
-     * walks every {@link ParamSource.Arg} parameter, validates each non-null arg via the
-     * {@code GraphitronContext}-supplied {@code Validator}, and short-circuits with the
-     * payload's errors-arm filled by the violations when any are produced.
+     * the wrapper's first statement inside the try is a pre-execution Jakarta validation pass
+     * over {@link ServiceMethodCall#validatedArguments()}, one target per field argument the call
+     * reads, which short-circuits with the payload's errors-arm filled by the violations when any
+     * are produced; a failure in the pass reaches the catch arm. See {@link #validatorPreStep}.
      *
      * <p>The success arm forks on {@code lift}. With no lift (the record- and scalar-returning
      * leaves) it is passthrough: the service method returns the SDL payload class directly, and

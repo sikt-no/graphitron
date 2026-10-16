@@ -1196,8 +1196,8 @@ type Query {
         })
 
     # The VALIDATION-channel entry point. Its channel mixes a {handler: VALIDATION} entry with a
-    # dispatch handler, so the wrapper emits the Jakarta validation pre-step ahead of the try block
-    # and the per-@error message() bodies carry the GraphQLError arm the validation path lands on.
+    # dispatch handler, so the wrapper emits the Jakarta validation pre-step as the first statement
+    # inside its try block and the per-@error message() bodies carry the GraphQLError arm the validation path lands on.
     # See FilmValidatedLookupService for what the fixture does and does not pin.
     filmLookupValidated(id: Int!): FilmValidatedLookupPayload
         @service(service: {
