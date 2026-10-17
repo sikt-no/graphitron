@@ -321,41 +321,6 @@ class FactExpectationTest {
     }
 
     /**
-     * The defect model's totality gate over the fact examples' store: every output field has a
-     * source, or an error defect says why it has none, written on the field or on the type it is
-     * a field of. A field missing a total fact with nothing explaining it is a capture bug, and the
-     * examples are where every arm of the facts is written down.
-     */
-    @Test
-    @DisplayName("every output field has a source, or a defect explains why not")
-    void everyOutputFieldHasASourceOrADefect() {
-        var f = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-        var t = no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
-        var src = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SOURCE;
-        var site = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
-        var type = no.sikt.graphitron.model.Tables.GRAPHITRON_DEFECT_TYPE;
-        var dsl = captured.dsl();
-        var unexplained = dsl.select(f.GRAPH_NAME, f.COORDINATE)
-            .from(f)
-            .join(t).on(t.GRAPH_NAME.eq(f.GRAPH_NAME), t.TYPE_NAME.eq(f.TYPE_NAME),
-                t.KIND.in("OBJECT", "INTERFACE"))
-            .whereNotExists(dsl.selectOne().from(src)
-                .where(src.GRAPH_NAME.eq(f.GRAPH_NAME), src.TYPE_NAME.eq(f.TYPE_NAME),
-                    src.FIELD_NAME.eq(f.FIELD_NAME)))
-            .andNotExists(dsl.selectOne().from(site)
-                .join(type).on(type.CODE.eq(site.CODE), type.SEVERITY.eq("error"))
-                .where(site.GRAPH_NAME.eq(f.GRAPH_NAME),
-                    site.COORDINATE.in(f.COORDINATE, f.TYPE_NAME)))
-            .fetch(r -> r.value1() + " " + r.value2());
-        assertThat(unexplained)
-            .as("output fields with no source and no error defect on them or their type")
-            .isEmpty();
-        assertThat(dsl.fetchCount(src))
-            .as("a store with no sources passes the gate by having nothing to check")
-            .isPositive();
-    }
-
-    /**
      * Navigation is total and single-valued over every field the examples capture: each field
      * navigates as exactly one type, which is what lets a reader join the relation rather than
      * left-join it. Counted against the emitted fields rather than the written ones, a minted field

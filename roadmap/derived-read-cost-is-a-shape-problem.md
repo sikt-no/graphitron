@@ -733,9 +733,13 @@ and the emitters read, and it goes when nothing reads what it builds.
     `graphitron_field`, complete over them, the supertype the fetcher's facts reference. R333's
     DataFetcher, one coordinate, one resolver, 1:1 and total, which joins `source` and `target` and
     dispatches the operation set. The row carries the key and the facts stay their own relations,
-    so `graphitron_field_source`, the target and the operations reference it rather than each
-    keying the field afresh, and a field no fact explains is an absent subtype row a gate can
-    find. What `<Type>Fetchers.<field>` is emitted from.
+    so the source, the target and the operations reference it rather than each keying the field
+    afresh, and a field no fact explains is an absent subtype row a gate can find. What
+    `<Type>Fetchers.<field>` is emitted from. How many source objects arrive, ROOT, ONLY_CHILD or
+    CHILD, was dissolved for want of a reader: `graphitron_type_reach`, `graphitron_type_arrival`
+    and `graphitron_field_source`, their stages, fact documents and totality gate are in trunk at
+    `ab6b49c34`, and this node's reader brings them back from there with the cost measured,
+    about 18 s of a sis capture as they were stored.
   * **The producers are stated** `open`. A producer is a field where something is executed, and
     `graphitron_producer` holds those fields and no others: R333's `operation` is total over every
     coordinate, a bare column read being `Fetch`, so the producers are its verbs that execute and
@@ -752,9 +756,8 @@ and the emitters read, and it goes when nothing reads what it builds.
         keyset paging and one select per participant of a polymorphic type are properties of it;
       * `_lookup`, the rows for an ordered list of keys, one position per key and null for a miss:
         `@lookupKey`, `node`, `nodes`, `_entities`, and the re-read after a write over the keys it
-        returned; `graphitron_type_reach.batched`, a node type or a type carrying `@key`, is this
-        fact read off reach, which counts authored edges only, and comes from these producers once
-        `node`, `nodes` and `_entities` are stated;
+        returned; arriving batched, a node type or a type carrying `@key`, is this fact, and comes
+        from these producers once `node`, `nodes` and `_entities` are stated;
       * `_insert`, values only, no row identified, returning the keys the database made;
       * the identifying write, with `matches`, `ONE` or `MANY` as `multiRow` was written, `ONE` by
         default: one row per input, or a filter per input that may match several. `_update` carries
@@ -784,9 +787,8 @@ and the emitters read, and it goes when nothing reads what it builds.
     apart, with how the coercing was declared, before `validate` can report it from the store.
   * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
     states whole, and totality is what the defect model's gate checks.
-    * **A field's source says how many objects arrive** `done`. `graphitron_type_arrival` folds each
-      type's arrival; `graphitron_field_source` names ROOT, ONLY_CHILD or CHILD, agrees with the
-      walk, and a gate over the fact examples holds every output field to a source or a defect.
+    * **A field's source says how many objects arrive** `blocked`, on the fetcher, its reader.
+      Dissolved with no reader; "Every field has one fetcher" says where it is resurrected from.
     * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
       table-bound, a record, or a nesting type passing its parent's row through.
       * **A type's backing is anchored by the graphitron gatherer** `done`.
@@ -1516,11 +1518,6 @@ then what resolves the documents against the rest.
   are `code_class` facts at the class grain, kind and supertypes without members, pinned by
   `CodeCaptureTest`: on sis 823 classes join the code family and the code gatherer stays at 0.7 s,
   where reading them whole cost 4 s more for 32844 generated members no reader asks for.
-* **The type reach rule is priced** `open`. `graphitron_type_reach_rule` takes 15 to 16 s per
-  evaluation on sis, the largest single cost in the graphitron gatherer, against 4 s for the path
-  resolution rule, 3.5 s for the type backing and 2.6 s for the type arrival; `TypeReaches`
-  evaluates it once per capture. Each CTE and each joined term timed alone first, then one join
-  dropped at a time, before any rewrite.
   * **A service beside the generated classes is read** `open`. Services are commonly written in
     the module jOOQ generates into, and the class-grain reading takes the package and every package
     under it, so a service class beneath the generated one is a `code_class` row whose methods are
@@ -1662,9 +1659,8 @@ resolved one.
   `graphitron_node_id_instruction` and the `intent_node_id_decode*` views, whose eight seeded classes
   seed `@node` without `implements Node`. `graphitron_node_type` is `graphitron_node` and every
   written `@node` besides, and the rows it adds are only ever wrong answers to its readers: a
-  reach marked batched, a `@nodeId` resolved to a node that does not exist. Its three readers,
-  `graphitron_type_reach_rule`, `graphitron_node_id_instruction_rule` and
-  `intent_node_container_member`, read `graphitron_node`, and the view goes. A node is what the
+  reach marked batched, a `@nodeId` resolved to a node that does not exist. Its two readers,
+  `graphitron_node_id_instruction_rule` and `intent_node_container_member`, read `graphitron_node`, and the view goes. A node is what the
   manual says takes effect: `@node`, a `@table` the catalog resolves and `implements Node`, or the
   last two over published metadata. Written once and set aside, which found the rest of it:
   * the walk spells the same membership in `NodeDeclaration.isNodeType`, read by
@@ -2201,6 +2197,11 @@ The two `@referenceFor` step relations, their one reader having moved to the ste
 **Dissolved into the target, the source and the target type.** `graphitron_field_table`, its
 grain `field-target-table`, its `target_basis` values `NAMED_TYPE_TABLE`, `PARTICIPANT_TABLE` and
 `ROUTINE_RESULT`, `FieldEndpoints` and `FieldEndpointsTest`.
+
+**Dissolved for want of a reader**, resurrectable from `ab6b49c34`. `graphitron_type_reach`,
+`graphitron_type_arrival`, `graphitron_field_source` and their `_rule` views, `TypeReaches`,
+`TypeArrivals`, `FieldSources`, the fact documents `type-arrival` and
+`type-arrival-through-a-connection`, and `FactExpectationTest`'s source-or-defect gate.
 
 **Dissolved into the reading.** `graphitron_field_routine`, its grain `field-routine-result`,
 `FieldRoutines` and `FieldRoutinesTest`.
