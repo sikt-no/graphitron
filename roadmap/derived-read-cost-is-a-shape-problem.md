@@ -1353,25 +1353,36 @@ reads nothing off the classpath that capture has already read, and builds no sch
 
 R682 ("planners read facts, emitters read commands") is absorbed here, 2026-10-17. Today a fact can
 reach an emitter two ways, joined onto a command row or read off the leaf the emitter holds, and
-nothing forbids the wrong one. The gate R682 set stays: generated output byte-identical, and the
-validator's message, location and severity unchanged, at every step. Its validator half is "Validate
-is a query over the store" and its terminal step is "The generator builds no schema".
+nothing forbids the wrong one. The gate is behaviour: the execution tests stay green, a change that
+reaches something they do not cover adds the coverage first, and the validator's message, location
+and severity stay unchanged. Generated output is not held byte-identical, and no test reads generated
+Java or SQL as text. Its validator half is "Validate is a query over the store" and its terminal step
+is "The generator builds no schema".
 
-* **The emitter architecture is examined against the store** `open`, first; every node below waits
-  on it. R682 chose plan, command, emit as a functional core and imperative shell: Java planners read
-  the store into command rows, and an emitter reads only its row. That was decided before the store
-  was the model. Is a command a relation row the emitter reads, as "Flip: the generator reads the
-  three queries" proposes, or a Java value a planner builds; does planning belong in rules anchored
-  at capture or in Java at generate; what becomes of R549's `command`, `plan` and `render` packages
-  and `CommandSeamRatchetTest`; and how is the byte-identical gate held. Decided with Alf; the
-  answer reshapes the nodes below and may merge them into the three queries.
-* **Routine writes read only the store** `blocked`, on the architecture. `RoutineWriteCommands.produce`
-  takes a `StoreHandle` and still a `GraphitronSchema` beside it, R668 having landed the emitter half.
-* **The launcher's routine row reads the facts R704 captured** `blocked`, on the architecture.
+* **The emitter architecture is examined against the store** `done`, decided with Alf 2026-10-17.
+  An emitter owns its query and its emission: it reads the store with jOOQ at the grain of what it
+  emits, one query per emitted unit rather than per field, and renders from the result rows. There
+  is no command layer between them. Evidence in `roadmap/audits/2026-10-17-emitter-owns-its-query.md`.
+  * The command was a Java value, never a store row, and the planner that already reads the store
+    copies its fact rows field for field into a near-identical record; that copy is the layer.
+  * Planning splits by the nature test: a verdict (which rule fired, which table stands for a type)
+    is a fact anchored at capture, and joining and shaping for one emitter stay in that emitter's
+    query.
+  * R549's `command` and `plan` packages dissolve into the emitters that read them, and `render`
+    merges with its queries. `CommandSeamRatchetTest` keeps its leaf pins until the leaves go with
+    the walk; its pin on `plan` goes with `plan`.
+  * Testability is held by behaviour, not by a seam: execution against PostgreSQL, the in-process
+    compile harness, and fact documents to reach a rare state, which replace a hand-built command.
+* **The recompile graph has a source once commands are gone** `open`. `PlanCompileGraph` is the only
+  reader of `FetcherEdgeRelation` and is how the dev loop knows which file to rebuild; it needs the
+  same answer from the store.
+* **Routine writes read only the store** `open`. The routine-write emitter reads `RoutineWriteFacts`
+  itself and `RoutineWriteCommands` goes; the error channel and tenant binding it still takes from
+  `GraphitronSchema` move to the store first.
+* **The launcher's routine row reads the facts R704 captured** `open`.
   `LauncherCommands.routineRow` reads the walk; R704's facts are in the store and nothing here reads
   them.
-* **Operation members and delivery are read from their relations alone** `blocked`, on the
-  architecture. R563 added `OperationMemberRelation` and `DeliveryFactRelation`, computed in
+* **Operation members and delivery are read from their relations alone** `open`. R563 added `OperationMemberRelation` and `DeliveryFactRelation`, computed in
   `GraphitronSchemaBuilder`, beside the leaf crosswalk `OperationMembers.membersOf` and
   `DeliveryFact.leafDerivedOf`; `OutputField`, `ColumnBindingLedger`, `TenantBindingIndex`,
   `ConditionCommands` and `ProjectionCommands` still read the crosswalk, and

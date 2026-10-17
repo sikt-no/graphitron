@@ -5,7 +5,7 @@
 
 This guide answers "which tier does my test belong to, where does the file go, and what should it assert?"
 Four tiers cover every test in the rewrite.
-For design principles (why pipeline is the primary behavioural tier, why code-string body matching is banned), see xref:../principles/development-principles.adoc[Graphitron Development Principles].
+For design principles (why pipeline is the primary behavioural tier, why code-string body matching and SQL-text assertions are banned), see xref:../principles/development-principles.adoc[Graphitron Development Principles].
 For build commands and database setup, see `.claude/web-environment.md`.
 
 == Choosing a tier
@@ -165,7 +165,9 @@ Patterns:
 
 * JDBC round-trip count via the `QUERY_COUNT` listener (`AtomicInteger` reset per test to assert DataLoader batching or lazy-on-selection).
 * Returned-row-id sets and field-value assertions against the Sakila fixture catalog.
-* Structural SQL-shape assertions via the `SQL_LOG` `ExecuteListener` (e.g. that no `select count` ran when `totalCount` was not selected).
+* What did not run is a count too: that `totalCount` unselected costs no extra round trip is asserted on `QUERY_COUNT`, not by reading the statements.
+
+Banned: assertions on the text of the SQL that generated code sends, whether one fragment or a whole statement. The rendered SQL is implementation; the rows and the round trips are the behaviour.
 
 == Module location vs. tier (`graphitron-sakila-example`)
 
