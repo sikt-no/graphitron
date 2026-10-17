@@ -74,7 +74,7 @@ growing plan without the contradiction showing.
 
 **Root: an expensive derived read is a modelling defect, so fix the shape rather than the cost.**
 
-### Every rule has an owner, and the register has no subject `done`
+### Every rule has an owner, and the register has no subject `open`
 
 A rule with no owner is what a registration compensates for, so ownership leaves the register with
 nothing to schedule. Reached by R955: `meta_materialize`, every registration and every `_live` view
@@ -94,7 +94,9 @@ are gone.
   move, because a relation whose owner is undeclared is cleared by whatever clear still stands and,
   once its old writer is gone, is not written back. The mechanism is R877's. The declaration is a
   build-time gate and not a runtime one: nothing that runs reads `meta_relation`, and what the gate
-  buys is that a new relation cannot arrive without an owner.
+  buys is that a new relation cannot arrive without an owner. `MetaDeclarationGateTest` holds the
+  ratchet: `undeclared-relations.txt` lists 118 relations on 2026-10-17, and this node is done when
+  it is empty.
 
 ### A fact is keyed by what it is, not by where it was written
 
@@ -156,7 +158,7 @@ are gone.
   with them the gatherer ordering constraint that existed only to keep a `code_` arm from reading a
   `jvm_` row.
 
-### A resolution keeps what a diagnostic needs `done`
+### A resolution keeps what a diagnostic needs `open`
 
 * The chain resolution is a walk in the catalog `done`, where it was a loop in Java invisible to every
   instrument that parses a rule body.
@@ -343,7 +345,7 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     input field step over `graphitron_field_reference_step_hop`; an element names the same thing
     whichever site it is written at, so the step is one relation and the sites differ only in where
     the walk starts.
-    * **A self-referencing key is oriented by R1037's rule**. Both ends of the key are one table, so
+    * **A self-referencing key is oriented by R1037's rule** `open`, R1037's to do. Both ends of the key are one table, so
       where the walk stands cannot say which way it rides. It rides forward unless the element
       writes `inverse: true`; until R1037 lands the step takes the field's cardinality as the
       generator does, and R1037 changes both, with the `@reference` reference page. Nothing in R876
@@ -735,8 +737,7 @@ leaves the population is overwritten rather than deleted, so `ON DELETE CASCADE`
 is part of the subtractive goal because it is the old shape of the anchor phase standing beside the
 new one.
 
-* **The graphitron anchor runs after what it resolves against** `done`, under the reference branch
-  above.
+* The graphitron anchor runs after what it resolves against: done, under the reference branch above.
 * **Each step moves into its owner's anchor phase, marked and swept** `open`. A step is done when
   it marks what it wrote and sweeps what it did not, in the anchor phase of the gatherer that owns
   its table. One child per step, grown as each is tried.
@@ -1011,21 +1012,21 @@ and the emitters read, and it goes when nothing reads what it builds.
       source table, one row per table, so the relation is keyed by the field and the table. A
       nesting type, an object type with no table of its own projected against its owner's, retains
       its owner's source table and source object, which is `graphitron_field_source_table`'s
-      `INHERITED` departure: a scalar on it has a target column of its own on each table it retains,
+      `INHERITED` source: a scalar on it has a target column of its own on each table it retains,
       two where two owners on two tables reach the type. A field has a source object, a source
       table, both or neither. Where the source object is a table's own record, its scalars are that
-      table's columns, read as `rec.get(TABLE.COLUMN)`: a `CONSUMED` departure whose
+      table's columns, read as `rec.get(TABLE.COLUMN)`: a `CONSUMED` source whose
       `graphitron_field_source_key` rule is `RECORD` gives target columns on the record's table, as
       `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as `film.film_id`. A `SOURCE_ROW`
-      departure gives none: a `@sourceRow` parent is a plain class whose scalars are read off the
-      object, the departure saying only where its batched query starts. A scalar whose type has no
+      source gives none: a `@sourceRow` parent is a plain class whose scalars are read off the
+      object, the source saying only where its batched query starts. A scalar whose type has no
       source table at all reads from its source object, which is no column and no row here.
     * **A scalar through a path reads where the path lands** `blocked`, on "The forward walk is a
       relation of its own": the path resolution is keyed by a target table, which a scalar does not
       have, so the landing is read off the forward walk once it exists.
     * **The editor shows information, not a classification** `open`, after the target column. A
       field's hover is a block of the facts a user wants, each a key lookup in a stored relation:
-      what produces it, read from `graphitron_producer`, its source and the table its read departs
+      what produces it, read from `graphitron_producer`, its source and the table its read starts
       from, its target type, wrapper and target table or column, its walked `@reference` links, its
       node identity from "The editor and the MCP read the resolved node", and its defects. A type's
       is its binding, its nodehood with type id and key columns, its backing class and its defects.
@@ -1266,11 +1267,10 @@ reads nothing off the classpath that capture has already read, and builds no sch
     type without a table becomes one class with an overload per owning table, where the generator
     emits one class per owner today: `CustomerOccupantLocation` and `StoreOccupantLocation` are one
     body for `OccupantLocation`.
-  * **Subtract** `blocked`, on the flip. Each relation the new ones replace goes once its readers
+  * **Subtract what the producers replace** `blocked`, on the flip. Each relation the new ones replace goes once its readers
     read the replacement:
     * `intent_field_separate_fetch`, replaced by `graphitron_producer`, read by the editor's
       `ClaimFacts` and `InlayFacts`;
-    * the `from_` columns of `graphitron_field_table`, replaced by the source, read by the chain;
     * whatever the generator's own classification stops being asked.
 
     The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
@@ -1320,8 +1320,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
     type first, and the enum and input classes render the schema's forms rather than the walk's.
 * **The configuration's rewrites leave the composition** `open`, so the written schema is what was
   written.
-  * **`TagLinkSynthesiser` leaves the composition** `blocked`, on the generator building no schema.
-    The written schema needs no `@tag` declaration now; the walk's federation opt-in is the one reader
+  * **`FederationLinkComposer` leaves the composition** `blocked`, on the generator building no
+    schema. It replaced `TagLinkSynthesiser`, and rewrites the author's link with the settled imports
+    or adds graphitron's own. The written schema needs no `@tag` declaration now; the walk's federation opt-in is the one reader
     left, and the emitted schema carries the link today only because it starts from the composition.
     When it goes, `EmittedRegistry` applies the link and the definitions it imports for a
     `CONFIGURED` row of `graphitron_federation_link`, so the emitted schema keeps saying it is
@@ -1366,16 +1367,17 @@ reads nothing off the classpath that capture has already read, and builds no sch
       the link imports what the mint writes, authored and configured alike, and an author's own
       declaration of an imported directive collides as it does today. Closed by "The effective
       imports are graphitron's rule".
-    * **A link's imported definitions are captured where the link is** `open`, a regression.
-      Reported 2026-10-15 from a live session. With the authored federation `@link` in place,
-      generate accepts `@tag` and `@key` but the editor flags each as "Unknown directive":
-      `DiagnosticFacts.directiveName` judges against `graphql_directive`, which holds only
-      definitions written in a document, while `FederationLinkApplier` adds the imported ones to the
-      generator's registry alone. The store has the link (`graphitron_federation_link`) and not what
-      it imports. The imported definitions are captured as base facts, sourced to the link, so the
-      editor and the generator read one vocabulary; the sibling node above reads the same fact.
-      Federation's side is "Federation is a gatherer of its own"; the editor reading the effective
-      vocabulary is the emitted directive anchors, after it.
+  * **A link's imported definitions are captured where the link is** `open`, a regression.
+    Reported 2026-10-15 from a live session. With the authored federation `@link` in place,
+    generate accepts `@tag` and `@key` but the editor flags each as "Unknown directive":
+    `DiagnosticFacts.directiveName` judges against `graphql_directive`, which holds only
+    definitions written in a document, while `FederationLinkApplier` adds the imported ones to the
+    generator's registry alone. The store has the link (`graphitron_federation_link`) and not what
+    it imports. The imported definitions are captured as base facts, sourced to the link, so the
+    editor and the generator read one vocabulary; the sibling node above reads the same fact.
+    Federation's side is "Federation is a gatherer of its own"; the editor reading the effective
+    vocabulary is the emitted directive anchors. After "The effective imports are graphitron's
+    rule" (done), whose imports are the vocabulary the editor reads.
   * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
     to rename.
 * **Federation is a gatherer of its own** `open`. Federation's facts are neither the SDL's nor
@@ -1405,9 +1407,10 @@ reads nothing off the classpath that capture has already read, and builds no sch
     the anchor, so `ModelCapture` runs it after `GraphitronAstCapture`. An author's own declaration
     of an imported directive collides at the declaration. Closed "A configured link mints no key it
     does not import"; the manual's tag sections say so.
-    * **A minted directive its version cannot import is a defect** `open`. The rule leaves such a
-      directive out of the imports, so the assembly reports it undeclared, which reads as the
-      author's fault. It is graphitron's own: a defect row naming the directive and the version.
+  * **A minted directive its version cannot import is a defect** `open`, after "The effective
+    imports are graphitron's rule". The rule leaves such a
+    directive out of the imports, so the assembly reports it undeclared, which reads as the
+    author's fault. It is graphitron's own: a defect row naming the directive and the version.
   * **The link decode and the opt-in are federation's** `open`, after. The `@link` and import
     entries leave `GraphitronSchemaEntries` for the gatherer, `graphitron_federation_link` becomes
     `federation_link` in its anchor, and the configured opt-in keeps reading
@@ -1452,8 +1455,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
     the stale applications are swept.
   * **Minted conflicts are marked and swept** `open`. Nothing keys into
     `graphitron_minted_conflict`, so this is the discipline rather than a hazard.
-  * **Table types, nodes and node key columns are marked and swept** `open`, in "A node is settled
-    with the decode that states it", which takes the three together.
+  * Table types, nodes and node key columns: see "Table types, nodes and node key columns are marked
+    and swept" under "A node is settled with the decode that states it", which takes the three
+    together.
 
 ### A capture reads only what changed
 
@@ -1974,7 +1978,7 @@ fields one target, the interface's.
   `NodeIdLeafResolver.landKeyColumns`.
 * **Flip: encode and decode read the target type and the forwarded key** `blocked`, on the two
   above, and so do the filter and carrier roles and the coverage census.
-* **Subtract** `blocked`, on the flip: `graphitron_node_id_instruction`, the endpoint that crosses,
+* **Subtract the node-id instruction and decode relations** `blocked`, on the flip: `graphitron_node_id_instruction`, the endpoint that crosses,
   `graphitron_node_id_decode_hop` and `_hop_column`, `graphitron_node_id_decode_column`, and
   whatever in the chain stops being read.
 
