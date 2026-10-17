@@ -170,18 +170,13 @@ are gone.
   stage re-walked every chain once per chain it drove and on a consumer-size schema did not finish.
   Evidence in `roadmap/audits/2026-09-28-chain-resolution-storage.md`.
   * **The resolution is stored once, at the reading grain** `done`. Three arm tables by key shape
-    under the existing name, filled from one walk, with which walks reached a reading as payload so
-    neither reader regroups. The arm tables are the hop relations' shape, which is this branch's
-    vote in the survivor question below.
+    under the existing name, filled from one walk; their hop-relation shape is this branch's vote in
+    the survivor question below.
   * **The rule is examined, not only its storage** `open`. `broken` drives a correlated `NOT EXISTS`
     over `routes`; restate it as an anti-join and record the figure beside the storage ones.
-  * **The reading's KEY arm is an equi-join** `done`. A three-way `OR` against `sql_constraint` was
-    most of the reading's cost; a `UNION ALL` of two equi-joins matched it by `EXCEPT` on a schema
-    that never exercised the jOOQ-name branch. Landed as three arms, qualified, SQL name and jOOQ
-    name, disjoint by the resolver's precedence, and the same split applied to
-    `FieldReferenceStepHops.namedKey`, which carried the identical `OR`. Not yet re-timed on sis:
-    the 2026-10-06 `graphitron:dev` profile put the hops and the resolution together at about 25 s
-    before it, the resolution alone about 23 s.
+  * **The reading's KEY arm is an equi-join** `done`. Three disjoint arms, qualified, SQL name and
+    jOOQ name, in place of a three-way `OR`, with the same split in
+    `FieldReferenceStepHops.namedKey`; not yet re-timed on sis.
   * **The reading is stored, so the walk reads it once** `open`. The resolution rule names
     `graphitron_field_path_reading` four times, each walk's seed and step, and the entry
     defect rule a fifth, and H2 evaluates a view at every naming. Storing the reading alone took a
@@ -206,25 +201,14 @@ are gone.
       `NO_ROUTE_TO_TARGET` report nothing on the 2026-10-14 stores, nor does sis; which change
       cleared them was not traced.
     * **A source is inherited through a type with no table of its own** `done`, by
-      `graphitron_field_source_table` under "The source is stated", with the class-backed parents
-      beside it; 0 on sis and on sakila. The endpoints
-      took the source from the enclosing type's own binding only, so a nested type had none and
-      its chains reported `NO_ROUTE_FROM_DEPARTURE`: 99 rows over 60 types on sis, 11
-      over 5 on sakila (`FilmDetails`, `FilmInfo`, `FilmInlineBundle` among them). A nested type
-      reached from two parents on two tables has two sources, which `graphitron_field_table`'s
-      key cannot hold, so the fix is `graphitron_field_source_table` under "The source is
-      stated", recursive through the types with no table, and the chain rules reading it.
-    * **A scalar `@reference` has a target** `done`, all 48 on sis and 14 on sakila gone, the cases
-      in `chain-without-target`; `column-unresolved` stops declaring the two it pinned. The path's last table is where a column read
-      through a chain is read, and with no target basis for it `CHAIN_WITHOUT_TARGET` fires: all 48
-      on sis and 14 on sakila. The rule reads `graphitron_field_target` and
-      `graphitron_field_target_table` instead of `graphitron_field_table`, and judges only a target
-      that could bind a table, an object, an interface or a union, at a field carrying no `@routine`
-      and no `@pivot`. Shares its question with "a routine resolving to nothing says so" below.
-    * **A `@pivot` projection has a target** `done`, by the same rule, the six gone. Six sakila coordinates report
-      `CHAIN_WITHOUT_TARGET` (`Film.titleTranslations`, `Film.prices` and their siblings): the target
-      is an object binding no table, `TranslatedTexts` or `PriceByCurrency`, read through `@reference`
-      and `@pivot`, so the path's last table is where its rows come from.
+      `graphitron_field_source_table` under "The source is stated", recursive through types with no
+      table; `NO_ROUTE_FROM_DEPARTURE` is 0 on sis and sakila.
+    * **A scalar `@reference` has a target** `done`, all 48 on sis and 14 on sakila gone.
+      `CHAIN_WITHOUT_TARGET` reads `graphitron_field_target` and `graphitron_field_target_table`,
+      judging only a target that could bind a table at a field with no `@routine` and no `@pivot`;
+      cases in `chain-without-target`.
+    * **A `@pivot` projection has a target** `done`, by the same rule, the six sakila coordinates
+      (`Film.titleTranslations`, `Film.prices` and siblings) gone.
     * **A condition method over untyped tables resolves** `open`. Two sakila coordinates report
       `ELEMENT_UNRESOLVED`, `Customer.addressByCondition` and `Film.actorsByCondition`: a
       condition-only element whose method takes `Table<?>` names no table in its signature, so the
@@ -235,13 +219,12 @@ are gone.
       `Query.occupantsByMixedNamePrefix(firstName:)`: a `@condition` on an argument of a multitable
       field names one method with an overload per participant table, and javac selects one per
       branch, so the overloads are the reference's resolution rather than an ambiguity.
-    * **A named self-referencing key reads one way** `done`. Both hops of a self-reference depart
-      and arrive at one table, so the reading keeps the one the field's cardinality names, which
-      is the generator's rule: along the key on a single-valued field, against it on a list.
-    * **A condition-only element resolves from its method** `done`. The method row was the
-      missing one, `CodeCapture` admitting only a `Condition` return where the generator checks
-      none; a `Field<Boolean>` return is admitted beside it, read off the signature's type
-      argument. The manual still documents `Condition` alone, deliberately.
+    * **A named self-referencing key reads one way** `done`. The reading keeps the hop the field's
+      cardinality names, as the generator does: along the key on a single-valued field, against it
+      on a list.
+    * **A condition-only element resolves from its method** `done`. `CodeCapture` admits a
+      `Field<Boolean>` return beside `Condition`; the manual still documents `Condition` alone,
+      deliberately.
 
 ### The path replaces the walk it was built to retire
 
@@ -264,15 +247,11 @@ either. The same holds at all three grains, a participant's path at an argument 
 running from the participant's table toward a `@nodeId` target in key hops alone.
 
 * **A coordinate's path and a participant's path are two relations** `done`, the field grain.
-  `graphitron_field_path` holds `@routine` and `@reference`, and
-  `graphitron_field_participant_path` one element of one participant's path, keyed by the field, the
-  participant and a position, both read off the same path elements by the graphitron anchor and
-  marked and swept with it. `field-path-and-participant-path` states a field with two participants'
-  paths and one left to discovery beside a `@reference` chain. On the sakila store the ten
-  chain-break defects on `@referenceFor` fields are gone and the other thirteen are unchanged. Its
-  reader is the walk, under "A path is resolved by a deterministic forward walk": a walk toward a
-  participant's target type reads that participant's own path where it has one. Until then those
-  ten fields get no chain at all, so the walk's first reading of them may surface real defects.
+  `graphitron_field_path` holds `@routine` and `@reference`, `graphitron_field_participant_path` one
+  element of one participant's path, both anchored and swept by the graphitron anchor; pinned by
+  `field-path-and-participant-path`. Its reader is the walk under "A path is resolved by a
+  deterministic forward walk"; until then the ten `@referenceFor` fields on sakila get no chain, so
+  that walk may surface real defects.
 * **Writing `@reference` and `@referenceFor` at one coordinate is a defect** `open`, as is a
   `@referenceFor` on a coordinate whose type is neither a union nor an interface. Both are rejections
   the vocabulary states; as codes they are where the editor learns of them.
@@ -326,11 +305,8 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     none of them is a fact about what was written. The input-value step entries gain their first
     reader.
     * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
-      `graphitron_ast_routine_entry` at its written position and folds the name against the catalog's
-      functions in parts, one candidate only; nothing about the target enters it, so no target check
-      moves into the walk. `graphitron_field_routine`, which held the same resolution once per target
-      keyed by an ordinal, and `FieldRoutines` go. Equal on sakila, 23 readings both ways; sis has no
-      `@routine`. The cases are `field-path-routine`.
+      `graphitron_ast_routine_entry` at its written position, one candidate only, with no target
+      check; `graphitron_field_routine` and `FieldRoutines` went. Cases in `field-path-routine`.
   * **Each element kind has a step rule** `open`. Small and separate, one per kind, each the answer
     to "this element, from this table":
     * a key, ridden from the table the walk stands at to its other end, one direction only between
@@ -453,25 +429,17 @@ a derivation over either corpus alone, and `graphitron_` already does this again
 `FieldReferenceStepHops` reads a spelled step entry and `sql_`, writes owned tables, and reaches
 `code_` only through one of these views.
 
-* **The graphitron anchor runs after what it resolves against** `done`. `GraphitronAstCapture`
-  runs after `CodeCapture`, and `graphitron-ast` declares `graphql-ast`, `jooq` and `code`. The
-  anchor is placed to resolve and does not yet; its tables still copy strings, which is what the
-  nodes below and every step `DerivationStratum` gives back to it change.
+* **The graphitron anchor runs after what it resolves against** `done`. `GraphitronAstCapture` runs
+  after `CodeCapture` and `graphitron-ast` declares `graphql-ast`, `jooq` and `code`; its tables
+  still copy strings, which the nodes below and every step `DerivationStratum` gives back change.
 * **Four of the eleven go** `done`. `intent_condition_context_parameter`,
   `intent_external_field_contract_defect`, `intent_producer_cardinality_conflict` and
-  `intent_scalar_java_type` were read by their own tests and by nothing else, and a view nothing
-  uses has not shown it is worth saving, so each went with its tests, the scalar view's
-  vocabulary gate among them.
-* **The demand relations go** `done`. `intent_field_demand_rule` and its five siblings answered
-  whether the generator owes a coordinate a verdict: a copy of the walk's registries, kept for a
-  store-side classifier that does not exist. The generator never read them, MCP's schema tool
-  restated directives it already showed, and the catch-all exemption restated every demand arm as a
-  negation that had already drifted, missing `@routine`. They go with `DemandRuleTest`,
-  `DemandShadowTest` and `DemandResidue`; `intent_type_domain`, the domain they quantified over,
-  stays. R740's demand slice is delivered by this, and R677 is told its precedent is gone.
+  `intent_scalar_java_type` went with their tests, having no other reader.
+* **The demand relations go** `done`. `intent_field_demand_rule` and its five siblings went with
+  `DemandRuleTest`, `DemandShadowTest` and `DemandResidue`; `intent_type_domain` stays. R740's
+  demand slice is delivered by this.
 * **The condition route resolves in `graphitron_`** `done`. `graphitron_condition_method_route`,
-  renamed and declared to the gatherer that already read it; declaring it is what cost anything,
-  the comment being reduced to its grain and example with the argument moved into the declaration.
+  renamed and declared to the gatherer that reads it.
 * **The producer resolution resolves in `graphitron_`** `open`. `intent_field_producer_method` is the
   resolution the other arms hang on, and four of the eleven read it. `graphitron_service_entry` and
   `graphitron_external_field_entry` are wrong as they stand: keyed by coordinate, holding the
@@ -483,79 +451,43 @@ a derivation over either corpus alone, and `graphitron_` already does this again
     `@service`, `@externalField` and `@condition` being meant to take one argMapping one way and
     today sharing no code.
     * **The written reference** `done`. `graphitron_ast_code_reference_entry`: one Java code
-      reference as written, class and optional method, keyed by the `ExternalCodeReference` value's
-      position, or `@sourceRow`'s directive, and referencing `graphql_ast_entry`. Written beside
-      the twins by a walk over the vocabulary's types, so a site is found rather than listed, and
-      pinned by a fact document stating twelve sites from the vocabulary, a multitable path
-      condition two input types deep among them. `@record` is declared only so schemas keep
-      parsing and is decoded by nothing, its two relations gone with it.
+      reference as written, class and optional method, keyed by its value's position or
+      `@sourceRow`'s directive, found by a walk over the vocabulary's types; pinned by a fact
+      document stating twelve sites. `@record` is decoded by nothing.
     * **The argMapping is written once** `done`. `graphitron_ast_argmapping_pair_entry`: one entry
-      of one argMapping as written, keyed to the string's own `graphql_ast_value_entry` row and the
-      entry's position, for `@routine`, `@service`, `@externalField` and `@condition` alike. Found
-      by the vocabulary's name for a mapping through `VocabularyWalk`, which the code reference now
-      walks on too, and read by `ArgMappingSigil.entries`, which judges no site; a sigil is a row
-      as written. `columnMapping` stays `@routine`'s own. The vocabulary still calls argMapping
-      inert on `@externalField`, which its reading and the generator's rejection follow until
-      changed.
-    * **The argMapping's readers are answered from the pair relation** `done`. Measured first: on
-      sakila and sis the family is cheap and the pair relation holds the rows the old entry holds,
-      in `roadmap/audits/2026-10-09-argmapping-and-derivation-timings.md`; each step is timed on
-      the sis store again.
+      of one argMapping as written, for `@routine`, `@service`, `@externalField` and `@condition`
+      alike, found through `VocabularyWalk` and read by `ArgMappingSigil.entries`. The vocabulary
+      still calls argMapping inert on `@externalField`.
+    * **The argMapping's readers are answered from the pair relation** `done`. Evidence in
+      `roadmap/audits/2026-10-09-argmapping-and-derivation-timings.md`.
       * **The pair relation carries its path decomposition** `done`. Root, head and tail of what an
         entry binds to, generated by the database from the written text as the old entry's are.
-      * **Where a mapping sits is an anchor** `done`. `graphitron_argmapping_site`: the directive,
-        its ordinal, the element and its kind, the code reference the mapping belongs to and the
-        path element it sits in, each a fixed hop through keys the transcription declares. The site
-        literal the old entry carries welds three of those into one value, so the parts are what
-        is stated. With the pair relation it holds exactly the old entry's coordinate, parameter
-        and path, both ways. First a view; the rekeyed chain over it ran up to forty times the old
-        chain's time, and the same rows in a keyed table brought it back level, so the
-        graphitron-ast anchor writes it from `graphitron_argmapping_site_rule`, marked and swept.
-        `graphql_directive_application` and its argument relation are declared to `graphql-ast`
-        now, their writer.
-      * **Each reader is answered from them** `done`. The readers downstream of the old entry are
-        joined on its site literal, so the chain is rekeyed to the written mapping rather than
-        flipped one view at a time, and a seeded test converts with the reader it pins. Each step
-        is timed on the sis and sakila stores before and after.
-        * **The candidate stage seeds a sigil from what was written** `done`. Admitting a sigil is
-          the site's rule, so a candidate exists wherever one is written; on sakila the two seeds
-          agree exactly, and `argmapping-pair` states the case.
+      * **Where a mapping sits is an anchor** `done`. `graphitron_argmapping_site`: directive,
+        ordinal, element and kind, code reference and path element, written by the graphitron-ast
+        anchor from `graphitron_argmapping_site_rule`, marked and swept, a keyed table because a
+        view was up to forty times slower. `graphql_directive_application` and its argument relation
+        are declared to `graphql-ast`.
+      * **Each reader is answered from them** `done`. The chain downstream of the old entry is
+        rekeyed to the written mapping, each seeded test converting with the reader it pins.
+        * **The candidate stage seeds a sigil from what was written** `done`. A candidate exists
+          wherever a sigil is written; `argmapping-pair` states the case.
         * **The chain is keyed by the written mapping** `done`. `graphitron_argmapping_match`, the
           three `intent_argmapping_` views and `intent_resolved_node_key_projection` carry the
-          mapping string's position and the entry's in place of the site literal, and the site
-          view's parts for what a reader needs to know of the site. `ArgmappingProjectionDefects`,
-          `ResolvedKeyProjections` and `NodeIdDecodeCoverageFacts` take a site's wording from those
-          parts, a message still naming the use site as it was spelled. `@externalField` and
-          `@multitableReference` mappings, which the old decode never wrote, are filtered by
-          directive so no consumer's answer moves. The parameter's method is the one
-          `graphitron_code_reference` settled rather than a name match, and a defect points at the
-          mapping string. On both stores old and new agree row for row, and time level. The seeded
-          `ArgmappingMatchTest`, `ResolvedNodeKeyProjectionTest` and
-          `ArgmappingProjectionDefectTest` are the fact documents `argmapping-match`,
-          `resolved-node-key-projection` and `argmapping-projection-defect`, and
-          `NodeIdDecodeDefectTest`'s mapped case is `node-id-decode-mapped-parameter`; the oracle
-          is `ArgmappingProjectionDefectsTest` and `ArgmappingProjectionRejectionPipelineTest`.
-        * **`graphitron_type_backing_rule` reads the pair relation** `done`. The parameter branch
-          redirects a `@service` parameter through the pair's `root_name`, keyed to the reference the
-          mapping is a field of through `graphitron_argmapping_site`, `@service` only; a `@condition`
-          mapping on the same field redirects nothing, which `type-backing.graphqls` states.
-        * **`intent_node_id_decode_slot` and `RoutineWriteFacts` read it** `done`. A `@routine`
-          parameter's written path is the pair at the site's field and ordinal, and the slot's
-          name-matched exclusion is any pair at the root field but `@externalField`'s and
-          `@multitableReference`'s, which the old decode never wrote. Old and new slots agree row
-          for row on both stores; sis answers in 302 ms against 1,139, sakila in 154 against 108,
-          the difference being the mapped join over the rekeyed chain. The seeded redirect case is
-          a field of `node-id-decode-mapped-parameter`. Open on the slot: a mapped `@service`
-          naming two overloads reaches it as one untyped row where it drew one row per overload,
-          which its comment still describes.
-      * **The old entry goes** `done`. `graphitron_argmapping_entry`, its indexes and its writer in
-        the registry decode, `GraphitronFactCapture`. `ArgmappingEntryTest`, `argmapping-entry`, the
-        seeders and the pair half of `SupertypeSiteReferenceTest` go with it, the pair relation's
-        foreign key to the written value holding what that orphan scan held.
-      * **The registry decode reads no argMapping** `done`. Its quarantine rows for a mapping the
-        grammar rejects had no reader, the build reporting one from `ArgBindingMap` and the editor
-        from its own parse, so the reads went; `graphitron_undecoded_argument_entry` keeps the
-        `columnMapping` it quarantines.
+          mapping's and entry's positions in place of the site literal, the parameter's method being
+          `graphitron_code_reference`'s. Pinned by the fact documents `argmapping-match`,
+          `resolved-node-key-projection`, `argmapping-projection-defect` and
+          `node-id-decode-mapped-parameter`.
+        * **`graphitron_type_backing_rule` reads the pair relation** `done`. A `@service` parameter
+          is redirected through the pair's `root_name` via `graphitron_argmapping_site`; a
+          `@condition` mapping redirects nothing, stated in `type-backing.graphqls`.
+        * **`intent_node_id_decode_slot` and `RoutineWriteFacts` read it** `done`, pinned by
+          `node-id-decode-mapped-parameter`. Open on the slot: a mapped `@service` naming two
+          overloads reaches it as one untyped row where it drew one row per overload.
+      * **The old entry goes** `done`. `graphitron_argmapping_entry`, its writer
+        `GraphitronFactCapture` and its tests went; the pair relation's foreign key to the written
+        value holds what the orphan scan held.
+      * **The registry decode reads no argMapping** `done`. Its unread quarantine rows went;
+        `graphitron_undecoded_argument_entry` keeps the `columnMapping` it quarantines.
     * **The resolution** `open`, reopened on a legal schema. `graphitron_code_reference`: the one method a written reference
       names, keyed to it and to `code_method`, written by the graphitron-ast anchor; no match is no
       row. `graphitron_code_reference_site` states once what both it and the defects read: the
@@ -596,17 +528,12 @@ a derivation over either corpus alone, and `graphitron_` already does this again
   store, across catalogs no graph reads together, for joins nobody wrote, and four readers re-scope
   it by graph. The walk's `BuildContext.synthesizeNameMatchedJoin` derives the same rule again from
   the live catalog. Nothing compares the two.
-  * **`@table` cannot name a routine result** `done`. A type is bound to a routine's result
-    implicitly, by the field returning it; binding one with `@table` is refused, by the walk while it
-    is the build's gate and by a `TABLE_NAMES_ROUTINE` entry defect the editor reads. The example's
-    `Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr")` loses the directive and
-    keeps working, which is the case that pins both halves.
-    * **The manual says a routine result is bound by its field** `done`.
-      `routine.adoc` says the `@table` spelling is accepted and changes nothing, and its implicit
-      name-matched hop example binds `Brukertilgang` to a function with `@table`; both become the
-      field's binding and the refusal. `code-generation-triggers.adoc` says the return type still
-      binds a `@table`, and its routine example is generated from the corpus file, which loses the
-      directive and is regenerated.
+  * **`@table` cannot name a routine result** `done`. A routine result is bound by the field
+    returning it; `@table` on one is refused by the walk and by a `TABLE_NAMES_ROUTINE` entry
+    defect, pinned by the example's `Tilgang`, which loses the directive.
+    * **The manual says a routine result is bound by its field** `done`. `routine.adoc` and
+      `code-generation-triggers.adoc` state the field's binding and the refusal, the routine example
+      regenerated from the corpus.
   * **The pairing is the anchor's, where a field joins a routine result** `open`. Matched once, by
     `graphitron`'s anchor, for each join a field asks of a routine result: an authored reference
     joining from one, and a routine write's payload re-reading the rows it returned. Stored at that
@@ -657,32 +584,21 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
 * **The twinned ones flip and subtract** `open`. Their replacement is written on every capture and
   read by nobody, which is the state this item calls the most dangerous one.
   * **The link and federation key entries are gone** `done`. Key synthesis reads
-    `graphitron_ast_link_entry` and the `graphitron_ast_federation_key_` entries, so
-    `graphitron_link_entry` and the three `graphitron_federation_key_` entries lost their last
-    reader and went, with the decode arms that wrote them and `intent_federation_key`, whose
-    readers read `graphitron_directive_application` instead.
-  * **The condition entries are gone** `done`. `graphitron_field_condition_entry`,
-    `graphitron_argument_condition_entry` and the two context-argument entries hanging off them,
-    which the registry decode wrote and nothing read but rules asking whether a `@condition` sits at
-    a coordinate. Those read `graphql_directive_application` there, and the MCP server's condition
-    bindings read the written reference off `graphitron_code_reference_site`, still matching the
-    census so an ambiguous one reports every candidate. Old and new agree on sakila and sis and time
-    level. The seeded read-surface case is `read-surface-on-write`.
+    `graphitron_ast_link_entry` and the `graphitron_ast_federation_key_` entries;
+    `graphitron_link_entry`, the three `graphitron_federation_key_` entries and
+    `intent_federation_key` went.
+  * **The condition entries are gone** `done`. The field, argument and context-argument condition
+    entries went; rules read `graphql_directive_application`, and MCP's condition bindings read
+    `graphitron_code_reference_site`. Pinned by `read-surface-on-write`.
   * **The reference-step entries are gone** `blocked`, on the steps below and on "One resolution
     of an authored element stands". Four relations the registry decode writes, read for the path's
     shape, for the name a step spells, and by the hops and the read-time chain.
-    * **The language server finds a spelled step through the step twins** `done`. Where a
-      `@reference` or `@referenceFor` step names a table or a key, read off the eight table and key
-      twins, field and input value alike, and located at the application holding the path, so an
-      argument's `@referenceFor` is found as well. `graphitron_reference_for_step_entry` and
-      `graphitron_argument_reference_for_step_entry` then had no reader and went; the registry
-      decode still writes their method references and spellings.
-    * **The language server locates a step at the name it wrote** `done`. A step is located at the
-      string written under `table:` or `key:`, the value the twin's element holds, rather than at
-      the application holding the path: that string is the reference an editor would change, a
-      path naming one table at two steps is two uses, and a step several lines into a path is
-      found where it was written. The twin keys the step by its element already, so the climb to
-      the holder's parent goes.
+    * **The language server finds a spelled step through the step twins** `done`, for field,
+      argument and input value; `graphitron_reference_for_step_entry` and
+      `graphitron_argument_reference_for_step_entry` went, though the registry decode still writes
+      their method references and spellings.
+    * **The language server locates a step at the name it wrote** `done`, the string under `table:`
+      or `key:` that the twin's element holds.
     * **Whether a coordinate carries a path is read off its applications** `open`. The node-id
       instruction and column-scope rules and `intent_field_column_table` ask only that, at fields,
       input fields and arguments alike, which `graphql_directive_application` answers once an
@@ -754,26 +670,21 @@ new one.
 
 ### `capture` runs against the model alone `done`
 
-* **The goal captures and nothing else** `done`. A second pass through the generator re-read every
-  corpus the gatherers had just written, kept nothing, and could fail the goal over a schema the
-  store already held; the goal now opens the store, captures and closes it from the plugin, and
-  fails only where it cannot capture.
+* **The goal captures and nothing else** `done`. The goal opens the store, captures and closes it
+  from the plugin, and fails only where it cannot capture.
   * A schema extending a built-in captures `done`, by "The specification is a document": an
-    extension merges onto the specification's declaration instead of adding the type twice.
-* **A capture commits as it goes** `done`. Each gatherer commits its own work in
-  transactions of its own choosing, and `store_graph_progress` holds each one's last start,
-  completion and time spent, recorded around the run rather than inside its transactions, with a
-  row for the capture as a whole, so a hung or failed capture leaves on disk how far it got; the one outer
-  transaction never held, `ANALYZE` committing it mid-capture. Readers do not consult it yet.
+    extension merges onto the specification's declaration.
+* **A capture commits as it goes** `done`. Each gatherer commits its own transactions and
+  `store_graph_progress` records each one's start, completion and time, so a failed capture leaves
+  its progress on disk. MCP status reads the `report` row to say a round's report is withheld.
 
 ### The classified model dissolves into the store
 
 The store is the model. The walk resolves the same schema a second time into records the validator
 and the emitters read, and it goes when nothing reads what it builds.
 
-* **What the store states of R333's facts is counted** `done`. Of the walk's 465 rejection calls, 411
-  are constraints on a fact, in about 95 rules of which about 15 have a code; per fact, a leaf being
-  a denormalized view over them. Evidence in `roadmap/audits/2026-10-08-fact-census.md`.
+* **What the store states of R333's facts is counted** `done`. Of the walk's 465 rejection calls,
+  411 constrain a fact; evidence in `roadmap/audits/2026-10-08-fact-census.md`.
 * **Every coordinate carries R333's facts, and a constraint a fact breaks is a located defect**
   `open`. The facts are what `generate` reads and their constraints are what `validate` reports, so
   neither needs a classification.
@@ -839,22 +750,17 @@ and the emitters read, and it goes when nothing reads what it builds.
   * **`source` and `target` are stated for every coordinate** `open`. The two total facts no relation
     states whole, and totality is what the defect model's gate checks.
     * **A field's source says how many objects arrive** `done`. `graphitron_type_arrival` folds each
-      type's arrival as the walk does, over the authored SDL; `graphitron_field_source` names ROOT,
-      ONLY_CHILD or CHILD, agrees with the walk on every field it classifies, and a gate over the fact
-      examples holds every output field to a source or a defect explaining it.
+      type's arrival; `graphitron_field_source` names ROOT, ONLY_CHILD or CHILD, agrees with the
+      walk, and a gate over the fact examples holds every output field to a source or a defect.
     * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
       table-bound, a record, or a nesting type passing its parent's row through.
-      * **A type's backing is anchored by the graphitron gatherer** `done`. `graphitron_type_backing`,
-        marked and swept after the table bindings: one recursive statement over the producers'
-        resolved methods and the members each backed class offers, an array path standing in for
-        the cycle detection H2 lacks. It agrees with the `intent_` cluster on every capture of the
-        model and generator suites, save an ambiguous reference, which grounds nothing here and
-        draws `CODE_REFERENCE_METHOD_AMBIGUOUS`. On a consumer schema of 2345 types: 130 backings
-        through 136 paths at most four deep.
-      * **The readers move and the `intent_` cluster retires** `done`. Every reader in the generator,
-        the language server and the MCP server reads `graphitron_type_backing`, a grounding being a
-        `PRODUCER` row; the seeded cases are fact documents, plus one capture over classpaths the
-        test compiles where the case is the classpath.
+      * **A type's backing is anchored by the graphitron gatherer** `done`.
+        `graphitron_type_backing`, marked and swept after the table bindings, one recursive
+        statement over producers' resolved methods and backed classes' members; an ambiguous
+        reference draws `CODE_REFERENCE_METHOD_AMBIGUOUS`.
+      * **The readers move and the `intent_` cluster retires** `done`. Every reader in the
+        generator, the language server and the MCP server reads `graphitron_type_backing`, a
+        grounding being a `PRODUCER` row; the seeded cases are fact documents.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
       * **A field's source object is stated** `blocked`, on "The code family reads the generated
@@ -865,18 +771,11 @@ and the emitters read, and it goes when nothing reads what it builds.
         nesting types with neither a table nor a backing of their own. Only the class; its kind, its
         members and whether it is a jOOQ record are joins. A row is
         `graphitron_field_source_table`'s, so the source object says nothing about tables.
-    * **A field's target is its target type** `done`. A field has a target type, and a target type
-      is what is bound to a table. `graphitron_field_target` holds one row per field: the target
-      type unwrapped, the element where the field returns a connection and the named type
-      otherwise, scalars included, with the connection it was unwrapped from beside it. List and
-      non-null wrapping are cardinality and stay on `graphql_field`. Everything else is a join on
-      the target type: its kind to `graphql_type`, its participants to `graphql_poly_member`, its
-      table to `graphitron_resolved_type_binding`, so two participants bound to one table are two
-      rows of that join and a target with no table is a row with none. It is
-      `graphitron_field_navigation` renamed, the wrapper's name in place of the two-value basis,
-      in one commit with its readers. A mutation's target is its payload type. The refetch a
-      mutation does is the carrier's own fact, `graphitron_carrier_data_field`, whose data field
-      has a target of its own; it is not folded in here.
+    * **A field's target is its target type** `done`. `graphitron_field_target` holds one row per
+      field: its target type unwrapped from list, non-null and connection wrapping, scalars
+      included, with the connection beside it; kind, participants and table are joins on the target
+      type. A mutation's target is its payload type; its refetch stays
+      `graphitron_carrier_data_field`'s fact.
     * **The duplicate statements of a field's tables dissolve** `open`. A field's target and its
       source are each stated several times at several grains, and each statement goes when its
       readers have moved:
@@ -910,18 +809,10 @@ and the emitters read, and it goes when nothing reads what it builds.
 
       Each is measured old against new on sakila and sis before it goes, the rules reading it keep
       their answers, and its readers are named on the commit that moves them.
-    * **The unlowerable ordering is a defect** `done`. A declared `@defaultOrder` or `@orderBy` on
-      a field read once per participant is `ORDERING_ACROSS_PARTICIPANTS`, resting on `UNSUPPORTED`,
-      at the declaring directive, in `graphitron_entry_defect_rule`. The unstored
-      `intent_field_unlowerable_ordering` was evaluated four times a round at 45 to 80 ms on sakila;
-      the rule is evaluated once per capture, at 2 to 3 ms on both stores, where both have no row.
-      `UnlowerableOrderings.detect` mints the build error from the stored rows until entry defects
-      fail the build, naming the target's members, and the editor reads the defect through the
-      `diagnostic` view, so the rejection rows and their stage go. The primary-key fallback route
-      went with the view, inert on a fan-out. The clause restating the classifier's precedence
-      (`@service`, `Node`, `@lookupKey`, `@routine`, the query root, the list shape) moved with the
-      rule; which route classifies a field is the fetcher's fact under "Every field has one
-      fetcher", and the rule reads it from there once it is stated. The seeded cases are
+    * **The unlowerable ordering is a defect** `done`. A declared `@defaultOrder` or `@orderBy` on a
+      field read once per participant is `ORDERING_ACROSS_PARTICIPANTS`, resting on `UNSUPPORTED`,
+      in `graphitron_entry_defect_rule`; `UnlowerableOrderings.detect` mints the build error from
+      the stored rows until entry defects fail the build. The cases are
       `ordering-across-participants`.
     * **A list `@routine` write delivers its order** `open`. Its returned keys are captured and its
       rows re-read by key, and neither step sorts, so the target's primary key orders nothing. The
@@ -936,13 +827,10 @@ and the emitters read, and it goes when nothing reads what it builds.
       primary key of the first link's table, or `@sourceRow`, which is a forced choice. A root field
       has no source: nothing encloses it, so its query starts on its target.
       * **A field's source is its parent's table, or its parent's sources** `done`.
-        `graphitron_field_source_table`, keyed by the field and the source table: `SOURCE_TYPE`
-        where the parent type binds a table, `INHERITED` through object types with no table of their
-        own, from each field reaching them that wrote no path, walked at the type grain with a cycle
-        guard. The head walk seeds from it, its only reader of a source, so
-        `graphitron_field_table.from_*` has none left. Every source that relation held is here,
-        and `NO_ROUTE_FROM_DEPARTURE` went from 99 to 0 on sis and from 11 to 3 on sakila. The cases
-        are `field-source-table`.
+        `graphitron_field_source_table`, keyed by field and source table: `SOURCE_TYPE` where the
+        parent binds a table, `INHERITED` through object types with no table of their own. The head
+        walk seeds from it, so `graphitron_field_table.from_*` has no reader; the cases are
+        `field-source-table`.
       * **A root field led by `@routine` reads from the routine's result** `open`, set aside while
         `@routine` and `@service` are left out of the path branch. A root has no source, and a
         leading routine is where its query starts instead of its target: a `ROUTINE` row in
@@ -1098,10 +986,9 @@ types and its formatter are already model-side, so what stands between here and 
       primary key, which are the three tiers `NodeKeyColumns` tries.
     * **Two nodes sharing a type id is a defect** `done`. `NODE_TYPE_ID_SHARED`, at each type's
       `@table`, off `graphitron_node`'s resolved id; stated by `facts/node-type-id.graphqls`.
-    * **A pinned key disagreeing with the published one is a defect** `blocked`, on node metadata
-      being a catalog fact, in "A node is settled with the decode that states it". Only
-      `intent_node_metadata_defect` states it today, and a `graphitron_` rule reading `intent_` is
-      the crossing this branch removes.
+    * **A pinned key disagreeing with the published one is a defect** `open`, after "Node metadata
+      is a catalog fact, and an attempt that fails is a warning" (done): the published key is a
+      catalog fact now, so the disagreement is a `graphitron_` rule over it. Nothing states it today.
   * **The `tableExpr` rules** `open`. 24 sites.
   * **The `sourceObject` rules** `open`. 23 sites.
     * **A `@table` naming no table, or one two schemas declare, is a defect** `done`.
@@ -1115,9 +1002,8 @@ types and its formatter are already model-side, so what stands between here and 
   * **The `errorGuard` rules** `open`. 16 sites, over a fact only `intent_` states.
   * **The `discrimination`, `source`, `referencedTable`, `target`, `enum` and `resolvedTable`
     rules** `open`. 31 sites between them.
-    * **A field on the subscription root is a defect** `done`. `SUBSCRIPTION_FIELD`, the first code
-      resting on `UNSUPPORTED`, at the field's own declaration and keyed on the root operation; the
-      diagnostic surface reports it as not actionable. Stated by `facts/subscription-field.graphqls`.
+    * **A field on the subscription root is a defect** `done`. `SUBSCRIPTION_FIELD`, resting on
+      `UNSUPPORTED`, at the field's own declaration; stated by `facts/subscription-field.graphqls`.
   * **The rules on directives R333's catalog names no fact for** `open`. `@scalarType` binding,
     tenancy and federation, 25 sites; rules all the same, over the relations that state them.
     * **A `@scalarType` naming no constant is a defect** `done`. `SCALAR_TYPE_REFERENCE_MALFORMED`,
@@ -1138,8 +1024,8 @@ types and its formatter are already model-side, so what stands between here and 
   `diagnostic`, so no surface lists the refusals. They are recorded where the written schema's
   refusals are, and the log names each one.
 * **What the generator cannot emit is judged as the schema** `done`, by the defect model's basis. A
-  generated name colliding is `GRAPHITRON`, an emission not written yet `UNSUPPORTED`; nothing is the
-  generator's fault, the generator running only on a schema that validates.
+  generated name colliding is `GRAPHITRON`, an emission not written yet `UNSUPPORTED`; the generator
+  runs only on a schema that validates.
 * **Node-id decode coverage is stated from the store** `open`. It is the one verdict that subtracts
   the walk's ledger from the store's census, so it is restated over store facts or it goes.
 * **The verdict reads what the editor reads** `blocked`, on the rules being defects and on "Entry
@@ -1168,19 +1054,16 @@ reads nothing off the classpath that capture has already read, and builds no sch
   `GraphitronStore.captured` returns it beside the store as a `CapturedGraph`.
   * **A dev round whose capture was skipped still has a schema** `done`. The skip yields: the
     session's generator factory captures first.
-  * **`AttributedRegistry.load` dissolves** `done`. The refusal cases and the walk's configured-tag
-    cases dissolved into what the capture path already pins, the configured tags and notes are read
-    off the emitted schema, and `CapturedSchemaAgreementTest` went with the second reading it
-    compared. `EmittedRegistry`'s overloads over `AttributedRegistry`, kept alive only by tests, went
-    after it, and with them the handle on the composition nothing else read.
+  * **`AttributedRegistry.load` dissolves** `done`. Its cases dissolved into what the capture path
+    pins, configured tags and notes are read off the emitted schema, and
+    `CapturedSchemaAgreementTest` and `EmittedRegistry`'s overloads over `AttributedRegistry` went
+    with it.
 * **Capture hands back the emitted schema** `done`. `EmittedRegistry` runs in capture and
   `CapturedSchema` carries both; the generator renders the emitted one and reads the written one
   only for the walk.
-  * **The emitted schema is derived right after the anchor** `done`, the macros being one
-    mint. They had diverged: the connection and facet mint was anchored by `EmittedAnchor`, while key
-    synthesis was a view over the deprecated decode and the node rule, and tag inheritance was Java
-    inside `EmittedRegistry`, the `graphitron_` anchors having no relation for a directive
-    application to be minted to.
+  * **The emitted schema is derived right after the anchor** `done`, the macros being one mint. The
+    connection and facet mint, key synthesis and tag inheritance are one mint by `EmittedAnchor`
+    into the `graphitron_` anchors; the nodes below state each part.
     * **Which types are nodes is settled in the anchor** `done`. `TableTypes.derive` and
       `Nodes.derive` read nothing written after it, and run there.
     * **The anchors hold directive applications** `done`. `graphitron_directive_application` and its
@@ -1191,12 +1074,11 @@ reads nothing off the classpath that capture has already read, and builds no sch
       knowing which macro wrote them.
     * **Tag and `@shareable` inheritance is minted by `EmittedAnchor`** `done`.
       `graphql_source_input` records what each file's entry configures, `graphitron_configured_tag`
-      states the tag rule over it as a third set of the directive anchor, and
-      `graphitron_inherited_directive` is the intersection over the carriers.
+      states the tag rule over it, and `graphitron_inherited_directive` is the intersection over the
+      carriers.
       * **The inheritance reads stored carriers** `done`. `graphitron_configured_tag`,
         `graphitron_minted_coinage` and `graphitron_carrier_directive` are stored by `EmittedAnchor`
-        from `_rule` views, H2 having re-run each view per joined row until a capture of sis never
-        finished its directive anchor; `roadmap/audits/2026-10-09-federation-chain-hang.md`.
+        from `_rule` views; `roadmap/audits/2026-10-09-federation-chain-hang.md`.
     * **The rule reads no deprecated decode** `done`. The key and link entries it read are retired;
       see "No `graphitron_*_entry` survives".
     * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored
@@ -1212,17 +1094,11 @@ reads nothing off the classpath that capture has already read, and builds no sch
     nothing. The support-type rule is structural and needs no classification: a support type is
     published only in the published tier, `SortDirection` today, and only where an element of a
     type outside the support set references it; a strictly internal one never is.
-    * **`CompletionData` dissolves** `done`. `CatalogBuilder` read `@node` off the emitted schema,
-      the one reader of a graphitron directive there, for a catalog nothing read: the editor reads
-      the store, and the dev loop only logged the catalog's counts. With it went `CatalogBuilder`,
-      the generator's classpath census, read only to build the catalog, and `ClasspathCensus` and
-      `ClasspathScanner` with it; capture reads the classpath into the `code_` family on its own.
-      R1008, a flaky report from that census, dissolved with it.
-      * **`TypeBackingShape` dissolves** `done`. What survived of the catalog was the walk's view
-        of a type's backing, read off the classified model, in main sources with only tests calling
-        it; the store states the backing in `graphitron_type_backing`. The tests that pinned the
-        projection went with it. The backing comparison went too, every case it ran being one
-        `TypeBackingClassTest` already pins against the store, and the plugin's completion
+    * **`CompletionData` dissolves** `done`. With it went `CatalogBuilder` and the generator's
+      classpath census (`ClasspathCensus`, `ClasspathScanner`), and R1008 dissolved; the editor
+      reads the store, and capture reads the classpath into the `code_` family.
+      * **`TypeBackingShape` dissolves** `done`. The store states a type's backing in
+        `graphitron_type_backing`, pinned by `TypeBackingClassTest`, and the plugin's completion
         pipeline asks the store which class backs a type.
   * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
     federation service form on the walk's `federationLink`; the emitted schema carries the
@@ -1296,28 +1172,20 @@ reads nothing off the classpath that capture has already read, and builds no sch
   view. The relations without one are held, not dropped: they wait for this flip.
   * **The readers move onto the store** `open`, one setting at a time.
   * **`RunContext` stops carrying what the store states** `blocked`, on the readers.
-  * **The configuration family is pinned by fact documents** `done`. A document states the
-    configuration it is captured under with `@withConfiguration`, which the fact harness reads off
-    its text before the capture, a stepped graph's reading taking it from the files as they then
-    stand. `configuration` states every parameter landing, `configuration-none` a run that
-    declared nothing, and `configuration-sweep` three readings: parameters taken out are swept,
-    and an unchanged configuration is restamped. `@assertEmpty` is how a document says a relation
-    holds no row for its graph. `StoreEntriesTest` keeps the recipe, which a document cannot state,
-    its recipe being the harness's own, and the sibling-graph case. A broken row in each document
-    was run and fails.
-* **Configured tags have one producer** `done`. `TagApplier` put them into the written composition
-  in Java while `graphitron_configured_tag` stated the same rule in SQL for inheritance to read, so a
-  carrier's own tags and the ones its minted types inherit came from two rules nothing compared.
-  `TagApplier` is gone: the emitted schema applies the `CONFIGURED` rows as it applies the `MINTED`
-  ones, at any coordinate kind, and the written schema carries no configured tag.
-  `ConfiguredTagTest` pins every kind the rule names on both schemas, and the federation pipeline
-  test compiles the schema classes a run writes and reads the tags off the types they build.
-  * **Enum values are anchored** `done`. `graphitron_element` admits them, so the rule states their
-    tags, and `graphitron_enum_value` is their part relation beside the other three, so a reader
-    reaches an enum value's type and name by a join rather than by taking its coordinate apart.
+  * **The configuration family is pinned by fact documents** `done`. A document states its
+    configuration with `@withConfiguration`, and `@assertEmpty` says a relation holds no row for its
+    graph; `configuration`, `configuration-none` and `configuration-sweep` pin landing, nothing
+    declared and the sweep, and `StoreEntriesTest` keeps the recipe and the sibling-graph case.
+* **Configured tags have one producer** `done`. `TagApplier` is gone: the emitted schema applies
+  `graphitron_configured_tag`'s `CONFIGURED` rows as it applies the `MINTED` ones, at any coordinate
+  kind, and the written schema carries no configured tag. Pinned by `ConfiguredTagTest` and the
+  federation pipeline test.
+  * **Enum values are anchored** `done`. `graphitron_element` admits them and
+    `graphitron_enum_value` is their part relation, so the tag rule states their tags and a reader
+    reaches an enum value's type and name by a join.
   * **The schema classes read the configured tags off the emitted schema** `done`. The walk's
-    own connection types inherit only authored tags now, so `CarriesObjectForm.formOf` reads the schema's
-    type first, and the enum and input classes render the schema's forms rather than the walk's.
+    connection types inherit only authored tags, so `CarriesObjectForm.formOf` reads the schema's
+    type first, and the enum and input classes render the schema's forms.
 * **The configuration's rewrites leave the composition** `open`, so the written schema is what was
   written.
   * **`FederationLinkComposer` leaves the composition** `blocked`, on the generator building no
@@ -1327,27 +1195,22 @@ reads nothing off the classpath that capture has already read, and builds no sch
     When it goes, `EmittedRegistry` applies the link and the definitions it imports for a
     `CONFIGURED` row of `graphitron_federation_link`, so the emitted schema keeps saying it is
     federated.
-    * **The opt-in is one relation** `done`. `graphitron_federation_link` states whether a graph is
-      federated and how, an authored federation `@link` or a configured tag where none is written,
-      and `graphitron_federation_link_import` what the link imports, both anchored and marked and
-      swept. The key mint reads it in place of the link entries and
-      `graphql_assembly_synthesised_link`, which goes with its writer, nothing else reading it.
+    * **The opt-in is one relation** `done`. `graphitron_federation_link` states whether and how a
+      graph is federated (an authored federation `@link`, or a configured tag where none is
+      written), `graphitron_federation_link_import` what it imports, both marked and swept; the key
+      mint reads it, and `graphql_assembly_synthesised_link` is gone.
       * **The federation link is decoded at capture** `done`. `graphitron_ast_federation_link_entry`
-        states which `@link` applications name the federation specification and the version, where
-        `FederationSpec` is a constant, so no view filters urls with a literal and the test pinning
-        that literal to the constant dissolves.
+        states which `@link` applications name the federation specification and the version, so no
+        view filters urls with a literal.
     * **A configured tag the authored link does not import is a detection** `open`, over the
       relation, where it is a refusal of the composition today.
-  * **`DescriptionNoteApplier` follows** `done`. The original description is the document's, in
-    `graphql_`; the note is the document's configuration, in `graphql_source_input`; and the
-    description the generator emits is minted, the anchor appending each element's note to it in the
-    `graphitron_` part relations' own `description`, a type's from the file holding its base
-    definition. `ConfiguredNoteTest` pinned the applier's behaviour before it went, and checks the
-    part relations beside the emitted schema. An editor knows a description is minted from the
-    document's configuration, and can show the minted text as a hint.
-    * **The part relations are read by their columns** `done`. `EmittedRegistry` reads the type,
-      member and argument from the four part relations, where it took coordinates apart, and sets
-      an element's description from its part relation where the anchor minted one.
+  * **`DescriptionNoteApplier` follows** `done`. The anchor mints each element's emitted
+    description, the document's own in `graphql_` plus the configured note from
+    `graphql_source_input`, into the `graphitron_` part relations' `description`;
+    `ConfiguredNoteTest` checks the part relations beside the emitted schema.
+    * **The part relations are read by their columns** `done`. `EmittedRegistry` reads type, member
+      and argument from the four part relations rather than taking coordinates apart, and an
+      element's description from its part relation where the anchor minted one.
 * **The vocabulary is emitted and minted** `open`. "Synthesis" named code that edited a registry in
   place; what graphitron adds to the schema is minted, by a rule over the store, and the schema
   capture derives is the emitted schema. `CapturedSchema.synthesised` becomes `emitted`, with the
@@ -1355,18 +1218,12 @@ reads nothing off the classpath that capture has already read, and builds no sch
   it names.
   * **The federation key is one rule of the mint** `done`. The synthesized-key view dissolved into
     `graphitron_directive_application_minted`: the node types of a federated graph with no authored
-    id key, read from `graphitron_node`, so a `@node` that is an error is not keyed. Its constant
-    arguments are rows of `graphitron_directive_application_arg_minted`, and its readers read the
-    minted applications.
-    * **A configured link mints no key it does not import** `done`, a regression. Reported
-      2026-10-15 from a live session. With the author's federation `@link` and `@key`s removed and
-      the inputs still tagged, `TagLinkSynthesiser`'s link imports `@tag` alone, yet the opt-in
-      reads it as `CONFIGURED` and the mint puts `@key(fields: "id")` on every `@node` type: twelve
-      "Federation directive '@key' is not declared" refusals of graphitron's own injection, which
-      the author cannot fix, so no author can leave federation while tags are configured. Decided:
-      the link imports what the mint writes, authored and configured alike, and an author's own
-      declaration of an imported directive collides as it does today. Closed by "The effective
-      imports are graphitron's rule".
+    id key, read from `graphitron_node`, so a `@node` that is an error is not keyed; its constant
+    arguments are rows of `graphitron_directive_application_arg_minted`.
+    * **A configured link mints no key it does not import** `done`, a regression. A configured link
+      imported `@tag` alone while the mint put `@key` on every `@node` type, refused as undeclared.
+      Closed by "The effective imports are graphitron's rule": the link imports what the mint
+      writes.
   * **A link's imported definitions are captured where the link is** `open`, a regression.
     Reported 2026-10-15 from a live session. With the authored federation `@link` in place,
     generate accepts `@tag` and `@key` but the editor flags each as "Unknown directive":
@@ -1386,27 +1243,15 @@ reads nothing off the classpath that capture has already read, and builds no sch
   graphql gatherers and graphitron, in a `federation_` family, reading `graphql-source` and
   `graphql-ast`; `graphitron-ast` reads it. What depends on graphitron's mint, the imports a link
   ends up with, stays graphitron's.
-  * **Federation's versions and their imports are captured** `done`. `federation_version`
-    is one row per spec version the library supports, keyed by its url; `federation_version_import`
-    one row per name that version's link may import, spelled as imports spell it (`@key`,
-    `FieldSet`). Read through the library's public API: versions probed upward from v2.0 until
-    `loadFederationSpecDefinitions` refuses, a test pinning the set, and each name in a version's
-    definitions tried as an import, since several versions share one definition file and the
-    library gates some of a file below a directive's minimum version. Marked and swept under one
-    `store_source` row for the library, kind `LIBRARY`, named by group and artifact and stamped by
-    the jar's content, the jar carrying no Maven metadata to name its release by; a changed stamp
-    is read whole. Needs no SDL, so it moves nothing. `FederationCapture` runs after the graphql
-    gatherers; federation-versions pins v2.0 to v2.15 and the imports graphitron mints, and
-    `FederationCaptureTest` the read-once and the re-read.
-  * **The effective imports are graphitron's rule** `done`. `graphitron_federation_link_import`
-    is the authored imports plus each MINTED or CONFIGURED directive the link's version may import
-    and the link does not, written after `EmittedAnchor`; the configured link names the generator's
-    version and its hard-coded `@tag` is gone. `FederationLinkComposer` replaces
-    `TagLinkSynthesiser`: `LoadingRewrites` takes the settled link and rewrites the author's
-    `@link` in place, or adds graphitron's own, and `TagNotImported` is gone. The assembly reads
-    the anchor, so `ModelCapture` runs it after `GraphitronAstCapture`. An author's own declaration
-    of an imported directive collides at the declaration. Closed "A configured link mints no key it
-    does not import"; the manual's tag sections say so.
+  * **Federation's versions and their imports are captured** `done`. `federation_version` holds one
+    row per spec version the library supports, keyed by url, and `federation_version_import` one row
+    per name its link may import, marked and swept under one `LIBRARY` `store_source` row stamped by
+    the jar's content. Pinned by `federation-versions` (v2.0 to v2.15) and `FederationCaptureTest`.
+  * **The effective imports are graphitron's rule** `done`. `graphitron_federation_link_import` is
+    the authored imports plus each MINTED or CONFIGURED directive the link's version may import,
+    written after `EmittedAnchor`. `FederationLinkComposer` replaces `TagLinkSynthesiser`, rewriting
+    the author's `@link` or adding graphitron's own from the settled link, so `ModelCapture` runs
+    the assembly after `GraphitronAstCapture`.
   * **A minted directive its version cannot import is a defect** `open`, after "The effective
     imports are graphitron's rule". The rule leaves such a
     directive out of the imports, so the assembly reports it undeclared, which reads as the
@@ -1471,12 +1316,10 @@ reads nothing off the classpath that capture has already read, and builds no sch
   what holds this: a row shared across classes by construction has no per-class mark that can decide
   its fate. Until this lands `store_class_file.byte_size` and `.mtime` are written and read by
   nobody, which is an arm waiting for its reader.
-* **An entry gone from disk can be deleted** `done`. It could not: `code_type` keyed `store_source`
-  with no `ON DELETE`, so `reclaim` deleting a vanished entry was refused and the whole capture
-  threw. `CodeCaptureTest` now removes an entry from disk between two readings and holds every
-  classpath relation empty for it afterwards, against a control entry that stays. The dictionary's
-  key and the positions' keys into it cascade; `sql_schema` and `sql_enum_binding` key
-  `store_source` the same way and are the catalog's to look at.
+* **An entry gone from disk can be deleted** `done`. `code_type`'s key into `store_source` cascades,
+  as do the dictionary's and the positions' keys, so `reclaim` deletes a vanished entry;
+  `CodeCaptureTest` pins it. `sql_schema` and `sql_enum_binding` key `store_source` the same way and
+  are the catalog's to look at.
 * **Every `code_` row hangs off a class** `open`. `code_throwable` and `code_throwable_supertype`
   key the entry, though every throwable is a class the reading read; the dictionary pair is the
   other two, and is going.
@@ -1507,17 +1350,12 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   `intent_delivery_container` supplies the container set, so siting the parse moves columns rather
   than moving a resolution.
 * **Each column is earned by a named reader** `done`, by tracing them to the queries. The spelling
-  is what an emitter declares a type from. `element_class` answers which class backs a GraphQL type,
-  through `intent_type_backing_seed` to five language-server surfaces and `TypeBackingRows`.
-  `delivery` answers whether a field declared a list is backed by a method that delivers one, which
-  a cardinality-conflict view stated until it was retired for having no reader, so the column has
-  none now. `erased_class` is what a
-  binding compares against, at argument mapping and at a `@nodeId` decode's landing.
+  declares a type; `element_class` answers which class backs a type, through
+  `intent_type_backing_seed` to the language server and `TypeBackingRows`; `erased_class` is what a
+  binding compares against; `delivery` has no reader now.
 * **A use site carries its own parse** `done`. `code_method` and `code_method_parameter` each hold
-  their own erasure, delivered class and delivery. Nothing new is computed: the reading reached all
-  three at the position already and deduplicated them into the dictionary, so siting them is
-  declining to deduplicate. Held against the dictionary in both directions while both exist, which
-  is an oracle only this order affords.
+  their own erasure, delivered class and delivery, held against the dictionary in both directions
+  while both exist.
 * **The readers move off the dictionary** `blocked`, on the seeded cases being gathered. Read at the
   queries rather than the views, what is left reading it through a position is the rendering and
   nothing else: `ClassMemberSlots` in the language server, and `SchemaQueries.members` and
@@ -1529,18 +1367,9 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
   states that one signature parses two ways. Teaching the seeder both halves is work on a fixture
   whose conversion makes the question disappear, a capture writing both from one reading. So the
   flip waits for those cases rather than paying for them twice.
-* **A slot carries its own parse** `done`. `code_read_slot` and `code_write_slot` each hold the
-  erasure, delivered class and delivery of their own type, beside the spelling they already had,
-  and `CodeCaptureTest` holds both against the dictionary as it holds the method positions. The
-  node read the other way round first, the slot reaching its type through its accessor's
-  `code_method` row, and inheritance is what turned it: what a member yields is a fact about the
-  class offering it and not about the method behind it. An inherited accessor has no row under the
-  offering class and may sit in an entry the reading did not read; a constructor has no
-  `code_method` row at all, so a POSITIONAL write slot would have nothing to reach; and a base class
-  declaring `K getId()` offers `Integer` to a subclass extending it at `Integer`, which only the
-  offering class can say. That last case is a known limit rather than a fixed one: the spelling is
-  the accessor's declared result, type variables unsubstituted, so it reads `K`. The slot is where
-  the substituted type goes when the reading states it.
+* **A slot carries its own parse** `done`. `code_read_slot` and `code_write_slot` each hold their
+  type's erasure, delivered class and delivery, pinned against the dictionary by `CodeCaptureTest`;
+  a type variable inherited from a base class still reads unsubstituted, a known limit.
 * **The read slot is named for its axis** `done`. `code_type_slot` became `code_read_slot`: keyed by
   the offering class and its accessor, it has no type in its key, and the store already called it
   the read side of the pair `code_write_slot` is the other half of.
@@ -1554,10 +1383,9 @@ result_delivery      -- DIRECT | WRAPPED | MANY, NULL with element_class
 * **A slot's parse is read by what replaces the accessor hop** `done`. `graphitron_type_backing_rule`
   reads `element_class` off the slot, and off the producer's method and parameter, with no peel
   through `code_type_element`; what blocked it was a stated classpath leaving the columns empty.
-* **`code_construction` keys on the class it is about** `done`. It states how a value of one class is
-  made and was keyed by a type spelling, a class fact filed under a type key. It keys into
-  `code_class` now and `code_write_slot` follows it, so a class the next reading does not find takes
-  its construction and its write slots with it.
+* **`code_construction` keys on the class it is about** `done`. It keys into `code_class` and
+  `code_write_slot` follows it, so a class the next reading does not find takes its construction and
+  write slots with it.
 * **`code_type` and `code_type_element` are gone** `blocked`, on the readers moving off them.
   * **The modeling discipline's worked example follows them out** `blocked`, on the node above.
     `modeling-discipline.adoc` names `code_type` as a fact read off the classfiles and
@@ -1596,48 +1424,28 @@ then what resolves the documents against the rest.
 * **The configuration runs first** `done`. Every `store_graph_*` relation keys `store_graph` and
   nothing else, and no gatherer reads them before they are written, so it was a move in
   `ModelCapture` and changed no row.
-* **The documents run after the classpath and the catalog** `done`. The three `graphql-` gatherers
-  declare no upstream, and the first gatherer reading them after the corpora is `graphitron-ast`, so
-  this move changed no row either. `ModelCapture` comments only what the code cannot say: the
-  narration it carried did not keep the order right, and the gate below is what will.
-* **The classpath is configuration** `done`. `store_graph_dependency` holds one row per entry of
-  the classpath the build handed a graph's run, written by the configuration gatherer with the
-  rest of the `store_graph_*` rows and swept with them. Each row says what the producer resolved
-  the entry as: a directory the build writes, a release jar, or a snapshot jar, the plugin telling
-  the two jars apart by the artifact's version and a producer that resolved nothing handing over
-  snapshots. Origin and coordinate moved there from `store_source`, being facts about one module's
-  build rather than about the bytes: one jar is declared by one module and dragged in by another.
-  `classpath-source` declares `configuration` as a corpus beside `classpath`, and the reading is
-  handed the classpath rather than reading these rows back, on `graphql-source`'s terms. A claim
-  does not reference the dependency: the reading already lets go of an entry the build stopped
-  declaring, so a cascade would replace a delete that works and buy nothing.
-* **Code does not depend on jOOQ** `done`. The two families are parallel: each reads its own
-  corpus under the configuration, and neither keys the other. The reading skipped the generated
-  jOOQ package as the catalog's to describe, which "The code family reads the generated jOOQ
-  classes" reverses. Two reads cross today, one child each.
-  * **The table a parameter is bound to is the graphitron anchor's** `done`. No relation states
-    it: the resolution that needs it joins the parameter's erased class to `sql_table.class_fqn`
-    among the graph's own sources, and stores what it resolved keyed to both sides. A chain link a
-    condition method routes is `graphitron_field_path_resolution_condition`, keyed to
-    `code_condition_method` and to the tables, so a method that changes signature takes its
-    readings with it. The code gatherer no longer reads the catalog, `code` no longer declares
-    `jooq`, and a table added to the catalog binds on the next capture where it used to wait for
-    the code entry to change. `code_method_parameter.role` keeps `TABLE_CONCRETE`, a fact about
-    the signature alone.
+* **The documents run after the classpath and the catalog** `done`. A move in `ModelCapture` that
+  changed no row; the gate below is what will hold the order.
+* **The classpath is configuration** `done`. `store_graph_dependency` holds one row per classpath
+  entry of a graph's run, written and swept by the configuration gatherer, saying whether the entry
+  is a build directory, a release jar or a snapshot jar, with origin and `coordinate`
+  (`groupId:artifactId`) moved there from `store_source`.
+* **Code does not depend on jOOQ** `done`. The two families are parallel, each reading its own
+  corpus under the configuration and neither keying the other; the children below removed the two
+  reads that crossed. "The code family reads the generated jOOQ classes" reverses the skip of the
+  generated package.
+  * **The table a parameter is bound to is the graphitron anchor's** `done`. The resolution joins
+    the parameter's erased class to `sql_table.class_fqn` and stores what it resolved, a condition
+    method's chain link in `graphitron_field_path_resolution_condition`; `code` no longer declares
+    `jooq`, and `code_method_parameter.role` keeps `TABLE_CONCRETE`.
   * **The reading's loader comes from the classpath it read** `done`. Capture takes the
-    configuration, the classpath and the loader over it, and each gatherer reads its own corpus
-    from those: the jOOQ gatherer builds its catalog from the configured package and the loader,
-    and nothing hands capture a built catalog. Fixtures state the same two things a run does, a
-    package and a loader, so `JooqCatalog` is no longer what a test starts from and is free to
-    change. The sentinel package a goal tolerating none substitutes is no package.
-  * **Ancestry is read from class headers** `done`. `ClassHeaders` reads the header of a class
-    the census does not hold, superclass, interfaces and flags, from the classpath's entries in
-    classpath order and then the platform's modules, so whether a type is a `Table`, a
-    `DSLContext`, an enum or a `Throwable` is answered without loading anything. The census
-    answers for its own classes, enums included, where the loader used to be asked. What still
-    loads is a scalar constant's coercing, which only running its initialiser can say. Fixtures
-    whose loader had been answering from the test JVM's classpath now carry what a run's
-    classpath carries: the generated catalog and the jOOQ runtime, as transitive entries.
+    configuration, the classpath and a loader over it, the jOOQ gatherer building its own catalog
+    from the configured package; fixtures state a package and a loader, so `JooqCatalog` is no
+    longer what a test starts from.
+  * **Ancestry is read from class headers** `done`. `ClassHeaders` reads a class's superclass,
+    interfaces and flags from the classpath and the platform modules without loading it; only a
+    scalar constant's coercing still loads, and fixtures carry the generated catalog and jOOQ
+    runtime as transitive entries.
 * **The code family reads the generated jOOQ classes** `open`. The reading's skip of the generated
   package was the wrong call: a class the model reasons about, a record backing a type or a table
   class a parameter takes, has to be a `code_class` fact a graphitron relation can key into, and
@@ -1668,52 +1476,31 @@ then what resolves the documents against the rest.
 
 Reading a jar is safe for a release and dangerous for a snapshot, and Maven settles which.
 
-* **How a sibling module reaches a run is decided** `done`. The Quarkus model, for every goal, so
-  there is one answer to learn. A workspace module resolves to its own output before the repository,
-  `target/classes` first, then its jar in `target/`, and the repository last; graphitron's goals do
-  not compile siblings, those being the IDE's or the build's to compile. The dev goal compiles its own
-  module before it starts, running the plan itself rather than forking a lifecycle, because a dev
-  tool needs to control what runs. Evidence:
+* **How a sibling module reaches a run is decided** `done`. The Quarkus model for every goal: a
+  workspace module resolves to its `target/classes`, then its jar in `target/`, then the repository;
+  the dev goal compiles its own module first. Evidence:
   `roadmap/audits/2026-10-12-how-a-sibling-module-reaches-a-run.md`.
-  * **A workspace module resolves to its own output, in place** `done`. The workspace is every
-    module under the outermost aggregator, `AbstractRewriteMojo.workspaceModules`, each coordinate
-    read from its pom with the parent's `groupId` inherited, the projects Maven loaded answering
-    first. A classpath element that is one of a module's outputs or carries its coordinate, an
-    installed copy among them, is replaced at its own position by the module's `target/classes`,
-    else its jar in `target/`, else left as Maven resolved it, and classifies `REACTOR` or
-    `SIBLING` under the module's coordinate. A module the classpath does not hold is appended
-    behind as `SIBLING`, named by coordinate where the scan used to name it by directory, and the
-    source-root walk covers the same modules, so completion and goto-definition agree.
-    * **The sibling scan's classification is pinned** `done`. `InstalledSiblingTest` stated first
-      what a goal run inside one module made of a declared sibling: the installed jar `DECLARED`,
-      the sibling's `target/classes` `SIBLING` behind it, and a class added since the install
-      refused as the build's own undeclared module, the opptak symptom told wrongly. The same case
-      now states the replacement: the sibling's classes in the jar's place, `REACTOR`, and the
-      added class nameable.
+  * **A workspace module resolves to its own output, in place** `done`.
+    `AbstractRewriteMojo.workspaceModules` finds every module under the outermost aggregator, and a
+    classpath element that is a module's output or coordinate is replaced in place by its output,
+    classified `REACTOR` or `SIBLING`; the source-root walk covers the same modules.
+    * **The sibling scan's classification is pinned** `done`. `InstalledSiblingTest` states that a
+      declared sibling's classes take the installed jar's place as `REACTOR` and a class added since
+      the install is nameable.
   * **The dev goal runs its module's plan through compile** `done`. Before its first round the goal
-    asks Maven for its own module's plan through `process-classes` and runs it, the first round
-    taking the place of the module's `graphitron:generate`, or running before the first `compile`
-    goal where none is bound, so the module generates once and compiles what the round wrote
-    (`ModulePlan`). A session that already compiled runs the round alone, and so does
-    `graphitron.dev.compileModule` off. A goal that fails is a warning and the loop starts anyway,
-    the loop being what shows the developer what is wrong.
-    * **The module's plan leaves the goal able to start its MCP server** `done`, a regression
-      reported 2026-10-15 and reproduced on `graphitron-sakila-example`. Running the module's plan
-      left the module's project realm as the thread's context classloader, which exists where the
-      module declares a build extension (`quarkus-maven-plugin` with `<extensions>true</extensions>`
-      there; sis declares none, which is why it ran clean), and the MCP SDK finds its JSON mapper
-      through the context classloader. The dev goal now puts its own loader back on the thread
-      before each step of the plan and after the last, the first round included;
-      `ModulePlanRunTest` runs a goal that leaves another loader behind.
+    runs its module's plan through `process-classes`, the round replacing `graphitron:generate`
+    (`ModulePlan`); `graphitron.dev.compileModule` off skips it, and a failing goal is a warning.
+    * **The module's plan leaves the goal able to start its MCP server** `done`, a regression. The
+      dev goal puts its own context classloader back before each plan step and after the last,
+      pinned by `ModulePlanRunTest`.
   * **The manual says where a sibling's classes come from** `done`. `dev-loop-internals.adoc`
     § Multi-module projects and the codegen classpath section and `compileModule` row of
     `mojo-configuration.adoc`.
 * **A reactor entry is never a release** `done`. A workspace module's entry takes its kind from the
-  path the run reads, a directory or a snapshot jar, whatever version it builds at; release is
-  trusted only for a jar a repository resolved.
-* An entry says what it is `done`. Both halves of the classpath corpus were handed to capture as this
-  module's own output, which was false twice, and the lie was load-bearing: it removed the reactor
-  limit the `@service` arm leans on.
+  path the run reads, a directory or a snapshot jar; release is trusted only for a jar a repository
+  resolved.
+* An entry says what it is `done`. Capture is no longer told both halves of the classpath are this
+  module's own output, which restores the reactor limit the `@service` arm leans on.
 * The store records which repository answered `done`, by consequence.
 * **The version is carried** `blocked`, on a workspace module being a configuration row, which
   is the coordinate-keyed half arriving first with a reader. `store_graph_dependency.coordinate`
@@ -1735,53 +1522,26 @@ Reading a jar is safe for a release and dangerous for a snapshot, and Maven sett
   and `diagnostics` answers and as an LSP diagnostic; the "could not be resolved" diagnostics it
   explains point back to it, so 98 read as one cause; a warning that never blocks generation, a
   false positive costing one line. Absorbed R987.
-  * **What stale compares is decided** `done`. The unit is a workspace module, and it is stale when
-    the run read its installed copy because it has no output, or when its newest source is newer than
-    the newest output the run reads: its `target/classes` class files, or its jar. Sources are its
-    Java sources. The output half is captured already, every class file's
-    time in `store_class_file`; the module and its sources are not, so the rule waits on the two
-    nodes below. Whether a rebuild while dev runs clears the warning live is the parent's to settle.
+  * **What stale compares is decided** `done`. A workspace module is stale when the run read its
+    installed copy for lack of output, or when its newest Java source is newer than the newest class
+    file or jar the run reads.
     * **A workspace module is a configuration row** `done`. `store_graph_module`, one row per
-      workspace module the run reads, keyed by graph and coordinate, with where it lives and where
-      its build writes; `store_graph_module_entry`, which classpath entry is a form of which module,
-      so neither relation carries a column empty on most rows. Written by the configuration gatherer
-      from the entries, each `ClasspathEntry` carrying the `WorkspaceModule` the plugin resolved it
-      to, the project's own output included.
+      workspace module keyed by graph and coordinate, and `store_graph_module_entry`, which
+      classpath entry is a form of which module, written by the configuration gatherer.
     * **A module's newest source is captured** `done`. `java_source_root`, one row per root the
-      `java-source` gatherer walks with the newest modification time among its `.java` files,
-      written and swept in the refresh that writes `java_file`. A time and not a stamp, because
-      content cannot say whether a compile came after an edit; the family's refusal to trust times
-      stands for what it governs, whether a file is read again. Java sources only: the names behind
-      a "not found" are classes, methods and tables, and a resource-only change is the rare miss an
-      advisory warning can afford.
-  * **The stale modules are a rule** `done`. `build_warning_stale_module`, one row per workspace
-    module a run read stale, with its reason and both times: `NO_OUTPUT` where the entry the run
-    read is neither the module's classes directory nor under its build directory, so an installed
-    copy, and `SOURCES_NEWER` where the module's own output's newest class time predates its
-    `src/main/java` root's newest file. A view evaluated when read, its source half being written by
-    the dev loop's walk after a capture's derivations have run, so `SOURCES_NEWER` exists in a dev
-    session and `NO_OUTPUT` in any capture. The derivation gatherer reads `classpath-source` for the
-    class times.
-  * **A stale module is said where the developer looks** `done`. One sentence, the view's
-    `message`: the module, what is old, and `mvn -pl :<artifactId> compile` from the reactor root.
-    In the `diagnostic` union as a warning of a third source, `classpath`, which is MCP's
-    diagnostics; in MCP `status` as `staleModules`; in the dev goal's console after each source walk
-    and classpath round; and in the editor as a `window/showMessage`, LSP's channel for a problem
-    with no place, a stale module being located in no schema file. Each reader says a module once
-    when it goes stale and once when it is compiled again (`StaleModules`), which settles whether a
-    rebuild while dev runs clears the warning live: it does.
-  * **The not-found diagnostics point at their cause** `done`. While a graph reads a workspace
-    module stale, each error it may have caused, a rejection, a claim conflict or an entry defect,
-    ends with `build_warning_stale_module_hint`'s clause: how many modules were read stale, that
-    this may be why, and where the warnings naming them are, so many errors read as one cause; the
-    count rather than the names, the schema folding no set into one string; the clause goes when the
-    modules
-    compile. Per graph and not per error, because which module an error needed is not recorded: an
-    unknown class or condition reaches the store as a sentence, and an unknown method names no class.
-    Joining an error to the one module that would carry its name needs the rejections to say what
-    they looked for, which is its own capture. Cost on sis with four stale modules and a thousand
-    error rows: the LSP's read of `diagnostic` 456 ms with the message against 366 to 396 ms
-    without, the clause's view 0.6 ms.
+      `java-source` gatherer walks with the newest modification time among its `.java` files, swept
+      with `java_file`.
+  * **The stale modules are a rule** `done`. `build_warning_stale_module`, a view with one row per
+    workspace module read stale, reason `NO_OUTPUT` (in any capture) or `SOURCES_NEWER` (in a dev
+    session), and both times.
+  * **A stale module is said where the developer looks** `done`. One sentence with the fix command,
+    in the `diagnostic` union as a `classpath` warning, in MCP `status` as `staleModules`, on the
+    dev console and as an LSP `window/showMessage`; each reader says it once when stale and once
+    when compiled again (`StaleModules`).
+  * **The not-found diagnostics point at their cause** `done`. While a graph reads a module stale,
+    each error it may have caused ends with `build_warning_stale_module_hint`'s clause, a count of
+    stale modules per graph; tying an error to one module would need the rejections to say what they
+    looked for.
   * **A catalog is compared with what generated it** `open`. The catalog module's sources are
     generated, so a stale catalog shows only against the migrations or DDL its codegen read, which
     only the codegen configuration names. Its own fact first, then a condition beside the module's.
@@ -1808,25 +1568,14 @@ squiggle on a `typeName:` the build accepts, and a hover showing the authored id
 resolved one.
 
 * **Node metadata is a catalog fact, and an attempt that fails is a warning** `done`. The jOOQ
-  gatherer records a class's node metadata only where `__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS` are
-  a well-formed pair: a non-empty string and a non-empty array of columns the table has. Anything
-  else publishes nothing, and graphitron falls back to its other tiers as it does today. A class
-  declaring either field without the pair being usable is a row of `sql_node_metadata_unreadable`,
-  reported as one warning, `NODE_METADATA_UNREADABLE`, at the `@table` of each type bound to it:
-  that it was noticed and failed, not why, the fallback changing the ids the type encodes. The ten
-  forms the crawler recorded, `intent_node_metadata_defect` and the filter `Nodes` and
-  `NodeKeyColumns` applied over it are gone, the crawler and the walk reading one probe. Stated by
-  `facts/node-metadata-unreadable.graphqls`, over a sakila table whose class publishes half the pair.
-* **A key column is the column it is, not the name it spells** `done`. `__NODE_KEY_COLUMNS` holds
-  the table's own field instances, and so does each index's sort, so capture resolves a key column
-  and an index column by identity against the table's fields, falling back to the one field spelled
-  exactly the same, through `JooqCatalog.columnOf`; the walk's node metadata probe reads it too. A
-  field of another table, whatever it is named, makes the node metadata an attempt that failed.
-  Capture no longer reaches `JooqCatalog.findColumn`, case-insensitive and taking the first match,
-  and the silent pick R724 described goes with it; `findColumn` is deleted when its last walk caller
-  goes. Stated by
-  `facts/node-metadata-foreign-key-column.graphqls`, over a sakila table whose array names
-  `film.film_id` beside a `film_id` of its own.
+  gatherer records node metadata only for a well-formed `__NODE_TYPE_ID` and `__NODE_KEY_COLUMNS`
+  pair; a malformed one is a row of `sql_node_metadata_unreadable` and the warning
+  `NODE_METADATA_UNREADABLE` at each bound `@table`. `intent_node_metadata_defect` is gone. Stated
+  by `facts/node-metadata-unreadable.graphqls`.
+* **A key column is the column it is, not the name it spells** `done`. Capture resolves key and
+  index columns by identity, else exact spelling, through `JooqCatalog.columnOf`; a field of another
+  table makes the metadata a failed attempt. `findColumn` goes when its last walk caller does.
+  Stated by `facts/node-metadata-foreign-key-column.graphqls`.
 * **The node is settled from the position-keyed entries, in one place** `blocked`, on "The
   table-binding and node subject converts" in the seeding branch: 45 seeded classes build their
   bindings and nodes through the coordinate copies this node retires, so moving the stages off them
@@ -1905,20 +1654,12 @@ fields one target, the interface's.
   an example of the model and writing them is where the cases nobody thought of turn up, while no
   code depends on the answer. Each is committed with the step that satisfies it, so every commit
   stays green.
-* **The entry states what was written** `done`. A row per `@nodeId` application, which is what says
-  the directive was there, and `node_type_ref` nullable, NULL on a bare one. Both entries' columns
-  are `NOT NULL` today and the input-value one writes no row for a bare `@nodeId`, so the columns,
-  both writers and that comment change.
-* **Measure the move from table to type** `done`. Today the walk's
-  `BuildContext.inferNodeTypeOverTable` and the instruction relation take every bare `@nodeId` as
-  the one node over a table: the return type's, the containing one, or `@mutation(table:)`'s. For
-  every bare `@nodeId` in the fixtures and in a tagged sis capture, the type answer below and the
-  table answer side by side, with every place an `id` is read as a node id by its name alone, so
-  the switch is known to be a fix or a break before it is made. Measured over the sakila
-  example, a sis store and opptak, 465 coordinates. Every bare output field is a `Node.id`; the type
-  and table answers differ only where a union return names its container rather than its members,
-  and where a payload-returning mutation leaves the table rung to answer, as it does today; and the
-  by-name `id` carries 83 mutation input fields in sis, as the reference documents.
+* **The entry states what was written** `done`. Both `@nodeId` entries write a row per application,
+  with `node_type_ref` nullable, NULL on a bare one.
+* **Measure the move from table to type** `done`. Over sakila, a sis store and opptak, 465
+  coordinates: every bare output field is a `Node.id`; the type and table answers differ only where a
+  union return names its container and where a payload-returning mutation leaves the table rung to
+  answer; the by-name `id` carries 83 mutation input fields in sis.
 * **The target type of a `@nodeId` coordinate is the entry's** `open`. Beside `node_type_ref`, what
   was written, the entry carries the type the id names and how it came to:
   * `WRITTEN`, the `typeName:` as written;
@@ -2053,17 +1794,12 @@ conversion frees one.
   SDL half's 50 and 354. Taken first because the prerequisites are here. A seeded `code_method` row
   is a claim about a method; a method in `graphitron-sakila-service` is one.
   * **A fixture's classpath is read, never stated** `done`. Every capturing fixture names classpath
-    entries and capture reads their classfiles as a run does; `CodeRows.writeStated`,
-    `ClasspathSourceCapture.stated` and the census parameter are gone, and a real read of the
-    largest fixture root costs what the projection did.
+    entries that capture reads as a run does; `CodeRows.writeStated` and the stated census are gone.
     * **A scanned census becomes the root it was scanned from** `done`. The language server's and
       MCP server's fixtures, `TestSchemaHelper`, `CorpusStore` and the derive tests pass the root,
       with no expectation moving.
-    * **A hand-built census becomes real classes** `done`. In the service corpus: the backing
-      graph, a package compiled without `-parameters`, and the shapes the editor tests named,
-      `ClasspathCorpus` declaring the module as the consumer's code and extended-scalars as a
-      library. One case moved its claim: a type grounded on a generated record jumps to the
-      record's table, so the member-less class is one no entry declares.
+    * **A hand-built census becomes real classes** `done`. The service corpus holds them, with
+      `ClasspathCorpus` declaring the module as the consumer's code and extended-scalars a library.
 * **The library carries the shapes a conversion needs** `open`, and grows by one shape per
   conversion attempt. The first attempt wanted an overload and the service module had none across
   ninety-seven classes, so `FilmService.topRated` is now a pair. That is the expected cost, a method
@@ -2095,54 +1831,23 @@ conversion frees one.
   so a derivation that drops `graph_name` fails whichever document it leaks into.
   `PolymorphicNodeIdDecodeTest` waits on the branch above, because a document written now would pin
   the rule that branch replaces.
-* **The fixture catalog is one catalog over every schema** `done`. `graphitron-sakila-db` generates
-  four catalogs from one database: `public`, `nodeidfixture` and `idreffixture` each pinned to one
-  `<inputSchema>`, and the multischema fixture over `multischema_a` and `multischema_b`, which omits
-  it to get jOOQ's per-schema sub-package layout, the one consumers with several schemas have. The
-  split is history rather than design: the two node-id fixtures were catalogs of their own for small
-  tests, and the generator they needed now runs on `public` too. A fact document is captured against
-  `public` alone, so the shapes the other fixtures hold, metadata keyed off the primary key or one
-  table name in two schemas, are gaps to every document though the database has them.
-  * The layout is `JooqCatalog`'s alone. A pair of its tests, one over the combined catalog and one
-    over a small single-schema fixture (a few tables with a foreign key, a composite key and node
-    metadata), ask both the same questions: a table found bare and qualified, its columns, keys,
-    indexes and node metadata, its routines, and the classes it names. Nothing outside
-    `JooqCatalog` reads a layout.
-    * **The single-schema fixture is its own schema** `done`. `singleschema`, generated by a codegen
-      pinned to it into the root package and left out of the fixture catalog: a node table, a child
-      with a composite key and a foreign key to it, an index and a table-valued function.
-      `JooqCatalogLayoutTest` asks it and the fixture catalog the same seven questions. Its other
-      readers want a generated model the fixture catalog shares no table with, not a layout: the
-      MCP cases whose subject is a census that changed, or two graphs whose censuses differ.
-    * **A table's source package is the catalog's** `done`. Capture took it from the table class's
-      package with `.tables` cut off; `JooqCatalog.schemaPackageOf` reads it off the schema class,
-      which sits in it under either layout, and the values are today's. `FetchersHelperNames`
-      prefixes a colliding class with its own package by design, for beans as for records, and
-      `TestFixtures` makes names up for tests no catalog reaches; neither reads a layout, and the
-      constant moves with the paths.
-  * **One codegen over every schema is the fixture catalog** `done`. Under the root package
-    `public` had, so the documents, the pipeline tests and the example are captured and generated
-    against every schema; its readers' paths moved to `public_`, code compiled against generated
-    classes as a consumer's is, not layout logic. A bare `@table` naming `event` or `note` is
-    ambiguous everywhere, as it is to a consumer with those schemas. The wider catalog found a test
-    joining a cross-schema foreign key's referenced constraint on the referencing side's source,
-    where the store states `referenced_source_name` for it; a tenant column borrowed from a
-    composite key that other schemas spell with another type, now `tenant_id`; and a census past
-    the MCP table page, which the listing tests now ask for whole.
-  * The three other fixtures' readers then move onto it one fixture at a time, each execution going
-    with its last reader. `NodeIdFixtureGenerator` keeps keying on bare table
-    names, qualifying only where two schemas share one. `nodeidfixture`'s `collide_a` and
-    `collide_b` share a type id on purpose and keep it, unwarned: two classes sharing a type id
-    matter only to a schema binding both.
-    * **The multischema fixture is part of the fixture catalog** `done`. Its readers name
-      `<root>.multischema_a` and `<root>.multischema_b` of the fixture catalog, which jOOQ lays out
-      as the fixture codegen did, and the codegen is gone. The fixtures' second multi-schema
-      catalog constants and constructors fold into the default; the MCP cases that wanted a
-      catalog other than the default had moved to the single-schema fixture first.
-    * **The node-id fixtures are part of the fixture catalog** `done`. `nodeidfixture` and
-      `idreffixture` are read as `<root>.nodeidfixture` and `<root>.idreffixture`, and their
-      codegens are gone. Nothing failed: their tables are bare-unique across the catalog, and the
-      metadata `NodeIdFixtureGenerator` keys on a bare table name reaches them as before.
+* **The fixture catalog is one catalog over every schema** `done`. `graphitron-sakila-db`
+  generates one catalog over every schema, so fact documents see every shape the database has;
+  only `JooqCatalog` reads a layout, pinned by `JooqCatalogLayoutTest`.
+    * **The single-schema fixture is its own schema** `done`. `singleschema`, left out of the
+      fixture catalog, is what `JooqCatalogLayoutTest` asks beside it, and serves the MCP cases that
+      want a generated model sharing no table with the fixture catalog.
+    * **A table's source package is the catalog's** `done`. `JooqCatalog.schemaPackageOf` reads it
+      off the schema class, which sits in it under either layout.
+  * **One codegen over every schema is the fixture catalog** `done`. Documents, pipeline tests and
+    the example are captured and generated against every schema, `public`'s readers at `public_`; a
+    bare `@table` naming `event` or `note` is ambiguous, as to a consumer with those schemas.
+  * The three other fixtures' readers then move onto it one fixture at a time.
+    `nodeidfixture`'s `collide_a` and `collide_b` keep their shared type id, unwarned.
+    * **The multischema fixture is part of the fixture catalog** `done`. Read as
+      `<root>.multischema_a` and `<root>.multischema_b`; its codegen and constants are gone.
+    * **The node-id fixtures are part of the fixture catalog** `done`. Read as
+      `<root>.nodeidfixture` and `<root>.idreffixture`; their codegens are gone.
 * **The table-binding and node subject converts** `open`, and frees "The node is settled from the
   position-keyed entries". Its conversions waited on the fixture catalog above, the nodes subject's
   cases wanting metadata keyed off the primary key and one table name in two schemas, which every
@@ -2150,43 +1855,18 @@ conversion frees one.
   `seedNode` and their siblings, which write the coordinate copies. Read for a production reader
   first, on this branch's terms: fifteen of them had none, and four pinned a dead relation beside a
   live one.
-  * **What nothing read goes** `done`. A cluster of seventeen relations with no production reader,
-    every chain ending at one: the mutation write family (`graphitron_mutation_write_payload`,
-    `_write_destination`, `_payload_column`, `_payload_refusal`, `_payload_key_membership`,
-    `intent_mutation_matched_key`, `intent_mutation_write_refusal`,
-    `intent_mutation_write_agreement`), the input-field column family
-    (`graphitron_input_field_column_match`, `_filter_role`, `_carrier_role`,
-    `intent_input_field_column_scope`), the argument column pair (`graphitron_argument_column_scope`,
-    `_column_match`) and three node-id views (`intent_node_id_decode`, `intent_node_id_encode`,
-    `intent_node_id_candidate_node_type`). With them their ten rule views, the two views only they
-    read (`intent_input_occurrence_descent_order`, `intent_table_key_candidate`), ten stages and
-    their `DerivationStratum` steps, four grains, nineteen test classes, the dead halves of four
-    more and two document blocks. Built again from the model, as the producers and the matched key,
-    when a reader asks.
+  * **What nothing read goes** `done`. Seventeen relations with no production reader (the mutation
+    write family, the input-field and argument column families, three node-id views) went with their
+    rule views, stages, grains and tests; they are built again from the model when a reader asks.
   * **The rest convert by subject** `open`. Twenty-six classes with a production reader: nodes
     four, fields six, references four, claims three, arguments and input fields four, and five
     node-id classes that wait with the node-id subject.
-    * **Nodes** `done`. `NodesTest`, `NodeKeyColumnTest`, `NodeTypeTest` and
-      `ResolvedNodeKeyColumnTest`, 44 cases, are `facts/node-population.graphqls` and
-      `facts/node-key-columns.graphqls` over the fixture catalog, plus `NodeGraphScopeTest` for the
-      two claims a single graph cannot state: a sibling's pinned list does not answer here, and a
-      table in a catalog the graph did not read makes no node. The fixture catalog gains the shapes
-      the seeds invented: `nodeidfixture.published_elsewhere`, whose three tiers name three
-      columns, and `nodeidfixture.case_twins`, with columns `"Code"` and `"code"` that its codegen
-      tells apart by a matcher strategy, so a pinned spelling folding onto both is real. The
-      membership view's assertions were not carried over, the view going next. A `@node` over
-      `@table` without `implements Node` is a node answering to its own name, beside its
-      `NODE_WITHOUT_NODE_INTERFACE`, which the population document now states.
-    * **Fields** `done`. `FieldScopeTableTest`, `FieldNavigatedTypeTest`, `FieldColumnTableTest`
-      and `FieldRoutineMethodTest`, 62 cases, are `facts/field-scope-table.graphqls`,
-      `facts/field-navigated-type.graphqls`, `facts/field-column-table.graphqls` and
-      `facts/field-routine-method.graphqls`, plus `FieldGraphScopeTest` for the graph partition.
-      "Every field has exactly one navigation" is a gate over every document's capture beside
-      "every output field has a source". The fixture catalog gains `ms_ping()` in both
-      multischema schemas, a routine name two schemas declare and one taking no parameters. One
-      case did not convert: a table-valued function whose generated model exposes no call
-      surface, which jOOQ does not produce for any fixture the catalog can hold; capture's null
-      reading for it stands untested.
+    * **Nodes** `done`. The node tests are `facts/node-population.graphqls` and
+      `facts/node-key-columns.graphqls` over the fixture catalog, plus `NodeGraphScopeTest`; the
+      population document states that a `@node` over `@table` without `implements Node` is a node.
+    * **Fields** `done`. The field tests are `facts/field-scope-table.graphqls`,
+      `field-navigated-type`, `field-column-table` and `field-routine-method`, plus
+      `FieldGraphScopeTest`; "every field has exactly one navigation" is a gate over every capture.
     * **Claims** `open`, not by converting: `AuthoredClaimTest` and `ColumnMatchClaimTest` pin the
       claim relations, which go under "The claims go", and they go with them.
 * **There is no residue, and no partial conversion** `open`. A class converts whole or it has not
@@ -2204,10 +1884,8 @@ conversion frees one.
   `ReferenceStepHopArmConstraintTest`. They pin the readers the flip moves, and a seeded step writes
   no ast row, so a reader moved to the transcription reads nothing under them.
   * **`ConditionMethodRouteTest` is two fact documents** `done`. `condition-method-route` and
-    `condition-method-route-departures` write each case as a condition-only path element naming a
-    method of `ConditionMethodRouteFixtures` in the sakila service, a real signature per case. A
-    wildcard source reaches the whole catalog, so its document states a sample and the targets
-    it must not have rather than the list; the sibling-graph case is the harness's own.
+    `condition-method-route-departures`, each case naming a real method of
+    `ConditionMethodRouteFixtures` in the sakila service.
   * **The old resolution's tests go with it** `open`. `ReferenceStepHopArmConstraintTest`,
     `ReferenceStepTargetTest` and `ReferenceStepFanoutTest` pin the step hop, the step target and the
     fanout, which the flip deletes rather than moves; they convert by going, each case
@@ -2225,15 +1903,9 @@ conversion frees one.
   type at two root slots went, the specification forbidding it; an input field of an output type
   became an input field of a `@table` input, the legal shape of the same guard; and the sibling-graph
   case is the harness's own, every document being its own graph checked alone.
-* **A document the toolchain refuses fails the runner** `done`. Capture never refuses a schema,
-  recording the problem in `graphql_schema_problem`, and neither runner read it, so a document that
-  redeclared a prelude type lost that declaration and everything in it to the older one in silence.
-  Both runners now fail on a recorded problem unless the document states the relation. It found
-  three documents losing what they wrote, all now fixed: `enum-value` and `federation-link` declared
-  `type Query` beside the prelude's at every instant, and `spelled-reference`'s `@mutation` used an
-  argument the directive no longer has on a `Mutation` nothing declared, so the spelling it claims
-  to show was never captured. Four state the problem they are about: `base-less-extension` and the
-  three `federation-key` documents.
+* **A document the toolchain refuses fails the runner** `done`. Both runners fail on a
+  `graphql_schema_problem` row unless the document states the relation; the documents that lost
+  what they wrote are fixed.
 * **A definition a document repeats within itself is recorded** `open`, a regression found
   2026-10-15. A plain document is captured as one source with the prelude before it, so a
   `type Query` beside the prelude's is a definition that one source repeats, and that refusal is
@@ -2261,47 +1933,23 @@ the store for. Its registration gate already left for `graphitron-model`. What s
 of case in one file: nine that compare the store against the walk, and the rest pinning capture
 against its own corpus, filed here because the walk's fixtures were.
 
-* **The walk's comparisons go** `done`. Nine cases took `GraphitronSchemaBuilder.build` or
-  `AttributedRegistry` as the expected value: the type census, federation keys, connection
-  provenance, source kind against the arrival fold, directive-driven carriers, scalar payloads,
-  ordered child rows, code references and enum literals. Deleted with no accounting, on R740's
-  terms: a difference from the walk is a walk bug or an unmoved consumer, never a debt. Each
-  store-side claim was already pinned by a fact document or the store's own tests but two: the
-  `@service` and `@mutation` payload columns the editor's claim surface reads, now
-  `field-site-payloads.graphqls`. The connection provenance case was the named gate on the Edge
-  name, which the promoter and the mint state twice; a one-sided change was run and fails
-  `EmittedRegistryAgreementTest` and the execution tier without it.
-* **The catalog cases become fact documents** `done`. Thirteen cases pinned `sql_` against jOOQ's
-  own API, each computing its expectation with the calls the gatherer makes, so a fault the two
-  shared passed. Five documents over the fixture catalog state the rows instead, captured by the
-  real run, each naming the shape a table is there for: `catalog-tables` (kinds, class names, the
-  per-schema `Keys` and `Tables` classes), `catalog-columns` (ordinals, SQL and binding types),
-  `catalog-constraints` (forms, `Keys` constants, a cross-schema key, positional pairing on a
-  reordered composite key, table pairs), `catalog-routines` (call surface, reflected parameter
-  names) and `catalog-node-metadata`. A broken row in each was run and fails. The fixture catalog
-  has no constraint without a `Keys` constant, so the null case the old one named was never
-  exercised and is not stated.
+* **The walk's comparisons go** `done`. The nine cases taking the walk as expected value are
+  deleted; the one claim not already pinned, the `@service` and `@mutation` payload columns, is
+  `field-site-payloads.graphqls`.
+* **The catalog cases become fact documents** `done`. `sql_` is pinned by `catalog-tables`,
+  `catalog-columns`, `catalog-constraints`, `catalog-routines` and `catalog-node-metadata` over the
+  fixture catalog, captured by the real run.
   * **A primary key names a primary-key constraint, and the database refuses otherwise** `done`.
-    The old case checked it with a query over every row. `sql_primary_key` now carries its form,
-    fixed and defaulted, and its foreign key into `sql_constraint` includes it, so a row naming a
-    unique key or a foreign key cannot be written.
+    `sql_primary_key` carries its form, and its foreign key into `sql_constraint` includes it.
 * **The source and membership cases move to their gatherers' tests** `done`. The partition by
-  schema package is the fact document `catalog-partition.graphqls`, over the fixture catalog's
-  package per schema and `event` in two of them. The stamp went to `GraphitronModelStoreTest`, the partition by classpath
-  entry to `CodeCaptureTest` over the model's own classpath corpus, schema-file sources to
-  `GraphQLSourceCaptureTest`, the per-coordinate directive application counts against the SDL to
-  `GraphQLAnchorTest`, and per-graph membership to a test of its own, `ModelCaptureMembershipTest`,
-  being a claim about the whole run's read-set.
+  schema package is `catalog-partition.graphqls`; the rest sit in `GraphitronModelStoreTest`,
+  `CodeCaptureTest`, `GraphQLSourceCaptureTest`, `GraphQLAnchorTest` and
+  `ModelCaptureMembershipTest`.
 * **The configuration cases move beside the configuration gatherer** `done`, as fact documents
   rather than as cases: see "The configuration family is pinned by fact documents".
-* **The emitted family's union moves beside `EmittedRegistry`** `done`, as fact documents rather
-  than beside it. `emitted-anchors` states the type, field, argument and element anchors holding
-  both the authored rows and the ones one `@asConnection` mints, the carrier once with its
-  rewritten expression; `federation-sound` states a federated schema that imports `@key` without
-  declaring it recording no problem and handing the derivations a domain. An assertion now takes a
-  `where`, a SQL condition over the relation's own columns applied as written before the
-  comparison, so an equality can be stated over part of a relation that holds every element of the
-  graph. A broken row in each was run and fails.
+* **The emitted family's union moves beside `EmittedRegistry`** `done`, as fact documents
+  `emitted-anchors` and `federation-sound`; an assertion takes a `where`, a SQL condition over the
+  relation's own columns, so an equality can be stated over part of a relation.
 * **The oracle writers' lifecycle cases stay with their writers** `open`. The javac partition and
   the loaded diagnostics are the generator's writes, so they stay in `graphitron`, in a test named
   for what it pins.
@@ -2346,21 +1994,12 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   tell the two apart, so the two silent gates say so once per document where the budget already
   warns.
 
-* **A failed round's report rows say they are stale** `done`, a regression reported 2026-10-15.
-  A dev round's report, the walk's rejections, lint findings and advisories, is written through
-  `ReportFacts`, which records the round in `store_graph_progress` as the `report` gatherer. A round
-  that fails before it can report withholds it: the rows are swept rather than left on lines the
-  edit has moved, and its progress row is started and not completed, which persists across a restart.
-  `status` reads that row and says `report` is `Withheld`, with why, where it said `Current`.
-* **The dev executor runs on a federated schema** `done`. `execute` was off for every federated
-  subgraph: `EmitPlan` emitted `DEV_EXECUTOR` only without a federation link, and
-  `GraphitronDevExecutorGenerator.generate` returned early, both for want of an entity fetcher the
-  schema class has since wired (`resolveEntityType` and `fetchEntities` inside
-  `Federation.transform`). Both gates are gone; the facade's one-arg `buildSchema` already builds
-  the federation-wrapped schema, so the executor needed no other change. Every schema now gets an
-  executor, so the tool's refusal for a missing one names its one cause, a regeneration or compile
-  that has not succeeded, and points at the diagnostics tool. `DevExecuteExecutionTest` resolves a
-  `Customer` through the federated fixture's executor's `_entities`.
+* **A failed round's report rows say they are stale** `done`, a regression. A round that fails
+  before reporting sweeps its report rows and leaves its `store_graph_progress` row started, not
+  completed, so `status` says `report` is `Withheld`, with why.
+* **The dev executor runs on a federated schema** `done`. Every schema gets a dev executor, so a
+  missing one means a regeneration or compile has not succeeded; `DevExecuteExecutionTest` resolves
+  a `Customer` through the federated fixture's `_entities`.
 * **The session's hovers and hints, as found** `open`, evidence for the nodes above, measured
   2026-10-15 in a live session: a field hover takes about 2.8 s where directive, key and
   declaration hovers take about 0.05 s; a hover on a type name written as a field's type answers
@@ -2374,38 +2013,12 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   session then serves from page cache until a read misses it. A connection's teardown cancels
   without interrupting, the store survives an interrupt anywhere else, and a store whose file is
   gone fails loudly rather than half-serving.
-  * **A connection's teardown lets its drains finish** `done`. `DevServer.stopDrains` shuts the
-    drain executor down without interrupting, so a drain inside the store runs to its end and a
-    queued one runs rather than being dropped, its publish landing on a client that is gone.
-    `DevServerTest` holds a drain in flight across the teardown and fails if it is interrupted. The
-    comment that said an interrupted store read runs to its budget is corrected.
-  * **The store survives an interrupt anywhere else** `done`. The store opens through H2's
-    `retry:` file system, which keeps the plain `FileChannel` and reopens it when an interrupt closed
-    it, so an interrupt reaching a thread inside the store's I/O costs that thread nothing and the
-    rest of the store nothing. `GraphitronModelStoreTest` reopens a captured store cold and reads
-    `graphql_directive`, the relation the live session failed on, with the thread's interrupt flag
-    set. Under `file:` that read fails with `ClosedByInterruptException` and the next one with
-    `ClosedChannelException`; under `retry:` both answer. `DebounceExecutor.close()` lets a
-    regeneration in flight finish rather than interrupting it, and `DebounceExecutorTest` fails if it
-    is interrupted.
-
-    Read 2026-10-15 against the dev goal's threads, nothing interrupts a thread inside the store
-    while a session runs, so the guard is for shutdown and for code the session hosts:
-    * LSP requests run on `CompletableFuture.supplyAsync`, and lsp4j's `$/cancelRequest` cancels
-      the future, which never interrupts.
-    * A read's budget is `SET QUERY_TIMEOUT`, H2's own cancel rather than an interrupt.
-    * An MCP tool runs on a Reactor `boundedElastic` worker while a Jetty thread blocks on its
-      response, and Reactor's `WorkerTask.dispose()` interrupts that worker. Nothing disposes it
-      during a call: SDK 2.0's one timeout is on requests the server sends the client, and it does
-      not handle `notifications/cancelled`. It is disposed only when Jetty stops.
-    * `DevServer.close()` calls `shutdownNow()` on its connection threads at shutdown.
-
-    Timed 2026-10-16 on sakila, a fresh file store per run, `file:`, `retry:` and `async:`
-    interleaved over eight rounds. The machine was at load 17 to 32, so thread CPU time is the
-    measure: a capture took 3.7 to 4.5 s of it on the quiet rounds, and `retry:` was at or below
-    `file:` in every quiet round, medians 4,049 ms against 4,483 ms, inside the noise. Cold reads
-    were 3 ms under both. `async:` survives the interrupt too and timed the same, but puts every read
-    through `AsynchronousFileChannel` to guard against something `retry:` already covers.
+  * **A connection's teardown lets its drains finish** `done`. `DevServer.stopDrains` shuts down
+    without interrupting; `DevServerTest` fails if a drain in flight is interrupted.
+  * **The store survives an interrupt anywhere else** `done`. The store opens through H2's `retry:`
+    file system, which reopens a `FileChannel` an interrupt closed; `GraphitronModelStoreTest` reads
+    a cold store with the interrupt flag set, and `DebounceExecutorTest` fails if a regeneration in
+    flight is interrupted.
   * **A store whose file is gone fails loudly** `open`, rather than answering from page cache until
     a read misses it. `retry:` reopens a file that is still there, not one deleted or moved. The
     read path treats `ClosedChannelException` as a dead store, closing it and reopening cold, keyed
