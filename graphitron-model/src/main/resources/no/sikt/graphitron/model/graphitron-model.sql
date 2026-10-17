@@ -5980,7 +5980,7 @@ COMMENT ON COLUMN graphitron_field_source_table.field_name IS 'the field; with t
 COMMENT ON COLUMN graphitron_field_source_table.from_source_name IS 'the departing table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN graphitron_field_source_table.from_schema IS 'the departing table''s SQL schema';
 COMMENT ON COLUMN graphitron_field_source_table.from_table IS 'the departing table''s SQL name; in the key, so a type reached from parents on two tables departs from both';
-COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of four. SOURCE_TYPE: the parent type binds the table. INHERITED: the parent type binds none, so the field departs from wherever each field returning it does, through any number of such types. RECORD_CLASS: the parent type binds none and is backed by the table''s own record class. SOURCE_ROW: the field carries @sourceRow, whose lifter returns the source-side columns of its path''s first key, so it departs from the table declaring that key. A root field has no row, a field whose path begins with a @routine departing from its result';
+COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of four. SOURCE_TYPE: the parent type binds the table. INHERITED: the parent type binds none, so the field departs from wherever each field returning it does, through any number of such types, a field that wrote a path or produces its own object with @service or @externalField handing down no row. RECORD_CLASS: the parent type binds none and is backed by the table''s own record class. SOURCE_ROW: the field carries @sourceRow, whose lifter returns the source-side columns of its path''s first key, so it departs from the table declaring that key. A root field has no row, a field whose path begins with a @routine departing from its result';
 COMMENT ON COLUMN graphitron_field_source_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphitron_field_target_column (
@@ -9250,11 +9250,12 @@ COMMENT ON COLUMN graphitron_field_column_scope_rule.table_name IS 'the table_na
 CREATE VIEW graphitron_field_target_column_match
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, spelling,
    column_name, matched_by, candidates) AS
--- A scalar or enum field with no path, on each table its read departs from that hands it a row to
--- read columns of: its parent type's own, inherited through types with no table, or the table whose
--- record class backs the parent. A field departing by @sourceRow has its lifter's key columns and
--- no row. A field carrying a directive that reads something other than a column is not read here,
--- and neither is a node type's id with no @field, which is the node's identity.
+-- A scalar or enum field with no path on an output type, on each table its read departs from that
+-- hands it a row to read columns of: its parent type's own, inherited through types with no table,
+-- or the table whose record class backs the parent. A field departing by @sourceRow has its
+-- lifter's key columns and no row. A field carrying a directive that reads something other than a
+-- column is not read here, and neither is an id: ID with no @field on a type implementing Node,
+-- which is the node's identity, a nesting type's included. Any other id matches a column.
 WITH site (graph_name, type_name, field_name, from_source_name, from_schema, from_table, spelling) AS (
   SELECT st.graph_name, st.type_name, st.field_name, st.from_source_name, st.from_schema,
          st.from_table, COALESCE(fb.name_ref, st.field_name)
@@ -9264,6 +9265,9 @@ WITH site (graph_name, type_name, field_name, from_source_name, from_schema, fro
     JOIN graphitron_type leaf
       ON leaf.graph_name = ft.graph_name AND leaf.type_name = ft.target_type_name
      AND leaf.kind IN ('SCALAR', 'ENUM')
+    JOIN graphitron_type parent
+      ON parent.graph_name = st.graph_name AND parent.type_name = st.type_name
+     AND parent.kind IN ('OBJECT', 'INTERFACE')
     LEFT JOIN graphitron_field_binding_entry fb
       ON fb.graph_name = st.graph_name AND fb.type_name = st.type_name AND fb.field_name = st.field_name
    WHERE st.basis IN ('SOURCE_TYPE', 'INHERITED', 'RECORD_CLASS')
@@ -9275,9 +9279,10 @@ WITH site (graph_name, type_name, field_name, from_source_name, from_schema, fro
                         AND a.coordinate = st.type_name || '.' || st.field_name
                         AND a.directive_name IN ('service', 'externalField', 'routine', 'nodeId',
                                                  'sourceRow', 'pivot'))
-     AND NOT (fb.name_ref IS NULL AND st.field_name = 'id'
-              AND EXISTS (SELECT 1 FROM graphitron_node n
-                           WHERE n.graph_name = st.graph_name AND n.type_name = st.type_name))
+     AND NOT (fb.name_ref IS NULL AND st.field_name = 'id' AND ft.target_type_name = 'ID'
+              AND EXISTS (SELECT 1 FROM graphql_implements_interface ii
+                           WHERE ii.graph_name = st.graph_name AND ii.type_name = st.type_name
+                             AND ii.interface_name = 'Node'))
 )
 -- Case folded, the SQL name first: the generated name answers only where no SQL name on the table
 -- does, the precedence a written key name resolves by.
@@ -10237,7 +10242,8 @@ CREATE VIEW graphitron_field_source_table_rule
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
 -- An object type with no table of its own is read on the table the field reaching it departs from,
 -- through any number of such types. Only where that field wrote no path: one that did arrives
--- somewhere else, which is the forward walk's to state. Walked at the type grain, carrying the
+-- somewhere else, which is the forward walk's to state. And only where that field hands down its
+-- row: a @service or an @externalField produces an object of its own, whose fields are read off it. Walked at the type grain, carrying the
 -- types visited, so a type reachable from itself stops rather than recursing forever.
 WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, from_table, visited) AS (
   SELECT p.graph_name, p.target_type_name,
@@ -10252,6 +10258,10 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
      AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
                       WHERE cl.graph_name = p.graph_name AND cl.type_name = p.type_name
                         AND cl.field_name = p.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application pa
+                      WHERE pa.graph_name = p.graph_name
+                        AND pa.coordinate = p.type_name || '.' || p.field_name
+                        AND pa.directive_name IN ('service', 'externalField'))
   UNION ALL
   SELECT p.graph_name, p.target_type_name,
          i.from_source_name, i.from_schema, i.from_table, i.visited || p.target_type_name || ','
@@ -10266,6 +10276,10 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
      AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
                       WHERE cl.graph_name = p.graph_name AND cl.type_name = p.type_name
                         AND cl.field_name = p.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_directive_application pa
+                      WHERE pa.graph_name = p.graph_name
+                        AND pa.coordinate = p.type_name || '.' || p.field_name
+                        AND pa.directive_name IN ('service', 'externalField'))
 )
 SELECT f.graph_name, f.type_name, f.field_name,
        b.table_source_name, b.table_schema, b.table_name, 'SOURCE_TYPE'

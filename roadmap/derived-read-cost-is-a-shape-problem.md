@@ -947,7 +947,10 @@ and the emitters read, and it goes when nothing reads what it builds.
       it retains, and `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as
       `film.film_id`, the row emitting turns into `rec.get(FILM.FILM_ID)` through the table's
       `code_class` fact. A `@sourceRow` departure gives none, and a type with no source table reads
-      its source object. The spelling matches case folded, the SQL name before the generated one;
+      its source object, as does one reached through a `@service` or `@externalField` field, which
+      produces an object of its own: `INHERITED` stops there, found on sis and sakila as false
+      `COLUMN_UNRESOLVED`. An `id: ID` with no `@field` is a node's identity only where its type
+      implements `Node`, a nesting type's too; anywhere else it matches a column. The spelling matches case folded, the SQL name before the generated one;
       none is `COLUMN_UNRESOLVED` and several `COLUMN_AMBIGUOUS`, both read off
       `graphitron_field_target_column_match` so the fact and the defect cannot disagree. A field with
       a path keeps `COLUMN_UNRESOLVED` over the column scope's `PATH_TERMINAL` rule until the node

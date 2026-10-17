@@ -331,7 +331,8 @@ class EntryDefectTest {
      * A {@code @node} on a type that does not implement {@code Node}. The interface is the contract
      * the directive publishes to clients, so the type cannot be promoted without it. Reported at the
      * {@code @node}, the one place the author decides between adding the interface and dropping the
-     * directive, and on the type it was written on.
+     * directive, and on the type it was written on. Not being a Node, its id is read as a column,
+     * and film has none.
      */
     @Test
     @DisplayName("a @node without the Node interface is a defect at the @node")
@@ -345,7 +346,8 @@ class EntryDefectTest {
                     GRAPHITRON_ENTRY_DEFECT_SITE.SOURCE_LINE)
                 .from(GRAPHITRON_ENTRY_DEFECT_SITE)
                 .fetch(r -> r.value1() + " " + r.value2() + " line " + r.value3()))
-                .containsExactly("NODE_WITHOUT_NODE_INTERFACE Film line 3"));
+                .containsExactlyInAnyOrder("NODE_WITHOUT_NODE_INTERFACE Film line 3",
+                    "COLUMN_UNRESOLVED Film line 3"));
     }
 
     /**

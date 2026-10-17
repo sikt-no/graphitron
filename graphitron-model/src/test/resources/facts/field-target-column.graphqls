@@ -12,6 +12,57 @@ type Film @table(name: "film") {
   titel: String
   renamed: String @field(name: "no_such_column")
   details: Details
+  # Produces an object of its own, whose fields are read off it rather than off film.
+  sharedTranslations: SharedTranslations @service(service: {
+    className: "no.sikt.graphitron.rewrite.test.services.SharedValueTypeService",
+    method: "translationsByFilm"
+  })
+}
+
+type SharedTranslations {
+  nb: String
+  en: String
+}
+
+# The same through @externalField, and a level further down.
+type Inventory @table(name: "inventory") {
+  filmCardData: FilmCardWrapper @externalField(reference: {
+    className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions",
+    method: "filmCardData"
+  })
+}
+
+type FilmCardWrapper {
+  example: RecordExample
+}
+
+type RecordExample {
+  fieldA: String
+  fieldC: String @field(name: "rebound")
+}
+
+# A nesting type implementing Node reads id as a node's identity. One that does not reads it as a
+# column, even under a node, and language has none.
+interface Node { id: ID! }
+
+type Lang implements Node @table(name: "language") @node {
+  id: ID!
+  info: LangInfo
+  plain: LangPlain
+}
+
+type LangInfo implements Node {
+  id: ID!
+  name: String
+}
+
+type LangPlain {
+  id: ID!
+}
+
+# An input type is no read; its deprecated @table binds it, and nothing here judges its fields.
+input FilmFilter @table(name: "film") {
+  titel: String
 }
 
 type Language @table(name: "language") {
@@ -44,6 +95,9 @@ type CustomerAddressSummary {
 
 extend type Query {
   films: [Film!]!
+  filteredFilms(filter: FilmFilter): [Film!]!
+  inventories: [Inventory!]!
+  langs: [Lang!]!
   languages: [Language!]!
   twins: [Twins!]!
   filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
@@ -60,6 +114,7 @@ extend schema @expectEquals(relation: "graphitron_field_target_column", rows: ""
   Film,               name,       film,       title,       SQL_NAME
   Film,               title,      film,       title,       SQL_NAME
   FilmDetailsCarrier, filmId,     film,       film_id,     SQL_NAME
+  LangInfo,           name,       language,   name,        SQL_NAME
   Twins,              capital,    case_twins, Code,        JOOQ_NAME
   """)
 
@@ -69,6 +124,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
   COLUMN_UNRESOLVED, Details,   title,      title
   COLUMN_UNRESOLVED, Film,      renamed,    no_such_column
   COLUMN_UNRESOLVED, Film,      titel,      titel
+  COLUMN_UNRESOLVED, LangPlain, id,         id
   """)
 
 # The columns an ambiguous spelling folds onto are the match's rows, one each.
@@ -76,4 +132,12 @@ extend schema @assertContains(relation: "graphitron_field_target_column_match", 
   type_name, field_name, from_table, column_name, candidates
   Twins,     code,       case_twins, Code,        2
   Twins,     code,       case_twins, code,        2
+  """)
+
+# Nothing departs from the parent's table through a field producing its own object.
+extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
+  type_name,          field_name
+  SharedTranslations, nb
+  FilmCardWrapper,    example
+  RecordExample,      fieldA
   """)

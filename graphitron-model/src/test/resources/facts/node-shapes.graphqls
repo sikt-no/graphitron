@@ -6,6 +6,8 @@
 # written. @node asks for a node and cannot make one where either half is missing: without the
 # interface there is no contract to publish, and without a table there is no row for the id to
 # encode. Each missing half is its own error at the @node, so a @node with neither is both.
+# Without the interface the id is no node's identity either, and is read as a column, which actor
+# does not have.
 
 interface Node { id: ID! }
 
@@ -25,6 +27,7 @@ extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
   type_name IN ('ExplicitNode', 'InferredNode', 'NoInterface', 'NoTable', 'Bare')
   """, rows: """
   type_name,   code
+  NoInterface, COLUMN_UNRESOLVED
   NoInterface, NODE_WITHOUT_NODE_INTERFACE
   NoTable,     NODE_WITHOUT_TABLE
   Bare,        NODE_WITHOUT_NODE_INTERFACE
