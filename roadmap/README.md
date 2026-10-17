@@ -56,7 +56,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
 | `R1057` | A filter field typed as a list of input objects is read as one Map, so the filter is silently dropped | In Review | 2026-10-16 | [plan](filter-list-of-input-field-silently-dropped.md) |
-| `R1058` | Client errors thrown from generated fetchers carry no path or locations | In Review | 2026-10-16 | [plan](client-errors-carry-no-path-or-locations.md) |
 
 ---
 
@@ -827,7 +826,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1057` [**A filter field typed as a list of input objects is read as one Map, so the filter is silently dropped**](filter-list-of-input-field-silently-dropped.md)
 - `R1059` [**A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS**](list-of-input-filter-through-reference.md)
 - `R825` [**A mutation test seeds film_actor rows a query test asserts the absence of**](film-actor-fixture-mutated-and-read-concurrently.md)
-- `R1058` [**Client errors thrown from generated fetchers carry no path or locations**](client-errors-carry-no-path-or-locations.md)
 - `R887` [**ColumnComparison's CatalogColumn overload has no caller, and a doc implies one**](column-comparison-catalog-column-overload-has-no-caller.md)
 - `R1055` [**GraphitronTransactionProvider closes the enclosing scope when a begin fails**](transaction-provider-failed-begin-closes-enclosing-scope.md)
 - `R862` [**Input-field @condition rewrap drops the enum leaf extraction**](preserve-enum-extraction-through-condition-rewrap.md)
