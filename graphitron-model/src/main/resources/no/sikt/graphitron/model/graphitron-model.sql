@@ -7852,17 +7852,18 @@ SELECT l.graph_name, v.position, i.name, i.alias
  WHERE l.origin = 'AUTHORED'),
 -- What graphitron applies itself, the mint and the configuration, that the link's version lets it
 -- import and the link does not import already. The library is the one the graph claims.
+-- Driven from the version's imports, a few dozen, each probing the applications.
 added (graph_name, name) AS (
-  SELECT DISTINCT a.graph_name, '@' || a.directive_name
-    FROM graphitron_directive_application a
-    JOIN graphitron_federation_link l ON l.graph_name = a.graph_name
+  SELECT DISTINCT l.graph_name, f.name
+    FROM graphitron_federation_link l
     JOIN store_graph_source m ON m.graph_name = l.graph_name
     JOIN federation_version_import f
       ON f.source_name = m.source_name AND f.version = l.version
-     AND f.name = '@' || a.directive_name
-   WHERE a.origin IN ('MINTED', 'CONFIGURED')
+   WHERE EXISTS (SELECT 1 FROM graphitron_directive_application a
+                  WHERE a.graph_name = l.graph_name AND '@' || a.directive_name = f.name
+                    AND a.origin IN ('MINTED', 'CONFIGURED'))
      AND NOT EXISTS (SELECT 1 FROM authored w
-                      WHERE w.graph_name = a.graph_name AND w.name = '@' || a.directive_name))
+                      WHERE w.graph_name = l.graph_name AND w.name = f.name))
 SELECT graph_name, ordinal, name, alias FROM authored
 UNION ALL
 -- After every authored import, in name order.
