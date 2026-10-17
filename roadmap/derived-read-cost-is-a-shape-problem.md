@@ -2099,6 +2099,18 @@ nothing when it fails: the budget warns, the other two say nothing at all.
     read path treats `ClosedChannelException` as a dead store, closing it and reopening cold, keyed
     on H2's error code the way `StoreReader` already recognises the query timeout.
 
+### The data model is written down as it now stands
+
+* **R333's data model is an architecture page, revised by what this item learned** `open`, after
+  "The emitter architecture is examined against the store", whose answer the page states. R333 is
+  absorbed here, 2026-10-17: the coordinate, its small independent facts and the leaf zoo they
+  dissolve move to `docs/architecture/explanation/` beside `fact-model.adoc` and
+  `modeling-discipline.adoc`, rewritten rather than copied. What it learned: the store is the model,
+  with capture and anchor phases per gatherer and no strata; facts are keyed by where they were
+  written; the emitted schema is decided in capture; a path is one forward walk from source to
+  target; and the generator's shape is whatever that first node decides. R983 rewrites the same
+  pages' vocabulary and lands with it or first. R333's body is in git history.
+
 ## Tests
 
 The obligation this section carried is discharged and not by being measured. It asked the Done gate
