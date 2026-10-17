@@ -950,9 +950,11 @@ and the emitters read, and it goes when nothing reads what it builds.
       table, both or neither. Where the source object is a table's own record, its scalars are that
       table's columns, read as `rec.get(TABLE.COLUMN)`: a `CONSUMED` source whose
       `graphitron_field_source_key` rule is `RECORD` gives target columns on the record's table, as
-      `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as `film.film_id`. A `SOURCE_ROW`
-      source gives none: a `@sourceRow` parent is a plain class whose scalars are read off the
-      object, the source saying only where its batched query starts. A scalar whose type has no
+      `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as `film.film_id`. The row keys
+      the column; emitting the read names the table's generated class, which is a `code_class` fact
+      after "The code family reads the generated jOOQ classes" and not a name off `sql_table`. A
+      `SOURCE_ROW` source gives none: a `@sourceRow` parent is a plain class whose scalars are read
+      off the object, the source saying only where its batched query starts. A scalar whose type has no
       source table at all reads from its source object, which is no column and no row here.
     * **A scalar through a path reads where the path lands** `blocked`, on "The forward walk is a
       relation of its own": the path resolution is keyed by a target table, which a scalar does not
