@@ -208,14 +208,20 @@ public final class GraphitronModelStore implements AutoCloseable {
      * @param millis      wall-clock time the compaction took
      * @param bytesBefore the file's size before it, or {@code -1} where it could not be read
      * @param bytesAfter  the file's size after it, or {@code -1} where it could not be read
+     * @param failure     what H2 said when it refused the compaction, or {@code null} where it
+     *                    compacted; a refused compaction leaves the file as a plain close does
      */
-    public record Compaction(long millis, long bytesBefore, long bytesAfter) {
+    public record Compaction(long millis, long bytesBefore, long bytesAfter, String failure) {
 
         /**
-         * One line naming the store and what it cost, or empty where the sizes could not be read
-         * and the line would say nothing a reader could act on.
+         * One line naming the store and what it cost, or why it was not compacted; empty where it
+         * compacted and the sizes could not be read, the line then saying nothing a reader could
+         * act on.
          */
         public Optional<String> report(Path home) {
+            if (failure != null) {
+                return Optional.of("Could not compact the fact store under " + home + ": " + failure);
+            }
             if (bytesBefore < 0 || bytesAfter < 0) {
                 return Optional.empty();
             }
@@ -609,15 +615,16 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
             long before = fileBytes();
             long startedAt = System.nanoTime();
+            String failure = null;
             try (Statement statement = connection.createStatement()) {
                 statement.execute("SHUTDOWN COMPACT");
             } catch (SQLException e) {
-                // A store that will not compact is a store that keeps its dead pages: worth
-                // nothing to a caller, and never worth failing a build that has already produced
-                // its output.
+                // A store that will not compact is a store that keeps its dead pages: never worth
+                // failing a build that has already produced its output, and always worth saying.
+                failure = e.getErrorCode() + " " + e.getMessage();
             }
             compaction = new Compaction(
-                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes());
+                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes(), failure);
             return null;
         });
     }

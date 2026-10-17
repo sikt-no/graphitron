@@ -685,6 +685,10 @@ class PersistentStoreTest {
 
         var compaction = held.compaction().orElseThrow(
             () -> new AssertionError("the only handle on the file reported no compaction"));
+        // First, because a refused compaction leaves the file as a plain close does, and the ratio
+        // below would then report a size where H2 said why.
+        assertThat(compaction.failure())
+            .as("what H2 said when it refused the compaction").isNull();
         // Both sizes first, because the record reports an unreadable file as -1 and the ratio below
         // is satisfied by -1 against -1: a measurement that failed outright would otherwise pass
         // the assertion that exists to catch a compaction that did nothing.
