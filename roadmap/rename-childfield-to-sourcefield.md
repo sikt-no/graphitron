@@ -54,5 +54,5 @@ for that reason.
 
 `mvn -f graphitron-rewrite/pom.xml install -Plocal-db` green with no other diff: the R281/R299 corpus
 byte-identical (every `carrier: Source` verdict unchanged), `LeafCoverageReportTest` leaf count
-unchanged, and no generated-output change. A rename that needs any test assertion edited beyond the
+unchanged, and no behaviour change. A rename that needs any test assertion edited beyond the
 type name itself is out of scope, that signals an unintended behavioural change.

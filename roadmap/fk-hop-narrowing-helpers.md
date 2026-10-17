@@ -22,8 +22,9 @@ cleanup (2), the bridging-join consolidation into `JoinPathEmitter`). The FK-hop
 FK-derived, and what are its column pairs"). A model-level `isFkHop(JoinStep)` / `pairsOf(JoinStep)`
 helper pair (natural home: `JoinStep` or a static on `On`) replaces the inline narrowings; the
 exhaustive sealed-switch sites are proper dispatch and stay. `TestFixtures.isFkHop` already exists
-as a test-side copy of the predicate and should fold onto the model helper. Acceptance mirrors
-R431's: generated output byte-identical, the diff audited in isolation; full reactor green.
+as a test-side copy of the predicate and should fold onto the model helper. Acceptance: behaviour is
+the gate, the execution and compile tiers green and coverage added first where the change reaches
+something they do not cover; the diff audited in isolation; full reactor green.
 
 Scope note (2026-08-19, revised 2026-08-21): R705 changes this item's census in one way, not the
 two an earlier version of this note claimed. It retires `FkHop` outright, whose `narrow` was one of

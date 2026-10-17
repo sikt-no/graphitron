@@ -1373,6 +1373,18 @@ is "The generator builds no schema".
     the walk; its pin on `plan` goes with `plan`.
   * Testability is held by behaviour, not by a seam: execution against PostgreSQL, the in-process
     compile harness, and fact documents to reach a rare state, which replace a hand-built command.
+* **No test reads generated SQL as text** `open`, ahead of the conversions, each of which changes
+  the SQL these pin. Five classes in `graphitron-sakila-example` assert whole rendered statements,
+  66 tests: `RootLauncherSqlBaselineTest`, `DmlSqlBaselineTest`, `ConditionSqlBaselineTest`,
+  `BatchedChildSqlBaselineTest` and `ProjectionSqlBaselineTest`; `GraphQLQueryTest`,
+  `AccessorDerivedSourceTest` and `MutationPayloadLifterTest` read fragments. Each becomes the rows
+  returned and the round trips counted, coverage added where the text was the only check.
+* **No test reads generated Java as text** `open`, ahead of each conversion for the emitter it
+  converts. About 495 assertion lines in 30 `graphitron` test files read generated bodies as text,
+  most in `TypeFetcherGeneratorTest`, `GraphitronSchemaClassGeneratorTest` and
+  `FetcherPipelineTest`; the compile and execution tiers replace them. `testing.adoc`'s "Renderer
+  arm tests" section, which still names hand-built command tests the preferred home, is rewritten
+  with it.
 * **The recompile graph has a source once commands are gone** `open`. `PlanCompileGraph` is the only
   reader of `FetcherEdgeRelation` and is how the dev loop knows which file to rebuild; it needs the
   same answer from the store.

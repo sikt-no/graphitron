@@ -84,7 +84,7 @@ and this item adopts them rather than re-deriving them:
 * `@service` is the documented escape hatch. "You own the implementation" should keep
   including the commit point.
 
-So the flag's default is `false`, and `false` must be the byte-identical emit we ship today.
+So the flag's default is `false`, and `false` must behave exactly as the emit we ship today.
 That is an acceptance criterion, not a hope: the compilation-tier fixtures that exist for the
 four service arms should be unchanged by this item's diff.
 
@@ -169,8 +169,9 @@ before the channel maps.
 * **Emission pin.** The wrapped body declares `txd` and binds the service call to it. The pin
   is a seam pin in the sense `roadmap/emitted-seam-pin-assertion-convention.md` is still
   litigating; keep it to the boundary call and the rebinding, not to incidental body text.
-* **Default-off equality.** The existing service-arm compilation fixtures emit byte-identical
-  output. This is the criterion that makes the feature safe to add.
+* **Default-off equality.** With the flag off the existing service-arm fixtures compile and their
+  execution tests stay green: no behaviour changes. This is the criterion that makes the feature
+  safe to add.
 * **Execution tier, the one that would have caught the reported bug.** A new service method
   that writes two rows and throws between them, on one coordinate with the flag and one
   without. Without: row 1 survives, which is today's behaviour and the reporter's incident.

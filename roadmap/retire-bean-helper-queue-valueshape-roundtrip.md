@@ -44,8 +44,9 @@ the `ValueShape` composite as their input shape, then drop `collectBeanHelpersFr
 legacy `MethodBackedField.callParams()` walk either keeps its `CallSiteExtraction.InputBean` feed
 (with a thin adapter at the emitter boundary) or is migrated in the same change; confirm during Spec
 which is cleaner. Dedup stays keyed on the bean `ClassName`. The compilation tier
-(`graphitron-sakila-example`) and the existing `@service`-bean fixtures are the regression backstop —
-the emitted helper bodies must be byte-identical across the cutover.
+(`graphitron-sakila-example`) and the existing `@service`-bean fixtures are the regression backstop:
+behaviour is the gate, so the emitted helper bodies may change where those tests stay green, with
+coverage added first where the cutover reaches something they do not cover.
 
 ## Out of scope
 
