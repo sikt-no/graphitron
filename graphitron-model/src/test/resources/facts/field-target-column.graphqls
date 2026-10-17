@@ -1,0 +1,79 @@
+# The column a scalar field with no path reads, on each table its read departs from. The spelling is
+# the @field(name:) where one is written and the field's own name otherwise, folded by case, and the
+# SQL name answers before the generated one. A spelling naming no column there, or several, has no
+# row and is a defect at the field. case_twins has "Code" and "code", which its codegen names
+# CAPITAL_CODE and CODE.
+
+type Film @table(name: "film") {
+  # Its own name, and @field with the case changed.
+  title: String
+  name: String @field(name: "TITLE")
+  # Names no column.
+  titel: String
+  renamed: String @field(name: "no_such_column")
+  details: Details
+}
+
+type Language @table(name: "language") {
+  details: Details
+}
+
+# No table of its own: reached from Film and from Language, its fields read both tables. title is
+# film's alone, so read from Language it names nothing.
+type Details {
+  lastUpdate: String @field(name: "last_update")
+  title: String
+}
+
+type Twins @table(name: "case_twins") {
+  # Only the generated name of "Code" answers.
+  capital: String @field(name: "CAPITAL_CODE")
+  # Both columns fold onto it.
+  code: String
+}
+
+# Backed by FilmRecord, the record class of film, so read off the record.
+type FilmDetailsCarrier {
+  filmId: Int @field(name: "film_id")
+}
+
+# Backed by a plain class with no table: read off the object, no column.
+type CustomerAddressSummary {
+  customerId: Int!
+}
+
+extend type Query {
+  films: [Film!]!
+  languages: [Language!]!
+  twins: [Twins!]!
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  customerAddressSummary(customerId: Int!): CustomerAddressSummary
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryService", method: "lookup"})
+}
+
+extend schema @expectEquals(relation: "graphitron_field_target_column", rows: """
+  type_name,          field_name, from_table, column_name, matched_by
+  Details,            lastUpdate, film,       last_update, SQL_NAME
+  Details,            lastUpdate, language,   last_update, SQL_NAME
+  Details,            title,      film,       title,       SQL_NAME
+  Film,               name,       film,       title,       SQL_NAME
+  Film,               title,      film,       title,       SQL_NAME
+  FilmDetailsCarrier, filmId,     film,       film_id,     SQL_NAME
+  Twins,              capital,    case_twins, Code,        JOOQ_NAME
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,              type_name, field_name, detail
+  COLUMN_AMBIGUOUS,  Twins,     code,       code
+  COLUMN_UNRESOLVED, Details,   title,      title
+  COLUMN_UNRESOLVED, Film,      renamed,    no_such_column
+  COLUMN_UNRESOLVED, Film,      titel,      titel
+  """)
+
+# The columns an ambiguous spelling folds onto are the match's rows, one each.
+extend schema @assertContains(relation: "graphitron_field_target_column_match", rows: """
+  type_name, field_name, from_table, column_name, candidates
+  Twins,     code,       case_twins, Code,        2
+  Twins,     code,       case_twins, code,        2
+  """)

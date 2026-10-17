@@ -940,22 +940,19 @@ and the emitters read, and it goes when nothing reads what it builds.
     a window function every time anyone asks. A spelling matching no column or several is a defect at
     the field and no row here: no column is `COLUMN_UNRESOLVED`, which "A field reading a column its
     table lacks is a defect" states over the column scope today and which moves onto this, and
-    several is a defect of its own.
-    * **A scalar without a path reads its source table** `open`. The column is on the field's
-      source table, one row per table, so the relation is keyed by the field and the table. A
-      nesting type, an object type with no table of its own projected against its owner's, retains
-      its owner's source table and source object, which is `graphitron_field_source_table`'s
-      `INHERITED` source: a scalar on it has a target column of its own on each table it retains,
-      two where two owners on two tables reach the type. A field has a source object, a source
-      table, both or neither. Where the source object is a table's own record, its scalars are that
-      table's columns, read as `rec.get(TABLE.COLUMN)`: a `CONSUMED` source whose
-      `graphitron_field_source_key` rule is `RECORD` gives target columns on the record's table, as
-      `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as `film.film_id`. The row keys
-      the column; emitting the read names the table's generated class, which is a `code_class` fact
-      after "The code family reads the generated jOOQ classes" and not a name off `sql_table`. A
-      `SOURCE_ROW` source gives none: a `@sourceRow` parent is a plain class whose scalars are read
-      off the object, the source saying only where its batched query starts. A scalar whose type has no
-      source table at all reads from its source object, which is no column and no row here.
+    several is `COLUMN_AMBIGUOUS`.
+    * **A scalar without a path reads its source table** `done`. `graphitron_field_target_column`
+      holds one row per field and table its read departs from, by `graphitron_field_source_table`'s
+      `SOURCE_TYPE`, `INHERITED` and `RECORD_CLASS` rules: a nesting type's scalar reads each table
+      it retains, and `FilmDetailsCarrier`, backed by `FilmRecord`, reads `filmId` as
+      `film.film_id`, the row emitting turns into `rec.get(FILM.FILM_ID)` through the table's
+      `code_class` fact. A `@sourceRow` departure gives none, and a type with no source table reads
+      its source object. The spelling matches case folded, the SQL name before the generated one;
+      none is `COLUMN_UNRESOLVED` and several `COLUMN_AMBIGUOUS`, both read off
+      `graphitron_field_target_column_match` so the fact and the defect cannot disagree. A field with
+      a path keeps `COLUMN_UNRESOLVED` over the column scope's `PATH_TERMINAL` rule until the node
+      below. Pinned by `field-target-column`. When `CONSUMED` replaces the record and source-row
+      rules, the column-giving set is "not `CONSUMED`, or the source key's rule is `RECORD`".
     * **A scalar through a path reads where the path lands** `blocked`, on "The forward walk is a
       relation of its own": the path resolution is keyed by a target table, which a scalar does not
       have, so the landing is read off the forward walk once it exists.
