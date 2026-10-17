@@ -96,8 +96,8 @@ final class ClassAncestry {
      * type is coerced.
      *
      * <p>The census answers for the classes it holds and the header for the rest, which is what
-     * makes it answerable: a generated jOOQ enum lives in the package the reading excludes, so a
-     * census alone could answer for an author's own enums and not for the ones a column binds to.
+     * makes it answerable for a class the reading did not carry, such as an enum in a jar no reactor
+     * entry declares.
      * A name that does not resolve is not an enum, on {@link #isThrowable}'s terms.
      */
     boolean isEnum(String className) {

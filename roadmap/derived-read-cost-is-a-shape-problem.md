@@ -798,9 +798,7 @@ and the emitters read, and it goes when nothing reads what it builds.
         grounding being a `PRODUCER` row; the seeded cases are fact documents.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
-      * **A field's source object is stated** `blocked`, on "The code family reads the generated
-        jOOQ classes", a record backing a type being a class the reading skips today.
-        `graphitron_field_source_object`, one row per
+      * **A field's source object is stated** `open`. `graphitron_field_source_object`, one row per
         field whose parent arrives as a Java object rather than a row, keyed by the field with the
         class a foreign key into the code family: the parent type's backing, passed down through
         nesting types with neither a table nor a backing of their own. Only the class; its kind, its
@@ -1514,21 +1512,23 @@ then what resolves the documents against the rest.
     interfaces and flags from the classpath and the platform modules without loading it; only a
     scalar constant's coercing still loads, and fixtures carry the generated catalog and jOOQ
     runtime as transitive entries.
-* **The code family reads the generated jOOQ classes** `open`. The reading's skip of the generated
-  package was the wrong call: a class the model reasons about, a record backing a type or a table
-  class a parameter takes, has to be a `code_class` fact a graphitron relation can key into, and
-  describing it only through the catalog's name columns leaves no key to hold. The two families
-  stay parallel and complete each: the catalog keeps `record_class_fqn`, `class_fqn` and the record
-  supertype closure as names, the code family captures the classes from its own corpus, and
-  neither keys the other. Measured on sis first, the generated package's class count and the
-  capture's time before and after.
-  * **A service beside the generated classes is read** `open`, with the node above. Services are
-    commonly written in the module jOOQ generates into, and the exclusion took the package and
-    every package under it, so a service package beneath the generated one was dropped silently.
-    With no exclusion there is nothing to pin; a case states that such a service is read.
-  * **The manual stops saying the reading leaves the jOOQ package out** `open`, with the node
-    above, if it says so anywhere; the `jooqPackage` row of `mojo-configuration.adoc` roots the
-    catalog there and nothing more.
+* **The code family reads the generated jOOQ classes** `done`. The configured package's classes
+  are `code_class` facts at the class grain, kind and supertypes without members, pinned by
+  `CodeCaptureTest`: on sis 823 classes join the code family and the code gatherer stays at 0.7 s,
+  where reading them whole cost 4 s more for 32844 generated members no reader asks for.
+* **The type reach rule is priced** `open`. `graphitron_type_reach_rule` takes 15 to 16 s per
+  evaluation on sis, the largest single cost in the graphitron gatherer, against 4 s for the path
+  resolution rule, 3.5 s for the type backing and 2.6 s for the type arrival; `TypeReaches`
+  evaluates it once per capture. Each CTE and each joined term timed alone first, then one join
+  dropped at a time, before any rewrite.
+  * **A service beside the generated classes is read** `open`. Services are commonly written in
+    the module jOOQ generates into, and the class-grain reading takes the package and every package
+    under it, so a service class beneath the generated one is a `code_class` row whose methods are
+    left out with the generated members. A case first, then either the narrowing stops at the
+    generated package or the layout is refused out loud.
+  * **The manual says the jOOQ package is read without its members** `open`. The `jooqPackage`
+    row of `mojo-configuration.adoc` roots the catalog there and says nothing of the classpath
+    reading, which an author whose services share the package needs to know.
 * **A gate holds the call order to the roster** `open`. Nothing checks that `ModelCapture` calls a
   gatherer after every gatherer it declares, which is how the two drifted apart. `java-source` and
   `compile` run in the dev loop on their own cadence rather than in this sequence, and `sdl` names a

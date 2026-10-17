@@ -179,30 +179,27 @@ class CodeCaptureTest {
     }
 
     /**
-     * The exclusion the caller passes is a package, and a package is a name plus a dot. Spelled as
-     * a bare string prefix it also excludes every package and every class whose name merely starts
-     * with those characters, which is not a corner: {@code graphql.Assert} is a class on this
-     * classpath and {@code graphql.AssertException} is the throwable beside it, so a consumer whose
-     * generated package is spelled like the shorter of the two loses the longer.
-     *
-     * <p>Both directions in one case, because only the pair says the rule. Excluding by a name that
-     * is a prefix of a class must keep that class; excluding by a name that is genuinely the
-     * package above it must still drop it, or the fix would have bought the parity by excluding
-     * nothing.
+     * The package a caller names is read at the class grain: its classes are kept with their kind
+     * and supertypes, so a relation can key into one, and their members are left out, which is the
+     * generated code's bulk and nothing a reader asks for. A package is a name plus a dot, so a
+     * name that merely starts the package's characters narrows nothing.
      */
     @Test
-    @DisplayName("the excluded package is a package, not any name starting with those characters")
-    void theExclusionIsAPackageAndNotAPrefix() {
-        withCapture(CLASSPATH, "graphql.Assert", FIRST, dsl ->
-            assertThat(dsl.fetchCount(CODE_THROWABLE,
-                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
-                .as("a class the excluded name is a prefix of, which is a different class")
-                .isEqualTo(1));
-        withCapture(CLASSPATH, "graphql", FIRST, dsl ->
-            assertThat(dsl.fetchCount(CODE_THROWABLE,
-                    CODE_THROWABLE.CLASS_NAME.eq("graphql.AssertException")))
-                .as("and the package above it, which is the exclusion doing its job")
-                .isZero());
+    @DisplayName("the named package's classes are kept without their members, and the name is a package")
+    void theNamedPackageIsReadAtTheClassGrain() {
+        String fixtures = "no.sikt.graphitron.model.capture.code.fixtures";
+        withCapture(REACTOR_AND_JOOQ, fixtures, FIRST, dsl -> {
+            assertThat(dsl.fetchCount(CODE_CLASS, CODE_CLASS.CLASS_NAME.eq(FIXTURE)))
+                .as("the class is kept, so a relation can key into it")
+                .isEqualTo(1);
+            assertThat(dsl.fetchCount(CODE_METHOD, CODE_METHOD.CLASS_NAME.eq(FIXTURE)))
+                .as("and its members are left out")
+                .isZero();
+        });
+        withCapture(REACTOR_AND_JOOQ, "no.sikt.graphitron.model.capture.code.fix", FIRST, dsl ->
+            assertThat(dsl.fetchCount(CODE_METHOD, CODE_METHOD.CLASS_NAME.eq(FIXTURE)))
+                .as("a name starting the package's characters is not the package")
+                .isPositive());
     }
 
     @Test
@@ -960,12 +957,12 @@ class CodeCaptureTest {
         withCapture(CLASSPATH, null, at, body);
     }
 
-    /** One reading of {@code entries} under {@code skipPrefix}, which is what a run hands in. */
-    private static void withCapture(List<ClasspathEntry> entries, String skipPrefix,
+    /** One reading of {@code entries} with {@code headerOnlyPackage}, which is what a run hands in. */
+    private static void withCapture(List<ClasspathEntry> entries, String headerOnlyPackage,
                                     LocalDateTime at, Consumer<DSLContext> body) {
         try (var store = GraphitronStore.inMemory()) {
             CodeCapture.capture(store.dsl(),
-                ClasspathSourceCapture.read(store.dsl(), entries, skipPrefix, at), null, at);
+                ClasspathSourceCapture.read(store.dsl(), entries, headerOnlyPackage, at), null, at);
             body.accept(store.dsl());
         }
     }

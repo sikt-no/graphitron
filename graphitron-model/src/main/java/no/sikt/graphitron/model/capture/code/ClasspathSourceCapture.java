@@ -101,10 +101,10 @@ public final class ClasspathSourceCapture {
      * carry it, and their sweeps tell this reading's rows from the last one's by it.
      */
     public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
-                                  String skipPrefix, LocalDateTime readAt) {
+                                  String headerOnlyPackage, LocalDateTime readAt) {
         Progress.started(dsl, graph, GATHERER);
         var read = dsl.transactionResult(
-            tx -> gather(tx.dsl(), graph, classpath, skipPrefix, readAt));
+            tx -> gather(tx.dsl(), graph, classpath, headerOnlyPackage, readAt));
         Progress.completed(dsl, graph, GATHERER);
         return read;
     }
@@ -113,7 +113,7 @@ public final class ClasspathSourceCapture {
     private static final String GATHERER = "classpath-source";
 
     private static Reading gather(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
-                                  String skipPrefix, LocalDateTime readAt) {
+                                  String headerOnlyPackage, LocalDateTime readAt) {
         var declared = declared(classpath);
         if (declared.isEmpty()) {
             // A run handed no classpath has nothing to say about one. Claiming nothing and
@@ -134,7 +134,7 @@ public final class ClasspathSourceCapture {
                 changed.add(entry);
             }
         }
-        var reading = read(dsl, changed, skipPrefix, readAt);
+        var reading = read(dsl, changed, headerOnlyPackage, readAt);
         var claimed = new LinkedHashSet<String>();
         declared.forEach(entry -> claimed.add(entry.path().toString()));
 
@@ -231,8 +231,8 @@ public final class ClasspathSourceCapture {
      * leave an entry alone on a later reading, which a caller holding no graph is not asking.
      */
     public static Reading read(DSLContext dsl, List<ClasspathEntry> classpath,
-                               String skipPrefix, LocalDateTime readAt) {
-        var census = ClassfileCensus.read(declared(classpath), skipPrefix);
+                               String headerOnlyPackage, LocalDateTime readAt) {
+        var census = ClassfileCensus.read(declared(classpath), headerOnlyPackage);
         var read = new LinkedHashSet<String>();
         census.entries().forEach(at -> read.add(at.source()));
         writeSources(dsl, census.entries(), readAt);

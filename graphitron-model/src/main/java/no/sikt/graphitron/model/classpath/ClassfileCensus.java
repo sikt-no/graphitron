@@ -30,8 +30,10 @@ import java.util.zip.ZipFile;
  * every public member it declares is reported; which of them any consumer may name is a question
  * asked of these rows later, never a filter applied while the bytes are read.
  *
- * <p>The one thing a caller may exclude is a package, for the generated code a consumer never names
- * directly. That is the caller's policy, passed in, rather than a rule this reader holds.
+ * <p>The one thing a caller may narrow is a package read at the class grain, for the generated code
+ * whose members no reader asks for: its classes are reported with their kind and supertypes and
+ * without their members. That is the caller's policy, passed in, rather than a rule this reader
+ * holds.
  *
  * <p>An entry that cannot be read declares nothing, rather than failing the census: a classpath is
  * a set and the other entries' facts are still worth having. Inside a readable entry the reading is
@@ -119,11 +121,11 @@ public final class ClassfileCensus {
      * the world would have nothing to scope by if this dropped it.
      *
      * @param entries    directories and jars, in the order a classloader would search them
-     * @param skipPrefix the package to leave out, or null to leave nothing out. A package name and
-     *                   not a character prefix; {@link #excludedPackage} is where the difference
-     *                   between the two is spelled
+     * @param headerOnlyPackage the package whose classes are read without their members, or null
+     *                   to read every class whole. A package name and not a character prefix;
+     *                   {@link #headerOnlyPrefix} is where the difference between the two is spelled
      */
-    public static Census read(List<ClasspathEntry> entries, String skipPrefix) {
+    public static Census read(List<ClasspathEntry> entries, String headerOnlyPackage) {
         var read = new ArrayList<EntryAt>();
         var classes = new ArrayList<ClassAt>();
         var seen = new LinkedHashSet<String>();
@@ -136,7 +138,7 @@ public final class ClassfileCensus {
             }
             read.add(new EntryAt(source, directory ? "DIRECTORY" : "JAR",
                 classified.origin().name(), classified.coordinate()));
-            for (ClassAt at : readEntry(entry, source, skipPrefix)) {
+            for (ClassAt at : readEntry(entry, source, headerOnlyPackage)) {
                 if (seen.add(at.className())) {
                     classes.add(at);
                 }
@@ -158,15 +160,15 @@ public final class ClassfileCensus {
      * @param source     the entry a class is recorded under, which is the entry rather than the
      *                   file, so a class reads the same whether the whole entry was walked or this
      *                   one file was re-read
-     * @param skipPrefix the package to leave out, on {@link #read}'s terms
+     * @param headerOnlyPackage the package read without members, on {@link #read}'s terms
      */
-    public static List<ClassAt> readEntry(Path entry, String source, String skipPrefix) {
-        String excluded = excludedPackage(skipPrefix);
+    public static List<ClassAt> readEntry(Path entry, String source, String headerOnlyPackage) {
+        String headerOnly = headerOnlyPrefix(headerOnlyPackage);
         if (Files.isDirectory(entry)) {
-            return readDirectory(entry, source, excluded);
+            return readDirectory(entry, source, headerOnly);
         }
         return Files.isRegularFile(entry) && entry.toString().endsWith(".jar")
-            ? readJar(entry, source, excluded)
+            ? readJar(entry, source, headerOnly)
             : List.of();
     }
 
@@ -174,9 +176,10 @@ public final class ClassfileCensus {
      * One classfile's class, or nothing where it is not one this reading carries. What a caller
      * re-reads for the files a compile rewrote, keeping the rest of the entry.
      */
-    public static Optional<ClassAt> readFile(Path entry, Path file, String source, String skipPrefix) {
+    public static Optional<ClassAt> readFile(Path entry, Path file, String source,
+                                             String headerOnlyPackage) {
         return read(bytes(file), pathOf(entry, file), sizeOf(file), modifiedOf(file),
-            file.getFileName().toString(), source, excludedPackage(skipPrefix));
+            file.getFileName().toString(), source, headerOnlyPrefix(headerOnlyPackage));
     }
 
     /** What the file was, as the reading found it; -1 where the filesystem would not say. */
@@ -221,17 +224,18 @@ public final class ClassfileCensus {
      * confusion: every class name starts with the empty string, so a caller declaring no package
      * would have had a reading admit nothing at all and report it as a classpath with no members.
      */
-    private static String excludedPackage(String skipPrefix) {
-        return skipPrefix == null || skipPrefix.isEmpty() ? null : skipPrefix + ".";
+    private static String headerOnlyPrefix(String headerOnlyPackage) {
+        return headerOnlyPackage == null || headerOnlyPackage.isEmpty()
+            ? null : headerOnlyPackage + ".";
     }
 
-    private static List<ClassAt> readDirectory(Path directory, String source, String excluded) {
+    private static List<ClassAt> readDirectory(Path directory, String source, String headerOnly) {
         try (Stream<Path> files = Files.walk(directory)) {
             var classes = new ArrayList<ClassAt>();
             files.filter(Files::isRegularFile)
                 .filter(file -> file.getFileName().toString().endsWith(".class"))
                 .forEach(file -> read(bytes(file), pathOf(directory, file), sizeOf(file),
-                        modifiedOf(file), file.getFileName().toString(), source, excluded)
+                        modifiedOf(file), file.getFileName().toString(), source, headerOnly)
                     .ifPresent(classes::add));
             return classes;
         } catch (IOException e) {
@@ -239,7 +243,7 @@ public final class ClassfileCensus {
         }
     }
 
-    private static List<ClassAt> readJar(Path jar, String source, String excluded) {
+    private static List<ClassAt> readJar(Path jar, String source, String headerOnly) {
         try (ZipFile zip = new ZipFile(jar.toFile())) {
             var classes = new ArrayList<ClassAt>();
             for (ZipEntry zipped : zip.stream().toList()) {
@@ -253,7 +257,7 @@ public final class ClassfileCensus {
                 String fileName = zipped.getName()
                     .substring(zipped.getName().lastIndexOf('/') + 1);
                 read(bytes, zipped.getName(), zipped.getSize(), zipped.getTime(), fileName,
-                    source, excluded).ifPresent(classes::add);
+                    source, headerOnly).ifPresent(classes::add);
             }
             return classes;
         } catch (IOException e) {
@@ -281,11 +285,12 @@ public final class ClassfileCensus {
 
     /**
      * One classfile, or nothing where it is not a class this census carries: a name the reader
-     * skips, a file that will not parse, a non-public class, or one under the excluded package.
+     * skips, a file that will not parse, or a non-public class. A class under the header-only
+     * package is carried without its members.
      */
     private static Optional<ClassAt> read(byte[] bytes, String filePath, long byteSize,
                                                     long mtimeMillis, String fileName,
-                                                    String source, String excluded) {
+                                                    String source, String headerOnly) {
         if (skipOnName(fileName)) {
             return Optional.empty();
         }
@@ -301,8 +306,10 @@ public final class ClassfileCensus {
             return Optional.empty();
         }
         String className = classfile.thisClass().asInternalName().replace('/', '.');
-        if (excluded != null && className.startsWith(excluded)) {
-            return Optional.empty();
+        if (headerOnly != null && className.startsWith(headerOnly)) {
+            return Optional.of(new ClassAt(source, filePath, byteSize, mtimeMillis, className,
+                kindOf(classfile), supertypesOf(classfile), List.of(), List.of(),
+                classfile.flags().has(AccessFlag.ABSTRACT), List.of(), List.of()));
         }
         return Optional.of(new ClassAt(source, filePath, byteSize, mtimeMillis, className,
             kindOf(classfile), supertypesOf(classfile), methodsOf(classfile),
