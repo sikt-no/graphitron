@@ -80,4 +80,5 @@ Counting round trips is behaviour, not text: it is what catches an emitter query
 - **The recompile graph.** `PlanCompileGraph` is the only reader of `FetcherEdgeRelation` and is how
   the dev loop knows which file to rebuild. It needs the same answer from the store.
 - **Query grain.** An emitter querying per field is the N+1 R682 warned of. The grains are the ones
-  "Flip: the generator reads the three queries" names: type, field, keyed selection.
+  "The datafetchers and the rest are generated from the store" catalogues: type, field, keyed
+  selection.

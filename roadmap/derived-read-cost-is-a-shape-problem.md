@@ -85,8 +85,8 @@ is that subtract's prerequisite, and a node that adds says which line it retires
   resolution of an authored element stands, not two" and "The backward walk leaves nothing behind".
 * Read-time path views: `intent_field_path_start`, `_node` and `_terminus`, evaluated by every
   reader. Ends at "The read-time path relations are gone".
-* The classified model beside the store: `generate` builds `GraphitronSchema`. Ends at "Flip: the
-  generator reads the three queries" and "The generator builds no schema".
+* The classified model beside the store: `generate` builds `GraphitronSchema`. Ends at "Each
+  emitter reads the store" and "The generator builds no schema".
 * The emitted schema twice: `EmittedRegistry` in capture, `ConnectionPromoter` in generate, pinned by
   `EmittedRegistryAgreementTest`. Ends at "The generator builds no schema".
 * Operation members and delivery twice (R563): the relations and the leaf crosswalk, every generate.
@@ -1129,31 +1129,9 @@ reads nothing off the classpath that capture has already read, and builds no sch
     * **`EmittedRegistry` renders the anchors and states no rule** `done`. It patches the anchored
       elements and applies the minted applications, and the narrowing it reports reads the rule's
       output.
-* **The schema classes and the SDL read only the emitted schema** `open`. The schema classes take
-  their forms from the emitted schema, `CarriesObjectForm.formOf` reading it before a variant's own
-  form, so the walk's own forms render nothing; the variants still carry them.
-  * **The emitted schema holds only what is published** `open`. `SchemaSdlEmitter` filters two
-    things out of it as it prints: the directive support types the walk did not keep, read off the
-    walk's types, and graphitron's own directives, by `SchemaDirectiveRegistry.isSurvivor`. Both are
-    decisions about what is published, so `EmittedRegistry` makes them and the printer filters
-    nothing. The support-type rule is structural and needs no classification: a support type is
-    published only in the published tier, `SortDirection` today, and only where an element of a
-    type outside the support set references it; a strictly internal one never is.
-    * **`CompletionData` dissolves** `done`. With it went `CatalogBuilder` and the generator's
-      classpath census (`ClasspathCensus`, `ClasspathScanner`), and R1008 dissolved; the editor
-      reads the store, and capture reads the classpath into the `code_` family.
-      * **`TypeBackingShape` dissolves** `done`. The store states a type's backing in
-        `graphitron_type_backing`, pinned by `TypeBackingClassTest`, and the plugin's completion
-        pipeline asks the store which class backs a type.
-  * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
-    federation service form on the walk's `federationLink`; the emitted schema carries the
-    federation `@link` itself, the configured one included while the composition synthesises it,
-    so the form is read off the schema it prints.
-  * **The schema class registers what the emitted schema and the store state** `open`.
-    `GraphitronSchemaClassGenerator` takes the roots, whether there are nodes, the scalars, the error
-    types and the federation entities from the walk's types.
-* **The datafetchers and the rest are generated from the store** `open`. `EmitPlan` reads the store
-  already; the per-type generators still take the walk's model. What they read is a few queries,
+* **The datafetchers and the rest are generated from the store** `open`, one emitter at a time in
+  "Each emitter reads the store"; what stays here is the grains those emitters query at.
+  `EmitPlan` reads the store already; the per-type generators still take the walk's model. What they read is a few queries,
   each at the grain the generated code is organised by, found by cataloguing the sakila example's
   977 generated files: a table-bound type's projection is one method reused wherever the type is
   reached, `Film.$project` at 94 call sites with nothing in its signature naming the usage; a
@@ -1181,14 +1159,7 @@ reads nothing off the classpath that capture has already read, and builds no sch
     `@sourceRow`, or the first stage's keys; which is the source.
   * **How a field projects is stated** `blocked`, on the producers, a projection field being any
     field that is not one.
-  * **Flip: the generator reads the three queries** `blocked`, on the producers, the source, how a
-    field projects, and key forwarding in the node-id branch, whose readers the catalogue found: a
-    `@nodeId` through a foreign key reads the key column without a join, a batched single object
-    forwards the parent's foreign key, and a path of several hops forwards the first hop's. A nested
-    type without a table becomes one class with an overload per owning table, where the generator
-    emits one class per owner today: `CustomerOccupantLocation` and `StoreOccupantLocation` are one
-    body for `OccupantLocation`.
-  * **Subtract what the producers replace** `blocked`, on the flip. Each relation the new ones replace goes once its readers
+  * **Subtract what the producers replace** `blocked`, on the emitters that read them. Each relation the new ones replace goes once its readers
     read the replacement:
     * `intent_field_separate_fetch`, replaced by `graphitron_producer`, read by the editor's
       `ClaimFacts` and `InlayFacts`;
@@ -1196,7 +1167,7 @@ reads nothing off the classpath that capture has already read, and builds no sch
 
     The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
     branch's to retire, through `graphitron_code_reference`, which the service producer joins to.
-* **The generator builds no schema** `blocked`, on the two nodes above and "No emitter reads a leaf": the walk goes when nothing
+* **The generator builds no schema** `blocked`, on every node of "Each emitter reads the store": the walk goes when nothing
   reads what it builds, and `KeyNodeSynthesiser`, `ConnectionPromoter`'s expansion and what is left of
   `AttributedRegistry` go with it. R289, which corrects `KeyNodeSynthesiser`'s javadoc, dissolves
   with them. Handing the walk the emitted schema instead was probed and set aside: the walk infers
@@ -1404,6 +1375,90 @@ is "The generator builds no schema".
   `CommandSeamRatchetTest` counts 66 leaf `instanceof` sites and 57 case patterns in the generator
   and 140 leaf references in `plan`; done at zero, which is what "The generator builds no schema"
   needs from this branch.
+
+### Each emitter reads the store
+
+The generator turns over one emitter at a time. An emitter owns its query and its emission, decided
+in "The emitter architecture is examined against the store", so each moves on its own, held to
+behaviour: the execution tests stay green, and where they are thin for what it emits, coverage comes
+first. Each node names what the emitter reads today; the tests that cover it are written into the
+node when it is taken up. A conversion waits on "No test reads generated SQL as text", and on "No
+test reads generated Java as text" for the emitter it converts. Retires "The classified model beside
+the store" and "Command rows beside leaves" in the register, one emitter at a time.
+
+* **The fixed runtime classes** `done`, by construction: they read nothing from the model.
+  `GraphitronValues`, `LightFetcher`, `OneOfDirectiveSdl`, `PolymorphicSelectionSet`,
+  `SelectionOccurrences`, `OrderByResult`, `GraphitronContextInterface`,
+  `GraphitronTransactionProvider`, `ConstraintViolations`, `GraphitronClientException`,
+  `ErrorRouter`, `Outcome`.
+* **The configuration-read runtime classes** `blocked`, on "The configuration is read from the
+  store". `ConnectionResult`, `ConnectionHelper`, `ConnectionRuntime` and
+  `GraphitronConnectionInstrumentation` read only the tenancy and the session hooks, both taken off
+  `GraphitronSchema`.
+* **`NodeIdEncoderClassGenerator`** `open`. Reads `GraphitronSchema`.
+* **`EntityFetcherDispatchClassGenerator`** `open`. Reads `GraphitronSchema`.
+* **`QueryNodeFetcherClassGenerator`** `open`. Reads `GraphitronSchema`.
+* **`ErrorMappingsClassGenerator`** `open`. Reads `GraphitronSchema`.
+* **`GraphitronFacadeGenerator`** `open`. Reads `GraphitronSchema` and the federation link.
+* **`GraphitronDevExecutorGenerator`** `open`. Reads `GraphitronSchema` and the session hooks.
+* **`FetcherRegistrationsEmitter`** `open`. Reads `GraphitronSchema` and the schema-shape rows.
+* **`InputRecordGenerator`** `open`. Reads the walk's input type for each row `InputRecordPlanner`
+  selects from the store.
+* **`ConnectionFetcherClassGenerator`** `open`. Reads the walk's connection type.
+* **The type generators read the emitted schema** `open`. `EnumTypeGenerator`, `InputTypeGenerator`
+  and `ObjectTypeGenerator` take their forms from the emitted schema, `CarriesObjectForm.formOf`
+  reading it before a variant's own form, so the walk's own forms render nothing; the variants still
+  carry them, and `ObjectTypeGenerator` still takes `GraphitronSchema`.
+* **`SchemaSdlEmitter` prints only the emitted schema** `open`. It reads the emitted schema and the
+  walk's types and `federationLink` beside it.
+  * **The emitted schema holds only what is published** `open`. `SchemaSdlEmitter` filters two
+    things out of it as it prints: the directive support types the walk did not keep, read off the
+    walk's types, and graphitron's own directives, by `SchemaDirectiveRegistry.isSurvivor`. Both are
+    decisions about what is published, so `EmittedRegistry` makes them and the printer filters
+    nothing. The support-type rule is structural and needs no classification: a support type is
+    published only in the published tier, `SortDirection` today, and only where an element of a
+    type outside the support set references it; a strictly internal one never is.
+    * **`CompletionData` dissolves** `done`. With it went `CatalogBuilder` and the generator's
+      classpath census (`ClasspathCensus`, `ClasspathScanner`), and R1008 dissolved; the editor
+      reads the store, and capture reads the classpath into the `code_` family.
+      * **`TypeBackingShape` dissolves** `done`. The store states a type's backing in
+        `graphitron_type_backing`, pinned by `TypeBackingClassTest`, and the plugin's completion
+        pipeline asks the store which class backs a type.
+  * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
+    federation service form on the walk's `federationLink`; the emitted schema carries the
+    federation `@link` itself, the configured one included while the composition synthesises it,
+    so the form is read off the schema it prints.
+* **`GraphitronSchemaClassGenerator`** `open`. Reads `GraphitronSchema`, the emitted schema and the
+  schema-shape rows.
+  * **The schema class registers what the emitted schema and the store state** `open`.
+    `GraphitronSchemaClassGenerator` takes the roots, whether there are nodes, the scalars, the error
+    types and the federation entities from the walk's types.
+* **`ConditionGlueRenderer`** `open`. Reads `ConditionCommands`' rows, which read `GraphitronSchema`.
+* **`ProjectionUnitRenderer`** `open`. Reads `ProjectionCommands`' rows, which read `GraphitronSchema`.
+* **`TypeFetcherGenerator`, by family of field** `open`. Reads `GraphitronSchema` and the launcher,
+  fetcher-edge, routine-write and key-projection commands, and dispatches on about forty kinds of
+  field. The kinds are the walk's vocabulary, so the children are families of field rather than
+  kinds, each querying at the grains "The datafetchers and the rest are generated from the store"
+  catalogues.
+  * **Root queries over tables** `open`. `QueryTableField`, `QueryNodeField`, `QueryNodesField`.
+  * **Services** `open`, at the root and below it. `QueryService*`, `MutationService*`,
+    `ServiceTableField`, `ServiceRecordField`.
+  * **DML writes** `open`. `DmlTableField`, `MutationDmlRecordField`, `MutationBulkDmlRecordField`.
+  * **Routine writes** `open`, as "Routine writes read only the store".
+  * **Projected child fields** `open`. `ColumnBackedField`, `ColumnBackedReferenceField`,
+    `TableField`, `ParticipantColumnReferenceField`, `SingleRecordIdField` and its returning form,
+    `NestingField`, `RecordReadField`, `RecordCompositeField`, `ComputedField`. A nested type without
+    a table becomes one class with an overload per owning table, where the generator emits one class
+    per owner today: `CustomerOccupantLocation` and `StoreOccupantLocation` are one body for
+    `OccupantLocation`.
+  * **Batched fetches** `open`. `BatchedTableField`, `BatchedTableInterfaceField`,
+    `BatchedInterfaceField`, `BatchedUnionField`. Key forwarding is read here: a `@nodeId` through a
+    foreign key reads the key column without a join, a batched single object forwards the parent's
+    foreign key, and a path of several hops forwards the first hop's.
+  * **Polymorphic fields** `open`. `QueryTableInterfaceField`, `QueryInterfaceField`,
+    `QueryUnionField`, `TableInterfaceField`, `InterfaceField`, `UnionField`.
+  * **Pivots** `open`. `PivotField`, `PivotSlotField`, `BatchedPivotField`.
+  * **The errors field** `open`. `ErrorsField`.
 
 ### A capture reads only what changed
 
