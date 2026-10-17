@@ -1606,14 +1606,15 @@ then what resolves the documents against the rest.
   are `code_class` facts at the class grain, kind and supertypes without members, pinned by
   `CodeCaptureTest`: on sis 823 classes join the code family and the code gatherer stays at 0.7 s,
   where reading them whole cost 4 s more for 32844 generated members no reader asks for.
-  * **A service beside the generated classes is read** `open`. Services are commonly written in
-    the module jOOQ generates into, and the class-grain reading takes the package and every package
-    under it, so a service class beneath the generated one is a `code_class` row whose methods are
-    left out with the generated members. A case first, then either the narrowing stops at the
-    generated package or the layout is refused out loud.
-  * **The manual says the jOOQ package is read without its members** `open`. The `jooqPackage`
-    row of `mojo-configuration.adoc` roots the catalog there and says nothing of the classpath
-    reading, which an author whose services share the package needs to know.
+* **A service beside the generated classes is read** `open`, after "The code family reads the
+  generated jOOQ classes". Services are commonly written in
+  the module jOOQ generates into, and the class-grain reading takes the package and every package
+  under it, so a service class beneath the generated one is a `code_class` row whose methods are
+  left out with the generated members. A case first, then either the narrowing stops at the
+  generated package or the layout is refused out loud.
+* **The manual says the jOOQ package is read without its members** `open`, after the same. The `jooqPackage`
+  row of `mojo-configuration.adoc` roots the catalog there and says nothing of the classpath
+  reading, which an author whose services share the package needs to know.
 * **A gate holds the call order to the roster** `open`. Nothing checks that `ModelCapture` calls a
   gatherer after every gatherer it declares, which is how the two drifted apart. `java-source` and
   `compile` run in the dev loop on their own cadence rather than in this sequence, and `sdl` names a
