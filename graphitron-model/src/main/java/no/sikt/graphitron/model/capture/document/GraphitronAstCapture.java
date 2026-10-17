@@ -136,6 +136,8 @@ public final class GraphitronAstCapture {
         EmittedAnchor.derive(dsl, graph.name(), readAt);
         // What the link imports, which is what the author wrote plus what was just applied.
         FederationLinks.imports(dsl, graph.name(), readAt);
+        // And the vocabulary the composed schema has, which those imports name.
+        FederationVocabulary.derive(dsl, graph.name(), readAt);
         // Last, the stages that resolve against everything above and the catalog and classpath.
         GraphitronAssemblyCapture.resolve(dsl, graph.name(), readAt);
     }

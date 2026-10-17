@@ -29,8 +29,9 @@ import java.util.function.Function;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
 import static no.sikt.graphitron.model.Tables.DIAGNOSTIC;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
@@ -719,14 +720,14 @@ final class DiagnosticFacts {
                 slotArm(store, questions.memberTypeNames),
                 sigilSiteArm(store, questions.sigilSites),
                 declaredTypeArm(store, questions.sigilTypeNames),
-                multiset(selectDistinct(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
-                    .from(GRAPHQL_DIRECTIVE)
-                    .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
-                    .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.in(questions.directiveNames))
-                    .orderBy(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME))
+                multiset(selectDistinct(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME)
+                    .from(GRAPHITRON_DIRECTIVE)
+                    .where(GRAPHITRON_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
+                    .and(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME.in(questions.directiveNames))
+                    .orderBy(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME))
                     .convertFrom(rows -> rows.map(Record1::value1)),
-                censusHolds(selectOne().from(GRAPHQL_DIRECTIVE)
-                    .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))),
+                censusHolds(selectOne().from(GRAPHITRON_DIRECTIVE)
+                    .where(GRAPHITRON_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))),
                 directiveArgumentArm(store, questions.directiveNames),
                 inputFieldArm(store, questions.nestedArgFieldNames),
                 replayArm(store, questions.replayFiles))
@@ -771,24 +772,25 @@ final class DiagnosticFacts {
 
     /**
      * Every formal argument of every directive the document applied, left-joined to the type each
-     * argument bottoms out in so the kind rides along. One arm answers three checks: a name with no
+     * argument bottoms out in so the kind rides along. The composed vocabulary, so a directive the
+     * federation link brings in is judged like a written one, its argument types among the types. One arm answers three checks: a name with no
      * rows is not a declared argument, a row whose {@code non_null} is set is a required one, and the
      * kind decides whether a literal written under it may be descended into.
      */
     private static Field<List<DirectiveArgRow>> directiveArgumentArm(
         StoreHandle store, Collection<String> directiveNames
     ) {
-        var argumentType = GRAPHQL_TYPE.as("argument_type");
-        return multiset(select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
-                GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME, GRAPHQL_DIRECTIVE_ARGUMENT.NON_NULL,
-                GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE, argumentType.KIND)
-            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
+        var argumentType = GRAPHITRON_TYPE.as("argument_type");
+        return multiset(select(GRAPHITRON_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
+                GRAPHITRON_DIRECTIVE_ARGUMENT.ARGUMENT_NAME, GRAPHITRON_DIRECTIVE_ARGUMENT.NON_NULL,
+                GRAPHITRON_DIRECTIVE_ARGUMENT.NAMED_TYPE, argumentType.KIND)
+            .from(GRAPHITRON_DIRECTIVE_ARGUMENT)
             .leftJoin(argumentType)
-            .on(argumentType.GRAPH_NAME.eq(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME))
-            .and(argumentType.TYPE_NAME.eq(GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE))
-            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.in(directiveNames))
-            .orderBy(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME, GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL))
+            .on(argumentType.GRAPH_NAME.eq(GRAPHITRON_DIRECTIVE_ARGUMENT.GRAPH_NAME))
+            .and(argumentType.TYPE_NAME.eq(GRAPHITRON_DIRECTIVE_ARGUMENT.NAMED_TYPE))
+            .where(GRAPHITRON_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.in(directiveNames))
+            .orderBy(GRAPHITRON_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME, GRAPHITRON_DIRECTIVE_ARGUMENT.ORDINAL))
             .convertFrom(rows -> rows.map(Records.mapping(DirectiveArgRow::new)));
     }
 

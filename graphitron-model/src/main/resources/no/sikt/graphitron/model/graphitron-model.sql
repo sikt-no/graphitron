@@ -7701,13 +7701,86 @@ COMMENT ON TABLE federation_written_version IS 'The federation version a link gr
 COMMENT ON COLUMN federation_written_version.source_name IS 'the library, on federation_version''s terms; the whole key, graphitron writing one version';
 COMMENT ON COLUMN federation_written_version.version IS 'the version, as FederationSpec.URL names it after the specification''s prefix';
 
+CREATE TABLE federation_version_definition (
+  source_name     VARCHAR NOT NULL,
+  version         VARCHAR NOT NULL,
+  name            VARCHAR NOT NULL,
+  kind            VARCHAR NOT NULL,
+  unimported_name VARCHAR NOT NULL,
+  repeatable      BOOLEAN,
+  description     VARCHAR,
+  PRIMARY KEY (source_name, version, name),
+  FOREIGN KEY (source_name, version) REFERENCES federation_version (source_name, version)
+    ON DELETE CASCADE,
+  CHECK (kind IN ('DIRECTIVE', 'SCALAR', 'ENUM')),
+  -- A directive is spelled with its at sign, as an import list spells it, and only a directive
+  -- repeats or not.
+  CHECK ((kind = 'DIRECTIVE') = (name LIKE '@%')),
+  CHECK ((kind = 'DIRECTIVE') = (unimported_name LIKE '@%')),
+  CHECK ((kind = 'DIRECTIVE') = (repeatable IS NOT NULL))
+);
+COMMENT ON TABLE federation_version_definition IS 'One definition a federation version brings into a schema that links it. For example @key under v2.10, a repeatable directive a link importing it names key and one that does not names federation__key, and FieldSet, a scalar.';
+COMMENT ON COLUMN federation_version_definition.source_name IS 'the library, on federation_version''s terms';
+COMMENT ON COLUMN federation_version_definition.version IS 'the version, anchored by federation_version';
+COMMENT ON COLUMN federation_version_definition.name IS 'the definition''s name in the specification, spelled as an import list spells it: a directive''s with its at sign, a type''s bare';
+COMMENT ON COLUMN federation_version_definition.kind IS 'DIRECTIVE, SCALAR or ENUM, the kinds the specification defines; a definition of another kind refuses the capture rather than arriving unmodelled';
+COMMENT ON COLUMN federation_version_definition.unimported_name IS 'the name the library gives the definition in a schema whose link does not import it, spelled as name is: the specification''s namespace prefixed, federation__key, or the name itself where the library always imports it, as @link';
+COMMENT ON COLUMN federation_version_definition.repeatable IS 'whether the directive may be applied more than once at one site; NULL on a type';
+COMMENT ON COLUMN federation_version_definition.description IS 'the definition''s description as the specification writes it, NULL where it writes none';
+
+CREATE TABLE federation_version_directive_argument (
+  source_name       VARCHAR NOT NULL,
+  version           VARCHAR NOT NULL,
+  name              VARCHAR NOT NULL,
+  argument_name     VARCHAR NOT NULL,
+  ordinal           INT     NOT NULL,
+  type_sdl          VARCHAR NOT NULL,
+  named_type        VARCHAR NOT NULL,
+  non_null          BOOLEAN NOT NULL,
+  is_list           BOOLEAN NOT NULL,
+  item_non_null     BOOLEAN,
+  default_value_sdl VARCHAR,
+  description       VARCHAR,
+  PRIMARY KEY (source_name, version, name, argument_name),
+  FOREIGN KEY (source_name, version, name)
+    REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
+);
+COMMENT ON TABLE federation_version_directive_argument IS 'One argument a federation version''s directive declares. For example fields: FieldSet! of @key under v2.10, its type named by the specification.';
+COMMENT ON COLUMN federation_version_directive_argument.source_name IS 'the library, on federation_version''s terms';
+COMMENT ON COLUMN federation_version_directive_argument.version IS 'the version';
+COMMENT ON COLUMN federation_version_directive_argument.name IS 'the directive, with its at sign, anchored by federation_version_definition';
+COMMENT ON COLUMN federation_version_directive_argument.argument_name IS 'the argument''s name';
+COMMENT ON COLUMN federation_version_directive_argument.ordinal IS 'the argument''s position in the definition, from 0';
+COMMENT ON COLUMN federation_version_directive_argument.type_sdl IS 'the argument''s type as the specification writes it, its named type under the specification''s name';
+COMMENT ON COLUMN federation_version_directive_argument.named_type IS 'the type the argument''s wrapping bottoms out in, under the specification''s name, which a schema may see under another';
+COMMENT ON COLUMN federation_version_directive_argument.non_null IS 'whether the outermost type is non-null';
+COMMENT ON COLUMN federation_version_directive_argument.is_list IS 'whether the type, under its outermost non-null, is a list';
+COMMENT ON COLUMN federation_version_directive_argument.item_non_null IS 'whether the innermost item of a list is non-null; NULL where the type is no list';
+COMMENT ON COLUMN federation_version_directive_argument.default_value_sdl IS 'the default as the specification writes it, NULL where it declares none';
+COMMENT ON COLUMN federation_version_directive_argument.description IS 'the argument''s description, NULL where the specification writes none';
+
+CREATE TABLE federation_version_directive_location (
+  source_name VARCHAR NOT NULL,
+  version     VARCHAR NOT NULL,
+  name        VARCHAR NOT NULL,
+  location    VARCHAR NOT NULL,
+  PRIMARY KEY (source_name, version, name, location),
+  FOREIGN KEY (source_name, version, name)
+    REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
+);
+COMMENT ON TABLE federation_version_directive_location IS 'One location a federation version''s directive may be applied at. For example OBJECT and INTERFACE for @key under v2.10.';
+COMMENT ON COLUMN federation_version_directive_location.source_name IS 'the library, on federation_version''s terms';
+COMMENT ON COLUMN federation_version_directive_location.version IS 'the version';
+COMMENT ON COLUMN federation_version_directive_location.name IS 'the directive, with its at sign, anchored by federation_version_definition';
+COMMENT ON COLUMN federation_version_directive_location.location IS 'the location as the specification spells it';
+
 CREATE TABLE federation_version_import (
   source_name VARCHAR NOT NULL,
   version     VARCHAR NOT NULL,
   name        VARCHAR NOT NULL,
   PRIMARY KEY (source_name, version, name),
-  FOREIGN KEY (source_name, version) REFERENCES federation_version (source_name, version)
-    ON DELETE CASCADE
+  FOREIGN KEY (source_name, version, name)
+    REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
 );
 COMMENT ON TABLE federation_version_import IS 'One name a federation version''s link may import. For example @key and FieldSet under v2.10, and @context only from the version that introduced it.';
 COMMENT ON COLUMN federation_version_import.source_name IS 'the library, on federation_version''s terms';
@@ -7829,6 +7902,167 @@ COMMENT ON COLUMN graphitron_federation_link_import_rule.graph_name IS 'the fede
 COMMENT ON COLUMN graphitron_federation_link_import_rule.ordinal IS 'the import''s index in the written list, and after it the added ones in name order';
 COMMENT ON COLUMN graphitron_federation_link_import_rule.name IS 'the name imported';
 COMMENT ON COLUMN graphitron_federation_link_import_rule.alias IS 'the authored alias, or NULL, an added import keeping its own name';
+
+CREATE TABLE graphitron_federation_definition (
+  graph_name  VARCHAR   NOT NULL,
+  name        VARCHAR   NOT NULL,
+  local_name  VARCHAR   NOT NULL,
+  kind        VARCHAR   NOT NULL,
+  source_name VARCHAR   NOT NULL,
+  version     VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, name),
+  -- Two definitions under one local name would be two answers to what that name means.
+  UNIQUE (graph_name, local_name),
+  FOREIGN KEY (graph_name) REFERENCES graphitron_federation_link (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, version, name)
+    REFERENCES federation_version_definition (source_name, version, name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_federation_definition IS 'One federation definition a graph''s link brings in, under the name the graph sees it by. For example @key as @key where the link imports it, as @federation__key where it does not, and FieldSet as federation__FieldSet unless imported.';
+COMMENT ON COLUMN graphitron_federation_definition.graph_name IS 'the federated graph, anchored by graphitron_federation_link';
+COMMENT ON COLUMN graphitron_federation_definition.name IS 'the definition''s name in the specification, as federation_version_definition spells it';
+COMMENT ON COLUMN graphitron_federation_definition.local_name IS 'the name the graph sees it by, spelled as name is: the alias an import binds, the name itself where the link imports it, and otherwise the name the library gives an unimported definition';
+COMMENT ON COLUMN graphitron_federation_definition.kind IS 'DIRECTIVE, SCALAR or ENUM, on federation_version_definition''s terms';
+COMMENT ON COLUMN graphitron_federation_definition.source_name IS 'the library the graph claims, which with the version names the definition read';
+COMMENT ON COLUMN graphitron_federation_definition.version IS 'the version the graph''s link names';
+COMMENT ON COLUMN graphitron_federation_definition.touched_at IS 'the reading that last wrote this row; a row this reading did not write is one the link stopped bringing in, and goes';
+
+CREATE VIEW graphitron_federation_definition_rule
+  (graph_name, name, local_name, kind, source_name, version) AS
+SELECT l.graph_name, d.name,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_federation_link_import i
+                          WHERE i.graph_name = l.graph_name AND i.name = d.name)
+            THEN COALESCE((SELECT i.alias FROM graphitron_federation_link_import i
+                            WHERE i.graph_name = l.graph_name AND i.name = d.name
+                            ORDER BY i.ordinal FETCH FIRST 1 ROW ONLY), d.name)
+            ELSE d.unimported_name END,
+       d.kind, d.source_name, d.version
+  FROM graphitron_federation_link l
+  JOIN store_graph_source m ON m.graph_name = l.graph_name
+  JOIN federation_version_definition d ON d.source_name = m.source_name AND d.version = l.version;
+COMMENT ON VIEW graphitron_federation_definition_rule IS 'The rule graphitron_federation_definition stores: one row per federation definition a graph''s link brings in. For example every definition of the version the link names, under the name its imports give it.';
+COMMENT ON COLUMN graphitron_federation_definition_rule.graph_name IS 'the federated graph';
+COMMENT ON COLUMN graphitron_federation_definition_rule.name IS 'the specification''s name';
+COMMENT ON COLUMN graphitron_federation_definition_rule.local_name IS 'the name the graph sees';
+COMMENT ON COLUMN graphitron_federation_definition_rule.kind IS 'the definition''s kind';
+COMMENT ON COLUMN graphitron_federation_definition_rule.source_name IS 'the library the graph claims';
+COMMENT ON COLUMN graphitron_federation_definition_rule.version IS 'the version the link names';
+
+CREATE TABLE graphitron_directive (
+  graph_name     VARCHAR   NOT NULL,
+  directive_name VARCHAR   NOT NULL,
+  origin         VARCHAR   NOT NULL,
+  repeatable     BOOLEAN   NOT NULL,
+  description    VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, directive_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  CHECK (origin IN ('AUTHORED', 'FEDERATION'))
+);
+COMMENT ON TABLE graphitron_directive IS 'A directive the graph''s schema declares, written or brought in by its federation link. For example a graph linking federation and importing @key holds key here as FEDERATION beside every directive its documents define, and federation__shareable where the link leaves @shareable out.';
+COMMENT ON COLUMN graphitron_directive.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive.directive_name IS 'the directive''s name in the graph, without its at sign, on graphql_directive''s terms';
+COMMENT ON COLUMN graphitron_directive.origin IS 'AUTHORED where a document defines it, the bundled vocabulary and the specification''s own included, FEDERATION where the link brings it in. A name both claim is the document''s, the composition refusing the collision';
+COMMENT ON COLUMN graphitron_directive.repeatable IS 'whether it may be applied more than once at one site';
+COMMENT ON COLUMN graphitron_directive.description IS 'its description, NULL where none is written';
+COMMENT ON COLUMN graphitron_directive.touched_at IS 'the reading that last wrote this row; a row this reading did not write is a directive the graph stopped declaring, and goes';
+
+CREATE VIEW graphitron_directive_rule (graph_name, directive_name, origin, repeatable, description) AS
+SELECT graph_name, directive_name, 'AUTHORED', repeatable, description
+  FROM graphql_directive
+UNION ALL
+SELECT f.graph_name, SUBSTRING(f.local_name FROM 2), 'FEDERATION', d.repeatable, d.description
+  FROM graphitron_federation_definition f
+  JOIN federation_version_definition d
+    ON d.source_name = f.source_name AND d.version = f.version AND d.name = f.name
+ WHERE f.kind = 'DIRECTIVE'
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive g
+                    WHERE g.graph_name = f.graph_name
+                      AND g.directive_name = SUBSTRING(f.local_name FROM 2));
+COMMENT ON VIEW graphitron_directive_rule IS 'The rule graphitron_directive stores: one row per directive a graph declares. For example what its documents define, and the federation directives its link brings in under the names it brings them in by.';
+COMMENT ON COLUMN graphitron_directive_rule.graph_name IS 'the owning graph';
+COMMENT ON COLUMN graphitron_directive_rule.directive_name IS 'the directive''s name, without its at sign';
+COMMENT ON COLUMN graphitron_directive_rule.origin IS 'AUTHORED or FEDERATION';
+COMMENT ON COLUMN graphitron_directive_rule.repeatable IS 'whether it repeats';
+COMMENT ON COLUMN graphitron_directive_rule.description IS 'its description';
+
+CREATE TABLE graphitron_directive_argument (
+  graph_name        VARCHAR   NOT NULL,
+  directive_name    VARCHAR   NOT NULL,
+  argument_name     VARCHAR   NOT NULL,
+  ordinal           INT       NOT NULL,
+  type_sdl          VARCHAR   NOT NULL,
+  named_type        VARCHAR   NOT NULL,
+  non_null          BOOLEAN   NOT NULL,
+  is_list           BOOLEAN   NOT NULL,
+  item_non_null     BOOLEAN,
+  default_value_sdl VARCHAR,
+  description       VARCHAR,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, directive_name, argument_name),
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphitron_directive (graph_name, directive_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_directive_argument IS 'One argument a directive the graph declares takes. For example fields: federation__FieldSet! of @key in a graph whose link imports @key and not FieldSet, its type under the name the graph sees.';
+COMMENT ON COLUMN graphitron_directive_argument.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_directive_argument.directive_name IS 'the directive, anchored by graphitron_directive';
+COMMENT ON COLUMN graphitron_directive_argument.argument_name IS 'the argument''s name';
+COMMENT ON COLUMN graphitron_directive_argument.ordinal IS 'its position in the definition, from 0';
+COMMENT ON COLUMN graphitron_directive_argument.type_sdl IS 'its type, the named type spelled as the graph sees it';
+COMMENT ON COLUMN graphitron_directive_argument.named_type IS 'the type its wrapping bottoms out in, as the graph names it';
+COMMENT ON COLUMN graphitron_directive_argument.non_null IS 'whether the outermost type is non-null';
+COMMENT ON COLUMN graphitron_directive_argument.is_list IS 'whether the type is a list';
+COMMENT ON COLUMN graphitron_directive_argument.item_non_null IS 'whether a list''s innermost item is non-null; NULL where the type is no list';
+COMMENT ON COLUMN graphitron_directive_argument.default_value_sdl IS 'its default as written, NULL where none is declared';
+COMMENT ON COLUMN graphitron_directive_argument.description IS 'its description, NULL where none is written';
+COMMENT ON COLUMN graphitron_directive_argument.touched_at IS 'the reading that last wrote this row, on graphitron_directive''s terms';
+
+CREATE VIEW graphitron_directive_argument_rule
+  (graph_name, directive_name, argument_name, ordinal, type_sdl, named_type, non_null, is_list,
+   item_non_null, default_value_sdl, description) AS
+SELECT a.graph_name, a.directive_name, a.argument_name, a.ordinal, a.type_sdl, a.named_type,
+       a.non_null, a.is_list, a.item_non_null, a.default_value_sdl, a.description
+  FROM graphql_directive_argument a
+UNION ALL
+-- A federation argument's type is the specification's name, which the graph may see under another.
+SELECT f.graph_name, SUBSTRING(f.local_name FROM 2), a.argument_name, a.ordinal,
+       REPLACE(a.type_sdl, a.named_type, COALESCE(t.local_name, a.named_type)),
+       COALESCE(t.local_name, a.named_type),
+       a.non_null, a.is_list, a.item_non_null, a.default_value_sdl, a.description
+  FROM graphitron_federation_definition f
+  JOIN federation_version_directive_argument a
+    ON a.source_name = f.source_name AND a.version = f.version AND a.name = f.name
+  LEFT JOIN graphitron_federation_definition t
+    ON t.graph_name = f.graph_name AND t.name = a.named_type AND t.kind <> 'DIRECTIVE'
+ WHERE f.kind = 'DIRECTIVE'
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive g
+                    WHERE g.graph_name = f.graph_name
+                      AND g.directive_name = SUBSTRING(f.local_name FROM 2));
+COMMENT ON VIEW graphitron_directive_argument_rule IS 'The rule graphitron_directive_argument stores: one row per argument of a directive a graph declares. For example the arguments its documents write, and those of the federation directives its link brings in.';
+COMMENT ON COLUMN graphitron_directive_argument_rule.graph_name IS 'the owning graph';
+COMMENT ON COLUMN graphitron_directive_argument_rule.directive_name IS 'the directive';
+COMMENT ON COLUMN graphitron_directive_argument_rule.argument_name IS 'the argument';
+COMMENT ON COLUMN graphitron_directive_argument_rule.ordinal IS 'its position';
+COMMENT ON COLUMN graphitron_directive_argument_rule.type_sdl IS 'its type as the graph names it';
+COMMENT ON COLUMN graphitron_directive_argument_rule.named_type IS 'its named type as the graph names it';
+COMMENT ON COLUMN graphitron_directive_argument_rule.non_null IS 'whether non-null';
+COMMENT ON COLUMN graphitron_directive_argument_rule.is_list IS 'whether a list';
+COMMENT ON COLUMN graphitron_directive_argument_rule.item_non_null IS 'whether a list''s item is non-null';
+COMMENT ON COLUMN graphitron_directive_argument_rule.default_value_sdl IS 'its default';
+COMMENT ON COLUMN graphitron_directive_argument_rule.description IS 'its description';
+
+CREATE VIEW graphitron_type_federation (graph_name, type_name, coordinate, kind, description) AS
+SELECT f.graph_name, f.local_name, f.local_name, f.kind, d.description
+  FROM graphitron_federation_definition f
+  JOIN federation_version_definition d
+    ON d.source_name = f.source_name AND d.version = f.version AND d.name = f.name
+ WHERE f.kind <> 'DIRECTIVE';
+COMMENT ON VIEW graphitron_type_federation IS 'One of the sets graphitron_type is the union of: a type a graph''s federation link brings in. For example federation__FieldSet, the scalar @key''s fields: argument takes, in a graph whose link does not import FieldSet.';
+COMMENT ON COLUMN graphitron_type_federation.graph_name IS 'the federated graph';
+COMMENT ON COLUMN graphitron_type_federation.type_name IS 'the type as the graph names it';
+COMMENT ON COLUMN graphitron_type_federation.coordinate IS 'its coordinate, which for a named type is its name';
+COMMENT ON COLUMN graphitron_type_federation.kind IS 'SCALAR or ENUM';
+COMMENT ON COLUMN graphitron_type_federation.description IS 'its description as the specification writes it';
 
 
 CREATE VIEW graphitron_synthesized_node_type_id
@@ -14623,6 +14857,24 @@ INSERT INTO meta_grain VALUES
   ('graph-module-entry',
    'one classpath entry of one graph''s run that a workspace module provides',
    'graph_name, source_name', 'configuration'),
+  ('federation-version-definition',
+   'one definition one federation version brings into a schema that links it',
+   'source_name, version, name', 'federation'),
+  ('federation-version-directive-argument',
+   'one argument one federation version''s directive declares',
+   'source_name, version, name, argument_name', 'federation'),
+  ('federation-version-directive-location',
+   'one location one federation version''s directive may be applied at',
+   'source_name, version, name, location', 'federation'),
+  ('federation-definition',
+   'one federation definition one graph''s link brings in, under the name the graph sees it by',
+   'graph_name, name', 'sdl'),
+  ('expanded-directive',
+   'one directive one graph''s schema declares, written or brought in by its federation link',
+   'graph_name, directive_name', 'sdl'),
+  ('expanded-directive-argument',
+   'one argument of one directive one graph''s schema declares',
+   'graph_name, directive_name, argument_name', 'sdl'),
   ('federation-written-version',
    'the federation version a link graphitron adds names, under one library',
    'source_name', 'federation'),
@@ -15110,6 +15362,18 @@ INSERT INTO meta_relation VALUES
    'One classpath entry of this graph''s run, and the workspace module it is a form of.',
    'For example the installed service-1.0-SNAPSHOT.jar Maven resolved for the service module, or that module''s target/classes read in its place.',
    'The link between the two identities a module has in a run, the path the classpath holds and the coordinate the module is, held apart so that neither relation carries a column empty on most of its rows: most entries are no module''s, and a module is told by its coordinate whatever form it arrived in.'),
+  ('federation_version_definition', 'federation-version-definition', 'federation',
+   'One definition a federation version brings into a schema that links it.',
+   'For example @key under v2.10, a repeatable directive a link importing it names key and one that does not names federation__key, and FieldSet, a scalar.',
+   'What a link brings into the schema is the library''s to say, the imported and the unimported alike, and the editor has to know it to judge a directive the generator accepts. Captured with the name the library gives a definition no import names, so graphitron never restates the specification''s namespacing.'),
+  ('federation_version_directive_argument', 'federation-version-directive-argument', 'federation',
+   'One argument a federation version''s directive declares.',
+   'For example fields: FieldSet! of @key under v2.10, its type named by the specification.',
+   'On graphql_directive_argument''s terms, so the vocabulary graphitron derives reads the two the same way; its named type is the specification''s, the graph''s name for it being graphitron''s rule.'),
+  ('federation_version_directive_location', 'federation-version-directive-location', 'federation',
+   'One location a federation version''s directive may be applied at.',
+   'For example OBJECT and INTERFACE for @key under v2.10.',
+   'On graphql_directive_location''s terms, the specification''s half of where a directive may stand.'),
   ('federation_written_version', 'federation-written-version', 'federation',
    'The federation version a link graphitron adds names, under the library it is read against.',
    'For example v2.10, which a graph federated only through a configured tag links to.',
@@ -15573,6 +15837,34 @@ INSERT INTO meta_relation VALUES
    'One of the four sets graphitron_element is the union of: a field argument macro expansion adds to the schema, which today is the pagination a connection carrier gets where its author wrote none.',
    'For example the first and after on Query.films(first:) where the author wrote films: [Film!]! @asConnection with no arguments.',
    'On the minted type set''s terms and no more: an argument the transcription already anchors is not minted over, and a contested coordinate belongs to nobody. No rule of the field set''s second kind is owed here, every argument minted today landing on the carrier the directive sits on, and that field surviving whether the expansion rewrote it or left it, so there is no owning element whose fate an argument could have to share.'),
+  ('graphitron_federation_definition', 'federation-definition', 'graphitron',
+   'One federation definition a graph''s link brings in, under the name the graph sees it by.',
+   'For example @key as @key where the link imports it, as @federation__key where it does not, and FieldSet as federation__FieldSet unless imported.',
+   'The one place a federation definition''s local name is decided, from the link''s imports and the library''s name for what it leaves out, so the directives, their argument types and the types themselves read one answer.'),
+  ('graphitron_federation_definition_rule', 'federation-definition', 'graphitron',
+   'The rule graphitron_federation_definition stores: one row per federation definition a graph''s link brings in.',
+   'For example every definition of the version the link names, under the name its imports give it.',
+   'The rule, on graphitron_federation_link_rule''s terms. It reads the stored link and imports, which the anchor fills first.'),
+  ('graphitron_directive', 'expanded-directive', 'graphitron',
+   'A directive the graph''s schema declares, written or brought in by its federation link.',
+   'For example a graph linking federation and importing @key holds key here as FEDERATION beside every directive its documents define, and federation__shareable where the link leaves @shareable out.',
+   'graphql_directive holds what documents define, which is not the vocabulary the composed schema has: the link brings federation''s in, and an editor judging against the written ones alone calls a directive the generator accepts unknown. This is the composed vocabulary, which the editor and the hover read.'),
+  ('graphitron_directive_rule', 'expanded-directive', 'graphitron',
+   'The rule graphitron_directive stores: one row per directive a graph declares.',
+   'For example what its documents define, and the federation directives its link brings in under the names it brings them in by.',
+   'The rule, on graphitron_federation_link_rule''s terms. A name a document defines and the link brings in is the document''s, the composition refusing the collision.'),
+  ('graphitron_directive_argument', 'expanded-directive-argument', 'graphitron',
+   'One argument a directive the graph declares takes.',
+   'For example fields: federation__FieldSet! of @key in a graph whose link imports @key and not FieldSet, its type under the name the graph sees.',
+   'On graphitron_directive''s terms, at the argument grain, which is what the editor''s argument checks read.'),
+  ('graphitron_directive_argument_rule', 'expanded-directive-argument', 'graphitron',
+   'The rule graphitron_directive_argument stores: one row per argument of a directive a graph declares.',
+   'For example the arguments its documents write, and those of the federation directives its link brings in.',
+   'The rule, on graphitron_directive_rule''s terms, mapping a federation argument''s type through graphitron_federation_definition.'),
+  ('graphitron_type_federation', 'expanded-type', 'graphitron',
+   'One of the sets graphitron_type is the union of: a type a graph''s federation link brings in.',
+   'For example federation__FieldSet, the scalar @key''s fields: argument takes, in a graph whose link does not import FieldSet.',
+   'The composed schema holds the types the link brings in, and a reader asking what a federation argument''s type is asks graphitron_type like any other. Written after the link''s imports, a name an author or the mint already holds staying theirs.'),
   ('graphitron_type', 'expanded-type', 'graphitron',
    'Every type the generator works with, the author''s and the ones macro expansion minted, under one key: one row per type name in the graph.',
    'For example a Connection type the connection macro minted sits here beside the type whose field carried the macro, at the same grain and answering the same questions. Total by construction, so a consumer joins this rather than left-joining it.',

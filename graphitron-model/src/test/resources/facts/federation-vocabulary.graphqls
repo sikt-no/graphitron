@@ -1,0 +1,51 @@
+"The vocabulary a federation link brings in, under the names the graph sees. The link imports @key under its own name and @shareable under an alias, and leaves the rest of the version out, which the library still brings in, under its namespace for most and under their own names for @tag and @inaccessible: so the graph declares key, fedShareable, tag and federation__external, the names being the library's rather than a rule graphitron restates. A federation argument's type follows the same names, @key's fields: being federation__FieldSet because FieldSet is not imported, and the types themselves join graphitron_type beside the author's."
+type Film @table(name: "film") @key(fields: "id") @fedShareable {
+  id: ID
+}
+
+extend schema @link(url: "https://specs.apollo.dev/federation/v2.10",
+  import: ["@key", {name: "@shareable", as: "@fedShareable"}])
+
+extend type Query {
+  films: [Film!]!
+}
+
+extend schema @assertContains(relation: "graphitron_directive", rows: """
+  directive_name,  origin
+  key,                  FEDERATION
+  fedShareable,         FEDERATION
+  tag,                  FEDERATION
+  federation__external, FEDERATION
+  table,                AUTHORED
+  """)
+
+# What the link imports under another name, or leaves out, is not declared under its own.
+extend schema @assertAbsent(relation: "graphitron_directive", rows: """
+  directive_name
+  shareable
+  federation__key
+  federation__shareable
+  """)
+
+extend schema @expectEquals(relation: "graphitron_directive_argument", where: """
+  directive_name = 'key'
+  """, rows: """
+  argument_name, named_type,           non_null
+  fields,        federation__FieldSet, TRUE
+  resolvable,    Boolean,              FALSE
+  """)
+
+extend schema @assertContains(relation: "graphitron_type", rows: """
+  type_name,            kind
+  federation__FieldSet, SCALAR
+  link__Purpose,        ENUM
+  """)
+
+extend schema @assertContains(relation: "graphitron_federation_definition", rows: """
+  name,        local_name
+  @key,        @key
+  @shareable,  @fedShareable
+  @tag,        @tag
+  @external,   @federation__external
+  FieldSet,    federation__FieldSet
+  """)

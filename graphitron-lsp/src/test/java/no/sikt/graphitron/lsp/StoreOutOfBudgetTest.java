@@ -140,7 +140,7 @@ class StoreOutOfBudgetTest {
                 .isNotEqualTo(LspVocabulary.empty());
 
             // The relation the directive surface is read from.
-            fixture.makeRunaway("graphql_directive");
+            fixture.makeRunaway("graphitron_directive");
             assertTimeoutPreemptively(HangGuard.BOUND, workspace::markAllForRecalculation);
 
             assertThat(workspace.vocabulary())

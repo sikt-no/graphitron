@@ -8,8 +8,8 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 
@@ -127,20 +127,20 @@ public record DirectiveSurface(
 
     private static Set<String> directiveNames(StoreHandle store) {
         return new HashSet<>(store.dsl()
-            .select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
-            .from(GRAPHQL_DIRECTIVE)
-            .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
-            .fetch(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME));
+            .select(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME)
+            .from(GRAPHITRON_DIRECTIVE)
+            .where(GRAPHITRON_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
+            .fetch(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME));
     }
 
     private static Map<String, Map<String, String>> argumentsByDirective(StoreHandle store) {
         var out = new HashMap<String, Map<String, String>>();
         store.dsl()
-            .select(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
-                GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME,
-                GRAPHQL_DIRECTIVE_ARGUMENT.NAMED_TYPE)
-            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
-            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+            .select(GRAPHITRON_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME,
+                GRAPHITRON_DIRECTIVE_ARGUMENT.ARGUMENT_NAME,
+                GRAPHITRON_DIRECTIVE_ARGUMENT.NAMED_TYPE)
+            .from(GRAPHITRON_DIRECTIVE_ARGUMENT)
+            .where(GRAPHITRON_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
             .forEach(row -> out
                 .computeIfAbsent(row.value1(), ignored -> new HashMap<>())
                 .put(row.value2(), row.value3()));

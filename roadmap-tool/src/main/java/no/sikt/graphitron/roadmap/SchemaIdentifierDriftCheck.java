@@ -195,7 +195,7 @@ final class SchemaIdentifierDriftCheck {
                 }
                 String relationPart = content.contains(".")
                     ? content.substring(0, content.indexOf('.')) : content;
-                if (universe.prefixes().stream().noneMatch(relationPart::startsWith)) {
+                if (!inScope(relationPart, universe)) {
                     continue;
                 }
                 if (!resolves(content, relationPart, universe)) {
@@ -223,7 +223,7 @@ final class SchemaIdentifierDriftCheck {
                 String content = token.group();
                 String relationPart = content.contains(".")
                     ? content.substring(0, content.indexOf('.')) : content;
-                if (universe.prefixes().stream().noneMatch(relationPart::startsWith)) {
+                if (!inScope(relationPart, universe)) {
                     continue;
                 }
                 if (!resolves(content, relationPart, universe)) {
@@ -232,6 +232,16 @@ final class SchemaIdentifierDriftCheck {
             }
         }
         return findings;
+    }
+
+    /**
+     * Whether a token names into the store: it starts with an observed family prefix and carries
+     * no double underscore. The second is GraphQL's link namespacing, federation__key being a
+     * schema name the federation family describes, and no relation spells one.
+     */
+    private static boolean inScope(String relationPart, Universe universe) {
+        return !relationPart.contains("__")
+            && universe.prefixes().stream().anyMatch(relationPart::startsWith);
     }
 
     private static boolean resolves(String identifier, String relationPart, Universe universe) {

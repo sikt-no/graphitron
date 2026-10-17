@@ -20,7 +20,7 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_FIELD;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.OBJECT_VALUE;
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.VALUE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 
@@ -125,12 +125,12 @@ public final class ArgNameCompletions {
     /** The directive definition's formal arguments, in declaration order. */
     private static List<String> directiveArgumentNames(StoreHandle store, String directiveName) {
         return store.dsl()
-            .select(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME)
-            .from(GRAPHQL_DIRECTIVE_ARGUMENT)
-            .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
-            .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(directiveName))
-            .orderBy(GRAPHQL_DIRECTIVE_ARGUMENT.ORDINAL)
-            .fetch(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME);
+            .select(GRAPHITRON_DIRECTIVE_ARGUMENT.ARGUMENT_NAME)
+            .from(GRAPHITRON_DIRECTIVE_ARGUMENT)
+            .where(GRAPHITRON_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+            .and(GRAPHITRON_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(directiveName))
+            .orderBy(GRAPHITRON_DIRECTIVE_ARGUMENT.ORDINAL)
+            .fetch(GRAPHITRON_DIRECTIVE_ARGUMENT.ARGUMENT_NAME);
     }
 
     /** An input object's field names, in the effective type's declaration order. */

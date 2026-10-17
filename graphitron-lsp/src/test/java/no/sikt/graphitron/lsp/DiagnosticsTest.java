@@ -933,6 +933,38 @@ class DiagnosticsTest {
     }
 
     @Test
+    void directivesTheFederationLinkBringsInAreKnown() {
+        // The live report: under an authored federation link the generator accepted @key and @tag
+        // and the editor called both unknown, judging against the definitions documents write. The
+        // composed vocabulary holds what the link brings in, so neither is flagged.
+        var diags = computeCaptured("""
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@tag"])
+            type Query { film: Film }
+            type Film @key(fields: "id") @tag(name: "public") {
+                id: ID
+            }
+            """);
+
+        assertThat(diags).isEmpty();
+    }
+
+    @Test
+    void aFederationDirectiveIsCheckedAgainstItsOwnArguments() {
+        // The arguments come with the vocabulary: a name @key does not declare is flagged as it would
+        // be on a directive a document defines.
+        var diags = computeCaptured("""
+            extend schema @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key"])
+            type Query { film: Film }
+            type Film @key(feilds: "id") {
+                id: ID
+            }
+            """);
+
+        assertThat(diags).extracting(org.eclipse.lsp4j.Diagnostic::getMessage)
+            .anySatisfy(message -> assertThat(message).contains("feilds"));
+    }
+
+    @Test
     void specBuiltinDirectivesAreNotFlagged() {
         // @deprecated is a GraphQL spec built-in; it appears in user
         // schemas but not in graphitron's bundled directives.graphqls.

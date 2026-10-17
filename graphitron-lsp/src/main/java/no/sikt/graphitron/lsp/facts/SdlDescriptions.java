@@ -5,8 +5,8 @@ import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.Optional;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 
@@ -44,18 +44,18 @@ public final class SdlDescriptions {
     public static Optional<String> of(StoreHandle store, SchemaCoordinate coord) {
         return text(switch (coord) {
             case SchemaCoordinate.Directive d -> store.dsl()
-                .select(GRAPHQL_DIRECTIVE.DESCRIPTION)
-                .from(GRAPHQL_DIRECTIVE)
-                .where(GRAPHQL_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
-                .and(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME.eq(d.name()))
-                .fetchOne(GRAPHQL_DIRECTIVE.DESCRIPTION);
+                .select(GRAPHITRON_DIRECTIVE.DESCRIPTION)
+                .from(GRAPHITRON_DIRECTIVE)
+                .where(GRAPHITRON_DIRECTIVE.GRAPH_NAME.eq(store.graphName()))
+                .and(GRAPHITRON_DIRECTIVE.DIRECTIVE_NAME.eq(d.name()))
+                .fetchOne(GRAPHITRON_DIRECTIVE.DESCRIPTION);
             case SchemaCoordinate.DirectiveArg da -> store.dsl()
-                .select(GRAPHQL_DIRECTIVE_ARGUMENT.DESCRIPTION)
-                .from(GRAPHQL_DIRECTIVE_ARGUMENT)
-                .where(GRAPHQL_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
-                .and(GRAPHQL_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(da.directive()))
-                .and(GRAPHQL_DIRECTIVE_ARGUMENT.ARGUMENT_NAME.eq(da.arg()))
-                .fetchOne(GRAPHQL_DIRECTIVE_ARGUMENT.DESCRIPTION);
+                .select(GRAPHITRON_DIRECTIVE_ARGUMENT.DESCRIPTION)
+                .from(GRAPHITRON_DIRECTIVE_ARGUMENT)
+                .where(GRAPHITRON_DIRECTIVE_ARGUMENT.GRAPH_NAME.eq(store.graphName()))
+                .and(GRAPHITRON_DIRECTIVE_ARGUMENT.DIRECTIVE_NAME.eq(da.directive()))
+                .and(GRAPHITRON_DIRECTIVE_ARGUMENT.ARGUMENT_NAME.eq(da.arg()))
+                .fetchOne(GRAPHITRON_DIRECTIVE_ARGUMENT.DESCRIPTION);
             case SchemaCoordinate.InputType t -> store.dsl()
                 .select(GRAPHQL_TYPE.DESCRIPTION)
                 .from(GRAPHQL_TYPE)

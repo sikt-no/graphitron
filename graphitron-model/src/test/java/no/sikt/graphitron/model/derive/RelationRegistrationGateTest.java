@@ -124,7 +124,9 @@ class RelationRegistrationGateTest {
             "java_field_declaration",
             // The federation_ family: what the library answers, pinned by the federation-versions
             // fact document. Nothing GraphitronSchema holds is federation's vocabulary.
-            "federation_version", "federation_version_import", "federation_written_version")) {
+            "federation_version", "federation_version_import", "federation_written_version",
+            "federation_version_definition", "federation_version_directive_argument",
+            "federation_version_directive_location")) {
             registrations.put(relation, Arm.EQUALITY);
         }
         // The SDL node entries: one relation per node kind and site, read per document and keyed by the
@@ -291,6 +293,13 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_federation_link_rule", Arm.DERIVED);
         registrations.put("graphitron_federation_link_import", Arm.DERIVED);
         registrations.put("graphitron_federation_link_import_rule", Arm.DERIVED);
+        registrations.put("graphitron_federation_definition", Arm.DERIVED);
+        registrations.put("graphitron_federation_definition_rule", Arm.DERIVED);
+        registrations.put("graphitron_directive", Arm.DERIVED);
+        registrations.put("graphitron_directive_rule", Arm.DERIVED);
+        registrations.put("graphitron_directive_argument", Arm.DERIVED);
+        registrations.put("graphitron_directive_argument_rule", Arm.DERIVED);
+        registrations.put("graphitron_type_federation", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
         registrations.put("graphitron_field_path", Arm.DERIVED);

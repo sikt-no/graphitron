@@ -89,6 +89,22 @@ class SchemaIdentifierDriftCheckTest {
                 + " column, per the graphql spec."), UNIVERSE)).isEmpty();
     }
 
+    /**
+     * A GraphQL link namespace starts the way a family does and is a schema name, not a relation:
+     * no relation spells a double underscore, so federation__key under a federation_ family is no
+     * citation, while a relation of that family still is.
+     */
+    @Test
+    void storeProseIgnoresALinkNamespace() {
+        var federation = new SchemaIdentifierDriftCheck.Universe(
+            Set.of("federation_"), Map.of("federation_version", Set.of("version")));
+        assertThat(SchemaIdentifierDriftCheck.scanStoreProse(
+            prose("A link not importing @key names it federation__key; federation_gone is cited."),
+            federation))
+            .extracting(SchemaIdentifierDriftCheck.Finding::identifier)
+            .containsExactly("t: federation_gone");
+    }
+
     /** Both corpora at once: {@code run} scans the authored pages and the store's own prose. */
     @Test
     void theTreeAndTheStoreProseItGuardsSatisfyIt() throws IOException {
