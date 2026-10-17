@@ -5,7 +5,7 @@ status: In Progress
 bucket: testing
 priority: 3
 theme: classification-model
-depends-on: [planners-read-facts-emitters-read-commands]
+depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-08-27
 last-updated: 2026-08-27
 ---

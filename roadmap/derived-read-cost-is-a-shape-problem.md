@@ -74,6 +74,41 @@ growing plan without the contradiction showing.
 
 **Root: an expensive derived read is a modelling defect, so fix the shape rather than the cost.**
 
+**Flips in flight.** Every add whose flip or subtract has not landed, one line each: what runs twice
+meanwhile, and the nodes that end it. **No node adds in an area with an open subtract here unless it
+is that subtract's prerequisite, and a node that adds says which line it retires.**
+
+* Entry twins: 15 `graphitron_ast_*_entry` beside the coordinate copies, both written every capture,
+  the twins read by nobody. Ends at "The twinned ones flip and subtract".
+* Two resolutions of an authored element: `graphitron_field_reference_step_hop` and
+  `graphitron_field_path_reading`, both every capture; the forward walk retires both. Ends at "One
+  resolution of an authored element stands, not two" and "The backward walk leaves nothing behind".
+* Read-time path views: `intent_field_path_start`, `_node` and `_terminus`, evaluated by every
+  reader. Ends at "The read-time path relations are gone".
+* The classified model beside the store: `generate` builds `GraphitronSchema`. Ends at "Flip: the
+  generator reads the three queries" and "The generator builds no schema".
+* The emitted schema twice: `EmittedRegistry` in capture, `ConnectionPromoter` in generate, pinned by
+  `EmittedRegistryAgreementTest`. Ends at "The generator builds no schema".
+* Operation members and delivery twice (R563): the relations and the leaf crosswalk, every generate.
+  Ends at "Operation members and delivery are read from their relations alone".
+* Command rows beside leaves (R549, R668, R704): `RoutineWriteCommands` and `LauncherCommands` read
+  both. Ends at "Routine writes read only the store", "The launcher's routine row reads the facts R704
+  captured" and "No emitter reads a leaf".
+* Node-id decode: the instruction and decode relations beside the target type. Ends at "Flip: encode
+  and decode read the target type and the forwarded key" and "Subtract the node-id instruction and
+  decode relations".
+* The type dictionary: `code_type` and `code_type_element`. Ends at "`code_type` and
+  `code_type_element` are gone".
+* Clear-and-recompute steps in `DerivationStratum`. Ends at "The class and its order gate are gone".
+* Producer views: `intent_field_separate_fetch`. Ends at "Subtract what the producers replace".
+* The per-member fit for a polymorphic id. Ends at "The per-member fit goes".
+* Walk and store shadows, both sides in production: `RoutineDirectiveResolver.bindArgs` and
+  `graphitron_argmapping_match` (R950), the column match, the input occurrences, and
+  `NodeDeclaration.isNodeType` and `graphitron_node`. Ends at "The shadow tests go with their walk
+  side".
+* The `RECORD_CLASS` and `SOURCE_ROW` interim in `graphitron_field_source_table`. Ends at "A consumed
+  key is a source".
+
 ### Every rule has an owner, and the register has no subject `open`
 
 A rule with no owner is what a registration compensates for, so ownership leaves the register with
@@ -1151,7 +1186,7 @@ reads nothing off the classpath that capture has already read, and builds no sch
 
     The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
     branch's to retire, through `graphitron_code_reference`, which the service producer joins to.
-* **The generator builds no schema** `blocked`, on the two nodes above: the walk goes when nothing
+* **The generator builds no schema** `blocked`, on the two nodes above and "No emitter reads a leaf": the walk goes when nothing
   reads what it builds, and `KeyNodeSynthesiser`, `ConnectionPromoter`'s expansion and what is left of
   `AttributedRegistry` go with it. R289, which corrects `KeyNodeSynthesiser`'s javadoc, dissolves
   with them. Handing the walk the emitted schema instead was probed and set aside: the walk infers
@@ -1303,6 +1338,39 @@ reads nothing off the classpath that capture has already read, and builds no sch
   * Table types, nodes and node key columns: see "Table types, nodes and node key columns are marked
     and swept" under "A node is settled with the decode that states it", which takes the three
     together.
+
+### An emitter reaches a fact one way, absorbed from R682
+
+R682 ("planners read facts, emitters read commands") is absorbed here, 2026-10-17. Today a fact can
+reach an emitter two ways, joined onto a command row or read off the leaf the emitter holds, and
+nothing forbids the wrong one. The gate R682 set stays: generated output byte-identical, and the
+validator's message, location and severity unchanged, at every step. Its validator half is "Validate
+is a query over the store" and its terminal step is "The generator builds no schema".
+
+* **The emitter architecture is examined against the store** `open`, first; every node below waits
+  on it. R682 chose plan, command, emit as a functional core and imperative shell: Java planners read
+  the store into command rows, and an emitter reads only its row. That was decided before the store
+  was the model. Is a command a relation row the emitter reads, as "Flip: the generator reads the
+  three queries" proposes, or a Java value a planner builds; does planning belong in rules anchored
+  at capture or in Java at generate; what becomes of R549's `command`, `plan` and `render` packages
+  and `CommandSeamRatchetTest`; and how is the byte-identical gate held. Decided with Alf; the
+  answer reshapes the nodes below and may merge them into the three queries.
+* **Routine writes read only the store** `blocked`, on the architecture. `RoutineWriteCommands.produce`
+  takes a `StoreHandle` and still a `GraphitronSchema` beside it, R668 having landed the emitter half.
+* **The launcher's routine row reads the facts R704 captured** `blocked`, on the architecture.
+  `LauncherCommands.routineRow` reads the walk; R704's facts are in the store and nothing here reads
+  them.
+* **Operation members and delivery are read from their relations alone** `blocked`, on the
+  architecture. R563 added `OperationMemberRelation` and `DeliveryFactRelation`, computed in
+  `GraphitronSchemaBuilder`, beside the leaf crosswalk `OperationMembers.membersOf` and
+  `DeliveryFact.leafDerivedOf`; `OutputField`, `ColumnBindingLedger`, `TenantBindingIndex`,
+  `ConditionCommands` and `ProjectionCommands` still read the crosswalk, and
+  `LauncherCommands.produceWithoutSchema` is a second launcher production beside `produce`. The
+  readers move and the productions merge, then the crosswalk and `OperationMemberMintPinTest` go.
+* **No emitter reads a leaf** `blocked`, on the three above and the families after them.
+  `CommandSeamRatchetTest` counts 66 leaf `instanceof` sites and 57 case patterns in the generator
+  and 140 leaf references in `plan`; done at zero, which is what "The generator builds no schema"
+  needs from this branch.
 
 ### A capture reads only what changed
 
@@ -1971,6 +2039,13 @@ against its own corpus, filed here because the walk's fixtures were.
 * **The fact model cites what pins it** `blocked`, on the registration. `fact-model.adoc` names the
   class six times, and already credits it with `everyRelationIsRegistered`, which moved.
 * **`FactCaptureAgreementTest` is gone** `blocked`, on all above.
+* **The shadow tests go with their walk side** `blocked`, each on its walk side losing its last
+  production reader. Each pins a walk derivation against the store relation that replaces it, both
+  running in production: `RoutineSpentInputShadowTest`, `RoutineDirectiveResolver.bindArgs` against
+  `graphitron_argmapping_match`, added by R950 and owned by no item before this;
+  `ColumnMatchShadowTest` and `InputOccurrenceShadowTest`, taken from R740; and
+  `NodeTypeShadowTest`, which goes with `NodeDeclaration.isNodeType` when "is a node" becomes the
+  resolved node, where R740 had kept both spellings.
 
 ### The editor's answers are tested where the editor gets them
 

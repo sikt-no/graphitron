@@ -24,13 +24,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R462` | Model the nested fetcher own outgoing per-field precise edges in CompileDependencyGraphBuilder | Spec | 2026-07-13 <sub>created 2026-07-10</sub> | [plan](nested-fetcher-outgoing-field-edges.md) |
-| `R682` | Planners read facts, emitters read commands: dissolve the walk and the leaf zoo | Spec | 2026-09-25 <sub>created 2026-08-14</sub> | [plan](planners-read-facts-emitters-read-commands.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R333` | The Graphitron data model | Ready | 2026-08-11 <sub>created 2026-06-18</sub> | [plan](coordinate-lowers-to-datafetcher-queryparts.md) |
-| `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
+| `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -416,9 +415,8 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R846` [**A field returning an author-declared connection type has no scope table**](authored-connection-type-scope-silence.md) — Backlog, bug
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R852` [**A field-site terminal condition hop resolves only through its signature, never the declared target**](field-walk-declared-target-condition-rung.md) — Backlog, bug
-- `R682` [**Planners read facts, emitters read commands: dissolve the walk and the leaf zoo**](planners-read-facts-emitters-read-commands.md) — Spec, architecture
 - `R628` [**Producer-binding probe grounds a dot-path leaf parameter against the outer input type**](producer-probe-dotpath-misgrounding.md) — Backlog, bug
-- `R851` [**Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves**](corpus-directives-to-expect-equals.md) — In Progress, testing, blocked by [planners-read-facts-emitters-read-commands](planners-read-facts-emitters-read-commands.md)
+- `R851` [**Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves**](corpus-directives-to-expect-equals.md) — In Progress, testing, blocked by [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)
 - `R333` [**The Graphitron data model**](coordinate-lowers-to-datafetcher-queryparts.md) — Ready, structural
 - `R1036` [**A wrong-type @nodeId on a DML UPDATE input reaches the client as a redacted server error**](update-rail-nodeid-decode-failure-is-redacted.md) — Backlog, bug
 - `R1045` [**An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row**](inline-same-table-child-reads-an-arbitrary-row.md) — Backlog, bug
