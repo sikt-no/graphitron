@@ -267,17 +267,12 @@ the `{@link}` itself; the pipeline tier and the `graphitron-sakila-example` comp
 
 Behaviour is asserted at the SDL to classified model to generated `TypeSpec` pipeline layer; new
 features earn a pipeline test first. Above it, the `graphitron-sakila-example` compile pins type
-correctness and PostgreSQL execution pins behaviour. Code-string assertions on generated method
-bodies are banned at every tier, and so are assertions on the text of the SQL generated code sends:
-they test implementation, not behaviour, and break on every refactor ; the compile and execution
-tiers replace them. What a caller observes is behaviour, the rows returned and the number of round
-trips among it, so counting statements is allowed where reading them is not. Generated output is not
-held byte-identical across a change either: a change is held to green behaviour, and where it
-reaches something the tests do not cover, the coverage is added first. Tier names, locations, and the decision
-rubric: xref:../how-to/testing.adoc[Test-tier guide].
+correctness and PostgreSQL execution pins behaviour. Asserting on generated Java or SQL text is
+banned: it tests implementation. Behaviour is what a caller sees, rows and round trips; counting
+statements is allowed, reading them is not. Output is never held byte-identical; thin coverage is
+added first. Tiers and rubric: xref:../how-to/testing.adoc[Test-tier guide].
 
-*Enforced by:* the tiers themselves, on every `-Plocal-db` build; the code-string and SQL-text bans
-are review-enforced at test-review time.
+*Enforced by:* the tiers themselves, on every `-Plocal-db` build; the text ban is review-enforced.
 
 === Principles are stated at altitude
 
