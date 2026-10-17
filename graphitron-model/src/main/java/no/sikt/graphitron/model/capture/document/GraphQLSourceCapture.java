@@ -5,6 +5,7 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -152,13 +153,18 @@ public final class GraphQLSourceCapture {
      *                  recipe would hold
      * @param failures  what the parser said about each {@link SourceDocument.Unparsable} source,
      *                  which a run refusing the corpus throws with
+     * @param refusals  what each source refused of itself, a document declaring one thing twice,
+     *                  which its own registry has already dropped, so the merge of the documents
+     *                  never meets it and only this list says it happened
      */
     public record CorpusReading(List<SourceDocument> documents, List<SchemaInput> inputs,
-                                List<SchemaLoader.SyntaxFailure> failures) {
+                                List<SchemaLoader.SyntaxFailure> failures,
+                                List<SchemaError> refusals) {
         public CorpusReading {
             documents = List.copyOf(documents);
             inputs = List.copyOf(inputs);
             failures = List.copyOf(failures);
+            refusals = List.copyOf(refusals);
         }
     }
 
@@ -215,7 +221,11 @@ public final class GraphQLSourceCapture {
         writeInputs(dsl, graph.name(), inputs, configured, readAt);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
         documents.sort(OLDEST_FIRST);
-        return new CorpusReading(documents, inputs, parse.failures());
+        // A source's own refusals stay on its reading, its registry having already dropped the repeat.
+        var refusals = parse.perSource().stream()
+            .flatMap(source -> source.registryErrors().stream())
+            .toList();
+        return new CorpusReading(documents, inputs, parse.failures(), refusals);
     }
 
     /**

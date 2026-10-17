@@ -1,0 +1,26 @@
+# A definition a document repeats within itself is refused, and the refusal is recorded. The
+# document is one source, so the merge of the documents never meets the repeat: the source's own
+# reading drops it, and that reading's refusal is the problem row. The first definition stands and
+# the repeat's field is never captured.
+
+type Repeated { kept: String }
+type Repeated { dropped: String }
+
+extend type Query {
+  repeated: Repeated
+}
+
+extend schema @assertContains(relation: "graphql_schema_problem", rows: """
+  stage
+  REGISTRY
+  """)
+
+extend schema @assertContains(relation: "graphql_field", rows: """
+  type_name, field_name
+  Repeated,  kept
+  """)
+
+extend schema @assertAbsent(relation: "graphql_field", rows: """
+  type_name, field_name
+  Repeated,  dropped
+  """)

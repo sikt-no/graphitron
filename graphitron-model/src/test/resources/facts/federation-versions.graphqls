@@ -1,5 +1,10 @@
-"The federation versions the library supports and what each lets a link import, read from federation-jvm rather than listed by graphitron. The rows are store-wide, a library being one source every graph claims, so they hold whatever the document says; this one says nothing federated. The version set is pinned whole, so a library upgrade that adds a version, or breaks the upward probe that finds them, fails here first."
-type Query {
+# The federation versions the library supports and what each lets a link import, read from
+# federation-jvm rather than listed by graphitron. The rows are store-wide, a library being one
+# source every graph claims, so they hold whatever the document says; this one says nothing
+# federated. The version set is pinned whole, so a library upgrade that adds a version, or breaks
+# the upward probe that finds them, fails here first.
+
+extend type Query {
   film: String
 }
 

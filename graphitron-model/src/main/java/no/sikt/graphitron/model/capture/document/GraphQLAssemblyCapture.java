@@ -4,12 +4,14 @@ import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SchemaError;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.FederationLinkComposer;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import org.jooq.DSLContext;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 
@@ -144,10 +146,13 @@ public final class GraphQLAssemblyCapture {
         };
         var assembly = SchemaAssembly.of(outcome instanceof LoadingRewrites.Outcome.Applied applied
             ? applied.registry() : merged.registry());
-        GraphQLSchemaProblems.writeAssembled(dsl, graph.name(), merged.registryErrors(),
+        // What each document refused of itself, then what the documents refused of each other.
+        var registryErrors = new ArrayList<SchemaError>(reading.refusals());
+        registryErrors.addAll(merged.registryErrors());
+        GraphQLSchemaProblems.writeAssembled(dsl, graph.name(), registryErrors,
             Optional.ofNullable(refusal), assembly.errors(), readAt);
         var read = new SchemaLoader.PerSourceParse(merged.registry(), reading.failures(),
-            merged.registryErrors());
+            registryErrors);
         return new AssemblyReading(read, outcome, assembly);
     }
 
