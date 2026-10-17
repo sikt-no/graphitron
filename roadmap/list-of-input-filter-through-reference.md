@@ -3,7 +3,7 @@ id: R1059
 title: "A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS"
 status: Backlog
 bucket: feature
-depends-on: [filter-list-of-input-field-silently-dropped]
+depends-on: []
 created: 2026-10-17
 last-updated: 2026-10-17
 ---
