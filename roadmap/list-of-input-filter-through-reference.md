@@ -1,7 +1,7 @@
 ---
 id: R1059
 title: "A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS"
-status: Spec
+status: Ready
 bucket: feature
 depends-on: []
 created: 2026-10-17
@@ -189,3 +189,12 @@ In `diagnostics-glossary.adoc` § An element field a list-of-input filter cannot
 - **Make the join a record of its own inside `Hop`.** Reach equality would then be plain record equality, with the alias outside it by construction. It is the cleaner end state, but it reshapes a record every path consumer reads, for one comparison. `sameJoinAs` plus its coverage test gets the same guarantee at this item's size.
 - **Pass the terminal hop alias to the helper.** The alias locals are declared after the binding locals, so this would move every reach-bearing glue method's alias declarations above its bindings. That changes their emitted order for no semantic gain, since the helper reads only data types.
 - **Admit `@nodeId` cells.** This needs a per-element node-id decode inside the row helper, with its own mismatch policy. No consumer asks for it.
+
+## Reviewer findings
+
+### Spec → Ready, signed off (session_01HyaqwVLfx3ZEXsVknznmCR, 2026-10-17)
+
+Both questions answered; no blocking findings. Two non-blocking notes for the implementer:
+
+- `referenceElementField_isRejected` builds through `assertRejected`, which adds an own-table `filmId` cell after the authored field. Its fixture is therefore a reached cell followed by an own-table cell, which under this plan stays rejected (located at `PairInput.filmId`, the second cell), not the one-cell positive case the Tests section says it becomes. The one-cell reached case needs its own fixture; the existing one can serve as the mixed-level negative.
+- After the change a reached `ColumnTerm` states its terminal table twice: as the last hop of `reach()` and as `binding().reachedTable()`. Both are set in the same `termOf` arm, so drift is unlikely, but a compact-constructor agreement check on `ColumnTerm` would make it unrepresentable at little cost.
