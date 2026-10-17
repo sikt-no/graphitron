@@ -789,6 +789,8 @@ and the emitters read, and it goes when nothing reads what it builds.
     states whole, and totality is what the defect model's gate checks.
     * **A field's source says how many objects arrive** `blocked`, on the fetcher, its reader.
       Dissolved with no reader; "Every field has one fetcher" says where it is resurrected from.
+      An arrival fact rather than the source: it returns under its own name, since
+      `graphitron_field_source` is the supertype below.
     * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
       table-bound, a record, or a nesting type passing its parent's row through.
       * **A type's backing is anchored by the graphitron gatherer** `done`.
@@ -800,6 +802,14 @@ and the emitters read, and it goes when nothing reads what it builds.
         grounding being a `PRODUCER` row; the seeded cases are fact documents.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
+      * **A field's source is one relation with subtypes, designed first** `open`; the source
+        object and the consume step wait on it. `graphitron_field_source` becomes the supertype:
+        one row per output field, its kind saying where the field's query starts (none for a root,
+        a table, an object, a service's result), with `graphitron_field_source_table`,
+        `graphitron_field_source_object` and a service subtype keyed into it, as
+        `graphitron_field_target` is to the target table and column. A gate holds every field to
+        its row or a defect. Designed with Alf before it is built: the kinds, whether a field can
+        have more than one, and where the consumed keys sit.
       * **A field's source object is stated** `open`. `graphitron_field_source_object`, one row per
         field whose parent arrives as a Java object rather than a row, keyed by the field with the
         class a foreign key into the code family: the parent type's backing, passed down through
