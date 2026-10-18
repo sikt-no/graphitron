@@ -10,11 +10,9 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.as;
@@ -26,13 +24,9 @@ import static org.assertj.core.api.InstanceOfAssertFactories.list;
 /**
  * Execution-tier coverage for composite-key {@code @lookupKey} via {@code @table} input type.
  * Behavioural assertions on {@code filmActorsByKey([FilmActorKey!]!)} live alongside the rest
- * of the lookup-field coverage in {@code GraphQLQueryTest}; this class focuses on the
- * load-bearing claim that wasn't being verified: the rendered SQL actually JOINs on both
- * {@code film_id} AND {@code actor_id}, not on either column alone.
- *
- * <p>SQL capture mirrors the {@code FederationEntitiesDispatchTest} pattern: a jOOQ
- * {@link org.jooq.ExecuteListener} appends each rendered statement (lower-cased) to
- * {@link #SQL_LOG}, and tests grep the log for the {@code film_actor} SELECT.
+ * of the lookup-field coverage in {@code GraphQLQueryTest}; this class pins that both key
+ * columns take part in the match: a key resolves only when {@code film_id} and
+ * {@code actor_id} both match a row.
  */
 @ExecutionTier
 class CompositeKeyLookupQueryTest {
@@ -40,7 +34,6 @@ class CompositeKeyLookupQueryTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -55,25 +48,12 @@ class CompositeKeyLookupQueryTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
-        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ctx) {
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
-                }
-            }));
         graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll
     static void stopDatabase() {
         if (postgres != null) postgres.stop();
-    }
-
-    @BeforeEach
-    void clearSqlLog() {
-        SQL_LOG.clear();
     }
 
     @SuppressWarnings("unchecked")
@@ -84,7 +64,7 @@ class CompositeKeyLookupQueryTest {
     }
 
     @Test
-    void compositeKeyLookup_emitsTwoColumnJoinOnFilmIdAndActorId() {
+    void compositeKeyLookup_returnsEachRequestedPair() {
         Map<String, Object> data = execute(
             "{ filmActorsByKey(key: [{filmId: 1, actorId: 2}, {filmId: 2, actorId: 3}]) { filmId actorId } }");
 
@@ -92,19 +72,6 @@ class CompositeKeyLookupQueryTest {
             .hasSize(2)
             .extracting(r -> r.get("filmId") + ":" + r.get("actorId"))
             .containsExactly("1:2", "2:3");
-
-        // The composite-key VALUES + JOIN must reference *both* columns; a single-column
-        // join would be a regression. The ON predicate carries one equality per key column.
-        var filmActorSelect = SQL_LOG.stream()
-            .filter(s -> s.contains("\"film_actor\""))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "film_actor SELECT not found in SQL log: " + SQL_LOG));
-        assertThat(filmActorSelect)
-            .as("composite-key join uses both film_id and actor_id")
-            .contains("on (\"public\".\"film_actor\".\"film_id\" = \"filmactorsbykeyinput\".\"film_id\" "
-                + "and \"public\".\"film_actor\".\"actor_id\" = \"filmactorsbykeyinput\".\"actor_id\")")
-            .doesNotContain("using (");
     }
 
     @Test

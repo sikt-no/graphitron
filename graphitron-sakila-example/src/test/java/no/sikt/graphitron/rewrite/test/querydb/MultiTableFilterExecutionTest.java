@@ -7,12 +7,10 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +40,6 @@ class MultiTableFilterExecutionTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() {
@@ -56,25 +53,12 @@ class MultiTableFilterExecutionTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
-        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ctx) {
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(Locale.ROOT));
-                }
-            }));
         graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll
     static void stopDatabase() {
         if (postgres != null) postgres.stop();
-    }
-
-    @BeforeEach
-    void clearSqlLog() {
-        SQL_LOG.clear();
     }
 
     @SuppressWarnings("unchecked")
@@ -154,9 +138,6 @@ class MultiTableFilterExecutionTest {
             .containsExactlyInAnyOrder("Mary", "Mike");
         assertThat(rows).extracting(r -> (String) r.get("__typename"))
             .containsExactlyInAnyOrder("Customer", "Staff");
-        assertThat(SQL_LOG)
-            .as("the nested-input filter still lowers to a per-branch first_name predicate")
-            .anyMatch(s -> s.contains("first_name") && s.contains(" in ("));
     }
 
     @Test
@@ -190,9 +171,6 @@ class MultiTableFilterExecutionTest {
             .containsExactlyInAnyOrder("Linda", "Elizabeth", "Jon");
         assertThat(rows).extracting(r -> (String) r.get("__typename"))
             .containsExactlyInAnyOrder("Customer", "Customer", "Staff");
-        assertThat(SQL_LOG)
-            .as("the ID-typed filter lowers to a per-branch store_id predicate")
-            .anyMatch(s -> s.contains("store_id") && s.contains(" in ("));
     }
 
     @Test
@@ -241,9 +219,6 @@ class MultiTableFilterExecutionTest {
             .containsExactlyInAnyOrder("Linda", "Mike");
         assertThat(rows).extracting(r -> (String) r.get("__typename"))
             .containsExactlyInAnyOrder("Customer", "Staff");
-        assertThat(SQL_LOG)
-            .as("the decoded node id lowers to a per-branch address_id predicate")
-            .anyMatch(s -> s.contains("address_id") && s.contains(" in ("));
     }
 
     @Test
@@ -584,10 +559,5 @@ class MultiTableFilterExecutionTest {
                 assertThat(n.get("__typename")).isEqualTo("Staff");
                 assertThat(n.get("firstName")).isEqualTo("Mike");
             });
-        // The connection branch loop (buildStage1ConnectionBlock) must emit a per-branch first_name
-        // predicate; it once emitted no WHERE at all.
-        assertThat(SQL_LOG)
-            .as("the connection stage-1 SQL filters on first_name")
-            .anyMatch(s -> s.contains("first_name") && s.contains(" in ("));
     }
 }

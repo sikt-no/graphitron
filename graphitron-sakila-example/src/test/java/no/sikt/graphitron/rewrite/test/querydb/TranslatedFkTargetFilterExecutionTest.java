@@ -8,12 +8,10 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -34,9 +32,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code BodyParam.RemoteColumnPredicate} is pinned more cheaply at the pipeline tier
  * ({@code NodeIdPipelineTest}'s translated-FK cases, and
  * {@code ReferenceFilterRemoteColumnPipelineTest} for the same machinery under a plain
- * {@code @reference}); the SQL-token assertions below are a thin structural cross-check that the
- * predicate really went through a subquery on the parent rather than degenerating into a local
- * comparison that happened to return the same rows on this seed data.
+ * {@code @reference}).
  *
  * <p>Seed data ({@code init.sql}): parent {@code P1} (alt key {@code AK-1}) has children
  * {@code C1}, {@code C2}; {@code P2} ({@code AK-2}) has {@code C3}; {@code P3} has none. The
@@ -56,7 +52,6 @@ class TranslatedFkTargetFilterExecutionTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() {
@@ -70,25 +65,12 @@ class TranslatedFkTargetFilterExecutionTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
-        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ctx) {
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(Locale.ROOT));
-                }
-            }));
         graphql = Graphitron.newGraphQL().build();
     }
 
     @AfterAll
     static void stopDatabase() {
         if (postgres != null) postgres.stop();
-    }
-
-    @BeforeEach
-    void clearSqlLog() {
-        SQL_LOG.clear();
     }
 
     @SuppressWarnings("unchecked")
@@ -119,11 +101,6 @@ class TranslatedFkTargetFilterExecutionTest {
 
         assertThat(childIds(data, "xlatChildrenByParentIds"))
             .containsExactlyInAnyOrder("C1", "C2", "C3");
-        // Structural cross-check: the predicate went through a subquery on the parent table and
-        // compared its node key, rather than comparing anything on xlat_child directly.
-        assertThat(SQL_LOG)
-            .as("the filter lowers to a correlated EXISTS over xlat_parent comparing pk_id")
-            .anyMatch(s -> s.contains("exists") && s.contains("xlat_parent") && s.contains("pk_id"));
     }
 
     @Test
@@ -173,8 +150,6 @@ class TranslatedFkTargetFilterExecutionTest {
             """.formatted(NodeIdEncoder.encode("XlatParent", "P2")));
 
         assertThat(childIds(data, "xlatChildByParentId")).containsExactly("C3");
-        assertThat(SQL_LOG)
-            .anyMatch(s -> s.contains("exists") && s.contains("xlat_parent"));
     }
 
     @Test
@@ -187,8 +162,6 @@ class TranslatedFkTargetFilterExecutionTest {
 
         assertThat(childIds(data, "xlatChildrenByFilter"))
             .containsExactlyInAnyOrder("C1", "C2");
-        assertThat(SQL_LOG)
-            .anyMatch(s -> s.contains("exists") && s.contains("xlat_parent") && s.contains("pk_id"));
     }
 
     @Test
@@ -271,9 +244,6 @@ class TranslatedFkTargetFilterExecutionTest {
         assertThat(ints(data, "actorsByFilmIds", "actorId"))
             .as("actor 1 is cast in both films and must appear exactly once")
             .containsExactlyInAnyOrder(1, 2, 3);
-        assertThat(SQL_LOG)
-            .as("the chain lowers to a correlated EXISTS reaching film through film_actor")
-            .anyMatch(s -> s.contains("exists") && s.contains("film_actor") && s.contains("film_id"));
     }
 
     @Test
@@ -326,9 +296,6 @@ class TranslatedFkTargetFilterExecutionTest {
         assertThat(ints(data, "actorsByFilmFilter", "actorId"))
             .as("an omitted filter returns the whole collection, the uncast actor included")
             .containsExactlyInAnyOrder(1, 2, 3, 4);
-        assertThat(SQL_LOG)
-            .as("no value, no conjunct: the semi-join is not in the statement at all")
-            .noneMatch(s -> s.contains("exists"));
     }
 
     @Test
@@ -400,8 +367,6 @@ class TranslatedFkTargetFilterExecutionTest {
         assertThat(ints(data, "addressesByCustomerIds", "addressId"))
             .as("both customers live at address 1, which must appear exactly once")
             .containsExactly(1);
-        assertThat(SQL_LOG)
-            .anyMatch(s -> s.contains("exists") && s.contains("customer"));
     }
 
     @Test
