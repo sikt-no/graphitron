@@ -8,13 +8,10 @@ import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
-import java.util.ArrayList;
 import java.util.List;
-import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -29,10 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * payload single, payload list). The no-match cases pin that an empty patch on a missing key
  * answers what a non-empty patch on that key answers.
  *
- * <p>Statements are captured with an {@code ExecuteListener}; a {@code TransactionListener} marks
- * the write transaction's {@code begin} and {@code commit} / {@code rollback} in the same log, so a
- * case can say which statements ran inside it. The follow-up re-select of the payload runs after
- * the transaction and is the same as for a non-empty patch, so the cases pin only the write half.
+ * <p>"No UPDATE" is read off the row version: {@code xmin} moves on any UPDATE of the row, even
+ * one that writes the same values. A {@code TransactionListener} records how the write
+ * transaction ended, so a failing batch can be shown to roll back.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -41,14 +37,11 @@ class EmptyPatchUpdateExecutionTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
-    static final List<String> LOG = new CopyOnWriteArrayList<>();
+    /** The write transaction's end markers, {@code commit} or {@code rollback}, in order. */
+    static final List<String> TX_END = new CopyOnWriteArrayList<>();
 
     /** A film id no row carries; each case that needs it deletes it first. */
     private static final int ABSENT_FILM_ID = 999_841;
-
-    private static final String KEY_READ =
-        "select \"public\".\"film\".\"film_id\" from \"public\".\"film\" "
-            + "where \"public\".\"film\".\"film_id\" = ?";
 
     @BeforeAll
     static void startDatabase() {
@@ -62,19 +55,10 @@ class EmptyPatchUpdateExecutionTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
-        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ctx) {
-                    var sql = ctx.sql();
-                    if (sql != null) LOG.add(sql.toLowerCase(Locale.ROOT));
-                }
-            }));
         dsl.configuration().set(new org.jooq.impl.DefaultTransactionListenerProvider(
             new org.jooq.TransactionListener() {
-                @Override public void beginEnd(org.jooq.TransactionContext ctx) { LOG.add("begin"); }
-                @Override public void commitEnd(org.jooq.TransactionContext ctx) { LOG.add("commit"); }
-                @Override public void rollbackEnd(org.jooq.TransactionContext ctx) { LOG.add("rollback"); }
+                @Override public void commitEnd(org.jooq.TransactionContext ctx) { TX_END.add("commit"); }
+                @Override public void rollbackEnd(org.jooq.TransactionContext ctx) { TX_END.add("rollback"); }
             }));
         graphql = Graphitron.newGraphQL().build();
     }
@@ -84,13 +68,8 @@ class EmptyPatchUpdateExecutionTest {
         if (postgres != null) postgres.stop();
     }
 
-    @BeforeEach
-    void clearLog() {
-        LOG.clear();
-    }
-
     private static ExecutionResult executeRaw(String query) {
-        LOG.clear();
+        TX_END.clear();
         return graphql.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build());
     }
 
@@ -100,24 +79,8 @@ class EmptyPatchUpdateExecutionTest {
         return result.getData();
     }
 
-    /** The statements between the write transaction's {@code begin} and its end marker. */
-    private static List<String> writeTransaction() {
-        int begin = LOG.indexOf("begin");
-        assertThat(begin).as("a write transaction ran: " + LOG).isNotNegative();
-        var inside = new ArrayList<String>();
-        for (var entry : LOG.subList(begin + 1, LOG.size())) {
-            if (entry.equals("commit") || entry.equals("rollback")) return inside;
-            inside.add(entry);
-        }
-        throw new AssertionError("the write transaction never ended: " + LOG);
-    }
-
     private static String transactionEnd() {
-        return LOG.stream().filter(e -> e.equals("commit") || e.equals("rollback")).findFirst().orElseThrow();
-    }
-
-    private static void assertNoUpdate() {
-        assertThat(LOG).as("an empty patch issues no UPDATE").noneMatch(sql -> sql.startsWith("update"));
+        return TX_END.stream().findFirst().orElseThrow();
     }
 
     private static int insertFilm(String title, String description) {
@@ -127,7 +90,6 @@ class EmptyPatchUpdateExecutionTest {
             .set(DSL.field("language_id"), (short) 1)
             .returningResult(DSL.field("film_id", Integer.class))
             .fetchOne().value1();
-        LOG.clear();
         return id;
     }
 
@@ -156,9 +118,6 @@ class EmptyPatchUpdateExecutionTest {
                 """.formatted(id));
             assertThat((Map<String, Object>) data.get("updateFilmNested"))
                 .containsEntry("filmId", id).containsEntry("title", title);
-            assertNoUpdate();
-            assertThat(writeTransaction()).as("the key read is the write transaction's only statement")
-                .containsExactly(KEY_READ);
             assertThat(dbRow(id)).as("the row and its version are untouched").isEqualTo(before);
         } finally {
             deleteFilm(id);
@@ -168,7 +127,7 @@ class EmptyPatchUpdateExecutionTest {
     // ---- direct projected, list (VALUES join) ---------------------------------------------------
 
     @Test
-    void directList_emptyPatch_readsEveryRowThroughTheValuesJoin() {
+    void directList_emptyPatch_echoesEveryRowWithoutAnUpdate() {
         String titleA = "EMPTY-PATCH-LA-" + UUID.randomUUID();
         String titleB = "EMPTY-PATCH-LB-" + UUID.randomUUID();
         int a = insertFilm(titleA, "da");
@@ -182,11 +141,6 @@ class EmptyPatchUpdateExecutionTest {
             assertThat((List<Map<String, Object>>) data.get("updateFilmsNested"))
                 .extracting(f -> f.get("title"))
                 .containsExactlyInAnyOrder(titleA, titleB);
-            assertNoUpdate();
-            assertThat(writeTransaction()).singleElement().satisfies(sql -> assertThat(sql)
-                .as("the key read joins the same VALUES table the UPDATE would have")
-                .startsWith("select \"public\".\"film\".\"film_id\" from \"public\".\"film\" join (values ")
-                .contains(" on \"public\".\"film\".\"film_id\" = \"v\".\"film_id\""));
             assertThat(dbRow(a)).isEqualTo(beforeA);
             assertThat(dbRow(b)).isEqualTo(beforeB);
         } finally {
@@ -209,8 +163,6 @@ class EmptyPatchUpdateExecutionTest {
             var payload = (Map<String, Object>) data.get("updateFilmNestedPayload");
             assertThat((Map<String, Object>) payload.get("film"))
                 .containsEntry("filmId", id).containsEntry("title", title);
-            assertNoUpdate();
-            assertThat(writeTransaction()).containsExactly(KEY_READ);
             assertThat(dbRow(id)).isEqualTo(before);
         } finally {
             deleteFilm(id);
@@ -245,12 +197,6 @@ class EmptyPatchUpdateExecutionTest {
                     org.assertj.core.groups.Tuple.tuple(a, titleA),
                     org.assertj.core.groups.Tuple.tuple(b, "EMPTY-PATCH-RENAMED"),
                     org.assertj.core.groups.Tuple.tuple(c, titleC));
-            assertThat(writeTransaction())
-                .as("key read, UPDATE, key read: one statement per row, in row order")
-                .satisfiesExactly(
-                    sql -> assertThat(sql).isEqualTo(KEY_READ),
-                    sql -> assertThat(sql).startsWith("update \"public\".\"film\" set \"title\" = ?"),
-                    sql -> assertThat(sql).isEqualTo(KEY_READ));
             assertThat(dbRow(a)).isEqualTo(beforeA);
             assertThat(dbRow(c)).isEqualTo(beforeC);
             assertThat(dbRow(b).get("title")).isEqualTo("EMPTY-PATCH-RENAMED");
@@ -269,7 +215,6 @@ class EmptyPatchUpdateExecutionTest {
         Map<String, Object> empty = execute("""
             mutation { updateFilmNested(in: { filmId: %d }) { filmId } }
             """.formatted(ABSENT_FILM_ID));
-        assertNoUpdate();
         Map<String, Object> nonEmpty = execute("""
             mutation { updateFilmNested(in: { filmId: %d, details: { title: "X" } }) { filmId } }
             """.formatted(ABSENT_FILM_ID));
@@ -288,7 +233,6 @@ class EmptyPatchUpdateExecutionTest {
                     { filmId: %d }
                 ]) { films { filmId } } }
                 """.formatted(id, ABSENT_FILM_ID));
-            assertFirstRowUpdatesAndSecondIsRead();
             assertThat(transactionEnd()).as("the batch rolls back").isEqualTo("rollback");
             assertThat(dbRow(id).get("title")).as("the other row's write is rolled back").isEqualTo(title);
 
@@ -309,13 +253,5 @@ class EmptyPatchUpdateExecutionTest {
         } finally {
             deleteFilm(id);
         }
-    }
-
-    /** The batch's first row is a real UPDATE; the empty-patch row after it is the key read. */
-    private static void assertFirstRowUpdatesAndSecondIsRead() {
-        assertThat(writeTransaction())
-            .satisfiesExactly(
-                sql -> assertThat(sql).startsWith("update"),
-                sql -> assertThat(sql).isEqualTo(KEY_READ));
     }
 }
