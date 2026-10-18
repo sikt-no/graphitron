@@ -663,7 +663,6 @@ class DmlBulkMutationsExecutionTest {
         // Duplicate-tuple guard: bulk UPDATE rejects when two rows share the same
         // lookup-key tuple (PostgreSQL UPDATE...FROM(VALUES) has undefined behavior
         // when the join produces multiple matches per target row). Fires before SQL.
-        // UPSERT has no analogue; PostgreSQL itself errors on duplicate ON CONFLICT keys.
         String origTitle = randomMarker("R77F-UPD-DUP");
         Integer id = insertFilm(origTitle);
         try {
@@ -692,15 +691,6 @@ class DmlBulkMutationsExecutionTest {
         assertThat(row.value1()).as("rejected update leaves the title unwritten").isEqualTo(origTitle);
         assertThat(row.value2()).as("rejected update leaves the description unwritten").isNull();
     }
-
-    // doNothing-mode coverage (`tia.setFields()` empty → uniform-shape guard not emitted at
-    // codegen time) is pinned at the pipeline tier in FetcherPipelineTest rather than here.
-    // PostgreSQL enforces NOT NULL before evaluating ON CONFLICT, so an UPSERT input
-    // carrying only @lookupKey fields can't be exercised against Sakila's `film` table:
-    // the INSERT branch errors on the first NOT NULL column (`title`) regardless of
-    // whether every supplied filmId would conflict. The structural assertion (no
-    // `firstKeys` capture, no uniformity guard) is the meaningful pin and lives at the
-    // tier that can read the emitted source.
 
     // ===== empty-list short-circuit, one per verb =====
 
