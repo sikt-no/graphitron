@@ -1358,8 +1358,7 @@ is "The generator builds no schema".
   behavioural checks in classes named for what they test; about 45 stray reads went the same way.
   Three fixture rows make observable what only the text had shown: a discriminator value outside
   the type, a key differing in one column, a default against an explicit null. What no caller can
-  observe went with nothing in its place. One listener still matches facet SQL by text, to make
-  that statement fail rather than to check it.
+  observe went with nothing in its place.
 * **No test reads generated Java as text** `open`, ahead of each conversion for the emitter it
   converts. About 495 assertion lines in 30 `graphitron` test files read generated bodies as text,
   most in `TypeFetcherGeneratorTest`, `GraphitronSchemaClassGeneratorTest` and
@@ -1369,9 +1368,28 @@ is "The generator builds no schema".
 * **The recompile graph has a source once commands are gone** `open`. `PlanCompileGraph` is the only
   reader of `FetcherEdgeRelation` and is how the dev loop knows which file to rebuild; it needs the
   same answer from the store.
-* **Routine writes read only the store** `open`. The routine-write emitter reads `RoutineWriteFacts`
-  itself and `RoutineWriteCommands` goes; the error channel and tenant binding it still takes from
-  `GraphitronSchema` move to the store first.
+* **Routine writes read only the store** `open`, in two steps: the command layer goes, then the
+  last two facts it takes from `GraphitronSchema` move to the store.
+  * **The command layer goes** `open`, first. The emitter reads `RoutineWriteFacts` rows and the two
+    schema facts itself; `RoutineWriteCommand`, `RoutineWriteRelation`, `RoutineWriteCommands` and
+    `TenantAcquisitionFragments` go.
+    * **What only the command tests describe runs against PostgreSQL** `open`. A chain over two or
+      more hops, with a hop `condition:`; a single-valued chain; a list-valued carrier; a composite
+      captured key; a multi-tenant routine write to an untenanted table; one coordinate mixing an
+      authored and an inferred node-id projection. Each is a sakila routine and field, since no
+      execution test runs it today.
+    * **No test reads its generated Java as text** `open`. The routine-write cases of
+      `RoutineMutationWritePipelineTest`, `RoutineWriteTenancyPipelineTest` and
+      `ArgmappingKeyProjectionEmissionPipelineTest`, and `TenantAcquisitionFragmentsTest`; most are
+      covered by execution tests already and go.
+  * **The error-mapping constant is a store fact** `open`, after. `intent_field_error_channel` states
+    whether a field has a channel and its transport, not the constant's name: the name deduplicates
+    handler lists and the plain name goes to whichever channel was classified first, an order the
+    store does not state. `ErrorMappingsClassGenerator` mints the same names, so both read one rule.
+  * **The routine write's tenancy is a store fact** `open`, after. No relation binds a coordinate to
+    its tenant or states the tenant key's type. A tenant-scoped routine write is rejected, so of the
+    renderer's four routings only the unrouted one and the default source are reachable; the
+    inherited and argument-bound ones are dead.
 * **The launcher's routine row reads the facts R704 captured** `open`.
   `LauncherCommands.routineRow` reads the walk; R704's facts are in the store and nothing here reads
   them.
