@@ -95,7 +95,7 @@ class BulkUpdateSetAgreementExecutionTest {
         dsl.deleteFrom(DSL.table("film_bookmark"))
             .where(DSL.field("note", String.class).like(NOTE_PREFIX + "%"))
             .execute();
-        // Bounded at both ends: DmlSqlBaselineTest owns the 700 band in the same mailbox, so an
+        // Bounded at both ends: DmlReprojectionExecutionTest owns the 700 band in the same mailbox, so an
         // open-ended `>= 300` would delete its in-flight rows.
         dsl.deleteFrom(DSL.table("email"))
             .where(DSL.field("mailbox_id", Integer.class).eq(MAILBOX_BOB))
