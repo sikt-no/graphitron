@@ -1,7 +1,7 @@
 ---
 id: R1059
 title: "A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS"
-status: Ready
+status: In Progress
 bucket: feature
 depends-on: []
 created: 2026-10-17
