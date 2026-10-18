@@ -5141,8 +5141,8 @@ type Mutation {
 
     # The bulk sibling of insertBookmarkOverlap. A row that sends filmRef as an explicit null, with no
     # bookmarkedFilm, has a present writer and nothing to agree on, so bookmarked_film binds a typed
-    # NULL; a row that sends neither writer takes the DEFAULT gap cell. bookmarked_film has no
-    # default, so only the rendered statement tells the two apart.
+    # NULL; a row that sends neither writer takes the DEFAULT gap cell, so bookmarked_film's column
+    # default lands.
     insertBookmarkOverlaps(in: [FilmBookmarkOverlapInput!]!): [FilmBookmark!]! @mutation(typeName: INSERT)
 
     # R322 single-row UPDATE SET value agreement: endorsed_film is SET by both endorsedFilm (@field) and

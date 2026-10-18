@@ -5342,7 +5342,7 @@ class GraphQLQueryTest {
         // The generated WHERE IN ('FILM','SHORT') filter must exclude any rows with unknown
         // discriminator values that cannot be routed by the TypeResolver. If the filter is
         // missing, those rows would cause a null type resolution and an opaque runtime error.
-        // init.sql seeds only FILM and SHORT rows so this test confirms no mystery rows appear.
+        // init.sql seeds one PODCAST row, so this test confirms it does not appear.
         Map<String, Object> data = execute("{ allContent { __typename } }");
         List<Map<String, Object>> items = (List<Map<String, Object>>) data.get("allContent");
         assertThat(items).extracting(i -> i.get("__typename"))
@@ -5360,7 +5360,8 @@ class GraphQLQueryTest {
         // single-cardinality, so a second content row on the same film makes the fetch throw
         // TooManyRows. The two classes in this module that insert content attach their rows to
         // film 1, so film 2 is the parent this case can own. A writer that starts attaching to
-        // film 2 has to revisit this.
+        // film 2 has to revisit this. Film 2 also carries the seeded PODCAST row, which only the
+        // discriminator filter keeps out of this fetch.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"2\"]) { filmContent { __typename contentId title } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
@@ -5463,6 +5464,36 @@ class GraphQLQueryTest {
                 .contains("as \"filmcontent_rating\"")
                 .as("and the batch is ordered, so each bucket keeps the scatter's order")
                 .contains("order by"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void filmContents_unknownDiscriminatorRow_isExcludedFromBothBatchedShapes() {
+        // init.sql attaches a PODCAST row to film 2 beside its FILM row. No participant type names
+        // PODCAST, so the list and the connection must both drop it rather than fail to route it.
+        // Nothing else in this module writes content on film 2, so its bucket is compared whole.
+        Map<String, Object> data = execute("""
+            { filmById(film_id: ["2"]) {
+                filmContents { __typename title }
+                filmContentsConnection { totalCount edges { node { __typename title } } }
+            } }
+            """);
+        var film = ((List<Map<String, Object>>) data.get("filmById")).get(0);
+
+        assertThat((List<Map<String, Object>>) film.get("filmContents"))
+            .extracting(c -> c.get("__typename") + ":" + c.get("title"))
+            .containsExactly("FilmContent:ACE GOLDFINGER (extended)");
+
+        var connection = (Map<String, Object>) film.get("filmContentsConnection");
+        assertThat((List<Map<String, Object>>) connection.get("edges"))
+            .extracting(e -> {
+                var node = (Map<String, Object>) e.get("node");
+                return node.get("__typename") + ":" + node.get("title");
+            })
+            .containsExactly("FilmContent:ACE GOLDFINGER (extended)");
+        assertThat(connection.get("totalCount"))
+            .as("the count leaves out the row the page leaves out")
+            .isEqualTo(1);
     }
 
     // ===== TableInterfaceType cross-table participant fields =====

@@ -41,7 +41,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>Seed data ({@code init.sql}): parent {@code P1} (alt key {@code AK-1}) has children
  * {@code C1}, {@code C2}; {@code P2} ({@code AK-2}) has {@code C3}; {@code P3} has none. The
  * composite pair mirrors it: {@code (A1,B1)} has {@code CC1}, {@code CC2}; {@code (A2,B2)} has
- * {@code CC3}.
+ * {@code CC3}; the decoy {@code (A1,B2)}, which shares one column of each key with each of them, has
+ * {@code CC4}.
  *
  * <p>The class also carries the two shapes that reach the same binding without any translation: a
  * junction chain through {@code film_actor} and a single hop traversed against its foreign key's
@@ -208,11 +209,20 @@ class TranslatedFkTargetFilterExecutionTest {
             """.formatted(NodeIdEncoder.encode("XlatCompParent", "A1", "B1")));
 
         assertThat(childIds(data, "xlatCompChildrenByParentIds"))
-            .as("only (A1,B1)'s children; CC3 belongs to (A2,B2)")
+            .as("only (A1,B1)'s children; CC3 belongs to (A2,B2), and CC4 to the decoy (A1,B2), "
+                + "which matches (A1,B1) on pk_a and alt_a alone")
             .containsExactlyInAnyOrder("CC1", "CC2");
-        assertThat(SQL_LOG)
-            .as("both composite node-key columns are compared inside the EXISTS")
-            .anyMatch(s -> s.contains("exists") && s.contains("pk_a") && s.contains("pk_b"));
+    }
+
+    @Test
+    void compositeKey_decoySharingTheOtherColumn_isExcluded() {
+        // The decoy (A1,B2) matches (A2,B2) on pk_b and alt_b alone, so this is the case that
+        // fails if only the second column of either pair is compared.
+        Map<String, Object> data = execute("""
+            { xlatCompChildrenByParentIds(parentIds: ["%s"]) { childId } }
+            """.formatted(NodeIdEncoder.encode("XlatCompParent", "A2", "B2")));
+
+        assertThat(childIds(data, "xlatCompChildrenByParentIds")).containsExactly("CC3");
     }
 
     @Test
@@ -224,6 +234,7 @@ class TranslatedFkTargetFilterExecutionTest {
                 NodeIdEncoder.encode("XlatCompParent", "A2", "B2")));
 
         assertThat(childIds(data, "xlatCompChildrenByParentIds"))
+            .as("every child of the two requested parents, and not the decoy's CC4")
             .containsExactlyInAnyOrder("CC1", "CC2", "CC3");
     }
 

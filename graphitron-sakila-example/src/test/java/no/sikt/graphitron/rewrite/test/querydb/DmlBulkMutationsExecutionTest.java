@@ -612,7 +612,7 @@ class DmlBulkMutationsExecutionTest {
     @Test
     void insertBookmarkOverlap_sharedColumnWithNoWriterPresentIsNotNamed() {
         // bookmarked_film is written by both bookmarkedFilm and filmRef; with both absent the
-        // column is left out, rather than taking a DEFAULT cell.
+        // column is left out, rather than taking a DEFAULT cell, and its default (film 3) lands.
         inRolledBackTransaction(tx -> {
             EXECUTED_SQL.clear();
             Map<String, Object> data = execute(tx, """
@@ -622,7 +622,7 @@ class DmlBulkMutationsExecutionTest {
                 .doesNotContain("bookmarked_film")
                 .doesNotContainPattern("\\bdefault\\b"));
             Map<String, Object> bookmark = (Map<String, Object>) data.get("insertBookmarkOverlap");
-            assertThat(bookmark).containsEntry("note", "overlap").containsEntry("bookmarkedFilm", null);
+            assertThat(bookmark).containsEntry("note", "overlap").containsEntry("bookmarkedFilm", 3);
         });
     }
 
@@ -645,13 +645,11 @@ class DmlBulkMutationsExecutionTest {
 
     @Test
     void insertBookmarkOverlaps_explicitNullReferenceBindsNullWhereOmittedTakesTheGapCell() {
-        // Three rows that differ only in filmRef: a value, an explicit null, nothing. Every row sends a
-        // note, so bookmarked_film is the only column that can take a DEFAULT cell. The explicit null
-        // binds a typed NULL and the omission takes DEFAULT; bookmarked_film has no default, so both
-        // land NULL and the rendered statement's single DEFAULT is what tells the two arms apart.
+        // Three rows that differ only in filmRef: a value, an explicit null, nothing. The explicit
+        // null binds a typed NULL and the omission takes the DEFAULT gap cell; bookmarked_film
+        // defaults to film 3 in init.sql, so the stored rows tell the two apart.
         String film1 = NodeIdEncoder.encode("Film", 1);
         inRolledBackTransaction(tx -> {
-            EXECUTED_SQL.clear();
             Map<String, Object> data = execute(tx, """
                 mutation {
                     insertBookmarkOverlaps(in: [
@@ -661,17 +659,13 @@ class DmlBulkMutationsExecutionTest {
                     ]) { bookmarkedFilm note }
                 }
                 """.formatted(film1));
-            assertThat(insertStatements()).singleElement().satisfies(sql -> assertThat(
-                    java.util.regex.Pattern.compile("\\bdefault\\b").matcher(sql).results().count())
-                .as("only the omitted row's bookmarked_film takes a DEFAULT cell: " + sql)
-                .isEqualTo(1));
             List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("insertBookmarkOverlaps");
             Map<Object, Object> filmByNote = new java.util.HashMap<>();
             rows.forEach(r -> filmByNote.put(r.get("note"), r.get("bookmarkedFilm")));
             assertThat(filmByNote)
                 .containsEntry("bulk-value", 1)
                 .containsEntry("bulk-null", null)
-                .containsEntry("bulk-omitted", null)
+                .containsEntry("bulk-omitted", 3)
                 .hasSize(3);
         });
     }

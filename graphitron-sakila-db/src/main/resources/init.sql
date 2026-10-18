@@ -247,11 +247,13 @@ CREATE TABLE film_endorsement (
 -- multi-tenant fixture's film_id tenant column a bookmark's film names the tenant holding that
 -- film, and a bookmark of no film names no tenant: its batched children answer the empty value
 -- without taking a connection. film_endorsement cannot serve that case, its reference is NOT NULL.
+-- bookmarked_film defaults to film 3 so an INSERT that leaves the column out is told apart from one
+-- that writes it NULL by the stored row alone.
 -- -------------------------
 
 CREATE TABLE film_bookmark (
     bookmark_id     serial        PRIMARY KEY,
-    bookmarked_film int           REFERENCES film(film_id),
+    bookmarked_film int           DEFAULT 3 REFERENCES film(film_id),
     note            varchar(255)
 );
 
@@ -450,11 +452,16 @@ INSERT INTO inventory (inventory_id, film_id, store_id) VALUES
 -- content seed data: two FilmContent rows linked to films 1 and 2, two ShortContent rows.
 -- short_description is populated only on SHORT rows so per-participant column isolation tests
 -- can verify NULL on FILM rows.
+--
+-- The fifth row is a PODCAST on film 2, a kind no participant type names. It sits beside film 2's
+-- FILM row so every read of film 2's content (the single filmContent included, which would raise
+-- TooManyRows) shows the discriminator filter dropping it.
 INSERT INTO content (content_type, title, length, short_description, film_id) VALUES
-    ('FILM',  'ACADEMY DINOSAUR (extended)',  120, NULL,                  1),
-    ('FILM',  'ACE GOLDFINGER (extended)',     90, NULL,                  2),
-    ('SHORT', 'Sunrise',                       12, 'Dawn over a city',    NULL),
-    ('SHORT', 'Interlude',                      8, 'Quiet jazz piece',    NULL);
+    ('FILM',    'ACADEMY DINOSAUR (extended)',  120, NULL,                  1),
+    ('FILM',    'ACE GOLDFINGER (extended)',     90, NULL,                  2),
+    ('SHORT',   'Sunrise',                       12, 'Dawn over a city',    NULL),
+    ('SHORT',   'Interlude',                      8, 'Quiet jazz piece',    NULL),
+    ('PODCAST', 'ACE GOLDFINGER (podcast)',      30, NULL,                  2);
 
 -- jti_subject seed data: two APP subjects (with app-account detail rows) and two PERSON subjects
 -- (with person detail rows). The detail rows re-state subject_kind in the composite FK, exercising
@@ -835,14 +842,19 @@ CREATE TABLE xlat_comp_child (
     FOREIGN KEY (fk_a, fk_b) REFERENCES xlat_comp_parent(alt_a, alt_b)
 );
 
+-- (A1,B2) is the decoy: it shares pk_a with (A1,B1) and pk_b with (A2,B2), and its alt key
+-- (X1,Y2) likewise shares one column with each. A comparison that drops either column of either
+-- key pair lets its child CC4 into a filter for one of the other two parents.
 INSERT INTO xlat_comp_parent (pk_a, pk_b, alt_a, alt_b, name) VALUES
     ('A1', 'B1', 'X1', 'Y1', 'first composite parent'),
-    ('A2', 'B2', 'X2', 'Y2', 'second composite parent');
+    ('A2', 'B2', 'X2', 'Y2', 'second composite parent'),
+    ('A1', 'B2', 'X1', 'Y2', 'decoy composite parent');
 
 INSERT INTO xlat_comp_child (child_id, fk_a, fk_b, note) VALUES
     ('CC1', 'X1', 'Y1', 'first of A1/B1'),
     ('CC2', 'X1', 'Y1', 'second of A1/B1'),
-    ('CC3', 'X2', 'Y2', 'only child of A2/B2');
+    ('CC3', 'X2', 'Y2', 'only child of A2/B2'),
+    ('CC4', 'X1', 'Y2', 'only child of the decoy A1/B2');
 
 -- A code table carrying node metadata with no node type over it in the execution schema:
 -- `StudyLevel` is a @table type without `implements Node`, the shape of a federation stub whose
