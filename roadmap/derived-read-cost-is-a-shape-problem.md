@@ -1373,15 +1373,13 @@ is "The generator builds no schema".
   * **The command layer goes** `open`, first. The emitter reads `RoutineWriteFacts` rows and the two
     schema facts itself; `RoutineWriteCommand`, `RoutineWriteRelation`, `RoutineWriteCommands` and
     `TenantAcquisitionFragments` go.
-    * **What only the command tests describe runs against PostgreSQL** `open`. A chain over two or
-      more hops, with a hop `condition:`; a single-valued chain; a list-valued carrier; a composite
-      captured key; a multi-tenant routine write to an untenanted table; one coordinate mixing an
-      authored and an inferred node-id projection. Each is a sakila routine and field, since no
-      execution test runs it today.
-    * **No test reads its generated Java as text** `open`. The routine-write cases of
-      `RoutineMutationWritePipelineTest`, `RoutineWriteTenancyPipelineTest` and
-      `ArgmappingKeyProjectionEmissionPipelineTest`, and `TenantAcquisitionFragmentsTest`; most are
-      covered by execution tests already and go.
+    * **What only the command tests describe runs against PostgreSQL** `done`. A chain over two
+      hops and one narrowed by a hop `condition:`, a single-valued chain, a list-valued carrier, a
+      composite captured key in both forms, a multi-tenant routine write to a global table, and one
+      coordinate mixing an authored and an inferred node-id projection, each a sakila routine.
+    * **No test reads its generated Java as text** `done`, but for `TenantAcquisitionFragmentsTest`,
+      which goes with the fragments it reads. Each deleted case was covered by an execution test,
+      two of them only once the node above landed.
   * **The error-mapping constant is a store fact** `open`, after. `intent_field_error_channel` states
     whether a field has a channel and its transport, not the constant's name: the name deduplicates
     handler lists and the plain name goes to whichever channel was classified first, an order the

@@ -157,7 +157,7 @@ class NameMatchedKeyPairTest {
             }
             """, dsl -> {
             assertThat(carrierHops(dsl)).isEmpty();
-            // A name-match hop's departure is a candidacy over every function result exposing
+            // A name-match hop's source is a candidacy over every function result exposing
             // rental's key, so other catalog routines may appear beside rent_film.
             assertThat(authoredNameMatchedHops(dsl)).contains("rent_film->rental");
         });
