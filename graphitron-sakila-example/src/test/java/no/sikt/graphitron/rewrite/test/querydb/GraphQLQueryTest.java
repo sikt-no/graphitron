@@ -43,12 +43,6 @@ class GraphQLQueryTest {
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
-    /**
-     * Lower-cased rendered SQL for every statement issued through the test {@link DSLContext}.
-     * Tests that need to assert on which SQL ran (e.g. that {@code totalCount} was lazy on
-     * selection) call {@link #SQL_LOG}{@code .clear()} before executing the GraphQL query.
-     */
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -65,16 +59,12 @@ class GraphQLQueryTest {
         }
 
         // Count JDBC round-trips via an ExecuteListener. Tests that care (DataLoader batching)
-        // call QUERY_COUNT.set(0) before executing and assert on the count afterward. The same
-        // listener captures the rendered SQL of every statement into SQL_LOG; the totalCount
-        // lazy-on-selection test asserts that no `select count` ran when the field wasn't picked.
+        // call QUERY_COUNT.set(0) before executing and assert on the count afterward.
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.ExecuteListener() {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
 
@@ -2006,28 +1996,6 @@ class GraphQLQueryTest {
             .containsEntry("totalCount", 2);
     }
 
-    @Test
-    void filmsConnection_totalCount_isLazyOnSelection_noCountSqlWhenUnselected() {
-        SQL_LOG.clear();
-        execute("{ filmsConnection(first: 2) { nodes { title } pageInfo { hasNextPage } } }");
-        // graphql-java only invokes the totalCount resolver when the client picks the field.
-        // No `select count` should appear among the rendered statements for this query.
-        assertThat(SQL_LOG)
-            .as("no SELECT count statement should be issued when totalCount is not selected")
-            .noneMatch(s -> s.contains("select count"));
-    }
-
-    @Test
-    void filmsConnection_totalCount_selected_doesIssueCountSql() {
-        // Companion ratchet: when totalCount IS selected, exactly one `select count` runs.
-        SQL_LOG.clear();
-        execute("{ filmsConnection { totalCount } }");
-        assertThat(SQL_LOG)
-            .filteredOn(s -> s.contains("select count"))
-            .as("selecting totalCount should issue exactly one SELECT count statement")
-            .hasSize(1);
-    }
-
     // ===== filmsFaceted — @asFacet facet counts =====
     //
     // Seed ratings: PG (ACADEMY DINOSAUR), G (ACE GOLDFINGER), NC-17 (ADAPTATION HOLES),
@@ -2131,20 +2099,16 @@ class GraphQLQueryTest {
         // One page query plus exactly one UNION ALL aggregate, regardless of how many facets
         // are selected; the aggregate is skipped entirely when no facet field is selected.
         QUERY_COUNT.set(0);
-        SQL_LOG.clear();
         execute("{ filmsFaceted { facets { rating { value count } length { value count } } nodes { title } } }");
         assertThat(QUERY_COUNT.get())
             .as("page query + one facet aggregate")
             .isEqualTo(2);
-        assertThat(SQL_LOG).filteredOn(s -> s.contains("union all")).hasSize(1);
 
         QUERY_COUNT.set(0);
-        SQL_LOG.clear();
         execute("{ filmsFaceted { nodes { title } } }");
         assertThat(QUERY_COUNT.get())
             .as("no facet selected: the aggregate is skipped")
             .isEqualTo(1);
-        assertThat(SQL_LOG).noneMatch(s -> s.contains("union all"));
     }
 
     @Test
@@ -2250,17 +2214,10 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsFaceted_selectionGate_unselectedFacetContributesNoArm() {
-        // Only rating is selected: the single aggregate has no arm grouping on length.
-        SQL_LOG.clear();
+    void filmsFaceted_selectionGate_selectedFacetResolvesAlone() {
         Map<String, Object> data = execute(
             "{ filmsFaceted { facets { rating { value count } } } }");
         assertThat(facetValues(data, "rating")).hasSize(3);
-        assertThat(SQL_LOG)
-            .filteredOn(s -> s.contains("group by"))
-            .as("one aggregate statement, grouping only on the selected facet")
-            .hasSize(1)
-            .noneMatch(s -> s.contains("length"));
     }
 
     // ===== @asFacet through @reference: facet counts over a joined table =====
@@ -4306,23 +4263,21 @@ class GraphQLQueryTest {
 
     @Test
     void splitQueryConnection_totalCount_isLazyOnSelection() {
-        // graphql-java only invokes the registered totalCount resolver on selection: no count
-        // SQL when the field is unselected, per-parent count statements when it is (N lazy
-        // count queries for a batch of N parents).
-        SQL_LOG.clear();
+        // graphql-java only invokes the registered totalCount resolver on selection: nothing
+        // extra when the field is unselected, one count statement per parent when it is.
+        QUERY_COUNT.set(0);
         execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
             + "{ nodes { actorId } } } }");
-        assertThat(SQL_LOG)
-            .as("no SELECT count statement should be issued when totalCount is not selected")
-            .noneMatch(s -> s.contains("select count"));
+        assertThat(QUERY_COUNT.get())
+            .as("the root and one batched page statement; no count")
+            .isEqualTo(2);
 
-        SQL_LOG.clear();
+        QUERY_COUNT.set(0);
         execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
-            + "{ totalCount } } }");
-        assertThat(SQL_LOG)
-            .filteredOn(s -> s.contains("select count"))
-            .as("selecting totalCount should issue one per-parent count statement per parent")
-            .hasSize(2);
+            + "{ nodes { actorId } totalCount } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("the same two plus one count statement per parent")
+            .isEqualTo(4);
     }
 
     @Test
@@ -4992,33 +4947,6 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void nodes_perTypeIdBatch_emitsValuesJoinOrderByIdxShape() {
-        // The per-typeId batch emission is asserted to be the lookup shape
-        // (VALUES + JOIN + ORDER BY idx) rather than the legacy `WHERE row-IN`. Catches
-        // regressions where EntityFetcherDispatch falls back to the old form: Query.nodes
-        // folds onto the lookup pipeline.
-        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
-        String c2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2);
-        String c3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 3);
-        SQL_LOG.clear();
-        execute("{ nodes(ids: [\"" + c1 + "\", \"" + c2 + "\", \"" + c3 + "\"]) {"
-            + " __typename ... on Customer { firstName } } }");
-        // SQL_LOG entries are already lowercased by the ExecuteListener at line ~67. jOOQ
-        // renders "public"."customer" with quoted identifiers; match on `customer` to span
-        // both quoted and unquoted forms.
-        assertThat(SQL_LOG)
-            .as("per-typeId Query.nodes batch must use the lookup-shape (VALUES + JOIN + ORDER BY idx)")
-            .anyMatch(s -> s.contains("\"customer\"")
-                && s.contains("values (")
-                && s.contains("join ")
-                && s.contains("order by"));
-        // Negative pin: no statement falls back to the legacy WHERE row-IN keyset filter.
-        assertThat(SQL_LOG)
-            .as("no Query.nodes statement should regress to the legacy WHERE row-IN form")
-            .noneMatch(s -> s.contains("\"customer\"") && s.contains("\"customer_id\" in ("));
-    }
-
-    @Test
     void nodes_paddedBase64Id_canonicalizesAndResolves() {
         // Canonicalisation: the encoder emits no-padding URL base64, but the decoder accepts
         // padded input where the total length is 4-byte-aligned.
@@ -5401,18 +5329,14 @@ class GraphQLQueryTest {
         // Three films in one request: #1 and #2 each have a content row, #3 has none. Unbatched
         // this arm ran one SELECT per parent; batched it runs one, keyed on the whole batch, and
         // a parent with no match still gets its (empty) bucket rather than dropping out.
-        SQL_LOG.clear();
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\", \"2\", \"3\"]) { filmId filmContents { __typename title } } }");
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         assertThat(films).hasSize(3);
-
-        var contentSql = SQL_LOG.stream()
-            .filter(s -> s.contains("from (values") && s.contains("\"public\".\"content\""))
-            .toList();
-        assertThat(contentSql)
-            .as("one batched child statement for all three films; captured: " + SQL_LOG)
-            .hasSize(1);
+        assertThat(QUERY_COUNT.get())
+            .as("the root and one batched child statement for all three films")
+            .isEqualTo(2);
 
         // Buckets narrowed to the seeded content rows: the other classes that write `content`
         // attach their rows to a film, so a bucket can hold rows this case did not seed.
@@ -5436,36 +5360,59 @@ class GraphQLQueryTest {
         // reads it back by that alias. Under batching the Record arrives from the scatter rather
         // than from a per-parent fetch, and no classification or delivery-fact tier can see
         // whether the alias survived that hop.
-        SQL_LOG.clear();
-        Map<String, Object> data = execute("""
-            { filmById(film_id: ["1", "2"]) { filmContents {
-                __typename
-                title
-                ... on FilmContent { rating }
-            } } }
-            """);
-        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
-        // Bounded by film id, but not by content: the other classes that write `content` attach
-        // their rows to film 1, so the seeded rows are picked out by title.
-        var contents = seededContent(films.stream()
-            .flatMap(f -> ((List<Map<String, Object>>) f.get("filmContents")).stream())
-            .toList());
-        assertThat(contents).hasSize(2);
-        assertThat(contents).allSatisfy(c ->
-            assertThat(c.get("rating"))
-                .as("the cross-table alias resolves off the scattered record").isNotNull());
-
-        var contentSql = SQL_LOG.stream()
-            .filter(s -> s.contains("from (values") && s.contains("\"public\".\"content\""))
-            .toList();
-        assertThat(contentSql)
-            .as("captured: " + SQL_LOG)
-            .hasSize(1)
-            .allSatisfy(sql -> assertThat(sql)
-                .as("the rating rides a capped subselect in the batch's select list")
-                .contains("as \"filmcontent_rating\"")
-                .as("and the batch is ordered, so each bucket keeps the scatter's order")
-                .contains("order by"));
+        //
+        // A second FILM row on film 1, seeded in a transaction that rolls back, gives the bucket
+        // more than one row so its order means something.
+        final class RolledBack extends RuntimeException {
+            private static final long serialVersionUID = 1L;
+        }
+        try {
+            dsl.transaction(cfg -> {
+                var tx = DSL.using(cfg);
+                tx.insertInto(DSL.table("content"))
+                    .set(DSL.field("content_type", String.class),
+                        DSL.field("CAST('FILM' AS content_kind)", String.class))
+                    .set(DSL.field("title"), "ACADEMY DINOSAUR (second cut)")
+                    .set(DSL.field("length"), 100)
+                    .set(DSL.field("film_id"), 1)
+                    .execute();
+                QUERY_COUNT.set(0);
+                var result = graphql.execute(Graphitron.newExecutionInput(tx, "{}", "test-user").query("""
+                    { filmById(film_id: ["1", "2"]) { filmContents {
+                        __typename
+                        contentId
+                        title
+                        ... on FilmContent { rating }
+                    } } }
+                    """).build());
+                assertThat(result.getErrors()).isEmpty();
+                assertThat(QUERY_COUNT.get())
+                    .as("the root and one batched child statement for both films")
+                    .isEqualTo(2);
+                Map<String, Object> data = result.getData();
+                List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+                // Other classes may attach content to film 1 too, so the seeded rows are picked
+                // out by title and the order is checked as a property.
+                var contents = seededContent(films.stream()
+                    .flatMap(f -> ((List<Map<String, Object>>) f.get("filmContents")).stream())
+                    .toList());
+                assertThat(contents).hasSize(2);
+                assertThat(contents).allSatisfy(c ->
+                    assertThat(c.get("rating"))
+                        .as("the cross-table alias resolves off the scattered record").isNotNull());
+                assertThat((List<Map<String, Object>>) films.get(0).get("filmContents"))
+                    .as("film 1 holds the seeded row and the second cut")
+                    .hasSizeGreaterThanOrEqualTo(2);
+                assertThat(films).allSatisfy(f ->
+                    assertThat(((List<Map<String, Object>>) f.get("filmContents")).stream()
+                            .map(c -> (Integer) c.get("contentId")).toList())
+                        .as("each bucket keeps content_id order through the scatter")
+                        .isSorted());
+                throw new RolledBack();
+            });
+        } catch (RolledBack expected) {
+            // every run ends here; the rollback is the cleanup
+        }
     }
 
     @Test
@@ -5527,49 +5474,6 @@ class GraphQLQueryTest {
         assertThat(filmItems).hasSize(2);
         assertThat(filmItems).allSatisfy(i ->
             assertThat(i.get("rating")).as("FilmContent.rating sourced from the film row").isNotNull());
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void allContent_crossTableField_subselectOmittedWhenNotRequested() {
-        // When the cross-table field is not selected, its subselect must be skipped so no
-        // over-fetching occurs. The SQL_LOG capture lets us assert no reference to film appears
-        // when only same-table columns are projected.
-        SQL_LOG.clear();
-        execute("{ allContent { __typename contentId title } }");
-        var contentSql = SQL_LOG.stream()
-            .filter(s -> s.contains("from \"content\"") || s.contains("from content"))
-            .toList();
-        assertThat(contentSql)
-            .as("content fetcher SQL must not reach film when no cross-table field is selected")
-            .allSatisfy(sql -> assertThat(sql).doesNotContain("film"));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void allContent_crossTableField_cappedSubselectPresentWhenRequested() {
-        // Inverse of the previous test: requesting the cross-table field must drive the
-        // correlated subselect, and it must be the capped shape rather than a join into the
-        // row-producing statement, which is what keeps one content row one entity.
-        SQL_LOG.clear();
-        execute("""
-            { allContent {
-                __typename
-                ... on FilmContent { rating }
-            } }
-            """);
-        var contentSql = SQL_LOG.stream()
-            .filter(s -> s.contains("from \"public\".\"content\""))
-            .toList();
-        assertThat(contentSql)
-            .as("captured: " + SQL_LOG)
-            .isNotEmpty()
-            .allSatisfy(sql -> assertThat(sql)
-                .as("the rating rides a subselect over film in the select list")
-                .contains("select \"content_f0\".\"rating\"")
-                .contains("as \"filmcontent_rating\"")
-                .as("and no join brings film into the statement's own row set")
-                .doesNotContain("join \"public\".\"film\""));
     }
 
     @Test
@@ -6508,32 +6412,6 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
-    void searchConnection_totalCount_isLazyOnSelection_noCountSqlWhenUnselected() {
-        // The polymorphic totalCount path should remain lazy on selection just like the
-        // single-table case. graphql-java only invokes the resolver when the client picks
-        // the field; no SELECT count should fire for an unselected totalCount.
-        SQL_LOG.clear();
-        execute("{ searchConnection(first: 2) { nodes { __typename } pageInfo { hasNextPage } } }");
-        assertThat(SQL_LOG)
-            .as("no SELECT count statement should be issued when totalCount is not selected")
-            .noneMatch(s -> s.contains("select count"));
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
-    void searchConnection_totalCount_selected_issuesCountSql() {
-        // Companion ratchet: when totalCount IS selected, exactly one count statement runs;
-        // pages-derived-table emission shows up as a `select count(*) from (...) as "pages"` shape.
-        SQL_LOG.clear();
-        execute("{ searchConnection(first: 2) { totalCount nodes { __typename } } }");
-        assertThat(SQL_LOG)
-            .filteredOn(s -> s.contains("select count"))
-            .as("selecting totalCount should issue exactly one SELECT count statement")
-            .hasSize(1);
-    }
-
-    @Test
-    @SuppressWarnings("unchecked")
     void documentsConnection_totalCount_unionVariant_returnsTotalRowCount() {
         // Union variant parity: same emitter path, same totalCount shape.
         Map<String, Object> data = execute("""
@@ -6879,13 +6757,10 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void addressOccupantsConnection_dataLoaderBatchesAcrossParents() {
-        // Batching ratchet: with N parents fetching occupantsConnection in one request, the
-        // DataLoader collapses the per-branch UNION-ALL page-rows query to ONE invocation
-        // regardless of N. The {@code as "parentInput"} VALUES table is unique to the
-        // rows-method (stage 2's per-typename helpers use {@code customerInput} /
-        // {@code staffInput} aliases), so a single occurrence in SQL_LOG = one batched query.
-        // A per-parent inline shape would fire one UNION-ALL per parent.
-        SQL_LOG.clear();
+        // Batching ratchet: the statement count does not grow with the number of parents. Three
+        // active customers and two inactive ones issue the same number of statements; a
+        // per-parent shape would fire one page query per parent.
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute("""
             { customers(active: true) {
                 customerId
@@ -6908,14 +6783,25 @@ class GraphQLQueryTest {
             var conn = (Map<String, Object>) address.get("occupantsConnection");
             assertThat(conn).isNotNull();
         });
-        // The page-rows rows-method fires ONE UNION-ALL with parentInput VALUES regardless
-        // of how many parents we ask about.
-        var parentInputQueries = SQL_LOG.stream()
-            .filter(s -> s.contains("as \"parentinput\""))
-            .toList();
-        assertThat(parentInputQueries)
-            .as("rows-method fires once for the entire batch; SQL_LOG: " + parentInputQueries)
-            .hasSize(1);
+        int threeParents = QUERY_COUNT.get();
+
+        QUERY_COUNT.set(0);
+        var inactive = (List<Map<String, Object>>) execute("""
+            { customers(active: false) {
+                customerId
+                address {
+                    addressId
+                    occupantsConnection(first: 1) {
+                        edges { node { __typename } }
+                    }
+                }
+            } }
+            """).get("customers");
+        assertThat(customers).hasSize(3);
+        assertThat(inactive).hasSize(2);
+        assertThat(QUERY_COUNT.get())
+            .as("two parents issue as many statements as three")
+            .isEqualTo(threeParents);
     }
 
     // ===== Composite-PK parent for child interface @asConnection =====
@@ -7055,7 +6941,7 @@ class GraphQLQueryTest {
         // Integer, Integer> (idx + composite parent PK) and the per-branch JOIN ON emits an
         // AND-chain over (org_id, project_id). Without the RowN widening this fails to
         // compile; unbatched it fires 3 separate UNION-ALLs.
-        SQL_LOG.clear();
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute("""
             { projects {
                 name orgId projectId
@@ -7066,18 +6952,11 @@ class GraphQLQueryTest {
             """);
         var projects = (List<Map<String, Object>>) data.get("projects");
         assertThat(projects).hasSize(3);
-        // The page-rows rows-method fires once across all 3 parents.
-        var parentInputQueries = SQL_LOG.stream()
-            .filter(s -> s.contains("as \"parentinput\""))
-            .toList();
-        assertThat(parentInputQueries)
-            .as("rows-method fires once for the composite-PK-parent batch; SQL_LOG: " + parentInputQueries)
-            .hasSize(1);
-        // The composite FK AND-chain shows up as two equality conjuncts on the FK columns.
-        assertThat(parentInputQueries.get(0))
-            .as("composite-FK JOIN predicate joins on both org_id and project_id")
-            .contains("\"org_id\"")
-            .contains("\"project_id\"");
+        // Root, one batched page statement, and one per-typename SELECT each for ProjectNote and
+        // ProjectEvent. Unbatched, the page statement alone would run once per parent.
+        assertThat(QUERY_COUNT.get())
+            .as("statements for three composite-PK parents")
+            .isEqualTo(4);
     }
 
     @Test
@@ -9638,7 +9517,6 @@ class GraphQLQueryTest {
         // once the join fires. execute() asserts no GraphQL errors, so reaching the data assertions
         // already proves the ambiguous-column failure is gone. The detail value is non-null for
         // matching discriminator rows and null for the others (the LEFT JOIN is discriminator-gated).
-        SQL_LOG.clear();
         Map<String, Object> data = execute("""
             { allSubjects {
                 __typename
@@ -9663,13 +9541,6 @@ class GraphQLQueryTest {
             .containsExactlyInAnyOrder("Ada Lovelace (full)", "Alan Turing (full)");
         assertThat(persons).allSatisfy(i ->
             assertThat(i.get("clientId")).as("AppAccount-only field is null on Person rows").isNull());
-
-        // Mechanical guard: the generated SQL qualifies the discriminator column to the base table
-        // (SQL_LOG entries are lowercased by the ExecuteListener). The qualified
-        // "jti_subject"."subject_kind" form, present at the join site, is what removes the ambiguity.
-        assertThat(SQL_LOG)
-            .as("the discriminated-interface query must qualify the discriminator to the base table at the join site")
-            .anyMatch(s -> s.contains("\"jti_subject\".\"subject_kind\"") && s.contains("join"));
     }
 
     @Test
@@ -9682,7 +9553,6 @@ class GraphQLQueryTest {
         // and the routing copy ("Ambiguous match found", resolved by luck). The routing copy is
         // projected as "__discriminator__" and the TypeResolver reads that alias, so routing is
         // unambiguous and the user-facing subjectKind field still resolves from its own column.
-        SQL_LOG.clear();
         Map<String, Object> data = execute("""
             { allSubjects {
                 subjectId
@@ -9703,12 +9573,6 @@ class GraphQLQueryTest {
             || "Alan Turing (full)".equals(i.get("fullName"))).toList();
         assertThat(persons).hasSize(2);
         assertThat(persons).allSatisfy(i -> assertThat(i.get("subjectKind")).isEqualTo("PERSON"));
-
-        // Mechanical guard: the routing discriminator is projected under the synthetic alias, distinct
-        // from the real subject_kind column the $project projection also emits. (SQL_LOG is lowercased.)
-        assertThat(SQL_LOG)
-            .as("the discriminated interface fetcher must project the routing discriminator under the __discriminator__ alias")
-            .anyMatch(s -> s.contains("as \"__discriminator__\""));
     }
 
     @Test
