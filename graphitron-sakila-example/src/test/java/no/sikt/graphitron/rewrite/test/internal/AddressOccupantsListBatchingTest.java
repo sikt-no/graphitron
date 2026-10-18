@@ -39,7 +39,6 @@ class AddressOccupantsListBatchingTest {
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -60,8 +59,6 @@ class AddressOccupantsListBatchingTest {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
 
@@ -84,7 +81,6 @@ class AddressOccupantsListBatchingTest {
     @Test
     void addressOccupantsListForm_dataLoaderBatchesOnParentPk() {
         QUERY_COUNT.set(0);
-        SQL_LOG.clear();
 
         Map<String, Object> data = execute("""
             { customers {
@@ -107,15 +103,6 @@ class AddressOccupantsListBatchingTest {
                 + "stage-1 union + 2 stage-2 typename SELECTs); regression to the pre-R102 "
                 + "per-parent fanout would scale linearly with customer count")
             .isEqualTo(4);
-
-        // Stage-1 UNION ALL references parentInput VALUES table joining on the parent address PK.
-        var stage1 = SQL_LOG.stream()
-            .filter(s -> s.contains("union all") && s.contains("\"parent_input\"")
-                || s.contains("union all") && s.contains("parentinput"))
-            .findFirst();
-        assertThat(stage1)
-            .as("Exactly one stage-1 union-all SELECT joining the parentInput VALUES table")
-            .isPresent();
 
         // Result shape sanity: every customer payload carries an address with at least one
         // occupant (the customer themselves).

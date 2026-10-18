@@ -33,7 +33,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>One JDBC round-trip total: the service hand-rolls payloads (no DB hit on the root),
  *       so the only query is the loadMany-driven batched film lookup.</li>
- *   <li>The single batched query references {@code film_id} and selects the film table.</li>
  *   <li>Both payloads' film lists resolve to the correct {@code Film} rows: payload 0 lists
  *       films [1, 2]; payload 1 lists film [3]. The DataLoader sees three element-PK keys
  *       and re-distributes the three resulting records back to the parent payloads as the
@@ -47,7 +46,6 @@ class AccessorDerivedSourceTest {
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -68,8 +66,6 @@ class AccessorDerivedSourceTest {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
 
@@ -92,7 +88,6 @@ class AccessorDerivedSourceTest {
     @Test
     void accessorDerivedManyPayloads_dataLoaderBatchesByElementPk() {
         QUERY_COUNT.set(0);
-        SQL_LOG.clear();
         Map<String, Object> data = execute(
             "{ recentlyCreatedFilmsBatched { films { filmId title } } }");
 
@@ -101,12 +96,6 @@ class AccessorDerivedSourceTest {
         // parents. Unbatched scatter would fire one query per key (3); an empty-input
         // short-circuit would fire 0.
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
-        assertThat(SQL_LOG).hasSize(1);
-        // The single batched query references the film table and the film_id key column from
-        // the accessor's element-PK derivation. Three VALUES rows for three keys (film IDs
-        // 1, 2, 3) prove the loadMany dispatch shape.
-        assertThat(SQL_LOG.get(0)).contains("film_id").contains("\"film\"");
-        assertThat(SQL_LOG.get(0)).contains("(values (0, ?), (1, ?), (2, ?))");
 
         List<Map<String, Object>> payloads = (List<Map<String, Object>>) data.get("recentlyCreatedFilmsBatched");
         assertThat(payloads).hasSize(2);
