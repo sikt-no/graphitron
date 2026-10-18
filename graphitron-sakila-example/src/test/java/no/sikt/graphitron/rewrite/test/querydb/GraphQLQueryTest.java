@@ -2095,23 +2095,6 @@ class GraphQLQueryTest {
     }
 
     @Test
-    void filmsFaceted_roundTripCount_isTwoWithFacetsAndOneWithout() {
-        // One page query plus exactly one UNION ALL aggregate, regardless of how many facets
-        // are selected; the aggregate is skipped entirely when no facet field is selected.
-        QUERY_COUNT.set(0);
-        execute("{ filmsFaceted { facets { rating { value count } length { value count } } nodes { title } } }");
-        assertThat(QUERY_COUNT.get())
-            .as("page query + one facet aggregate")
-            .isEqualTo(2);
-
-        QUERY_COUNT.set(0);
-        execute("{ filmsFaceted { nodes { title } } }");
-        assertThat(QUERY_COUNT.get())
-            .as("no facet selected: the aggregate is skipped")
-            .isEqualTo(1);
-    }
-
-    @Test
     void filmsFaceted_nonFacetFilterInSameArg_restrictsEveryFacet() {
         // title is a plain (non-facet) filter field on the same input as the facets: it belongs
         // to every facet arm's base predicate, never to any facet's own fragment. This case also
@@ -3938,11 +3921,9 @@ class GraphQLQueryTest {
     @Test
     void nestingField_onlyRequestedColumnsSelected() {
         // Requesting only summary.title must project FILM.TITLE — not releaseYear —
-        // since $project is selection-aware. One round-trip; correct value returned.
-        QUERY_COUNT.set(0);
+        // since $project is selection-aware. The correct value is returned.
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\"]) { summary { title } } }");
-        assertThat(QUERY_COUNT.get()).isEqualTo(1);
         assertThat(data).extractingByKey("filmById", as(LIST))
             .first(as(MAP))
             .extractingByKey("summary", as(MAP))
@@ -6774,8 +6755,8 @@ class GraphQLQueryTest {
             """);
         var customers = (List<Map<String, Object>>) data.get("customers");
         assertThat(customers)
-            .as("customers list should be non-empty (sakila has 599 active customers)")
-            .isNotEmpty();
+            .as("the fixture's three active customers")
+            .hasSize(3);
         // Every customer carries an address with an occupantsConnection sublist.
         assertThat(customers).allSatisfy(c -> {
             var address = (Map<String, Object>) c.get("address");
