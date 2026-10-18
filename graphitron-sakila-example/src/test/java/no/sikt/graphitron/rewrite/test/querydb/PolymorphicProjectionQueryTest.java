@@ -1,42 +1,32 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
-import graphql.ExecutionInput;
 import graphql.GraphQL;
-import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphitron.generated.Graphitron;
-import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.util.List;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Execution-tier proof that the rendered SQL for an asymmetric inline-fragment query on a
- * multi-table polymorphic field projects only the columns the active fragment selected,
- * per participant.
+ * Execution-tier proof that an asymmetric inline-fragment query on a multi-table polymorphic
+ * field resolves each participant with exactly the fields its own fragment selected.
  *
- * <p>The {@code AddressOccupant} union resolves to {@code Customer | Staff}. Both participant
- * tables expose a {@code first_name} column behind the GraphQL field {@code firstName}.
- * Previously the Stage-2 per-typename SELECT received the parent's flattened
- * {@code DataFetchingFieldSelectionSet}, so an asymmetric fragment query asking for
- * {@code firstName} only on {@code Customer} still produced {@code SELECT "staff"."first_name"}
- * in the Staff-branch SQL; the wire payload stayed correct (graphql-java drops the inactive
- * value at serialisation) but the SQL over-selected. The fix wraps the selection set through
- * {@code PolymorphicSelectionSet.restrictTo} at the Stage-2 emit site so each per-typename
- * SELECT projects only columns matching that variant.
+ * <p>The {@code AddressOccupant} union resolves to {@code Customer | Staff}; both participant
+ * tables expose {@code first_name} behind {@code firstName}. Each Stage-2 per-typename SELECT
+ * sees the selection set restricted to its own participant through
+ * {@code PolymorphicSelectionSet.restrictTo}.
  *
- * <p>SQL capture mirrors the {@code CompositeKeyLookupQueryTest} pattern: a jOOQ
- * {@link org.jooq.ExecuteListener} appends each rendered statement (lower-cased) to
- * {@link #SQL_LOG}; tests grep the log for the per-table SELECTs and assert on the
- * column references.
+ * <p>Fixture: active customers Mary (address 1), Patricia (address 2) and Linda (address 3).
+ * Address 1 also houses inactive customer Barbara; address 2 houses inactive Elizabeth and
+ * staff Jon; address 3 houses staff Mike.
  */
 @ExecutionTier
 class PolymorphicProjectionQueryTest {
@@ -44,7 +34,6 @@ class PolymorphicProjectionQueryTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
-    static final java.util.List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -59,14 +48,6 @@ class PolymorphicProjectionQueryTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
-        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ctx) {
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
-                }
-            }));
         graphql = Graphitron.newGraphQL().build();
     }
 
@@ -75,73 +56,48 @@ class PolymorphicProjectionQueryTest {
         if (postgres != null) postgres.stop();
     }
 
-    @BeforeEach
-    void clearSqlLog() {
-        SQL_LOG.clear();
-    }
-
-    private Map<String, Object> execute(String query) {        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
+    private Map<String, Object> execute(String query) {
+        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();
         var result = graphql.execute(input);
         assertThat(result.getErrors()).isEmpty();
         return result.getData();
     }
 
     @Test
-    void asymmetricFragment_customerOnly_staffSelectOmitsFirstName() {
-        // Query: occupants { __typename ... on Customer { firstName } }. Previously, the Staff
-        // Stage-2 SELECT received the flattened selection set and projected first_name even
-        // though no Staff branch requested it; the response stayed correct because graphql-java
-        // dropped the value at serialisation, but the SQL over-selected. The fix wraps the
-        // selection set so Staff sees no Customer-side SelectedFields.
-        execute("""
+    void asymmetricFragment_customerOnly_staffResolvesWithoutFirstName() {
+        var data = execute("""
             { customers(active: true) { address { occupants {
                 __typename
                 ... on Customer { firstName }
             } } } }
             """);
 
-        var customerSelect = findStage2Select("customer");
-        assertThat(customerSelect)
-            .as("Customer branch keeps the requested firstName column")
-            .contains("\"customer\".\"first_name\"");
-
-        var staffSelect = findStage2Select("staff");
-        assertThat(staffSelect)
-            .as("Staff branch must NOT project first_name; the asymmetric fragment requested it "
-                + "only on Customer, and R108 filters the selection set per participant")
-            .doesNotContain("\"staff\".\"first_name\"");
+        assertThat(occupantsPerCustomer(data)).containsExactly(
+            List.of("Customer:Mary", "Customer:Barbara"),
+            List.of("Customer:Patricia", "Customer:Elizabeth", "Staff"),
+            List.of("Customer:Linda", "Staff"));
     }
 
     @Test
-    void asymmetricFragment_staffOnly_customerSelectOmitsFirstName() {
-        // Inverse asymmetry: pin both directions so the filter is precise rather than
-        // accidentally always-dropping the shared column.
-        execute("""
+    void asymmetricFragment_staffOnly_customerResolvesWithoutFirstName() {
+        // Inverse asymmetry: the restriction is per participant, not an always-drop of the
+        // shared column.
+        var data = execute("""
             { customers(active: true) { address { occupants {
                 __typename
                 ... on Staff { firstName }
             } } } }
             """);
 
-        var staffSelect = findStage2Select("staff");
-        assertThat(staffSelect)
-            .as("Staff branch keeps the requested firstName column")
-            .contains("\"staff\".\"first_name\"");
-
-        var customerSelect = findStage2Select("customer");
-        assertThat(customerSelect)
-            .as("Customer branch must NOT project first_name; the asymmetric fragment requested "
-                + "it only on Staff")
-            .doesNotContain("\"customer\".\"first_name\"");
+        assertThat(occupantsPerCustomer(data)).containsExactly(
+            List.of("Customer", "Customer"),
+            List.of("Customer", "Customer", "Staff:Jon"),
+            List.of("Customer", "Staff:Mike"));
     }
 
     @Test
     void symmetricFragment_bothBranchesKeepFirstName() {
-        // Symmetric query: both fragments request firstName. The filter is precise: the
-        // wrapper restricts by participant, so a SelectedField requested on Customer survives
-        // for the Customer pass, and one requested on Staff survives for the Staff pass. A
-        // regression that drops the column on both sides would fail this assertion.
-        execute("""
+        var data = execute("""
             { customers(active: true) { address { occupants {
                 __typename
                 ... on Customer { firstName }
@@ -149,32 +105,26 @@ class PolymorphicProjectionQueryTest {
             } } } }
             """);
 
-        var customerSelect = findStage2Select("customer");
-        assertThat(customerSelect)
-            .as("Customer branch projects firstName when both fragments request it")
-            .contains("\"customer\".\"first_name\"");
-
-        var staffSelect = findStage2Select("staff");
-        assertThat(staffSelect)
-            .as("Staff branch projects firstName when both fragments request it")
-            .contains("\"staff\".\"first_name\"");
+        assertThat(occupantsPerCustomer(data)).containsExactly(
+            List.of("Customer:Mary", "Customer:Barbara"),
+            List.of("Customer:Patricia", "Customer:Elizabeth", "Staff:Jon"),
+            List.of("Customer:Linda", "Staff:Mike"));
     }
 
     /**
-     * Locates the Stage-2 per-typename SELECT for a given participant. Each Stage-2 query
-     * binds the parent VALUES table as {@code "<participant-lc>input"} (e.g. {@code customerinput}
-     * for {@code Customer}, {@code staffinput} for {@code Staff}); filtering on that alias picks
-     * the multi-table polymorphic emitter's per-typename helper specifically, ignoring the
-     * Stage-1 narrow UNION ALL (which uses {@code parentinput}) and any unrelated SELECT against
-     * the same underlying table elsewhere in the query plan.
+     * Each customer's address occupants as {@code Typename}, or {@code Typename:firstName}
+     * when the response carries a {@code firstName} key.
      */
-    private String findStage2Select(String participantLowercase) {
-        String inputAlias = "\"" + participantLowercase + "input\"";
-        return SQL_LOG.stream()
-            .filter(s -> s.startsWith("select ") && s.contains(inputAlias))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError(
-                "no Stage-2 SELECT for participant '" + participantLowercase
-                    + "' (alias " + inputAlias + ") found in SQL log: " + SQL_LOG));
+    @SuppressWarnings("unchecked")
+    private static List<List<String>> occupantsPerCustomer(Map<String, Object> data) {
+        var customers = (List<Map<String, Object>>) data.get("customers");
+        return customers.stream()
+            .map(c -> ((List<Map<String, Object>>) ((Map<String, Object>) c.get("address")).get("occupants"))
+                .stream()
+                .map(o -> o.containsKey("firstName")
+                    ? o.get("__typename") + ":" + o.get("firstName")
+                    : (String) o.get("__typename"))
+                .toList())
+            .toList();
     }
 }
