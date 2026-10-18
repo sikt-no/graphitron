@@ -461,9 +461,11 @@ class GraphQLQueryTest {
     void store_customersByAddressDistrictSplit_splitFkTargetOverride_filtersByForeignTable() {
         // @splitQuery child path (SplitRowsMethodEmitter, the third WHERE-emitting site). Same
         // FK-target EXISTS as the inline sibling, embedded in the batched rows-method instead.
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ storeById(store_id: [1, 2]) { storeId customersByAddressDistrictSplit("
             + "filter: { addressId: \"" + ALBERTA_ADDRESS + "\" }) { lastName } } }");
+        assertThat(QUERY_COUNT.get()).as("the store lookup and one batched child statement").isEqualTo(2);
         assertThat(data).extractingByKey("storeById", as(list(Map.class)))
             .anySatisfy(s -> {
                 assertThat(s.get("storeId")).isEqualTo(1);
