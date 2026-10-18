@@ -91,25 +91,6 @@ input RentFilmProjectedInput {
     customerId:  ID! @nodeId(typeName: "Customer")
 }
 
-# The list-valued routine carrier: rent_films writes two rentals and the payload's data field
-# re-reads every captured key.
-type RentFilmsPayload {
-    rentals: [Rental!]
-}
-
-# A routine carrier whose captured key spans two columns: post_email returns email's whole key.
-type PostEmailPayload {
-    email: Email
-}
-
-# Two node ids feeding one routine call, one opened with the key column it encodes and one left
-# closed for the build to infer. Film and Customer keys are both integers, so a binding that read
-# either id at the other's slot would hand the routine the wrong key without a type error.
-input RentFilmCopyInput {
-    filmId:     ID! @nodeId(typeName: "Film")
-    customerId: ID! @nodeId(typeName: "Customer")
-}
-
 # The child-position sibling: a filter input the correlated routine's argument-sourced parameter
 # reaches through a dot-path, so the descent is exercised off a SelectedField rather than env.
 input ActorFilmFilter {
@@ -4571,6 +4552,25 @@ type DeletedFilmsIdPayload {
 # the deleted bin_id through the StorageBin @node encoder. See deleteStorageBinByCodePayload.
 type DeletedStorageBinPayload {
     deletedId: ID
+}
+
+# The list-valued routine carrier: rent_films writes two rentals and the payload's data field
+# re-reads every captured key.
+type RentFilmsPayload {
+    rentals: [Rental!]
+}
+
+# A routine carrier whose captured key spans two columns: post_email returns email's whole key.
+type PostEmailPayload {
+    email: Email
+}
+
+# Two node ids feeding one routine call, one opened with the key column it encodes and one left
+# closed for the build to infer. Film and Customer keys are both integers, so a binding that read
+# either id at the other's slot would hand the routine the wrong key without a type error.
+input RentFilmCopyInput {
+    filmId:     ID! @nodeId(typeName: "Film")
+    customerId: ID! @nodeId(typeName: "Customer")
 }
 
 type Mutation {
