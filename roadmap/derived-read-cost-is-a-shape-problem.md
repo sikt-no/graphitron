@@ -1352,12 +1352,14 @@ is "The generator builds no schema".
     the walk; its pin on `plan` goes with `plan`.
   * Testability is held by behaviour, not by a seam: execution against PostgreSQL, the in-process
     compile harness, and fact documents to reach a rare state, which replace a hand-built command.
-* **No test reads generated SQL as text** `open`, ahead of the conversions, each of which changes
-  the SQL these pin. Five classes in `graphitron-sakila-example` assert whole rendered statements,
-  66 tests: `RootLauncherSqlBaselineTest`, `DmlSqlBaselineTest`, `ConditionSqlBaselineTest`,
-  `BatchedChildSqlBaselineTest` and `ProjectionSqlBaselineTest`; `GraphQLQueryTest`,
-  `AccessorDerivedSourceTest` and `MutationPayloadLifterTest` read fragments. Each becomes the rows
-  returned and the round trips counted, coverage added where the text was the only check.
+* **No test reads generated SQL as text** `done`, 2026-10-18. A test asserts the rows returned and
+  their order, the database effect, and the round trips of a batched child; a root field's round
+  trips are not pinned. Of the 66 baseline tests, 39 went against a covering test and 27 became
+  behavioural checks in classes named for what they test; about 45 stray reads went the same way.
+  Three fixture rows make observable what only the text had shown: a discriminator value outside
+  the type, a key differing in one column, a default against an explicit null. What no caller can
+  observe went with nothing in its place. One listener still matches facet SQL by text, to make
+  that statement fail rather than to check it.
 * **No test reads generated Java as text** `open`, ahead of each conversion for the emitter it
   converts. About 495 assertion lines in 30 `graphitron` test files read generated bodies as text,
   most in `TypeFetcherGeneratorTest`, `GraphitronSchemaClassGeneratorTest` and
