@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the largest this renderer emits and body strings there would break on every later slice
  * without asserting behaviour. Code correctness is verified by compiling the generated output
  * against real jOOQ classes in {@code graphitron-sakila-example}, and SQL behaviour by the
- * execution tier's {@code RootLauncherSqlBaselineTest} plus the connection behaviour suite.
+ * execution tier's {@code RootFieldExecutionTest} plus the connection behaviour suite.
  */
 @UnitTier
 class RootLauncherRendererTest {

@@ -31,9 +31,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>What each case proves is that PostgreSQL accepted the statement: there is no
  * {@code org_code_domain = character varying} operator, so a value that reached the database at
  * the converter's user type fails the request outright rather than answering the wrong rows. The
- * returned rows are therefore the whole assertion. This is the only enforcer of the bind's type:
- * {@link ConditionSqlBaselineTest} renders every bind as {@code ?} and so can pin the statement
- * text while saying nothing about what a bind carries.
+ * returned rows are therefore the whole assertion, and this is the only enforcer of the bind's
+ * type.
  *
  * <p>The row-shape cases read their ids off the {@code converterCampusTerms} listing rather than
  * minting them with the generated {@code NodeIdEncoder}, because minting one in the test would

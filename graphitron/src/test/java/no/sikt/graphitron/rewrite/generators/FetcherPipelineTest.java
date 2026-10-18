@@ -440,8 +440,8 @@ class FetcherPipelineTest {
     @Test
     void dmlInsertField_bulkInput_bindsListArgumentAndShortCircuitsEmptyList() {
         // The INSERT statement itself (which columns it names, where a gap cell writes DEFAULT) is
-        // pinned on the rendered SQL at the execution tier: DmlBulkMutationsExecutionTest and
-        // DmlSqlBaselineTest.
+        // asserted at the execution tier: DmlBulkMutationsExecutionTest and
+        // DmlReprojectionExecutionTest.
         var sdl = """
             type Film @table(name: "film") { title: String }
             input FilmInput {

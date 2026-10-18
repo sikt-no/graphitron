@@ -1195,9 +1195,8 @@ class TypeFetcherGeneratorTest {
     // A cross-table participant field is projected as a discriminator-gated correlated subselect
     // capped at one row, gated on the type-scoped selection-set check (Type.field at any depth).
     // No generator-tier test asserts that body: the lowering is pinned as data in
-    // LauncherCommandsPipelineTest, the exact SQL in RootLauncherSqlBaselineTest (root) and
-    // BatchedChildSqlBaselineTest (child), and the row semantics in GraphQLQueryTest, per the
-    // code-string ban in the testing guide. The fixture below feeds the discriminator
+    // LauncherCommandsPipelineTest, and the row semantics in RootFieldExecutionTest (root) and
+    // GraphQLQueryTest (batched child), per the code-string ban in the testing guide. The fixture below feeds the discriminator
     // qualification tests in the next section.
 
     private static ParticipantRef.TableBound.CrossTableField filmContentRatingCrossTable() {
