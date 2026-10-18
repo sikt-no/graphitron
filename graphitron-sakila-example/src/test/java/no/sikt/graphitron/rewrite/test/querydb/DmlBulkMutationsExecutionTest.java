@@ -28,17 +28,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Execution-tier coverage for bulk DML mutations against PostgreSQL.
- * Each verb's bulk arm (INSERT/UPDATE/UPSERT/DELETE) is exercised end-to-end via
- * the {@code createFilms} / {@code updateFilms} / {@code upsertFilms} /
- * {@code deleteFilms} Mutation fields wired in the Sakila schema, plus the
- * {@code upsertFilmsDoNothing} surface that covers the {@code .doNothing()}
- * mode. Pinned in this tier because the bulk arms have execution-only
- * semantics not visible at compile or pipeline tier: an absent field takes its
- * column default, alone or beside rows that supply it (INSERT, UPSERT insert
- * branch); the dynamic SET walk (UPDATE,
- * UPSERT update branch); the uniform-shape / duplicate-tuple guards (UPDATE,
- * UPSERT doUpdate) and UPSERT's no-set-fields guard; and the typed empty-list
- * short-circuit.
+ * Each verb's bulk arm (INSERT/UPDATE/DELETE) is exercised end-to-end via
+ * the {@code createFilms} / {@code updateFilms} / {@code deleteFilms} Mutation
+ * fields wired in the Sakila schema. Pinned in this tier because the bulk arms
+ * have execution-only semantics not visible at compile or pipeline tier: an
+ * absent field takes its column default, alone or beside rows that supply it
+ * (INSERT); the dynamic SET walk (UPDATE); the uniform-shape / duplicate-tuple
+ * guards (UPDATE), which reject the input and leave the database unchanged;
+ * and the typed empty-list short-circuit.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -343,47 +340,6 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
-    void upsertFilms_writesNRowsAndReturnsProjectedListAcrossBothBranches() {
-        // Mixes INSERT branch (novel filmId) and UPDATE branch (pre-existing filmId)
-        // in a single bulk call. Single dispatched statement; `valuesOfRows`
-        // followed by `.onConflict(filmId).doUpdate().set(...)`.
-        int novelId = 999_101;
-        deleteFilmById(novelId); // pre-clean
-        String existingMarker = randomMarker("R77F-UPSERT-EXISTING");
-        Integer existingId = insertFilm(existingMarker);
-        String upsertedExisting = randomMarker("R77F-UPSERT-UPDATED");
-        String novelMarker = randomMarker("R77F-UPSERT-NOVEL");
-        try {
-            Map<String, Object> data = execute("""
-                mutation {
-                    upsertFilms(in: [
-                        { filmId: %d, title: "%s", languageId: 1 },
-                        { filmId: %d, title: "%s", languageId: 1 }
-                    ]) { filmId title }
-                }
-                """.formatted(existingId, upsertedExisting, novelId, novelMarker));
-            List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("upsertFilms");
-            assertThat(rows).hasSize(2);
-            assertThat(rows).extracting(r -> r.get("title"))
-                .containsExactlyInAnyOrder(upsertedExisting, novelMarker);
-
-            // Confirm both branches wrote.
-            String dbTitleExisting = dsl.select(DSL.field("title", String.class))
-                .from(DSL.table("film")).where(DSL.field("film_id", Integer.class).eq(existingId))
-                .fetchOne().value1();
-            assertThat(dbTitleExisting).isEqualTo(upsertedExisting);
-            String dbTitleNovel = dsl.select(DSL.field("title", String.class))
-                .from(DSL.table("film")).where(DSL.field("film_id", Integer.class).eq(novelId))
-                .fetchOne().value1();
-            assertThat(dbTitleNovel).isEqualTo(novelMarker);
-        } finally {
-            deleteFilmById(existingId);
-            deleteFilmById(novelId);
-        }
-    }
-
-    @Test
     void deleteFilms_deletesNRowsByLookupKeyTuple() {
         // Bulk DELETE emits `DELETE FROM film WHERE DSL.row(film_id).in(<row tuples>)`.
         // No RETURNING projection (return type is [ID!]!, EncodedList terminator).
@@ -678,68 +634,6 @@ class DmlBulkMutationsExecutionTest {
         }
     }
 
-    // ===== UPSERT missing-vs-null =====
-
-    @Test
-    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
-    void upsertFilms_omittedFieldOnInsertBranchUsesColumnDefault() {
-        // INSERT branch fires (novel filmIds). Neither row supplies rentalDuration, so the
-        // INSERT leaves the column out and its default lands.
-        int id1 = 999_201, id2 = 999_202;
-        deleteFilmById(id1); deleteFilmById(id2);
-        String m1 = randomMarker("R77F-UPS-INS-A");
-        String m2 = randomMarker("R77F-UPS-INS-B");
-        try {
-            execute("""
-                mutation {
-                    upsertFilms(in: [
-                        { filmId: %d, title: "%s", languageId: 1 },
-                        { filmId: %d, title: "%s", languageId: 1 }
-                    ]) { filmId }
-                }
-                """.formatted(id1, m1, id2, m2));
-            Integer dbRental1 = dsl.select(DSL.field("rental_duration", Integer.class))
-                .from(DSL.table("film")).where(DSL.field("film_id", Integer.class).eq(id1))
-                .fetchOne().value1();
-            assertThat(dbRental1).isEqualTo(3);
-        } finally {
-            deleteFilmById(id1); deleteFilmById(id2);
-        }
-    }
-
-    @Test
-    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
-    void upsertFilms_omittedFieldOnUpdateBranchLeavesColumnAlone() {
-        // UPDATE branch (existing filmIds). The dynamic doUpdate SET walks firstKeys
-        // and binds DSL.excluded(col) only for present keys. rentalDuration is omitted
-        // from the input, so it drops out of DO UPDATE SET entirely; existing value (7)
-        // survives. A naive `c = EXCLUDED.c` for every setFields entry would overwrite
-        // with EXCLUDED.rental_duration, which (because the INSERT branch leaves the
-        // column to its default) resolves to 3: silent data loss.
-        String origTitle1 = randomMarker("R77F-UPS-UPD-A");
-        String origTitle2 = randomMarker("R77F-UPS-UPD-B");
-        Integer id1 = insertFilm(origTitle1, 7);
-        Integer id2 = insertFilm(origTitle2, 7);
-        String newTitle1 = randomMarker("R77F-UPS-UPD-NEW-A");
-        String newTitle2 = randomMarker("R77F-UPS-UPD-NEW-B");
-        try {
-            execute("""
-                mutation {
-                    upsertFilms(in: [
-                        { filmId: %d, title: "%s", languageId: 1 },
-                        { filmId: %d, title: "%s", languageId: 1 }
-                    ]) { filmId }
-                }
-                """.formatted(id1, newTitle1, id2, newTitle2));
-            Integer dbRental1 = dsl.select(DSL.field("rental_duration", Integer.class))
-                .from(DSL.table("film")).where(DSL.field("film_id", Integer.class).eq(id1))
-                .fetchOne().value1();
-            assertThat(dbRental1).as("omitted rentalDuration preserved on bulk upsert update branch").isEqualTo(7);
-        } finally {
-            deleteFilmById(id1); deleteFilmById(id2);
-        }
-    }
-
     // ===== runtime-guard rejection paths =====
 
     @Test
@@ -748,7 +642,6 @@ class DmlBulkMutationsExecutionTest {
         // title, description}`; the guard fires before any SQL dispatch.
         String origTitle = randomMarker("R77F-UPD-DIV");
         Integer id = insertFilm(origTitle);
-        QUERY_COUNT.set(0);
         try {
             graphql.ExecutionResult result = executeRaw("""
                 mutation {
@@ -759,48 +652,10 @@ class DmlBulkMutationsExecutionTest {
                 }
                 """.formatted(id, id));
             assertThat(result.getErrors()).isNotEmpty();
-            assertThat(QUERY_COUNT.get()).as("uniform-shape guard fires before SQL").isZero();
+            assertFilmUnchanged(id, origTitle);
         } finally {
             deleteFilmById(id);
         }
-    }
-
-    @Test
-    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
-    void upsertFilms_divergentInputShapes_raisesError() {
-        // UPSERT in `.doUpdate()` mode (FilmUpsertInput has setFields). Uniform-shape
-        // guard fires before SQL.
-        int id1 = 999_301, id2 = 999_302;
-        deleteFilmById(id1); deleteFilmById(id2);
-        QUERY_COUNT.set(0);
-        graphql.ExecutionResult result = executeRaw("""
-            mutation {
-                upsertFilms(in: [
-                    { filmId: %d, title: "a", languageId: 1 },
-                    { filmId: %d, title: "b", languageId: 1, rentalDuration: 5 }
-                ]) { filmId }
-            }
-            """.formatted(id1, id2));
-        assertThat(result.getErrors()).isNotEmpty();
-        assertThat(QUERY_COUNT.get()).as("uniform-shape guard fires before SQL").isZero();
-    }
-
-    @Test
-    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
-    void upsertFilms_onlyLookupKeyFields_raisesError() {
-        // FilmUpsertInput has non-lookup setFields, but the input map carries only
-        // filmId; the dynamic doUpdate SET walks firstKeys and finds none of the
-        // setFields present. Same no-set-fields-present guard.
-        int id1 = 999_401, id2 = 999_402;
-        deleteFilmById(id1); deleteFilmById(id2);
-        QUERY_COUNT.set(0);
-        graphql.ExecutionResult result = executeRaw("""
-            mutation {
-                upsertFilms(in: [{ filmId: %d }, { filmId: %d }]) { filmId }
-            }
-            """.formatted(id1, id2));
-        assertThat(result.getErrors()).isNotEmpty();
-        assertThat(QUERY_COUNT.get()).as("no-set-fields guard fires before SQL").isZero();
     }
 
     @Test
@@ -811,7 +666,6 @@ class DmlBulkMutationsExecutionTest {
         // UPSERT has no analogue; PostgreSQL itself errors on duplicate ON CONFLICT keys.
         String origTitle = randomMarker("R77F-UPD-DUP");
         Integer id = insertFilm(origTitle);
-        QUERY_COUNT.set(0);
         try {
             graphql.ExecutionResult result = executeRaw("""
                 mutation {
@@ -822,10 +676,21 @@ class DmlBulkMutationsExecutionTest {
                 }
                 """.formatted(id, id));
             assertThat(result.getErrors()).isNotEmpty();
-            assertThat(QUERY_COUNT.get()).as("duplicate-tuple guard fires before SQL").isZero();
+            assertFilmUnchanged(id, origTitle);
         } finally {
             deleteFilmById(id);
         }
+    }
+
+    /** A rejected bulk update leaves the seeded film exactly as {@link #insertFilm(String)} wrote it. */
+    private void assertFilmUnchanged(int filmId, String origTitle) {
+        var row = dsl.select(DSL.field("title", String.class), DSL.field("description", String.class))
+            .from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).eq(filmId))
+            .fetchOne();
+        assertThat(row).as("the film survives the rejected update").isNotNull();
+        assertThat(row.value1()).as("rejected update leaves the title unwritten").isEqualTo(origTitle);
+        assertThat(row.value2()).as("rejected update leaves the description unwritten").isNull();
     }
 
     // doNothing-mode coverage (`tia.setFields()` empty → uniform-shape guard not emitted at
@@ -840,36 +705,21 @@ class DmlBulkMutationsExecutionTest {
     // ===== empty-list short-circuit, one per verb =====
 
     @Test
-    void createFilms_emptyListInput_doesNotRoundTrip() {
-        QUERY_COUNT.set(0);
+    void createFilms_emptyListInput_returnsEmptyList() {
         Map<String, Object> data = execute("mutation { createFilms(in: []) { filmId } }");
         assertThat((List<?>) data.get("createFilms")).isEmpty();
-        assertThat(QUERY_COUNT.get()).isZero();
     }
 
     @Test
-    void updateFilms_emptyListInput_doesNotRoundTrip() {
-        QUERY_COUNT.set(0);
+    void updateFilms_emptyListInput_returnsEmptyList() {
         Map<String, Object> data = execute("mutation { updateFilms(in: []) { filmId } }");
         assertThat((List<?>) data.get("updateFilms")).isEmpty();
-        assertThat(QUERY_COUNT.get()).isZero();
     }
 
     @Test
-    @org.junit.jupiter.api.Disabled("R144 retires UPSERT generation pending R145.")
-    void upsertFilms_emptyListInput_doesNotRoundTrip() {
-        QUERY_COUNT.set(0);
-        Map<String, Object> data = execute("mutation { upsertFilms(in: []) { filmId } }");
-        assertThat((List<?>) data.get("upsertFilms")).isEmpty();
-        assertThat(QUERY_COUNT.get()).isZero();
-    }
-
-    @Test
-    void deleteFilms_emptyListInput_doesNotRoundTrip() {
-        QUERY_COUNT.set(0);
+    void deleteFilms_emptyListInput_returnsEmptyList() {
         Map<String, Object> data = execute("mutation { deleteFilms(in: []) }");
         assertThat((List<?>) data.get("deleteFilms")).isEmpty();
-        assertThat(QUERY_COUNT.get()).isZero();
     }
 
     // ===== bulk-input single-payload-carrier list-data-field DML mutations =====

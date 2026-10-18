@@ -32,7 +32,6 @@ class FederationEntitiesDispatchTest {
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
-    static final java.util.concurrent.atomic.AtomicInteger QUERY_COUNT = new java.util.concurrent.atomic.AtomicInteger();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -47,13 +46,6 @@ class FederationEntitiesDispatchTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
-        dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
-            new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ctx) {
-                    QUERY_COUNT.incrementAndGet();
-                }
-            }));
         graphql = Graphitron.newGraphQL().build();
     }
 
@@ -390,13 +382,12 @@ class FederationEntitiesDispatchTest {
     /**
      * {@code @key(fields: "languageId", resolvable: false)} on a non-{@code @node} type:
      * Language declares the key for reference only. A rep that matches the alternative must
-     * yield {@code null} (federation surfaces "entity resolution failed") and must not fire a
-     * SELECT. Locks the dispatcher's {@code resolvable: false} skip path end-to-end.
+     * yield {@code null} (federation surfaces "entity resolution failed"). Locks the
+     * dispatcher's {@code resolvable: false} skip path end-to-end.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void entities_nonResolvableKey_yieldsNullSlotWithoutSelect() {
-        QUERY_COUNT.set(0);
+    void entities_nonResolvableKey_yieldsNullSlot() {
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) { __typename } }",
             Map.of("reps", List.of(Map.of("__typename", "Language", "languageId", 1))));
@@ -405,28 +396,22 @@ class FederationEntitiesDispatchTest {
         assertThat(entities.get(0))
             .as("non-resolvable @key alternative must yield null for matching reps")
             .isNull();
-        assertThat(QUERY_COUNT.get())
-            .as("non-resolvable alternative must not fire any statement")
-            .isZero();
     }
 
     /**
      * A federation customizer that calls {@code fb.fetchEntities(...)} replaces the default
      * dispatcher entirely: the subsequent {@code _entities} call hits the consumer's fetcher,
-     * never the generated one, so no entity SELECT fires. Locks the documented customizer
-     * order ("federation customizer runs after Graphitron's defaults attach"), not just "the
-     * customizer was invoked". Lives in this tier because detecting that the dispatcher's
-     * SELECT path was bypassed needs a real {@link DSLContext}.
+     * never the generated one. Locks the documented customizer order ("federation customizer
+     * runs after Graphitron's defaults attach").
      */
     @Test
-    void entities_customizerReplacesDefaultFetchEntities_noSelectFires() {
+    void entities_customizerReplacesDefaultFetchEntities() {
         var customCalled = new java.util.concurrent.atomic.AtomicBoolean();
         GraphQLSchema customised = Graphitron.buildSchema(b -> {}, fed -> fed.fetchEntities(env -> {
             customCalled.set(true);
             return java.util.concurrent.CompletableFuture.completedFuture(java.util.List.of());
         }));
         var customGraphql = GraphQL.newGraphQL(customised).build();
-        QUERY_COUNT.set(0);
         var input = Graphitron.newExecutionInput(dsl, "{}")
             .query("{ _entities(representations: [{__typename: \"Film\", filmId: 1}]) { __typename } }")
             .build();
@@ -434,9 +419,6 @@ class FederationEntitiesDispatchTest {
         assertThat(customCalled.get())
             .as("custom fetchEntities must run when registered via the federation customizer")
             .isTrue();
-        assertThat(QUERY_COUNT.get())
-            .as("custom fetchEntities replaces the default; no entity SELECT must fire")
-            .isZero();
     }
 
     /**

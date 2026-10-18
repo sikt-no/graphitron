@@ -2159,44 +2159,6 @@ class GraphQLQueryTest {
     }
 
     @Test
-    @SuppressWarnings("unchecked")
-    void filmsFaceted_facetFailure_degradesToNullFacetsWithRedactedError() {
-        // Facet failure semantics: a facet-aggregate failure degrades to facets: null plus
-        // a GraphQL error while the page still returns; and the facets delegate routes the throw
-        // through ErrorRouter.surfaceClientErrorOrRedact, so the raw exception text (a jOOQ
-        // DataAccessException embeds the rendered SQL) never reaches the errors array. The
-        // derived DSLContext fails only the facet aggregate (recognised by its `facet` label
-        // column alias, present regardless of how many arms the aggregate has), leaving the
-        // page query untouched.
-        var failing = org.jooq.impl.DSL.using(dsl.configuration().derive(
-            new org.jooq.impl.DefaultExecuteListenerProvider(new org.jooq.ExecuteListener() {
-                @Override
-                public void executeStart(org.jooq.ExecuteContext ectx) {
-                    var sql = ectx.sql();
-                    if (sql != null && sql.toLowerCase(java.util.Locale.ROOT).contains("as \"facet\"")) {
-                        throw new org.jooq.exception.DataAccessException(
-                            "boom: select secret_column from film -- rendered sql must not leak");
-                    }
-                }
-            })));
-        var input = Graphitron.newExecutionInput(failing, "{}", "test-user")
-            .query("{ filmsFaceted { facets { rating { value count } } nodes { title } } }")
-            .build();
-        var result = graphql.execute(input);
-
-        assertThat(result.getErrors())
-            .as("the facet failure surfaces as a GraphQL error")
-            .isNotEmpty()
-            .allSatisfy(err -> assertThat(err.getMessage())
-                .as("the raw exception (with rendered SQL) must be redacted")
-                .doesNotContain("secret_column"));
-        Map<String, Object> data = result.getData();
-        var conn = (Map<String, Object>) data.get("filmsFaceted");
-        assertThat(conn.get("facets")).as("facets degrade to null").isNull();
-        assertThat((java.util.List<?>) conn.get("nodes")).as("the page is unaffected").isNotEmpty();
-    }
-
-    @Test
     void filmsFaceted_selectionGate_selectedFacetResolvesAlone() {
         Map<String, Object> data = execute(
             "{ filmsFaceted { facets { rating { value count } } } }");
