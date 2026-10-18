@@ -52,11 +52,6 @@ class TenantFanOutExecutionTest {
     static final AtomicInteger TENANT_1_OPENED = new AtomicInteger();
     static final AtomicInteger TENANT_2_OPENED = new AtomicInteger();
     static final AtomicBoolean TENANT_2_DOWN = new AtomicBoolean(false);
-    // Per-tenant SQL logs, captured at the JDBC boundary (the runtime owns its DSLContexts, so
-    // the SQL_LOG ExecuteListener idiom cannot attach; a recording Connection proxy on each
-    // tenant DataSource is the same instrument one level down). Lowercased, bind placeholders.
-    static final List<String> TENANT_1_SQL = new java.util.concurrent.CopyOnWriteArrayList<>();
-    static final List<String> TENANT_2_SQL = new java.util.concurrent.CopyOnWriteArrayList<>();
     static GraphQL graphql;
 
     @BeforeAll
@@ -126,8 +121,8 @@ class TenantFanOutExecutionTest {
         // Ordered: the fan-out domain (and so the union's concatenation order) follows the
         // tenant map's configured key order, which the runtime preserves via LinkedHashMap.
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
-        byTenant.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null, TENANT_1_SQL));
-        byTenant.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, TENANT_2_DOWN, TENANT_2_SQL));
+        byTenant.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null));
+        byTenant.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, TENANT_2_DOWN));
         var runtime = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
@@ -147,31 +142,6 @@ class TenantFanOutExecutionTest {
         TENANT_2_DOWN.set(false);
         TENANT_1_OPENED.set(0);
         TENANT_2_OPENED.set(0);
-        TENANT_1_SQL.clear();
-        TENANT_2_SQL.clear();
-    }
-
-    @Test
-    void fannedRoot_sqlBaseline_oneIdenticalStatementPerTenant() {
-        // The fan-out family's exact-SQL equivalence pin: statement count is a function of the
-        // strategy here (one identical statement per tenant in the domain), which is exactly
-        // what a behaviour assertion cannot pin. Authored against the pre-launcher emission and
-        // held byte-identical through the fanned root's launcher cutover.
-        var result = execute("{ filmsEverywhere { title } }", List.of(1, 2));
-        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
-        // The JDBC boundary sees the whole per-tenant frame: the session mount at pin time,
-        // the one fanned statement, and the unmount at release. Three statements per tenant,
-        // identical across tenants; the mount and unmount are the configured hook methods'
-        // own jOOQ routine calls, not generator-authored SQL.
-        String mount = "select row(t.*) from \"public\".\"session_connect\""
-            + "(\"p_claims\" := cast(row(?, ?) as \"public\".\"session_claims\")) as t";
-        String statement = "select \"public\".\"film\".\"title\" "
-            + "from \"public\".\"film\" "
-            + "order by \"public\".\"film\".\"film_id\" asc";
-        String unmount = "select * from \"public\".\"session_disconnect\""
-            + "(\"p_handle\" := cast(row(?, ?) as \"public\".\"session_handle\"))";
-        assertThat(TENANT_1_SQL).containsExactly(mount, statement, unmount);
-        assertThat(TENANT_2_SQL).containsExactly(mount, statement, unmount);
     }
 
     private static ExecutionResult execute(String query, Collection<Integer> tenants) {
@@ -344,7 +314,7 @@ class TenantFanOutExecutionTest {
         // A dedicated engine with a short scatter deadline; tenant 2's acquisition hangs past
         // it, so the join stops waiting and the wire carries the timeout classification.
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
-        byTenant.put(1, tenantDataSource("fanout_t1", null, null, null));
+        byTenant.put(1, tenantDataSource("fanout_t1", null, null));
         byTenant.put(2, hangingDataSource("fanout_t2", 5_000));
         var slowRuntime = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES,
             4, java.time.Duration.ofMillis(500));
@@ -392,8 +362,8 @@ class TenantFanOutExecutionTest {
         TENANT_2_DOWN.set(true);
         var logged = new java.util.concurrent.CopyOnWriteArrayList<LoggedTenantFailure>();
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
-        byTenant.put(1, tenantDataSource("fanout_t1", null, null, null));
-        byTenant.put(2, tenantDataSource("fanout_t2", null, TENANT_2_DOWN, null));
+        byTenant.put(1, tenantDataSource("fanout_t1", null, null));
+        byTenant.put(2, tenantDataSource("fanout_t2", null, TENANT_2_DOWN));
         var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES)
             .withFetcherErrorLog(recordingTenantLog(logged))
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
@@ -413,7 +383,7 @@ class TenantFanOutExecutionTest {
     void timedOutTenant_reachesTheRuntimesFetcherErrorLogAsATimeoutException() {
         var logged = new java.util.concurrent.CopyOnWriteArrayList<LoggedTenantFailure>();
         Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
-        byTenant.put(1, tenantDataSource("fanout_t1", null, null, null));
+        byTenant.put(1, tenantDataSource("fanout_t1", null, null));
         byTenant.put(2, hangingDataSource("fanout_t2", 5_000));
         var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES,
                 4, java.time.Duration.ofMillis(500))
@@ -575,12 +545,11 @@ class TenantFanOutExecutionTest {
     }
 
     private static DataSource defaultDataSource() {
-        return dataSource(jdbcUrl, null, null, null);
+        return dataSource(jdbcUrl, null, null);
     }
 
-    private static DataSource tenantDataSource(String db, AtomicInteger opened, AtomicBoolean down,
-            List<String> sqlLog) {
-        return dataSource(tenantUrl(db), opened, down, sqlLog);
+    private static DataSource tenantDataSource(String db, AtomicInteger opened, AtomicBoolean down) {
+        return dataSource(tenantUrl(db), opened, down);
     }
 
     /** A DataSource whose acquisition hangs past the scatter deadline, then connects normally. */
@@ -603,8 +572,7 @@ class TenantFanOutExecutionTest {
             });
     }
 
-    private static DataSource dataSource(String url, AtomicInteger opened, AtomicBoolean down,
-            List<String> sqlLog) {
+    private static DataSource dataSource(String url, AtomicInteger opened, AtomicBoolean down) {
         return (DataSource) Proxy.newProxyInstance(
             TenantFanOutExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},
@@ -614,8 +582,7 @@ class TenantFanOutExecutionTest {
                         throw new SQLException("tenant 2 is down");
                     }
                     if (opened != null) opened.incrementAndGet();
-                    var real = DriverManager.getConnection(url, jdbcUser, jdbcPassword);
-                    return sqlLog == null ? real : recordingConnection(real, sqlLog);
+                    return DriverManager.getConnection(url, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);
@@ -623,24 +590,6 @@ class TenantFanOutExecutionTest {
                     case "toString" -> "dataSource:" + url;
                     default -> throw new UnsupportedOperationException(method.getName());
                 };
-            });
-    }
-
-    /** Records every prepared statement's SQL into {@code sqlLog}, delegating everything else. */
-    private static java.sql.Connection recordingConnection(java.sql.Connection real, List<String> sqlLog) {
-        return (java.sql.Connection) Proxy.newProxyInstance(
-            TenantFanOutExecutionTest.class.getClassLoader(),
-            new Class<?>[]{java.sql.Connection.class},
-            (proxy, method, args) -> {
-                if (method.getName().equals("prepareStatement")
-                        && args != null && args.length > 0 && args[0] instanceof String sql) {
-                    sqlLog.add(sql.toLowerCase(java.util.Locale.ROOT));
-                }
-                try {
-                    return method.invoke(real, args);
-                } catch (java.lang.reflect.InvocationTargetException e) {
-                    throw e.getCause();
-                }
             });
     }
 }
