@@ -956,12 +956,12 @@ and the emitters read, and it goes when nothing reads what it builds.
       a path keeps `COLUMN_UNRESOLVED` over the column scope's `PATH_TERMINAL` rule until the node
       below. Pinned by `field-target-column`. When `CONSUMED` replaces the record and source-row
       rules, the column-giving set is "not `CONSUMED`, or the source key's rule is `RECORD`".
-    * **The generator refuses an `id` that is no node's identity** `open`. An `id: ID` with no
-      `@field` on a type that does not implement `Node` is no node's identity, so the store reads it
-      as a column and draws `COLUMN_UNRESOLVED` where none matches. The generator reads it as the
-      enclosing node's id instead (the `Node.id` path in `FieldBuilder`), so eight sis
-      fields on nesting types under node parents (the "TODO: Ta vekk" fields) build while the store
-      refuses them. Alf ruled 2026-10-18 that the fields are wrong: the generator refuses them too.
+    * **The generator reads an `id: ID` without `@nodeId` as a column** `open`. Such a field is a
+      column like any other, as the store reads it, with `COLUMN_UNRESOLVED` where none matches.
+      The generator reads it as the enclosing node's id instead (the `Node.id` path in
+      `FieldBuilder`), so eight sis fields on nesting types under node parents (the "TODO: Ta vekk"
+      fields) build while the store refuses them. The generator reads the column, and refuses
+      where there is none, as the store does.
     * **A scalar through a path reads where the path lands** `blocked`, on "The forward walk is a
       relation of its own": the path resolution is keyed by a target table, which a scalar does not
       have, so the landing is read off the forward walk once it exists.
