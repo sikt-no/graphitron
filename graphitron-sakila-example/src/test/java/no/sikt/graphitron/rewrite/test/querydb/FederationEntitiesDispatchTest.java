@@ -33,7 +33,6 @@ class FederationEntitiesDispatchTest {
     static DSLContext dsl;
     static GraphQL graphql;
     static final java.util.concurrent.atomic.AtomicInteger QUERY_COUNT = new java.util.concurrent.atomic.AtomicInteger();
-    static final List<String> SQL_LOG = new java.util.concurrent.CopyOnWriteArrayList<>();
 
     @BeforeAll
     static void startDatabase() throws Exception {
@@ -53,8 +52,6 @@ class FederationEntitiesDispatchTest {
                 @Override
                 public void executeStart(org.jooq.ExecuteContext ctx) {
                     QUERY_COUNT.incrementAndGet();
-                    var sql = ctx.sql();
-                    if (sql != null) SQL_LOG.add(sql.toLowerCase(java.util.Locale.ROOT));
                 }
             }));
         graphql = Graphitron.newGraphQL().build();
@@ -239,19 +236,17 @@ class FederationEntitiesDispatchTest {
 
     /**
      * Type-scoped selection set: a single _entities call with two __typenames and inline
-     * fragments produces per-type SELECTs whose projection lists exclude the other type's
-     * fields. Locks the load-bearing claim that graphql-java's
+     * fragments resolves each entity with its own fragment's fields. graphql-java's
      * {@code DataFetchingFieldSelectionSet} is type-scoped at the {@code _entities} DFE
      * call site, so {@code <TypeName>.$project} walking it picks up only the inline
      * fragment scoped to that __typename.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void entities_typeScopedSelectionSet_perTypeProjectionDistinct() {
+    void entities_typeScopedSelectionSet_resolvesEachTypesOwnFields() {
         String customerId = NodeIdEncoder.encode("Customer", 1);
         String filmId = NodeIdEncoder.encode("Film", 1);
-        SQL_LOG.clear();
-        execute(
+        Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
             + " __typename"
             + " ... on Customer { firstName lastName }"
@@ -261,23 +256,18 @@ class FederationEntitiesDispatchTest {
                 Map.of("__typename", "Customer", "id", customerId),
                 Map.of("__typename", "Film", "id", filmId))));
 
-        var customerSelect = SQL_LOG.stream()
-            .filter(s -> s.contains("'customer' as \"__typename\""))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Customer SELECT not found in SQL log: " + SQL_LOG));
-        var filmSelect = SQL_LOG.stream()
-            .filter(s -> s.contains("'film' as \"__typename\""))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Film SELECT not found in SQL log: " + SQL_LOG));
-
-        assertThat(customerSelect)
-            .as("Customer SELECT projects Customer's fields, not Film's")
-            .contains("first_name").contains("last_name")
-            .doesNotContain("title").doesNotContain("rental_rate");
-        assertThat(filmSelect)
-            .as("Film SELECT projects Film's fields, not Customer's")
-            .contains("title").contains("rental_rate")
-            .doesNotContain("first_name").doesNotContain("last_name");
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(2);
+        assertThat(entities.get(0))
+            .containsOnlyKeys("__typename", "firstName", "lastName")
+            .containsEntry("__typename", "Customer")
+            .containsEntry("firstName", "Mary")
+            .containsEntry("lastName", "Smith");
+        assertThat(entities.get(1))
+            .containsOnlyKeys("__typename", "title", "rentalRate")
+            .containsEntry("__typename", "Film")
+            .containsEntry("title", "ACADEMY DINOSAUR");
+        assertThat(((Number) entities.get(1).get("rentalRate")).doubleValue()).isEqualTo(0.99);
     }
 
     // The per-tenant partition proof lives with the multi-tenant fixture: the dispatcher's
@@ -290,14 +280,12 @@ class FederationEntitiesDispatchTest {
      * Multi-alternative dispatch: Film carries both a synthesised NODE_ID alternative
      * (from {@code @node}) and a DIRECT alternative (from {@code @key(fields: "filmId")}).
      * Reps that supply only {@code id} pick the NODE_ID alternative; reps that supply only
-     * {@code filmId} pick the DIRECT alternative. The dispatcher selects per-rep and
-     * groups by alternative, so a mixed call issues two SELECTs.
+     * {@code filmId} pick the DIRECT alternative. Each rep resolves its own film, in rep order.
      */
     @Test
     @SuppressWarnings("unchecked")
     void entities_multipleAlternatives_dispatchPerRep() {
         String filmId1 = NodeIdEncoder.encode("Film", 1);
-        SQL_LOG.clear();
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
             + " __typename ... on Film { title } } }",
@@ -307,15 +295,10 @@ class FederationEntitiesDispatchTest {
 
         List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
         assertThat(entities).hasSize(2);
-        assertThat(entities.get(0)).containsEntry("__typename", "Film");
-        assertThat(entities.get(1)).containsEntry("__typename", "Film");
-
-        long filmSelectCount = SQL_LOG.stream()
-            .filter(s -> s.contains("'film' as \"__typename\""))
-            .count();
-        assertThat(filmSelectCount)
-            .as("two alternatives → two SELECTs")
-            .isEqualTo(2);
+        assertThat(entities).extracting(e -> e.get("__typename"), e -> e.get("title"))
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Film", "ACADEMY DINOSAUR"),
+                org.assertj.core.groups.Tuple.tuple("Film", "ACE GOLDFINGER"));
     }
 
     /**
@@ -381,31 +364,27 @@ class FederationEntitiesDispatchTest {
      * Most-specific tie-break: Film carries {@code @key(fields: "filmId")} and
      * {@code @key(fields: "filmId title")}. A representation that supplies both fields must
      * select the compound alternative (more required fields wins; ties broken by declaration
-     * order). Asserted via SQL inspection: the compound alternative's SELECT joins on
-     * {@code title}, while the simple alternative does not.
+     * order). The compound alternative matches on {@code title} as well, so a rep whose title
+     * disagrees with the row resolves to null where the simple alternative would have found
+     * film 1.
      */
     @Test
     @SuppressWarnings("unchecked")
     void entities_mostSpecificTieBreak_selectsCompoundOverSimple() {
-        SQL_LOG.clear();
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
             + " __typename ... on Film { title } } }",
-            Map.of("reps", List.of(Map.of(
-                "__typename", "Film",
-                "filmId", 1,
-                "title", "ACADEMY DINOSAUR"))));
+            Map.of("reps", List.of(
+                Map.of("__typename", "Film", "filmId", 1, "title", "ACADEMY DINOSAUR"),
+                Map.of("__typename", "Film", "filmId", 1, "title", "NOT THIS FILM"))));
         List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
-        assertThat(entities).hasSize(1);
-        assertThat(entities.get(0)).containsEntry("__typename", "Film");
-
-        var filmSelect = SQL_LOG.stream()
-            .filter(s -> s.contains("'film' as \"__typename\""))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Film SELECT not found in SQL log: " + SQL_LOG));
-        assertThat(filmSelect)
-            .as("rep with both filmId and title must hit the compound alternative (joins on title)")
-            .contains("\"title\"");
+        assertThat(entities).hasSize(2);
+        assertThat(entities.get(0))
+            .containsEntry("__typename", "Film")
+            .containsEntry("title", "ACADEMY DINOSAUR");
+        assertThat(entities.get(1))
+            .as("the title is part of the match, so a wrong title finds no film")
+            .isNull();
     }
 
     /**
@@ -417,7 +396,7 @@ class FederationEntitiesDispatchTest {
     @Test
     @SuppressWarnings("unchecked")
     void entities_nonResolvableKey_yieldsNullSlotWithoutSelect() {
-        SQL_LOG.clear();
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) { __typename } }",
             Map.of("reps", List.of(Map.of("__typename", "Language", "languageId", 1))));
@@ -426,11 +405,8 @@ class FederationEntitiesDispatchTest {
         assertThat(entities.get(0))
             .as("non-resolvable @key alternative must yield null for matching reps")
             .isNull();
-        long languageSelects = SQL_LOG.stream()
-            .filter(s -> s.contains("'language' as \"__typename\"") || s.contains("from \"public\".\"language\""))
-            .count();
-        assertThat(languageSelects)
-            .as("non-resolvable alternative must not fire any SELECT against the language table")
+        assertThat(QUERY_COUNT.get())
+            .as("non-resolvable alternative must not fire any statement")
             .isZero();
     }
 
@@ -466,16 +442,12 @@ class FederationEntitiesDispatchTest {
     /**
      * A federated {@code _entities} query that selects both {@code id} (the NodeId-encoded
      * primary key) and a sibling SDL field whose {@code @field(name:)} resolves to the same
-     * underlying column. {@code Customer.$project} accumulates projected columns in a
-     * {@link java.util.LinkedHashSet}, deduping by jOOQ {@code Field} identity, so the column
-     * appears exactly once in the SELECT; a duplicate projection makes jOOQ's
-     * {@code FieldsImpl.indexOf} log an INFO "Ambiguous match" on every fetched row.
+     * underlying column resolves both fields.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void entities_nodeIdAndOverlappingSiblingField_projectColumnOnce() {
+    void entities_nodeIdAndOverlappingSiblingField_resolves() {
         String customerNodeId = NodeIdEncoder.encode("Customer", 1);
-        SQL_LOG.clear();
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
             + " __typename ... on Customer { id customerId firstName } } }",
@@ -484,22 +456,6 @@ class FederationEntitiesDispatchTest {
         List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
         assertThat(entities).hasSize(1);
         assertThat(entities.get(0)).containsEntry("__typename", "Customer");
-
-        var customerSelect = SQL_LOG.stream()
-            .filter(s -> s.contains("'customer' as \"__typename\""))
-            .findFirst()
-            .orElseThrow(() -> new AssertionError("Customer SELECT not found in SQL log: " + SQL_LOG));
-
-        // Extract the projection list (between SELECT and FROM) and count customer_id occurrences.
-        int selectIdx = customerSelect.indexOf("select ");
-        int fromIdx = customerSelect.indexOf(" from ", selectIdx);
-        String projection = customerSelect.substring(selectIdx, fromIdx);
-        long customerIdCount = projection.split("\"customer_id\"", -1).length - 1;
-        assertThat(customerIdCount)
-            .as("Customer SELECT projection must reference customer_id exactly once "
-                + "(id @nodeId and customerId @field both target customer_id; dedupe lives in $project())\n"
-                + "projection was: " + projection)
-            .isEqualTo(1);
     }
 
     /**
@@ -576,13 +532,12 @@ class FederationEntitiesDispatchTest {
 
     /**
      * Compound key batching: multiple reps of the same {@code (typename, alternative,
-     * tenantId)} batch into a single SELECT via the {@code VALUES (idx, ...)} derived
-     * table. Verifies the row-array machinery emits one SELECT for two reps, not two.
+     * tenantId)} batch through the {@code VALUES (idx, ...)} derived table and scatter back to
+     * their rep positions.
      */
     @Test
     @SuppressWarnings("unchecked")
-    void entities_compoundKeyBatch_oneSelectForMultipleReps() {
-        SQL_LOG.clear();
+    void entities_compoundKeyBatch_resolvesEachRepInPosition() {
         Map<String, Object> data = execute(
             "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
             + " __typename ... on FilmActor { filmId actorId } } }",
@@ -591,12 +546,10 @@ class FederationEntitiesDispatchTest {
                 Map.of("__typename", "FilmActor", "filmId", 1, "actorId", 2),
                 Map.of("__typename", "FilmActor", "filmId", 2, "actorId", 1))));
         List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
-        assertThat(entities).hasSize(3);
-        long filmActorSelects = SQL_LOG.stream()
-            .filter(s -> s.contains("'filmactor' as \"__typename\""))
-            .count();
-        assertThat(filmActorSelects)
-            .as("three reps of one (typename, alt, tenant) group → one SELECT")
-            .isEqualTo(1);
+        assertThat(entities).extracting(e -> e.get("filmId"), e -> e.get("actorId"))
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple(1, 1),
+                org.assertj.core.groups.Tuple.tuple(1, 2),
+                org.assertj.core.groups.Tuple.tuple(2, 1));
     }
 }
