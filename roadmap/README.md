@@ -52,7 +52,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1059` | A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS | In Progress | 2026-10-17 | [plan](list-of-input-filter-through-reference.md) |
+| `R1059` | A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS | In Review | 2026-10-18 <sub>created 2026-10-17</sub> | [plan](list-of-input-filter-through-reference.md) |
 
 ---
 

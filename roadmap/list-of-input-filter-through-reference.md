@@ -1,11 +1,11 @@
 ---
 id: R1059
 title: "A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS"
-status: In Progress
+status: In Review
 bucket: feature
 depends-on: []
 created: 2026-10-17
-last-updated: 2026-10-17
+last-updated: 2026-10-18
 ---
 
 # A list-of-input filter whose element fields share a @reference path renders as one correlated EXISTS
@@ -179,6 +179,19 @@ In `docs/manual/reference/directives/field.adoc`, the second list-of-input parag
 > The list then becomes one `EXISTS` over the path, matching a customer when some address it reaches equals some element: `(district, city_id) IN (...)` on the joined `address` row. One reached row must match the whole element, so on a path that reaches many rows (a film's cast, say) an element's fields cannot be satisfied by two different rows, as separate `@reference` fields on a non-list input can. Element fields on different paths, or mixing the field's own columns with a path, are not accepted. Neither are `@nodeId`, list-typed fields and `@condition` inside a list-of-input filter. The build names the field at fault (see the diagnostics glossary). To filter on anything else, put `@condition(override: true)` on the list field: your method receives the whole list (as a `List<Map<String, Object>>`) and owns the predicate.
 
 In `diagnostics-glossary.adoc` § An element field a list-of-input filter cannot compare, the cause names the new refusal ("its column is reached through a different @reference path than element field '<first>'"), and the `@nodeId`/`@reference` clause becomes `@nodeId` alone.
+
+## Implementation notes
+
+Where the landed code departs from or settles the plan above:
+
+- **Both reviewer notes are taken.** `referenceElementField_isRejected` became `reachedCellFollowedByOwnTableCell_isRejectedAtTheOwnTableCell`, the mixed-level negative located at `PairInput.filmId`; the one-cell reached case has its own fixture (`oneCellReachedElement_classifiesAsRemoteIn`). `ColumnTerm`'s compact constructor now requires its binding's `reachedTable` to be the reach's last hop target, and empty for an own-table term.
+- **`ArgBinding` keeps a two-argument constructor** for the own-table case, and gains `reachedAt(TableRef)`, which `ConditionCommands.termOf` calls in its `RemoteColumnPredicate` arm. Authored bindings use the two-argument form unchanged.
+- **The table decision is one renderer record.** `ConditionGlueRenderer.ValueTable` is built once per binding from `reachedTable` and handed to `extractionExpr`, `nestedExtraction` and `rowsCall`, so the two scalar `JooqConvert` arms and the row helper read the same expression (`Tables.ADDRESS` in the sakila output).
+- **A local shared between an authored binding and a reached term takes the reached table.** `distinctBindings` keys on the local name, and an authored predicate's binding never knows a generated term's reach, so the merge keeps whichever occurrence names a table, and throws if two name different tables. This is the confirmation the plan asked for on the scalar reference arms, made structural rather than argued.
+- **The disagreement diagnostic has two wordings.** A reached cell after a different reach reads "its column is reached through a different @reference path than element field '<first>'", as planned. An own-table cell after a reached first cell reads "its column is on the field's own table, while element field '<first>' is reached through a @reference path", because the planned wording would describe a path the cell does not have. The glossary names both.
+- **The defect in Context was real.** Before the change the `JooqConvert` reads emitted `table.CITY_ID` with `table` typed `Customer`, which has no `CITY_ID`; the new `customersByCityId` / `customersByCityFilter` glue now reads `Tables.ADDRESS.CITY_ID` and compiles at release 17. This was confirmed by reading the old renderer against the fixture, not by building the fixture before the change.
+- **Alias and multi-table confirmations.** No condition-glue or `PathFragments` code reads `Hop.alias()`: hop locals are minted in `declareReachAliases` and passed in. `MultiTableFilterLoweringTest.reachedListOfInputFilter_lowersPerParticipantAsRemoteRowIn` spells the path `{table: "address"}`, so each participant resolves its own foreign key, and both lower to a `RemoteColumnPredicate` whose hop departs from the participant's table.
+- **The `Hop` coverage test** is `HopSameJoinTest` (unit tier). Besides the reflective component check, it builds one hop per compared component that differs from a base hop only there, and asserts `sameJoinAs` is false for each and true for an alias-only difference.
 
 ## Other solutions we've considered
 
