@@ -7034,9 +7034,16 @@ class GraphQLQueryTest {
         graphql.ExecutionResult result = executeRaw(
             "mutation { rentFilm(inventoryId: 999999, customerId: 3) { rentalId } }");
 
+        // No payload carrier to route into, so the database error is redacted to a reference: the
+        // client sees the correlation id and nothing of the constraint that fired.
         assertThat(result.getErrors())
-            .as("a failing routine call surfaces an error on the mutation field")
-            .isNotEmpty();
+            .as("a failing routine call surfaces one redacted error on the mutation field")
+            .singleElement()
+            .satisfies(error -> {
+                assertThat(error.getMessage())
+                    .matches("An error occurred\\. Reference: [0-9a-f-]{36}\\.");
+                assertThat(error.getPath()).containsExactly("rentFilm");
+            });
         int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
         assertThat(countAfter)
             .as("the failed routine write committed nothing")
@@ -7338,6 +7345,251 @@ class GraphQLQueryTest {
         assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
             .as("the failed routine write committed nothing")
             .isEqualTo(countBefore);
+    }
+
+    // ===== Routine write shapes beyond the one-hop list chain and the single carrier =====
+    //
+    // Every rental these write is deleted afterwards by id: rental is written by no other class, so
+    // the rows above the highest id seen before a test are exactly that test's.
+
+    private int maxRentalId() {
+        Integer max = dsl.select(org.jooq.impl.DSL.max(org.jooq.impl.DSL.field("rental_id", Integer.class)))
+            .from(org.jooq.impl.DSL.table("rental"))
+            .fetchOne(0, Integer.class);
+        return max == null ? 0 : max;
+    }
+
+    /** The (inventory_id, customer_id) of every rental written after {@code afterId}, by id. */
+    private List<List<Integer>> rentalsAfter(int afterId) {
+        return dsl.select(org.jooq.impl.DSL.field("inventory_id", Integer.class),
+                org.jooq.impl.DSL.field("customer_id", Integer.class))
+            .from(org.jooq.impl.DSL.table("rental"))
+            .where(org.jooq.impl.DSL.field("rental_id", Integer.class).gt(afterId))
+            .orderBy(org.jooq.impl.DSL.field("rental_id"))
+            .fetch(r -> List.of(r.value1(), r.value2()));
+    }
+
+    private void deleteRentalsAfter(int afterId) {
+        dsl.deleteFrom(org.jooq.impl.DSL.table("rental"))
+            .where(org.jooq.impl.DSL.field("rental_id", Integer.class).gt(afterId))
+            .execute();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmCustomer_aTwoHopChainReReadsTheRowAtItsTerminus() {
+        // The re-read departs from the rental the routine wrote and follows rental -> customer, so
+        // the answer is the renting customer, not the rental. Customer 3 is Linda.
+        int before = maxRentalId();
+        try {
+            var result = executeRaw("""
+                mutation { rentFilmCustomer(inventoryId: 2, customerId: 3) { customerId firstName } }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            var customers = (List<Map<String, Object>>) ((Map<String, Object>) result.getData())
+                .get("rentFilmCustomer");
+            assertThat(customers)
+                .extracting(c -> c.get("customerId"), c -> c.get("firstName"))
+                .containsExactly(tuple(3, "Linda"));
+            assertThat(rentalsAfter(before))
+                .as("the write committed one rental, of inventory 2 to customer 3")
+                .containsExactly(List.of(2, 3));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmActiveCustomer_aTailHopFilterNarrowsTheReReadAndNotTheWrite() {
+        // customerIsActive filters the rental -> customer hop. Customer 3 is active and is read
+        // back; customer 4 is inactive, so the re-read finds nothing, yet both rentals commit.
+        int before = maxRentalId();
+        try {
+            var active = executeRaw("""
+                mutation { rentFilmActiveCustomer(inventoryId: 2, customerId: 3) { customerId } }
+                """);
+            var inactive = executeRaw("""
+                mutation { rentFilmActiveCustomer(inventoryId: 2, customerId: 4) { customerId } }
+                """);
+            assertThat(active.getErrors()).as("top-level errors: %s", active.getErrors()).isEmpty();
+            assertThat(inactive.getErrors()).as("top-level errors: %s", inactive.getErrors()).isEmpty();
+            assertThat((List<Map<String, Object>>) ((Map<String, Object>) active.getData())
+                    .get("rentFilmActiveCustomer"))
+                .as("an active customer passes the filter")
+                .extracting(c -> c.get("customerId"))
+                .containsExactly(3);
+            assertThat((List<Map<String, Object>>) ((Map<String, Object>) inactive.getData())
+                    .get("rentFilmActiveCustomer"))
+                .as("an inactive customer is filtered out of the re-read")
+                .isEmpty();
+            assertThat(rentalsAfter(before))
+                .as("the filter reads after the commit, so both writes landed")
+                .containsExactly(List.of(2, 3), List.of(2, 4));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmSingle_aSingleValuedChainReturnsTheOneRowItWrote() {
+        int before = maxRentalId();
+        try {
+            var result = executeRaw("""
+                mutation { rentFilmSingle(inventoryId: 2, customerId: 3) { rentalId inventoryId customerId } }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            var rental = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rentFilmSingle");
+            assertThat(rental)
+                .as("one object, not a list")
+                .containsEntry("inventoryId", 2)
+                .containsEntry("customerId", 3);
+            assertThat(rental.get("rentalId"))
+                .as("the row returned is the row the routine wrote")
+                .isEqualTo(maxRentalId())
+                .isNotEqualTo(before);
+            assertThat(rentalsAfter(before)).containsExactly(List.of(2, 3));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilms_aListCarrierReReadsEveryCapturedKeyInTheRoutinesOrder() {
+        // rent_films writes one rental per inventory id, first then second. The payload's list data
+        // field re-reads each captured key, in the order the routine returned them.
+        int before = maxRentalId();
+        try {
+            var result = executeRaw("""
+                mutation {
+                    rentFilms(firstInventoryId: 3, secondInventoryId: 1, customerId: 2) {
+                        rentals { rentalId inventoryId customerId }
+                    }
+                }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            var rentals = (List<Map<String, Object>>) ((Map<String, Object>) ((Map<String, Object>)
+                result.getData()).get("rentFilms")).get("rentals");
+            assertThat(rentals)
+                .extracting(r -> r.get("inventoryId"), r -> r.get("customerId"))
+                .containsExactly(tuple(3, 2), tuple(1, 2));
+            assertThat(rentals)
+                .extracting(r -> r.get("rentalId"))
+                .as("each returned row is one the routine wrote, none read twice")
+                .doesNotHaveDuplicates()
+                .allSatisfy(id -> assertThat((Integer) id).isGreaterThan(before));
+            assertThat(rentalsAfter(before))
+                .as("the one call committed both rentals")
+                .containsExactly(List.of(3, 2), List.of(1, 2));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void rentFilmCopy_anAuthoredAndAnInferredNodeIdEachReachTheirOwnParameter() {
+        // filmId spells film_id past its node id; customerId stops on its node id and the build
+        // infers customer_id. Film 3 and customer 2 are both valid keys of the other kind too, so
+        // a decode aimed at the wrong leaf would rent film 2's copy to customer 3 rather than fail.
+        // Film 3's one copy is inventory 3.
+        int before = maxRentalId();
+        try {
+            var result = executeRaw("""
+                mutation {
+                    rentFilmCopy(input: { filmId: "%s", customerId: "%s" }) { inventoryId customerId }
+                }
+                """.formatted(
+                    no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3),
+                    no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 2)));
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("rentFilmCopy"))
+                .extracting(r -> r.get("inventoryId"), r -> r.get("customerId"))
+                .containsExactly(tuple(3, 2));
+            assertThat(rentalsAfter(before))
+                .as("the committed rental is film 3's copy, to customer 2")
+                .containsExactly(List.of(3, 2));
+        } finally {
+            deleteRentalsAfter(before);
+        }
+    }
+
+    // email's key is (mailbox_id, message_no). This class owns message_no 900-999 in mailboxes 5
+    // and 9; each test seeds decoys sharing one key column with the row it writes.
+
+    private void deletePostedEmails() {
+        dsl.deleteFrom(org.jooq.impl.DSL.table("email"))
+            .where(org.jooq.impl.DSL.field("mailbox_id", Integer.class).in(5, 9))
+            .and(org.jooq.impl.DSL.field("message_no", Integer.class).between(900, 999))
+            .execute();
+    }
+
+    private void seedEmail(int mailboxId, int messageNo, String subject) {
+        dsl.insertInto(org.jooq.impl.DSL.table("email"),
+                org.jooq.impl.DSL.field("mailbox_id"), org.jooq.impl.DSL.field("message_no"),
+                org.jooq.impl.DSL.field("subject"))
+            .values(mailboxId, messageNo, subject)
+            .execute();
+    }
+
+    private String subjectOfEmail(int mailboxId, int messageNo) {
+        return dsl.select(org.jooq.impl.DSL.field("subject", String.class))
+            .from(org.jooq.impl.DSL.table("email"))
+            .where(org.jooq.impl.DSL.field("mailbox_id", Integer.class).eq(mailboxId))
+            .and(org.jooq.impl.DSL.field("message_no", Integer.class).eq(messageNo))
+            .fetchOne(0, String.class);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void postEmail_aCompositeCapturedKeyReReadsExactlyTheRowItWrote() {
+        // The routine writes (9, 901). The decoys share one key column each, so a re-read keyed on
+        // either column alone returns a decoy beside it.
+        deletePostedEmails();
+        try {
+            seedEmail(5, 901, "decoy-other-mailbox");
+            seedEmail(9, 902, "decoy-same-mailbox");
+            var result = executeRaw("""
+                mutation { postEmail(mailboxId: 9, messageNo: 901, subject: "posted") { id messageNo subject } }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("postEmail"))
+                .extracting(e -> e.get("id"), e -> e.get("messageNo"), e -> e.get("subject"))
+                .containsExactly(tuple(
+                    no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Email", 9, 901), 901, "posted"));
+            assertThat(subjectOfEmail(9, 901)).as("the write committed").isEqualTo("posted");
+        } finally {
+            deletePostedEmails();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void postEmailPayload_aCarrierCapturesBothKeyColumnsForItsDataField() {
+        deletePostedEmails();
+        try {
+            seedEmail(5, 903, "decoy-other-mailbox");
+            seedEmail(9, 904, "decoy-same-mailbox");
+            var result = executeRaw("""
+                mutation {
+                    postEmailPayload(mailboxId: 9, messageNo: 903, subject: "posted") {
+                        email { id messageNo subject }
+                    }
+                }
+                """);
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            var email = (Map<String, Object>) ((Map<String, Object>) ((Map<String, Object>)
+                result.getData()).get("postEmailPayload")).get("email");
+            assertThat(email)
+                .containsEntry("id", no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Email", 9, 903))
+                .containsEntry("messageNo", 903)
+                .containsEntry("subject", "posted");
+            assertThat(subjectOfEmail(9, 903)).as("the write committed").isEqualTo("posted");
+        } finally {
+            deletePostedEmails();
+        }
     }
 
     @Test

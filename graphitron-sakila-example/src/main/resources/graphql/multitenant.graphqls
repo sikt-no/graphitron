@@ -424,6 +424,11 @@ type Mutation {
         method: "rateFilmsAsFilms", argMapping: "ratings: in"})
     createInventory(in: InventoryCreateInput!): Inventory @mutation(typeName: INSERT)
     createEndorsement(in: FilmEndorsementCreateInput!): FilmEndorsement @mutation(typeName: INSERT, table: "film_endorsement")
+    # A routine write to the same global table: film_endorsement has no tenant column, so the call
+    # and its re-read run on the default source.
+    endorseFilm(endorsedFilm: Int!, note: String!): [FilmEndorsement!]!
+        @routine(name: "endorse_film", argMapping: "pEndorsedFilm: endorsedFilm, pNote: note")
+        @reference(path: [{table: "film_endorsement"}])
     createInventoryByFilmRef(in: InventoryCreateByFilmRefInput!): Inventory @mutation(typeName: INSERT, table: "inventory")
     # Single and bulk: the bulk form is where the agreement guard earns its keep, refusing a
     # batch whose ids decode to two tenants before any SQL runs.

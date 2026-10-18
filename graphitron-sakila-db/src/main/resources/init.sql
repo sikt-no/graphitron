@@ -959,6 +959,50 @@ AS $$
     RETURNING rental.rental_id
 $$;
 
+-- Routine-write fixture: two rentals in one call, so a payload whose data field is a list
+-- re-reads more than one captured key.
+CREATE OR REPLACE FUNCTION public.rent_films(
+    p_first_inventory_id  INTEGER,
+    p_second_inventory_id INTEGER,
+    p_customer_id         INTEGER
+) RETURNS TABLE(rental_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+    SELECT now(), i, p_customer_id, 1
+    FROM unnest(ARRAY[p_first_inventory_id, p_second_inventory_id]) AS i
+    RETURNING rental.rental_id
+$$;
+
+-- Routine-write fixture: rents the lowest-numbered copy of a film. Takes a film and a customer,
+-- two integer keys a caller can swap without a type error, so a binding that hands either
+-- parameter the other's key writes a visibly wrong rental.
+CREATE OR REPLACE FUNCTION public.rent_film_copy(
+    p_film_id     INTEGER,
+    p_customer_id INTEGER
+) RETURNS TABLE(rental_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO rental (rental_date, inventory_id, customer_id, staff_id)
+    SELECT now(), min(inventory.inventory_id), p_customer_id, 1
+    FROM inventory
+    WHERE inventory.film_id = p_film_id
+    RETURNING rental.rental_id
+$$;
+
+-- Routine-write fixture on a global table: film_endorsement has no film_id column, so under the
+-- multi-tenant fixture's film_id tenant column this write is untenanted.
+CREATE OR REPLACE FUNCTION public.endorse_film(
+    p_endorsed_film INTEGER,
+    p_note          TEXT
+) RETURNS TABLE(endorsement_id INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO film_endorsement (endorsed_film, note)
+    VALUES (p_endorsed_film, p_note)
+    RETURNING film_endorsement.endorsement_id
+$$;
+
 -- R451 routine fixture: a scalar (non-table-valued) function pinning JooqCatalog's
 -- exists-but-not-table-valued resolution arm. jOOQ places it in the generated `routines`
 -- package (not `tables`), so @routine naming it must land the typed Deferred routed off
@@ -1085,6 +1129,20 @@ INSERT INTO mailbox (mailbox_id, owner_name) VALUES (5, 'alice'), (9, 'bob');
 INSERT INTO email (mailbox_id, message_no, in_reply_to_no, subject) VALUES
     (5, 1, NULL, 'root-in-5'),
     (9, 1, NULL, 'root-in-9');
+
+-- Routine-write fixture whose result key spans two columns: email's whole primary key
+-- (mailbox_id, message_no), so the re-read is keyed by a composite captured key.
+CREATE OR REPLACE FUNCTION public.post_email(
+    p_mailbox_id INTEGER,
+    p_message_no INTEGER,
+    p_subject    TEXT
+) RETURNS TABLE(mailbox_id INTEGER, message_no INTEGER)
+LANGUAGE sql VOLATILE
+AS $$
+    INSERT INTO email (mailbox_id, message_no, subject)
+    VALUES (p_mailbox_id, p_message_no, p_subject)
+    RETURNING email.mailbox_id, email.message_no
+$$;
 
 -- ===========================
 -- Straddling cross-table @nodeId reference fixture

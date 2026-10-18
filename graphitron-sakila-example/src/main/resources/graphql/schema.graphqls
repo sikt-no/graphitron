@@ -91,6 +91,25 @@ input RentFilmProjectedInput {
     customerId:  ID! @nodeId(typeName: "Customer")
 }
 
+# The list-valued routine carrier: rent_films writes two rentals and the payload's data field
+# re-reads every captured key.
+type RentFilmsPayload {
+    rentals: [Rental!]
+}
+
+# A routine carrier whose captured key spans two columns: post_email returns email's whole key.
+type PostEmailPayload {
+    email: Email
+}
+
+# Two node ids feeding one routine call, one opened with the key column it encodes and one left
+# closed for the build to infer. Film and Customer keys are both integers, so a binding that read
+# either id at the other's slot would hand the routine the wrong key without a type error.
+input RentFilmCopyInput {
+    filmId:     ID! @nodeId(typeName: "Film")
+    customerId: ID! @nodeId(typeName: "Customer")
+}
+
 # The child-position sibling: a filter input the correlated routine's argument-sourced parameter
 # reaches through a dot-path, so the descent is exercised off a SelectedField rather than env.
 input ActorFilmFilter {
@@ -4643,6 +4662,64 @@ type Mutation {
             name: "create_secure_note"
             argMapping: "pOwner: owner, pNote: note"
         )
+
+    # A routine write whose re-read crosses two hops: rent_film's rental key anchors the read and
+    # the rental -> customer foreign key carries it on to the renting customer.
+    rentFilmCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}, {table: "customer"}])
+
+    # The same chain with a filter on its tail hop: only an active customer is read back, while the
+    # write commits whatever the filter keeps.
+    rentFilmActiveCustomer(inventoryId: Int!, customerId: Int!): [Customer!]!
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}, {table: "customer", condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+            method: "customerIsActive"}}])
+
+    # The single-valued chain: the field returns one rental rather than a list.
+    rentFilmSingle(inventoryId: Int!, customerId: Int!): Rental
+        @routine(
+            name: "rent_film"
+            argMapping: "pInventoryId: inventoryId, pCustomerId: customerId"
+        )
+        @reference(path: [{table: "rental"}])
+
+    # The list-valued carrier: two rentals captured, both re-read by the payload's data field.
+    rentFilms(firstInventoryId: Int!, secondInventoryId: Int!, customerId: Int!): RentFilmsPayload
+        @routine(
+            name: "rent_films"
+            argMapping: "pFirstInventoryId: firstInventoryId, pSecondInventoryId: secondInventoryId, pCustomerId: customerId"
+        )
+
+    # Composite captured key, in both forms: the chain re-reads email by (mailbox_id, message_no)
+    # off the routine's result, the carrier captures both columns for its data field.
+    postEmail(mailboxId: Int!, messageNo: Int!, subject: String!): [Email!]!
+        @routine(
+            name: "post_email"
+            argMapping: "pMailboxId: mailboxId, pMessageNo: messageNo, pSubject: subject"
+        )
+        @reference(path: [{table: "email"}])
+    postEmailPayload(mailboxId: Int!, messageNo: Int!, subject: String!): PostEmailPayload
+        @routine(
+            name: "post_email"
+            argMapping: "pMailboxId: mailboxId, pMessageNo: messageNo, pSubject: subject"
+        )
+
+    # An authored and an inferred node-id projection at one coordinate: filmId spells the column it
+    # opens, customerId leaves it to Customer's one-column key. Each parameter must get its own key.
+    rentFilmCopy(input: RentFilmCopyInput!): [Rental!]!
+        @routine(
+            name: "rent_film_copy"
+            argMapping: "pFilmId: input.filmId.film_id, pCustomerId: input.customerId"
+        )
+        @reference(path: [{table: "rental"}])
 
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$project>).fetchOne(r -> r)`.

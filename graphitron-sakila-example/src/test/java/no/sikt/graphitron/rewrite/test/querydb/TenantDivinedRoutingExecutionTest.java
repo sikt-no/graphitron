@@ -64,6 +64,8 @@ class TenantDivinedRoutingExecutionTest {
         no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures.TENANT_ENDORSEMENT_NOTE;
     /** The note this class's global-write case writes under, told apart from the read fixture's. */
     static final String WRITTEN_ENDORSEMENT_NOTE = ENDORSEMENT_NOTE + " (global write)";
+    /** The note this class's global routine write writes under. */
+    static final String ROUTINE_ENDORSEMENT_NOTE = ENDORSEMENT_NOTE + " (global routine write)";
     /** Bookmarks of each tenant's film. */
     static final String ROUTED_BOOKMARK_NOTE = "parent-row tenant fixture (routed)";
     /** A bookmark of no film, whose reference names no tenant. */
@@ -142,7 +144,8 @@ class TenantDivinedRoutingExecutionTest {
 
         // Global endorsements on the default source, one of each tenant's film, told apart from
         // concurrent classes' rows by the fixture note.
-        dsl.execute("delete from film_endorsement where note in (?, ?)", ENDORSEMENT_NOTE, WRITTEN_ENDORSEMENT_NOTE);
+        dsl.execute("delete from film_endorsement where note in (?, ?, ?)", ENDORSEMENT_NOTE,
+            WRITTEN_ENDORSEMENT_NOTE, ROUTINE_ENDORSEMENT_NOTE);
         dsl.execute("insert into film_endorsement (endorsed_film, note) values (1, ?), (2, ?)",
             ENDORSEMENT_NOTE, ENDORSEMENT_NOTE);
         dsl.execute("delete from film_bookmark where note in (?, ?)", ROUTED_BOOKMARK_NOTE, UNSET_BOOKMARK_NOTE);
@@ -162,8 +165,8 @@ class TenantDivinedRoutingExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) {
-            dsl.execute("delete from film_endorsement where note in (?, ?)", ENDORSEMENT_NOTE,
-                WRITTEN_ENDORSEMENT_NOTE);
+            dsl.execute("delete from film_endorsement where note in (?, ?, ?)", ENDORSEMENT_NOTE,
+                WRITTEN_ENDORSEMENT_NOTE, ROUTINE_ENDORSEMENT_NOTE);
             dsl.execute("delete from film_bookmark where note in (?, ?)", ROUTED_BOOKMARK_NOTE,
                 UNSET_BOOKMARK_NOTE);
             dsl.execute("drop database if exists tenant_1 with (force)");
@@ -797,6 +800,25 @@ class TenantDivinedRoutingExecutionTest {
             assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
         } finally {
             dsl.execute("delete from film_endorsement where note = ?", WRITTEN_ENDORSEMENT_NOTE);
+        }
+    }
+
+    @Test
+    void defaultTenant_aRoutineWriteToAGlobalTable_keepsTheDefaultSource() {
+        // endorse_film exists only in the default database, and the tenant databases hold no
+        // film_endorsement table, so the call or its re-read routed to a tenant would fail.
+        var result = executeWithDefault("mutation { endorseFilm(endorsedFilm: 2, note: \""
+            + ROUTINE_ENDORSEMENT_NOTE + "\") { note } }", List.of(1, 2), 2);
+        try {
+            assertThat((List<Map<String, Object>>) data(result, "endorseFilm"))
+                .extracting(e -> e.get("note"))
+                .containsExactly(ROUTINE_ENDORSEMENT_NOTE);
+            assertThat(dsl.fetch("select endorsed_film from film_endorsement where note = ?",
+                    ROUTINE_ENDORSEMENT_NOTE).getValues(0, Integer.class))
+                .as("the row landed on the default source").containsExactly(2);
+            assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get()).isZero();
+        } finally {
+            dsl.execute("delete from film_endorsement where note = ?", ROUTINE_ENDORSEMENT_NOTE);
         }
     }
 

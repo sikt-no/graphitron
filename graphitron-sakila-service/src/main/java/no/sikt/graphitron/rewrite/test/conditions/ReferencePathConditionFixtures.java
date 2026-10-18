@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FilmActor;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Rental;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterParent;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.SplitFilterTarget;
 import org.jooq.Condition;
@@ -87,6 +88,15 @@ public final class ReferencePathConditionFixtures {
      */
     public static Condition actorIsNotEd(FilmActor filmActor, Actor actor) {
         return actor.FIRST_NAME.ne("ED");
+    }
+
+    /**
+     * Hop-filter fixture: the {@code condition:} half of a {@code {table:, condition:}} hop from
+     * {@code rental} to {@code customer}, keeping only active customers. The foreign key still joins
+     * the hop; this narrows it, so a rental to an inactive customer reaches no row.
+     */
+    public static Condition customerIsActive(Rental rental, Customer customer) {
+        return customer.ACTIVEBOOL.isTrue();
     }
 
     /**
