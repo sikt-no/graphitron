@@ -24,7 +24,6 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 
@@ -161,7 +160,8 @@ public final class ConditionGlueRenderer {
         // projection the sink contributes nothing and this emits exactly what the loop used to.
         var bindingLocals = new ArrayList<CodeBlock>();
         for (var binding : bindings) {
-            bindingLocals.add(extractionExpr(binding.param(), jooqTableClass, liftLocals, hosts, keys));
+            bindingLocals.add(extractionExpr(binding.param(), ValueTable.of(binding, jooqTableClass),
+                liftLocals, hosts, keys));
         }
         builder.addCode(keys.declarations());
         for (int i = 0; i < bindings.size(); i++) {
@@ -187,21 +187,30 @@ public final class ConditionGlueRenderer {
         return builder.build();
     }
 
-    /** The method's binding set in first-occurrence order; equal params share one declared local. */
+    /**
+     * The method's binding set in first-occurrence order; equal params share one declared local.
+     * A shared local takes the reached table of whichever occurrence names one: an authored
+     * predicate's binding never knows a generated term's reach, and the value both read is the
+     * same column's.
+     */
     private static List<ArgBinding> distinctBindings(List<Predicate> predicates) {
-        var seen = new LinkedHashSet<String>();
-        var out = new ArrayList<ArgBinding>();
+        var byLocal = new LinkedHashMap<String, ArgBinding>();
+        java.util.function.Consumer<ArgBinding> add = b -> byLocal.merge(b.localName(), b, (kept, next) -> {
+            if (kept.reachedTable().isPresent() && next.reachedTable().isPresent()
+                    && !kept.reachedTable().equals(next.reachedTable())) {
+                throw new IllegalStateException("glue local '" + kept.localName() + "' is read off "
+                    + kept.reachedTable().get().tableName() + " and " + next.reachedTable().get().tableName()
+                    + "; one call param binds one column");
+            }
+            return kept.reachedTable().isPresent() ? kept : next.reachedTable().isPresent() ? next : kept;
+        });
         for (var predicate : predicates) {
             switch (predicate) {
-                case Predicate.Generated generated -> generated.terms().forEach(t -> {
-                    if (seen.add(t.binding().localName())) out.add(t.binding());
-                });
-                case Predicate.Authored authored -> authored.bindings().forEach(b -> {
-                    if (seen.add(b.localName())) out.add(b);
-                });
+                case Predicate.Generated generated -> generated.terms().forEach(t -> add.accept(t.binding()));
+                case Predicate.Authored authored -> authored.bindings().forEach(add);
             }
         }
-        return out;
+        return List.copyOf(byLocal.values());
     }
 
     // ------------------------------------------------------------------------------------------
@@ -552,7 +561,22 @@ public final class ConditionGlueRenderer {
         return null;
     }
 
-    private static CodeBlock extractionExpr(CallParam param, TypeName jooqTableClass,
+    /**
+     * The table a binding's values are lifted against: its {@link ArgBinding#reachedTable()} when the
+     * term reaches one, read through the unaliased catalog constant, otherwise the glue's own
+     * {@code table}. An unaliased constant is sound because every read through it takes only a
+     * column's {@code DataType}, which no alias changes.
+     */
+    private record ValueTable(TypeName tableClass, CodeBlock expr) {
+        static ValueTable of(ArgBinding binding, TypeName jooqTableClass) {
+            return binding.reachedTable()
+                .map(t -> new ValueTable(CatalogRefs.tableClass(t),
+                    CodeBlock.of("$T.$L", CatalogRefs.constantsClass(t), t.javaFieldName())))
+                .orElseGet(() -> new ValueTable(jooqTableClass, CodeBlock.of("table")));
+        }
+    }
+
+    private static CodeBlock extractionExpr(CallParam param, ValueTable valueTable,
             Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
         return switch (param.extraction()) {
             case CallSiteExtraction.Direct ignored ->
@@ -564,16 +588,16 @@ public final class ConditionGlueRenderer {
             }
             case CallSiteExtraction.JooqConvert jc -> param.list()
                 ? CodeBlock.of("args.get($S) instanceof $T<?> keys"
-                        + " ? keys.stream().map(k -> $T.val(k, table.$L.getDataType()).getValue()).toList() : null",
-                    param.name(), LIST, DSL, jc.columnJavaName())
-                : CodeBlock.of("$T.val(args.get($S), table.$L.getDataType()).getValue()",
-                    DSL, param.name(), jc.columnJavaName());
+                        + " ? keys.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList() : null",
+                    param.name(), LIST, DSL, valueTable.expr(), jc.columnJavaName())
+                : CodeBlock.of("$T.val(args.get($S), $L.$L.getDataType()).getValue()",
+                    DSL, param.name(), valueTable.expr(), jc.columnJavaName());
             case CallSiteExtraction.NodeIdDecodeKeys nidk ->
                 decodeCall(hosts.decodes(), nidk, decodesList(param), CodeBlock.of("args.get($S)", param.name()));
             case CallSiteExtraction.NestedInputField nif ->
-                nestedExtraction(nif, param, jooqTableClass, liftLocals, hosts, keys);
+                nestedExtraction(nif, param, valueTable, liftLocals, hosts, keys);
             case CallSiteExtraction.ElementRows rows ->
-                rowsCall(hosts.elementRows(), rows, param, jooqTableClass,
+                rowsCall(hosts.elementRows(), rows, param, valueTable,
                     CodeBlock.of("args.get($S)", param.name()));
             // Request context is not in the args map: the local reads through the class's own
             // graphitronContext(env) helper, whose need the collector records so the drain and
@@ -618,14 +642,14 @@ public final class ConditionGlueRenderer {
 
     /**
      * The row-read helper call for a filter field typed as a list of input objects: the helper takes
-     * the uncast wire list and the aliased table, as the decode arm hands its descent to the decode
-     * helper.
+     * the uncast wire list and the table the cells' columns belong to (the glue's own, or a reach's
+     * terminal table), as the decode arm hands its descent to the decode helper.
      */
     private static CodeBlock rowsCall(ElementRowsHelperRegistry registry,
-            CallSiteExtraction.ElementRows rows, CallParam param, TypeName jooqTableClass,
+            CallSiteExtraction.ElementRows rows, CallParam param, ValueTable valueTable,
             CodeBlock wireExpr) {
-        return CodeBlock.of("$L($L, table)", registry.register(param.name(), jooqTableClass, rows),
-            wireExpr);
+        return CodeBlock.of("$L($L, $L)", registry.register(param.name(), valueTable.tableClass(), rows),
+            wireExpr, valueTable.expr());
     }
 
     /**
@@ -651,7 +675,7 @@ public final class ConditionGlueRenderer {
      * casts to the declared type.
      */
     private static CodeBlock nestedExtraction(CallSiteExtraction.NestedInputField nif, CallParam param,
-            TypeName jooqTableClass, Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
+            ValueTable valueTable, Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
         if (nif.leaf() instanceof CallSiteExtraction.ContextArg) {
             // The resolver keeps context params bare when it rewraps a nested condition's value
             // params (ConditionResolver.rewrapForNested), so this leaf shape is unconstructable;
@@ -683,7 +707,7 @@ public final class ConditionGlueRenderer {
         // A list of input objects at the end of the descent: the row helper takes the uncast list
         // the descent finds. A projected key names a column below a @nodeId, never a list level.
         if (nif.leaf() instanceof CallSiteExtraction.ElementRows rows) {
-            return rowsCall(hosts.elementRows(), rows, param, jooqTableClass,
+            return rowsCall(hosts.elementRows(), rows, param, valueTable,
                 WireMapChain.of(root, nif.path(), null, lifted));
         }
 
@@ -716,10 +740,11 @@ public final class ConditionGlueRenderer {
             CodeBlock chain = WireMapChain.of(root, nif.path(), null, lifted);
             if (param.list()) {
                 return CodeBlock.of(
-                    "$L instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, table.$L.getDataType()).getValue()).toList() : null",
-                    chain, LIST, DSL, jc.columnJavaName());
+                    "$L instanceof $T<?> keys ? keys.stream().map(k -> $T.val(k, $L.$L.getDataType()).getValue()).toList() : null",
+                    chain, LIST, DSL, valueTable.expr(), jc.columnJavaName());
             }
-            return CodeBlock.of("$T.val($L, table.$L.getDataType()).getValue()", DSL, chain, jc.columnJavaName());
+            return CodeBlock.of("$T.val($L, $L.$L.getDataType()).getValue()", DSL, chain, valueTable.expr(),
+                jc.columnJavaName());
         }
         return WireMapChain.of(root, nif.path(), localType(param), lifted);
     }

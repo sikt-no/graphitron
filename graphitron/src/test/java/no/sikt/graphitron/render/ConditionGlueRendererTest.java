@@ -1,10 +1,23 @@
 package no.sikt.graphitron.render;
 
+import graphql.schema.FieldCoordinates;
+import no.sikt.graphitron.command.ArgBinding;
+import no.sikt.graphitron.command.ColumnTerm;
+import no.sikt.graphitron.command.ConditionCommand;
+import no.sikt.graphitron.command.KeyProjectionRelation;
+import no.sikt.graphitron.command.MatchKind;
+import no.sikt.graphitron.command.Predicate;
 import no.sikt.graphitron.command.ReachPath;
+import no.sikt.graphitron.command.UnitMethodRef;
+import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.rewrite.model.CallParam;
+import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.model.jooq.TableRef;
@@ -137,5 +150,56 @@ class ConditionGlueRendererTest {
         var reach = new ReachPath(List.of(fkHop(null)));
         var code = ConditionGlueRenderer.reachExists(reach, List.of("table_fkt0_0"), INNER).toString();
         assertThat(code).contains(".where(table_fkt0_0.FILM_ID.eq(table.FILM_ID).and(inner()))");
+    }
+
+    // ===== List-of-input row reads: the helper's table is the cells' table =====
+
+    @Test
+    void reachedListLevel_declaresItsRowHelperOverTheTerminalTable() {
+        // A reached level's cells name actor's columns, which film_actor's class does not have, so
+        // the helper must take actor's class; what the call passes is pinned by compilation.
+        var firstName = TestFixtures.col("first_name", "FIRST_NAME", "java.lang.String");
+        var lastName = TestFixtures.col("last_name", "LAST_NAME", "java.lang.String");
+        var rows = new CallSiteExtraction.ElementRows(List.of(
+            new CallSiteExtraction.Cell(List.of("firstName"), firstName, new CallSiteExtraction.Direct()),
+            new CallSiteExtraction.Cell(List.of("lastName"), lastName, new CallSiteExtraction.Direct())));
+        var reached = new ArgBinding(new CallParam("names", rows, true, "org.jooq.Row2"), "names")
+            .reachedAt(ACTOR);
+        var term = new ColumnTerm(List.of(firstName, lastName), MatchKind.MEMBERSHIP, false, reached,
+            new ReachPath(List.of(actorFkHop())));
+
+        var helper = rowHelperOf(render(term));
+        assertThat(helper.parameters().get(1).type()).isEqualTo(CatalogRefs.tableClass(ACTOR));
+    }
+
+    @Test
+    void ownTableListLevel_declaresItsRowHelperOverTheGluesTable() {
+        var rows = new CallSiteExtraction.ElementRows(List.of(
+            new CallSiteExtraction.Cell(List.of("actorId"), ACTOR_ID, new CallSiteExtraction.Direct()),
+            new CallSiteExtraction.Cell(List.of("filmId"), FILM_ID, new CallSiteExtraction.Direct())));
+        var own = new ArgBinding(new CallParam("pairs", rows, true, "org.jooq.Row2"), "pairs");
+        var term = new ColumnTerm(List.of(ACTOR_ID, FILM_ID), MatchKind.MEMBERSHIP, false, own,
+            ReachPath.none());
+
+        var helper = rowHelperOf(render(term));
+        assertThat(helper.parameters().get(1).type()).isEqualTo(CatalogRefs.tableClass(FILM_ACTOR));
+    }
+
+    private static TypeSpec render(ColumnTerm term) {
+        var row = new ConditionCommand(FieldCoordinates.coordinates("Query", "filmActors"), FILM_ACTOR,
+            List.of(new Predicate.Generated(List.of(term))),
+            new UnitMethodRef(new UnitRef("fake.code.generated.conditions", "QueryConditions"),
+                "filmActorsCondition"),
+            List.of(), List.of());
+        var classes = ConditionGlueRenderer.render(List.of(row), "fake.code.generated",
+            KeyProjectionRelation.empty());
+        assertThat(classes).hasSize(1);
+        return classes.get(0);
+    }
+
+    private static MethodSpec rowHelperOf(TypeSpec conditions) {
+        var helpers = conditions.methodSpecs().stream().filter(m -> m.name().endsWith("Rows")).toList();
+        assertThat(helpers).hasSize(1);
+        return helpers.get(0);
     }
 }

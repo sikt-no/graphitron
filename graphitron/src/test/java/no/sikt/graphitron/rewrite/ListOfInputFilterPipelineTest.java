@@ -16,6 +16,7 @@ import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableType;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
@@ -34,6 +35,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * reading the wire list through {@link CallSiteExtraction.ElementRows}. Before this, each element
  * field classified as an independent scalar {@code .eq} whose read treated the list as one
  * {@code Map}, so the filter was silently dropped.
+ *
+ * <p>When every element field reaches its column through one {@code @reference} path, the
+ * row-{@code IN} is wrapped in a {@link BodyParam.RemoteColumnPredicate} over that path, compared
+ * against the terminal table's columns.
  *
  * <p>An element the row cannot express is a located diagnostic at the offending element field's
  * own coordinate, carrying the occurrence path, and the consuming field keeps one consequence
@@ -191,7 +196,232 @@ class ListOfInputFilterPipelineTest {
                 new CallSiteExtraction.NestedInputField("filter", List.of("pairs", "filmId")));
     }
 
+    // ===== Reached levels: every cell on one @reference path =====
+
+    private static final String ACTOR_KEY = "@reference(path: [{key: \"film_actor_actor_id_fkey\"}])";
+
+    @Test
+    void twoCellReachedElement_classifiesAsOneRemoteColumnPredicate() {
+        var schema = build("""
+            input NameInput {
+                firstName: String! @field(name: "first_name") %s
+                lastName: String! @field(name: "last_name") %s
+            }
+            input NameFilter { names: [NameInput] }
+            """.formatted(ACTOR_KEY, ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: NameFilter): [FilmActor!]! }
+            """);
+
+        var params = bodyParams(schema, "filmActors");
+        assertThat(params).as("one predicate for the list, none per field").hasSize(1);
+        var remote = (BodyParam.RemoteColumnPredicate) params.get(0);
+        assertThat(remote.joinPath()).extracting(s -> ((JoinStep.Hop) s).targetTable().tableName())
+            .containsExactly("actor");
+        var rowIn = (BodyParam.RowIn) remote.inner();
+        assertThat(rowIn.columns()).extracting(c -> c.sqlName()).containsExactly("first_name", "last_name");
+        var nif = (CallSiteExtraction.NestedInputField) rowIn.extraction();
+        assertThat(nif.path()).containsExactly("names");
+        var rows = (CallSiteExtraction.ElementRows) nif.leaf();
+        assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::path)
+            .containsExactly(List.of("firstName"), List.of("lastName"));
+    }
+
+    @Test
+    void oneCellReachedElement_classifiesAsRemoteIn() {
+        var schema = build("""
+            input NameInput { firstName: String! @field(name: "first_name") %s }
+            input NameFilter { names: [NameInput!] }
+            """.formatted(ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: NameFilter): [FilmActor!]! }
+            """);
+
+        var remote = (BodyParam.RemoteColumnPredicate) single(bodyParams(schema, "filmActors"));
+        var in = (BodyParam.In) remote.inner();
+        assertThat(in.column().sqlName()).isEqualTo("first_name");
+        assertThat(CallSiteExtraction.ElementRows.of(in.extraction()).cells()).hasSize(1);
+    }
+
+    @Test
+    void multiHopReach_carriesBothHops() {
+        String path = "@reference(path: [{key: \"film_actor_film_id_fkey\"}, {key: \"film_language_id_fkey\"}])";
+        var schema = build("""
+            input LanguageInput {
+                name: String! @field(name: "name") %s
+                languageId: Int! @field(name: "language_id") %s
+            }
+            input LanguageFilter { languages: [LanguageInput] }
+            """.formatted(path, path) + FILM_ACTOR + """
+            type Query { filmActors(filter: LanguageFilter): [FilmActor!]! }
+            """);
+
+        var remote = (BodyParam.RemoteColumnPredicate) single(bodyParams(schema, "filmActors"));
+        assertThat(remote.joinPath()).extracting(s -> ((JoinStep.Hop) s).targetTable().tableName())
+            .containsExactly("film", "language");
+        assertThat(((BodyParam.RowIn) remote.inner()).columns()).extracting(c -> c.sqlName())
+            .containsExactly("name", "language_id");
+    }
+
+    @Test
+    void sameForeignKeySpelledTwoWays_isOneReach() {
+        // Each field mints its own hop aliases, and the table form infers the key the other cell
+        // names, so neither the alias nor the spelling may decide reach equality.
+        var schema = build("""
+            input NameInput {
+                firstName: String! @field(name: "first_name") @reference(path: [{table: "actor"}])
+                lastName: String! @field(name: "last_name") %s
+            }
+            input NameFilter { names: [NameInput] }
+            """.formatted(ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: NameFilter): [FilmActor!]! }
+            """);
+
+        var remote = (BodyParam.RemoteColumnPredicate) single(bodyParams(schema, "filmActors"));
+        assertThat(remote.inner()).isInstanceOf(BodyParam.RowIn.class);
+        assertThat(schema.diagnostics()).isEmpty();
+    }
+
+    @Test
+    void reachedListTypedArgument_wrapsABareElementRows() {
+        var schema = build("""
+            input NameInput {
+                firstName: String! @field(name: "first_name") %s
+                lastName: String! @field(name: "last_name") %s
+            }
+            """.formatted(ACTOR_KEY, ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(names: [NameInput!]): [FilmActor!]! }
+            """);
+
+        var remote = (BodyParam.RemoteColumnPredicate) single(bodyParams(schema, "filmActors"));
+        assertThat(remote.extraction()).isInstanceOf(CallSiteExtraction.ElementRows.class);
+    }
+
+    @Test
+    void idTypedReachedCell_readsThroughJooqConvert() {
+        var schema = build("""
+            input NameInput {
+                actorId: ID! @field(name: "actor_id") %s
+                lastName: String! @field(name: "last_name") %s
+            }
+            input NameFilter { names: [NameInput] }
+            """.formatted(ACTOR_KEY, ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: NameFilter): [FilmActor!]! }
+            """);
+
+        var remote = (BodyParam.RemoteColumnPredicate) single(bodyParams(schema, "filmActors"));
+        var cells = CallSiteExtraction.ElementRows.of(remote.extraction()).cells();
+        assertThat(cells.get(0).leaf()).isEqualTo(new CallSiteExtraction.JooqConvert("ACTOR_ID"));
+        assertThat(cells.get(1).leaf()).isInstanceOf(CallSiteExtraction.Direct.class);
+    }
+
+    @Test
+    void emptyPathReferenceCell_joinsAnOwnTableLevel() {
+        var schema = build("""
+            input PairInput {
+                actorId: Int! @field(name: "actor_id")
+                filmId: Int! @field(name: "film_id") @reference(path: [])
+            }
+            input PairFilter { pairs: [PairInput] }
+            """ + FILM_ACTOR + """
+            type Query { filmActors(filter: PairFilter): [FilmActor!]! }
+            """);
+
+        var rowIn = (BodyParam.RowIn) single(bodyParams(schema, "filmActors"));
+        assertThat(rowIn.columns()).extracting(c -> c.sqlName()).containsExactly("actor_id", "film_id");
+    }
+
+    @Test
+    void differentReaches_areRejectedAtTheSecondCell() {
+        var schema = build("""
+            input PairInput {
+                lastName: String! @field(name: "last_name") %s
+                title: String! @field(name: "title") @reference(path: [{key: "film_actor_film_id_fkey"}])
+            }
+            input PairFilter { pairs: [PairInput] }
+            """.formatted(ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: PairFilter): [FilmActor!]! }
+            """);
+        assertLocated(schema, "PairInput.title", "Query.filmActors(filter)/pairs/title");
+        assertThat(diagnosticsAt(schema, "PairInput.lastName")).isEmpty();
+        assertThat(diagnosticsAt(schema, "PairInput.title")).singleElement()
+            .satisfies(d -> assertThat(d.message())
+                .contains("reached through a different @reference path than element field 'lastName'"));
+    }
+
+    @Test
+    void ownTableCellFollowedByReachedCell_isRejectedAtTheReachedCell() {
+        var schema = build("""
+            input PairInput {
+                filmId: Int! @field(name: "film_id")
+                lastName: String! @field(name: "last_name") %s
+            }
+            input PairFilter { pairs: [PairInput] }
+            """.formatted(ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: PairFilter): [FilmActor!]! }
+            """);
+        assertLocated(schema, "PairInput.lastName", "Query.filmActors(filter)/pairs/lastName");
+        assertThat(diagnosticsAt(schema, "PairInput.filmId")).isEmpty();
+    }
+
+    @Test
+    void reachedCellFollowedByOwnTableCell_isRejectedAtTheOwnTableCell() {
+        var schema = assertRejected(
+            "actorId: String! @field(name: \"first_name\") " + ACTOR_KEY, "PairInput.filmId", "pairs/filmId");
+        assertThat(diagnosticsAt(schema, "PairInput.actorId")).isEmpty();
+        assertThat(diagnosticsAt(schema, "PairInput.filmId")).singleElement()
+            .satisfies(d -> assertThat(d.message()).contains("on the field's own table"));
+    }
+
+    @Test
+    void nullableReachedCell_isRejected() {
+        assertRejected("actorId: String @field(name: \"first_name\") " + ACTOR_KEY,
+            "PairInput.actorId", "pairs/actorId");
+    }
+
+    @Test
+    void reachedElementFieldSlots_recordTheTerminalColumnInTheColumnBindingLedger() {
+        String sdl = """
+            input NameInput {
+                firstName: String! @field(name: "first_name") %s
+                lastName: String! @field(name: "last_name") %s
+            }
+            input NameFilter { names: [NameInput] }
+            """.formatted(ACTOR_KEY, ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: NameFilter): [FilmActor!]! }
+            """;
+        build(sdl);
+        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var table = ((TableType) bundle.model().type("FilmActor")).table();
+        var slots = bundle.columnBindings().slotsAt(FieldCoordinates.coordinates("Query", "filmActors"), table);
+        assertThat(slots).extracting(ColumnBindingLedger.ColumnBoundSlot::slotName)
+            .containsExactly("firstName", "lastName");
+        assertThat(slots).flatExtracting(ColumnBindingLedger.ColumnBoundSlot::columns)
+            .extracting(c -> c.sqlName()).containsExactly("first_name", "last_name");
+        assertThat(slots).extracting(ColumnBindingLedger.ColumnBoundSlot::extraction)
+            .containsExactly(
+                new CallSiteExtraction.NestedInputField("filter", List.of("names", "firstName")),
+                new CallSiteExtraction.NestedInputField("filter", List.of("names", "lastName")));
+    }
+
     // ===== Suppression =====
+
+    @Test
+    void enclosingOverride_suppressesDifferentReachesWithoutRejection() {
+        var schema = build("""
+            input PairInput {
+                lastName: String! @field(name: "last_name") %s
+                title: String! @field(name: "title") @reference(path: [{key: "film_actor_film_id_fkey"}])
+            }
+            input PairFilter { pairs: [PairInput] }
+            """.formatted(ACTOR_KEY) + FILM_ACTOR + """
+            type Query {
+                filmActors(filter: PairFilter @condition(condition: {className: "%s", method: "lifterFieldCondition"}, override: true)): [FilmActor!]!
+            }
+            """.formatted(STUB));
+
+        assertThat(schema.field("Query", "filmActors")).isInstanceOf(QueryField.QueryTableField.class);
+        assertThat(bodyParams(schema, "filmActors")).isEmpty();
+        assertThat(diagnosticsAt(schema, "PairInput.title")).isEmpty();
+    }
 
     @Test
     void enclosingOverride_suppressesTheListLevelWithoutRejection() {
@@ -311,13 +541,6 @@ class ListOfInputFilterPipelineTest {
             type Query { filmActors(filter: PairFilter): [FilmActor!]! }
             """);
         assertLocated(schema, "PairInput.film", "Query.filmActors(filter)/pairs/film");
-    }
-
-    @Test
-    void referenceElementField_isRejected() {
-        assertRejected(
-            "actorId: String! @field(name: \"first_name\") @reference(path: [{key: \"film_actor_actor_id_fkey\"}])",
-            "PairInput.actorId", "pairs/actorId");
     }
 
     @Test

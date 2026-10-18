@@ -4,6 +4,7 @@ import no.sikt.graphitron.rewrite.model.BodyParam;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.GeneratedConditionFilter;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.ParticipantFilters;
 import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -139,6 +140,44 @@ class MultiTableFilterLoweringTest {
                 var rowIn = (BodyParam.RowIn) bp;
                 assertThat(rowIn.columns()).extracting(c -> c.sqlName())
                     .containsExactly("first_name", "last_name");
+                assertThat(CallSiteExtraction.ElementRows.of(rowIn.extraction())).isNotNull();
+            });
+        }
+    }
+
+    @Test
+    void reachedListOfInputFilter_lowersPerParticipantAsRemoteRowIn() {
+        // The reached twin of the case above: every element field reaches address through the
+        // participant's own foreign key, so each participant lowers to one correlated EXISTS over
+        // its own path, comparing address's columns as a row.
+        var schema = TestSchemaHelper.buildSchema(CUSTOMER_STAFF + """
+            input AddressInput {
+                district: String! @field(name: "district") @reference(path: [{table: "address"}])
+                cityId: Int! @field(name: "city_id") @reference(path: [{table: "address"}])
+            }
+            input OccupantFilter { addresses: [AddressInput!] }
+            union Occupant = Customer | Staff
+            type Query {
+                occupants(filter: OccupantFilter): [Occupant!]!
+            }
+            """);
+        var union = (QueryField.QueryUnionField) schema.field("Query", "occupants");
+        assertThat(union.participantFilters()).hasSize(2);
+        for (var pf : union.participantFilters()) {
+            var gcf = pf.filters().stream()
+                .filter(GeneratedConditionFilter.class::isInstance)
+                .map(GeneratedConditionFilter.class::cast)
+                .findFirst().orElseThrow();
+            assertThat(gcf.bodyParams()).singleElement().satisfies(bp -> {
+                var remote = (BodyParam.RemoteColumnPredicate) bp;
+                assertThat(remote.joinPath()).singleElement().satisfies(step -> {
+                    var hop = (JoinStep.Hop) step;
+                    assertThat(hop.originTable().tableName()).isEqualTo(pf.participant().table().tableName());
+                    assertThat(hop.targetTable().tableName()).isEqualTo("address");
+                });
+                var rowIn = (BodyParam.RowIn) remote.inner();
+                assertThat(rowIn.columns()).extracting(c -> c.sqlName())
+                    .containsExactly("district", "city_id");
                 assertThat(CallSiteExtraction.ElementRows.of(rowIn.extraction())).isNotNull();
             });
         }

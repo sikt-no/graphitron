@@ -161,6 +161,39 @@ class ConditionCommandsPipelineTest {
     }
 
     @Test
+    void listOfInputLevels_bindingNamesTheTableItsCellsAreReadOff() {
+        // A reached level's values are lifted at actor's column types, so its binding names actor;
+        // an own-table level's names nothing, and the glue's own table stands.
+        var schema = TestSchemaHelper.buildSchema("""
+            type FilmActor @table(name: "film_actor") { actorId: Int! @field(name: "actor_id") }
+            input NameInput {
+                firstName: String! @field(name: "first_name") @reference(path: [{key: "film_actor_actor_id_fkey"}])
+                lastName: String! @field(name: "last_name") @reference(path: [{key: "film_actor_actor_id_fkey"}])
+            }
+            input PairInput {
+                actorId: Int! @field(name: "actor_id")
+                filmId: Int! @field(name: "film_id")
+            }
+            input FilmActorFilter { names: [NameInput!], pairs: [PairInput!] }
+            type Query { filmActors(filter: FilmActorFilter): [FilmActor!]! }
+            """);
+
+        var row = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE).rows().get(0);
+        var terms = row.predicates().stream()
+            .filter(p -> p instanceof Predicate.Generated)
+            .flatMap(p -> ((Predicate.Generated) p).terms().stream())
+            .toList();
+        assertThat(terms).hasSize(2);
+        var names = terms.get(0);
+        assertThat(names.reach().hops()).extracting(h -> h.targetTable().tableName()).containsExactly("actor");
+        assertThat(names.binding().reachedTable()).hasValueSatisfying(t ->
+            assertThat(t.tableName()).isEqualTo("actor"));
+        var pairs = terms.get(1);
+        assertThat(pairs.reach().isEmpty()).isTrue();
+        assertThat(pairs.binding().reachedTable()).isEmpty();
+    }
+
+    @Test
     void lookupCoordinate_authoredFilterProducesARow() {
         var schema = TestSchemaHelper.buildSchema("""
             type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }

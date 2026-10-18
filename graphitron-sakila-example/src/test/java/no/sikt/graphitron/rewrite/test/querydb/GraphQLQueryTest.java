@@ -4574,6 +4574,83 @@ class GraphQLQueryTest {
             .containsExactly("1/1", "3/2");
     }
 
+    @SuppressWarnings("unchecked")
+    private List<String> names(String field, String argument, String nameField) {
+        Map<String, Object> data = execute("{ " + field + argument + " { " + nameField + " } }");
+        var rows = (List<Map<String, Object>>) data.get(field);
+        return rows.stream().map(r -> (String) r.get(nameField)).sorted().toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private List<Integer> filmIds(String argument) {
+        Map<String, Object> data = execute("{ filmsByCastNames" + argument + " { filmId } }");
+        var rows = (List<Map<String, Object>>) data.get("filmsByCastNames");
+        return rows.stream().map(r -> (Integer) r.get("filmId")).sorted().toList();
+    }
+
+    private static final List<String> ALL_CUSTOMERS =
+        List.of("Barbara", "Elizabeth", "Linda", "Mary", "Patricia");
+
+    @Test
+    void reachedListOfInputFilter_matchesCustomersWhoseAddressEqualsAnElement() {
+        // (district, city_id) IN (...) on the joined address row. Alberta is city 1 (addresses 1
+        // and 3), Lazio city 2 and Tasmania city 1, so only the first element names an address.
+        // Comparing the fields independently would admit every customer.
+        assertThat(names("customersByAddresses", "(filter: {addresses: ["
+            + "{district: \"Alberta\", cityId: \"1\"}, {district: \"Tasmania\", cityId: \"2\"},"
+            + " {district: \"Lazio\", cityId: \"1\"}]})", "firstName"))
+            .containsExactly("Barbara", "Linda", "Mary");
+    }
+
+    @Test
+    void reachedListOfInputFilter_singleObjectIsCoercedToOneElement() {
+        assertThat(names("customersByAddresses",
+            "(filter: {addresses: {district: \"Lazio\", cityId: \"2\"}})", "firstName"))
+            .containsExactly("Elizabeth", "Patricia");
+    }
+
+    @Test
+    void reachedListOfInputFilter_emptyNullOrAbsentListAppliesNoFilter() {
+        assertThat(names("customersByAddresses", "(filter: {addresses: []})", "firstName"))
+            .isEqualTo(ALL_CUSTOMERS);
+        assertThat(names("customersByAddresses", "(filter: {addresses: null})", "firstName"))
+            .isEqualTo(ALL_CUSTOMERS);
+        assertThat(names("customersByAddresses", "", "firstName")).isEqualTo(ALL_CUSTOMERS);
+    }
+
+    @Test
+    void reachedListOfInputFilter_nullElementMatchesNothing() {
+        assertThat(names("customersByAddresses",
+            "(filter: {addresses: [{district: \"Lazio\", cityId: \"2\"}, null]})", "firstName"))
+            .containsExactly("Elizabeth", "Patricia");
+        assertThat(names("customersByAddresses", "(filter: {addresses: [null]})", "firstName")).isEmpty();
+    }
+
+    @Test
+    void reachedScalarIdFilter_readsTheTerminalColumn() {
+        // The single-valued twins: an ID lifted at address.city_id's type, as an argument and as
+        // a nested input field.
+        assertThat(names("customersByCityId", "(cityId: \"2\")", "firstName"))
+            .containsExactly("Elizabeth", "Patricia");
+        assertThat(names("customersByCityFilter", "(filter: {cityId: \"2\"})", "firstName"))
+            .containsExactly("Elizabeth", "Patricia");
+    }
+
+    @Test
+    void reachedListOfInputFilter_oneReachedRowMustMatchTheWholeElement() {
+        // Film 1's cast holds a PENELOPE GUINESS and a NICK WAHLBERG, but no PENELOPE WAHLBERG.
+        // One EXISTS per field would return film 1.
+        assertThat(filmIds("(names: [{firstName: \"PENELOPE\", lastName: \"WAHLBERG\"}])")).isEmpty();
+    }
+
+    @Test
+    void reachedListOfInputFilter_returnsEachMatchingParentOnce() {
+        // Film 1 matches both elements, through two different cast rows, and comes back once.
+        assertThat(filmIds("(names: [{firstName: \"PENELOPE\", lastName: \"GUINESS\"},"
+            + " {firstName: \"NICK\", lastName: \"WAHLBERG\"}])"))
+            .containsExactly(1, 2, 3, 4);
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void inputFieldCondition_plainInput_outerOverride_preservesInnerExplicitMethod() {

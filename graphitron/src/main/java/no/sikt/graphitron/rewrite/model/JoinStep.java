@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import java.util.Objects;
 import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
@@ -119,6 +120,21 @@ public sealed interface JoinStep permits JoinStep.Hop {
                 case TableExpr.Catalog c -> c.table();
                 case TableExpr.RoutineCall rc -> rc.resultTable();
             };
+        }
+
+        /**
+         * Whether {@code other} is the same join as this hop: the same {@link #target()}, joined the
+         * same way ({@link #on()}), from the same {@link #originTable()}, under the same
+         * {@link #filter()}. The {@link #alias()} is left out because it is an emit-side name minted
+         * per field ({@code <fieldName>_<stepIndex>}), so two fields spelling one join carry
+         * different aliases. The authored spelling is already gone from every compared component, so
+         * a {@code {table:}} step and the {@code {key:}} step it infers agree.
+         */
+        public boolean sameJoinAs(Hop other) {
+            return Objects.equals(target, other.target)
+                && Objects.equals(on, other.on)
+                && Objects.equals(originTable, other.originTable)
+                && Objects.equals(filter, other.filter);
         }
     }
 

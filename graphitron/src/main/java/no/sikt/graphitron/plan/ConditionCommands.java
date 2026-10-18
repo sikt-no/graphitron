@@ -245,9 +245,12 @@ public final class ConditionCommands {
                 new ColumnTerm(rin.columns(), MatchKind.MEMBERSHIP, rin.nonNull(), binding, ReachPath.none());
             case BodyParam.RemoteColumnPredicate r -> {
                 var inner = termOf(r.inner(), binding, fieldName);
-                yield new ColumnTerm(inner.columns(), inner.match(), inner.nonNull(), binding,
-                    ReachPath.narrow(r.joinPath(),
-                        fieldName + "'s reference filter '" + r.name() + "'"));
+                var reach = ReachPath.narrow(r.joinPath(),
+                    fieldName + "'s reference filter '" + r.name() + "'");
+                // The inner predicate's columns are the terminal table's, so every read that lifts
+                // the value at a column's DataType reads it there.
+                yield new ColumnTerm(inner.columns(), inner.match(), inner.nonNull(),
+                    binding.reachedAt(reach.hop(reach.size() - 1).targetTable()), reach);
             }
         };
     }

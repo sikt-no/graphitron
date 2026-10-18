@@ -450,6 +450,16 @@ type Query {
     # rows separate. Nested in a filter input, and as the argument itself.
     filmActorsByPairs(filter: FilmActorPairFilter): [FilmActor!]!
     filmActorsByPairList(pairs: [FilmActorPairInput]): [FilmActor!]!
+    # The same row-IN, its element fields all reaching their columns through one @reference
+    # path: one correlated EXISTS over the path, comparing the reached row against the
+    # elements. The filter matches when one reached row equals a whole element, so on the
+    # fanning cast path an element whose names belong to two different actors matches no film.
+    # cityId is an ID over a column customer does not have, so every read lifting it at its
+    # column's type must resolve on address; the two single-valued twins pin the scalar reads.
+    customersByAddresses(filter: CustomerAddressFilter): [Customer!]!
+    filmsByCastNames(names: [FilmCastNameInput!]): [Film!]!
+    customersByCityId(cityId: ID @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])): [Customer!]!
+    customersByCityFilter(filter: CustomerCityFilter): [Customer!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
     # synthesises QueryStoresConnectionType, QueryStoresConnectionEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
@@ -3075,6 +3085,24 @@ input FilmActorPairInput {
 
 input FilmActorPairFilter {
     pairs: [FilmActorPairInput]
+}
+
+input CustomerAddressInput {
+    district: String! @field(name: "district") @reference(path: [{key: "customer_address_id_fkey"}])
+    cityId: ID! @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+input CustomerAddressFilter {
+    addresses: [CustomerAddressInput]
+}
+
+input CustomerCityFilter {
+    cityId: ID @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+input FilmCastNameInput {
+    firstName: String! @field(name: "first_name") @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    lastName: String! @field(name: "last_name") @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
 }
 
 input FilmActorCompositeNodeIdFilter {

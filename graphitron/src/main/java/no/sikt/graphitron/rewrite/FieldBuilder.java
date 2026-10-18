@@ -3429,6 +3429,10 @@ class FieldBuilder {
      * Classifies one list level: the element's fields become the cells of one row-{@code IN}
      * ({@link BodyParam.RowIn} at two or more cells, {@link BodyParam.In} at one) over a
      * {@link CallSiteExtraction.ElementRows} read, so a row matches when it equals any one element.
+     * When every cell reaches its column through one {@code @reference} path, the predicate is
+     * wrapped in a {@link BodyParam.RemoteColumnPredicate} over that path, so one row reached
+     * through it must equal the whole element; cells on different paths, or own-table cells mixed
+     * with reached ones, are refused at the cell that disagrees with the first.
      *
      * <p>Every element field's column slot is recorded exactly as the plain walk records it, ahead
      * of every decision below, so the tenant fold reads the same ledger whatever happens here.
@@ -3473,10 +3477,14 @@ class FieldBuilder {
                     : conditionResolver.rewrapForNested(filter, outerArgName, level.listPath()));
             }
         }
-        var cells = new ArrayList<CallSiteExtraction.Cell>();
+        var collected = new ArrayList<CollectedCell>();
         offending += collectCells(level, elementFields, List.of(), useSiteCoordinate, outerArgName,
-            level.listPath(), suppressed, lookupBoundNames, columnSlots, cells, resolvingTable,
+            level.listPath(), suppressed, lookupBoundNames, columnSlots, collected, resolvingTable,
             containerSummary);
+        if (!suppressed) {
+            offending += checkReachAgreement(level, collected, useSiteCoordinate, outerArgName,
+                containerSummary);
+        }
         if (offending > 0) {
             walkRejections.add(Rejection.structural(listLevelMessage(containerSummary, level.name(),
                 useSiteCoordinate, outerArgName, level.listPath())
@@ -3487,22 +3495,29 @@ class FieldBuilder {
         if (suppressed) {
             return;
         }
-        if (cells.size() > MAX_ROW_DEGREE) {
+        if (collected.size() > MAX_ROW_DEGREE) {
             walkRejections.add(Rejection.structural(listLevelMessage(containerSummary, level.name(),
                 useSiteCoordinate, outerArgName, level.listPath())
-                + " has " + cells.size() + " element fields; a row compares at most "
+                + " has " + collected.size() + " element fields; a row compares at most "
                 + MAX_ROW_DEGREE + " columns"));
             return;
         }
-        var rows = new CallSiteExtraction.ElementRows(cells);
+        var rows = new CallSiteExtraction.ElementRows(
+            collected.stream().map(CollectedCell::cell).toList());
         CallSiteExtraction extraction = level.listPath().isEmpty()
             ? rows
             : new CallSiteExtraction.NestedInputField(outerArgName, level.listPath(), rows);
         var columns = rows.columns();
-        implicitBodyParams.add(columns.size() == 1
+        BodyParam.ColumnPredicate inner = columns.size() == 1
             ? new BodyParam.In(level.name(), columns.get(0), columns.get(0).columnClass(), listNonNull,
                 extraction)
-            : new BodyParam.RowIn(level.name(), columns, listNonNull, extraction));
+            : new BodyParam.RowIn(level.name(), columns, listNonNull, extraction);
+        // The cells agree on one reach (checked above), so the first one's is the level's. A reached
+        // level is one correlated EXISTS whose last conjunct compares the terminal row.
+        var reach = collected.isEmpty() ? List.<JoinStep>of() : collected.get(0).reach();
+        implicitBodyParams.add(reach.isEmpty()
+            ? inner
+            : wrapIfRemote(inner, new FilterBinding.Remote(), reach));
     }
 
     /**
@@ -3516,7 +3531,7 @@ class FieldBuilder {
             String useSiteCoordinate, String outerArgName, List<String> slotPrefix,
             boolean suppressed, Set<String> lookupBoundNames,
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
-            List<CallSiteExtraction.Cell> cells,
+            List<CollectedCell> cells,
             TableRef resolvingTable, String containerSummary) {
         int offending = 0;
         for (var f : fields) {
@@ -3534,29 +3549,24 @@ class FieldBuilder {
                     var column = cf.columns().get(0);
                     var leaf = implicitLeaf(cf.extraction(), cf.typeName(), column);
                     if (cf.isComposite() || leaf instanceof CallSiteExtraction.NodeIdDecodeKeys) {
-                        yield "it carries @nodeId, whose decoded key a row of plain values cannot hold";
+                        yield NODE_ID_IN_ELEMENT;
                     }
-                    if (cf.list()) {
-                        yield "it is itself a list, and one cell of a row holds one value";
-                    }
-                    if (!cf.nonNull()) {
-                        yield "it is nullable; a left-out cell would compare as null and the element"
-                            + " would match no row, so declare it non-null";
-                    }
-                    if (!(leaf instanceof CallSiteExtraction.Direct
-                            || leaf instanceof CallSiteExtraction.JooqConvert
-                            || leaf instanceof CallSiteExtraction.EnumValueOf)) {
-                        yield "its value is read as " + leaf.getClass().getSimpleName()
-                            + ", which a row cell does not take";
-                    }
-                    cells.add(new CallSiteExtraction.Cell(cellPath, column, leaf));
-                    yield null;
+                    yield addCell(cells, f, cf.list(), cf.nonNull(), leafPath, cellPath, column, leaf,
+                        List.of());
                 }
                 case InputField.ColumnBackedReferenceField rf when rf.condition().isPresent() -> CONDITION_IN_ELEMENT;
                 case InputField.ColumnBackedReferenceField rf when suppressed -> null;
-                case InputField.ColumnBackedReferenceField rf ->
-                    "it carries @nodeId or @reference, whose column is reached through a key or a join"
-                        + " a row of plain values cannot express";
+                case InputField.ColumnBackedReferenceField rf -> {
+                    if (rf.extraction() instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                        yield NODE_ID_IN_ELEMENT;
+                    }
+                    // A Remote binding's column is on the reach's terminal table; a Local one (an
+                    // empty-path @reference) binds the filter's own column, as the plain walk does.
+                    var column = predicateColumns(rf.binding(), rf.columns()).get(0);
+                    var reach = rf.binding() instanceof FilterBinding.Remote ? rf.joinPath() : List.<JoinStep>of();
+                    yield addCell(cells, f, rf.list(), rf.nonNull(), leafPath, cellPath, column,
+                        implicitLeaf(rf.extraction(), rf.typeName(), column), reach);
+                }
                 case InputField.ConditionOwnedField cof -> CONDITION_IN_ELEMENT;
                 case InputField.NestingField nf when nf.condition().isPresent() -> CONDITION_IN_ELEMENT;
                 case InputField.NestingField nf when nf.list() && suppressed -> null;
@@ -3590,19 +3600,109 @@ class FieldBuilder {
             };
             if (refusal != null) {
                 offending++;
-                ctx.addDiagnostic(new ValidationError(f.qualifiedName(), Rejection.structural(
-                    containerSummary + ": input field '" + f.name() + "' at occurrence '"
-                    + occurrencePath(useSiteCoordinate, outerArgName, leafPath)
-                    + "' is an element field of list-of-input filter field '" + level.name()
-                    + "', whose elements are compared as rows: " + refusal),
-                    f.location()));
+                mintElementFieldRefusal(level, f, leafPath, refusal, useSiteCoordinate, outerArgName,
+                    containerSummary);
             }
         }
         return offending;
     }
 
+    /**
+     * One cell as the list level collected it: the {@link CallSiteExtraction.Cell} itself, the
+     * {@code reach} (resolved join path) its column is reached through, empty for a column on the
+     * filter's own table, and the element field with its slot path, which a reach disagreement is
+     * located at.
+     */
+    private record CollectedCell(CallSiteExtraction.Cell cell, List<JoinStep> reach, InputField field,
+                                 List<String> leafPath) {}
+
+    /**
+     * The checks every column-bound element field takes, whichever table its column is on; adds the
+     * cell and returns {@code null} when it passes, or returns the refusal.
+     */
+    private static String addCell(List<CollectedCell> cells, InputField field, boolean list,
+            boolean nonNull, List<String> leafPath, List<String> cellPath, ColumnRef column,
+            CallSiteExtraction leaf, List<JoinStep> reach) {
+        if (list) {
+            return "it is itself a list, and one cell of a row holds one value";
+        }
+        if (!nonNull) {
+            return "it is nullable; a left-out cell would compare as null and the element"
+                + " would match no row, so declare it non-null";
+        }
+        if (!(leaf instanceof CallSiteExtraction.Direct
+                || leaf instanceof CallSiteExtraction.JooqConvert
+                || leaf instanceof CallSiteExtraction.EnumValueOf)) {
+            return "its value is read as " + leaf.getClass().getSimpleName()
+                + ", which a row cell does not take";
+        }
+        cells.add(new CollectedCell(new CallSiteExtraction.Cell(cellPath, column, leaf), reach, field,
+            List.copyOf(leafPath)));
+        return null;
+    }
+
+    /**
+     * Mints a located diagnostic for every cell whose reach is not the first cell's and returns their
+     * count: one {@code EXISTS} over one path is what a list level renders, so an element's cells
+     * either all name the filter's own table or all share one reach.
+     */
+    private int checkReachAgreement(ListLevel level, List<CollectedCell> cells, String useSiteCoordinate,
+            String outerArgName, String containerSummary) {
+        if (cells.isEmpty()) {
+            return 0;
+        }
+        var first = cells.get(0);
+        int offending = 0;
+        for (var cell : cells.subList(1, cells.size())) {
+            if (sameReach(first.reach(), cell.reach())) {
+                continue;
+            }
+            offending++;
+            String refusal = cell.reach().isEmpty()
+                ? "its column is on the field's own table, while element field '" + first.field().name()
+                    + "' is reached through a @reference path; an element's fields must all share one"
+                : "its column is reached through a different @reference path than element field '"
+                    + first.field().name() + "'";
+            mintElementFieldRefusal(level, cell.field(), cell.leafPath(), refusal, useSiteCoordinate,
+                outerArgName, containerSummary);
+        }
+        return offending;
+    }
+
+    /**
+     * Two reaches are the same when they are hop by hop the same join ({@link JoinStep.Hop#sameJoinAs}),
+     * whatever the SDL spelling and whichever field minted the hop aliases.
+     */
+    private static boolean sameReach(List<JoinStep> a, List<JoinStep> b) {
+        if (a.size() != b.size()) {
+            return false;
+        }
+        for (int i = 0; i < a.size(); i++) {
+            var hopA = switch (a.get(i)) { case JoinStep.Hop hop -> hop; };
+            var hopB = switch (b.get(i)) { case JoinStep.Hop hop -> hop; };
+            if (!hopA.sameJoinAs(hopB)) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /** The located diagnostic for one element field a list level's row cannot express. */
+    private void mintElementFieldRefusal(ListLevel level, InputField f, List<String> leafPath,
+            String refusal, String useSiteCoordinate, String outerArgName, String containerSummary) {
+        ctx.addDiagnostic(new ValidationError(f.qualifiedName(), Rejection.structural(
+            containerSummary + ": input field '" + f.name() + "' at occurrence '"
+            + occurrencePath(useSiteCoordinate, outerArgName, leafPath)
+            + "' is an element field of list-of-input filter field '" + level.name()
+            + "', whose elements are compared as rows: " + refusal),
+            f.location()));
+    }
+
     /** The widest typed row jOOQ offers ({@code Row22}). */
     private static final int MAX_ROW_DEGREE = 22;
+
+    private static final String NODE_ID_IN_ELEMENT =
+        "it carries @nodeId, whose decoded key a row of plain values cannot hold";
 
     private static final String CONDITION_IN_ELEMENT =
         "it carries @condition, whose value would be read through the list as one object; put"

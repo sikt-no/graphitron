@@ -18,9 +18,10 @@ import java.util.Map;
  * Per-class collector for the row reads of filter fields typed as a list of input objects
  * ({@link CallSiteExtraction.ElementRows}). The glue local such a filter binds is built by a private
  * static helper on the conditions class, and the call site collapses to
- * {@code <name>(<wire>, table)}.
+ * {@code <name>(<wire>, <table>)}.
  *
- * <p>The helper takes the uncast wire value and the aliased table, and returns one entry per
+ * <p>The helper takes the uncast wire value and the table the cells' columns belong to (the glue's
+ * own table, or the terminal table a {@code @reference} path reaches), and returns one entry per
  * element: {@code List<Row<N><T1, ..., TN>>} for two or more cells, each cell lifted through
  * {@code DSL.val(value, table.COL.getDataType())} so a converter on the column runs, or
  * {@code List<T>} for a one-cell element, which {@code table.COL.in(values)} binds itself. A wire
@@ -66,7 +67,8 @@ public final class ElementRowsHelperRegistry {
      * Registers the row read for one list-of-input filter and returns the helper's name.
      *
      * @param stem       the filter's parameter name, which names the helper
-     * @param tableClass the aliased table's class, the helper's second parameter
+     * @param tableClass the class of the table the cells' columns belong to, the helper's second
+     *                   parameter
      * @param rows       the cells one element contributes
      */
     public String register(String stem, TypeName tableClass, CallSiteExtraction.ElementRows rows) {
