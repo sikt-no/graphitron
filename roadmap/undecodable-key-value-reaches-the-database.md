@@ -293,3 +293,59 @@ before the fix.
   `data`, and the documented outcome for a malformed id on a lookup is a `null` slot, not an error.
 - **Letting the database refuse it.** A wrap produces a valid value of the column, so the database
   never sees the overflow, and a read never refuses at all.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready): request revisions
+
+The goal is clear and the diagnosis checks out. Every symbol, test class and schema field the spec
+names exists as named, the mechanism table reproduces exactly against jOOQ 3.20.11 (`hasPrecision()`
+is false for `SMALLINT`/`INTEGER`/`BIGINT`, so the integer types rely on clause 3 and the precision
+clause bites only on `NUMERIC`), and the per-surface outcomes match the emitters. One finding blocks.
+
+**F1 (question 1, viability; question 2, fit): the primitive stops before the converter, so on a
+converter-backed column an undecodable value still reaches SQL.** `ColumnValues.exact` and `coerce`
+test the value `DataType.convert` returns. On a column whose `DataType` is a converted type, that is
+the *user* type, and when the user type is `String` (`OrgCodeStringConverter`, the sis shape the
+fixture mirrors) `convert` is the identity on a `String` input: probed, `convert("abc")` gives `"abc"`
+and `convert("0186")` gives `"0186"`, with `isNumeric()` true and `hasPrecision()` false. So under the
+`exact` rule as written, a `ConverterCampusTerm` id whose `org_code` slot is `abc` (or
+`99999999999999999999`) passes all four clauses: non-null, `toString()` equals the slot text, and the
+result is not a `Number`. It is then bound, and `OrgCodeStringConverter.to` throws
+`NumberFormatException` inside the statement: a redacted error on an argument, and out of
+`fetchEntities` on `_entities`, where it nulls all of `data`. That is the defect the goal says is
+closed ("a value that does not decode is never bound into SQL"), on the column shape the Evidence
+itself suspects behind `LANDNR`. The same gap makes `"0186"` an accepted alias of an id the encoder
+writes as `"186"`, contradicting the claim that `exact` refuses `"01"`. On the `coerce` side the wrap
+clause compares "the coerced value" with a `BigDecimal`, which on this column is a `String`
+(`"0186"`) against `186`; the spec does not say which side of the converter the comparison reads, and
+the literal reading breaks the `"0186"` test it promises stays green.
+
+The tenant path hides this only because `tenantKeyOrNull` runs `roundTrip` after `coerce`. That
+leaves the converter round trip in `TenantConnections` alone while every non-tenant key slot goes
+without it, which is two decode-side coercions rather than the one the design section claims
+`ColumnValues` holds. R1044 (`column-agreement-follows-the-database-value.md`) already names the same
+need and asks whether "the round trip becomes one emitted primitive that `NodeIdEncoder` and
+`TenantConnections` both call".
+
+What would satisfy it: the spec states where the converter sits in both rules, so that a value is
+"a value of the column" only if it survives the trip to the database type (and, for `exact`, back to
+the slot text), with a converter `IllegalArgumentException`/`DataTypeException` read as absent, and
+says which value the wrap and precision clauses inspect on a converted column. Say too whether
+`tenantKeyOrNull` then reduces to `ColumnValues` (and `roundTrip` moves into it) or keeps its own
+trip, and how that relates to R1044. Add an execution case that fails today on a converter-backed key:
+`node(id:)` over a `ConverterCampusTerm` id whose `org_code` slot is `abc`, answering `null` with no
+error, plus the same id on the `ConverterCampusTerm` `@nodeId` filter root giving the malformed-id
+client error.
+
+### Non-blocking
+
+- `ConvertedTenantRoutingExecutionTest`'s proposed `sites(ownerOrg: "99999999999999999999")` case
+  passes on today's tree: `Long.valueOf` in `OrgCodeStringConverter.to` throws
+  `NumberFormatException`, an `IllegalArgumentException`, which `canonicalTenantKey` already maps to
+  the client error. It is a regression pin, not one of the "fail on today's tree" wrap cases; label it
+  so.
+- The `coerce` wrap clause reads "the text as a `BigDecimal`", but jOOQ trims and `BigDecimal` does
+  not: `" 1234"` coerces to `1234` today and `new BigDecimal(" 1234")` throws. Say whether such a
+  value is refused or compared after trimming, since the authored rule promises the documented
+  coercion stays.
