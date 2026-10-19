@@ -1,7 +1,7 @@
 ---
 id: R1065
 title: "An interface's own implements clause is dropped from the runtime schema"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 5
 theme: codegen-correctness
@@ -112,3 +112,14 @@ matching the source.
 
 Done is demonstrated by the dedicated pin going from red to green on the fixture, with the parity
 gate green.
+
+## Implementation notes
+
+The red run confirmed the Cause and the parity gate's coverage. With the fixture in and the fix
+not applied, both `FederationBuildSmokeTest.interfaceKeepsItsImplementsClause` and
+`emittedSdlMatchesRuntimeSchema` failed; the parity gate reported a single `DELETE_EDGE`
+`Locatable -> Node` (label `implements Node`) going from the emitted file to the runtime schema, so
+the emitted `schema.graphqls` carries the clause and `SchemaDiffing` does see interface-to-interface
+edges. Neither edge case applies: no blind-spot javadoc on the pin, no fix upstream of the emitter.
+With the `withInterface` loop in `ObjectTypeGenerator.buildInterfaceTypeSpec`, all fifteen tests in
+the class pass.

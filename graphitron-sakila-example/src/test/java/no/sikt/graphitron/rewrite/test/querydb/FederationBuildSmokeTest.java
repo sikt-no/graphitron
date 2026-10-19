@@ -113,6 +113,34 @@ class FederationBuildSmokeTest {
     }
 
     /**
+     * An interface's own {@code implements} clause reaches the runtime schema: the fixture's
+     * {@code interface Locatable implements Node} must keep {@code Node} both in the served
+     * {@code _service { sdl }} and in introspection. Object types' clauses are emitted by
+     * {@code withInterface} on the object builder; this pins the interface builder's counterpart.
+     */
+    @Test
+    void interfaceKeepsItsImplementsClause() {
+        var result = Graphitron.newGraphQL().build().execute(ExecutionInput.newExecutionInput()
+            .query("{ _service { sdl } __type(name: \"Locatable\") { interfaces { name } } }")
+            .build());
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var data = (Map<String, Object>) result.getData();
+        @SuppressWarnings("unchecked")
+        var sdl = (String) ((Map<String, Object>) data.get("_service")).get("sdl");
+        @SuppressWarnings("unchecked")
+        var interfaces = (List<Map<String, Object>>) ((Map<String, Object>) data.get("__type")).get("interfaces");
+
+        assertThat(sdl)
+            .as("the served SDL keeps the interface's implements clause")
+            .contains("interface Locatable implements Node");
+        assertThat(interfaces)
+            .as("introspection lists Node as Locatable's interface")
+            .extracting(i -> i.get("name"))
+            .containsExactly("Node");
+    }
+
+    /**
      * The {@code _Entity} union must list every type Graphitron classifies as a federation entity:
      * four {@code @node} types (Customer, Address, Film, and the compound-key FilmActor), the
      * single-column-key City (the service-child projection fixture), plus the two

@@ -13,6 +13,11 @@ extend schema
 
 interface Node { id: ID! }
 
+# An interface implementing an interface. Like Node, it is returned by no field and reached only
+# through its implementers' clauses; its own `implements Node` must survive into the runtime
+# schema and the served _service { sdl }.
+interface Locatable implements Node { id: ID! }
+
 type Query {
     customers: [Customer!]!
     films: [Film!]!
@@ -39,14 +44,14 @@ input FilmOneOfFilter @oneOf {
     title:  String @field(name: "title")
 }
 
-type Customer implements Node @table(name: "customer") @node {
+type Customer implements Node & Locatable @table(name: "customer") @node {
     id:         ID!      @nodeId
     customerId: Int!     @field(name: "CUSTOMER_ID")
     firstName:  String!  @field(name: "FIRST_NAME")
     lastName:   String!  @field(name: "LAST_NAME")
 }
 
-type Address implements Node @table(name: "address") @node {
+type Address implements Node & Locatable @table(name: "address") @node {
     id:         ID!      @nodeId
     addressId:  Int!     @field(name: "ADDRESS_ID")
 }

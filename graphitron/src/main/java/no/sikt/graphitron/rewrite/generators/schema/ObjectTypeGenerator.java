@@ -166,6 +166,9 @@ public final class ObjectTypeGenerator {
         if (interfaceType.getDescription() != null && !interfaceType.getDescription().isEmpty()) {
             body.addStatement("b.description($S)", interfaceType.getDescription());
         }
+        for (var iface : interfaceType.getInterfaces()) {
+            body.addStatement("b.withInterface($T.typeRef($S))", TYPE_REF, iface.getName());
+        }
         for (var field : interfaceType.getFieldDefinitions()) {
             String helper = sink.addObjectFieldDef(interfaceType.getName(), field, schema);
             body.addStatement("b.field($L())", helper);
