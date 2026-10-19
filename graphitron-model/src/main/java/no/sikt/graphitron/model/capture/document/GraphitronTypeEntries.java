@@ -21,6 +21,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
@@ -36,6 +38,7 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.ofK
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.writtenIn;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.tokenOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -49,13 +52,13 @@ import static org.jooq.impl.DSL.val;
  *
  * <p>The type-site directives this writes are {@code @table}, {@code @scalarType}, {@code @enum},
  * {@code @error}, {@code @node}, {@code @discriminate}, {@code @discriminator} and
- * federation's {@code @key}, and two of those eight surprise. {@code @error} has no
- * relation, its only argument being the handler list, so a row carrying its key and nothing else
- * would say what the applied-directive row already says. Its handlers have one relation per kind,
- * because the kind decides which of the input's six fields mean anything: GENERIC matches by class
- * identity, DATABASE by one of two SQL discriminators, and VALIDATION carries nothing at all.
- * {@code @defaultTenant} reaches this site too and gets no relation for the same reason: it
- * declares no argument, so its applied-directive row is the whole fact.
+ * federation's {@code @key}. {@code @error}'s row carries its key and nothing else, its only
+ * argument being the handler list; it is there for the handlers to hang off. A handler is one row
+ * of a supertype naming its kind and the application holding it, and one row of that kind's own
+ * relation, because the kind decides which of the input's six fields mean anything: GENERIC matches
+ * by class identity, DATABASE by one of two SQL discriminators, and VALIDATION carries nothing at
+ * all. {@code @defaultTenant} reaches this site too and gets no relation: it declares no argument,
+ * so its applied-directive row is the whole fact.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */
@@ -72,7 +75,11 @@ final class GraphitronTypeEntries {
         tables(dsl, graph, touchedAt, wrote(applied(applications, "table"), "name"));
         scalarTypes(dsl, graph, touchedAt, wrote(applied(applications, "scalarType"), "scalar"));
         enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
-        var handlers = elementsOf(applied(applications, "error"), "handlers");
+        var errors = applied(applications, "error");
+        errors(dsl, graph, touchedAt, errors);
+        var handlers = elementsOf(errors, "handlers");
+        handlers(dsl, graph, touchedAt, HANDLER_KINDS.stream()
+            .flatMap(kind -> ofKind(handlers, kind).stream()).toList());
         genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC").stream()
             .filter(handler -> stringOf(inside(handler.node(), "className")) != null).toList());
         databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
@@ -98,15 +105,17 @@ final class GraphitronTypeEntries {
      * What the sweep deletes from, and the only thing that reads it. Listed rather than found by
      * prefix: a relation added above and not here would keep its stale rows silently.
      *
-     * <p>In no particular order, these relations referencing one another not at all. An application
-     * the author moved or deleted is swept by the cascade from the directive row it hung on; what
-     * is left for this sweep is the application whose position another directive now occupies.
+     * <p>A child before the relation it references, so no delete here cascades into rows a later
+     * one would have reached. An application the author moved or deleted is swept by the cascade
+     * from the directive row it hung on; what is left for this sweep is the application whose
+     * position another directive now occupies.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
         GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY,
+        GRAPHITRON_AST_ERROR_HANDLER_ENTRY, GRAPHITRON_AST_ERROR_ENTRY,
         GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY,
         GRAPHITRON_AST_DISCRIMINATE_ENTRY, GRAPHITRON_AST_DISCRIMINATOR_ENTRY,
         GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY,
@@ -181,6 +190,54 @@ final class GraphitronTypeEntries {
                 .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
                 .set(t.METHOD, excluded(t.METHOD))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
+    }
+
+    /** The handler kinds the directive declares, which the supertype's CHECK admits. */
+    private static final List<String> HANDLER_KINDS = List.of("GENERIC", "DATABASE", "VALIDATION");
+
+    /** A row for every application, the handler list being the child relation it hangs off. */
+    private static void errors(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                               List<Directive> applications) {
+        var t = GRAPHITRON_AST_ERROR_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * Every handler of a declared kind, whether or not its kind's relation can decode it: a GENERIC
+     * element naming no class is a handler of that kind all the same.
+     */
+    private static void handlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                 List<GraphitronAstEntries.Element> handlers) {
+        var t = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
+        var rows = handlers.stream().collect(Rows.toRowList(
+            handler -> val(graph, t.GRAPH_NAME),
+            handler -> GraphQLAstEntries.sourceName(handler.node()),
+            handler -> GraphQLAstEntries.sourceLine(handler.node()),
+            handler -> GraphQLAstEntries.sourceColumn(handler.node()),
+            handler -> val(touchedAt, t.TOUCHED_AT),
+            handler -> GraphQLAstEntries.sourceLine(handler.application()),
+            handler -> GraphQLAstEntries.sourceColumn(handler.application()),
+            handler -> val(tokenOf(inside(handler.node(), "handler")), t.HANDLER)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.APPLICATION_LINE, t.APPLICATION_COLUMN, t.HANDLER)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.APPLICATION_LINE, excluded(t.APPLICATION_LINE))
+                .set(t.APPLICATION_COLUMN, excluded(t.APPLICATION_COLUMN))
+                .set(t.HANDLER, excluded(t.HANDLER)));
     }
 
     private static void genericHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,

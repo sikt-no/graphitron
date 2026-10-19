@@ -155,6 +155,7 @@ class RelationRegistrationGateTest {
             "graphitron_ast_federation_key_entry",
             "graphitron_ast_federation_key_selection_entry",
             "graphitron_ast_federation_key_segment_entry",
+            "graphitron_ast_error_entry", "graphitron_ast_error_handler_entry",
             "graphitron_ast_error_generic_handler_entry",
             "graphitron_ast_error_database_handler_entry",
             "graphitron_ast_error_validation_handler_entry",
