@@ -1,7 +1,7 @@
 ---
 id: R1060
 title: "A DATABASE @error handler's matches never sees the SQL text jOOQ wraps around the SQLException"
-status: In Progress
+status: In Review
 bucket: bug
 depends-on: []
 created: 2026-10-19
@@ -144,6 +144,19 @@ Collision semantics are accepted, not engineered away. The same `SQLException` i
 * **Classification tier.** Existing `ErrorChannelClassificationTest` and `GraphitronSchemaBuilderTest` handler rows retarget to `DatabaseHandler`, one case per `Discriminator` arm. Two new Rule 8 cases: `{GENERIC, className: "java.sql.SQLException", matches: X}` and `{DATABASE, matches: X}` on one channel are both admitted, and two `{DATABASE, matches: X}` entries on one channel are rejected.
 * **Generator tier, `TypeSpec` shape only.** Update `ErrorRouterClassGeneratorTest` and `ErrorMappingsClassGeneratorTest` for the new surface: the `DatabaseMapping` nested class and its constructor, `Mapping.match(Throwable, Throwable)`, and the `claim` and `matchesSource` signatures. Add no assertion on the text of an emitted method body; `docs/architecture/how-to/testing.adoc` bans that in the unit tier. The body-text assertions that exist today on `SqlStateMapping` and `VendorCodeMapping` go away with those classes, and nothing replaces them in kind. The router unit tests above pin the walk's behaviour. The `TypeResolver` step gets no generator-tier test. The resolver-order case above pins its one change, and the union execution tests that exist today pin that nothing else moves. The generator crash on a malformed class name goes away because the resolver no longer names the class.
 * **sis acceptance.** `BankkontonummerErrorMappingTest.forMangeSifreMappesTilUgyldigBankkontonummer`, `...forMangeSifreMappesUavhengigAvDatabasensSprak` and `...forStortProsenttallMappesFortsattTilProsentmelding` pass. If their harness drives `ErrorRouter.dispatch` they pass unchanged. If it calls `Mapping.match` link by link, it moves to `ErrorRouter.claim` (the public entry for exactly that walk), because the single-argument `match` is retired. Tell the reporter which applies when this ships.
+
+## Implementation notes
+
+Shipped in one code commit rather than the three the plan allowed (model, resolver, behaviour); the model and resolver steps were not landed on their own. Points where the code departs from, or adds to, the text above:
+
+* `TypeUnitCommand.ErrorFetchersUnit` carries an `errorRouter` ref beside `errorMappings`, because `message` now names `ErrorRouter.matchesSource`. `FetchersPlanner` fills it; `ERROR_ROUTER` is already a frozen scaffold kind in `PlanCompileGraph`, so no new compile edge is needed.
+* `MappingsConstantNameDedup.handlerLine` gives `Discriminator.Any` its own `D|` line. Before the split it hashed as `E|...|java.sql.SQLException`, the same as a `GENERIC` handler on `SQLException`; two channels differing only in that would otherwise share one `Mapping[]` constant while behaving differently.
+* `ErrorDispatchFragments.outcomeArm` drops its `mappingInterface` parameter (the arm no longer names `Mapping`), and `ErrorRouterClassGenerator.mappingInterface` goes with it.
+* The chain-root holder is the private nested `ErrorRouter.ChainRoots`, stored with `GraphQLContext.computeIfAbsent`; one lock guards the identity map and each identity-keyed root set.
+* Execution fixtures: `Mutation.updateFilmPrice` / `updateFilmRentalRate` over `FilmPriceUpdateInput` (both price fields optional `BigDecimal`), and `Query.filmLookupRefused` with `FilmLookupRefusedException` in `graphitron-sakila-service`. jOOQ renders the columns as `"rental_rate"` / `"replacement_cost"`, so `matches` uses the bare column names.
+* Router unit tests: `ErrorRouterDatabaseMatchesTest` in `graphitron-sakila-example`.
+
+Pending: the sis acceptance check. `claim` is public and single-argument `match` is gone, so a sis harness that calls `Mapping.match` link by link moves to `ErrorRouter.claim`; one that drives `ErrorRouter.dispatch` passes unchanged. Tell the reporter which applies.
 
 ## Retired vocabulary
 
