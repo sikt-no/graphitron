@@ -49,9 +49,7 @@ type Bar @table(name: "bar") {
 
 ## Plan
 
-The work has a real seam. Step 1 is a build-time rejection that closes the leak on its own and ships first, at the sis session's request: the four sis fields become build errors instead of wrong answers. Step 2 replaces the single-cardinality half of that rejection with the parent-row read. The intermediate state is observable and releasable, which is why the steps are numbered.
-
-Both steps work in one place: the `TableBoundReturnType` arm of `FieldBuilder.classifyObjectReturnChildField`, at the inline `TableField` mint, which runs after the arm's existing guards (the `@splitQuery` same-table guard, the `@lookupKey` gate, the split branch and the inline `@asConnection` rejection). The predicate is decided there once, from facts the arm already holds:
+The change is decided in one place: the `TableBoundReturnType` arm of `FieldBuilder.classifyObjectReturnChildField`, at the inline `TableField` mint, which runs after the arm's existing guards (the `@splitQuery` same-table guard, the `@lookupKey` gate, the split branch and the inline `@asConnection` rejection). The predicate is decided there once, from facts the arm already holds:
 
 - *same-row candidate*: `referencePath.elements()` is empty and the parent correlation is null (the carrier shape `TableField.checkCarrierInvariant` admits for an empty path). An empty path with no `@reference` only arises when the two tables are the same, because `parsePath` errors on a missing or ambiguous foreign key between different tables.
 - *narrowed*: `TableFieldComponents.Ok` carries a non-empty `filters()` (argument filters, argument or field-level `@condition`, `@nodeId` decodes) or a `lookup()` other than `LookupResolution.None`.
@@ -59,16 +57,13 @@ Both steps work in one place: the `TableBoundReturnType` arm of `FieldBuilder.cl
 
 A narrowed candidate mints `TableField` exactly as today, at every cardinality. Connection cardinality is rejected by the inline `@asConnection` guard, and single-cardinality `@lookupKey` by `LookupKeyDirectiveResolver.resolveAtChild`, so neither reaches the predicate.
 
-### Step 1: reject the unnarrowed shape
+An unnarrowed candidate splits two ways: a single-cardinality, argument-free one reads the parent's own row (below), and every other one is rejected.
 
-An unnarrowed candidate returns an `UnclassifiedField`:
+### Reject the unnarrowed shapes with no parent-row reading
 
-- Single cardinality, argument-free: `Rejection.deferred(...)`, because Step 2 retires it. The message names the field coordinate, both types and the table, says the field would read an arbitrary row of the table regardless of the parent, and gives the remedies available today: drop `@table` from the return type if no other field needs it as a table type, so it nests on the parent row; or state the correlation with `@reference(path: [{condition: ...}])`; or narrow it with an argument, `@condition` or `@lookupKey` to read rows of the table independent of the parent.
-- Every other unnarrowed candidate (list cardinality, or single cardinality carrying `@orderBy`, `first` or another argument that filters nothing): `Rejection.structural(...)`, permanent. The message says the field reads every row of the table under every parent, and gives the remedies: `@reference` with a self-referencing `{key:}` for rows related to the parent; an argument, `@condition` or `@lookupKey` to narrow the read; and, in Step 2's revision of the message, single cardinality with no arguments to read the parent's own row.
+An unnarrowed candidate that is a list, or single cardinality carrying `@orderBy`, `first` or another argument that filters nothing, returns an `UnclassifiedField` with `Rejection.structural(...)`. The message names the field coordinate, both types and the table, says the field would read every row of the table under every parent, and gives the remedies: single cardinality with no arguments to read the parent's own row; `@reference` with a self-referencing `{key:}` for rows related to the parent; an argument, `@condition` or `@lookupKey` to narrow the read. The message is built by a helper beside `uncorrelatedSameTableSplitMessage`, so the two same-table guards read as siblings. `ProjectionUnitRenderer`'s comment on the empty-path arm is corrected to say the read is uncorrelated and narrowed only by the field's own filters.
 
-Messages are built by a helper beside `uncorrelatedSameTableSplitMessage`, so the two same-table guards read as siblings. `ProjectionUnitRenderer`'s comment on the empty-path arm is corrected in this step to say the read is uncorrelated and narrowed only by the field's own filters.
-
-### Step 2: read the parent's own row
+### Read the parent's own row
 
 A single-cardinality, argument-free candidate mints a new leaf, `ChildField.SameRowTableField` (working name; the implementer may pick a better one). The leaf's fact is "this coordinate's value is the parent's own row, read through the return type's own classification". That is a different fact from `ChildField.NestingField`, whose nested fields are classified per embedding edge against the host's table, so reusing `NestingField` would put an "is the target a table type?" branch into every walker of `nestedFields()` (`NestingReach`, `ProjectionCommands.mintNestedUnit`, `collectSplicedClaims`, `subtreePresence`, the validator's nested-leaf walk). A new leaf strains the rule that the classified leaf model is drained rather than extended; it is admissible here because it restores Graphitron 9's reading as a bug fix, adds no capability, and has no fact-store reader to migrate.
 
@@ -94,7 +89,7 @@ The cost is one correlated subquery per parent row that touches no table, which 
 
 Memberships the leaf owes, each a build-enforced partition: `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` (it contributes to its parent's projection), the dual-arm kinds `GeneratorCoverageTest` pins (it both projects and has a fetcher), and an arm in `GraphitronSchemaValidator`'s exhaustive child-field switches. `FetcherEmitter` gets the fetcher arm; `TypeFetcherGenerator` and `FetcherRegistrationsEmitter` need nothing new, because the return type's fetchers are its own.
 
-The Step 1 deferred rejection retires in place: the branch that returned it now mints the leaf. The structural message gains the "single cardinality with no arguments reads the parent's own row" remedy. `uncorrelatedSameTableSplitMessage` and the `splitQuery.adoc` bullet change their first two remedies to "drop `@splitQuery` from a single-cardinality field with no arguments to read the parent's own row in the same statement" and keep the `@reference(path: [{condition: ...}])` remedy for a field that must stay split.
+`uncorrelatedSameTableSplitMessage` and the `splitQuery.adoc` bullet change their first two remedies to "drop `@splitQuery` from a single-cardinality field with no arguments to read the parent's own row in the same statement" and keep the `@reference(path: [{condition: ...}])` remedy for a field that must stay split.
 
 ## User documentation (first-client check)
 
@@ -118,23 +113,20 @@ The Step 1 deferred rejection retires in place: the branch that returned it now 
 >
 > With arguments, a `@condition` or a `@lookupKey`, the same field means something else: a read of the whole table narrowed by them, the same for every parent. `related(filter: FilmFilter): [Film!]` on `Film` returns the films matching the filter, whichever film it is selected under. A same-table field that is neither, a list or a single field with arguments that filter nothing, would read every row of the table under every parent and is rejected at build time. To reach other rows of the table related to the parent, state the self-referencing key with `@reference(path: [{key: ...}])`.
 
-`docs/manual/how-to/migrating-from-legacy.adoc`, "Things that didn't change": one bullet saying a field returning a `@table` type on the parent's own table, with no `@reference`, still reads the parent's own row with Graphitron 9's null rule, and needs no `@splitQuery`. `docs/manual/reference/directives/splitQuery.adoc`: the remedy revision above. Step 1 ships only the rejection's mention in `splitQuery.adoc` and `map-types-to-tables.adoc` (the two rejected shapes and their remedies); the section above lands with Step 2.
+`docs/manual/how-to/migrating-from-legacy.adoc`, "Things that didn't change": one bullet saying a field returning a `@table` type on the parent's own table, with no `@reference`, still reads the parent's own row with Graphitron 9's null rule, and needs no `@splitQuery`. `docs/manual/reference/directives/splitQuery.adoc`: the remedy revision above.
 
 ## Tests
 
-Step 1, pipeline tier (a new `SameTableInlineChildPipelineTest`, or a nested class of `SplitQuerySameTableRejectionPipelineTest` if the fixtures share enough):
+Pipeline tier (a new `SameTableInlineChildPipelineTest`, or a nested class of `SplitQuerySameTableRejectionPipelineTest` if the fixtures share enough):
 
-- single, argument-free, unnarrowed: `UnclassifiedField` with a deferred rejection whose message names the coordinate, both types, the table and the three remedies;
-- list unnarrowed, list with only `first`, single with only an order argument: structural rejections;
+- single, argument-free, unnarrowed: classifies as `SameRowTableField` over the return type's table, including under a `@key` entity parent;
+- list unnarrowed, list with only `first`, single with only an order argument: structural rejections whose message names the coordinate, both types, the table and the remedies, surfacing through `GraphitronSchemaValidator` output with the field coordinate;
 - field-level `@condition` (single), argument filter (list, the `Bar.related` shape), list `@lookupKey`: still `TableField` with empty path and null correlation;
-- the rejection surfaces through `GraphitronSchemaValidator` output with the field coordinate;
-- the parent is a `@key` entity: rejected the same way.
+- the null contract over a type of column leaves is `CollapsesWhenAbsent`, over a type holding a list child is `AlwaysObject`, and over a same-table cycle terminates as `AlwaysObject`; the shared presence rule yields the same verdicts for every existing `NestingFieldNullContractTest` case.
 
-`SplitQuerySameTableRejectionPipelineTest.inlineTwin_keepsStandaloneShape` is rewritten to pin the Step 1 rejection, and in Step 2 the leaf. Any sakila or corpus fixture the full build finds on the rejected shape is fixed in the same commit; the survey found none.
+`SplitQuerySameTableRejectionPipelineTest.inlineTwin_keepsStandaloneShape` is rewritten to pin the new leaf. Any sakila or corpus fixture the full build finds on the rejected shapes is fixed in the same commit; the survey found none.
 
-Step 2, pipeline tier: the single argument-free candidate classifies as `SameRowTableField` over the return type's table; the narrowed shapes are unchanged; the null contract over a type of column leaves is `CollapsesWhenAbsent`, over a type holding a list child is `AlwaysObject`, and over a same-table cycle terminates as `AlwaysObject`; the shared presence rule yields the same verdicts for every existing `NestingFieldNullContractTest` case.
-
-Step 2, execution tier (`graphitron-sakila-example`, `GraphQLQueryTest` and `FederationEntitiesDispatchTest`), on a new fixture pair `Film.sameRow: FilmSameRow` with `FilmSameRow @table(name: "film")` also returned by a root field, so the type is a genuine table type:
+Execution tier (`graphitron-sakila-example`, `GraphQLQueryTest` and `FederationEntitiesDispatchTest`), on a new fixture pair `Film.sameRow: FilmSameRow` with `FilmSameRow @table(name: "film")` also returned by a root field, so the type is a genuine table type:
 
 - several films each get their own `title` under `sameRow` (the regression: today they all get one film's title);
 - a nullable `sameRow` over only nullable columns (`release_year`, `original_language_id`) resolves to `null` for a film where both are null and to an object otherwise;
@@ -147,8 +139,9 @@ No assertions on generated method bodies.
 
 ## Other solutions we've considered
 
-- *Reuse `ChildField.NestingField` for a `@table` return type.* Rejected for the reason under Step 2: two disciplines behind one leaf, a per-edge copy of a classification the type already has, and a "circular type reference" rejection on exactly the same-table cycles real schemas can hold.
+- *Reuse `ChildField.NestingField` for a `@table` return type.* Rejected for the reason under "Read the parent's own row": two disciplines behind one leaf, a per-edge copy of a classification the type already has, and a "circular type reference" rejection on exactly the same-table cycles real schemas can hold.
 - *Splice the return type's anchor unit into the host select (`CallWrap.Splice`).* No subquery, but it merges the child's result-key aliases into the host's namespace, and same-table cycles make the collision reachable by any client.
 - *Nested `DSL.row(...)` under the field's alias.* Graphitron 9's shape, no subquery, same reader contract as the chosen arm. It is the fallback if the spike shows the `FROM`-less multiset does not render; it was not chosen first because jOOQ's nested-record emulation with multisets inside is less exercised in this codebase than `multiset`.
 - *Synthesize a primary-key self-correlation so the existing multiset arm reads the parent's row.* Reuses the most, but a synthesized correlation is indistinguishable from an authored `@reference` or an inferred foreign key in `ParentCorrelation`, it fails on tables with no primary key, it scans the table by key once per parent row, and a nullable child never collapses to `null`, breaking Graphitron 9 parity.
-- *Reject every unnarrowed shape, permanently.* Rejected by the production evidence: four sis fields depend on the parent-row reading. It survives as Step 1.
+- *Reject every unnarrowed shape, permanently.* Rejected by the production evidence: four sis fields depend on the parent-row reading.
+- *Ship a build-time rejection of the single argument-free shape first, as an interim safety net (requested by the sis session).* Not chosen. It passes the same Spec → Ready gate as the fix, so it would land only marginally sooner; v10 is unreleased and no production `_entities(FeideBruker)` calls were seen, so the exposure stays latent in the meantime; and it would make sis rewrite four fields to clear a rejection that the fix then removes. The fix reuses the return type's anchor unit, the single-row multiset reader and the nesting null rule, and its one open question (the jOOQ spike) has a fallback, so it does not need a holding position. If implementation stalls, the interim rejection is cheap to add then.
