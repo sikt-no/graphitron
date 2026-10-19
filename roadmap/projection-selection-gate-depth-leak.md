@@ -390,3 +390,41 @@ does not create a new kind of risk. Neighbor, not a dependency: R752
 discriminated fold rather than across nesting siblings.
 
 ## Reviewer findings
+
+### Round 1 (Spec → Ready): request revisions, session_01WLbf1Fz1xSvu9nEhVNYhsG, 2026-10-19
+
+**Question 1 fails on one claim: the rule does not hold for every launcher.** The plan says the
+`SelectMethodBody` restriction "makes the rule hold for every launcher: a unit's map contains only
+its own type's fields at its own level". The single-table discriminated fold is the exception.
+`DiscriminatedTableFragments.fieldsList` uses the selective restriction, and that form passes an
+exempt entry through whole: every name not in `perTypeFieldNames`, which holds only
+participant-qualified `ResultKeyAliasedField`s. Plain columns and nesting fields are therefore
+exempt. The plan keeps this rule as it is ("an exempt name passes through whole"), and
+`ProjectionUnitRenderer` calls `canonical` on every entry before it switches. So
+`{ allContent { ... on FilmContent { k: length } ... on ShortContent { k: description } } }` still
+reaches `FilmContent.$project` with `k = [length, description]` and is still rejected after this
+item lands. That is the type-scoped form of the rejection that the plan calls "the same defect" at
+the node dispatch and fixes there. The Goal's rule and its "Valid documents are rejected" bullet
+claim coverage the plan does not deliver, and no test pins the fold.
+
+What would satisfy it is the author's choice:
+
+* **Carve it out.** Name the fold case in the Goal as a deliberate remaining rejection, next to the
+  connection one, give the reason, and pin it with a test.
+* **Close it.** Have the selective form also drop exempt occurrences that belong to another
+  participant. If you choose this, the census has to be revisited in the same change. The plan's
+  census relaxation (claiming by the nesting-name chain plus the leaf) is sound today only because
+  the exemption keeps a client-aliased bucket whole. For example, `... on A { l: locA { x } } ... on
+  B { l: locB { x } }` lands both occurrences in one bucket, and `canonical` rejects it loudly. If
+  the exemption narrows, those two participants compose one alias, `__rk_l/x`, at runtime over
+  divergent SQL. The fold's set then drops one term, and that is silent wrong data the default-key
+  census cannot see. Interface-owned aliased names have the same exposure, which is why the
+  exemption exists.
+
+Question 2 passes. Scoping in `SelectionOccurrences`, the derived connection arm, and an
+`AliasScope` axis stamped next to `AliasOwner` all extend shapes already in the tree.
+
+Non-blocking: `NestingReach.compute` visits every `NestingField`, but it keeps only one
+representative per nesting type and drops the parent coordinate. Reading `NestingCoordinates` "off
+the existing fold" therefore means extending the fold to collect `(parent type, field)` pairs. A
+sentence saying so would spare the implementer the surprise.
