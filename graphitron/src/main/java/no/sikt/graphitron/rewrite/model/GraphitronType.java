@@ -322,7 +322,7 @@ public sealed interface GraphitronType
          * discriminator selects.
          */
         public sealed interface Handler
-            permits ExceptionHandler, SqlStateHandler, VendorCodeHandler, ValidationHandler {
+            permits ExceptionHandler, DatabaseHandler, ValidationHandler {
 
             /** Optional substring filter on the matched exception's {@code getMessage()}. */
             Optional<String> matches();
@@ -365,9 +365,8 @@ public sealed interface GraphitronType
 
         /**
          * Matches by exception class identity, walking the cause chain.
-         * Lift target for {@code {handler: GENERIC, className: ...}} and the no-discriminator
-         * {@code {handler: DATABASE}} (which lifts to a {@link ExceptionClass.ClasspathClass} on
-         * {@code java.sql.SQLException}).
+         * Lift target for {@code {handler: GENERIC, className: ...}}; every {@code DATABASE}
+         * entry lifts to {@link DatabaseHandler} instead.
          *
          * <p>{@code exceptionClass} records the classifier's one decision about the named class:
          * whether it resolved on the codegen classpath, or is the client exception this run
@@ -393,8 +392,7 @@ public sealed interface GraphitronType
 
         /**
          * The class an {@link ExceptionHandler} matches, by what it is rather than by who wrote
-         * the name: {@code java.sql.SQLException} from the {@code DATABASE} lift is a classpath
-         * class no author wrote.
+         * the name: a class on the codegen classpath, or the client exception this run emits.
          */
         public sealed interface ExceptionClass
             permits ExceptionClass.ClasspathClass, ExceptionClass.GeneratedClientException {
@@ -438,29 +436,37 @@ public sealed interface GraphitronType
         }
 
         /**
-         * Matches any {@link java.sql.SQLException} in the cause chain whose
-         * {@code getSQLState()} equals {@code sqlState}.
-         * Lift target for {@code {handler: DATABASE, sqlState: ...}}.
+         * Matches a {@link java.sql.SQLException} in the cause chain that passes
+         * {@code discriminator}. Lift target for every {@code {handler: DATABASE, ...}} entry.
+         *
+         * <p>{@code matches} is tested against the message of the matched {@code SQLException}
+         * and of every exception wrapping it, from the outermost throw down, so it sees the SQL
+         * text jOOQ's {@code DataAccessException} carries. The discriminator itself is always
+         * read off the {@code SQLException}.
          */
-        public record SqlStateHandler(
-            String sqlState,
+        public record DatabaseHandler(
+            Discriminator discriminator,
             Optional<String> matches,
             ClientMessage clientMessage
         ) implements Handler {
             @Override public String accessorSourceClassName() { return "java.sql.SQLException"; }
-        }
 
-        /**
-         * Matches any {@link java.sql.SQLException} in the cause chain whose
-         * {@code getErrorCode()} string-equals {@code vendorCode}.
-         * Lift target for {@code {handler: DATABASE, code: ...}}.
-         */
-        public record VendorCodeHandler(
-            String vendorCode,
-            Optional<String> matches,
-            ClientMessage clientMessage
-        ) implements Handler {
-            @Override public String accessorSourceClassName() { return "java.sql.SQLException"; }
+            /**
+             * Which {@code SQLException} property a {@code DATABASE} entry keys on. The SDL
+             * spells these as sparse alternatives ({@code sqlState:}, {@code code:}, neither);
+             * at most one is set.
+             */
+            public sealed interface Discriminator permits Discriminator.SqlState, Discriminator.VendorCode, Discriminator.Any {
+
+                /** {@code getSQLState()} equals {@code sqlState}. */
+                record SqlState(String sqlState) implements Discriminator {}
+
+                /** {@code getErrorCode()} string-equals {@code vendorCode}. */
+                record VendorCode(String vendorCode) implements Discriminator {}
+
+                /** Any {@code SQLException}. */
+                record Any() implements Discriminator {}
+            }
         }
 
         /**

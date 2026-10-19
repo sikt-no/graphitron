@@ -486,16 +486,12 @@ class GraphitronSchemaClassGeneratorTest {
 
     @Test
     void build_emitsErrorTypeResolver_forUnionOfErrorTypes() {
-        // An @error-only union gets a TypeResolver that dispatches by source-class
-        // instanceof; the runtime sources are throwables (GENERIC/DATABASE) or GraphQLErrors
-        // (VALIDATION), never jOOQ records. The TypeResolver must therefore NOT emit the
-        // jOOQ-record __typename probe used for table-backed unions.
+        // An @error-only union gets a TypeResolver over its members' dispatch mappings; the
+        // runtime sources are throwables (GENERIC/DATABASE) or GraphQLErrors (VALIDATION), never
+        // jOOQ records. The TypeResolver must therefore NOT emit the jOOQ-record __typename probe
+        // used for table-backed unions.
         var body = buildBody(ERROR_UNION_SDL);
         assertThat(body).contains("codeRegistry.typeResolver(\"SakError\"");
-        // Source-class dispatch references graphql.GraphQLError and java.sql.SQLException.
-        assertThat(body).contains("graphql.GraphQLError");
-        assertThat(body).contains("java.sql.SQLException");
-        assertThat(body).contains("\"23503\".equals(sqlEx.getSQLState())");
         // Routes each source to the right SDL @error type.
         assertThat(body).contains("env.getSchema().getObjectType(\"ValidationErr\")");
         assertThat(body).contains("env.getSchema().getObjectType(\"DbErr\")");
@@ -728,9 +724,12 @@ class GraphitronSchemaClassGeneratorTest {
             .orElseThrow(() -> new AssertionError("no @error type '" + typeName + "' classified"));
         var mappings = new no.sikt.graphitron.plan.GeneratedUnits(OUTPUT_PKG)
             .errorMappings();
+        var router = new no.sikt.graphitron.plan.GeneratedUnits(OUTPUT_PKG)
+            .errorRouter();
         return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
             .generateFor(errorType, no.sikt.graphitron.javapoet.ClassName.get(
                 mappings.packageName(), mappings.simpleName()),
+                no.sikt.graphitron.javapoet.ClassName.get(router.packageName(), router.simpleName()),
                 bundle.model().errorFieldReads(typeName))
             .toString();
     }

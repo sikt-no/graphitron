@@ -43,8 +43,7 @@ class MutationServiceRecordFieldValidationTest {
 
         LIST_OF_LISTS_OF_INPUT_OBJECTS_WITHOUT_VALIDATION(
             "list of lists of input objects under a channel without VALIDATION → passes validation",
-            gridField(List.of(new GraphitronType.ErrorType.SqlStateHandler(
-                "23503", Optional.empty(), new GraphitronType.ErrorType.ClientMessage.FromSource()))),
+            gridField(List.of(new GraphitronType.ErrorType.DatabaseHandler(new GraphitronType.ErrorType.DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new GraphitronType.ErrorType.ClientMessage.FromSource()))),
             List.of());
 
         private final String description;

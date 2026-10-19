@@ -38,13 +38,13 @@ class ErrorHandlerAccessorSourceTest {
 
     @Test
     void sqlStateHandler_readsSqlException() {
-        assertThat(new ErrorType.SqlStateHandler("23503", Optional.empty(), FROM_SOURCE).accessorSourceClassName())
+        assertThat(new ErrorType.DatabaseHandler(new ErrorType.DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), FROM_SOURCE).accessorSourceClassName())
             .isEqualTo("java.sql.SQLException");
     }
 
     @Test
     void vendorCodeHandler_readsSqlException() {
-        assertThat(new ErrorType.VendorCodeHandler("1", Optional.empty(), FROM_SOURCE).accessorSourceClassName())
+        assertThat(new ErrorType.DatabaseHandler(new ErrorType.DatabaseHandler.Discriminator.VendorCode("1"), Optional.empty(), FROM_SOURCE).accessorSourceClassName())
             .isEqualTo("java.sql.SQLException");
     }
 

@@ -8652,6 +8652,33 @@ class GraphQLQueryTest {
 
     @Test
     @SuppressWarnings("unchecked")
+    void filmLookupRefused_throwableThatIsAlsoAGraphQLError_resolvesToTheTypeDispatchChose() {
+        // The union lists a {handler: VALIDATION} member ahead of the GENERIC member naming the
+        // thrown class, which extends graphql.GraphqlErrorException. Dispatch claims the throw for
+        // the GENERIC member, since VALIDATION mints no mapping; the type resolver runs every
+        // member's mappings before the VALIDATION member's GraphQLError test, so it agrees.
+        Map<String, Object> data = execute("""
+            {
+                filmLookupRefused(id: -3) {
+                    title
+                    errors {
+                        __typename
+                        ... on FilmRefusedLookupRefused { message }
+                        ... on FilmRefusedLookupValidationFailed { message }
+                    }
+                }
+            }
+            """);
+        var only = assertThat(data).extractingByKey("filmLookupRefused", as(MAP))
+            .extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmRefusedLookupRefused");
+        only.containsEntry("message", "The film lookup was refused");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
     void countFilmDrafts_listInputUnderValidationChannel_runsTheService() {
         // A list of input objects on a @service field whose channel carries {handler: VALIDATION}.
         // The validation pre-step reads the argument as a list and validates each element; it once
@@ -9482,6 +9509,89 @@ class GraphQLQueryTest {
         assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
         Map<String, Object> data = result.getData();
         assertThat(data).containsEntry("updateFilmWithErrors", null);
+    }
+
+    // ===== DATABASE matches against jOOQ's SQL text =====
+    //
+    // PostgreSQL's 22003 ("numeric field overflow") names no column; only the UPDATE statement jOOQ
+    // puts in its DataAccessException does. The two @error types on FilmPriceOverflowError share the
+    // sqlState and differ only in matches, so dispatch, the union's type resolver and each type's
+    // message() all have to read the wrapper's text to agree on the type. Each request sends one
+    // price field, so the UPDATE's SET clause, and with it the failing statement, names only that
+    // column; the selection reads back nothing that would name the other. A failed UPDATE changes
+    // no row, so these cases need no cleanup.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilmPrice_rentalRateOverflow_mapsToTheRentalRateType() {
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                updateFilmPrice(in: { filmId: 1, rentalRate: 1000 }) {
+                    film { filmId }
+                    errors {
+                        __typename
+                        ... on FilmRentalRateOverflow { message }
+                        ... on FilmReplacementCostOverflow { message }
+                    }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("updateFilmPrice", as(MAP));
+        payload.containsEntry("film", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmRentalRateOverflow");
+        only.containsEntry("message", "The rental rate is too large");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void updateFilmPrice_replacementCostOverflow_mapsToTheReplacementCostType() {
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                updateFilmPrice(in: { filmId: 1, replacementCost: 100000 }) {
+                    film { filmId }
+                    errors {
+                        __typename
+                        ... on FilmRentalRateOverflow { message }
+                        ... on FilmReplacementCostOverflow { message }
+                    }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("updateFilmPrice", as(MAP));
+        payload.containsEntry("film", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class)))
+            .hasSize(1)
+            .element(0, as(MAP));
+        only.containsEntry("__typename", "FilmReplacementCostOverflow");
+        only.containsEntry("message", "The replacement cost is too large");
+    }
+
+    @Test
+    void updateFilmRentalRate_replacementCostOverflow_redacts() {
+        // This carrier's union holds only the rental-rate type, and the failing statement does not
+        // name rental_rate, so no mapping claims the throw and the field redacts.
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                updateFilmRentalRate(in: { filmId: 1, replacementCost: 100000 }) {
+                    film { filmId }
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(error -> assertThat(error.getMessage())
+                .startsWith("An error occurred. Reference: ")
+                .doesNotContain("replacement_cost"));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("updateFilmRentalRate", null);
     }
 
     // ===== Mutable-bean payload shape end-to-end =====

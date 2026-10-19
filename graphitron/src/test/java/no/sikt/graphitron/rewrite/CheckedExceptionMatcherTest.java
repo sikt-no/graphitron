@@ -7,9 +7,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -27,9 +26,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>An exact-class {@code ExceptionHandler} match (declared = handler class).</li>
  *   <li>A subtype-of-handler match (declared {@code SQLDataException} covered by
  *       {@code ExceptionHandler(SQLException)}).</li>
- *   <li>A {@code SqlStateHandler} or {@code VendorCodeHandler} covers any
+ *   <li>A {@code DatabaseHandler}, whatever its discriminator, covers any
  *       {@code SQLException}.</li>
- *   <li>A {@code SqlStateHandler}/{@code VendorCodeHandler} alone does not cover a
+ *   <li>A {@code DatabaseHandler} alone does not cover a
  *       non-{@code SQLException} declared throw.</li>
  *   <li>{@code ValidationHandler} covers nothing in the matcher (it's a wrapper-side flag).</li>
  *   <li>An {@code ExceptionHandler} on the generated client exception covers nothing: the class
@@ -81,9 +80,9 @@ class CheckedExceptionMatcherTest {
 
     @Test
     void sqlStateHandler_coversAnySqlException() {
-        // SqlStateHandler matches any SQLException at runtime (the state predicate runs
-        // inside the cause-chain walk). Same applies to VendorCodeHandler.
-        var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()));
+        // A DatabaseHandler matches any SQLException at runtime (the state predicate runs
+        // inside the cause-chain walk), whatever its discriminator.
+        var channel = channelWith(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLDataException"), Optional.of(channel), LOADER))
@@ -92,16 +91,16 @@ class CheckedExceptionMatcherTest {
 
     @Test
     void vendorCodeHandler_coversAnySqlException() {
-        var channel = channelWith(new VendorCodeHandler("12345", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new DatabaseHandler(new DatabaseHandler.Discriminator.VendorCode("12345"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.sql.SQLException"), Optional.of(channel), LOADER))
             .isEmpty();
     }
 
     @Test
     void sqlStateHandlerAlone_doesNotCoverNonSqlException() {
-        // SqlStateHandler / VendorCodeHandler only cover SQLException subclasses — a method
+        // A DatabaseHandler only covers SQLException subclasses: a method
         // throws java.lang.Exception needs a corresponding ExceptionHandler.
-        var channel = channelWith(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()));
+        var channel = channelWith(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource()));
         assertThat(CheckedExceptionMatcher.unmatched(List.of("java.lang.Exception"), Optional.of(channel), LOADER))
             .containsExactly("java.lang.Exception");
     }

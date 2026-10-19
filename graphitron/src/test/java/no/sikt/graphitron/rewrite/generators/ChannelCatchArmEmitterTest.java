@@ -33,18 +33,14 @@ class ChannelCatchArmEmitterTest {
         ClassName.get("com.example", "SakRecord"));
 
     @Test
-    void emit_mappedChannel_walksMappingsAndReturnsErrorList() {
+    void emit_mappedChannel_claimsAgainstItsMappingsAndReturnsErrorList() {
         var channel = new ErrorChannel.Mapped(List.of(anyErrorType()), "FILM_PAYLOAD");
 
         var code = ChannelCatchArmEmitter.emit(channel, OUTCOME_OF_RECORD, OUTPUT_PACKAGE).toString();
 
         assertThat(code)
             .contains(".FILM_PAYLOAD")
-            .contains("for (")
-            .contains("cause = e")
-            .contains("mapping.match(cause)")
             .contains("ErrorList<>(")
-            .contains("cause")
             .as("unmapped fall-through is the no-channel disposition")
             .contains("ErrorRouter.surfaceClientErrorOrRedact(e, env);")
             .doesNotContain("ErrorRouter.redact(e, env)");

@@ -10,11 +10,10 @@ import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ErrorFieldRead;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.Handler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -42,14 +41,14 @@ import java.util.List;
  *   <li>A dispatch-table walk, guarded by {@code src instanceof Throwable}. Emitted only when
  *       some handler on this type declares a {@code description:}, since a type with no authored
  *       override has nothing to resolve. Each handler emits its own
- *       {@code if (ByType.<TYPE>[i].match(thr)) return ...;} against the type's own
- *       {@code Mapping[]} constant on {@code ErrorMappings}, so the returned expression is chosen
+ *       {@code if (ErrorRouter.matchesSource(ByType.<TYPE>[i], thr, context)) return ...;}
+ *       against the type's own {@code Mapping[]} constant on {@code ErrorMappings}, so the returned expression is chosen
  *       at build time from that handler's {@link ClientMessage} arm rather than by a runtime test
  *       on the mapping: an override arm returns the mapping's own {@code description()}, and a
  *       source-message arm returns {@code thr.getMessage()}. Reading the authored string back off
  *       the mapping rather than inlining it keeps one spelling of that string in the emitted
  *       output, and is what makes {@code Mapping.description()} a read accessor. The guard is
- *       load-bearing: {@code Mapping.match} takes a {@code Throwable}, and a
+ *       load-bearing: {@code matchesSource} takes a {@code Throwable}, and a
  *       {@code ConstraintViolations}-produced {@code GraphQLError} need not be one.</li>
  *   <li>The {@code GraphQLError} arm, {@code ge.getMessage()}. This is the validation path:
  *       {@code ConstraintViolations.toGraphQLError} puts {@code GraphQLError} instances in the
@@ -67,12 +66,13 @@ import java.util.List;
  * authored override for exactly those classes. A validator-produced {@code GraphQLError} that is
  * not a {@code Throwable} skips the guarded block and reaches its own arm unchanged.
  *
- * <p>The walk is per-{@code @error}-type rather than channel-wide, and the difference is
- * observable: two {@code @error} types on one channel can both match one throwable through
- * different variants, and where dispatch takes the channel's first match, the union
- * {@code TypeResolver} picks the type by source class. Resolving the message against the type the
- * resolver already selected keeps {@code message} consistent with the {@code __typename} the
- * client sees in the same selection set.
+ * <p>The walk is per-{@code @error}-type rather than channel-wide: the union {@code TypeResolver}
+ * runs the same mappings, through the same {@code matchesSource}, in the same order, and this
+ * method resolves the message against the type the resolver already selected. That keeps
+ * {@code message} consistent with the {@code __typename} the client sees in the same selection
+ * set. {@code matchesSource} re-checks a mapping against the source and against the exceptions
+ * that wrapped it when dispatch claimed it, so a {@code DATABASE} {@code matches} text found only
+ * in jOOQ's SQL text resolves here as it did in dispatch.
  */
 public final class ErrorTypeFetcherClassGenerator {
 
@@ -86,16 +86,16 @@ public final class ErrorTypeFetcherClassGenerator {
 
     /**
      * Renders one {@code @error} type's fetchers class; membership is the type-unit relation's
-     * {@code @error} fetchers row, and {@code errorMappings} is the ref that row carries, the one
-     * address the {@code message} body names besides its own. This method builds the fixed method
+     * {@code @error} fetchers row, and {@code errorMappings} and {@code errorRouter} are the refs
+     * that row carries, the addresses the {@code message} body names besides its own. This method builds the fixed method
      * pair for the type the row names.
      */
     public static TypeSpec generateFor(GraphitronType.ErrorType et, ClassName errorMappings,
-            List<ErrorFieldRead> fieldReads) {
+            ClassName errorRouter, List<ErrorFieldRead> fieldReads) {
         var cls = TypeSpec.classBuilder(et.name() + GeneratedUnits.FETCHERS_SUFFIX)
             .addModifiers(Modifier.PUBLIC)
             .addMethod(pathMethod())
-            .addMethod(messageMethod(et, errorMappings));
+            .addMethod(messageMethod(et, errorMappings, errorRouter));
         for (var read : fieldReads) {
             if (read instanceof ErrorFieldRead.SourceAccessor accessor
                     && accessor.wire() instanceof CallSiteCompaction.NodeIdEncodeKeys encode) {
@@ -146,7 +146,8 @@ public final class ErrorTypeFetcherClassGenerator {
             .build();
     }
 
-    private static MethodSpec messageMethod(GraphitronType.ErrorType et, ClassName errorMappings) {
+    private static MethodSpec messageMethod(GraphitronType.ErrorType et, ClassName errorMappings,
+            ClassName errorRouter) {
         var method = MethodSpec.methodBuilder("message")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object.class)
@@ -167,10 +168,11 @@ public final class ErrorTypeFetcherClassGenerator {
                 // source-message handler would let a later override fire in its place.
                 switch (clientMessageOf(handler)) {
                     case ClientMessage.Static ignored -> method.addStatement(
-                        "if ($T.$L[$L].match(thr)) return $T.$L[$L].description()",
-                        byType, constant, index, byType, constant, index);
+                        "if ($T.matchesSource($T.$L[$L], thr, env.getGraphQlContext())) return $T.$L[$L].description()",
+                        errorRouter, byType, constant, index, byType, constant, index);
                     case ClientMessage.FromSource ignored -> method.addStatement(
-                        "if ($T.$L[$L].match(thr)) return thr.getMessage()", byType, constant, index);
+                        "if ($T.matchesSource($T.$L[$L], thr, env.getGraphQlContext())) return thr.getMessage()",
+                        errorRouter, byType, constant, index);
                 }
                 index++;
             }
@@ -220,8 +222,7 @@ public final class ErrorTypeFetcherClassGenerator {
     private static ClientMessage clientMessageOf(Handler handler) {
         return switch (handler) {
             case ExceptionHandler eh -> eh.clientMessage();
-            case SqlStateHandler sh -> sh.clientMessage();
-            case VendorCodeHandler vh -> vh.clientMessage();
+            case DatabaseHandler dh -> dh.clientMessage();
             case ValidationHandler vh -> throw new IllegalStateException(
                 "ValidationHandler carries no ClientMessage and must be skipped before this call;"
                     + " reached clientMessageOf with " + vh);

@@ -329,8 +329,8 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void rule8_duplicateSqlStateHandlers_rejectsCarrier() {
-        // Identical SqlStateHandler tuples across two @error types; the second is unreachable.
+    void rule8_duplicateSqlStateDatabaseHandlers_rejectsCarrier() {
+        // Identical DatabaseHandler(SqlState) tuples across two @error types; the second is unreachable.
         var schema = build("""
             type FkA @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
                 path: [String!]!
@@ -359,8 +359,8 @@ class ErrorChannelClassificationTest {
     }
 
     @Test
-    void rule8_duplicateVendorCodeHandlers_rejectsCarrier() {
-        // Identical VendorCodeHandler tuples across two @error types; the second is unreachable.
+    void rule8_duplicateVendorCodeDatabaseHandlers_rejectsCarrier() {
+        // Identical DatabaseHandler(VendorCode) tuples across two @error types; the second is unreachable.
         var schema = build("""
             type OraA @error(handlers: [{handler: DATABASE, code: "1"}]) {
                 path: [String!]!
@@ -389,8 +389,8 @@ class ErrorChannelClassificationTest {
 
     @Test
     void rule8_crossVariantOverlapIsAccepted() {
-        // ExceptionHandler(SQLException) and SqlStateHandler("23503") discriminate on different
-        // fields. They may both match the same SQLException; §3 source-order picks the first.
+        // ExceptionHandler(SQLException) and DatabaseHandler(SqlState "23503") are different
+        // variants. They may both match the same SQLException; §3 source-order picks the first.
         // This is the canonical "specific arm before fallback" pattern and must NOT be rejected.
         var schema = build("""
             type FkErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
@@ -414,6 +414,65 @@ class ErrorChannelClassificationTest {
         assertThat(f.errorChannel().get().mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("FkErr", "DbErr");
+    }
+
+    @Test
+    void rule8_duplicateDatabaseMatchesWithoutDiscriminator_rejectsCarrier() {
+        // Two {DATABASE, matches: X} entries key on (Any, X): the second is unreachable, as it
+        // was when both lifted to one ExceptionHandler(SQLException).
+        var schema = build("""
+            type ColA @error(handlers: [{handler: DATABASE, matches: "BANKKONTONR"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type ColB @error(handlers: [{handler: DATABASE, matches: "BANKKONTONR"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ColA | ColB
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var field = schema.field("Query", "sak");
+        assertThat(field).isInstanceOf(UnclassifiedField.class);
+        assertThat(((UnclassifiedField) field).reason())
+            .contains("identical match-criteria")
+            .contains("ColA")
+            .contains("ColB")
+            .contains("BANKKONTONR");
+    }
+
+    @Test
+    void rule8_genericSqlExceptionAndDatabaseWithSameMatches_bothAdmitted() {
+        // {GENERIC, className: SQLException, matches: X} tests X against the SQLException's own
+        // message; {DATABASE, matches: X} also tests the wrappers above it. Different variants
+        // reaching different exceptions, so the overlap is admitted.
+        var schema = build("""
+            type Generic @error(handlers: [{handler: GENERIC, className: "java.sql.SQLException", matches: "BANKKONTONR"}]) {
+                path: [String!]!
+                message: String!
+            }
+            type Database @error(handlers: [{handler: DATABASE, matches: "BANKKONTONR"}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = Generic | Database
+            type SakPayload {
+                data: String
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        var f = (QueryField.QueryServiceRecordField) schema.field("Query", "sak");
+        assertThat(f.errorChannel()).isPresent();
+        assertThat(f.errorChannel().get().mappedErrorTypes())
+            .extracting(et -> et.name())
+            .containsExactly("Generic", "Database");
     }
 
     @Test

@@ -5252,10 +5252,10 @@ class FieldBuilder {
      *   <li>Rule 8: two handlers of the same variant in the channel's flattened handler
      *       list with identical match-criteria. The runtime's source-order {@code findFirst}
      *       on {@code MAPPINGS} would make the second mapping unreachable, so the duplicate
-     *       is an author mistake. Intra-variant only: an {@code ExceptionHandler(SQLException)}
-     *       and a {@code SqlStateHandler("23503")} discriminate on different fields and are
-     *       intentionally allowed to overlap (source order resolves which {@code @error}
-     *       type wins).</li>
+     *       is an author mistake. Intra-variant only: a {@code GENERIC} handler on
+     *       {@code SQLException} and a {@code DATABASE} handler reach different exceptions
+     *       and are intentionally allowed to overlap (source order resolves which
+     *       {@code @error} type wins).</li>
      * </ul>
      *
      * <p>(There is no {@code ValidationViolationGraphQLException}-shadowing check:
@@ -5276,15 +5276,15 @@ class FieldBuilder {
      *
      * <ul>
      *   <li>{@link ErrorType.ExceptionHandler}: {@code (exceptionClassName, matches)}</li>
-     *   <li>{@link ErrorType.SqlStateHandler}: {@code (sqlState, matches)}</li>
-     *   <li>{@link ErrorType.VendorCodeHandler}: {@code (vendorCode, matches)}</li>
+     *   <li>{@link ErrorType.DatabaseHandler}: {@code (discriminator, matches)}</li>
      * </ul>
      *
      * <p>Tuple equality treats absent {@code matches} as a distinct value from any present
      * {@code matches}. {@link ErrorType.ValidationHandler} is excluded; rule 7 already caps it
      * at one per channel and it has no discriminator. Cross-variant overlap is intentionally
-     * allowed: a channel with {@code ExceptionHandler(SQLException)} and
-     * {@code SqlStateHandler("23503")} is the canonical "specific arm before fallback" pattern,
+     * allowed: a channel with a no-discriminator {@code DatabaseHandler} and a
+     * {@code DatabaseHandler} on {@code sqlState "23503"} is the canonical "specific arm
+     * before fallback" pattern,
      * and the runtime's source-order dispatch resolves which {@code @error} type it emits.
      *
      * <p>Returns the first reason encountered, or {@code null} when no duplicates exist. The
@@ -5311,9 +5311,8 @@ class FieldBuilder {
      *       {@code exceptionClassName}, or for the generated client exception its
      *       {@linkplain ErrorType.ExceptionClass.GeneratedClientException#SUPERCLASS superclass},
      *       since the generated class is not on the classpath before its first compile.</li>
-     *   <li>{@link ErrorType.SqlStateHandler} / {@link ErrorType.VendorCodeHandler}:
-     *       {@code java.sql.SQLException} (the universal supertype these variants match in
-     *       the cause chain).</li>
+     *   <li>{@link ErrorType.DatabaseHandler}: {@code java.sql.SQLException} (the universal
+     *       supertype it matches in the cause chain).</li>
      *   <li>{@link ErrorType.ValidationHandler}: {@code graphql.GraphQLError} (the wrapper's
      *       pre-execution Jakarta validation step produces one per violation).</li>
      * </ul>
@@ -5392,10 +5391,13 @@ class FieldBuilder {
         return switch (handler) {
             case ErrorType.ExceptionHandler eh -> "{handler: GENERIC, className: \""
                 + eh.exceptionClassName() + "\"}";
-            case ErrorType.SqlStateHandler sh -> "{handler: DATABASE, sqlState: \""
-                + sh.sqlState() + "\"}";
-            case ErrorType.VendorCodeHandler vh -> "{handler: DATABASE, code: \""
-                + vh.vendorCode() + "\"}";
+            case ErrorType.DatabaseHandler dh -> switch (dh.discriminator()) {
+                case ErrorType.DatabaseHandler.Discriminator.SqlState s ->
+                    "{handler: DATABASE, sqlState: \"" + s.sqlState() + "\"}";
+                case ErrorType.DatabaseHandler.Discriminator.VendorCode v ->
+                    "{handler: DATABASE, code: \"" + v.vendorCode() + "\"}";
+                case ErrorType.DatabaseHandler.Discriminator.Any ignored -> "{handler: DATABASE}";
+            };
             case ErrorType.ValidationHandler ignored -> "{handler: VALIDATION}";
         };
     }

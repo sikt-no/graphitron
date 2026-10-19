@@ -5794,8 +5794,8 @@ class GraphitronSchemaBuilderTest {
                     .isInstanceOf(ErrorType.ClientMessage.FromSource.class);
             }),
 
-        DATABASE_SQL_STATE_LIFTS_TO_SQL_STATE_HANDLER(
-            "{handler: DATABASE, sqlState: ...} lifts to SqlStateHandler",
+        DATABASE_SQL_STATE_LIFTS_TO_DATABASE_HANDLER(
+            "{handler: DATABASE, sqlState: ...} lifts to DatabaseHandler(SqlState)",
             """
             type DbError @error(handlers: [{handler: DATABASE, sqlState: "23503", description: "FK violation"}]) {
                 path: [String!]!
@@ -5805,16 +5805,17 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
-                assertThat(h).isInstanceOf(ErrorType.SqlStateHandler.class);
-                var sh = (ErrorType.SqlStateHandler) h;
-                assertThat(sh.sqlState()).isEqualTo("23503");
+                assertThat(h).isInstanceOf(ErrorType.DatabaseHandler.class);
+                var sh = (ErrorType.DatabaseHandler) h;
+                assertThat(sh.discriminator())
+                    .isEqualTo(new ErrorType.DatabaseHandler.Discriminator.SqlState("23503"));
                 // description: lifts to the resolved Static arm carrying the authored string.
                 assertThat(sh.clientMessage())
                     .isEqualTo(new ErrorType.ClientMessage.Static("FK violation"));
             }),
 
-        DATABASE_CODE_LIFTS_TO_VENDOR_CODE_HANDLER(
-            "{handler: DATABASE, code: ...} lifts to VendorCodeHandler",
+        DATABASE_CODE_LIFTS_TO_DATABASE_HANDLER(
+            "{handler: DATABASE, code: ...} lifts to DatabaseHandler(VendorCode)",
             """
             type DbError @error(handlers: [{handler: DATABASE, code: "1"}]) {
                 path: [String!]!
@@ -5824,12 +5825,13 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
-                assertThat(h).isInstanceOf(ErrorType.VendorCodeHandler.class);
-                assertThat(((ErrorType.VendorCodeHandler) h).vendorCode()).isEqualTo("1");
+                assertThat(h).isInstanceOf(ErrorType.DatabaseHandler.class);
+                assertThat(((ErrorType.DatabaseHandler) h).discriminator())
+                    .isEqualTo(new ErrorType.DatabaseHandler.Discriminator.VendorCode("1"));
             }),
 
-        DATABASE_NO_DISCRIMINATOR_LIFTS_TO_EXCEPTION_HANDLER_SQL_EXCEPTION(
-            "{handler: DATABASE} (no discriminator) lifts to ExceptionHandler(java.sql.SQLException)",
+        DATABASE_NO_DISCRIMINATOR_LIFTS_TO_DATABASE_HANDLER_ANY(
+            "{handler: DATABASE} (no discriminator) lifts to DatabaseHandler(Any)",
             """
             type DbError @error(handlers: [{handler: DATABASE}]) {
                 path: [String!]!
@@ -5839,9 +5841,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var h = ((ErrorType) schema.type("DbError")).handlers().get(0);
-                assertThat(h).isInstanceOf(ErrorType.ExceptionHandler.class);
-                assertThat(((ErrorType.ExceptionHandler) h).exceptionClass())
-                    .isEqualTo(new ErrorType.ExceptionClass.ClasspathClass("java.sql.SQLException"));
+                assertThat(h).isInstanceOf(ErrorType.DatabaseHandler.class);
+                assertThat(((ErrorType.DatabaseHandler) h).discriminator())
+                    .isEqualTo(new ErrorType.DatabaseHandler.Discriminator.Any());
             }),
 
         GENERIC_NAMING_GENERATED_CLIENT_EXCEPTION_LIFTS_TO_GENERATED_ARM(
@@ -5906,7 +5908,7 @@ class GraphitronSchemaBuilderTest {
                 var handlers = ((ErrorType) schema.type("MultiError")).handlers();
                 assertThat(handlers).hasSize(2);
                 assertThat(handlers.get(0)).isInstanceOf(ErrorType.ExceptionHandler.class);
-                assertThat(handlers.get(1)).isInstanceOf(ErrorType.SqlStateHandler.class);
+                assertThat(handlers.get(1)).isInstanceOf(ErrorType.DatabaseHandler.class);
             }),
 
         REJECT_GENERIC_WITHOUT_CLASS_NAME(

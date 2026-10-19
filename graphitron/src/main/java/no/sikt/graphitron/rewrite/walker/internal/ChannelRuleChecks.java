@@ -52,8 +52,9 @@ public final class ChannelRuleChecks {
      * Rule 8: rejects a channel whose flattened handler list contains two intra-variant handlers
      * with identical match-criteria. The runtime's source-order {@code findFirst} on
      * {@code MAPPINGS} would make the second mapping unreachable. Cross-variant overlap is
-     * intentionally allowed (an {@code ExceptionHandler(SQLException)} and a
-     * {@code SqlStateHandler("23503")} discriminate on different fields). {@link
+     * intentionally allowed (a {@code GENERIC} {@code ExceptionHandler(SQLException)} and a
+     * {@code DATABASE} {@code DatabaseHandler} reach different exceptions with {@code matches}).
+     * A {@code DatabaseHandler} keys on {@code (discriminator, matches)}. {@link
      * ErrorType.ValidationHandler} is excluded; rule 7 already caps it at one per channel and it
      * has no discriminator. Returns the first duplicate's detail string, or {@code null} when no
      * duplicates exist.
@@ -69,14 +70,16 @@ public final class ChannelRuleChecks {
                     key = new CriteriaKey("ExceptionHandler", eh.exceptionClassName(), eh.matches());
                     fingerprint = "ExceptionHandler(className=\"" + eh.exceptionClassName() + "\""
                         + matchesSuffix(eh.matches()) + ")";
-                } else if (h instanceof ErrorType.SqlStateHandler sh) {
-                    key = new CriteriaKey("SqlStateHandler", sh.sqlState(), sh.matches());
-                    fingerprint = "SqlStateHandler(sqlState=\"" + sh.sqlState() + "\""
-                        + matchesSuffix(sh.matches()) + ")";
-                } else if (h instanceof ErrorType.VendorCodeHandler vh) {
-                    key = new CriteriaKey("VendorCodeHandler", vh.vendorCode(), vh.matches());
-                    fingerprint = "VendorCodeHandler(vendorCode=\"" + vh.vendorCode() + "\""
-                        + matchesSuffix(vh.matches()) + ")";
+                } else if (h instanceof ErrorType.DatabaseHandler dh) {
+                    String discriminator = switch (dh.discriminator()) {
+                        case ErrorType.DatabaseHandler.Discriminator.SqlState s -> "sqlState=\"" + s.sqlState() + "\"";
+                        case ErrorType.DatabaseHandler.Discriminator.VendorCode v -> "code=\"" + v.vendorCode() + "\"";
+                        case ErrorType.DatabaseHandler.Discriminator.Any ignored -> "";
+                    };
+                    key = new CriteriaKey("DatabaseHandler", discriminator, dh.matches());
+                    String matchesPart = matchesSuffix(dh.matches());
+                    fingerprint = "DatabaseHandler(" + (discriminator.isEmpty() && !matchesPart.isEmpty()
+                        ? matchesPart.substring(2) : discriminator + matchesPart) + ")";
                 } else {
                     continue;
                 }

@@ -5,11 +5,10 @@ import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.Handler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.MutationField;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -259,10 +258,11 @@ public final class MappingsConstantNameDedup {
         return switch (h) {
             case ExceptionHandler eh -> "E|" + errorTypeName + "|" + eh.exceptionClassName()
                 + "|" + eh.matches().orElse("");
-            case SqlStateHandler sh -> "S|" + errorTypeName + "|" + sh.sqlState()
-                + "|" + sh.matches().orElse("");
-            case VendorCodeHandler vh -> "V|" + errorTypeName + "|" + vh.vendorCode()
-                + "|" + vh.matches().orElse("");
+            case DatabaseHandler dh -> switch (dh.discriminator()) {
+                case DatabaseHandler.Discriminator.SqlState s -> "S|" + errorTypeName + "|" + s.sqlState();
+                case DatabaseHandler.Discriminator.VendorCode v -> "V|" + errorTypeName + "|" + v.vendorCode();
+                case DatabaseHandler.Discriminator.Any ignored -> "D|" + errorTypeName + "|";
+            } + "|" + dh.matches().orElse("");
             case ValidationHandler ignored -> "L|" + errorTypeName + "||";
         };
     }

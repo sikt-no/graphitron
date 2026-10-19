@@ -32,7 +32,6 @@ public final class ChannelCatchArmEmitter {
             TypeName valueType,
             String outputPackage) {
         return no.sikt.graphitron.render.ErrorDispatchFragments.outcomeArm(
-            ErrorRouterClassGenerator.mappingInterface(outputPackage),
             ErrorMappingsClassGenerator.mappingsClass(outputPackage),
             channel.mappingsConstantName(), valueType, errorListClass(outputPackage),
             ErrorRouterClassGenerator.routerClass(outputPackage));

@@ -777,7 +777,6 @@ class TypeFetcherGeneratorTest {
         assertThat(emitted.returnType().toString()).contains(".schema.Outcome<");
         var body = emitted.code().toString();
         assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        assertThat(body).contains("mapping.match(cause)");
         assertThat(body).contains("ErrorList<>(");
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }
@@ -913,7 +912,6 @@ class TypeFetcherGeneratorTest {
         assertThat(emitted.returnType().toString()).contains(".schema.Outcome<");
         var body = emitted.code().toString();
         assertThat(body).contains("ErrorMappings.SAK_PAYLOAD");
-        assertThat(body).contains("mapping.match(cause)");
         assertThat(body).contains("ErrorList<>(");
         assertThat(body).doesNotContain("ErrorRouter.dispatch");
     }

@@ -1221,6 +1221,14 @@ type Query {
             method: "lookup"
         })
 
+    # Resolver-order fixture: a negative id throws an exception that is both a Throwable and a
+    # GraphQLError. See FilmRefusedLookupError.
+    filmLookupRefused(id: Int!): FilmRefusedLookupPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmRefusedLookupService",
+            method: "lookup"
+        })
+
     # R110 Story 1 fixture entry point. The service hand-rolls a CustomerAddressSummary row;
     # the @sourceRow on `address` lets the rewrite generator emit a path-keyed DataLoader fetch
     # via customer_address_id_fkey without requiring the DTO to carry jOOQ metadata.
@@ -1531,6 +1539,32 @@ type FilmValidatedLookupPayload {
     errors: [FilmValidatedLookupError]
 }
 
+# The errors union of Query.filmLookupRefused. Its VALIDATION member is listed first, and its
+# GENERIC member names an exception that is both a Throwable and a GraphQLError. Dispatch gives the
+# throw to the GENERIC member, since VALIDATION mints no mapping, and the union's type resolver
+# must agree: it runs every member's dispatch mappings before any VALIDATION member's GraphQLError
+# test. See FilmRefusedLookupService.
+type FilmRefusedLookupValidationFailed @error(handlers: [{handler: VALIDATION}]) {
+    path: [String!]!
+    message: String!
+}
+
+type FilmRefusedLookupRefused @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.FilmLookupRefusedException",
+        description: "The film lookup was refused"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmRefusedLookupError = FilmRefusedLookupValidationFailed | FilmRefusedLookupRefused
+
+type FilmRefusedLookupPayload {
+    title: String
+    errors: [FilmRefusedLookupError]
+}
+
 # R12 fixture (error-handling-parity.md): mutation-side counterpart to FilmLookupError. Drives
 # the MutationServiceRecordField emit path through compile-spec + execute-spec; mirrors the
 # production bug shape (a @service-backed mutation returning a @record payload with an errors
@@ -1692,6 +1726,40 @@ type FilmsCreateCheckedPayload {
 type FilmUpdateCheckedPayload {
     film: Film
     errors: [FilmCreateError]
+}
+
+# DATABASE handlers told apart only by text in jOOQ's SQL statement. PostgreSQL's 22003 ("numeric
+# field overflow") names no column, so the column name appears only in the DataAccessException
+# jOOQ wraps around the SQLException; a DATABASE handler's matches reads every message from the
+# outermost throw down to the SQLException. Pinned by GraphQLQueryTest's updateFilmPrice* cases.
+type FilmRentalRateOverflow @error(handlers: [{
+        handler: DATABASE, sqlState: "22003", matches: "rental_rate",
+        description: "The rental rate is too large"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+type FilmReplacementCostOverflow @error(handlers: [{
+        handler: DATABASE, sqlState: "22003", matches: "replacement_cost",
+        description: "The replacement cost is too large"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmPriceOverflowError = FilmRentalRateOverflow | FilmReplacementCostOverflow
+
+union FilmRentalRateOverflowError = FilmRentalRateOverflow
+
+type FilmPriceUpdatePayload {
+    film: Film
+    errors: [FilmPriceOverflowError]
+}
+
+type FilmRentalRateUpdatePayload {
+    film: Film
+    errors: [FilmRentalRateOverflowError]
 }
 
 type Customer implements Node @table(name: "customer") @node {
@@ -4085,6 +4153,14 @@ input FilmCreateReturnDerivedInput {
 # by the direct-return UPDATEs (`updateFilm` / `updateFilms`, R246) and the payload-returning
 # UPDATEs (`updateFilmPayload` / `updateFilmsPayload`, R258); the catalog-derived partition is why
 # the `@value` directive was retired entirely (R266, absorbing R188).
+# Both price fields are optional, so an UPDATE leaves an absent one out of its SET clause and the
+# failing statement names only the column the request sent.
+input FilmPriceUpdateInput {
+    filmId:          Int!        @field(name: "film_id")
+    rentalRate:      BigDecimal  @field(name: "rental_rate")
+    replacementCost: BigDecimal  @field(name: "replacement_cost")
+}
+
 input FilmUpdateInput {
     filmId:      Int!    @field(name: "film_id")
     title:       String! @field(name: "title")
@@ -4868,6 +4944,12 @@ type Mutation {
     createFilmWithErrors(in: FilmCreateInput!): FilmCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
     createFilmsWithErrors(in: [FilmCreateInput!]!): FilmsCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
     updateFilmWithErrors(in: FilmUpdateInput!): FilmUpdateCheckedPayload @mutation(typeName: UPDATE)
+
+    # A numeric overflow on either price column maps to the error type whose DATABASE matches
+    # names that column; see FilmPriceOverflowError. The second carrier's union holds only the
+    # rental-rate type, so a replacement-cost overflow there redacts.
+    updateFilmPrice(in: FilmPriceUpdateInput!): FilmPriceUpdatePayload @mutation(typeName: UPDATE)
+    updateFilmRentalRate(in: FilmPriceUpdateInput!): FilmRentalRateUpdatePayload @mutation(typeName: UPDATE)
 
     # A @service mutation over a list of input objects whose errors union shares FilmWriteInvalid, a
     # {handler: VALIDATION} type, with the DML carriers above: the shape a consumer reaches by putting

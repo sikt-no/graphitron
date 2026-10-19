@@ -2202,17 +2202,12 @@ class TypeBuilder {
                         + " (DATABASE matches any SQLException; use {handler: GENERIC, className: \"...\"} for class-narrowed matching)");
                     return null;
                 }
-                if (sqlState != null) {
-                    return new ErrorType.SqlStateHandler(sqlState, matchesOpt, clientMessage);
-                }
-                if (code != null) {
-                    return new ErrorType.VendorCodeHandler(code, matchesOpt, clientMessage);
-                }
-                // No-discriminator DATABASE lifts to ExceptionHandler(SQLException). SQLException
-                // always resolves on the classifier classpath, so no Class.forName check is
-                // needed here.
-                return new ErrorType.ExceptionHandler(
-                    new ErrorType.ExceptionClass.ClasspathClass("java.sql.SQLException"), matchesOpt, clientMessage);
+                ErrorType.DatabaseHandler.Discriminator discriminator = sqlState != null
+                    ? new ErrorType.DatabaseHandler.Discriminator.SqlState(sqlState)
+                    : code != null
+                        ? new ErrorType.DatabaseHandler.Discriminator.VendorCode(code)
+                        : new ErrorType.DatabaseHandler.Discriminator.Any();
+                return new ErrorType.DatabaseHandler(discriminator, matchesOpt, clientMessage);
             }
             case VALIDATION -> {
                 // Rule 5: VALIDATION takes neither discriminators, nor matches, nor a client

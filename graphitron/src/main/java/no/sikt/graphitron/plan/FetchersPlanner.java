@@ -53,13 +53,14 @@ public final class FetchersPlanner {
                 rows.add(new TypeUnitCommand.FetchersUnit(name, units.fetchers(name)));
             }
         }
-        // The @error population gets its own arm: its rows carry the ErrorMappings ref the
-        // emitted message() body names when the type declares a client-message override. The
+        // The @error population gets its own arm: its rows carry the ErrorMappings and
+        // ErrorRouter refs the emitted message() body names when the type declares a
+        // client-message override. The
         // population comes from the model's own name-ordered fold, the same one the mappings
         // emitter mints its per-type dispatch tables over, so the two cannot disagree about which
         // names exist.
         schema.errorTypes().keySet().forEach(name -> rows.add(new TypeUnitCommand.ErrorFetchersUnit(
-            name, units.fetchers(name), units.errorMappings())));
+            name, units.fetchers(name), units.errorMappings(), units.errorRouter())));
         schema.types().values().stream()
             .filter(t -> t instanceof GraphitronType.ConnectionType)
             .map(t -> (GraphitronType.ConnectionType) t)

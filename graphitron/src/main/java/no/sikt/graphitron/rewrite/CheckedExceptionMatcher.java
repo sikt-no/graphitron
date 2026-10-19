@@ -2,10 +2,9 @@ package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 
 import java.io.IOException;
 import java.sql.SQLException;
@@ -17,9 +16,9 @@ import java.util.Optional;
  * Declared-checked-exception match rule: verifies each non-exempt checked exception a method
  * declares (FQNs captured from {@link java.lang.reflect.Method#getExceptionTypes()}) is covered
  * by at least one handler on the surrounding field's {@link ErrorChannel}. Coverage rationale
- * the code does not show: {@link SqlStateHandler} and {@link VendorCodeHandler} cover any
- * declared {@link java.sql.SQLException} subtype because both match any {@code SQLException}
- * in the cause chain at runtime; {@link ValidationHandler} covers nothing here, it is a
+ * the code does not show: a {@link DatabaseHandler} covers any declared
+ * {@link java.sql.SQLException} subtype because every discriminator matches any
+ * {@code SQLException} in the cause chain at runtime; {@link ValidationHandler} covers nothing here, it is a
  * wrapper-side pre-execution flag that never participates in the catch arm's dispatch.
  *
  * <p>{@link InterruptedException} and {@link java.io.IOException} (and subclasses) are exempt:
@@ -112,8 +111,7 @@ final class CheckedExceptionMatcher {
                     yield handlerClass.isAssignableFrom(ex);
                 }
             };
-            case SqlStateHandler ignored -> SQLException.class.isAssignableFrom(ex);
-            case VendorCodeHandler ignored -> SQLException.class.isAssignableFrom(ex);
+            case DatabaseHandler ignored -> SQLException.class.isAssignableFrom(ex);
             case ValidationHandler ignored -> false;
         };
     }

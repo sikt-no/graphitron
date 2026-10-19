@@ -54,18 +54,19 @@ public sealed interface TypeUnitCommand {
     /**
      * An {@code @error} type's {@code <Type>Fetchers} class: the fixed {@code path} / {@code
      * message} method pair, emitted for every {@code ErrorType} the schema registers. Its own arm
-     * rather than a {@link FetchersUnit} because its body names a second unit: {@code message}
-     * resolves an authored {@code description:} by walking the type's own {@code Mapping[]}
-     * constant on {@code errorMappings}, so the join between the two addresses is the producer's
-     * to make. Membership and naming only, as every row: which handler contributes an override is
+     * rather than a {@link FetchersUnit} because its body names two more units: {@code message}
+     * resolves an authored {@code description:} by re-checking the type's own {@code Mapping[]}
+     * constant on {@code errorMappings} through {@code errorRouter}'s {@code matchesSource}, so the
+     * join between the addresses is the producer's to make. Membership and naming only, as every row: which handler contributes an override is
      * read from the model by the renderer.
      */
-    record ErrorFetchersUnit(String typeName, UnitRef unit, UnitRef errorMappings)
+    record ErrorFetchersUnit(String typeName, UnitRef unit, UnitRef errorMappings, UnitRef errorRouter)
             implements TypeUnitCommand {
         public ErrorFetchersUnit {
             Objects.requireNonNull(typeName, "typeName");
             Objects.requireNonNull(unit, "unit");
             Objects.requireNonNull(errorMappings, "errorMappings");
+            Objects.requireNonNull(errorRouter, "errorRouter");
         }
     }
 

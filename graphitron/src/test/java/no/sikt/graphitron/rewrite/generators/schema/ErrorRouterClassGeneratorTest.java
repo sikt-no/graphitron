@@ -42,16 +42,30 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void emits_threeConcreteMappingClasses() {
+    void mapping_match_takesTheThrowAndTheCandidate() {
+        // A DATABASE mapping's matches text is tested against every link from the outermost
+        // throw down to the candidate, so match sees both.
+        var match = method(nested(generate(), "Mapping"), "match");
+        assertThat(match.returnType().toString()).isEqualTo("boolean");
+        assertThat(match.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("java.lang.Throwable", "java.lang.Throwable");
+        assertThat(match.parameters()).extracting(p -> p.name())
+            .containsExactly("thrown", "candidate");
+    }
+
+    @Test
+    void emits_twoConcreteMappingClassesAndThePrivateChainRootHolder() {
         // ValidationMapping retired with §5: validation runs as a wrapper pre-execution step,
-        // not via the dispatcher, so its Mapping shape is no longer needed.
+        // not via the dispatcher, so its Mapping shape is no longer needed. Every DATABASE
+        // discriminator is one DatabaseMapping.
         var router = generate();
         var nestedNames = router.typeSpecs().stream().map(TypeSpec::name).toList();
         assertThat(nestedNames).containsExactlyInAnyOrder(
             "Mapping",
             "ExceptionMapping",
-            "SqlStateMapping",
-            "VendorCodeMapping");
+            "DatabaseMapping",
+            "ChainRoots");
+        assertThat(nested(router, "ChainRoots").modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
     }
 
     @Test
@@ -67,28 +81,39 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void sqlStateMapping_matchKeysOnSQLException_andSqlStateAccessor() {
+    void databaseMapping_carriesBothDiscriminatorsMatchesAndDescription() {
         var router = generate();
-        var sm = nested(router, "SqlStateMapping");
-        var match = method(sm, "match");
-        // Code emission detail: must check instanceof SQLException and consult getSQLState().
-        String body = match.code().toString();
-        assertThat(body).contains("instanceof");
-        assertThat(body).contains("SQLException");
-        assertThat(body).contains("getSQLState");
+        var dm = nested(router, "DatabaseMapping");
+        assertThat(dm.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL);
+        assertThat(dm.fieldSpecs()).extracting(f -> f.name())
+            .containsExactly("sqlState", "vendorCode", "matches", "description");
+        var ctor = dm.methodSpecs().stream().filter(MethodSpec::isConstructor).findFirst().orElseThrow();
+        assertThat(ctor.parameters()).extracting(p -> p.name())
+            .containsExactly("sqlState", "vendorCode", "matches", "description");
+        assertThat(method(dm, "match").parameters()).extracting(p -> p.name())
+            .containsExactly("thrown", "candidate");
     }
 
     @Test
-    void vendorCodeMapping_matchKeysOnSQLException_andStringifiesErrorCode() {
-        var router = generate();
-        var vm = nested(router, "VendorCodeMapping");
-        var match = method(vm, "match");
-        String body = match.code().toString();
-        assertThat(body).contains("SQLException");
-        assertThat(body).contains("getErrorCode");
-        // String.valueOf(...) is the agreed coercion; vendor codes are emitted as Strings on
-        // the @error directive but graphql-java surfaces SQLException.getErrorCode() as int.
-        assertThat(body).contains("valueOf");
+    void claim_signature_returnsTheClaimedThrowable() {
+        var claim = method(generate(), "claim");
+        assertThat(claim.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(claim.returnType().toString()).isEqualTo("java.lang.Throwable");
+        assertThat(claim.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "java.lang.Throwable",
+            "Mapping[]",
+            "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void matchesSource_signature_takesTheMappingTheSourceAndTheContext() {
+        var matchesSource = method(generate(), "matchesSource");
+        assertThat(matchesSource.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(matchesSource.returnType().toString()).isEqualTo("boolean");
+        assertThat(matchesSource.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "Mapping",
+            "java.lang.Throwable",
+            "graphql.GraphQLContext");
     }
 
     @Test
@@ -111,7 +136,6 @@ class ErrorRouterClassGeneratorTest {
         String body = dispatch.code().toString();
         assertThat(body).doesNotContain("ValidationViolationGraphQLException");
         assertThat(body).doesNotContain("validationCause");
-        assertThat(body).contains("mapping.match(t)");
     }
 
     @Test

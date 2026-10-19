@@ -37,8 +37,13 @@ public final class ErrorRouterClassGenerator {
     public static final String CLASS_NAME = "ErrorRouter";
     public static final String MAPPING_INTERFACE = "Mapping";
     public static final String EXCEPTION_MAPPING = "ExceptionMapping";
-    public static final String SQL_STATE_MAPPING = "SqlStateMapping";
-    public static final String VENDOR_CODE_MAPPING = "VendorCodeMapping";
+    public static final String DATABASE_MAPPING = "DatabaseMapping";
+
+    /** The private holder the chain roots of claimed sources live in, keyed in the request's {@code GraphQLContext}. */
+    private static final String CHAIN_ROOTS = "ChainRoots";
+
+    /** The private helper spelling {@code DatabaseMapping}'s message walk. */
+    private static final String MESSAGE_ON_PATH = "messageOnPathContains";
 
     private static final ClassName THROWABLE                  = ClassName.get(Throwable.class);
     private static final ClassName SQL_EXCEPTION              = ClassName.get("java.sql", "SQLException");
@@ -78,11 +83,6 @@ public final class ErrorRouterClassGenerator {
         return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
-    /** The nested {@code ErrorRouter.Mapping} interface every dispatch table is typed over. */
-    public static ClassName mappingInterface(String outputPackage) {
-        return routerClass(outputPackage).nestedClass(MAPPING_INTERFACE);
-    }
-
     public static List<TypeSpec> generate(String outputPackage) {
         var typeP = TypeVariableName.get("P");
         var resultOfP = ParameterizedTypeName.get(DATA_FETCHER_RESULT, typeP);
@@ -90,8 +90,7 @@ public final class ErrorRouterClassGenerator {
         var mappingInterface = buildMappingInterface();
 
         var exceptionMapping = buildExceptionMapping();
-        var sqlStateMapping = buildSqlStateMapping();
-        var vendorCodeMapping = buildVendorCodeMapping();
+        var databaseMapping = buildDatabaseMapping();
 
         var loggerField = FieldSpec.builder(LOGGER_CN, "LOGGER",
                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -122,6 +121,8 @@ public final class ErrorRouterClassGenerator {
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
         var dispatch = buildDispatchMethod(typeP, resultOfP);
+        var claim = buildClaimMethod();
+        var matchesSource = buildMatchesSourceMethod();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
@@ -142,12 +143,15 @@ public final class ErrorRouterClassGenerator {
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addType(mappingInterface)
             .addType(exceptionMapping)
-            .addType(sqlStateMapping)
-            .addType(vendorCodeMapping)
+            .addType(databaseMapping)
+            .addType(buildChainRootsHolder())
             .addMethod(redact)
             .addMethod(toConfiguredLog)
             .addMethod(surfaceClientErrorOrRedact)
             .addMethod(dispatch)
+            .addMethod(claim)
+            .addMethod(matchesSource)
+            .addMethod(buildMessageOnPathMethod())
             .build();
 
         return List.of(spec);
@@ -173,9 +177,17 @@ public final class ErrorRouterClassGenerator {
         var match = MethodSpec.methodBuilder("match")
             .addModifiers(Modifier.PUBLIC, Modifier.ABSTRACT)
             .returns(boolean.class)
-            .addParameter(THROWABLE, "throwable")
-            .addJavadoc("Whether this mapping's criteria fire on {@code throwable}. The dispatch arm\n"
-                + "walks the cause chain outermost-first per mapping; the first match wins.\n")
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(THROWABLE, "candidate")
+            .addJavadoc("Whether this mapping claims {@code candidate}, which is {@code thrown} or a link\n"
+                + "of its cause chain. {@link ErrorRouter#claim} walks the chain outermost-first per\n"
+                + "mapping; the first match wins. {@link ExceptionMapping} reads only\n"
+                + "{@code candidate};\n"
+                + "{@link DatabaseMapping} also tests its {@code matches} text against every link from\n"
+                + "{@code thrown} down to {@code candidate}.\n"
+                + "@param thrown the outermost throw\n"
+                + "@param candidate the link of {@code thrown}'s cause chain offered as the source\n"
+                + "@return whether {@code candidate} is claimed\n")
             .build();
 
         var description = MethodSpec.methodBuilder("description")
@@ -193,9 +205,9 @@ public final class ErrorRouterClassGenerator {
         return TypeSpec.interfaceBuilder(MAPPING_INTERFACE)
             .addModifiers(Modifier.PUBLIC)
             .addJavadoc("One channel-flattened entry on the per-fetcher {@code Mapping[]} array. Each\n"
-                + "concrete variant ({@link ExceptionMapping}, {@link SqlStateMapping},\n"
-                + "{@link VendorCodeMapping}) implements {@link #match(Throwable)} against the\n"
-                + "thrown cause. No {@code build} factory: under the source-direct dispatch\n"
+                + "concrete variant ({@link ExceptionMapping}, {@link DatabaseMapping}) implements\n"
+                + "{@link #match(Throwable, Throwable)} against a link of the thrown cause chain.\n"
+                + "No {@code build} factory: under the source-direct dispatch\n"
                 + "contract the matched throwable itself goes into the errors list, and\n"
                 + "graphql-java's {@code PropertyDataFetcher} reads each declared {@code @error}\n"
                 + "field directly from the source.\n")
@@ -211,9 +223,8 @@ public final class ErrorRouterClassGenerator {
         return TypeSpec.classBuilder(EXCEPTION_MAPPING)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(ClassName.get("", MAPPING_INTERFACE))
-            .addJavadoc("Matches by exception class identity. Lift target for\n"
-                + "{@code @error} {@code GENERIC} handlers and the no-discriminator {@code DATABASE}\n"
-                + "handler (which lifts to {@code ExceptionMapping(SQLException, ...)}).\n")
+            .addJavadoc("Matches by exception class identity, with {@code matches} tested against the\n"
+                + "candidate's own message. Lift target for {@code @error} {@code GENERIC} handlers.\n")
             .addField(FieldSpec.builder(classOfThrowable, "exceptionClass",
                 Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(STRING_CN, "matches",
@@ -233,10 +244,11 @@ public final class ErrorRouterClassGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(boolean.class)
-                .addParameter(THROWABLE, "throwable")
-                .addCode("if (!exceptionClass.isInstance(throwable)) return false;\n")
+                .addParameter(THROWABLE, "thrown")
+                .addParameter(THROWABLE, "candidate")
+                .addCode("if (!exceptionClass.isInstance(candidate)) return false;\n")
                 .addCode("if (matches == null) return true;\n")
-                .addCode("$T msg = throwable.getMessage();\n", STRING_CN)
+                .addCode("$T msg = candidate.getMessage();\n", STRING_CN)
                 .addCode("return msg != null && msg.contains(matches);\n")
                 .build())
             .addMethod(MethodSpec.methodBuilder("description")
@@ -248,55 +260,18 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static TypeSpec buildSqlStateMapping() {
-        return TypeSpec.classBuilder(SQL_STATE_MAPPING)
+    private static TypeSpec buildDatabaseMapping() {
+        return TypeSpec.classBuilder(DATABASE_MAPPING)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(ClassName.get("", MAPPING_INTERFACE))
-            .addJavadoc("Matches any {@link $T} in the cause chain whose {@code getSQLState()} equals\n"
-                + "the configured {@code sqlState}. Lift target for\n"
-                + "{@code @error} {@code DATABASE} handlers with {@code sqlState} set.\n", SQL_EXCEPTION)
+            .addJavadoc("Matches a {@link $T} whose {@code getSQLState()} equals {@code sqlState}, or\n"
+                + "whose {@code getErrorCode()} string-equals {@code vendorCode}; with both null, any\n"
+                + "{@code SQLException}. {@code matches} succeeds when the message of the candidate or\n"
+                + "of any exception wrapping it, from the outermost throw down, contains the text, so\n"
+                + "it sees the SQL statement jOOQ's {@code DataAccessException} carries. Lift target\n"
+                + "for every {@code @error} {@code DATABASE} handler.\n", SQL_EXCEPTION)
             .addField(FieldSpec.builder(STRING_CN, "sqlState",
                 Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(STRING_CN, "matches",
-                Modifier.PRIVATE, Modifier.FINAL).build())
-            .addField(FieldSpec.builder(STRING_CN, "description",
-                Modifier.PRIVATE, Modifier.FINAL).build())
-            .addMethod(MethodSpec.constructorBuilder()
-                .addModifiers(Modifier.PUBLIC)
-                .addParameter(STRING_CN, "sqlState")
-                .addParameter(STRING_CN, "matches")
-                .addParameter(STRING_CN, "description")
-                .addStatement("this.sqlState = sqlState")
-                .addStatement("this.matches = matches")
-                .addStatement("this.description = description")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("match")
-                .addAnnotation(Override.class)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(boolean.class)
-                .addParameter(THROWABLE, "throwable")
-                .addCode("if (!(throwable instanceof $T sqlEx)) return false;\n", SQL_EXCEPTION)
-                .addCode("if (!sqlState.equals(sqlEx.getSQLState())) return false;\n")
-                .addCode("if (matches == null) return true;\n")
-                .addCode("$T msg = throwable.getMessage();\n", STRING_CN)
-                .addCode("return msg != null && msg.contains(matches);\n")
-                .build())
-            .addMethod(MethodSpec.methodBuilder("description")
-                .addAnnotation(Override.class)
-                .addModifiers(Modifier.PUBLIC)
-                .returns(STRING_CN)
-                .addStatement("return description")
-                .build())
-            .build();
-    }
-
-    private static TypeSpec buildVendorCodeMapping() {
-        return TypeSpec.classBuilder(VENDOR_CODE_MAPPING)
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-            .addSuperinterface(ClassName.get("", MAPPING_INTERFACE))
-            .addJavadoc("Matches any {@link $T} in the cause chain whose {@code getErrorCode()}\n"
-                + "string-equals the configured {@code vendorCode}. Lift target for\n"
-                + "{@code @error} {@code DATABASE} handlers with {@code code} set.\n", SQL_EXCEPTION)
             .addField(FieldSpec.builder(STRING_CN, "vendorCode",
                 Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(STRING_CN, "matches",
@@ -305,9 +280,11 @@ public final class ErrorRouterClassGenerator {
                 Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PUBLIC)
+                .addParameter(STRING_CN, "sqlState")
                 .addParameter(STRING_CN, "vendorCode")
                 .addParameter(STRING_CN, "matches")
                 .addParameter(STRING_CN, "description")
+                .addStatement("this.sqlState = sqlState")
                 .addStatement("this.vendorCode = vendorCode")
                 .addStatement("this.matches = matches")
                 .addStatement("this.description = description")
@@ -316,12 +293,12 @@ public final class ErrorRouterClassGenerator {
                 .addAnnotation(Override.class)
                 .addModifiers(Modifier.PUBLIC)
                 .returns(boolean.class)
-                .addParameter(THROWABLE, "throwable")
-                .addCode("if (!(throwable instanceof $T sqlEx)) return false;\n", SQL_EXCEPTION)
-                .addCode("if (!vendorCode.equals($T.valueOf(sqlEx.getErrorCode()))) return false;\n", STRING_CN)
-                .addCode("if (matches == null) return true;\n")
-                .addCode("$T msg = throwable.getMessage();\n", STRING_CN)
-                .addCode("return msg != null && msg.contains(matches);\n")
+                .addParameter(THROWABLE, "thrown")
+                .addParameter(THROWABLE, "candidate")
+                .addCode("if (!(candidate instanceof $T sqlEx)) return false;\n", SQL_EXCEPTION)
+                .addCode("if (sqlState != null && !sqlState.equals(sqlEx.getSQLState())) return false;\n")
+                .addCode("if (vendorCode != null && !vendorCode.equals($T.valueOf(sqlEx.getErrorCode()))) return false;\n", STRING_CN)
+                .addCode("return matches == null || $L(thrown, candidate, matches);\n", MESSAGE_ON_PATH)
                 .build())
             .addMethod(MethodSpec.methodBuilder("description")
                 .addAnnotation(Override.class)
@@ -329,6 +306,156 @@ public final class ErrorRouterClassGenerator {
                 .returns(STRING_CN)
                 .addStatement("return description")
                 .build())
+            .build();
+    }
+
+    /**
+     * {@code messageOnPathContains(thrown, candidate, text)}: whether any link from {@code thrown}
+     * down to {@code candidate}, inclusive, has a message containing {@code text}. Links below
+     * {@code candidate} do not count; when {@code candidate} is not reachable from
+     * {@code thrown}, only {@code candidate} is checked.
+     */
+    private static MethodSpec buildMessageOnPathMethod() {
+        return MethodSpec.methodBuilder(MESSAGE_ON_PATH)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(THROWABLE, "candidate")
+            .addParameter(STRING_CN, "text")
+            .addJavadoc("Whether the message of any link from {@code thrown} down to {@code candidate},\n"
+                + "inclusive, contains {@code text}. Links below {@code candidate} do not count. When\n"
+                + "{@code candidate} is not reachable from {@code thrown}, only {@code candidate} is\n"
+                + "checked.\n")
+            .addStatement("boolean seen = false")
+            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
+            .beginControlFlow("if (!seen)")
+            .addStatement("$T msg = t.getMessage()", STRING_CN)
+            .addStatement("seen = msg != null && msg.contains(text)")
+            .endControlFlow()
+            .beginControlFlow("if (t == candidate)")
+            .addStatement("return seen")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("$T own = candidate.getMessage()", STRING_CN)
+            .addStatement("return own != null && own.contains(text)")
+            .build();
+    }
+
+    /**
+     * The private chain-root holder: per claimed source, the outermost throws it was wrapped in
+     * when a fetcher claimed it. Lives in the request's {@code GraphQLContext} under its own
+     * class, the way {@code toConfiguredLog} finds {@code FetcherErrorLog}. Both the source key
+     * and the root set are identity-keyed, because an author's exception may override
+     * {@code equals}; recording is a set union under one lock, so the outcome does not depend on
+     * the order concurrent fetchers complete in.
+     */
+    private static TypeSpec buildChainRootsHolder() {
+        var setOfThrowable = ParameterizedTypeName.get(ClassName.get(java.util.Set.class), THROWABLE);
+        var listOfThrowable = ParameterizedTypeName.get(LIST_CN, THROWABLE);
+        var mapType = ParameterizedTypeName.get(ClassName.get(java.util.Map.class), THROWABLE, setOfThrowable);
+        return TypeSpec.classBuilder(CHAIN_ROOTS)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("Per claimed source, the exceptions it was wrapped in when it was claimed (its\n"
+                + "chain roots). Stored in the request's {@code GraphQLContext} under this class.\n"
+                + "Identity-keyed throughout, and safe for concurrent fetchers.\n")
+            .addField(FieldSpec.builder(mapType, "roots", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", java.util.IdentityHashMap.class)
+                .build())
+            .addMethod(MethodSpec.methodBuilder("record")
+                .addModifiers(Modifier.SYNCHRONIZED)
+                .addParameter(THROWABLE, "source")
+                .addParameter(THROWABLE, "root")
+                .addStatement("roots.computeIfAbsent(source, k -> $T.newSetFromMap(new $T<>())).add(root)",
+                    java.util.Collections.class, java.util.IdentityHashMap.class)
+                .build())
+            .addMethod(MethodSpec.methodBuilder("rootsOf")
+                .addModifiers(Modifier.SYNCHRONIZED)
+                .returns(listOfThrowable)
+                .addParameter(THROWABLE, "source")
+                .addStatement("$T found = roots.get(source)", setOfThrowable)
+                .addStatement("return found == null ? $T.of() : new $T<>(found)", LIST_CN, java.util.ArrayList.class)
+                .build())
+            .build();
+    }
+
+    private static MethodSpec buildClaimMethod() {
+        var mappingArray = ArrayTypeName.of(ClassName.get("", MAPPING_INTERFACE));
+        var chainRoots = ClassName.get("", CHAIN_ROOTS);
+        return MethodSpec.methodBuilder("claim")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(THROWABLE)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(mappingArray, "mappings")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The one dispatch walk: for each mapping in source-declaration order, offers\n"
+                + "{@code thrown} and then each link of its cause chain, outermost-first, to\n"
+                + "{@link Mapping#match(Throwable, Throwable)}, and returns the first candidate claimed,\n"
+                + "or {@code null} when none is. The claimed candidate is the payload's source.\n"
+                + "\n"
+                + "<p>When the claimed candidate is not {@code thrown} itself, {@code thrown} is recorded\n"
+                + "in the request's {@code GraphQLContext} as a chain root of the candidate, so the\n"
+                + "read side ({@link #matchesSource}) can re-check a mapping against the same chain\n"
+                + "dispatch saw. The record is keyed on the source alone. If one source is claimed by\n"
+                + "two fetchers through wrappers carrying different text, both readers see the union\n"
+                + "of roots; in practice the wrappers are jOOQ's one {@code DataAccessException} and\n"
+                + "the roots agree. A null {@code env} or context records nothing.\n"
+                + "@param thrown the exception the fetcher caught\n"
+                + "@param mappings the channel's dispatch table\n"
+                + "@param env the failing field's environment, or {@code null}\n"
+                + "@return the claimed link of {@code thrown}'s cause chain, or {@code null}\n")
+            .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))
+            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
+            .beginControlFlow("if (mapping.match(thrown, t))")
+            .beginControlFlow("if (t != thrown && env != null)")
+            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .beginControlFlow("if (context != null)")
+            .addStatement("context.<$T>computeIfAbsent($T.class, k -> new $T()).record(t, thrown)",
+                chainRoots, chainRoots, chainRoots)
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return t")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return null")
+            .build();
+    }
+
+    private static MethodSpec buildMatchesSourceMethod() {
+        var mapping = ClassName.get("", MAPPING_INTERFACE);
+        var chainRoots = ClassName.get("", CHAIN_ROOTS);
+        return MethodSpec.methodBuilder("matchesSource")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(mapping, "mapping")
+            .addParameter(THROWABLE, "source")
+            .addParameter(GRAPHQL_CONTEXT, "context")
+            .addJavadoc("The read-side re-check: whether {@code mapping} matches {@code source} as\n"
+                + "dispatch saw it. True if {@code mapping.match(source, source)} holds, or\n"
+                + "{@code mapping.match(root, source)} holds for any chain root {@link #claim}\n"
+                + "recorded for {@code source}. With a null {@code context} or no record, only\n"
+                + "{@code source} itself is evaluated. The union {@code TypeResolver} and each\n"
+                + "{@code <ErrorType>Fetchers.message} call this, so both agree with dispatch.\n"
+                + "@param mapping the mapping to re-check\n"
+                + "@param source the payload's error source\n"
+                + "@param context the request's context, or {@code null}\n"
+                + "@return whether {@code mapping} matches {@code source}\n")
+            .beginControlFlow("if (mapping.match(source, source))")
+            .addStatement("return true")
+            .endControlFlow()
+            .beginControlFlow("if (context == null)")
+            .addStatement("return false")
+            .endControlFlow()
+            .addStatement("$T roots = context.get($T.class)", chainRoots, chainRoots)
+            .beginControlFlow("if (roots == null)")
+            .addStatement("return false")
+            .endControlFlow()
+            .beginControlFlow("for ($T root : roots.rootsOf(source))", THROWABLE)
+            .beginControlFlow("if (mapping.match(root, source))")
+            .addStatement("return true")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return false")
             .build();
     }
 
@@ -396,10 +523,9 @@ public final class ErrorRouterClassGenerator {
             .addParameter(mappingArray, "mappings")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(payloadFactoryType, "payloadFactory")
-            .addJavadoc("Channel-mapped dispatch (source-direct contract). For each mapping in\n"
-                + "source-declaration order, walks the cause chain outermost-first; the first\n"
-                + "match places the matched {@code Throwable} itself into the errors list and\n"
-                + "returns the populated payload. Falls through to {@link #surfaceClientErrorOrRedact}\n"
+            .addJavadoc("Channel-mapped dispatch (source-direct contract). Asks {@link #claim} for the\n"
+                + "first (mapping, cause) pair that matches and places the claimed {@code Throwable}\n"
+                + "itself into the errors list, returning the populated payload. Falls through to {@link #surfaceClientErrorOrRedact}\n"
                 + "on no match, the disposition a fetcher without a channel gets.\n"
                 + "graphql-java's {@code PropertyDataFetcher} reads each declared {@code @error}\n"
                 + "field directly from whatever source object happens to be in the slot;\n"
@@ -417,14 +543,10 @@ public final class ErrorRouterClassGenerator {
                 + "so an authored override cannot disagree with the {@code __typename} the client\n"
                 + "sees in the same selection set.\n")
             // ----- Source-order match -----
-            .addCode("// Source-order match: first (mapping, cause) pair that satisfies the predicate.\n")
-            .beginControlFlow("for ($T mapping : mappings)", mapping)
-            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
-            .beginControlFlow("if (mapping.match(t))")
-            .addStatement("return $T.<P>newResult().data(payloadFactory.apply($T.of(t))).build()",
+            .addStatement("$T claimed = claim(thrown, mappings, env)", THROWABLE)
+            .beginControlFlow("if (claimed != null)")
+            .addStatement("return $T.<P>newResult().data(payloadFactory.apply($T.of(claimed))).build()",
                 DATA_FETCHER_RESULT, LIST_CN)
-            .endControlFlow()
-            .endControlFlow()
             .endControlFlow()
             // ----- Unmatched: surface a client error, else redact -----
             .addCode("\n// Unmatched: surface a client error, else log + redacted DataFetcherResult.\n")

@@ -13,10 +13,7 @@ import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.InterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
@@ -212,19 +209,16 @@ public final class GraphitronSchemaClassGenerator {
                 body.add(cb.build());
             });
 
-        // @error-only union/interface TypeResolvers: source-class-instanceof dispatch.
-        // The runtime source for each entry in a payload's errors list is the
-        // matched object itself (Throwable for GENERIC/DATABASE handlers, GraphQLError for
-        // VALIDATION); no developer-supplied data class. Each such union or interface gets a
-        // resolver that walks every (participant @error type, handler) pair in source order
-        // (declaration order, then the handler array's order within each @error type) and
-        // dispatches each runtime source to the @error type whose handler discriminator
-        // matches. Mirrors the dispatcher's source-order-first-match semantics.
+        // @error-only union/interface TypeResolvers. The runtime source for each entry in a
+        // payload's errors list is the matched object itself (Throwable for GENERIC/DATABASE
+        // handlers, GraphQLError for VALIDATION); no developer-supplied data class. Each such
+        // union or interface gets a resolver that re-runs the participants' own dispatch
+        // mappings against the source, so it agrees with dispatch by construction.
         schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof InterfaceType || e.getValue() instanceof UnionType)
             .filter(e -> isErrorOnlyPolymorphic(e.getValue(), schema))
             .sorted(Map.Entry.comparingByKey())
-            .forEach(e -> body.add(buildErrorPolymorphicResolver(e.getKey(), e.getValue(), schema)));
+            .forEach(e -> body.add(buildErrorPolymorphicResolver(e.getKey(), e.getValue(), schema, outputPackage)));
 
         // Per-@error-type path/message DataFetchers. The SDL grammar restricts
         // @error types to {path: [String!]!, message: String!}; the @error type's source
@@ -387,8 +381,8 @@ public final class GraphitronSchemaClassGenerator {
     /**
      * True for a {@link UnionType} or {@link InterfaceType} whose participants are all classified
      * as {@link ErrorType}. Used to fork the TypeResolver emission: jOOQ-record-backed
-     * polymorphic types read a {@code __typename} column; @error-only polymorphic types
-     * dispatch by runtime source class (Throwable / GraphQLError).
+     * polymorphic types read a {@code __typename} column; @error-only polymorphic types re-run
+     * their members' dispatch mappings against the source.
      *
      * <p>A polymorphic type with mixed @error and non-@error participants does not occur in
      * practice: the carrier classifier only lifts a payload's errors-shaped field to
@@ -411,14 +405,27 @@ public final class GraphitronSchemaClassGenerator {
 
     /**
      * Emits the {@code codeRegistry.typeResolver(...)} call for an @error-only union or
-     * interface. Walks every (@error-typed participant, handler) pair in source order; the
-     * resulting {@code if} ladder mirrors the dispatcher's source-order-first-match semantics.
-     * The first {@code instanceof} predicate that satisfies returns
-     * the corresponding @error SDL type; falls through to {@code null} when no predicate
-     * matches (unreachable in practice; the dispatcher's match step has already filtered).
+     * interface. The resolver runs the same predicates, in the same order, as
+     * {@code <ErrorType>Fetchers.message}:
+     *
+     * <ol>
+     *   <li>Under one {@code src instanceof Throwable}: for each participant in member order and
+     *       each of its dispatch-capable handlers in declaration order,
+     *       {@code ErrorRouter.matchesSource(ErrorMappings.ByType.<T>[i], thr, context)}. These
+     *       are the mappings dispatch claimed the source with, re-checked against the chain roots
+     *       dispatch recorded, so a {@code DATABASE} {@code matches} text found only in a wrapper
+     *       resolves to the type dispatch chose.</li>
+     *   <li>Then, for each participant carrying a {@code VALIDATION} handler,
+     *       {@code src instanceof GraphQLError}. After every mapping, because a source can be both
+     *       a {@code Throwable} and a {@code GraphQLError}; such a source caught by a
+     *       {@code GENERIC} member resolves to that member, the type dispatch chose.</li>
+     * </ol>
+     *
+     * <p>Falls through to {@code null} when nothing matches (unreachable in practice; the
+     * dispatcher's match step has already filtered).
      */
     private static CodeBlock buildErrorPolymorphicResolver(String typeName, GraphitronType type,
-                                                           GraphitronSchema schema) {
+                                                           GraphitronSchema schema, String outputPackage) {
         var participants = switch (type) {
             case UnionType u -> u.participants();
             case InterfaceType i -> i.participants();
@@ -426,59 +433,35 @@ public final class GraphitronSchemaClassGenerator {
         };
 
         var GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
-        var SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
-        var STRING_CN     = ClassName.get(String.class);
+        var THROWABLE     = ClassName.get(Throwable.class);
+        var errorRouter   = ErrorRouterClassGenerator.routerClass(outputPackage);
+        var byType        = ErrorMappingsClassGenerator.mappingsClass(outputPackage)
+            .nestedClass(ErrorMappingsClassGenerator.BY_TYPE_HOLDER);
+
+        var errorTypes = participants.stream().map(p -> (ErrorType) schema.type(p.typeName())).toList();
 
         var cb = CodeBlock.builder();
         cb.add("codeRegistry.typeResolver($S, env -> {\n", typeName).indent();
         cb.addStatement("Object src = env.getObject()");
-        for (var p : participants) {
-            var et = (ErrorType) schema.type(p.typeName());
-            for (var handler : et.handlers()) {
-                String et_name = et.name();
-                if (handler instanceof ValidationHandler) {
-                    cb.beginControlFlow("if (src instanceof $T)", GRAPHQL_ERROR);
-                    cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                    cb.endControlFlow();
-                } else if (handler instanceof ExceptionHandler eh) {
-                    var excClass = ClassName.bestGuess(eh.exceptionClassName());
-                    if (eh.matches().isPresent()) {
-                        cb.beginControlFlow("if (src instanceof $T thr)", excClass);
-                        cb.addStatement("$T msg = thr.getMessage()", STRING_CN);
-                        cb.beginControlFlow("if (msg != null && msg.contains($S))", eh.matches().get());
-                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                        cb.endControlFlow();
-                        cb.endControlFlow();
-                    } else {
-                        cb.beginControlFlow("if (src instanceof $T)", excClass);
-                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                        cb.endControlFlow();
-                    }
-                } else if (handler instanceof SqlStateHandler sh) {
-                    cb.beginControlFlow("if (src instanceof $T sqlEx && $S.equals(sqlEx.getSQLState()))",
-                        SQL_EXCEPTION, sh.sqlState());
-                    if (sh.matches().isPresent()) {
-                        cb.addStatement("$T msg = sqlEx.getMessage()", STRING_CN);
-                        cb.beginControlFlow("if (msg != null && msg.contains($S))", sh.matches().get());
-                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                        cb.endControlFlow();
-                    } else {
-                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                    }
-                    cb.endControlFlow();
-                } else if (handler instanceof VendorCodeHandler vh) {
-                    cb.beginControlFlow("if (src instanceof $T sqlEx && $S.equals($T.valueOf(sqlEx.getErrorCode())))",
-                        SQL_EXCEPTION, vh.vendorCode(), STRING_CN);
-                    if (vh.matches().isPresent()) {
-                        cb.addStatement("$T msg = sqlEx.getMessage()", STRING_CN);
-                        cb.beginControlFlow("if (msg != null && msg.contains($S))", vh.matches().get());
-                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                        cb.endControlFlow();
-                    } else {
-                        cb.addStatement("return env.getSchema().getObjectType($S)", et_name);
-                    }
-                    cb.endControlFlow();
+        if (errorTypes.stream().anyMatch(et -> et.handlers().stream().anyMatch(h -> !(h instanceof ValidationHandler)))) {
+            cb.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
+            for (var et : errorTypes) {
+                String constant = ErrorMappingsClassGenerator.byTypeConstantName(et.name());
+                int index = 0;
+                for (var handler : et.handlers()) {
+                    if (handler instanceof ValidationHandler) continue;
+                    cb.addStatement("if ($T.matchesSource($T.$L[$L], thr, env.getGraphQLContext())) "
+                            + "return env.getSchema().getObjectType($S)",
+                        errorRouter, byType, constant, index, et.name());
+                    index++;
                 }
+            }
+            cb.endControlFlow();
+        }
+        for (var et : errorTypes) {
+            if (et.handlers().stream().anyMatch(h -> h instanceof ValidationHandler)) {
+                cb.addStatement("if (src instanceof $T) return env.getSchema().getObjectType($S)",
+                    GRAPHQL_ERROR, et.name());
             }
         }
         cb.addStatement("return null");

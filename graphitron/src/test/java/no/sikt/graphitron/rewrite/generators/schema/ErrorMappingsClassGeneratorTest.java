@@ -14,9 +14,8 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -71,7 +70,7 @@ class ErrorMappingsClassGeneratorTest {
 
     @Test
     void dedups_twoIdenticalChannelsIntoOneConstant() {
-        var handler = new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource());
+        var handler = new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource());
         var errorTypes = List.of(errorType("FilmFkViolation", FILM_FK_FQN, List.of(handler)));
         var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", errorTypes);
         var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", errorTypes);
@@ -94,7 +93,7 @@ class ErrorMappingsClassGeneratorTest {
                     Optional.empty(), new ClientMessage.FromSource())))));
         var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
+                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
 
         var schema = synthesizeSchemaWithDedup(List.of(ch1, ch2));
         var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
@@ -115,7 +114,7 @@ class ErrorMappingsClassGeneratorTest {
                     Optional.empty(), new ClientMessage.FromSource())))));
         var ch2 = channel("CreateFilmPayload", CREATE_FILM_PAYLOAD_FQN, "CREATE_FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
+                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
 
         var schema = synthesizeSchema(List.of(ch1, ch2));
         var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
@@ -145,33 +144,48 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     @Test
-    void initializer_emitsSqlStateMappingForSqlStateHandler() {
+    void initializer_emitsDatabaseMappingForSqlStateDiscriminator() {
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
+                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
         var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
-        assertThat(init).contains("SqlStateMapping");
-        assertThat(init).contains("\"23503\"");
+        // An absent vendor code, an absent matches and a FromSource client message all render
+        // as bare null.
+        assertThat(init).contains("DatabaseMapping(\"23503\", null, null, null)");
         assertThat(init).doesNotContain("::new");
-        // An absent matches and a FromSource client message both render as bare null.
-        assertThat(init).contains("null");
     }
 
     @Test
-    void initializer_emitsVendorCodeMappingForVendorCodeHandler() {
+    void initializer_emitsDatabaseMappingForVendorCodeDiscriminator() {
         var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new VendorCodeHandler("1452", Optional.empty(), new ClientMessage.FromSource())))));
+                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.VendorCode("1452"), Optional.empty(), new ClientMessage.FromSource())))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
         var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
-        assertThat(init).contains("VendorCodeMapping");
-        assertThat(init).contains("\"1452\"");
+        assertThat(init).contains("DatabaseMapping(null, \"1452\", null, null)");
         assertThat(init).doesNotContain("::new");
+    }
+
+    @Test
+    void initializer_emitsDatabaseMappingWithNeitherDiscriminatorForAny() {
+        // {DATABASE, matches: ...} without code or sqlState is its own DatabaseMapping, not an
+        // ExceptionMapping on SQLException: its matches text reaches the wrappers above the
+        // SQLException, which a GENERIC mapping's does not.
+        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+            List.of(errorType("FilmFkViolation", FILM_FK_FQN,
+                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.Any(), Optional.of("rental_rate"),
+                    new ClientMessage.Static("Too large"))))));
+        var spec = ErrorMappingsClassGenerator
+            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+
+        var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
+        assertThat(init).contains("DatabaseMapping(null, null, \"rental_rate\", \"Too large\")");
+        assertThat(init).doesNotContain("ExceptionMapping");
     }
 
     @Test
@@ -188,8 +202,7 @@ class ErrorMappingsClassGeneratorTest {
         var init = byTypeEntries(spec, "FILM_VALIDATION");
         assertThat(init).doesNotContain("ValidationMapping");
         assertThat(init).doesNotContain("ExceptionMapping");
-        assertThat(init).doesNotContain("SqlStateMapping");
-        assertThat(init).doesNotContain("VendorCodeMapping");
+        assertThat(init).doesNotContain("DatabaseMapping");
     }
 
     @Test
@@ -202,14 +215,14 @@ class ErrorMappingsClassGeneratorTest {
                 errorType("FilmValidation", FILM_VALIDATION_FQN,
                     List.of(new ValidationHandler())),
                 errorType("FilmFkViolation", FILM_FK_FQN,
-                    List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())))));
+                    List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
         var spec = ErrorMappingsClassGenerator
             .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
 
         assertThat(byTypeEntries(spec, "FILM_VALIDATION")).doesNotContain("Mapping(");
         var fk = byTypeEntries(spec, "FILM_FK_VIOLATION");
         assertThat(fk).doesNotContain("ValidationMapping");
-        assertThat(fk).contains("SqlStateMapping");
+        assertThat(fk).contains("DatabaseMapping");
         assertThat(fk).contains("\"23503\"");
     }
 
@@ -219,8 +232,8 @@ class ErrorMappingsClassGeneratorTest {
         // declaration order of its own ByType array; type order is the channel constant's
         // concatenation order. Both matter: dispatch is source-order-first-match.
         var et1 = errorType("FilmFkViolation", FILM_FK_FQN, List.of(
-            new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource()),
-            new SqlStateHandler("23505", Optional.empty(), new ClientMessage.FromSource())));
+            new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource()),
+            new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23505"), Optional.empty(), new ClientMessage.FromSource())));
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN, List.of(
             new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
@@ -240,7 +253,7 @@ class ErrorMappingsClassGeneratorTest {
         // The use-keyed grain derives wholly from the definition-keyed one: a channel constant
         // is the ordered concatenation of the ByType arrays of the types it maps, nothing else.
         var et1 = errorType("FilmFkViolation", FILM_FK_FQN,
-            List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())));
+            List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())));
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
             List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
@@ -263,7 +276,7 @@ class ErrorMappingsClassGeneratorTest {
         // registered @error type), and that class's message body names this constant, so a
         // channel-keyed mint would leave it naming something that does not exist.
         var mapped = errorType("FilmFkViolation", FILM_FK_FQN,
-            List.of(new SqlStateHandler("23503", Optional.empty(), new ClientMessage.FromSource())));
+            List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())));
         var unmapped = errorType("FilmValidation", FILM_VALIDATION_FQN,
             List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalStateException"),
                 Optional.empty(), new ClientMessage.Static("nope"))));

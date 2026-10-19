@@ -12,11 +12,10 @@ import no.sikt.graphitron.rewrite.MappingsConstantNameDedup;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
+import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.Handler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.SqlStateHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.VendorCodeHandler;
 import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 
 import javax.lang.model.element.Modifier;
@@ -294,8 +293,7 @@ public final class ErrorMappingsClassGenerator {
 
     private static CodeBlock buildMappingEntry(Handler handler, ClassName errorRouter) {
         var exceptionMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.EXCEPTION_MAPPING);
-        var sqlStateMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.SQL_STATE_MAPPING);
-        var vendorCodeMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.VENDOR_CODE_MAPPING);
+        var databaseMapping = errorRouter.nestedClass(ErrorRouterClassGenerator.DATABASE_MAPPING);
 
         return switch (handler) {
             case ExceptionHandler eh -> {
@@ -306,18 +304,18 @@ public final class ErrorMappingsClassGenerator {
                     literalOrNull(eh.matches().orElse(null)),
                     descriptionLiteral(eh.clientMessage()));
             }
-            case SqlStateHandler sh ->
-                CodeBlock.of("new $T($S, $L, $L)",
-                    sqlStateMapping,
-                    sh.sqlState(),
-                    literalOrNull(sh.matches().orElse(null)),
-                    descriptionLiteral(sh.clientMessage()));
-            case VendorCodeHandler vh ->
-                CodeBlock.of("new $T($S, $L, $L)",
-                    vendorCodeMapping,
-                    vh.vendorCode(),
-                    literalOrNull(vh.matches().orElse(null)),
-                    descriptionLiteral(vh.clientMessage()));
+            case DatabaseHandler dh -> {
+                String sqlState = dh.discriminator() instanceof DatabaseHandler.Discriminator.SqlState s
+                    ? s.sqlState() : null;
+                String vendorCode = dh.discriminator() instanceof DatabaseHandler.Discriminator.VendorCode v
+                    ? v.vendorCode() : null;
+                yield CodeBlock.of("new $T($L, $L, $L, $L)",
+                    databaseMapping,
+                    literalOrNull(sqlState),
+                    literalOrNull(vendorCode),
+                    literalOrNull(dh.matches().orElse(null)),
+                    descriptionLiteral(dh.clientMessage()));
+            }
             case ValidationHandler vh -> throw new IllegalStateException(
                 "ValidationHandler should be skipped by buildMappingArrayInitializer; reached "
                     + "buildMappingEntry with " + vh);
