@@ -440,3 +440,36 @@ client error.
   > **Author (round 1):** Settled in the authored rule: the input is read with
   > `new BigDecimal(text.trim())`, matching jOOQ's trim, so `" 1234"` keeps coercing; a
   > `filmsByWireId(filmId: " 1")` test pins it. `exact` still refuses it.
+
+### Round 2 (Spec → Ready): request revisions, session_01Fv45gxYwZiArbtYEgLe29C, 2026-10-19
+
+Round 1's finding is resolved. The column trip puts the converter in both rules, and it holds
+against jOOQ 3.20.11. `getConverter()` gives `IdentityConverter` on an unconverted type. A
+`NUMERIC(4,1)` converted type reports precision 4 and scale 1. `OrgCodeStringConverter.from` gives
+`"186"`. `exact`'s "an id graphitron minted always passes" also holds beyond the numeric types:
+`toString` survives `convert` for `LocalDate`, `LocalDateTime`, `OffsetDateTime`, `Timestamp`,
+`LocalTime`, `UUID`, `NUMERIC(10,2)` `1.50`, `double`, `real` and `boolean`. Every symbol, test
+class, schema field and fixture row the spec names exists as named. One finding blocks.
+
+**F1 (question 1, viability): the inventory of raw decode sites misses
+`JooqRecordInstantiationEmitter.emitPrepare`, so one write rail still loads lenient strings.** The
+generator emits `decodeValues` in eight places. The spec covers `NodeIdEncoderClassGenerator`
+(`buildPerTypeDecode`), `HandleMethodBody`, `RecordDecodeFragments` and the two in `emitKeyDecode`.
+It does not cover the three in `emitPrepare`. That is the prepare phase a jOOQ-record writer takes
+when more than one writer lands on a column. It declares `String[] <base>Keys = decodeValues(...)`
+and checks only the arity. `emitLoadPrepared` then loads those keys with `rec.fromArray`, and
+`emitAgreement` feeds them to `requireColumnAgreement`. A wrapping key there is written as the
+wrapped row. It also *agrees* with a plain writer that names that row: a `StorageBin` id carrying
+`4294967297` beside `binId: 1` passes the check and writes bin 1. That breaks "a value that does not
+decode is never bound into SQL", the half of the goal the spec calls urgent. The spec also says "no
+generated typed decode calls it directly any more" and that the argument rails need no edit. Read
+together, those tell the implementer the listed sites are the whole set. The backstop ("a rail found
+without one gets it") only covers `decode<Type>` callers, and `emitPrepare` is not one.
+
+What would satisfy it: add `emitPrepare` to the `RecordDecodeFragments` / `emitKeyDecode` bullet.
+Say that `<base>Keys` becomes the `Object[]` from `decodeColumns`. Say what `requireColumnAgreement`
+then receives on this path: canonical values from the node-id writer, raw values from a plain
+writer. Then confirm the boundary with R1044 still holds as the Neighbours section states it. Add an
+execution case that fails on today's tree, for example in `NodeIdValueAgreementExecutionTest` over
+the `agreeStorageBin` fixture: a `StorageBin` id whose key wraps onto an existing bin, with or
+without a plain writer, gives the rail's decode failure and nothing is written.
