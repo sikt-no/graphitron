@@ -1370,9 +1370,11 @@ is "The generator builds no schema".
   same answer from the store.
 * **Routine writes read only the store** `open`, in two steps: the command layer goes, then the
   last two facts it takes from `GraphitronSchema` move to the store.
-  * **The command layer goes** `open`, first. The emitter reads `RoutineWriteFacts` rows and the two
-    schema facts itself; `RoutineWriteCommand`, `RoutineWriteRelation`, `RoutineWriteCommands` and
-    `TenantAcquisitionFragments` go.
+  * **The command layer goes** `done`. `RoutineWriteEmitter` in `no.sikt.graphitron.emit` renders from
+    `RoutineWriteQuery`'s rows, still three statements for the run, and is handed the error channel
+    and the tenancy as values; the command, its relation, the copy and the dead tenant routings went,
+    about 1,500 lines net. An import rule keeps `emit` off `GraphitronSchema`, the leaf model and the
+    command triangle; nine named `render` helpers are its only exceptions, each a shared spelling.
     * **What only the command tests describe runs against PostgreSQL** `done`. A chain over two
       hops and one narrowed by a hop `condition:`, a single-valued chain, a list-valued carrier, a
       composite captured key in both forms, a multi-tenant routine write to a global table, and one
