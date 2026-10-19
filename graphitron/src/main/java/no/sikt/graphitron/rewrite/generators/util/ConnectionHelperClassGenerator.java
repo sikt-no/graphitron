@@ -25,8 +25,8 @@ import java.util.List;
  * PostgreSQL strings cannot contain NUL bytes, so no escaping is needed. Decoding splits on
  * {@code \u0000} and uses {@code field.getDataType().convert(token)} for type-safe
  * round-tripping. Returns {@code Field<?>[]} so jOOQ's {@code .seek(Field<?>...)} receives
- * correctly-typed bind values. When no cursor is present, {@code DSL.noField(field)} is
- * returned per column, making {@code .seek()} a no-op.
+ * correctly-typed bind values. When no cursor is present (absent, empty, or blank),
+ * {@code DSL.noField(field)} is returned per column, making {@code .seek()} a no-op.
  *
  * <p>Every malformed-input failure of decode (bad Base64, wrong token arity, a token not
  * coercible to its column type) is rethrown as a {@code GraphitronClientException} carrying
@@ -130,6 +130,8 @@ public class ConnectionHelperClassGenerator {
 
         // --- pageRequest(...) → PageRequest ---
         // The shared pagination entry point for every connection fetcher:
+        //   - an empty or blank after/before reads as absent, ahead of everything else, so both
+        //     decodeCursor and the PageRequest the ConnectionResult page flags read from see null
         //   - client-mistake guards (first/last mutual exclusion, negative first/last,
         //     derived-limit overflow) throw GraphitronClientException so the real message
         //     reaches the client instead of a redacted correlation-id 500
@@ -151,6 +153,8 @@ public class ConnectionHelperClassGenerator {
             .addParameter(listOfSortField, "orderBy")
             .addParameter(listOfField, "extraFields")
             .addParameter(listOfField, "selection")
+            .addCode("if (after != null && after.isBlank()) after = null;\n")
+            .addCode("if (before != null && before.isBlank()) before = null;\n")
             .addCode("if (first != null && last != null)\n")
             .addCode("    throw new $T($S);\n",
                 clientException, "first and last must not both be specified")
@@ -205,7 +209,8 @@ public class ConnectionHelperClassGenerator {
             .build();
 
         // --- decodeCursor(String cursor, List<Field<?>>) → Field<?>[] ---
-        // Returns DSL.noField(col) per column when cursor is null (seek no-op).
+        // Returns DSL.noField(col) per column when cursor is null (seek no-op); pageRequest has
+        // already turned an empty or blank cursor into null.
         // Returns DSL.val(DataType.convert(token), DataType) per column when cursor is present.
         // The decode body is wrapped in one try whose multi-catch classifies blame at the wire
         // boundary: Base64 decode, strict-arity, and convert failures are all pure functions

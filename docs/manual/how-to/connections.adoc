@@ -61,10 +61,11 @@ The `defaultFirstValue:` argument is purely a default for the omitted-`first:` c
 
 == Cursor encoding is part of the public contract
 
-Cursors are base64-encoded NUL-separated tuples of the active sort columns' values for the last row of the page. Two consequences worth restating here (the sort recipe covers the full set):
+Cursors are base64-encoded NUL-separated tuples of the active sort columns' values for the last row of the page. Three consequences worth restating here (the sort recipe covers the full set):
 
 * *The cursor's columns are the order's columns.* Adding, removing, or reordering columns in xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] or in an xref:../reference/directives/order.adoc[`@order`] enum value invalidates outstanding cursors. Treat the order column list as part of the cursor wire contract.
 * *Decoding rejects shape mismatches.* When the request's effective order produces a different column count than the cursor decodes, the request fails. A cursor issued under `@orderBy` cannot be replayed against a `@defaultOrder`-only request unless the column lists happen to coincide.
+* *An empty cursor is no cursor.* `after: ""` and `before: ""` (or a whitespace-only value) read as if the argument were omitted, so an operation that declares `$after: String!` can fetch the first page by sending the empty string. One cursor graphitron emits is itself empty: when the order is a single text column and the page's last row holds `''` in it. Give such an order a unique, non-empty tiebreaker column, such as the primary key, if clients page through it one row at a time.
 
 Backward pagination reuses the same encoding; the rewrite reverses each `SortField`'s direction via jOOQ's `$field()`/`$sortOrder()` model API, runs the seek, and reverses the in-memory result before returning. A cursor issued from a `first:` page round-trips through a `before:` request and vice versa.
 

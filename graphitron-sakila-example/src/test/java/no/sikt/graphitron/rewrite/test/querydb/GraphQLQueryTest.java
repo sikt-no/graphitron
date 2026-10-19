@@ -1900,6 +1900,84 @@ class GraphQLQueryTest {
             .doesNotContain("An error occurred. Reference:");
     }
 
+    // ===== filmsConnection — empty cursor =====
+    // An empty or blank after/before reads as the argument omitted, as Graphitron 9 read it, so an
+    // operation binding after to a String! variable fetches the first page by sending "". The
+    // malformed-cursor tests above stay green, which is what shows the carve-out is no wider.
+
+    private static void assertFirstTwoFilms(Map<String, Object> data) {
+        var conn = assertThat(data).extractingByKey("filmsConnection", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("title"))
+            .containsExactly("ACADEMY DINOSAUR", "ACE GOLDFINGER");
+        // hasPreviousPage pins that the empty cursor never reaches ConnectionResult as a cursor:
+        // a forward page reports hasPreviousPage from afterCursor != null.
+        conn.extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", true)
+            .containsEntry("hasPreviousPage", false);
+    }
+
+    @Test
+    void filmsConnection_emptyAfterCursor_returnsFirstPage() {
+        assertFirstTwoFilms(execute(
+            "{ filmsConnection(first: 2, after: \"\") { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }"));
+    }
+
+    @Test
+    void filmsConnection_emptyAfterCursorFromNonNullVariable_returnsFirstPage() {
+        assertFirstTwoFilms(execute(
+            "query($after: String!) { filmsConnection(first: 2, after: $after) "
+                + "{ nodes { title } pageInfo { hasNextPage hasPreviousPage } } }",
+            Map.of("after", "")));
+    }
+
+    @Test
+    void filmsConnection_blankAfterCursor_returnsFirstPage() {
+        assertFirstTwoFilms(execute(
+            "{ filmsConnection(first: 2, after: \"   \") { nodes { title } pageInfo { hasNextPage hasPreviousPage } } }"));
+    }
+
+    @Test
+    void filmsConnection_emptyBeforeCursor_returnsLastPage() {
+        // Compared against the same query without before rather than against fixed rows: which rows
+        // `last` addresses is a property of the table (see filmsConnection_backward_returnsLastNFilms).
+        String selection = "{ nodes { filmId } pageInfo { hasNextPage hasPreviousPage } } }";
+        Map<String, Object> absent = execute("{ filmsConnection(last: 2) " + selection);
+        Map<String, Object> empty = execute("{ filmsConnection(last: 2, before: \"\") " + selection);
+        assertThat(empty).isEqualTo(absent);
+        assertThat(empty).extractingByKey("filmsConnection", as(MAP))
+            .extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasPreviousPage", true)
+            .containsEntry("hasNextPage", false);
+    }
+
+    @Test
+    void filmsConnection_emptyAfterCursorOnBackwardPage_reportsNoNextPage() {
+        // A backward page reports hasNextPage from afterCursor != null; an empty after is no cursor.
+        Map<String, Object> data = execute(
+            "{ filmsConnection(last: 2, after: \"\") { nodes { filmId } pageInfo { hasNextPage } } }");
+        assertThat(data).extractingByKey("filmsConnection", as(MAP))
+            .extractingByKey("pageInfo", as(MAP))
+            .containsEntry("hasNextPage", false);
+    }
+
+    @SuppressWarnings("unchecked")
+    @Test
+    void splitQueryConnection_emptyAfterCursor_returnsFirstPagePerParent() {
+        // The batched DataLoader path: each parent's page comes from the same pageRequest.
+        Map<String, Object> data = execute(
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1, after: \"\") "
+                + "{ nodes { actorId } pageInfo { hasNextPage hasPreviousPage } } } }");
+        List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
+        assertThat(films).hasSize(2).allSatisfy(film -> {
+            var conn = (Map<String, Object>) film.get("actorsConnection");
+            assertThat((List<Map<String, Object>>) conn.get("nodes"))
+                .extracting(n -> n.get("actorId")).containsExactly(1);
+            assertThat((Map<String, Object>) conn.get("pageInfo"))
+                .extracting("hasNextPage", "hasPreviousPage").containsExactly(true, false);
+        });
+    }
+
     @Test
     void filmsConnection_firstZero_returnsEmptyPageWithoutError() {
         // first: 0 stays valid (the clamp fires only below zero): an empty page whose hasNextPage is
