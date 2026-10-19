@@ -3,11 +3,11 @@ id: R708
 title: "The $project selection gate fires on names selected at any depth below its unit"
 status: Backlog
 bucket: correctness
-priority: 5
+priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-08-18
+last-updated: 2026-10-19
 ---
 
 # The $project selection gate fires on names selected at any depth below its unit
@@ -50,3 +50,27 @@ the map, the pivot and discriminated-table bodies loop it too, and the generated
 `SelectionOccurrences` helpers are part of the contract. Filed from R323, which named its fixture
 leaves around the collision (`occupantDistrict` / `occupantAddressId`) rather than re-pinning a
 baseline onto the spurious column.
+
+## Production consequence: valid documents rejected
+
+The sis v9 against v10 differential test on Oracle (2026-10-19) found the client-visible form of
+this defect, and it is the most severe finding of that test. The guard in the generated
+`SelectionOccurrences.canonical` fails a bucket whose occurrences name different fields, on the
+assumption that they are sibling selection paths (`edges.node` against `nodes`). Because the bucket
+is grouped over every depth, two selections under *different parents* that reuse one response key
+land in the same bucket and trip it. GraphQL scopes response keys per selection set, so the document
+is valid; Graphitron 9 answered it.
+
+Minimal repro:
+`{ emnerV2(filter: {eierOrganisasjonskode: "1234", emnekoder: ["INF1000"]}, first: 1) { nodes { personroller { fsRolle { name: navnAlleSprak { nb } } personProfil { name: navn { fornavn } } } } } }`
+fails with "Result key 'name' selects two different fields ('navnAlleSprak' and 'navn') across
+selection paths merged into one projection ...". Aliases are not needed: an unaliased `kode` on the
+outer type plus `kode: navnAlleSprak` on a child fails too. It triggers through a joined single child
+and through a list child. It does not trigger when the shared key names the same field on different
+types, or when names do not collide. On a root typed `Connection!` the whole `data` becomes null.
+
+A scan of the consumer's production operation log found about 38 distinct documents that reuse one
+key for different fields at different depths, across several stable root fields and `_entities`.
+That moves this item from over-projection hygiene to a correctness defect with production impact;
+the fix has to scope the result-key grouping to the unit's immediate children before either guard
+(`canonical`, `requireConsistentArguments`) runs.

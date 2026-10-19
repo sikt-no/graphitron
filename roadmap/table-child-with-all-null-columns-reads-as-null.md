@@ -1,6 +1,6 @@
 ---
 id: R1069
-title: "A single-row @table child whose columns are all null resolves to null, as v9 resolved it"
+title: "A single-row child whose projected values are all null resolves to null, as v9 resolved it"
 status: Backlog
 bucket: bug
 priority: 4
@@ -10,12 +10,12 @@ created: 2026-10-19
 last-updated: 2026-10-19
 ---
 
-# A single-row @table child whose columns are all null resolves to null, as v9 resolved it
+# A single-row child whose projected values are all null resolves to null, as v9 resolved it
 
 ## Goal
 
-A single-row `@table` child field resolves to `null` when every column it projects is `null`, as
-Graphitron 9 resolved it, so a client that reads `postadresse != null` as "has an address" keeps
+A single-row child field resolves to `null` when every value it projects is `null`, as Graphitron 9
+resolved it, so a client that reads `postadresse != null` as "has an address" keeps
 working across the upgrade. Today the field resolves to an object whose fields are all `null`
 whenever the underlying row exists.
 
@@ -41,3 +41,17 @@ Whether collapsing on all-null columns is right in general for a row that exists
 row" with "a row with no values", which v9 did silently), or should be a declared choice on the
 field. The plan settles that before choosing between a default and a directive, and says how it
 interacts with `@splitQuery` batching, where the child row is read in a separate statement.
+
+## Second shape: a reference leaf whose target row is missing
+
+Also from the sis test (emne area, 2026-10-19). `Termin.studiesemesterPeriode` returns the nesting
+type `StudiesemesterPeriode` (no `@table`), whose two leaves are
+`fraDato: Date @field(name: "DATO_START_SEMESTER") @reference(path: {table: "SEMESTERREGISTRERINGSTERMIN"})`
+and the same for `tilDato`. When no `SEMESTERREGISTRERINGSTERMIN` row matches, v10 returns
+`{fraDato: null, tilDato: null}` and v9 returned `null`. A production operation selects it.
+
+R1026's contract collapses such a wrapper only when every reference in it "is joined from a null
+parent column". Here the parent's join column is set and the referenced row simply does not exist,
+so the contract keeps the object. Both shapes come down to one decision: whether "absent" is judged
+by the join (v10's row-presence reading) or by the projected values (v9's `nullOnAllNull`). The plan
+makes that decision once and applies it to both the `@table` child and the nesting wrapper.
