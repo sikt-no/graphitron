@@ -699,6 +699,26 @@ entry is written by the capture phase alone. Counted in `roadmap/audits/2026-09-
 * **The supertype roster becomes shrink-only** `open`. It already records the duplication and only
   ever gains rows, so making it a ratchet turns the record into the gate rather than adding one.
 
+#### graphitron-ast and graphitron are one gatherer
+
+Two gatherers by name and one by what they do. graphitron-ast captures the documents' graphitron
+directives and then, in its anchor phase, writes `graphitron_field`, `graphitron_element` and the
+rest, which are declared `graphitron`'s; `GraphitronAssemblyCapture` then writes more of
+`graphitron`'s tables in a pass of its own. Decided with Alf 2026-10-19: they are one gatherer, its
+capture phase and its anchor phase, and `GraphitronAssemblyCapture` dissolves into the anchor. The
+fetcher and its subtypes are written there.
+
+* **What each assembly step reads is known** `open`, first. `GraphQLAssemblyCapture` and
+  `SdlFactCapture.decode` run between the anchor and `GraphitronAssemblyCapture`. A step reading
+  neither moves as it is; one that reads them says what orders it, and "The assembly runs as the
+  anchor's last step" may settle that.
+* **The two are one in the meta** `open`. One `meta_gatherer` row, the owners and the dependency
+  edges merged, and `store_graph_progress` following.
+* **Each `GraphitronAssemblyCapture` step moves into the anchor phase, marked and swept** `open`,
+  after the inventory. One child per step, grown as each is tried; `targets` early, since the
+  producers read `graphitron_field_target`.
+* **`GraphitronAssemblyCapture` is gone** `blocked`, on the steps.
+
 #### `DerivationStratum` is gone, each step anchored by its owner
 
 `DerivationStratum` is a second pass that runs after every gatherer, and it exists because the
@@ -752,7 +772,17 @@ and the emitters read, and it goes when nothing reads what it builds.
   * **A defect rests on a basis and sits at an AST entry** `done`. `basis` in place of `fault`, the
     twelve codes `GRAPHITRON`, and the position a foreign key into `graphql_ast_entry`, the element
     `graphitron_entry_defect_site`'s fixed hops away.
-  * **Every field has one fetcher** `open`. `graphitron_fetcher`: one row per output field of
+  * **Every field has one fetcher, which produces a result or reads one** `open`, the spine, decided
+    with Alf 2026-10-19. A producer produces a result and a reader reads from one. A result can be
+    nested, so a reader can read what a reader read, and a producer can read a result to produce a
+    new one. Each of the walk's field classes falls on one side: the root fields, the split
+    children, a child `@service`, `totalCount` and the facets produce; a column, an
+    `@externalField`, a record accessor, the ID encoders, a pivot slot, the errors field and the
+    inline table, interface, union and pivot children read, the last of them a nested result; a
+    `NestingField` reads the whole result. A field neither subtype explains is the defect a
+    totality gate finds. Written in the graphitron anchor phase, once the steps whose tables it
+    reads have moved there; see "graphitron-ast and graphitron are one gatherer".
+    `graphitron_fetcher`: one row per output field of
     `graphitron_field`, complete over them, the supertype the fetcher's facts reference. R333's
     DataFetcher, one coordinate, one resolver, 1:1 and total, which joins `source` and `target` and
     dispatches the operation set. The row carries the key and the facts stay their own relations,
@@ -763,13 +793,26 @@ and the emitters read, and it goes when nothing reads what it builds.
     and `graphitron_field_source`, their stages, fact documents and totality gate are in trunk at
     `ab6b49c34`, and this node's reader brings them back from there with the cost measured,
     about 18 s of a sis capture as they were stored.
-  * **The producers are stated** `open`. A producer is a field where something is executed, and
+  * **The producers are stated** `open`, the fetcher's first subtype. A producer is a field where
+    something is executed, and
     `graphitron_producer` holds those fields and no others: R333's `operation` is total over every
     coordinate, a bare column read being `Fetch`, so the producers are its verbs that execute and
-    not the fact itself; how the two meet is refined as the work goes. Keyed by field, with its kind
-    and `mutates`, true on a field of the mutation root type. A root field, a `@service`, a
-    `@splitQuery` and a connection are producers; a `@routine` below a root that is not split, an
-    `@externalField` and every projected field are not. A producer that reads and lands on a
+    not the fact itself; how the two meet is refined as the work goes. Keyed by field, with its kind.
+    Neither the root it sits on nor the type it produces is a column: the first is a join to the
+    root types and the second is the field's target. What it executes is, a subtype per kind naming
+    it resolved: a write its mutated table and `matches`, which is why a produced and a mutated type
+    are two facts (a delete produces an id and mutates a table); a `_routine` its first `@routine`
+    application and the routine, the applications after it being elements of the reference path;
+    a `_service` its application and the method. A root field, by `graphql_root_operation` and not by
+    name, a `@service`, a `@splitQuery`, a connection, `@tenantFanOut`, `totalCount` and the facets
+    are producers, and so are `node` and `nodes`, by their signature; so are a record-backed
+    parent's table-bound child, the polymorphic fan-in and a discriminated interface's list child,
+    which the walk fetches apart today without a directive saying so; and so is the re-read on a
+    payload's data field, a producer reading the result the write returned. A `@routine` below a
+    root that is not split, an `@externalField` and every projected field are not. `_entities`
+    waits until it is stated, having no `graphitron_field` row. A field the rule finds two kinds
+    for has no row and is a defect at the field; `@lookupKey` with `@routine` is deferred and has
+    none either. A producer that reads and lands on a
     table-bound type leaves its window open, and every field below it that is not a producer is
     projected into its statement; a write closes it, the lock it takes being returned before anything
     more is read, and so does a `_service`. The hierarchy is by what executes and how it identifies
@@ -787,8 +830,7 @@ and the emitters read, and it goes when nothing reads what it builds.
         a predicate and values, `_delete` a predicate alone and returns keys of rows that are gone.
         How a `MANY` update tells its filter from its values is out of scope; the model only records
         the intention, and behaviour does not change;
-    * `_routine`, SQL generated around a database routine, keyed to the application that made it
-      one;
+    * `_routine`, SQL generated around a database routine, keyed to its first application;
     * `_service`, a Java method, keyed to its application.
 
     Upsert is retired and stays out. What makes a field a producer is read from what was written,
@@ -801,6 +843,10 @@ and the emitters read, and it goes when nothing reads what it builds.
     producer away. The payload a producer returns is its own field's return type, one join away, so
     it is not a column here; the carrier rule's `family` is this relation's kind. Every producer is
     in the population, not only the mutation-rooted ones: a query-rooted payload has the same shape.
+  * **The readers are stated** `open`, the fetcher's second subtype, after the producers.
+    `graphitron_reader`: which result a field reads and how, a column, an expression, a record
+    accessor, the whole result, an id encoding or the errors. It meets "A field's source has kinds",
+    which says where the result comes from.
   * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
     row per field of a type a producer returns, with its role, errors or data, and its element,
     table, record, id or other. Total over the fields, an element no rule recognises being a row of
