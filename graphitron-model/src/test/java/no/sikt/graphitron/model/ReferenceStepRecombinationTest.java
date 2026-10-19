@@ -170,11 +170,14 @@ class ReferenceStepRecombinationTest {
          WHERE graph_name = ?
         """;
 
-    /** The whole rule: the same arm over each of the two site families, and nothing over both. */
+    /**
+     * The whole rule: the same arm over each of the two site families. The step relations are
+     * shared by every site, so the arms differ only in which applications they claim.
+     */
     private static final String RECOMBINED =
-        arm(CLAIMED_FIELD, "graphitron_ast_field_reference")
+        arm(CLAIMED_FIELD, "graphitron_ast_reference")
             + " UNION ALL "
-            + arm(CLAIMED_INPUT_FIELD, "graphitron_ast_input_value_reference");
+            + arm(CLAIMED_INPUT_FIELD, "graphitron_ast_reference");
 
     /** The corpus assembled, which is the scope every comparison here is made in. */
     private static final String PROBLEMS = """

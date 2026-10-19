@@ -6,7 +6,6 @@ import org.jooq.Condition;
 import org.jooq.Field;
 import org.jooq.Record3;
 import org.jooq.Result;
-import org.jooq.Select;
 import org.jooq.Table;
 import org.jooq.TableField;
 
@@ -16,14 +15,8 @@ import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_METHOD_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
@@ -247,33 +240,30 @@ public final class BindingUsages {
     private static Result<Record3<String, Integer, Integer>> hopSites(
         StoreHandle store, Spelled spelled
     ) {
-        // The step twins key a step by the path element it sits in; the name is the value written
-        // inside that element at the field the twin spells.
+        // A step is keyed by the path element it sits in, whichever directive and site wrote it;
+        // the name is the value written inside that element at the field the step spells.
         var name = GRAPHQL_AST_VALUE_ENTRY;
         String fieldName = spelled.isKey() ? "key" : "table";
-        Select<Record3<String, Integer, Integer>> sites = null;
-        for (var step : spelled.isKey() ? KEY_STEPS : TABLE_STEPS) {
-            var select = store.dsl()
-                .select(name.SOURCE_NAME, name.SOURCE_LINE, name.SOURCE_COLUMN)
-                .from(step.table())
-                .join(name).on(name.GRAPH_NAME.eq(step.graphName()),
-                    name.SOURCE_NAME.eq(step.sourceName()), name.PARENT_LINE.eq(step.sourceLine()),
-                    name.PARENT_COLUMN.eq(step.sourceColumn()),
-                    name.OBJECT_FIELD_NAME.eq(fieldName))
-                .where(step.graphName().eq(store.graphName()))
-                .and(hopNames(spelled, step.nameUpper(), step.namespaceUpper()));
-            sites = sites == null ? select : sites.unionAll(select);
-        }
-        return sites.fetch();
+        var step = spelled.isKey() ? KEY_STEP : TABLE_STEP;
+        return store.dsl()
+            .select(name.SOURCE_NAME, name.SOURCE_LINE, name.SOURCE_COLUMN)
+            .from(step.table())
+            .join(name).on(name.GRAPH_NAME.eq(step.graphName()),
+                name.SOURCE_NAME.eq(step.sourceName()), name.PARENT_LINE.eq(step.sourceLine()),
+                name.PARENT_COLUMN.eq(step.sourceColumn()),
+                name.OBJECT_FIELD_NAME.eq(fieldName))
+            .where(step.graphName().eq(store.graphName()))
+            .and(hopNames(spelled, step.nameUpper(), step.namespaceUpper()))
+            .fetch();
     }
 
-    /** One step twin's key and the two halves of the name it spells. */
-    private record StepTwin(Table<?> table, Field<String> graphName, Field<String> sourceName,
+    /** One step relation's key and the two halves of the name it spells. */
+    private record StepRelation(Table<?> table, Field<String> graphName, Field<String> sourceName,
                             Field<Integer> sourceLine, Field<Integer> sourceColumn,
                             Field<String> nameUpper, Field<String> namespaceUpper) {
 
-        static StepTwin of(Table<?> table, String spelled) {
-            return new StepTwin(table, column(table, "graph_name", String.class),
+        static StepRelation of(Table<?> table, String spelled) {
+            return new StepRelation(table, column(table, "graph_name", String.class),
                 column(table, "source_name", String.class),
                 column(table, "source_line", Integer.class),
                 column(table, "source_column", Integer.class),
@@ -288,17 +278,11 @@ public final class BindingUsages {
         }
     }
 
-    private static final List<StepTwin> KEY_STEPS = List.of(
-        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY, "key_ref"),
-        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY, "key_ref"),
-        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY, "key_ref"),
-        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_KEY_STEP_ENTRY, "key_ref"));
+    private static final StepRelation KEY_STEP =
+        StepRelation.of(GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY, "key_ref");
 
-    private static final List<StepTwin> TABLE_STEPS = List.of(
-        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY, "table_ref"),
-        StepTwin.of(GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY, "table_ref"),
-        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY, "table_ref"),
-        StepTwin.of(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY, "table_ref"));
+    private static final StepRelation TABLE_STEP =
+        StepRelation.of(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY, "table_ref");
 
     /**
      * The hop-matching rule: the name matches case-insensitively, and a namespace the hop wrote must

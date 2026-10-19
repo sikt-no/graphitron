@@ -25,9 +25,11 @@ import java.util.Locale;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
@@ -200,8 +202,8 @@ class GraphitronFieldEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var table = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
-            var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
+            var table = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
+            var key = GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 
             assertThat(dsl.selectDistinct(table.SOURCE_LINE).from(table).fetch(table.SOURCE_LINE))
                 .as("the two applications sit at two positions, which is their whole identity here")
@@ -217,6 +219,61 @@ class GraphitronFieldEntriesTest {
                     + "of the table row it shares an element with")
                 .extracting(r -> r.value2(), r -> r.value3())
                 .containsExactly(tuple(0, "film_actor_actor_id_fk"));
+        });
+    }
+
+    /**
+     * An entry captures and does not judge. A path element naming none of a table, a key and a
+     * condition is legal, every field of the element being optional, and it is still an element of
+     * its path: a row at its index under the application that wrote it. A condition naming a method
+     * and no class is legal too, the reference's class being optional, and it is a condition row. Which elements name anything
+     * is what the step relations say, and what is wrong with the rest is a detection's to state. A
+     * field the element type does not declare is another matter: the definition does not admit it,
+     * so assembly reports it and the application is not transcribed, on {@code DirectiveLegality}'s
+     * terms.
+     */
+    @Test
+    @DisplayName("every path element is captured at its index, whether or not it names anything")
+    void everyElementIsCapturedWhetherOrNotItParses(@TempDir Path tmp) {
+        write(tmp, "film.graphqls", """
+            type Film {
+              actors: [Actor!] @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"},
+                  {condition: {method: "liveActor", argMapping: "a: b"}}])
+            }
+            """);
+
+        ThreadConfinedStore.run(dsl -> {
+            read(dsl, tmp);
+            var application = GRAPHITRON_AST_REFERENCE_ENTRY;
+            var element = GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
+            var table = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
+
+            assertThat(dsl.fetchCount(application))
+                .as("the application has a decode of its own, which its elements hang from")
+                .isEqualTo(1);
+            assertThat(dsl.select(element.POSITION).from(element)
+                    .join(application).on(application.GRAPH_NAME.eq(element.GRAPH_NAME),
+                        application.SOURCE_NAME.eq(element.SOURCE_NAME),
+                        application.SOURCE_LINE.eq(element.APPLICATION_LINE),
+                        application.SOURCE_COLUMN.eq(element.APPLICATION_COLUMN))
+                    .orderBy(element.POSITION).fetch(element.POSITION))
+                .as("four elements written, four rows, each at its index under that application")
+                .containsExactly(0, 1, 2, 3);
+            assertThat(dsl.select(element.POSITION).from(table)
+                    .join(element).on(element.GRAPH_NAME.eq(table.GRAPH_NAME),
+                        element.SOURCE_NAME.eq(table.SOURCE_NAME),
+                        element.SOURCE_LINE.eq(table.SOURCE_LINE),
+                        element.SOURCE_COLUMN.eq(table.SOURCE_COLUMN))
+                    .fetch(element.POSITION))
+                .as("and only the first names a table, the second naming nothing at all")
+                .containsExactly(0);
+            var condition = GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
+            assertThat(dsl.select(condition.CLASS_NAME, condition.METHOD, condition.ARGMAPPING)
+                    .from(condition).fetch())
+                .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
+                .as("a condition naming no class is still the condition the author wrote, its "
+                    + "method and mapping kept, the missing class a detection's to state")
+                .containsExactly(tuple(null, "liveActor", "a: b"));
         });
     }
 
@@ -240,9 +297,9 @@ class GraphitronFieldEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var table = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
-            var key = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
-            var condition = GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
+            var table = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
+            var key = GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
+            var condition = GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 
             assertThat(dsl.select(writtenAt(table), table.TABLE_REF_NAMESPACE_PART,
                         table.TABLE_REF_NAME_PART).from(table).fetch())

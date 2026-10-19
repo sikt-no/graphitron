@@ -23,13 +23,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_BINDING_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
@@ -38,15 +31,11 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SOURCE_ROW_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.conditioned;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.keyed;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.tabled;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.bool;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.integer;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
-import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.steps;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.stringOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.token;
@@ -68,12 +57,12 @@ import static org.jooq.impl.DSL.val;
  * how the walk this replaces routed them, and it follows from the key: an entry references the AST
  * row it decodes, and those rows are in different relations.
  *
- * <p>Seventeen directive names reach this site and twelve of them get a relation.
+ * <p>Seventeen directive names reach this site and ten of them get a relation here.
  * {@code @splitQuery}, {@code @tenantFanOut} and {@code @globalData} declare no argument, and
  * {@code @multitableReference} is rejected before anything reads its one argument, so a row for
  * any of the four would carry its key and nothing else, which is what the applied-directive row
- * already says. {@code @reference} has only its path, so its steps get a relation and the
- * application does not.
+ * already says. {@code @reference} and {@code @referenceFor} are the path family's, written for
+ * every site at once by {@link GraphitronReferencePathEntries}.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */
@@ -92,17 +81,6 @@ final class GraphitronFieldEntries {
         var conditions = naming(applied(applications, "condition"), "condition");
         conditions(dsl, graph, touchedAt, conditions);
         conditionContextArguments(dsl, graph, touchedAt, conditions);
-
-        var referenceSteps = steps(applied(applications, "reference"));
-        referenceTableSteps(dsl, graph, touchedAt, tabled(referenceSteps));
-        referenceKeySteps(dsl, graph, touchedAt, keyed(referenceSteps));
-        referenceConditionSteps(dsl, graph, touchedAt, conditioned(referenceSteps));
-        var referenceFor = wrote(applied(applications, "referenceFor"), "type");
-        referencesFor(dsl, graph, touchedAt, referenceFor);
-        var referenceForSteps = steps(referenceFor);
-        referenceForTableSteps(dsl, graph, touchedAt, tabled(referenceForSteps));
-        referenceForKeySteps(dsl, graph, touchedAt, keyed(referenceForSteps));
-        referenceForConditionSteps(dsl, graph, touchedAt, conditioned(referenceForSteps));
 
         var services = naming(applied(applications, "service"), "service");
         services(dsl, graph, touchedAt, services);
@@ -132,13 +110,6 @@ final class GraphitronFieldEntries {
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         GRAPHITRON_AST_FIELD_BINDING_ENTRY, GRAPHITRON_AST_FIELD_CONDITION_ENTRY,
         GRAPHITRON_AST_FIELD_CONDITION_CONTEXT_ARG_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY,
-        GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY,
         GRAPHITRON_AST_SERVICE_ENTRY,
         GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY, GRAPHITRON_AST_EXTERNAL_FIELD_ENTRY,
         GRAPHITRON_AST_SOURCE_ROW_ENTRY, GRAPHITRON_AST_CONNECTION_ENTRY,
@@ -211,162 +182,12 @@ final class GraphitronFieldEntries {
                 .set(t.NAME, excluded(t.NAME)));
     }
 
-    private static void referencesFor(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                      List<Directive> applications) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
-        var rows = applications.stream().collect(Rows.toRowList(
-            application -> val(graph, t.GRAPH_NAME),
-            application -> GraphQLAstEntries.sourceName(application),
-            application -> GraphQLAstEntries.sourceLine(application),
-            application -> GraphQLAstEntries.sourceColumn(application),
-            application -> val(touchedAt, t.TOUCHED_AT),
-            application -> val(string(application, "type"), t.PARTICIPANT_TYPE_REF)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.PARTICIPANT_TYPE_REF)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.PARTICIPANT_TYPE_REF, excluded(t.PARTICIPANT_TYPE_REF)));
-    }
 
-    private static void referenceTableSteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<GraphitronAstEntries.Step> steps) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_TABLE_STEP_ENTRY;
-        var rows = steps.stream().collect(Rows.toRowList(
-            step -> val(graph, t.GRAPH_NAME),
-            step -> GraphQLAstEntries.sourceName(step.node()),
-            step -> GraphQLAstEntries.sourceLine(step.node()),
-            step -> GraphQLAstEntries.sourceColumn(step.node()),
-            step -> val(touchedAt, t.TOUCHED_AT),
-            step -> val(step.tableRef(), t.TABLE_REF),
-            step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
-            step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.TABLE_REF, excluded(t.TABLE_REF))
-                .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-                .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
-    }
 
-    private static void referenceKeySteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<GraphitronAstEntries.Step> steps) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_KEY_STEP_ENTRY;
-        var rows = steps.stream().collect(Rows.toRowList(
-            step -> val(graph, t.GRAPH_NAME),
-            step -> GraphQLAstEntries.sourceName(step.node()),
-            step -> GraphQLAstEntries.sourceLine(step.node()),
-            step -> GraphQLAstEntries.sourceColumn(step.node()),
-            step -> val(touchedAt, t.TOUCHED_AT),
-            step -> val(step.keyRef(), t.KEY_REF),
-            step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
-            step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.KEY_REF, excluded(t.KEY_REF))
-                .set(t.KEY_REF_NAMESPACE_PART, excluded(t.KEY_REF_NAMESPACE_PART))
-                .set(t.KEY_REF_NAME_PART, excluded(t.KEY_REF_NAME_PART)));
-    }
 
-    private static void referenceConditionSteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<GraphitronAstEntries.Step> steps) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_CONDITION_STEP_ENTRY;
-        var rows = steps.stream().collect(Rows.toRowList(
-            step -> val(graph, t.GRAPH_NAME),
-            step -> GraphQLAstEntries.sourceName(step.node()),
-            step -> GraphQLAstEntries.sourceLine(step.node()),
-            step -> GraphQLAstEntries.sourceColumn(step.node()),
-            step -> val(touchedAt, t.TOUCHED_AT),
-            step -> val(step.className(), t.CLASS_NAME),
-            step -> val(step.method(), t.METHOD),
-            step -> val(step.argMapping(), t.ARGMAPPING)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.METHOD, excluded(t.METHOD))
-                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
-    }
 
-    private static void referenceForTableSteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<GraphitronAstEntries.Step> steps) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_TABLE_STEP_ENTRY;
-        var rows = steps.stream().collect(Rows.toRowList(
-            step -> val(graph, t.GRAPH_NAME),
-            step -> GraphQLAstEntries.sourceName(step.node()),
-            step -> GraphQLAstEntries.sourceLine(step.node()),
-            step -> GraphQLAstEntries.sourceColumn(step.node()),
-            step -> val(touchedAt, t.TOUCHED_AT),
-            step -> val(step.tableRef(), t.TABLE_REF),
-            step -> val(QualifiedNameGrammar.namespacePart(step.tableRef()), t.TABLE_REF_NAMESPACE_PART),
-            step -> val(QualifiedNameGrammar.namePart(step.tableRef()), t.TABLE_REF_NAME_PART)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.TABLE_REF, t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.TABLE_REF, excluded(t.TABLE_REF))
-                .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
-                .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));
-    }
 
-    private static void referenceForKeySteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<GraphitronAstEntries.Step> steps) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_KEY_STEP_ENTRY;
-        var rows = steps.stream().collect(Rows.toRowList(
-            step -> val(graph, t.GRAPH_NAME),
-            step -> GraphQLAstEntries.sourceName(step.node()),
-            step -> GraphQLAstEntries.sourceLine(step.node()),
-            step -> GraphQLAstEntries.sourceColumn(step.node()),
-            step -> val(touchedAt, t.TOUCHED_AT),
-            step -> val(step.keyRef(), t.KEY_REF),
-            step -> val(QualifiedNameGrammar.namespacePart(step.keyRef()), t.KEY_REF_NAMESPACE_PART),
-            step -> val(QualifiedNameGrammar.namePart(step.keyRef()), t.KEY_REF_NAME_PART)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.KEY_REF, t.KEY_REF_NAMESPACE_PART, t.KEY_REF_NAME_PART)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.KEY_REF, excluded(t.KEY_REF))
-                .set(t.KEY_REF_NAMESPACE_PART, excluded(t.KEY_REF_NAMESPACE_PART))
-                .set(t.KEY_REF_NAME_PART, excluded(t.KEY_REF_NAME_PART)));
-    }
 
-    private static void referenceForConditionSteps(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<GraphitronAstEntries.Step> steps) {
-        var t = GRAPHITRON_AST_FIELD_REFERENCE_FOR_CONDITION_STEP_ENTRY;
-        var rows = steps.stream().collect(Rows.toRowList(
-            step -> val(graph, t.GRAPH_NAME),
-            step -> GraphQLAstEntries.sourceName(step.node()),
-            step -> GraphQLAstEntries.sourceLine(step.node()),
-            step -> GraphQLAstEntries.sourceColumn(step.node()),
-            step -> val(touchedAt, t.TOUCHED_AT),
-            step -> val(step.className(), t.CLASS_NAME),
-            step -> val(step.method(), t.METHOD),
-            step -> val(step.argMapping(), t.ARGMAPPING)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.CLASS_NAME, t.METHOD, t.ARGMAPPING)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.CLASS_NAME, excluded(t.CLASS_NAME))
-                .set(t.METHOD, excluded(t.METHOD))
-                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
-    }
 
     private static void services(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                  List<Directive> applications) {

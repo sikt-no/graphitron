@@ -276,17 +276,13 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_field_condition_entry", "graphitron_ast_input_value_condition_entry"),
         // Nine, and they arrived by being stamped: an @enum application records a class, a method
         // and an argMapping, which is what a service and an external field record too, at either
-        // stratum. Four of them are the condition arm of a path element, one per directive per
-        // site, which the step split put here: an element correlating by an external method records
-        // the same three things, and under the wide step row that was invisible because the row
-        // also carried six catalog columns. What it would take to collapse them is a supertype at a
-        // coordinate none of them has, so the entry half of this set outlives the migration and
-        // this row does not.
+        // stratum. One of them is a path's method-call segment, at every site and under either
+        // directive: it is written the way every method call is, and its own relation is what says
+        // the method is a join at that position, which a @condition's method is not. What it would
+        // take to collapse them is a supertype at a coordinate none of them has, so the entry half
+        // of this set outlives the migration and this row does not.
         Set.of("graphitron_ast_enum_entry", "graphitron_ast_external_field_entry",
-               "graphitron_ast_field_reference_condition_step_entry",
-               "graphitron_ast_field_reference_for_condition_step_entry",
-               "graphitron_ast_input_value_reference_condition_step_entry",
-               "graphitron_ast_input_value_reference_for_condition_step_entry",
+               "graphitron_ast_reference_condition_step_entry",
                "graphitron_ast_service_entry", "graphitron_external_field_entry",
                "graphitron_service_entry"),
         // The written code reference and the one site copy that carries nothing beside it. The
@@ -297,25 +293,14 @@ class SupertypeSignatureGateTest {
                "graphitron_default_order_field_entry"),
         Set.of("graphitron_argument_node_id_entry", "graphitron_ast_field_node_id_entry",
                "graphitron_ast_input_value_node_id_entry", "graphitron_field_node_id_entry"),
-        Set.of("graphitron_argument_reference_for_entry",
-               "graphitron_ast_field_reference_for_entry",
-               "graphitron_ast_input_value_reference_for_entry", "graphitron_reference_for_entry"),
-        // What the step split leaves in place of the two wide relations, at both sites now, and the
-        // grouping is the split being right rather than a roster growing. Each arm sits with the
-        // relations that say the same thing it says: the key arm with the other three key arms, the
-        // table arm with them and with @table, because naming a table is one fact wherever it is
-        // written, and the condition arm with the external-code-reference set above. None of that
-        // was visible while one row carried all three, which is the wide shape's real cost, and it
-        // is why both sites were worth reconciling before the anchors are derived from either.
-        Set.of("graphitron_ast_field_reference_for_key_step_entry",
-               "graphitron_ast_field_reference_key_step_entry",
-               "graphitron_ast_input_value_reference_for_key_step_entry",
-               "graphitron_ast_input_value_reference_key_step_entry"),
-        Set.of("graphitron_ast_field_reference_for_table_step_entry",
-               "graphitron_ast_field_reference_table_step_entry",
-               "graphitron_ast_input_value_reference_for_table_step_entry",
-               "graphitron_ast_input_value_reference_table_step_entry",
-               "graphitron_ast_table_entry"),
+        Set.of("graphitron_argument_reference_for_entry", "graphitron_ast_reference_for_entry",
+               "graphitron_reference_for_entry"),
+        // What the step split leaves in place of the two wide relations, one per arm now that both
+        // directives and every site write the same arm to one relation. The table arm sits with
+        // @table, because naming a table is one fact wherever it is written, and the condition arm
+        // with the external-code-reference set above; the key arm shares its payload with nothing
+        // and is no set at all.
+        Set.of("graphitron_ast_reference_table_step_entry", "graphitron_ast_table_entry"),
         Set.of("graphitron_ast_connection_entry", "graphitron_connection_entry"),
         Set.of("graphitron_ast_default_order_entry", "graphitron_default_order_entry"),
         // The field-site binding entry pairs with the enum-value anchor rather than with the field
@@ -371,17 +356,6 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
-        // The chain resolution, which reconstructs the @reference and @referenceFor step pairs
-        // once per element shape. Not a reconstruction this roster gained, but one it can finally
-        // see: GraphitronAnchor and the resolution stage below it both unioned these pairs in
-        // jOOQ, where no parse over a stored definition reaches, and the rule moving into the
-        // catalog is what put it in front of this gate. Three rows and not one because the pair
-        // is spelled per element shape, which is what a supertype over the four would collapse;
-        // the four are recorded as deliberately unconverted, so this records the sites rather
-        // than pre-empting that decision.
-        "graphitron_field_path_reading|graphitron_ast_field_reference_condition_step_entry,graphitron_ast_field_reference_for_condition_step_entry",
-        "graphitron_field_path_reading|graphitron_ast_field_reference_for_key_step_entry,graphitron_ast_field_reference_key_step_entry",
-        "graphitron_field_path_reading|graphitron_ast_field_reference_for_table_step_entry,graphitron_ast_field_reference_table_step_entry",
         // The chain-link resolution's canonical name over its arms, which is the presentation
         // surface the split owes its readers and the one place the absent columns are cast to
         // NULL, on graphitron_field_reference_step_hop's terms.

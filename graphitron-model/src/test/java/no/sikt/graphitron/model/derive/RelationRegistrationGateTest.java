@@ -163,13 +163,6 @@ class RelationRegistrationGateTest {
             // GraphitronSchema holds one binding per field under an ordinal it assigned.
             "graphitron_ast_field_binding_entry", "graphitron_ast_field_condition_entry",
             "graphitron_ast_field_condition_context_arg_entry",
-            "graphitron_ast_field_reference_table_step_entry",
-            "graphitron_ast_field_reference_key_step_entry",
-            "graphitron_ast_field_reference_condition_step_entry",
-            "graphitron_ast_field_reference_for_entry",
-            "graphitron_ast_field_reference_for_table_step_entry",
-            "graphitron_ast_field_reference_for_key_step_entry",
-            "graphitron_ast_field_reference_for_condition_step_entry",
             "graphitron_ast_service_entry", "graphitron_ast_service_context_arg_entry",
             "graphitron_ast_external_field_entry", "graphitron_ast_source_row_entry",
             "graphitron_ast_connection_entry", "graphitron_ast_field_node_id_entry",
@@ -183,6 +176,16 @@ class RelationRegistrationGateTest {
             // Every entry of every argMapping, read off the vocabulary's name for one; pinned by the
             // fact document argmapping-pair.graphqls, one mapping per directive that takes one.
             "graphitron_ast_argmapping_pair_entry",
+            // The path family, read off every application of the two directives that carry a path
+            // rather than off a site: the application, every element at its index, one relation per
+            // thing an element names, and @referenceFor's participant. GraphitronFieldEntriesTest and GraphitronInputValueEntriesTest pin them at
+            // both sites.
+            "graphitron_ast_reference_entry",
+            "graphitron_ast_reference_element_entry",
+            "graphitron_ast_reference_key_step_entry",
+            "graphitron_ast_reference_table_step_entry",
+            "graphitron_ast_reference_condition_step_entry",
+            "graphitron_ast_reference_for_entry",
             // Its columnMapping pairs, decoded where the string was written. The oracle it
             // would be compared against is the same one its parent has none of, and a pair
             // carries less besides: the walk that wrote the resolved relation is gone, so
@@ -208,13 +211,6 @@ class RelationRegistrationGateTest {
             "graphitron_ast_input_value_binding_entry",
             "graphitron_ast_input_value_condition_entry",
             "graphitron_ast_input_value_condition_context_arg_entry",
-            "graphitron_ast_input_value_reference_key_step_entry",
-            "graphitron_ast_input_value_reference_table_step_entry",
-            "graphitron_ast_input_value_reference_condition_step_entry",
-            "graphitron_ast_input_value_reference_for_entry",
-            "graphitron_ast_input_value_reference_for_key_step_entry",
-            "graphitron_ast_input_value_reference_for_table_step_entry",
-            "graphitron_ast_input_value_reference_for_condition_step_entry",
             "graphitron_ast_input_value_node_id_entry",
             // And of an enum-value application, the sorting vocabulary read where it was written.
             // Keyed by the position of the @ token like every entry above it, where GraphitronSchema

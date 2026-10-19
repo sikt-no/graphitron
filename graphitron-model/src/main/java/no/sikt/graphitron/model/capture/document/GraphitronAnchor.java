@@ -14,7 +14,7 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PARTICIPANT_PATH;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
@@ -348,7 +348,7 @@ public final class GraphitronAnchor {
      * participant and none of them is a step of {@link #fieldPaths}'s path.
      */
     private static void participantPaths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var rf = GRAPHITRON_AST_FIELD_REFERENCE_FOR_ENTRY;
+        var rf = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
         var d = GRAPHQL_AST_ENTRY;
         var t = GRAPHITRON_FIELD_PARTICIPANT_PATH;
         var elements = pathElements(dsl, graph, fieldApplications(dsl, graph), "referenceFor")

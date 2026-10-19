@@ -2081,13 +2081,13 @@ COMMENT ON COLUMN graphitron_ast_error_database_handler_entry.description IS 'th
 -- site's seventeen directive names get no relation at all. @splitQuery, @tenantFanOut and
 -- @globalData declare no argument, and @multitableReference is rejected before anything reads its
 -- one argument, so a row under any of the four would carry its key and nothing else, which is what
--- the applied-directive row already says. @reference's only argument is its path, so the steps get
--- the relation and the application does not.
+-- the applied-directive row already says. @reference and @referenceFor are not decoded here: a path
+-- is one grammar wherever it is written, so the path family below decodes both directives at every
+-- site at once.
 --
 -- A list argument becomes a child relation, and a child hangs off the decode of the application it
--- was written inside, so deleting that decode takes its elements. @reference's steps are the one
--- exception and for the one reason: its application has no decode to hang from, so they reference
--- the AST row directly.
+-- was written inside, so deleting that decode takes its elements. A decode that carries nothing but
+-- its key is not empty when children hang from it: it is what they reference and cascade from.
 CREATE TABLE graphitron_ast_field_binding_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -2157,7 +2157,60 @@ COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.source_column
 COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_field_condition_context_arg_entry.name IS 'the element as written. NOT NULL because an element the author wrote as anything but a string contributes no row at all, so a name is the whole of what a row here says; the element it skipped stands verbatim in graphql_ast_applied_argument_entry. Whether the runtime context carries a value under this name is nothing any reading of a document can say';
 
-CREATE TABLE graphitron_ast_field_reference_table_step_entry (
+-- The path family: @reference and @referenceFor both carry path: [ReferenceElement!]!, at a field,
+-- an argument and an input field alike, so their applications and their elements are decoded here
+-- once rather than once per directive and site. Which directive and which site an application is
+-- under is the applied-directive row's to say, one join away.
+CREATE TABLE graphitron_ast_reference_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_reference_entry IS 'One application of a directive that carries a path, @reference or @referenceFor, at whichever site it was written. For example @reference(path: [{table: "film_actor"}, {table: "actor"}]) on Film.actors gives one row at its at sign.';
+COMMENT ON COLUMN graphitron_ast_reference_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_reference_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_reference_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_reference_entry.source_column IS 'source column of the same. The four columns are the applied directive''s own key, so which directive and which site this application is are one join away rather than columns here';
+COMMENT ON COLUMN graphitron_ast_reference_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an application the author removed is swept with the directive row it hangs on, and its elements with it';
+
+CREATE TABLE graphitron_ast_reference_element_entry (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  application_line   INT     NOT NULL,
+  application_column INT     NOT NULL,
+  position           INT     NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  UNIQUE (graph_name, source_name, application_line, application_column, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, application_line, application_column)
+    REFERENCES graphitron_ast_reference_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_ast_reference_element_entry IS 'One element of the path an application of @reference or @referenceFor wrote, at its index in the list, whatever it says. For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.source_name IS 'the file the element was written in, which is the application''s file too';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.source_line IS 'source line of the element, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose application went is swept with it';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.application_line IS 'source line of the application the element was written in, the first half of its key in graphitron_ast_reference_entry; the file is the element''s own';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.application_column IS 'source column of the same';
+COMMENT ON COLUMN graphitron_ast_reference_element_entry.position IS 'the index the element was written at in its path, from 0. A path written as one object rather than a list is a list of that one object, at 0';
+
+CREATE TABLE graphitron_ast_reference_table_step_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT     NOT NULL,
@@ -2171,22 +2224,22 @@ CREATE TABLE graphitron_ast_field_reference_table_step_entry (
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_field_reference_table_step_entry IS 'The table a path element of a @reference application on an output field names, at its position in the list, as written. For example @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives two rows.';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref IS 'the table field of the element as written. NOT NULL because a row exists exactly where the author named a table, which is what this relation says';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_name_part IS 'the table half of the same, total because the grammar always yields one where a name was written';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
-COMMENT ON COLUMN graphitron_ast_field_reference_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON TABLE graphitron_ast_reference_table_step_entry IS 'The table a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written. For example @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives two rows.';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.source_column IS 'source column of the same. The four columns are the element''s key in graphitron_ast_reference_element_entry, which holds the application it was written in and the index it was written at';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.table_ref IS 'the table field of the element as written. NOT NULL because a row exists exactly where the author named a table, which is what this relation says';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.table_ref_name_part IS 'the table half of the same, total because the grammar always yields one where a name was written';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
+COMMENT ON COLUMN graphitron_ast_reference_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
-CREATE TABLE graphitron_ast_field_reference_key_step_entry (
+CREATE TABLE graphitron_ast_reference_key_step_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT     NOT NULL,
@@ -2200,47 +2253,47 @@ CREATE TABLE graphitron_ast_field_reference_key_step_entry (
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_field_reference_key_step_entry IS 'The foreign key a path element of a @reference application on an output field names, at its position in the list, as written. For example the second element of @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives one row.';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint. NOT NULL because a row exists exactly where the author named one';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_namespace_part IS 'the schema half of the written name, which scopes the lookup to constraints held in that schema; NULL where none was written';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_name_part IS 'the constraint half of the same, total because the grammar always yields one where a name was written';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
-COMMENT ON COLUMN graphitron_ast_field_reference_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
+COMMENT ON TABLE graphitron_ast_reference_key_step_entry IS 'The foreign key a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written. For example the second element of @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives one row.';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.source_column IS 'source column of the same. The four columns are the element''s key in graphitron_ast_reference_element_entry, which holds the application it was written in and the index it was written at';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint. NOT NULL because a row exists exactly where the author named one';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.key_ref_namespace_part IS 'the schema half of the written name, which scopes the lookup to constraints held in that schema; NULL where none was written';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.key_ref_name_part IS 'the constraint half of the same, total because the grammar always yields one where a name was written';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
+COMMENT ON COLUMN graphitron_ast_reference_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 
-CREATE TABLE graphitron_ast_field_reference_condition_step_entry (
+CREATE TABLE graphitron_ast_reference_condition_step_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  class_name               VARCHAR NOT NULL,
+  class_name               VARCHAR,
   method                   VARCHAR,
   argmapping               VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_field_reference_condition_step_entry IS 'The condition a path element of a @reference application on an output field names, at its position in the list, as written. For example {table: "actor", condition: {className: "no.example.Conditions", method: "liveActor"}} gives one row here and one in the table relation.';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.class_name IS 'the className of the element''s condition reference, as written. NOT NULL because a row exists exactly where the author stated a condition, which is the one arm of an element that reaches the classpath rather than the catalog';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was';
-COMMENT ON COLUMN graphitron_ast_field_reference_condition_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
+COMMENT ON TABLE graphitron_ast_reference_condition_step_entry IS 'The condition a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written. For example {table: "actor", condition: {className: "no.example.Conditions", method: "liveActor"}} gives one row here and one in the table relation.';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.source_column IS 'source column of the same. The four columns are the element''s key in graphitron_ast_reference_element_entry, which holds the application it was written in and the index it was written at';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.class_name IS 'the className of the element''s condition reference, as written, or null where the author wrote a condition naming none: a row exists exactly where a condition object was written, and the reference''s className is optional in the vocabulary, so a condition with no class is a detection''s to state rather than a condition lost. This is the one arm of an element that reaches the classpath rather than the catalog';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was';
+COMMENT ON COLUMN graphitron_ast_reference_condition_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
 
-CREATE TABLE graphitron_ast_field_reference_for_entry (
+CREATE TABLE graphitron_ast_reference_for_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
   source_line   INT     NOT NULL,
@@ -2250,99 +2303,16 @@ CREATE TABLE graphitron_ast_field_reference_for_entry (
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_field_reference_for_entry IS 'What a @referenceFor application on an output field says: the participant type whose join path this application replaces, as written. For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry and neither carries what the other holds';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_entry.participant_type_ref IS 'the type argument exactly as written, naming the participant this path applies to. Nullable although the definition marks it required, because a document that omits it still applied the directive. Two applications naming one participant are two rows here and the conflict is a detection over them, this relation refusing nothing';
-
-CREATE TABLE graphitron_ast_field_reference_for_table_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  table_ref                VARCHAR NOT NULL,
-  table_ref_namespace_part VARCHAR,
-  table_ref_name_part      VARCHAR NOT NULL,
-  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
-  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_field_reference_for_table_step_entry IS 'The table a path element of a @referenceFor application on an output field names, at its position in the list, as written. For example @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}]) gives one row.';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref IS 'the table field of the element as written. NOT NULL because a row exists exactly where the author named a table, which is what this relation says';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_name_part IS 'the table half of the same, total because the grammar always yields one where a name was written';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_ast_field_reference_for_key_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  key_ref                  VARCHAR NOT NULL,
-  key_ref_namespace_part   VARCHAR,
-  key_ref_name_part        VARCHAR NOT NULL,
-  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
-  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_field_reference_for_key_step_entry IS 'The foreign key a path element of a @referenceFor application on an output field names, at its position in the list, as written. For example the element of @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}]) gives one row.';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref IS 'the key field of the element as written, naming a foreign-key constraint. NOT NULL because a row exists exactly where the author named one';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_namespace_part IS 'the schema half of the written name, which scopes the lookup to constraints held in that schema; NULL where none was written';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_name_part IS 'the constraint half of the same, total because the grammar always yields one where a name was written';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_ast_field_reference_for_condition_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  class_name               VARCHAR NOT NULL,
-  method                   VARCHAR,
-  argmapping               VARCHAR,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_field_reference_for_condition_step_entry IS 'The condition a path element of a @referenceFor application on an output field names, at its position in the list, as written. For example {table: "book", condition: {className: "no.example.Conditions", method: "liveBook"}} gives one row here and one in the table relation.';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.class_name IS 'the className of the element''s condition reference, as written. NOT NULL because a row exists exactly where the author stated a condition. The manual admits one on an output coordinate only, which is a rule about where the application sits and so a detection over these rows rather than a constraint this relation states';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was';
-COMMENT ON COLUMN graphitron_ast_field_reference_for_condition_step_entry.argmapping IS 'the argMapping of the same, kept as the one string the author typed';
+COMMENT ON TABLE graphitron_ast_reference_for_entry IS 'What a @referenceFor application says, at any site: the participant type whose join path this application replaces, as written. For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.';
+COMMENT ON COLUMN graphitron_ast_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_reference_for_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_reference_for_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_reference_for_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row adds the participant to exactly one row of graphitron_ast_reference_entry and neither carries what the other holds';
+COMMENT ON COLUMN graphitron_ast_reference_for_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_reference_for_entry.participant_type_ref IS 'the type argument exactly as written, naming the participant this path applies to. Nullable although the definition marks it required, because a document that omits it still applied the directive. Two applications naming one participant are two rows here and the conflict is a detection over them, this relation refusing nothing';
 
 CREATE TABLE graphitron_ast_argmapping_pair_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2919,193 +2889,6 @@ COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.source_
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an entry whose whole application went is swept with the decode it hangs on';
 COMMENT ON COLUMN graphitron_ast_input_value_condition_context_arg_entry.name IS 'the context key as written. Not nullable, unlike the payload of a decode: an element written as some other shape contributes no row at all rather than a row of NULL, so what stands here is always something the author typed';
-
-CREATE TABLE graphitron_ast_input_value_reference_for_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  participant_type_ref VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_input_value_directive_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_for_entry IS 'What a @referenceFor application on an input value says: the participant whose join path it replaces, as written. For example target: ID @referenceFor(type: "Book", path: [{table: "book"}]) gives one row naming Book.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_input_value_directive_entry; the directive is repeatable and no ordinal is needed, each application standing at its own at sign';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_entry.participant_type_ref IS 'the type argument exactly as written, naming the participant this path applies to. Required by the definition, so an application omitting it writes no row; whether the name is a participant of any consuming query is a question for the resolving';
-
-CREATE TABLE graphitron_ast_input_value_reference_key_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  key_ref                  VARCHAR NOT NULL,
-  key_ref_namespace_part   VARCHAR,
-  key_ref_name_part        VARCHAR NOT NULL,
-  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
-  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_key_step_entry IS 'One path element of a @reference application on an input value that names a foreign key, at its position in the list. For example {key: "actor_agency_fk"} at position 0 gives one row.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref IS 'the key field of the element exactly as written, naming the foreign-key constraint the hop is drawn through';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_namespace_part IS 'the schema half of the written key name, or NULL where none was written; the qualifier binds the constraint holder''s schema';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_name_part IS 'the constraint half of the same, which is what sql_constraint is matched on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_ast_input_value_reference_table_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  table_ref                VARCHAR NOT NULL,
-  table_ref_namespace_part VARCHAR,
-  table_ref_name_part      VARCHAR NOT NULL,
-  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
-  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_table_step_entry IS 'One path element of a @reference application on an input value that names a table, at its position in the list. For example {table: "sakila.agency"} at position 0 gives one row reading sakila and agency.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref IS 'the table field of the element exactly as written';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_namespace_part IS 'the schema half of the written table name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_name_part IS 'the table half of the same, which is what the spelled-table resolution is matched on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_ast_input_value_reference_condition_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  class_name               VARCHAR NOT NULL,
-  method                   VARCHAR,
-  argmapping               VARCHAR,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_condition_step_entry IS 'One path element of a @reference application on an input value that names a condition, at its position in the list. For example {condition: {className: "no.example.Conditions", method: "live"}} at position 1.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.class_name IS 'the className of the element''s condition reference, as written';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was; an optional narrowing rather than a different intent';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_condition_step_entry.argmapping IS 'the argMapping of the same, as written, or NULL where none was. Kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
-
-CREATE TABLE graphitron_ast_input_value_reference_for_key_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  key_ref                  VARCHAR NOT NULL,
-  key_ref_namespace_part   VARCHAR,
-  key_ref_name_part        VARCHAR NOT NULL,
-  key_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_namespace_part)),
-  key_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(key_ref_name_part)),
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_for_key_step_entry IS 'One path element of a @referenceFor application on an input value that names a foreign key, at its position in the list. For example {key: "actor_agency_fk"} at position 0 gives one row.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref IS 'the key field of the element exactly as written, naming the foreign-key constraint the hop is drawn through';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_namespace_part IS 'the schema half of the written key name, or NULL where none was written; the qualifier binds the constraint holder''s schema';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_name_part IS 'the constraint half of the same, which is what sql_constraint is matched on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s table_schema_upper, a written qualifier naming the schema of the table holding the constraint rather than a namespace of the constraint''s own. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and matches on its name half alone';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_key_step_entry.key_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_constraint''s constraint_name_upper and jooq_name_upper, in that precedence. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_ast_input_value_reference_for_table_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  table_ref                VARCHAR NOT NULL,
-  table_ref_namespace_part VARCHAR,
-  table_ref_name_part      VARCHAR NOT NULL,
-  table_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_namespace_part)),
-  table_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(table_ref_name_part)),
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_for_table_step_entry IS 'One path element of a @referenceFor application on an input value that names a table, at its position in the list. For example {table: "sakila.agency"} at position 0 gives one row reading sakila and agency.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref IS 'the table field of the element exactly as written';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_namespace_part IS 'the schema half of the written table name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_name_part IS 'the table half of the same, which is what the spelled-table resolution is matched on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_schema_upper. Generated, so nothing writes it and nothing can. NULL where the column beside it is, which is an unqualified spelling and is admitted against any schema the graph''s sources carry';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_table_step_entry.table_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s table_name_upper. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
-
-CREATE TABLE graphitron_ast_input_value_reference_for_condition_step_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  class_name               VARCHAR NOT NULL,
-  method                   VARCHAR,
-  argmapping               VARCHAR,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_input_value_reference_for_condition_step_entry IS 'One path element of a @referenceFor application on an input value that names a condition, at its position in the list. For example {condition: {className: "no.example.Conditions", method: "live"}} at position 1.';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.source_name IS 'the file the element was written in';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.class_name IS 'the className of the element''s condition reference, as written';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.method IS 'the method of the same, as written, or NULL where none was; an optional narrowing rather than a different intent';
-COMMENT ON COLUMN graphitron_ast_input_value_reference_for_condition_step_entry.argmapping IS 'the argMapping of the same, as written, or NULL where none was. Kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
 
 CREATE TABLE graphitron_ast_input_value_node_id_entry (
   graph_name    VARCHAR NOT NULL,
@@ -6425,32 +6208,21 @@ CREATE VIEW graphitron_field_path_reading
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
    method_source_name, method_class_name, method_name, method_descriptor) AS
 WITH
--- The key an element named, whichever directive wrote it. One fact with one shape, so one
--- relation; a written position is never under both directives at once, so a bag costs nothing.
+-- What each element was written as, read off the one relation per kind that both directives and
+-- every site write: an element is one input type wherever it is spelled.
 key_spelling (graph_name, source_name, source_line, source_column, namespace_upper, name_upper) AS (
   SELECT graph_name, source_name, source_line, source_column,
          key_ref_namespace_part_upper, key_ref_name_part_upper
-    FROM graphitron_ast_field_reference_key_step_entry
-  UNION ALL
-  SELECT graph_name, source_name, source_line, source_column,
-         key_ref_namespace_part_upper, key_ref_name_part_upper
-    FROM graphitron_ast_field_reference_for_key_step_entry
+    FROM graphitron_ast_reference_key_step_entry
 ),
 table_spelling (graph_name, source_name, source_line, source_column, namespace_upper, name_upper) AS (
   SELECT graph_name, source_name, source_line, source_column,
          table_ref_namespace_part_upper, table_ref_name_part_upper
-    FROM graphitron_ast_field_reference_table_step_entry
-  UNION ALL
-  SELECT graph_name, source_name, source_line, source_column,
-         table_ref_namespace_part_upper, table_ref_name_part_upper
-    FROM graphitron_ast_field_reference_for_table_step_entry
+    FROM graphitron_ast_reference_table_step_entry
 ),
 condition_spelling (graph_name, source_name, source_line, source_column, class_name, method) AS (
   SELECT graph_name, source_name, source_line, source_column, class_name, method
-    FROM graphitron_ast_field_reference_condition_step_entry
-  UNION ALL
-  SELECT graph_name, source_name, source_line, source_column, class_name, method
-    FROM graphitron_ast_field_reference_for_condition_step_entry
+    FROM graphitron_ast_reference_condition_step_entry
 ),
 -- One link of one chain toward one target, which is the grain every arm below answers at: the
 -- chain's order is stated once at the coordinate and the target is what a resolution belongs to.
@@ -14760,34 +14532,30 @@ INSERT INTO meta_relation VALUES
    'One contextArguments element of a @condition application on an output field, at its position in the list, as written.',
    'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
    'A list argument becomes rows rather than a column, because a reader asking which context values one application names should not be parsing a rendered literal. Keyed by the application''s position and the element''s index inside it, which is the whole of what identifies one element: the list is ordered and the order is the author''s. An element of some other shape makes the whole application one the definition does not admit, so none of it is transcribed and the question of what its neighbours are numbered does not arise; a reader wanting the literal an author wrote finds it verbatim in graphql_ast_applied_argument_entry. Whether the runtime context carries a value under a name here is not something any reading of a document can say.'),
-  ('graphitron_ast_field_reference_for_entry', 'sdl-declaration-site', 'graphitron-ast',
-   'What a @referenceFor application on an output field says: the participant type whose join path this application replaces, as written.',
+  ('graphitron_ast_reference_entry', 'sdl-declaration-site', 'graphitron-ast',
+   'One application of a directive that carries a path, @reference or @referenceFor, at whichever site it was written.',
+   'For example @reference(path: [{table: "film_actor"}, {table: "actor"}]) on Film.actors gives one row at its at sign.',
+   'A key-only decode, and not empty for being one: a path''s elements hang from it and cascade with it, so a path has an application to belong to rather than reaching one through the value tree''s holder chain. Both directives carry the same path and are written at a field, an argument and an input field alike, so one relation serves the six combinations, the directive and the site being the applied-directive row''s to say.'),
+  ('graphitron_ast_reference_element_entry', 'sdl-written-value', 'graphitron-ast',
+   'One element of the path an application of @reference or @referenceFor wrote, at its index in the list, whatever it says.',
+   'For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.',
+   'Entries capture and do not validate, so an element exists whatever it names: one naming none of a table, a key and a condition, which the element type allows, is a row here and a defect for a detection to state, where before it was in no relation at all and a path read through the step relations had a hole at its index. A field the element type does not declare is not admitted by the definition, so assembly reports it and DirectiveLegality keeps the application out of the entries. The step relations are its subtypes, one per thing an element can name.'),
+  ('graphitron_ast_reference_for_entry', 'sdl-declaration-site', 'graphitron-ast',
+   'What a @referenceFor application says, at any site: the participant type whose join path this application replaces, as written.',
    'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.',
-   'A decode of one directive application, keyed by the application''s own position. Unlike @reference this directive names something besides its path, so the application has a row and the path elements hang off it rather than off the AST relation, which is what lets a participant name be read without touching the steps. Repeated applications are independent, one per participant, where repeated @reference applications concatenate: that difference is a fact about what the two directives mean and shows up here only as a relation the steps reference. Declaring one participant twice is a build error and no key here states it, two documents naming one participant being two rows this relation transcribes and a detection reports.'),
-  ('graphitron_ast_field_reference_table_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'The table a path element of a @reference application on an output field names, at its position in the list, as written.',
+   'A decode of one directive application, keyed by the application''s own position. Unlike @reference this directive names something besides its path, so its application adds the participant to the path family''s application decode, at whichever site it was written; its path elements are the shared element and step entries, so a participant name is read without touching the steps. Repeated applications are independent, one per participant, where repeated @reference applications concatenate: that difference is a fact about what the two directives mean and shows up here only as a relation the steps reference. Declaring one participant twice is a build error and no key here states it, two documents naming one participant being two rows this relation transcribes and a detection reports.'),
+  ('graphitron_ast_reference_table_step_entry', 'sdl-written-value', 'graphitron-ast',
+   'The table a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written.',
    'For example @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives two rows.',
-   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. The input-value site states the same fact the same way, so a rule over path elements is written once per fact rather than once per site. The application gets no relation of its own, its only argument being the path, so these rows hang off graphql_ast_field_directive_entry directly.'),
-  ('graphitron_ast_field_reference_key_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'The foreign key a path element of a @reference application on an output field names, at its position in the list, as written.',
+   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. Both directives that carry a path, at every site they are written at, write here: an element is one input type wherever it is spelled, and which directive and which site it sits under are facts of its application, reached through the element''s value entry, rather than of the element. So a rule over path elements is written once per fact and reads one relation. The rows hang off the element''s entry, which every element has whatever it says, so the application and the index it was written at are its columns and an element writing none of the three is still an element.'),
+  ('graphitron_ast_reference_key_step_entry', 'sdl-written-value', 'graphitron-ast',
+   'The foreign key a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written.',
    'For example the second element of @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives one row.',
-   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. The input-value site states the same fact the same way, so a rule over path elements is written once per fact rather than once per site. Whether the named constraint exists is a question for the catalog and belongs where the resolving happens.'),
-  ('graphitron_ast_field_reference_condition_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'The condition a path element of a @reference application on an output field names, at its position in the list, as written.',
+   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. Both directives that carry a path, at every site they are written at, write here: an element is one input type wherever it is spelled, and which directive and which site it sits under are facts of its application, reached through the element''s value entry, rather than of the element. So a rule over path elements is written once per fact and reads one relation. Whether the named constraint exists is a question for the catalog and belongs where the resolving happens.'),
+  ('graphitron_ast_reference_condition_step_entry', 'sdl-written-value', 'graphitron-ast',
+   'The condition a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written.',
    'For example {table: "actor", condition: {className: "no.example.Conditions", method: "liveActor"}} gives one row here and one in the table relation.',
-   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. The input-value site states the same fact the same way, so a rule over path elements is written once per fact rather than once per site. This is the one arm of an element that reaches the classpath where the others reach the catalog, which is why it carries a class and a method rather than a qualified name.'),
-  ('graphitron_ast_field_reference_for_table_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'The table a path element of a @referenceFor application on an output field names, at its position in the list, as written.',
-   'For example @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}]) gives one row.',
-   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. The input-value site states the same fact the same way, so a rule over path elements is written once per fact rather than once per site. These hang off the application''s own decode rather than off the AST row, unlike their @reference twins: that directive names a participant as well as a path, so it has a row of its own for a step to reference.'),
-  ('graphitron_ast_field_reference_for_key_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'The foreign key a path element of a @referenceFor application on an output field names, at its position in the list, as written.',
-   'For example the element of @referenceFor(type: "Book", path: [{table: "book", key: "book_media_fk"}]) gives one row.',
-   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. The input-value site states the same fact the same way, so a rule over path elements is written once per fact rather than once per site. Naming a key is the ordinary reason to reach for this directive at all: it replaces the automatic discovery for one participant, and a participant with more than one foreign key to the other end is where discovery cannot choose.'),
-  ('graphitron_ast_field_reference_for_condition_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'The condition a path element of a @referenceFor application on an output field names, at its position in the list, as written.',
-   'For example {table: "book", condition: {className: "no.example.Conditions", method: "liveBook"}} gives one row here and one in the table relation.',
-   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. The input-value site states the same fact the same way, so a rule over path elements is written once per fact rather than once per site. The manual admits a condition step on an output coordinate only, which is a rule about where the application sits, so it is a detection over these rows and the position they hang from rather than a constraint this relation could state.'),
+   'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. Both directives that carry a path, at every site they are written at, write here: an element is one input type wherever it is spelled, and which directive and which site it sits under are facts of its application, reached through the element''s value entry, rather than of the element. So a rule over path elements is written once per fact and reads one relation. This is the one arm of an element that reaches the classpath where the others reach the catalog, which is why it carries a class and a method rather than a qualified name.'),
   ('graphitron_ast_service_entry', 'sdl-declaration-site', 'graphitron-ast',
    'What a @service application says: the external method resolving the field, as written.',
    'For example importFilms: [Film!] @service(service: {className: "no.example.FilmService", method: "importFilms"}) gives one row.',
@@ -14909,34 +14677,6 @@ INSERT INTO meta_relation VALUES
    'One contextArguments entry of a @condition application on an input value, at its position in the list.',
    'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
    'A list argument becomes a relation of its own rather than a delimited column, so a reader asks for one key by name instead of splitting a string, and the position keeps the order the author wrote. Hung off the decode of the application it was written inside rather than off the AST row, so deleting that decode takes its elements and no row is left naming an application nobody decoded. What a context key must be present in the GraphQLContext at run time is not a question this relation answers or could.'),
-  ('graphitron_ast_input_value_reference_for_entry', 'sdl-declaration-site', 'graphitron-ast',
-   'What a @referenceFor application on an input value says: the participant whose join path it replaces, as written.',
-   'For example target: ID @referenceFor(type: "Book", path: [{table: "book"}]) gives one row naming Book.',
-   'A decode of one directive application, keyed by the application''s own position, which is what lets the repeatable directive drop the ordinal the incumbent carried: two applications on one input value are two at signs. Unlike @reference this one has a payload beyond its path, the participant it names, so it has a decode row and its elements hang off that. Whether the name is a participant of any consuming query, and whether two applications named the same one, are questions for the resolving and detections over these rows.'),
-  ('graphitron_ast_input_value_reference_key_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'One path element of a @reference application on an input value that names a foreign key, at its position in the list.',
-   'For example {key: "actor_agency_fk"} at position 0 gives one row.',
-   'The author named a constraint, so the anchor joins sql_constraint on it and reports the miss. One relation per join target rather than one wide row per element: the resolution used to pick its arm with a WHERE over which columns were null, and the relation is that discriminator stated once at capture. A table written beside a key lands in the sibling relation at the same position and is not folded in here, which is what keeps this row total and what makes the resolution''s habit of ignoring it visible rather than silent.'),
-  ('graphitron_ast_input_value_reference_table_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'One path element of a @reference application on an input value that names a table, at its position in the list.',
-   'For example {table: "sakila.agency"} at position 0 gives one row reading sakila and agency.',
-   'The author named a table and left the foreign key to be discovered, so the anchor joins the spelled-table resolution and, where that lands on a table-valued function, the name-matched column pairing beside it. Whether the target is a table or a function is the catalog''s answer and not the author''s, which is why one relation covers both and the split is by what was written rather than by what it turns out to be.'),
-  ('graphitron_ast_input_value_reference_condition_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'One path element of a @reference application on an input value that names a condition, at its position in the list.',
-   'For example {condition: {className: "no.example.Conditions", method: "live"}} at position 1.',
-   'The author asked for a correlation an external method decides, so the anchor joins the classpath census rather than anything in sql_. The one arm of a path element that reaches the classpath reading at all, which is the whole reason it is a relation of its own: a reader resolving a path has to know which elements are foreign-key hops before it can walk them, and a null class name in a wide row said that only by implication.'),
-  ('graphitron_ast_input_value_reference_for_key_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'One path element of a @referenceFor application on an input value that names a foreign key, at its position in the list.',
-   'For example {key: "actor_agency_fk"} at position 0 gives one row.',
-   'The author named a constraint, so the anchor joins sql_constraint on it and reports the miss. One relation per join target rather than one wide row per element: the resolution used to pick its arm with a WHERE over which columns were null, and the relation is that discriminator stated once at capture. A table written beside a key lands in the sibling relation at the same position and is not folded in here, which is what keeps this row total and what makes the resolution''s habit of ignoring it visible rather than silent.'),
-  ('graphitron_ast_input_value_reference_for_table_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'One path element of a @referenceFor application on an input value that names a table, at its position in the list.',
-   'For example {table: "sakila.agency"} at position 0 gives one row reading sakila and agency.',
-   'The author named a table and left the foreign key to be discovered, so the anchor joins the spelled-table resolution and, where that lands on a table-valued function, the name-matched column pairing beside it. Whether the target is a table or a function is the catalog''s answer and not the author''s, which is why one relation covers both and the split is by what was written rather than by what it turns out to be.'),
-  ('graphitron_ast_input_value_reference_for_condition_step_entry', 'sdl-written-value', 'graphitron-ast',
-   'One path element of a @referenceFor application on an input value that names a condition, at its position in the list.',
-   'For example {condition: {className: "no.example.Conditions", method: "live"}} at position 1.',
-   'The author asked for a correlation an external method decides, so the anchor joins the classpath census rather than anything in sql_. The one arm of a path element that reaches the classpath reading at all, which is the whole reason it is a relation of its own: a reader resolving a path has to know which elements are foreign-key hops before it can walk them, and a null class name in a wide row said that only by implication.'),
   ('graphitron_ast_input_value_node_id_entry', 'sdl-declaration-site', 'graphitron-ast',
    'What a @nodeId application on an input value says: the type the identifier belongs to, as written.',
    'For example actorId: ID @nodeId(typeName: "Actor") gives one row naming Actor.',

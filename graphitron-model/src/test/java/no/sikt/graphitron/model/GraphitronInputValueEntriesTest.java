@@ -25,12 +25,11 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_CONDITION_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
@@ -153,8 +152,8 @@ class GraphitronInputValueEntriesTest {
                 .containsExactly("asFacet", "lookupKey", "orderBy");
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY)
                     + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_ENTRY)
-                    + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY)
+                    + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_FOR_ENTRY)
+                    + dsl.fetchCount(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY)
                     + dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_NODE_ID_ENTRY))
                 .as("and no decode relation holds a row for any of them")
                 .isZero();
@@ -182,17 +181,17 @@ class GraphitronInputValueEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var t = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_ENTRY;
+            var t = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 
             assertThat(dsl.select(t.PARTICIPANT_TYPE_REF, t.SOURCE_LINE)
                     .from(t).orderBy(t.PARTICIPANT_TYPE_REF).fetch())
                 .as("two decodes at two positions, told apart by the key and nothing else")
                 .extracting(row -> row.value1())
                 .containsExactly("Book", "Film");
-            assertThat(dsl.select(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY.TABLE_REF)
-                    .from(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY)
-                    .orderBy(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY.TABLE_REF)
-                    .fetch(GRAPHITRON_AST_INPUT_VALUE_REFERENCE_FOR_TABLE_STEP_ENTRY.TABLE_REF))
+            assertThat(dsl.select(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF)
+                    .from(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY)
+                    .orderBy(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF)
+                    .fetch(GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY.TABLE_REF))
                 .as("each application's path hangs off its own decode")
                 .containsExactly("book", "film");
         });
@@ -222,9 +221,9 @@ class GraphitronInputValueEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var tables = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_TABLE_STEP_ENTRY;
-            var keys = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_KEY_STEP_ENTRY;
-            var conditions = GRAPHITRON_AST_INPUT_VALUE_REFERENCE_CONDITION_STEP_ENTRY;
+            var tables = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
+            var keys = GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
+            var conditions = GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 
             assertThat(dsl.select(writtenAt(tables), tables.TABLE_REF_NAMESPACE_PART,
                         tables.TABLE_REF_NAME_PART)

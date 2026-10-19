@@ -68,11 +68,12 @@ public final class GraphitronAstEntries {
         GraphitronInputValueEntries.write(dsl, graph, source, onInputValues, touchedAt);
         GraphitronEnumValueEntries.write(dsl, graph, source, onEnumValues, touchedAt);
         GraphitronSchemaEntries.write(dsl, graph, source, onSchemas, touchedAt);
-        // The writers that are not a site's: a code reference and an argMapping are each the same
-        // fact wherever they are written, so they are read off every application at once.
+        // The writers that are not a site's: a code reference, an argMapping and a path are each the
+        // same fact wherever they are written, so they are read off every application at once.
         var everywhere = new ArrayList<GraphQLAstEntries.Nested<Directive>>();
         List.of(onTypes, onFields, onInputValues, onEnumValues, onSchemas).forEach(everywhere::addAll);
         GraphitronCodeReferenceEntries.write(dsl, graph, source, everywhere, touchedAt);
+        GraphitronReferencePathEntries.write(dsl, graph, source, everywhere, touchedAt);
         GraphitronArgMappingEntries.write(dsl, graph, source, everywhere, touchedAt);
     }
 
@@ -235,7 +236,7 @@ public final class GraphitronAstEntries {
      * only the relation the rows land in differs.
      */
     record Step(Directive application, ObjectValue node, String tableRef, String keyRef,
-                String className, String method, String argMapping) {}
+                boolean conditionWritten, String className, String method, String argMapping) {}
 
     /** The path elements of {@code applications}, each naming the element it decodes. */
     static List<Step> steps(List<Directive> applications) {
@@ -243,6 +244,7 @@ public final class GraphitronAstEntries {
             .map(element -> new Step(element.application(), element.node(),
                 stringOf(inside(element.node(), "table")),
                 stringOf(inside(element.node(), "key")),
+                inside(element.node(), "condition") instanceof ObjectValue,
                 inside(element.node(), "condition", "className"),
                 inside(element.node(), "condition", "method"),
                 inside(element.node(), "condition", "argMapping")))
@@ -265,8 +267,13 @@ public final class GraphitronAstEntries {
         return steps.stream().filter(step -> step.tableRef() != null).toList();
     }
 
+    /**
+     * The steps that wrote a condition object, whatever it holds. A reference's {@code className} is
+     * optional in the vocabulary, so a condition naming only a method is legal and is still a
+     * condition the author wrote; that it names no class is a detection's to state.
+     */
     static List<Step> conditioned(List<Step> steps) {
-        return steps.stream().filter(step -> step.className() != null).toList();
+        return steps.stream().filter(Step::conditionWritten).toList();
     }
 
     /**
