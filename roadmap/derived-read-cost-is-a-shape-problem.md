@@ -712,6 +712,9 @@ new one.
 * **Each step moves into its owner's anchor phase, marked and swept** `open`. A step is done when
   it marks what it wrote and sweeps what it did not, in the anchor phase of the gatherer that owns
   its table. One child per step, grown as each is tried.
+  * **`CarrierDataFields`** `open`, as "A producer's carrier is its one data channel". Declared owned
+    by `graphitron` and written by the stratum, so a reader in the graphitron anchor phase reads the
+    previous capture's rows, none on a first one. Found when the error channel tried to read it.
 * **The `intent_` writers go to a family or go** `open`. `ClassificationDomainCapture`,
   `InputOccurrencePaths`, `TypeBackingRows` and `AuthoredClaimRejectionRows` write `intent_`
   tables, so each moves to the family whose facts
@@ -792,6 +795,34 @@ and the emitters read, and it goes when nothing reads what it builds.
     the decoded entries and, for the bare `@splitQuery`, `graphitron_directive_application`; the
     deprecated coordinate-keyed `graphitron_split_query_entry`, `graphitron_service_entry` and
     `graphitron_routine_entry` are not read. Marked and swept from the start.
+
+    First of its siblings, decided with Alf 2026-10-19: the payload, the carrier and the error
+    channel are all facts about a producer, and each is restated today by a relation that folded the
+    producer away. The payload a producer returns is its own field's return type, one join away, so
+    it is not a column here; the carrier rule's `family` is this relation's kind. Every producer is
+    in the population, not only the mutation-rooted ones: a query-rooted payload has the same shape.
+  * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
+    row per field of a type a producer returns, with its role, errors or data, and its element,
+    table, record, id or other. Total over the fields, an element no rule recognises being a row of
+    kind other and not an absence. The table test and the table a reader fetches read one binding,
+    `graphitron_resolved_type_binding`, where today the rule tests `intent_bound_table` and every
+    reader fetches from the former. The errors side absorbs `intent_errors_field`'s field half; its
+    members stay an ordered child tied to `graphitron_ast_error_entry`.
+  * **A producer's carrier is its one data channel** `open`, after the payload's fields.
+    `graphitron_carrier_data_channel`, keyed by the producer and naming the data field, one row per
+    producer, so no reader re-derives the producer from a payload. What stops a payload being a
+    carrier is a defect at the site that stops it, with its reason: several data channels, an element
+    of kind other, a directive that routes a field out of the mold, the family rules on id fields and
+    `@splitQuery`, two kinds on one coordinate. Today each is an absence nobody can explain, which is
+    why the walk keeps its own reasons. Written in the graphitron anchor phase, which is
+    `CarrierDataFields`' step under "Each step moves into its owner's anchor phase".
+  * **The carrier's readers move** `open`, after the carrier: the scope table's payload rung,
+    `RoutineWriteQuery`, `intent_mutation_routine_seat` (its refusals reading the defects rather than
+    absence), the language server's `$source` site, and the error channel's transport.
+  * **Subtract what the carrier replaces** `blocked`, on its readers. `graphitron_carrier_data_field`
+    and its rule, with `family` in the key and `data_fields`, a count read only as a verdict;
+    `intent_field_payload_producer`; `intent_carrier_routine_hop`'s producer re-join and its
+    `candidates` column.
   * **The matched key is stated** `open`, with the identifying writes.
     `graphitron_producer_matched_key`, one row per `ONE` write and key its input columns cover, keyed
     to the producer and to `sql_constraint`. An input covering two keys is two rows, and choosing one
@@ -1411,10 +1442,21 @@ is "The generator builds no schema".
     `ProjectionCall`, are one-spelling helpers old and new emitters share. They move into `emit`, the
     old renderers import them from there, and the rule's exception list is empty, so `emit` stops
     depending on a package that is emptying.
-  * **The error-mapping constant is a store fact** `open`, after. `intent_field_error_channel` states
+  * **The error-mapping constant is a store fact** `blocked`, on the channel below. `intent_field_error_channel` states
     whether a field has a channel and its transport, not the constant's name: the name deduplicates
     handler lists and the plain name goes to whichever channel was classified first, an order the
     store does not state. `ErrorMappingsClassGenerator` mints the same names, so both read one rule.
+    * **The channel is a producer's, and its types tie to their applications** `blocked`, on the
+      producers and the payload's fields. `graphitron_error_channel`, keyed by the producer, and
+      `graphitron_error_channel_type`, its `@error` types in order, each referencing its
+      `graphitron_ast_error_entry`. Tried first over `intent_field_error_channel`: its transport reads
+      the carrier, which the stratum writes after the anchor phase, so it waits on the facts instead.
+      A type with two `@error` applications, which assembly refuses but capture still sees, puts no
+      channel through that type.
+    * **The constant is named by its producer, and the dedup goes** `open`, after the channel. A
+      channel's constant is `concat` over its types' `ByType` arrays, and the dedup exists only to
+      share that between channels of one shape; naming by producer drops it, the hash and the
+      first-classified rule.
   * **The routine write's tenancy is a store fact** `open`, after. No relation binds a coordinate to
     its tenant or states the tenant key's type. A tenant-scoped routine write is rejected, so of the
     renderer's four routings only the unrouted one and the default source are reachable; the
