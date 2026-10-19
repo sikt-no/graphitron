@@ -38,6 +38,14 @@ level, and every value it puts on a shared row is named by its full path from th
 owner.** Nothing changes in schemas, directives, or results that are correct today, except the
 names Graphitron gives its own generated SQL columns.
 
+One shape stays rejected, deliberately: one key for two *different* fields under `edges
+{ node { ... } }` and under `nodes { ... }` of the *same* connection (`edges { node { x: title } }
+nodes { x: releaseYear }`). Both paths are served from one SQL row by one node reader, so the
+shape is unrepresentable without treating the connection wrapper as a path segment, and the
+existing message says exactly that. Every production shape the sis scans reported reuses a key
+under different parents, not across these two connection paths; a consumer report of the
+connection shape gets its own item.
+
 ## Evidence
 
 Every table-backed type gets a generated `<Type>.$project(grouped, table, env)` method, called
@@ -123,9 +131,16 @@ insertion-ordered `Map<String, List<SelectedField>>` built from `getImmediateFie
 * `mergeByResultKey(List<SelectedField>)` keeps its name and its union semantics. It now
   merges each occurrence's *immediate* children instead of its whole subtree.
 
-`ProjectionCall` gets a matching `fromConnection` shape, and the connection launchers switch
-to it. These are the only call sites whose unit fields are not the fetched field's direct
-children:
+**The scope is derived, not chosen per call site.** Today a connection launcher calls the same
+`fromEnvSelection` as a list launcher, and nothing but the command says which it is. A call
+site left on `ownFields` under a connection would see only `edges` / `nodes` / `pageInfo`,
+match no arm, and silently project the `__row_present__` sentinel. So `ProjectionCall` gains
+one launcher entry that takes the command's `ResultShape` and picks `connectionNodes` for
+`ResultShape.Connection` and `ownFields` otherwise; the launcher sites call that entry. The
+legacy emitters that hold no `ResultShape` (`MultiTablePolymorphicEmitter`,
+`TypeFetcherGenerator.buildTableInterfaceReprojection`) pass the connection fact they already
+branch on through the same entry. The sites whose unit fields are not the fetched field's
+direct children, all of which take the connection arm:
 
 * `RootLauncherRenderer.connectionBody` (the root anchor and routine connections);
 * `BatchedRowsFragments.connectionTail`;
@@ -139,8 +154,10 @@ These sites do not change and use `ownFields`: `RootLauncherRenderer` `selectCha
 `fannedBody`, `lookupBody` and `routineBody`; `BatchedRowsFragments` `body` and
 `pivotBody`; `ReentryRowsFragments.projectedBody`; `ServiceRowsFragments.liftBody`;
 `RoutineWriteEmitter.chainReread`; `SelectMethodBody.body`; and the non-connection
-`DiscriminatedTableFragments.fieldsList` hosts, including
-`TypeFetcherGenerator.buildTableInterfaceReprojection`. The renderer arms in
+`DiscriminatedTableFragments.fieldsList` hosts, including the `buildTableInterfaceReprojection`
+methods on `TypeFetcherGenerator` and `MultiTablePolymorphicEmitter`. This inventory is a
+starting point, not the guarantee; the guarantee is the lint enforcer under Tests, which fails
+on any emitted `getFieldsGroupedByResultKey(` left behind. The renderer arms in
 `ProjectionUnitRenderer` (Splice, Multiset, LookupMultiset, PivotMultiset) all reach their
 callee through `mergeByResultKey` and change only through it. The pivot body's
 `grouped.values()` loop needs no change once its input is scoped.
@@ -179,16 +196,17 @@ host), and every read in the fold uses it:
   anywhere deeper. It becomes a membership test on the scoped map: some occurrence has name
   `<f>` and object type names containing `<Type>`.
 
+The same fold also routes its `InheritedRef` alias through `ReservedAliases.resultKeyPrefix`
+instead of spelling `RESULT_KEY_PREFIX` raw, so every `__rk_` writer goes through the one
+composition point.
+
 **Guards keep their checks and narrow their premise.** After scoping, a bucket holds more than
 one occurrence only when several parent occurrences were merged: the connection's
 `edges.node` and `nodes` paths, or a child bucket of such a merge. `canonical` and
 `requireConsistentArguments` keep their checks and messages, and their javadoc now describes
-the buckets they actually receive. One case stays rejected, and the tests pin it: one key for
-two different fields under `edges { node }` and `nodes` of the *same* connection
-(`ConnectionSharedResultKeyProjectionTest.nameDivergence_onNonArgConsumingArm_failsLoudAsFieldError`).
-Both paths project from one SQL row and one node reader, so that shape cannot be represented,
-and the message already names it. It is the one narrow exception to "reusing a key under a
-different parent is accepted", and graphql-java gives these two paths no sibling-merge check.
+the buckets they actually receive. The Goal's one carved-out rejection is `canonical` firing on
+that merge, pinned by
+`ConnectionSharedResultKeyProjectionTest.nameDivergence_onNonArgConsumingArm_failsLoudAsFieldError`.
 
 ### Alias namespace: path-qualify values written onto a shared row
 
@@ -197,36 +215,73 @@ under one anchor. It is reached only by splicing (`CallWrap.Splice`) into its an
 list, so it writes into the anchor's row. Every selection set spliced into one row must get
 its own alias space.
 
+**Decided once, at capture.** Whether a result-key alias is path-qualified is a fact about the
+field, and it is stamped next to the one that already decides qualification. `AliasOwner` says
+*who* owns the namespace and stays as it is; a second, independent axis on
+`ResultKeyAliasedField` says *where the row starts*. Working name `AliasScope`, with two arms:
+`RowOwner` (the field's declaring type owns the row it is written into) and `Spliced` (the
+declaring type is a nesting type, so the field is written into an ancestor's row). It is minted
+at classification off the declaring type, the same place `AliasOwner` is minted, and copied by
+every downstream carrier: `Contribution` carries it beside `aliasOwner()`, and the read arms in
+`FetcherEmitter` read it off the field. Neither side re-derives it. A separate axis rather than
+new `AliasOwner` arms, because the two facts vary independently (a participant can own a
+nesting field), and folding them would multiply arms into Shared/Qualified by owner/spliced.
+`NestedUnit`'s constructor asserts that every result-key-aliased contribution it holds is
+`Spliced` and `AnchorUnit`'s that none is, so the stamp and the unit kind cannot disagree.
+
 * **Write side.** A nested unit's `$project` takes one more parameter, `rkPath`: the result
-  keys from the row owner down to this nesting occurrence, each followed by a path delimiter.
-  An anchor's Splice arm passes `entry.getKey() + <delim>`, and a nested unit's Splice arm
-  passes `rkPath + entry.getKey() + <delim>`. Every result-key-aliased term the nested unit
+  keys from the row owner down to this nesting occurrence, each followed by the path
+  delimiter. An anchor's Splice arm passes `entry.getKey() + <delim>`, and a nested unit's
+  Splice arm passes `rkPath + entry.getKey() + <delim>`. Every `Spliced` term the nested unit
   writes uses `<prefix> + rkPath + entry.getKey()` where it now uses `<prefix> +
   entry.getKey()`. Those terms are `SelectTerm.Column` with `BY_RESULT_KEY`, `HelperCall`,
   unnamed `ScalarSubselect`, and the Multiset, LookupMultiset and PivotMultiset envelopes.
   Multiset arms open a new row, so the callee they call stays an anchor unit and takes no
   path. Anchor and pivot unit signatures do not change. Neither do `BY_COLUMN_IDENTITY`
   columns, because every selection set that reads a plain column reads the same value.
-* **Read side.** Readers declared on a nesting type (the `FetcherEmitter` arms for
-  `TableField` single and list, `PivotField`, `ComputedField`, and direct-compaction
-  `ColumnBackedReferenceField`) compose the same path at runtime. They walk
-  `env.getExecutionStepInfo()` up through the ancestor steps whose declaring object type is a
-  nesting type, prepending each step's result key. The walk is parent-agnostic, which a shared
-  nesting type needs because its `Fetchers` class is registered once (first-parent-wins, see
-  R323's changelog entry). The set of nesting type names comes from the model's
-  `NestingField` return types. It is emitted as a constant on one generated per-schema runtime
-  helper, and the helper also holds the walk. Readers on table-backed types are unchanged: the
-  path is empty for them, and the emitter knows that statically.
+* **Read side.** A `Spliced` reader (the `FetcherEmitter` arms for `TableField` single and
+  list, `PivotField`, `ComputedField`, and direct-compaction `ColumnBackedReferenceField`)
+  composes the same path at runtime. Starting from its own step's parent, it walks
+  `env.getExecutionStepInfo()` upward, and for each ancestor step whose *field coordinate*
+  (`getObjectType().getName()` + `.` + the field name) is a `NestingField`, prepends that
+  step's result key; it stops at the first ancestor step that is not. The rule is keyed on the
+  field, because nesting is a field-level classification: the immediate nesting step's
+  declaring type is the anchor, so a rule keyed on declaring types would drop the first
+  segment. `RowOwner` readers are unchanged and do no walk.
+* **The walk's preconditions are validator facts, linked from the walk's javadoc.** A nesting
+  field is never list-wrapped (the list-wrapper rejection on `NestingField` in
+  `GraphitronSchemaValidator`), so no list-element step sits mid-chain. Nesting under a
+  `JOOQ_RECORD_CARRIER` source is rejected (`ReachableSourceShape.REJECTED`), and in the
+  `ReachableSourceShape.DISPATCHED` mix the class-backed arm never takes the `Record` read.
+  Federation `_entities`, `Query.node(s)`, interface parents and the connection `node` /
+  `nodes` steps stop the walk on their own, since none of them is a nesting coordinate.
+* **Where the coordinate set lives.** A new per-schema generated runtime class,
+  `NestingCoordinates` in `<outputPackage>.util` (emitted by a
+  `NestingCoordinatesClassGenerator`, name minted beside the other util class names), holds the
+  set and the walk. It cannot live on `SelectionOccurrences`, whose statics are identical for
+  every schema by contract. The set is read off the existing nesting reach fold
+  (`NestingReach.compute` already visits every `NestingField`), not a fourth scan of the
+  model, and it excludes the pivot projection wirings that fold also carries, or the walk would
+  cross a pivot row boundary.
+* **There is no static alternative.** Fetchers are registered per nesting *type*
+  (first-parent-wins, see R323's changelog entry) while a nested unit is per *(anchor, type)*,
+  so one reader serves chains of different depth; only the runtime path tells them apart.
 * **Delimiter and composition** belong to `ReservedAliases`, next to `resultKeyPrefix`, so the
   write and read sides spell one decision. The composed alias is `__rk_` + optional `<owner>$`
   + path segments + key. The delimiter must be outside the GraphQL name grammar, different
-  from the owner delimiter `$`, and not `.`. The `Record.get(String, Class)` reads in
+  from the owner delimiter `$`, and not `.`: the `Record.get(String, Class)` reads in
   `FetcherEmitter` take a plain field name, and a dot risks being read as a qualifier. The
   recommendation is `/`, the separator graphql-java uses for selection paths. It is injective
   for the same reason the owner qualifier is: no client-minted key can spell it.
-
-The path walk and the threaded `rkPath` must agree for every inline chain. The test that pins
-this is the shared-nesting-type case below, read through both parents.
+* **The discriminated-participant census follows the alias.** A single-table discriminated
+  fold puts every participant's splices into one select list, so two participants can still
+  write one composed alias. That collision is already a build-time rejection:
+  `ProjectionCommands.siblingProjectionConflicts` claims every result-key alias a participant's
+  spliced nesting subtree contributes (`collectSplicedClaims`), and `GraphitronSchemaValidator`
+  reports the divergent ones. Today it claims by leaf field name alone. It now claims by the
+  splice chain of nesting field names plus the leaf name, which is the composed alias at the
+  default (unaliased) result keys, so it stays exactly as strict as what the fold still shares
+  and stops rejecting participants whose leaves no longer collide.
 
 ### Fixture prose
 
@@ -239,12 +294,15 @@ which is exactly the collision R323 avoided, now pinned rather than dodged.
 
 Each goal bullet gets its own execution-tier test in `graphitron-sakila-example`, in a new
 class next to `ConnectionSharedResultKeyProjectionTest` (or extending it, at the
-implementer's judgment). SQL is captured with the `ExecuteListener` pattern
-`ProjectionShapeExecutionTest` already uses.
+implementer's judgment). None of them asserts on SQL text.
 
 * **No over-projection.** `{ customers(active: true) { location { address { district } } } }`
-  with the new `OccupantLocation.district` leaf returns correct data, and the captured SQL
-  carries no `__rk_district` term at the `location` level. A second case selects both
+  with the new `OccupantLocation.district` leaf returns correct data, and the statement's
+  *result shape* carries no term for `location`'s own `district`: an `ExecuteListener` (the
+  hook `ProjectionShapeExecutionTest` already installs to count statements) records the field
+  names of each returned result (`ctx.result().fields()`), and the test asserts on those. That
+  observes what the database was asked to return, not how the generator spelled it. A second
+  case selects both
   `location { district }` and `location { address { district } }` and asserts that each
   resolves its own value.
 * **No rejection.** All of these resolve with no errors and with the values v9 semantics give:
@@ -269,8 +327,20 @@ implementer's judgment). SQL is captured with the `ExecuteListener` pattern
   non-connection control. That shows `connectionNodes` reproduces the one merge the flattening
   provided.
 
-Pipeline tier: `SelectionOccurrencesClassEmitTest` covers the three adapters and the
-restriction filter. `OccurrenceArgumentGuardPipelineTest` stays green. Unit and pipeline tests
+* **A participant splice.** If the sakila schema has a single-table discriminated participant
+  with a nesting field (or one is cheap to add), a selection under the interface that reaches a
+  nesting leaf through two participants resolves each participant's own value. The census
+  change gets a `GraphitronSchemaValidator` test: two participants whose nesting fields have
+  different names now validate clean, and two with the same nesting field name and divergent
+  leaves are still rejected.
+
+Enforcers: `GeneratedSourcesLintTest` gains a rule that fails on any emitted
+`getFieldsGroupedByResultKey(` and on any `"**/` glob literal in emitted sources, which is what
+makes the retired vocabulary below stay retired. `NestedUnit` / `AnchorUnit` constructor
+assertions on `AliasScope` get unit tests. Adapter behaviour is pinned at the execution tier
+above; `SelectionOccurrencesClassEmitTest` stays structural (the methods exist with the right
+signatures), and a matching emit test covers `NestingCoordinates`.
+`OccurrenceArgumentGuardPipelineTest` stays green. Unit and pipeline tests
 that assert on emitted `__rk_` aliases or on `PolymorphicSelectionSet` get updated for the new
 shapes (`ProjectionUnitRendererTest`, `RootLauncherRendererTest`,
 `PolymorphicSelectionSetClassEmitTest`, `ParticipantAliasOwnerPipelineTest`, and any captured
@@ -296,6 +366,9 @@ behaviour changes and are called out in the In Review notes.
 * **Glob patterns (`edges/node/*`, `nodes/*`) for the connection level.** These work, but they
   match field names through a file-system path matcher and return an unordered map. Walking
   `getImmediateFields()` does the same with no new matching semantics.
+* **Decide path qualification by unit kind on the write side and by declaring type on the read
+  side.** Each side can compute the answer from what it holds, but that re-derives one
+  predicate in two places, which is the drift `AliasOwner` exists to prevent.
 * **Key the whole map by path instead of by result key.** This would change the `$project`
   contract and every arm, only to encode what the immediate-children grouping already gives.
 * **Carry the inline path in graphql-java's `localContext`.** The slot is owned by the tenant
