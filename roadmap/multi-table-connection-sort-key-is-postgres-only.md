@@ -400,3 +400,62 @@ the work, or give the recurrence evidence that admits them.
   `docs/manual/how-to/polymorphic-types.adoc` line 164 ("a single typed `__sort__` column").
 
   > Response (revision 1): all three added to the Retired vocabulary habitats.
+
+### Round 2 (2026-10-19, Spec -> Ready, reviewer session 01FAucicwY7Q6ad1ZURocEqJ)
+
+Verdict: request revisions. One blocking finding, on question two, with a factual correction
+under question one folded into it. Everything else holds: the goal reads cleanly (a root
+multi-table list or connection orders and pages by its participants' key columns on every
+database, and old composite-key cursors are refused), the diagnosis matches the emitter, every
+symbol, test, fixture and doc path the plan names exists as named, and the core shape (key
+positions as `PolymorphicOrdering` slots, a plain-column seek, `__sort__` retired) extends what is
+there. The round-1 responses are adopted as stated.
+
+**Finding (question two, with a question-one correction). The key-widening rule has no emitter
+half: as written, its own fixture does not compile.**
+
+Each stage-1 branch is a typed `dsl.select(...)` (`branchProjection` projects
+`stage1_X.<PK>.as("__pkI__")`, a `Field<Short>` on one branch and a `Field<Integer>` on the
+other), and jOOQ's `unionAll` takes `Select<? extends R>`. Checked with javac against jOOQ 3.20.11:
+a `Record2<String, Short>` branch unioned with a `Record2<String, Integer>` one fails with
+"incompatible types"; coercing the narrow branch's projection (`a.coerce(b.getDataType())`)
+compiles. The emitter's own comment in `buildStage1ConnectionBlock` already says as much
+("jOOQ's UNION ALL would fail to compile otherwise"). The plan keeps "the `__pkI__` projections
+stay" in `branchProjection`, so the `smallint` / `integer` widening fixture would fail
+`graphitron-sakila-example`'s compile of the emitted sources, and the implementer would have to
+design the missing half: coerce or cast each branch's key projection to the slot's typing
+`DataType`, on which paths (`branchProjection` is shared by the root list, the root connection
+and the inline child fetcher, and only roots with an ordering carry key slots), and what a
+single-valued root or a child field with mixed key widths does.
+
+That also makes three of the plan's claims about today's behaviour untrue, which bears on how the
+consumer-facing change is described:
+
+- "a schema whose key positions differ in binding ... builds today and binds every cursor value
+  through the first participant's key type": such a schema generates sources that do not compile,
+  so the new rejection replaces a javac failure in emitted code with a diagnostic; it does not
+  stop anything that builds today.
+- "Today every position is typed by the first participant, so a cursor holding a value from a
+  wider participant ... decodes through `Short` and fails", and the **Execution, widening** bullet's
+  "This one does reproduce a defect on PostgreSQL": today the fixture does not get as far as
+  running. The test would be coverage of a new capability, not a reproduction.
+- The round-1 concern this rule answers (sis's nine `personroller` participants declaring a key
+  column at different precisions) cannot arise in a schema that builds: sis generates and runs
+  today, so its participants already agree on bound Java type at every key position. And since
+  `sqlType` is `DataType.getTypeName()`, which carries no precision, Oracle `NUMBER` columns that
+  bind alike also agree on it.
+
+What would satisfy it, either of:
+
+1. Keep widening, and specify the emitter half: how each branch's key projection is brought to
+   the slot's typing (`coerce` leaves the SQL to the dialect's union typing; `cast` states it),
+   which fetchers apply it, and what the paths without key slots do with mixed widths. Scope the
+   `sort-results.adoc` bullet to the fields that get it, and correct the three claims above.
+2. Drop widening. Every schema that builds today already agrees on bound Java type per key
+   position, so the key rule only has to admit those: state whether `sqlType` is compared too
+   (comparing it would newly reject keys that bind alike under different type names, a `text`
+   key beside a `varchar` one, which compile and union correctly today), correct the claims above,
+   and the widening tests, fixture tables and doc sentence go.
+
+Option 2 is the smaller plan and is enough for the goal; option 1 is a feature in its own right
+and could be a Backlog item. The choice is the author's.
