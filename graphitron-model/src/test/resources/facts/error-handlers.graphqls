@@ -184,10 +184,33 @@ extend schema @expectEquals(relation: "graphitron_ast_error_database_handler_ent
   23503
   """)
 
+# A VALIDATION handler is its supertype row and nothing more, there being no relation of its kind:
+# Mixed and Classless write one each, read here as the declarations holding them.
+extend schema @expectEquals(relation: "graphql_ast_element_entry", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT n.graph_name, n.source_name, n.parent_line, n.parent_column
+      FROM graphitron_ast_error_handler_entry h
+      JOIN graphql_ast_entry n
+        ON n.graph_name = h.graph_name AND n.source_name = h.source_name
+       AND n.source_line = h.application_line AND n.source_column = h.application_column
+     WHERE h.handler = 'VALIDATION')
+  """, rows: """
+  coordinate
+  Classless
+  Mixed
+  """)
+
 # A per-kind row agrees with the kind its supertype row names.
-extend schema @assertEmpty(relation: "graphitron_ast_error_validation_handler_entry", where: """
+extend schema @assertEmpty(relation: "graphitron_ast_error_generic_handler_entry", where: """
   (graph_name, source_name, source_line, source_column) NOT IN (
     SELECT h.graph_name, h.source_name, h.source_line, h.source_column
       FROM graphitron_ast_error_handler_entry h
-     WHERE h.handler = 'VALIDATION')
+     WHERE h.handler = 'GENERIC')
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_ast_error_database_handler_entry", where: """
+  (graph_name, source_name, source_line, source_column) NOT IN (
+    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
+      FROM graphitron_ast_error_handler_entry h
+     WHERE h.handler = 'DATABASE')
   """)

@@ -31,7 +31,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELE
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
@@ -140,12 +140,12 @@ class GraphitronTypeEntriesTest {
 
     /**
      * A list argument, which is the one shape whose values need a key of their own, and three
-     * kinds of value, which is why they need three relations. The index is the author's order
-     * inside one application and is shared across the three, so it decides nothing about which
-     * document wins and everything about what the author wrote first.
+     * kinds of value, two of which carry fields and so have a relation of their own. The index is
+     * the author's order inside one application and is shared across the kinds, so it decides
+     * nothing about which document wins and everything about what the author wrote first.
      */
     @Test
-    @DisplayName("each handler of an @error application is a row of the relation of its kind")
+    @DisplayName("each handler of an @error application is a row of its kind's relation, where it has one")
     void handlersAreRowsOfTheirKind(@TempDir Path tmp) {
         write(tmp, "errors.graphqls", """
             type Failed @error(handlers: [
@@ -158,7 +158,7 @@ class GraphitronTypeEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var database = GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
-            var validation = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
+            var handler = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
             var generic = GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
 
             assertThat(dsl.select(writtenAt(database), database.CODE, database.SQL_STATE)
@@ -167,9 +167,10 @@ class GraphitronTypeEntriesTest {
                 .extracting(r -> r.value1(), r -> r.value2(), r -> r.value3())
                 .containsExactly(tuple(0, "23505", null));
 
-            assertThat(dsl.select(writtenAt(validation)).from(validation)
-                    .fetch(writtenAt(validation)))
-                .as("the position is the whole row, this kind carrying nothing the directive allows")
+            assertThat(dsl.select(writtenAt(handler)).from(handler)
+                    .where(handler.HANDLER.eq("VALIDATION"))
+                    .fetch(writtenAt(handler)))
+                .as("the kind is the whole of a VALIDATION handler, so its supertype row is all of it")
                 .containsExactly(1);
 
             assertThat(dsl.select(writtenAt(generic), generic.CLASS_NAME, generic.DESCRIPTION)

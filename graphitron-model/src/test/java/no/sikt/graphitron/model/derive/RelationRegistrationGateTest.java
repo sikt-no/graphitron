@@ -158,7 +158,6 @@ class RelationRegistrationGateTest {
             "graphitron_ast_error_entry", "graphitron_ast_error_handler_entry",
             "graphitron_ast_error_generic_handler_entry",
             "graphitron_ast_error_database_handler_entry",
-            "graphitron_ast_error_validation_handler_entry",
             // The decode of a field-site application, on the same terms: keyed by the position of
             // the @ token, so an application repeated on one field is repeated rows here where
             // GraphitronSchema holds one binding per field under an ordinal it assigned.

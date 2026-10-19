@@ -24,7 +24,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HAND
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SCALAR_TYPE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.applied;
@@ -55,10 +54,11 @@ import static org.jooq.impl.DSL.val;
  * federation's {@code @key}. {@code @error}'s row carries its key and nothing else, its only
  * argument being the handler list; it is there for the handlers to hang off. A handler is one row
  * of a supertype naming its kind and the application holding it, and one row of that kind's own
- * relation, because the kind decides which of the input's six fields mean anything: GENERIC matches
- * by class identity, DATABASE by one of two SQL discriminators, and VALIDATION carries nothing at
- * all. {@code @defaultTenant} reaches this site too and gets no relation: it declares no argument,
- * so its applied-directive row is the whole fact.
+ * relation where the kind has one, because the kind decides which of the input's six fields mean
+ * anything: GENERIC matches by class identity and DATABASE by one of two SQL discriminators, while
+ * VALIDATION carries nothing beyond its kind and so is the supertype row alone.
+ * {@code @defaultTenant} reaches this site too and gets no relation: it declares no argument, so its
+ * applied-directive row is the whole fact.
  *
  * @see GraphitronAstEntries for what every site's decode holds in common
  */
@@ -78,12 +78,10 @@ final class GraphitronTypeEntries {
         var errors = applied(applications, "error");
         errors(dsl, graph, touchedAt, errors);
         var handlers = elementsOf(errors, "handlers");
-        handlers(dsl, graph, touchedAt, HANDLER_KINDS.stream()
-            .flatMap(kind -> ofKind(handlers, kind).stream()).toList());
+        handlers(dsl, graph, touchedAt, handlers);
         genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC").stream()
             .filter(handler -> stringOf(inside(handler.node(), "className")) != null).toList());
         databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
-        validationHandlers(dsl, graph, touchedAt, ofKind(handlers, "VALIDATION"));
 
         var nodes = applied(applications, "node");
         nodes(dsl, graph, touchedAt, nodes);
@@ -114,7 +112,6 @@ final class GraphitronTypeEntries {
         GRAPHITRON_AST_TABLE_ENTRY, GRAPHITRON_AST_SCALAR_TYPE_ENTRY, GRAPHITRON_AST_ENUM_ENTRY,
         GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
-        GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_HANDLER_ENTRY, GRAPHITRON_AST_ERROR_ENTRY,
         GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY,
         GRAPHITRON_AST_DISCRIMINATE_ENTRY, GRAPHITRON_AST_DISCRIMINATOR_ENTRY,
@@ -192,9 +189,6 @@ final class GraphitronTypeEntries {
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
     }
 
-    /** The handler kinds the directive declares, which the supertype's CHECK admits. */
-    private static final List<String> HANDLER_KINDS = List.of("GENERIC", "DATABASE", "VALIDATION");
-
     /** A row for every application, the handler list being the child relation it hangs off. */
     private static void errors(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                List<Directive> applications) {
@@ -214,8 +208,9 @@ final class GraphitronTypeEntries {
     }
 
     /**
-     * Every handler of a declared kind, whether or not its kind's relation can decode it: a GENERIC
-     * element naming no class is a handler of that kind all the same.
+     * Every object element of the list, with its kind. Only an admitted application reaches here, so
+     * the kind is one of the three the table's CHECK names. A GENERIC element naming no class is a
+     * row here though its kind's relation has none.
      */
     private static void handlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                  List<GraphitronAstEntries.Element> handlers) {
@@ -286,24 +281,6 @@ final class GraphitronTypeEntries {
                 .set(t.SQL_STATE, excluded(t.SQL_STATE))
                 .set(t.MATCHES, excluded(t.MATCHES))
                 .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
-    }
-
-    /** The position is the whole row: the directive gives this kind no field it may carry. */
-    private static void validationHandlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                           List<GraphitronAstEntries.Element> handlers) {
-        var t = GRAPHITRON_AST_ERROR_VALIDATION_HANDLER_ENTRY;
-        var rows = handlers.stream().collect(Rows.toRowList(
-            handler -> val(graph, t.GRAPH_NAME),
-            handler -> GraphQLAstEntries.sourceName(handler.node()),
-            handler -> GraphQLAstEntries.sourceLine(handler.node()),
-            handler -> GraphQLAstEntries.sourceColumn(handler.node()),
-            handler -> val(touchedAt, t.TOUCHED_AT)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
     /**
