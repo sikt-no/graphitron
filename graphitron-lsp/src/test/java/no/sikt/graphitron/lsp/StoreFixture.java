@@ -283,6 +283,14 @@ final class StoreFixture implements AutoCloseable {
     }
 
     /**
+     * Captures {@code sdl} with {@code tag} configured on its file, the shape a run whose schema input
+     * carries a tag has: every field it declares gets the configured {@code @tag}.
+     */
+    static StoreFixture tagged(Path directory, String sdl, String tag) {
+        return new StoreFixture(CapturedStore.tagged(directory, sdl, tag), directory, Lifetime.CASE);
+    }
+
+    /**
      * Captures {@code sdl} through the read that keeps its stage refusals as data, so a source the
      * parser or the assembler refused lands in the store's own verdict relations. The shape for the
      * cases about what a build said, where the document not reading clean is the subject.

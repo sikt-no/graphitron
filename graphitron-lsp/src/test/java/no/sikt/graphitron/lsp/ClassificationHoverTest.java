@@ -15,9 +15,10 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The declaration hover's classification block, over a real capture. The block is the classifiers
- * claiming a declaration plus the facts behind each, read from the relations that own them: there is
- * no projection variant name in it and no per-variant payload record behind it.
+ * A type declaration's hover classification block, over a real capture. The block is the classifiers
+ * claiming the type plus the facts behind each, read from the relations that own them: there is no
+ * projection variant name in it and no per-variant payload record behind it. A field's hover carries
+ * no classification; {@code FieldInformationHoverTest} covers it.
  *
  * <p>Every assertion runs under an unavailable snapshot, which is how the class states that this
  * block's source is the store. The overlay beneath it still needs the snapshot, and its coverage
@@ -26,10 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 class ClassificationHoverTest {
 
     /**
-     * A schema covering each shape the block answers: a column-matched field, one whose
-     * {@code @field} binding matched under another name, a service field, a conflicted coordinate,
-     * a DML mutation, a split child field claimed by nothing, a claimed type, an error type, and
-     * declarations nothing reaches at all.
+     * A schema covering each shape the block answers: a claimed type, an error type, types a
+     * producer backs once and twice over, and declarations nothing reaches at all.
      */
     private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
 
@@ -87,118 +86,6 @@ class ClassificationHoverTest {
     @AfterAll
     static void closeStore() {
         store.close();
-    }
-
-    @Test
-    void aColumnMatchedFieldNamesTheColumnItResolvedTo() {
-        var file = file("""
-            type Film @table(name: "film") {
-                title: String
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    titl".length()))
-            .contains("**TABLE_COLUMN**")
-            .contains("`Film.title`")
-            .contains("Column: `title`")
-            .contains("Table: `film`")
-            .contains("Matched by: `generated name`");
-    }
-
-    @Test
-    void anAuthoredBindingShowsTheNameTheMatchRanOn() {
-        // The @field binding is the author's redirection, so which spelling the classifier matched
-        // on is the difference between the binding being read and the binding being ignored.
-        var file = file("""
-            type Film @table(name: "film") {
-                filmTitle: String @field(name: "title")
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    filmTi".length()))
-            .contains("**TABLE_COLUMN**")
-            .contains("Column: `title`")
-            .contains("Matched name: `title`");
-    }
-
-    @Test
-    void aFieldMatchingUnderItsOwnNameShowsNoMatchedName() {
-        var file = file("""
-            type Film @table(name: "film") {
-                title: String
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    titl".length())).doesNotContain("Matched name");
-    }
-
-    @Test
-    void aServiceFieldNamesItsMethodAndSaysItLaunchesItsOwnQuery() {
-        var file = file("""
-            type Film @table(name: "film") {
-                rating: String @service(service: {className: "com.example.FilmService", method: "rating"})
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    rati".length()))
-            .contains("**SERVICE**")
-            .contains("Service: `com.example.FilmService#rating`")
-            .contains("Fetched separately:")
-            .contains("the service fetches independently of the parent's SELECT");
-    }
-
-    @Test
-    void aSplitChildFieldGetsItsJoinPathAndItsRoundTripWithoutAnyClaim() {
-        // Nothing claims a table-typed child: no directive names what it is, and the structural
-        // classifier only reaches leaf fields. The round-trip answer is the whole reason an author
-        // hovers here, so the block opens on the claim-independent facts alone.
-        var file = file("""
-            type Film @table(name: "film") {
-                language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
-            }
-            """);
-        var md = hoverAt(file, 1, "    langu".length());
-        assertThat(md)
-            .doesNotContain("**")
-            .contains("`Film.language`")
-            .contains("Join path:")
-            .contains("`film_language_id_fkey` → `language`")
-            .contains("Fetched separately:")
-            .contains("`@splitQuery` defers the fetch to a batched DataLoader call");
-    }
-
-    @Test
-    void aRootFieldIsItsOwnEntryPoint() {
-        var file = file("""
-            type Query {
-                films: [Film] @service(service: {className: "com.example.FilmService", method: "all"})
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    fil".length()))
-            .contains("**SERVICE**")
-            .contains("a root operation field is its own entry point");
-    }
-
-    @Test
-    void aConflictedCoordinateNamesBothClaimsAndCarriesBothSetsOfFacts() {
-        var file = file("""
-            type Film @table(name: "film") {
-                filmId: ID @nodeId(typeName: "Film") @service(service: {className: "com.example.FilmService", method: "id"})
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    filmI".length()))
-            .contains("**NODE_ID, SERVICE**")
-            .contains("Node type: `Film`")
-            .contains("Service: `com.example.FilmService#id`");
-    }
-
-    @Test
-    void aDmlMutationNamesItsOperationAndTable() {
-        var file = file("""
-            type Mutation {
-                deleteFilm(filmId: ID): ID @mutation(typeName: DELETE, table: "film")
-            }
-            """);
-        assertThat(hoverAt(file, 1, "    delet".length()))
-            .contains("**MUTATION**")
-            .contains("Operation: `DELETE`")
-            .contains("Table: `film`");
     }
 
     @Test
@@ -267,7 +154,6 @@ class ClassificationHoverTest {
             }
             """);
         assertThat(hover(file, 0, "type No".length())).isEmpty();
-        assertThat(hover(file, 1, "    tex".length())).isEmpty();
     }
 
     @Test
@@ -304,9 +190,7 @@ class ClassificationHoverTest {
             }
             """);
         assertThat(hoverAt(file, 0, "extend type Fi".length())).contains("**TABLE**");
-        assertThat(hoverAt(file, 1, "    titl".length()))
-            .contains("**TABLE_COLUMN**")
-            .contains("`Film.title`");
+        assertThat(hoverAt(file, 1, "    titl".length())).contains("**Column** `film.title`");
     }
 
     // ===== Helpers =====

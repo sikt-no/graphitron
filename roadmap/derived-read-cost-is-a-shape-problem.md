@@ -1100,6 +1100,20 @@ and the emitters read, and it goes when nothing reads what it builds.
       authored claim opens with a recursive CTE, and the resolved claim unions them under a
       correlated `NOT EXISTS`; whole, on sis, the two cost 306 ms and 376 ms, and the resolved claim
       43 s. A cost gate holds the block's statement to a bound over a large capture.
+      * **A field's hover is its information** `done`. `FieldInformation` reads the signature
+        and description, the column with its type and how it matched or "no column", the target
+        type, wrapper and table, the source table and its basis in words, the target's node id and
+        key columns, the methods its code references resolve to, the directives graphitron adds,
+        the written path's length and the defects at the field, one statement over stored tables.
+        `FieldHoverReadsNoViewTest` fails if a field hover's statement names a view, with the type
+        hover as its control; `FieldInformationHoverTest` pins the lines. On a 2026-10-17 sis store
+        the statement takes 4.1 ms at the median and 28 ms at worst over 302 fields. Not yet: what
+        produces the field, which waits on `graphitron_producer` being stored; the walked route,
+        which waits on the forward walk; and a method's doc comment, which `java_method_declaration`
+        cannot answer by key.
+      * **A type's hover is its information** `open`. Its binding, nodehood, backing class and
+        defects, in place of the claim block and the overlay, which still read `intent_` views.
+      * **The inlay hints show the same facts** `open`, through `InlayFacts`.
     * **The claims go** `open`, after the editor. A claim is a field's row in the walk's classified
       vocabulary and its classifier the variant, whose precedence is the fetcher's fact under "Every
       field has one fetcher": `intent_authored_field_claim` restates the producing entries,

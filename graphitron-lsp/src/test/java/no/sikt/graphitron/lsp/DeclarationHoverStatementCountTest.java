@@ -105,6 +105,7 @@ class DeclarationHoverStatementCountTest {
     void aCoordinateTwoDirectivesClaimStillCostsOneStatement() {
         // The count used to grow with the claims, which made a conflicted coordinate the most
         // expensive thing an author could hover, for facts every relation keys on the one coordinate.
+        // A field's hover reads no claim now, and the coordinate two directives meet at is still one.
         var file = file("""
             type Film @table(name: "film") {
                 filmId: ID @nodeId(typeName: "Film") @service(service: {className: "com.example.FilmService", method: "id"})
@@ -112,7 +113,7 @@ class DeclarationHoverStatementCountTest {
             """);
         var hover = hover(file, 1, "    filmI".length());
         assertThat(hover).isPresent();
-        assertThat(hover.get()).contains("NODE_ID").contains("SERVICE");
+        assertThat(hover.get()).contains("`Film.filmId: ID`");
         assertThat(statementsForHoverAt(file, 1, "    filmI".length())).isEqualTo(1);
     }
 

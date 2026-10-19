@@ -5,7 +5,7 @@ import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.ClaimFacts;
 import no.sikt.graphitron.lsp.facts.DeclarationFact;
 import no.sikt.graphitron.lsp.facts.DeclarationFacts;
-import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
+import no.sikt.graphitron.lsp.facts.FieldInformation;
 import no.sikt.graphitron.lsp.facts.SourceDeclarations;
 import no.sikt.graphitron.lsp.parsing.DeclTarget;
 import no.sikt.graphitron.lsp.parsing.Positions;
@@ -34,20 +34,22 @@ import java.util.function.Function;
  * SDL declaration coordinate added to the sealed family fails to compile until its
  * hover content lands here in the same commit.
  *
- * <p>The classification block is the classifier a claim carries and the facts behind it, each read
- * from the relation that owns it. There is no variant name here and no per-variant payload: the block
- * is a heading and a list of labelled values, so a claim growing a fact is an arm of
- * {@link ClaimFacts#fieldArms}'s statement rather than a new arm in a projection's switch. A
- * declaration nothing claims gets no block, which is the same silence the inlay hint keeps at an
- * unclaimed declaration.
+ * <p>A field's hover is the information the store states about it, {@link FieldInformation}: its
+ * signature, the column or type it reads, where its query starts, the target's node identity, the
+ * code it calls, what graphitron adds at it, its written path and its defects. Every line is a key
+ * lookup in a stored relation and none reads a view, which {@code FieldHoverReadsNoViewTest} holds;
+ * there is no classification in it.
  *
- * <p>The whole hover costs one statement, both blocks together, and the per-claim reads it replaced
+ * <p>A type's hover is the classification block: the classifier a claim carries and the facts behind
+ * it, from {@link ClaimFacts}, with the description overlay beneath.
+ *
+ * <p>Either hover costs one statement, a type's two blocks together, and the per-claim reads it replaced
  * were the defect: a conflicted coordinate paid per directive that claimed it, for facts whose
  * relations were all keyed on the one coordinate being hovered.
  * {@code DeclarationHoverStatementCountTest} holds the number, because no assertion on the rendered
  * text can see it.
  *
- * <p>Beneath the classification block, the hover overlays what the graph's own facts say about the
+ * <p>Beneath a type's classification block, the hover overlays what the graph's own facts say about the
  * declaration the coordinate binds to: a table's database comment, a column's or member's doc
  * comment, a backing class's doc comment. The binding is resolved through the shared
  * {@link DeclTarget} that goto-definition ({@code DeclarationDefinitions}) also projects, so the two
@@ -85,7 +87,10 @@ public final class DeclarationHovers {
         var handle = store.get();
         var declaration = declOpt.get();
         var hoverDecl = toDeclarationHover(declaration);
-        var block = classificationBlock(handle, hoverDecl);
+        if (hoverDecl instanceof DeclarationHover.FieldDeclarationHover f) {
+            return fieldInformation(handle, f).map(markdown -> hover(file, f.nameNode(), markdown));
+        }
+        var block = typeBlock(handle, (DeclarationHover.TypeDeclarationHover) hoverDecl);
         var coord = DeclTarget.coordinateOf(declaration, file.source());
         var binding = DeclarationFacts.arms(handle, coord);
         var fields = new ArrayList<Field<?>>(block.arms());
@@ -98,29 +103,28 @@ public final class DeclarationHovers {
         return Optional.of(hover(file, hoverDecl.nameNode(), compose(classification, overlay)));
     }
 
-    /**
-     * The classification block's arms and how they render, chosen by grain. A holder rather than two
-     * code paths because the two grains ask different relations and render differently while costing
-     * the same one statement, and the switch over {@link DeclarationHover} stays exhaustive here so a
-     * new declaration coordinate cannot reach the wire without content.
-     */
+    /** The type block's arms and how they render. */
     private record ClassificationBlock(List<Field<?>> arms, Function<Record, String> render) {}
 
-    private static ClassificationBlock classificationBlock(
-        StoreHandle store, DeclarationHover declaration
+    private static ClassificationBlock typeBlock(
+        StoreHandle store, DeclarationHover.TypeDeclarationHover t
     ) {
-        return switch (declaration) {
-            case DeclarationHover.FieldDeclarationHover f -> {
-                var arms = ClaimFacts.fieldArms(store, f.parentTypeName(), f.fieldName());
-                yield new ClassificationBlock(arms.fields(),
-                    row -> renderFieldMarkdown(f, arms.read(row)));
-            }
-            case DeclarationHover.TypeDeclarationHover t -> {
-                var arms = ClaimFacts.typeArms(store, t.typeName());
-                yield new ClassificationBlock(arms.fields(),
-                    row -> renderTypeMarkdown(t, arms.read(row)));
-            }
-        };
+        var arms = ClaimFacts.typeArms(store, t.typeName());
+        return new ClassificationBlock(arms.fields(), row -> renderTypeMarkdown(t, arms.read(row)));
+    }
+
+    /**
+     * The field block: what the store states about the field, one statement over stored relations
+     * and no view, so its cost is a handful of key lookups whatever the size of the graph. Empty
+     * where the store does not know the field.
+     */
+    private static Optional<String> fieldInformation(
+        StoreHandle store, DeclarationHover.FieldDeclarationHover f
+    ) {
+        var lines = FieldInformation.of(store, f.parentTypeName(), f.fieldName());
+        var info = lines.read(store.dsl().select(lines.fields()).fetchOne());
+        if (info.isEmpty()) return Optional.empty();
+        return Optional.of(FieldInformationMarkdown.render(f.coordinate(), info));
     }
 
     /**
@@ -236,36 +240,6 @@ public final class DeclarationHovers {
     }
 
     /**
-     * The field block: every classifier claiming the coordinate, the facts behind each, where an
-     * authored {@code @reference} path lands, and whether the field costs a round-trip of its own.
-     * {@code null} when nothing claims the coordinate.
-     *
-     * <p>Several classifiers at one coordinate is a conflict, and it renders as its claims: the
-     * heading names them all and each contributes its own facts, so the reader sees what the two
-     * directives each asked for rather than a word meaning "these disagree".
-     *
-     * <p>The two claim-independent facts hold a block open on their own. A {@code @splitQuery} child
-     * returning a table type is claimed by nothing (no directive names what it is, and the
-     * structural classifier only reaches leaf fields), and it is the field an author most wants the
-     * round-trip answer about; gating the block on a claim would silence it exactly there.
-     */
-    private static String renderFieldMarkdown(
-        DeclarationHover.FieldDeclarationHover decl, ClaimFacts.FieldBlock block
-    ) {
-        if (block.isEmpty()) return null;
-        var sb = new StringBuilder();
-        var classifiers = block.classifiers();
-        if (!classifiers.isEmpty()) sb.append("**").append(String.join(", ", classifiers)).append("**\n\n");
-        sb.append("`").append(decl.coordinate()).append("`");
-        for (var claim : block.claims()) {
-            appendFacts(sb, claim.facts());
-        }
-        appendJoinPath(sb, block.joinPath());
-        appendSeparateFetch(sb, block.fetchRules());
-        return sb.toString();
-    }
-
-    /**
      * The type block, on the same shape as the field one and at the same cost, one statement.
      * {@code null} when the store says nothing about the type at all, which is a plain nesting object
      * and the population this block must stay quiet about.
@@ -317,35 +291,6 @@ public final class DeclarationHovers {
     private static void appendFacts(StringBuilder sb, List<DeclarationFact> facts) {
         for (var fact : facts) {
             sb.append("\n\n").append(fact.label()).append(": `").append(fact.value()).append("`");
-        }
-    }
-
-    private static void appendJoinPath(StringBuilder sb, List<ClaimFacts.JoinStep> path) {
-        if (path.isEmpty()) return;
-        sb.append("\n\nJoin path:");
-        for (var step : path) {
-            sb.append("\n- ");
-            if (step.constraintName() != null) sb.append("`").append(step.constraintName()).append("` \u2192 ");
-            if (step.toTable() != null) sb.append("`").append(step.toTable()).append("`");
-        }
-    }
-
-    /**
-     * The round-trip line: this field's rows come from a statement of its own, and why. Rendered
-     * only where a rule reaches the field, never as its negation, because the relation does not yet
-     * carry a child reached through a connection wrapper nor the polymorphic fan-in.
-     *
-     * <p>Every rule renders, the universal one included: the inlay marker suppresses that case to
-     * keep a root type from repeating itself, but a reader who hovered one declaration asked about
-     * that declaration and gets the whole answer.
-     */
-    private static void appendSeparateFetch(StringBuilder sb, List<String> rules) {
-        if (rules.isEmpty()) return;
-        sb.append("\n\nFetched separately:");
-        for (String rule : rules) {
-            sb.append("\n- ").append(SeparateFetchRule.of(rule)
-                .map(SeparateFetchRule::description)
-                .orElse(rule));
         }
     }
 
