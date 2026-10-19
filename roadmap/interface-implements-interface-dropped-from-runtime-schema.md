@@ -1,7 +1,7 @@
 ---
 id: R1065
 title: "An interface's own implements clause is dropped from the runtime schema"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 5
 theme: codegen-correctness
