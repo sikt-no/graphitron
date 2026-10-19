@@ -714,7 +714,7 @@ fetcher and its subtypes are written there.
   through an earlier step. None reads `DerivationStratum`'s tables or `graphql_schema_problem`, and
   nothing in the anchor reads what the assembly writes, so no move makes a first capture read
   stale rows.
-* **The decode runs before the anchor** `open`, first. It reads nothing from the store, only the
+* **The decode runs before the anchor** `done`, 2026-10-19. It reads nothing from the store, only the
   documents merged in memory, which need no assembly; once it runs ahead, every step can follow
   the anchor in its present order. It goes altogether with "No `graphitron_*_entry` survives".
 * **The two are one in the meta** `open`, after the decode moves. One `meta_gatherer` row, the

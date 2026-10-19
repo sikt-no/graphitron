@@ -62,8 +62,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FEDERATION_LINK_IMPORT;
  * stage numbering and sweeping its own rows.
  *
  * <p>It returns the merged registry beside the composition and the assembly. The decode walks the
- * merged registry, the corpus as written, which the composition started from and never touches:
- * the rewrites run on a reduce of their own. The assembly is a narrower claim than an executable
+ * corpus as written, {@link #corpus}, ahead of the anchor; the composition starts from it and never
+ * touches it, the rewrites running on a reduce of their own. The assembly is a narrower claim than an executable
  * schema: {@link SchemaAssembly} carries the schema on the arm that has one, and a caller that
  * reaches for it has to have said what it does when there is none. A capture whose corpus did not
  * assemble is an ordinary outcome here, the verdict being the thing this gatherer was run for.
@@ -83,17 +83,12 @@ public final class GraphQLAssemblyCapture {
      *                    and the reduce refused on the way
      * @param composition the loading rewrites' outcome over a reduce of its own: the composed
      *                    registry, or the refusal that stopped it
-     * @param assembly    the assembly over the composition, or over {@link #merged()} where the
-     *                    composition refused; {@link SchemaAssembly#registry()} says which was
+     * @param assembly    the assembly over the composition, or over the corpus as written where
+     *                    the composition refused; {@link SchemaAssembly#registry()} says which was
      *                    judged
      */
     public record AssemblyReading(SchemaLoader.PerSourceParse read,
                                   LoadingRewrites.Outcome composition, SchemaAssembly assembly) {
-
-        /** The corpus as written, reduced into one registry; what the decode walks. */
-        public TypeDefinitionRegistry merged() {
-            return read.registry();
-        }
     }
 
     /**
@@ -108,6 +103,14 @@ public final class GraphQLAssemblyCapture {
             .filter(GraphQLSourceCapture.SourceDocument.Stated.class::isInstance)
             .map(GraphQLSourceCapture.SourceDocument.Stated.class::cast)
             .map(GraphQLSourceCapture.SourceDocument.Stated::registry).toList());
+    }
+
+    /**
+     * The corpus as written, reduced into one registry: what the decode walks, which needs no
+     * composition or assembly and so can run before either.
+     */
+    public static TypeDefinitionRegistry corpus(List<GraphQLSourceCapture.SourceDocument> documents) {
+        return merge(documents).registry();
     }
 
     /**

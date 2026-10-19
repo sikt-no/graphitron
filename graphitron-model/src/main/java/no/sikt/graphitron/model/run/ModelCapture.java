@@ -79,13 +79,14 @@ public final class ModelCapture {
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         FederationCapture.capture(dsl, graph.name(), readAt);
 
+        // The decode reads only the corpus as written, so it runs ahead of the anchor.
+        SdlFactCapture.decode(dsl, graph.name(), GraphQLAssemblyCapture.corpus(documents), readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         // The composition hands federation-jvm the link the anchor just settled.
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
         GraphQLSourceCapture.reclaim(dsl, documents);
         // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
         var schemas = schemas(dsl, graph, assembled);
-        SdlFactCapture.decode(dsl, graph.name(), assembled.merged(), readAt);
         GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
         // The store does not analyse itself, and ANALYZE commits: it runs outside the
         // derivations, never between a step's delete and its inserts.
