@@ -775,6 +775,13 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
             method: "filmsByServiceUnchecked"
         })
+    # Key carriers with gaps: a null id hands back a null element in its place. The null element
+    # has no row to re-select and drops like a key with no live row; only null elements resolve [].
+    filmsByServiceWithNulls(ids: [Int]!): [Film!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.SampleQueryService",
+            method: "filmsByServiceWithNulls"
+        })
     # The single-cardinality arm of the same coordinate: one key carrier instead of a container of
     # them. Its own emitted shape (a bare RecordN key row, and a null where the list arm returns an
     # empty list), so it is a distinct field rather than a variation on the one above. Omitting `id`
@@ -1185,6 +1192,14 @@ type Query {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
             method: "recentlyCreatedFilmsBatchedWithGap"
+        })
+
+    # Accessor-many with a key the table has no row for: the loadMany dispatch answers null for it
+    # and the list field drops it rather than rendering a null slot under [Film!]!.
+    recentlyCreatedFilmsBatchedWithMissingRow: [CreateFilmsPayload!]!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService",
+            method: "recentlyCreatedFilmsBatchedWithMissingRow"
         })
 
     # R366 compilation-tier fixture: free-form record-backed payload whose typed
@@ -4602,6 +4617,18 @@ type FilmsServicePayload {
     films: [Film!]
 }
 
+# FilmsServicePayload with nullable elements: a dropped element is absent, not a null slot,
+# whatever the element nullability.
+type FilmsNullableServicePayload {
+    films: [Film]
+}
+
+# The ID carrier without an errors channel: encodes each returned record's key, skipping a null
+# element.
+type FilmIdsServicePayload {
+    filmIds: [ID!] @nodeId(typeName: "Film")
+}
+
 # R158 composite-PK execution-tier fixture: same Wrap.TableRecord(FilmActorRecord) shape as
 # FilmsServicePayload but on a two-PK data table (film_actor: actor_id + film_id). Forces the
 # new MANY-arm code paths in FetcherEmitter.buildSingleRecordTableFetcherValueTableRecordWrap
@@ -4989,6 +5016,36 @@ type Mutation {
             method: "filmById"
         })
 
+    # Carrier list fields over a service list with gaps: a null element (an id the table has no row
+    # for, filmsByIdsWithNulls) or a key with no live row (filmsByIdsKeyOnly) drops from the list
+    # and the films that exist render. The same producers feed the nullable-element payload and
+    # the ID carrier.
+    serviceFilmsByIdsWithNulls(ids: [Int!]!): FilmsServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService",
+            method: "filmsByIdsWithNulls"
+        })
+    serviceFilmsByIdsKeyOnly(ids: [Int!]!): FilmsServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService",
+            method: "filmsByIdsKeyOnly"
+        })
+    serviceNullableFilmsByIdsWithNulls(ids: [Int!]!): FilmsNullableServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService",
+            method: "filmsByIdsWithNulls"
+        })
+    serviceNullableFilmsByIdsKeyOnly(ids: [Int!]!): FilmsNullableServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService",
+            method: "filmsByIdsKeyOnly"
+        })
+    serviceFilmIdsByIdsWithNulls(ids: [Int!]!): FilmIdsServicePayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmListGapService",
+            method: "filmsByIdsWithNulls"
+        })
+
     # R308 execution-tier fixture (service-list-payload-arrival.md): the coherent LIST carrier —
     # a @service field returning [FilmServicePayload] whose single @table data field `film` is
     # produced by a List<FilmRecord>. graphql-java iterates the producer list into the
@@ -5022,6 +5079,14 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
             method: "filmsByIds"
+        })
+
+    # The errors carrier over a service list with gaps: a null element drops from `films`, and an
+    # empty id list makes the service return null, which renders films null with errors null.
+    serviceFilmsByIdsWithNullsWithErrors(ids: [Int!]!): FilmsCarrierWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "filmsByIdsWithNulls"
         })
 
     # R275 requirement-2 single arm: delete-shaped @service producer returning a synthesized

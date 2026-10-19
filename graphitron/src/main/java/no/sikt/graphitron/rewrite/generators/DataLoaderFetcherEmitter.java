@@ -215,14 +215,17 @@ public final class DataLoaderFetcherEmitter {
      * {@code keys.size()} key contexts because {@code DataLoader.loadMany}'s context-list
      * overload requires the contexts list to match the keys list arity. The BatchLoader only
      * reads {@code keyContextsList.get(0)} (see {@link RowsMethodCall#batchLoaderLambda}), so
-     * the duplication is structural padding.
+     * the duplication is structural padding. The loader answers one value per key, {@code null}
+     * where no row matched; the {@code thenApply} drops those, so a key with no row is absent
+     * from the field's list.
      */
     private static CodeBlock dispatchCall(LoaderRegistration.Dispatch dispatch) {
         return switch (dispatch) {
             case LOAD_ONE  -> CodeBlock.of("return loader.load(key, env)\n");
             case LOAD_MANY -> CodeBlock.of(
-                "return loader.loadMany(keys, $T.nCopies(keys.size(), env))\n",
-                ClassName.get("java.util", "Collections"));
+                "return loader.loadMany(keys, $T.nCopies(keys.size(), env))\n"
+                    + "    .thenApply(rows -> rows.stream().filter($T::nonNull).toList())\n",
+                ClassName.get("java.util", "Collections"), ClassName.get("java.util", "Objects"));
         };
     }
 }

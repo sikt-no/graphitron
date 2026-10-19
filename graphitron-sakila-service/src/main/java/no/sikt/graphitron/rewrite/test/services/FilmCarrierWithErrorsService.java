@@ -109,4 +109,16 @@ public final class FilmCarrierWithErrorsService {
         }
         return ordered;
     }
+
+    /**
+     * The errors carrier's list arm with gaps: {@code null} for an empty id list, otherwise one
+     * element per requested id in input order, {@code null} where the table has no row. Never
+     * throws, so the source is always the {@code Outcome.Success} arm: the data field drops a
+     * {@code null} element, and a {@code null} list renders the data field {@code null} with
+     * {@code errors} {@code null}.
+     */
+    public static java.util.List<FilmRecord> filmsByIdsWithNulls(java.util.List<Integer> ids, DSLContext dsl) {
+        if (ids == null || ids.isEmpty()) return null;
+        return FilmListGapService.filmsByIdsWithNulls(ids, dsl);
+    }
 }

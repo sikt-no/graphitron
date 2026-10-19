@@ -665,6 +665,7 @@ public final class FetcherEmitter {
             body.add("    if (source == null) return null;\n");
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", recordType);
+            body.add("        if (row == null) continue;\n");
             body.add("        ids.add($T.$L(", encoder.encoderClass(), encoder.methodName());
             for (int i = 0; i < keyColumns.size(); i++) {
                 if (i > 0) body.add(", ");

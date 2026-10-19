@@ -281,9 +281,10 @@ class GeneratorUtils {
 
     /**
      * {@link KeyLift.ProducedRecords} at {@link Arity#MANY}: the source is the producer's held
-     * collection of target records. Iterates it and builds one {@code RowN} PK key per element,
-     * collected into {@code List<key> keys} for the {@code LOAD_MANY} dispatch (one re-projected
-     * row per key, scattered by idx). Mirrors {@link #buildAccessorKeyMany} with the source itself
+     * collection of target records. Iterates it and builds one {@code RowN} PK key per non-null
+     * element, collected into {@code List<key> keys} for the {@code LOAD_MANY} dispatch (one
+     * re-projected row per key, scattered by idx). A {@code null} element is skipped: it has no
+     * row to re-select, and the dispatch drops absent rows anyway. Mirrors {@link #buildAccessorKeyMany} with the source itself
      * as the iterable rather than an accessor's return.
      */
     private static CodeBlock buildProducedRecordsKeyMany(
@@ -296,6 +297,7 @@ class GeneratorUtils {
         return CodeBlock.builder()
             .addStatement("$T keys = new $T<>()", keysListType, arrayList)
             .beginControlFlow("for ($T element : ($T) $L)", Object.class, iterableOfWild, sourceExpr)
+            .addStatement("if (element == null) continue")
             .addStatement("$T key = $T.row($L)", keyType, DSL,
                 recordColumnReadArgs(sourceKey.columns(), resultType, CodeBlock.of("element")))
             .addStatement("keys.add(key)")

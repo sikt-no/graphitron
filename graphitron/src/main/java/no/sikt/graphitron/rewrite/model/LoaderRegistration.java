@@ -72,8 +72,10 @@ public record LoaderRegistration(
          * Many keys per fetch site: emits
          * {@code loader.loadMany(keys, Collections.nCopies(keys.size(), env))}. The fetch
          * site's key-extraction supplies a {@code keys} list local; the loader returns one
-         * record per element-PK key. Today only the accessor-many arm reaches this dispatch
-         * (a class-backed parent's typed list-accessor fans out per-element).
+         * value per key, {@code null} where no row matched, and the fetch site drops those
+         * {@code null}s, so a key with no row is absent from the field's list. Reached by the
+         * accessor-many arms (a class-backed parent's typed list-accessor fans out per-element)
+         * and by the carrier re-fetch at {@link KeyLift.ProducedRecords} many.
          */
         LOAD_MANY
     }

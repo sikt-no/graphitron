@@ -73,6 +73,20 @@ public final class SampleQueryService {
     }
 
     /**
+     * Key carriers with gaps: one key-only {@code FilmRecord} per requested id, and {@code null}
+     * in the position of a {@code null} id. A {@code null} element has no row to re-select, so it
+     * drops from the result like a key with no live row; a list of only {@code null} elements
+     * resolves the empty list.
+     */
+    public static List<FilmRecord> filmsByServiceWithNulls(DSLContext dsl, List<Integer> ids) {
+        List<FilmRecord> carriers = new java.util.ArrayList<>(ids.size());
+        for (Integer id : ids) {
+            carriers.add(id == null ? null : filmByServiceUnchecked(dsl, id));
+        }
+        return carriers;
+    }
+
+    /**
      * The single-cardinality shape of the same contract: one key carrier rather than a container
      * of them, with no query run. Its own arm in the generated fetcher, which is why it is a
      * fixture and not a variation on {@link #filmsByServiceUnchecked}: the lift builds a bare

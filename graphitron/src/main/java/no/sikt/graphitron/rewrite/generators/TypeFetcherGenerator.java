@@ -1791,9 +1791,11 @@ public class TypeFetcherGenerator {
      * <ul>
      *   <li>The empty gate, which is the caller's to own: the companion deliberately has none
      *       ("only ever called with captured keys"), and its list arm builds
-     *       {@code DSL.values(keyRows)}, which jOOQ rejects on an empty array. A null or empty
-     *       list return resolves the empty list; a null single return resolves null, mirroring
-     *       {@link #emitReentry}'s {@code keys == null} guard.</li>
+     *       {@code DSL.values(keyRows)}, which jOOQ rejects on an empty array. A null list
+     *       return resolves the empty list, and so does a list with no non-null element: the
+     *       loop skips a null element (it has no row to re-select) and the empty check follows
+     *       it. A null single return resolves null, mirroring {@link #emitReentry}'s
+     *       {@code keys == null} guard.</li>
      *   <li>The keys container, typed to the companion's own {@code keys} parameter
      *       ({@code ReentryRowsFragments.keysType}, a {@code RecordN} row lifted to
      *       {@code Result} for the list shape) and built through jOOQ's typed
@@ -1834,14 +1836,19 @@ public class TypeFetcherGenerator {
             body.addStatement("$T dsl = $L", DSL_CONTEXT, dslSource);
         }
         if (isList) {
-            body.beginControlFlow("if (result == null || result.isEmpty())")
+            body.beginControlFlow("if (result == null)")
                 .addStatement("return $T.<$T>newResult().data($T.of()).build()",
                     DATA_FETCHER_RESULT, valueType, LIST)
                 .endControlFlow()
                 .addStatement("$T keys = dsl.newResult($L)", keysType, keyFields)
                 .beginControlFlow("for ($T carried : result)", RECORD)
+                .addStatement("if (carried == null) continue")
                 .addStatement("keys.add(dsl.newRecord($L).values($L))", keyFields,
                     keyCellsFrom(table, keyCols, "carried"))
+                .endControlFlow()
+                .beginControlFlow("if (keys.isEmpty())")
+                .addStatement("return $T.<$T>newResult().data($T.of()).build()",
+                    DATA_FETCHER_RESULT, valueType, LIST)
                 .endControlFlow();
         } else {
             body.beginControlFlow("if (result == null)")

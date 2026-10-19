@@ -53,4 +53,19 @@ public final class CreateFilmsPayloadService {
             new CreateFilmsPayload(null)
         );
     }
+
+    /**
+     * Fixture: one payload whose {@code films} accessor lists films [1, 999999, 2], where film
+     * 999999 has no row. The {@code loadMany} dispatch answers {@code null} for that key and the
+     * field drops it, so the list renders films [1, 2].
+     */
+    public static List<CreateFilmsPayload> recentlyCreatedFilmsBatchedWithMissingRow() {
+        FilmRecord f1 = new FilmRecord();
+        f1.setFilmId(1);
+        FilmRecord missing = new FilmRecord();
+        missing.setFilmId(999999);
+        FilmRecord f2 = new FilmRecord();
+        f2.setFilmId(2);
+        return List.of(new CreateFilmsPayload(List.of(f1, missing, f2)));
+    }
 }

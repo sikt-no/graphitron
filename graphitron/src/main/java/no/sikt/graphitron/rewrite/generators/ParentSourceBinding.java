@@ -105,7 +105,9 @@ public sealed interface ParentSourceBinding {
     /**
      * A producer-handed backing object behind the wrapper transport: the source is a non-null
      * {@code Outcome}, the backing object lives in {@code Success.value()}, and the
-     * {@code ErrorList} arm escapes (the sibling errors field renders the error list). The
+     * {@code ErrorList} arm escapes (the sibling errors field renders the error list). A
+     * {@code Success} whose value is {@code null} (a producer that returned {@code null}) escapes
+     * too, which is {@link DirectRecord}'s null-source guard on the wrapped arm. The
      * narrowed {@code success} local the prelude binds is what {@link #sourceExpr} reads, so the
      * two halves cannot be consumed apart.
      */
@@ -115,7 +117,8 @@ public sealed interface ParentSourceBinding {
                 .get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
                 .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
             return CodeBlock.builder()
-                .beginControlFlow("if (!($L instanceof $T<?> success))", subject, successClass)
+                .beginControlFlow("if (!($L instanceof $T<?> success) || success.value() == null)",
+                    subject, successClass)
                 .addStatement("return $L", escape)
                 .endControlFlow()
                 .build();

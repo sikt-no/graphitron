@@ -75,8 +75,8 @@ public sealed interface KeyLift {
      * {@code Outcome.Success.value()}), and the field reads the identifying PK off them to
      * re-project the {@code @table} (source=target re-fetch). {@link #arity()} is the produced
      * wrapper's arity: {@link Arity#ONE} reads the PK off the single source record;
-     * {@link Arity#MANY} iterates the held collection, one {@code RowN} PK key per element (the
-     * {@code LOAD_MANY} contract). The source envelope is handled by the generator at the type
+     * {@link Arity#MANY} iterates the held collection, one {@code RowN} PK key per non-null
+     * element (the {@code LOAD_MANY} contract; a {@code null} element is skipped). The source envelope is handled by the generator at the type
      * level ({@link no.sikt.graphitron.rewrite.generators.ParentSourceBinding}), not carried here.
      */
     record ProducedRecords(Arity arity) implements KeyLift {

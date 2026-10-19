@@ -1,7 +1,7 @@
 ---
 id: R1064
 title: "A service payload list with a null element throws while extracting keys"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: service
@@ -182,9 +182,17 @@ and the gotcha bullet's "a key the table has no row for is absent from a list re
 
 ## Tests
 
-Execution tier, in a new `graphitron-sakila-example` test class beside
-`ListCarrierServiceProducerExecutionTest` (same database setup), each case seeded with films it
-inserts and deletes:
+Execution tier, in `ServiceListGapExecutionTest` (`graphitron-sakila-example`, beside
+`ListCarrierServiceProducerExecutionTest`, same database setup), each case seeded with films it
+inserts and deletes. The fixtures as landed: `FilmListGapService.filmsByIdsWithNulls` and
+`filmsByIdsKeyOnly` (a class of their own, so the LSP completion tests that pin
+`FilmCarrierService`'s method set stay put) feed the `[Film!]` carrier, the new `[Film]` `FilmsNullableServicePayload`
+and (the `null`-element producer) the new direct-envelope `FilmIdsServicePayload`;
+`FilmCarrierWithErrorsService.filmsByIdsWithNulls` feeds the existing
+`FilmsCarrierWithErrorsPayload`; `SampleQueryService.filmsByServiceWithNulls` backs the root
+`filmsByServiceWithNulls(ids: [Int]!)`; `CreateFilmsPayloadService
+.recentlyCreatedFilmsBatchedWithMissingRow` is the accessor-many case on `CreateFilmsPayload`.
+All ten cases fail against the generator before this change:
 
 * Carrier `[Film!]`, `null` element: a new `FilmCarrierService` method returning `null` for an
   unknown id, behind a new mutation field typed `FilmsServicePayload`. Asserts the known films in the
