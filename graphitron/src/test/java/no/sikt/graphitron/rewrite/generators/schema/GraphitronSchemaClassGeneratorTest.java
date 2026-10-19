@@ -638,15 +638,19 @@ class GraphitronSchemaClassGeneratorTest {
     }
 
     @Test
-    void scalarRegistration_directiveResolvesConsumerScalar_emitsAdditionalTypeForConstant() {
-        // A scalar declaring @scalarType(scalar: "...FQN.FIELD") generates an additionalType
-        // call pointing at the consumer's constant, in addition to the spec built-ins the
-        // schema references.
+    void scalarRegistration_directiveResolvesConsumerScalar_registersCopyOfConstant() {
+        // A scalar declaring @scalarType(scalar: "...FQN.FIELD") is name-bound: it registers
+        // through a factory that copies the consumer's constant (so the SDL declaration's
+        // directives can ride along), not the constant itself. The spec built-ins the schema
+        // references still register as the graphql.Scalars constants.
         var body = buildBody("""
             scalar Money @scalarType(scalar: "no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY")
             type Query { m: Money, s: String }
             """);
+        assertThat(body).contains(".additionalType(scalar_Money())");
         assertThat(body).contains(
+            "GraphQLScalarType.newScalar(no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY)");
+        assertThat(body).doesNotContain(
             ".additionalType(no.sikt.graphitron.rewrite.scalarfixture.ScalarConstants.MONEY)");
         // Spec built-in still emitted.
         assertThat(body).contains(".additionalType(graphql.Scalars.GraphQLString)");

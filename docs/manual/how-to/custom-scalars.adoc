@@ -21,7 +21,7 @@ type Customer @table(name: "customer") {
 }
 ----
 
-Graphitron loads each named class via the project-aware codegen classloader, reads the static final field, and reflects on the bound `Coercing<I, O>` to recover the Java type used for input-record components, service parameters, and `Field<X>` projections. The constant is then registered on the synthesized schema (`.additionalType(<constant>)`) automatically. Consumer code does not need to wire the scalar in its `buildSchema(...)` hook.
+Graphitron loads each named class via the project-aware codegen classloader, reads the static final field, and reflects on the bound `Coercing<I, O>` to recover the Java type used for input-record components, service parameters, and `Field<X>` projections. The scalar is then registered on the synthesized schema automatically. Consumer code does not need to wire the scalar in its `buildSchema(...)` hook, and must not: the registered scalar is a copy of the constant carrying the SDL declaration's description and directives (a `@tag`, a `@specifiedBy(url:)`) in place of the constant's own, so registering the constant again from the customizer fails schema build with graphql-java's "You have redefined the type" error.
 
 [NOTE]
 ====

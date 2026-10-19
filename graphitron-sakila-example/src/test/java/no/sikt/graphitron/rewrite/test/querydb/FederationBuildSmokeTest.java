@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite.test.querydb;
 import com.apollographql.federation.graphqljava.printer.ServiceSDLPrinter;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
+import graphql.Scalars;
+import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.GraphQLUnionType;
 import no.sikt.graphitron.generated.federated.Graphitron;
@@ -200,8 +202,50 @@ class FederationBuildSmokeTest {
             .containsPattern(
                 "schema\\s+[^{]*@link[^{]*url\\s*:\\s*\""
                     + "https://specs\\.apollo\\.dev/federation/v2\\.10\"")
-            .as("@link import argument must list @key and @composeDirective")
-            .containsPattern("schema\\s+[^{]*@link[^{]*import\\s*:\\s*\\[\\s*\"@key\"\\s*,\\s*\"@composeDirective\"\\s*\\]");
+            .as("@link import argument must list @key, @composeDirective and @tag")
+            .containsPattern("schema\\s+[^{]*@link[^{]*import\\s*:\\s*\\[\\s*\"@key\"\\s*,\\s*\"@composeDirective\"\\s*,\\s*\"@tag\"\\s*\\]");
+    }
+
+    /**
+     * Directives applied to a custom scalar reach the served {@code _service { sdl }}, where
+     * Apollo contract filtering reads {@code @tag}. Covers both registration heads: BigDecimal
+     * resolves to a constant of its own name and registers as a copy of it; LocalDate aliases
+     * {@code ExtendedScalars.Date} and is built under its SDL name. BigDecimal's
+     * {@code @specifiedBy} rides along the same way.
+     */
+    @Test
+    void serviceSdlExposesScalarAppliedDirectives() {
+        var result = Graphitron.newGraphQL().build().execute(
+            ExecutionInput.newExecutionInput().query("{ _service { sdl } }").build());
+        assertThat(result.getErrors()).isEmpty();
+        @SuppressWarnings("unchecked")
+        var sdl = (String) ((Map<String, Object>) ((Map<String, Object>) result.getData())
+            .get("_service")).get("sdl");
+
+        assertThat(sdl)
+            .as("a scalar resolving to a same-named constant keeps its @tag")
+            .containsPattern("scalar\\s+BigDecimal\\b[^\\n]*@tag\\s*\\(\\s*name\\s*:\\s*\"stable\"\\s*\\)")
+            .as("and its @specifiedBy")
+            .containsPattern("scalar\\s+BigDecimal\\b[^\\n]*@specifiedBy\\s*\\(\\s*url\\s*:\\s*\"https://example\\.org/big-decimal\"\\s*\\)")
+            .as("an aliasing scalar keeps its @tag")
+            .containsPattern("scalar\\s+LocalDate\\b[^\\n]*@tag\\s*\\(\\s*name\\s*:\\s*\"stable\"\\s*\\)");
+    }
+
+    /**
+     * The spec built-ins register as the {@code graphql.Scalars} constants themselves, since
+     * introspection and federation-jvm reference them as objects; every other scalar is a copy
+     * carrying its SDL declaration, so its {@code @specifiedBy} URL is what introspection reports.
+     */
+    @Test
+    void builtInScalarsKeepIdentityAndCustomScalarsCarrySpecifiedBy() {
+        GraphQLSchema schema = Graphitron.buildSchema(b -> {}, fed -> {});
+        assertThat(schema.getType("String")).isSameAs(Scalars.GraphQLString);
+        assertThat(schema.getType("Int")).isSameAs(Scalars.GraphQLInt);
+        assertThat(schema.getType("Float")).isSameAs(Scalars.GraphQLFloat);
+        assertThat(schema.getType("Boolean")).isSameAs(Scalars.GraphQLBoolean);
+        assertThat(schema.getType("ID")).isSameAs(Scalars.GraphQLID);
+        assertThat(((GraphQLScalarType) schema.getType("BigDecimal")).getSpecifiedByUrl())
+            .isEqualTo("https://example.org/big-decimal");
     }
 
     /**

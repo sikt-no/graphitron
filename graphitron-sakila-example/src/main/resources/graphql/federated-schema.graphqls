@@ -1,5 +1,5 @@
 extend schema
-  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective"])
+  @link(url: "https://specs.apollo.dev/federation/v2.10", import: ["@key", "@composeDirective", "@tag"])
   @composeDirective(name: "@nodeType")
 
 # Slim federation-only test fixture. Types here exercise the entity dispatcher
@@ -17,6 +17,16 @@ interface Node { id: ID! }
 # through its implementers' clauses; its own `implements Node` must survive into the runtime
 # schema and the served _service { sdl }.
 interface Locatable implements Node { id: ID! }
+
+# Directives applied to custom scalars reach the runtime schema, and so the served _service.sdl
+# Apollo contract filtering reads @tag off. BigDecimal resolves to a constant of the same name
+# (registered as a copy carrying the declaration); LocalDate aliases ExtendedScalars.Date (built
+# under the SDL name). The @specifiedBy URL also surfaces as the scalar's specifiedByURL.
+scalar BigDecimal @scalarType(scalar: "graphql.scalars.ExtendedScalars.GraphQLBigDecimal")
+  @tag(name: "stable")
+  @specifiedBy(url: "https://example.org/big-decimal")
+scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
+  @tag(name: "stable")
 
 type Query {
     customers: [Customer!]!
@@ -49,6 +59,7 @@ type Customer implements Node & Locatable @table(name: "customer") @node {
     customerId: Int!     @field(name: "CUSTOMER_ID")
     firstName:  String!  @field(name: "FIRST_NAME")
     lastName:   String!  @field(name: "LAST_NAME")
+    createDate: LocalDate @field(name: "CREATE_DATE")
 }
 
 type Address implements Node & Locatable @table(name: "address") @node {
@@ -67,6 +78,7 @@ type Film implements Node @table(name: "film") @node
     filmId:      Int!    @field(name: "FILM_ID")
     title:       String! @field(name: "TITLE")
     rentalRate:  Float!  @field(name: "RENTAL_RATE")
+    rentalRateExact: BigDecimal @field(name: "RENTAL_RATE")
     # Fixture: a typed-TableRecord-sourced @service child whose body needs a NON-KEY column
     # (title) that the framework does not supply, so the service batch-fetches it itself. A
     # representations-driven _entities fetch that selects only this child supplies the key via

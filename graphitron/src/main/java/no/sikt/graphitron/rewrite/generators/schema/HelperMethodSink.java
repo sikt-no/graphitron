@@ -4,12 +4,14 @@ import graphql.schema.GraphQLAppliedDirective;
 import graphql.schema.GraphQLDirective;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectField;
+import graphql.schema.GraphQLScalarType;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.EnumValueSpec;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import javax.lang.model.element.Modifier;
@@ -36,7 +38,7 @@ import java.util.regex.Pattern;
  *       same SDL directive can be applied multiple times with different argument literals;
  *       indexing the <em>application</em> rather than the directive name keeps each helper's
  *       contents distinct.</li>
- *   <li>Directive definitions, synthesised scalars, field / input-field / enum-value
+ *   <li>Directive definitions, scalars, field / input-field / enum-value
  *       definitions are name-derived (each unique within its enclosing scope), with
  *       non-identifier characters in the SDL name replaced by {@code _}.</li>
  * </ul>
@@ -61,9 +63,9 @@ final class HelperMethodSink {
         return name;
     }
 
-    String addSynthesisedScalar(ScalarResolution.Synthesised s) {
-        String name = "scalar_" + sanitise(s.sdlName());
-        methods.add(buildSynthesisedScalarMethod(name, s));
+    String addScalar(GraphitronType.ScalarType scalar, GraphQLScalarType form) {
+        String name = "scalar_" + sanitise(scalar.name());
+        methods.add(buildScalarMethod(name, scalar, form, this));
         return name;
     }
 
@@ -91,11 +93,36 @@ final class HelperMethodSink {
         }
     }
 
-    private static MethodSpec buildSynthesisedScalarMethod(String methodName, ScalarResolution.Synthesised s) {
+    /**
+     * The factory for one name-bound scalar: the head picks where the scalar's name and coercing
+     * come from (a copy of the resolved constant, or a fresh scalar under the SDL name borrowing
+     * the constant's coercing), the tail carries the SDL declaration, read off {@code form}: its
+     * description (replacing a copied constant's own, so the runtime scalar describes itself as the
+     * emitted SDL does), its {@code @specifiedBy} URL and its surviving applied directives.
+     */
+    private static MethodSpec buildScalarMethod(String methodName, GraphitronType.ScalarType scalar,
+                                                GraphQLScalarType form, HelperMethodSink sink) {
         var body = CodeBlock.builder();
-        body.addStatement("$T.Builder b = $T.newScalar()", SCALAR_TYPE, SCALAR_TYPE);
-        body.addStatement("b.name($S)", s.sdlName());
-        body.addStatement("b.coercing($T.$L.getCoercing())", s.coercingSourceOwner(), s.coercingSourceField());
+        switch (scalar.resolution()) {
+            case ScalarResolution.Resolved r ->
+                body.addStatement("$T.Builder b = $T.newScalar($T.$L)",
+                    SCALAR_TYPE, SCALAR_TYPE, r.scalarConstantOwner(), r.scalarConstantField());
+            case ScalarResolution.Synthesised s -> {
+                body.addStatement("$T.Builder b = $T.newScalar()", SCALAR_TYPE, SCALAR_TYPE);
+                body.addStatement("b.name($S)", s.sdlName());
+                body.addStatement("b.coercing($T.$L.getCoercing())", s.coercingSourceOwner(), s.coercingSourceField());
+            }
+        }
+        var description = form.getDescription();
+        if (description != null && !description.isEmpty()) {
+            body.addStatement("b.description($S)", description);
+        } else if (scalar.resolution() instanceof ScalarResolution.Resolved) {
+            body.addStatement("b.description(null)");
+        }
+        if (form.getSpecifiedByUrl() != null) {
+            body.addStatement("b.specifiedByUrl($S)", form.getSpecifiedByUrl());
+        }
+        AppliedDirectiveEmitter.emitApplications(body, "b", form, sink);
         body.addStatement("return b.build()");
         return MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -7,10 +8,12 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.rewrite.ScalarTypeResolver;
 import no.sikt.graphitron.model.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.rewrite.generators.MultiTablePolymorphicEmitter;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
+import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
@@ -20,6 +23,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.RootType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.TableInterfaceType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.UnionType;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
+import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -47,14 +51,14 @@ import java.util.function.Consumer;
  *       {@code .codeRegistry(UnaryOperator)} overload on the schema builder; see
  *       {@link no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator
  *       GraphitronFacadeGenerator} javadoc.</li>
- *   <li>Invokes the user's {@code customizer} on the schema builder to register scalars, extra
- *       types, or additional directives.</li>
+ *   <li>Invokes the user's {@code customizer} on the schema builder to register extra types
+ *       or additional directives.</li>
  *   <li>Calls {@code .build()} and returns the result.</li>
  * </ol>
  *
  * <p>Method body shape: one local {@code schemaBuilder} variable plus one statement per
  * registered element (root types, additional types, scalars, directive definitions, schema
- * applied directives). Non-trivial sub-values (synthesised scalars, directive definitions,
+ * applied directives). Non-trivial sub-values (scalars, directive definitions,
  * schema-level applied directives) reach the schemaBuilder through {@code private static}
  * factory methods on the emitted class, allocated by {@link HelperMethodSink}. The shape
  * keeps chain depth on every emitted expression-statement O(1) regardless of schema element
@@ -64,7 +68,12 @@ import java.util.function.Consumer;
  * <p>Type membership comes from the type-keyed command relation's schema-shape rows (one row
  * per emitted {@code <Name>Type} class, produced once for the whole run), so the registration
  * loop here and the per-type emitters read the same decision. Scalars have no row and register
- * generator-side through their resolved constants.
+ * generator-side, split on how the rest of the runtime schema reaches them: the spec built-ins
+ * ({@code Int}, {@code Float}, {@code String}, {@code Boolean}, {@code ID}) are referenced as
+ * objects by introspection, federation-jvm and the emitted argument types, so they register as
+ * the {@code graphql.Scalars} constants themselves; every other scalar is reached only by name,
+ * so it registers through a factory that carries the SDL declaration's {@code @specifiedBy} and
+ * surviving applied directives onto a copy of its resolved constant.
  */
 public final class GraphitronSchemaClassGenerator {
 
@@ -95,7 +104,7 @@ public final class GraphitronSchemaClassGenerator {
      * other row), and the {@code registerFetchers} call sites come from the rows'
      * {@code registersFetchers} flag, the same fact the per-type emitter renders the method
      * from, so the class, the body and the call cannot drift. Scalar registrations stay
-     * generator-side (they route through resolved constants or synthesised factory helpers,
+     * generator-side (they route through spec built-in constants or per-scalar factory helpers,
      * not per-type classes, so no row exists for them).
      */
     public static List<TypeSpec> generate(GraphitronSchema schema, GraphQLSchema assembled,
@@ -245,11 +254,16 @@ public final class GraphitronSchemaClassGenerator {
         // ScalarType variants drive the registration here (no schema-shape row: scalars have no
         // per-type class to route through, so this enumeration is registration plumbing, not
         // unit membership).
-        // Resolved scalars (spec built-ins and @scalarType-declared) surface
-        // as (owner, fieldName) pointing at a public-static-final GraphQLScalarType constant;
-        // Synthesised scalars (federation-namespace names whose renamed forms have no constant
-        // exposed on the federation-jvm public API) reach the builder through a per-scalar
-        // factory method that constructs the GraphQLScalarType inline.
+        //
+        // Registration splits on how the rest of the runtime schema reaches the scalar.
+        // The spec built-ins are identity-bound: introspection, federation-jvm and the
+        // applied-directive argument types reference Scalars.GraphQLString and its siblings as
+        // objects, so the registered scalar must be that constant (a copy beside it fails
+        // schema build as a redefinition). Every other scalar is name-bound: generated code
+        // reaches it only through typeRef(name), so it registers through a per-scalar factory
+        // that copies the resolved constant (or, for a Synthesised scalar, builds one under the
+        // SDL name borrowing its coercing) and carries the SDL declaration's @specifiedBy and
+        // surviving applied directives, read off the same form SchemaSdlEmitter prints.
         //
         // This filter is the registered set GraphitronSchemaBuilder's reference-closure guard
         // re-derives to check that every scalar the emitted forms reference lands here. Without a
@@ -262,14 +276,15 @@ public final class GraphitronSchemaClassGenerator {
             .sorted(Comparator.comparing(no.sikt.graphitron.rewrite.model.GraphitronType.ScalarType::name))
             .toList();
         for (var scalar : scalarTypes) {
-            switch (scalar.resolution()) {
-                case no.sikt.graphitron.rewrite.model.ScalarResolution.Resolved r ->
-                    body.addStatement("schemaBuilder.additionalType($T.$L)", r.scalarConstantOwner(), r.scalarConstantField());
-                case no.sikt.graphitron.rewrite.model.ScalarResolution.Synthesised s -> {
-                    String helper = sink.addSynthesisedScalar(s);
-                    body.addStatement("schemaBuilder.additionalType($L())", helper);
-                }
+            if (ScalarTypeResolver.isSpecBuiltIn(scalar.name())
+                    && scalar.resolution() instanceof ScalarResolution.Resolved r) {
+                body.addStatement("schemaBuilder.additionalType($T.$L)", r.scalarConstantOwner(), r.scalarConstantField());
+                continue;
             }
+            var form = CarriesObjectForm.formOf(scalar, scalar.name(), assembled) instanceof GraphQLScalarType f
+                ? f : scalar.schemaType();
+            String helper = sink.addScalar(scalar, form);
+            body.addStatement("schemaBuilder.additionalType($L())", helper);
         }
         for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
             String helper = sink.addDirectiveDefinition(dir);

@@ -89,7 +89,12 @@ uses for the same distinction; no new `ScalarResolution` arm or model flag.
     graphql-java's copy builder, which keeps the constant's name, coercing and description;
   - head, `Synthesised`: `newScalar()`, `b.name(<sdlName>)`, `b.coercing(<owner>.<field>.getCoercing())`,
     as today;
-  - tail: `b.specifiedByUrl(<url>)` when `form.getSpecifiedByUrl()` is non-null, then
+  - tail: the form's description, `b.description(<description>)` when non-empty, otherwise
+    `b.description(null)` on the `Resolved` arm, so the copy drops the constant's own description
+    and the runtime scalar describes itself as the emitted `schema.graphqls` does (the
+    `emittedSdlMatchesRuntimeSchema` parity test fails on the fixture's `BigDecimal` otherwise,
+    since `ExtendedScalars.GraphQLBigDecimal` carries "An arbitrary precision signed decimal" and
+    the SDL declares none); then `b.specifiedByUrl(<url>)` when `form.getSpecifiedByUrl()` is non-null, then
     `AppliedDirectiveEmitter.emitApplications(body, "b", form, this)` (the survivor filter every
     other type's applications go through), then `return b.build()`.
 - `GraphitronSchemaClassGenerator`, the scalar registration loop: a spec built-in emits
@@ -119,6 +124,11 @@ automatically (the registered scalar is a copy carrying the SDL declaration's di
 registering the constant again from the customizer fails the build), and a migration note in the
 item's `roadmap/changelog.md` entry at Done.
 
+The description follows the SDL too: a scalar backed by a library constant that carries its own
+description (every `ExtendedScalars` constant does) now introspects with the SDL declaration's
+description, or none, rather than the library's. The migration note says so, and that the remedy
+is a description on the SDL declaration.
+
 ## Tests
 
 All behavioural, at the execution tier in `graphitron-sakila-example`; nothing asserts on
@@ -143,9 +153,6 @@ generated Java text.
 
 ## Out of scope
 
-- A `Resolved` scalar's SDL description. The copy builder keeps the constant's own description,
-  which is today's behaviour; whether an SDL description should override a library constant's is a
-  separate decision with no evidence behind it yet.
 - Applications on spec built-ins (`extend scalar String @tag(...)`). graphql-java drops them while
   building the assembled schema (confirmed against 25.0: the built scalar is identical to
   `Scalars.GraphQLString` and carries no applications), so they never reach Graphitron, and

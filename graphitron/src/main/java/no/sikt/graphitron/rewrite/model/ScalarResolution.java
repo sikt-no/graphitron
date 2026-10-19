@@ -15,8 +15,9 @@ import no.sikt.graphitron.javapoet.TypeName;
  * {@link Successful#javaType()} so consumers that only read the Java type stay variant-agnostic.
  *
  * <p>{@link Resolved}'s {@link TypeName} is what input-record components, service params and
- * {@code Field<X>} projections bind to; its owner class and field name feed the synthesized
- * schema's {@code .additionalType(...)} registration.
+ * {@code Field<X>} projections bind to; its owner class and field name feed the runtime
+ * schema's scalar registration (the constant itself for a spec built-in, a copy of it carrying
+ * the SDL declaration's directives otherwise).
  *
  * <p>{@link Synthesised} adds the SDL name the scalar registers under and a
  * {@code (coercingSourceOwner, coercingSourceField)} pair naming the {@code GraphQLScalarType}
