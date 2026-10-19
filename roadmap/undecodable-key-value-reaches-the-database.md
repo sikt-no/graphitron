@@ -73,6 +73,14 @@ of them throws:
 | `" 1234"` | `1234` | `1234` | `1234` | `1234` |
 | `"1.5"` | `1` | `1` | `1` | `1.5` |
 
+A column a jOOQ converter maps to another Java type hides a second gap. Its `DataType` is a converted
+type whose `convert` returns the *user* type, and an input already of the user type passes through
+untouched. Over `SQLDataType.BIGINT.asConvertedDataType(OrgCodeStringConverter)`, the sakila fixture
+of the sis shape, `convert("abc")` gives `"abc"` and `convert("0186")` gives `"0186"`. The value
+fails only when it is bound, where the converter's `to` (`Long.valueOf`) throws inside the statement.
+So no check on the result of `convert` alone can tell whether a value fits a converter-backed column:
+the check has to follow the value through the converter to its database value.
+
 The generated decode paths add no check of their own on top of that:
 
 - `NodeIdEncoder.decodeValues` returns the raw `String[]` and checks only the base64, the type prefix
@@ -105,30 +113,65 @@ the text is refused.
 
 ### Two acceptance rules, by provenance
 
+Both rules run on the same three-step **column trip**, read off the column's `DataType` and its
+`getConverter()` (jOOQ's identity converter when the column has none, so there is one emitted
+shape):
+
+1. the *user value*: `type.convert(input)`;
+2. the *database value*: `converter.to(user value)`;
+3. the *canonical value*: `converter.from(database value)`.
+
+The trip fails when any step gives `null` or throws `IllegalArgumentException` or
+`DataTypeException`; `NumberFormatException` is an `IllegalArgumentException`, so a converter's
+`Long.valueOf("abc")` fails the trip. Any other exception propagates: it is a fault in the
+consumer's converter, not a fact about the value, which is the contract `canonicalTenantKey`
+documents today. The trip's last two steps are the `roundTrip` `TenantConnections` already performs
+for the tenant key, now applied to every column.
+
+The clauses below that inspect a number read the **numeric value** of the trip: the canonical value
+when it is a `Number`, else the database value when that is a `Number`, else there is none and those
+clauses do not apply. On an unconverted integer column that is the coerced value; on the
+`String`-over-`bigint` tenant it is the database `Long`; on a converter whose user type is itself
+numeric it is the user-side number. The precision and scale are the ones the column's `DataType`
+reports, which a converted type carries over from its SQL type (`NUMERIC(4,1)` converted reports
+`hasPrecision()`, precision 4, scale 1).
+
 **A server-minted value: the exact inverse of the encoder.** This covers every key slot of a node id,
-the tenant slot included. `NodeIdEncoder.encode` writes each key value as `v.toString()`, so the
-decoder accepts exactly the encoder's image: a slot decodes iff all four of these hold:
+the tenant slot included. `NodeIdEncoder.encode` writes each key value as `v.toString()`, where `v`
+is the record's user-type value, so the decoder accepts exactly the encoder's image. A slot decodes
+iff all three of these hold:
 
-1. coercion does not throw;
-2. the result is non-null;
-3. `result.toString()` equals the slot text;
-4. when the column's `DataType` declares a precision (`hasPrecision()` and `precision() > 0`) and the
-   result is a `Number`, the result fits that precision and scale.
+1. the column trip succeeds;
+2. the canonical value's `toString()` equals the slot text;
+3. when the column's `DataType` declares a precision (`hasPrecision()` and `precision() > 0`) and the
+   trip has a numeric value, that value fits the precision and scale: at most `precision - scale`
+   integer digits and at most `scale` fractional digits.
 
-An id graphitron minted always passes, because every stored value fits its column. This rule refuses
-`"abc"`, a wrapped number, `" 1234"`, `"01"` and `"1.5"`, none of which the encoder writes.
+The decoded value is the canonical value. An id graphitron minted always passes, because every stored
+value fits its column and the encoder wrote the canonical value's text. On an integer column this
+rule refuses `"abc"`, a wrapped number, `" 1234"`, `"01"` and `"1.5"`, none of which the encoder
+writes; on a converter-backed column it also refuses `"0186"` (the canonical value is `"186"`) and
+any text the converter cannot take to the database. A converter that wraps or substitutes a
+sentinel in `to` is refused too, whenever its `from` does not give the slot text back.
 
 **An authored wire value: the documented coercion, minus the wrap.** This covers a tenant argument, a
 `@tenantFanOut` narrowing value, and a key value in a non-node-id federation `@key` representation.
 These are values a client typed, and `tenant-scoping.adoc` section 1 documents their coercion: `"1.5"`
-binds as `1`, and on the converter-backed tenant `"0186"` routes to `186`. That coercion stays. A value
-is refused when any of these holds:
+binds as `1`, and on the converter-backed tenant `"0186"` routes to `186`. That coercion stays. The
+input is a `String` or a JSON-sourced `Number`. A value is refused when any of these holds:
 
-- coercion throws or gives `null`;
-- the column's `DataType` is numeric and the coerced value differs from the integral part of the text
-  read as a `BigDecimal`. That is a wrap, and the check refuses it without disturbing the documented
-  `"1.5"` truncation;
-- the precision clause above fails.
+- the column trip fails;
+- the input *reads as a number* and the trip's numeric value equals neither that number nor its
+  integral part. An input reads as a number when it is a `Number`, or a `String` that
+  `new BigDecimal(text.trim())` accepts; the trim matches jOOQ, which trims before it parses, so
+  `" 1234"` keeps coercing to `1234` as it does today. A mismatch is a wrap. Equality is
+  `BigDecimal.compareTo`, so `"1.5"` is accepted at `1` on an integer column and at `1.5` on a
+  `NUMERIC`, and `"0186"` is accepted at the database value `186`. An input that does not read as a
+  number has no number to wrap, and this clause does not apply: a converter from a code such as
+  `"NORWAY"` to a database number is not second-guessed;
+- the precision clause above fails on the trip's numeric value.
+
+The accepted value is the canonical value, which is what `canonicalTenantKey` returns today.
 
 ### One primitive, value or absent
 
@@ -139,11 +182,16 @@ two methods:
 - `static <T> T exact(DataType<T> type, String text)`
 - `static <T> T coerce(DataType<T> type, Object value)`
 
-Each returns the typed value, or `null` when the value is not a value of the column, and neither
-throws. `ColumnValues` holds the only decode-side coercion call, so R267's replacement of the
-deprecated `DataType.convert` becomes a swap at this site plus `requireColumnAgreement`, which belongs
-to R1044. Neither surface lives below the primitive: the lookups skip on `null`, the argument rails
-and the tenant fold throw on `null`. The skip-or-throw choice belongs to the surface, not to the
+Each returns the canonical value, or `null` when the value is not a value of the column. Neither
+throws for such a value; only a converter fault (an exception outside the two the column trip reads
+as failure) propagates. `ColumnValues` holds the column trip, so it is the only decode-side
+coercion call and the only decode-side converter round trip: `TenantConnections.roundTrip` moves into
+it rather than being kept beside it. R267's replacement of the deprecated `DataType.convert` becomes
+a swap at this site plus `requireColumnAgreement`, which belongs to R1044. R1044 asks whether the
+converter round trip should become one emitted primitive both `NodeIdEncoder` and `TenantConnections`
+call; this item builds that primitive, and R1044 is left to decide whether `requireColumnAgreement`
+compares through it. Neither surface lives below the primitive: the lookups skip on `null`, the
+argument rails and the tenant fold throw on `null`. The skip-or-throw choice belongs to the surface, not to the
 helper. The throw that `canonicalTenantKey` performs today inside the shared helper is why `_entities`
 nulls the whole response.
 
@@ -176,13 +224,17 @@ which is what the `[_Entity]!` shape means.
 ## Implementation
 
 - **`ColumnValuesClassGenerator`** (new, `rewrite/generators/util`) emits `ColumnValues` with `exact`
-  and `coerce` as specified above. It is emitted wherever `NodeIdEncoder` or `TenantConnections` is.
-  Emitting it unconditionally is fine if that is simpler, since it is a few methods with no schema
-  input. Register the unit in `GeneratedUnits` beside its siblings.
+  and `coerce` as specified above, both over one private column-trip helper that captures the
+  converter's wildcard database type the way `roundTrip` does today, so the trip type-checks at Java
+  17. It carries the `deprecation`/`removal` suppression `NodeIdEncoder` carries, since it holds the
+  `convert` call. It is emitted wherever `NodeIdEncoder` or `TenantConnections` is. Emitting it
+  unconditionally is fine if that is simpler, since it is a few methods with no schema input.
+  Register the unit in `GeneratedUnits` beside its siblings.
 - **`NodeIdEncoderClassGenerator`**:
   - Emit `static Object[] decodeColumns(String expectedTypeId, String base64Id, Field<?>... columns)`.
     It calls `decodeValues`, checks the arity against `columns.length`, then runs `ColumnValues.exact`
-    per slot. It returns the typed values, or `null` if any step fails.
+    per slot over `columns[i].getDataType()`, which is the converted type on a converter-backed
+    column. It returns the canonical values, or `null` if any step fails.
   - `buildPerTypeDecode` builds `decode<Type>` on `decodeColumns`, so a `null` from `decode<Type>` now
     also means "a value does not fit". The typed `RecordN` return shape is kept, and every
     `decode<Type>` caller is untouched.
@@ -203,10 +255,13 @@ which is what the `[_Entity]!` shape means.
     answers null" `continue` are unchanged.
   - Where the `@defaultTenant` value is already canonical, it skips the call.
 - **`ConnectionRuntimeClassGenerator`**:
-  - New non-throwing core `tenantKeyOrNull(Object)`: `ColumnValues.coerce` on the tenant column's
-    type, then the existing converter `roundTrip`.
-  - `canonicalTenantKey` becomes the throwing layer over it. Its documented contract is unchanged; it
-    now also refuses a wrap. `tenantKeyOf`, `agreeOnTenant` and `fanOutDomain` are unchanged and
+  - New non-throwing `tenantKeyOrNull(Object)`: `ColumnValues.coerce(TENANT_COLUMN_TYPE, value)`, and
+    nothing else, since the column trip already ends at the canonical value.
+  - `roundTrip` and the `TENANT_COLUMN_CONVERTER` field are deleted: the trip reads the converter off
+    the `DataType`, and `TENANT_COLUMN_TYPE` is that column's `DataType`.
+  - `canonicalTenantKey` becomes the throwing layer over `tenantKeyOrNull`, keeping its message. Its
+    documented contract is unchanged, the converter-fault propagation included; it now also refuses a
+    wrap. `tenantKeyOf`, `agreeOnTenant` and `fanOutDomain` are unchanged and
     inherit the wrap refusal.
   - Configured keys (`RequestTenants`, `sourcesByTenant`) also pass through `canonicalTenantKey`, so a
     configured key that would wrap is now refused at construction with the existing
@@ -257,14 +312,28 @@ before the fix.
   - `deleteFilmActorByNodeId` with a `FilmActor` id whose key wraps onto an existing row: an error, and
     that row is still present.
   - The existing `"abc"` tenant tests stay green unchanged.
+  - `filmsByWireId(filmId: " 1")` keeps today's coercion and answers tenant 1's films, pinning the
+    trim in the authored rule.
+- `ConverterFilterExecutionTest`, the converter-backed key, which fails on today's tree at bind time:
+  - `node` with a `ConverterCampusTerm` id whose `org_code` slot is `abc`, and one whose slot is
+    `99999999999999999999`: `null`, no errors. Today `Long.valueOf` throws inside the statement.
+  - `node` with a `ConverterCampusTerm` id whose `org_code` slot is `0186` beside the real `186` term:
+    `null` for the alias, the row for the real id.
+  - `converterCampusTermByNodeId` with the `abc` id: the malformed-id client error, before SQL.
 - `ConvertedTenantRoutingExecutionTest`: `sites(ownerOrg: "99999999999999999999")` gives a client error
-  with no connection opened, and the existing `"0186"` routing test stays green.
+  with no connection opened. This one passes on today's tree, because `OrgCodeStringConverter.to`
+  throws `NumberFormatException` and `canonicalTenantKey` already maps it; it is a regression pin
+  for the move of `roundTrip` into `ColumnValues`, not a wrap case. The existing `"0186"`,
+  `sitesIn(["0186", "186"])` and `"abc"` tests stay green unchanged.
 - A mutation-rail "never written" case for a non-tenant node: an update keyed by `Film:4294967297`
   errors, and film 1 is unchanged. Put it in `DmlBulkMutationsExecutionTest` or wherever the UPDATE
   rail's wrong-type cases live.
-- The precision clause: no sakila key column is narrow, so call the generated `ColumnValues` directly
-  over `SQLDataType.SMALLINT`, `NUMERIC(4)` and `NUMERIC(4,1)`. This covers both rules on the probe's
-  rows plus the precision and scale refusals, and needs no DDL change.
+- The precision clause and the numeric-value choice: no sakila key column is narrow, so call the
+  generated `ColumnValues` directly over `SQLDataType.SMALLINT`, `NUMERIC(4)`, `NUMERIC(4,1)`, and
+  `BIGINT` converted through `OrgCodeStringConverter`. This covers both rules on the probe's rows,
+  the precision and scale refusals, `"0186"` (refused by `exact`, accepted at `186` by `coerce`), and
+  needs no DDL change. Add one converter whose `to` truncates silently, defined in the test, to pin
+  that `exact` refuses a converter-side wrap that `from` does not give back.
 
 ## Neighbours, not absorbed
 
@@ -272,8 +341,9 @@ before the fix.
   "Invalid node id"; this item makes sure they are reached.
 - **R267**: replace the deprecated `DataType.convert`. After this item the decode-side call is in
   `ColumnValues` alone.
-- **R1044**: `requireColumnAgreement`'s converter-backed comparison. That is a different question, and
-  its `convert` stays where it is.
+- **R1044**: `requireColumnAgreement`'s converter-backed comparison. This item builds the emitted
+  round-trip primitive R1044's notes ask about, but `requireColumnAgreement` and its `convert` stay
+  where they are; whether agreement compares through `ColumnValues` is R1044's to decide.
 - **R534**: the null-flag erasure from `fromArray`, which is adjacent but unchanged here.
 - **Cursor decode and `ID` arguments bound by coercion.** Two more sites share this bug class and
   belong to a follow-up that routes them through `ColumnValues`. The first is
@@ -291,12 +361,16 @@ before the fix.
   section 1 states.
 - **Catching at the fetcher**, by wrapping `fetchEntities` in `ErrorRouter`. `[_Entity]!` still nulls
   `data`, and the documented outcome for a malformed id on a lookup is a `null` slot, not an error.
+- **Checking the result of `convert` alone, with the converter round trip kept in the tenant path.**
+  This was the first draft. On a converter-backed column `convert` passes a user-type input through,
+  so the check accepts `"abc"` and the converter throws at bind, which is the defect the goal closes.
+  It would also leave two decode-side coercions, one per runtime class.
 - **Letting the database refuse it.** A wrap produces a valid value of the column, so the database
   never sees the overflow, and a read never refuses at all.
 
 ## Reviewer findings
 
-### Round 1 (Spec → Ready): request revisions
+### Round 1 (Spec → Ready): request revisions, session_01EUZJP9WzXawm9B85Tt8mq2, 2026-10-19
 
 The goal is clear and the diagnosis checks out. Every symbol, test class and schema field the spec
 names exists as named, the mechanism table reproduces exactly against jOOQ 3.20.11 (`hasPrecision()`
@@ -338,6 +412,16 @@ trip, and how that relates to R1044. Add an execution case that fails today on a
 error, plus the same id on the `ConverterCampusTerm` `@nodeId` filter root giving the malformed-id
 client error.
 
+> **Author (round 1):** Addressed in Design. Both rules now run on one *column trip* (`convert`, then
+> the converter's `to` and `from`), so a converter-backed value is a value of the column only if it
+> reaches the database type; `exact` compares the canonical value's text with the slot, which also
+> refuses `"0186"`. The wrap and precision clauses read the trip's numeric value (canonical if a
+> `Number`, else database), and the wrap clause accepts either the input number or its integral part,
+> so `"0186"` passes `coerce` at `186`. `roundTrip` and `TENANT_COLUMN_CONVERTER` move into
+> `ColumnValues`, `tenantKeyOrNull` is `coerce` alone, and R1044's note is answered in Neighbours.
+> `ConverterFilterExecutionTest` gains the `ConverterCampusTerm` `abc`, overflow and `0186` cases on
+> `node` and the `@nodeId` filter root.
+
 ### Non-blocking
 
 - `ConvertedTenantRoutingExecutionTest`'s proposed `sites(ownerOrg: "99999999999999999999")` case
@@ -345,7 +429,14 @@ client error.
   `NumberFormatException`, an `IllegalArgumentException`, which `canonicalTenantKey` already maps to
   the client error. It is a regression pin, not one of the "fail on today's tree" wrap cases; label it
   so.
+
+  > **Author (round 1):** Relabelled in Tests as a regression pin for the `roundTrip` move.
+
 - The `coerce` wrap clause reads "the text as a `BigDecimal`", but jOOQ trims and `BigDecimal` does
   not: `" 1234"` coerces to `1234` today and `new BigDecimal(" 1234")` throws. Say whether such a
   value is refused or compared after trimming, since the authored rule promises the documented
   coercion stays.
+
+  > **Author (round 1):** Settled in the authored rule: the input is read with
+  > `new BigDecimal(text.trim())`, matching jOOQ's trim, so `" 1234"` keeps coercing; a
+  > `filmsByWireId(filmId: " 1")` test pins it. `exact` still refuses it.
