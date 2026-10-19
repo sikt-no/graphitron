@@ -21,7 +21,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1062` | A multi-table interface or union connection pages and orders correctly only on PostgreSQL | Spec | 2026-10-19 | [plan](multi-table-connection-sort-key-is-postgres-only.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
-| `R1064` | A service payload list with a null element throws while extracting keys | Ready | 2026-10-19 | [plan](service-payload-list-null-element.md) |
+| `R1064` | A service payload list with a null element throws while extracting keys | In Progress | 2026-10-19 | [plan](service-payload-list-null-element.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1067` | A node id or tenant value that does not fit its column is not caught at decode | Spec | 2026-10-19 | [plan](undecodable-key-value-reaches-the-database.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
@@ -538,7 +538,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### service
 
-- `R1064` [**A service payload list with a null element throws while extracting keys**](service-payload-list-null-element.md) — Ready, bug
+- `R1064` [**A service payload list with a null element throws while extracting keys**](service-payload-list-null-element.md) — In Progress, bug
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
 - `R1004` [**Read consumer method signatures from classfiles so an unrelated sibling method cannot fail reflection**](reflect-consumer-signatures-from-classfiles.md) — Backlog, architecture

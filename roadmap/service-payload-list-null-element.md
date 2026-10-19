@@ -1,7 +1,7 @@
 ---
 id: R1064
 title: "A service payload list with a null element throws while extracting keys"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: service
