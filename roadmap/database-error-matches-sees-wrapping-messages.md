@@ -3,7 +3,7 @@ id: R1060
 title: "A DATABASE @error handler's matches never sees the SQL text jOOQ wraps around the SQLException"
 status: Spec
 bucket: bug
-depends-on: [error-type-resolver-ladder-onto-mapping-array]
+depends-on: []
 created: 2026-10-19
 last-updated: 2026-10-19
 ---
@@ -12,7 +12,7 @@ last-updated: 2026-10-19
 
 ## Goal
 
-A `DATABASE` `@error` handler's `matches` fires when its text appears in the message of any exception from the outermost throw down to the `SQLException` the handler keys on. That includes jOOQ's `DataAccessException`, whose message starts with the SQL statement. `code` and `sqlState` are still read off the `SQLException`. Handlers that key on a column name, which only the SQL text carries, then map to their typed error as they did in Graphitron 9, instead of falling through to redaction (the generic "An error occurred. Reference: <uuid>" field error). Handlers whose `matches` targets the driver's own message, and every `GENERIC` handler, behave as before.
+A `DATABASE` `@error` handler's `matches` fires when its text appears in the message of any exception from the outermost throw down to the `SQLException` the handler keys on. That includes jOOQ's `DataAccessException`, whose message starts with the SQL statement. `code` and `sqlState` are still read off the `SQLException`. Handlers that key on a column name, which only the SQL text carries, then map to their typed error as they did in Graphitron 9, instead of falling through to redaction (the generic "An error occurred. Reference: <uuid>" field error). Every `GENERIC` handler, and every `DATABASE` handler without `matches`, behaves as before. A `DATABASE` handler with `matches` reaches further than it does today: if its text also appears in the SQL statement (a table or column name, a literal), it now also catches those errors. Dispatch is first-match-wins, so a broad handler declared ahead of a narrow one can take errors that used to go to the narrow one. That is Graphitron 9's rule, and handlers ported from Graphitron 9 were written for it.
 
 The schema that needs it, from the sis port. The two types share one union and one vendor code, so only `matches` tells them apart:
 
@@ -36,7 +36,7 @@ An over-long `bankkontonr` on Oracle raises `ORA-01438: value 1111111111111111 g
 
 ## Context
 
-Reported from the sis port (trunk `f611072f5`). Two of the 179 sis handlers audited depend on SQL text: the two above. Graphitron 9's `DataAccessExceptionContentToErrorMapping.matches` took the code from the `SQLException` and checked `matches` against the `DataAccessException`'s message. sis relies on this on purpose; main's `BankkontonummerErrorMappingTest` documents it, and it is also the choice that works whatever the database session's language.
+Reported from the sis port (trunk `f611072f5`). Two of the 179 sis handlers audited depend on SQL text: the two above. Graphitron 9's `DataAccessExceptionContentToErrorMapping.matches` took the code from the `SQLException` and checked `matches` against the `DataAccessException`'s message. sis relies on this on purpose; main's `BankkontonummerErrorMappingTest` documents it, and it is also the choice that works whatever the database session's language. The audit found which handlers need the SQL text. It did not check whether the remaining handlers will now match more. The case for them is parity: all of them were written for Graphitron 9, where `matches` already saw the SQL text, so this item gives them back the reach they had when they were written.
 
 Terms used below:
 
@@ -46,20 +46,23 @@ Terms used below:
 
 Cause: the generated `ErrorRouter.VendorCodeMapping.match(Throwable)` and `SqlStateMapping.match(Throwable)` accept only `throwable instanceof SQLException`, and they test `matches` against that same throwable's message. Dispatch offers one link of the chain at a time, so no single `match` call ever sees the code and the SQL text together. Fixing dispatch alone is not enough. The source has to stay the `SQLException`: the extra-field accessor contract names it, and its message is what a type without `description` shows the client. The source does not reach the wrapper above it, so both re-checks would still fail. The two sis types sit in one union, and only `matches` separates them, so the `TypeResolver` needs the wrapper's text as much as dispatch does.
 
-Prerequisite: R777 re-sources the `TypeResolver`'s hand-rolled `instanceof` ladder onto the `ErrorRouter.Mapping[]` walk the other two sites use. It is behaviour-preserving. Without it this item would need a third spelling of the new rule.
+The `TypeResolver` is an obstacle in its own right, and this item removes it too (see Implementation, "TypeResolver"). The resolver is a hand-rolled `instanceof` ladder (`GraphitronSchemaClassGenerator.buildErrorPolymorphicResolver`) that re-implements the three discriminators instead of walking the `ErrorRouter.Mapping[]` tables that dispatch and `message` use. Left alone, it would need a third spelling of the new rule. The two spellings have already drifted apart. Given a malformed exception class name, `ErrorMappingsClassGenerator.bestGuessOrObject` falls back to `Object`, while the ladder calls `ClassName.bestGuess` directly and the generator crashes.
 
-The model has a second obstacle, which this item removes itself (see Implementation, "Model"). `{handler: DATABASE, matches: X}`, with no `code` and no `sqlState`, classifies as an `ExceptionHandler` on `java.sql.SQLException`. A `GENERIC` handler naming that class produces the same thing. So the rule here could not reach that spelling, and the docs would have to say `matches` behaves differently depending on which `DATABASE` discriminators an author wrote.
+The model has another obstacle, which this item also removes (see Implementation, "Model"). `{handler: DATABASE, matches: X}`, with no `code` and no `sqlState`, classifies as an `ExceptionHandler` on `java.sql.SQLException`. A `GENERIC` handler naming that class produces the same thing. So the rule here could not reach that spelling, and the docs would have to say `matches` behaves differently depending on which `DATABASE` discriminators an author wrote.
 
 ## User documentation (first-client check)
 
 `docs/manual/reference/directives/error.adoc`, the `matches` row:
 
-> `matches` | no | Substring the exception message must contain. For `GENERIC`, the message of the exception whose class matched. For `DATABASE`, the message of the `SQLException` or of any exception wrapping it, so a handler can key on the SQL text jOOQ puts in its `DataAccessException` (`SQL [update ... "bankkontonr" = ? ...]; ...`), which is often the only place a column name appears. `code` and `sqlState` are always read off the `SQLException` itself. Useful to narrow a broad `className`, `code` or `sqlState` to one specific error.
+> `matches` | no | Substring the exception message must contain. For `GENERIC`, the message of the exception whose class matched. For `DATABASE`, the message of the `SQLException` or of any exception wrapping it, so a handler can key on the SQL text jOOQ puts in its `DataAccessException` (`SQL [update ... "bankkontonr" = ? ...]; ...`), which is often the only place a column name appears. The flip side is that a `DATABASE` text which also occurs in the SQL (a table or column name) matches every error of that code raised by such a statement, so pick a text specific to the error you mean. `code` and `sqlState` are always read off the `SQLException` itself. Useful to narrow a broad `className`, `code` or `sqlState` to one specific error.
+
+In the same file, the `handler` row's `DATABASE` sentence gets a clause: `matches` reads the messages from the outermost exception down to the matched `SQLException`, so it sees jOOQ's SQL text.
 
 `docs/manual/how-to/error-channel.adoc` gets matching edits:
 
 * The dispatch-loop snippet and the two facts beneath it: dispatch calls `ErrorRouter.claim`. The second fact names the `DATABASE` reach.
-* The `description:` section's bullet "A `union` carrier resolves `__typename` by the source's own class". The resolver now evaluates the type's handlers against the source and against the exceptions that wrapped it when it was claimed.
+* The `description:` section's bullet "A `union` carrier resolves `__typename` by the source's own class". The resolver now runs the type's own dispatch mappings against the source and against the exceptions that wrapped it when it was claimed.
+* The paragraph after the per-type `message:` walk ("the union's type resolver picks the type by source class") gets the same correction. Resolver and `message:` now run the same mappings, so agreeing with the `__typename` follows from that.
 
 The docs read simply, so the rule is the right shape. One thing remains for authors to know: wrappers whose default message is `cause.toString()` (for example `CompletionException` or `new RuntimeException(cause)`) echo text that was already matchable.
 
@@ -71,11 +74,13 @@ Sites that switch on the handler arms, to re-check at pickup:
 
 * `GraphitronType.ErrorType`, `TypeBuilder`, `FieldBuilder`
 * `MappingsConstantNameDedup`, `walker.internal.ChannelRuleChecks`, `CheckedExceptionMatcher`
-* `ErrorMappingsClassGenerator`, `ErrorTypeFetcherClassGenerator`, and the `TypeResolver` emission that R777 leaves
+* `ErrorMappingsClassGenerator`, `ErrorTypeFetcherClassGenerator`, `GraphitronSchemaClassGenerator.buildErrorPolymorphicResolver` (until the step below replaces it)
 
-Rule 8 (duplicate criteria): today `{GENERIC, className: "java.sql.SQLException", matches: X}` and `{DATABASE, matches: X}` lift to the same arm and criteria. After the split they are different variants with different `matches` reach, so both stay reachable as a cross-variant overlap. Pin that verdict with a test.
+Rule 8 (duplicate criteria) keys a `DatabaseHandler` on `(discriminator, matches)`. Two `{DATABASE, matches: X}` entries on one channel therefore stay rejected, as they are today when both lift to `ExceptionHandler(SQLException)`. Today `{GENERIC, className: "java.sql.SQLException", matches: X}` and `{DATABASE, matches: X}` also lift to the same arm and criteria. After the split they are different variants that reach different exceptions with `matches`, so both are admitted as an overlap across variants. Pin both verdicts with tests.
 
-This step changes no generated output, and the existing suite covers it, so an implementer may land it as its own commit ahead of the behaviour change.
+This step changes no generated output, and the existing suite covers it, so an implementer may land it as its own commit ahead of the behaviour change. During this step `ErrorMappingsClassGenerator` keeps emitting `ExceptionMapping(SQLException.class, ...)` for `Discriminator.Any`.
+
+**TypeResolver: walk the mapping tables.** `buildErrorPolymorphicResolver` stops re-implementing the discriminators. For each union participant in order, and each of its dispatch-capable handlers in declaration order, it emits `if (ErrorMappings.ByType.<T>[i].match(src)) return <T>;`. This uses the same `ByType` addressing as `ErrorTypeFetcherClassGenerator.messageMethod`, where `i` counts handlers and skips `VALIDATION`. A `VALIDATION` handler keeps its `src instanceof GraphQLError` test, because it has no mapping. `src` is cast once under `src instanceof Throwable`. With this the resolver, `message` and dispatch share one predicate per handler, and the bare `ClassName.bestGuess` call (the crash on a malformed class name) is gone. The step changes no behaviour and can land as its own commit after the model step. After it, the only edit the resolver needs for the new rule is the `matchesSource` swap under "Read side".
 
 **Emitted router** (`ErrorRouterClassGenerator`):
 
@@ -91,7 +96,7 @@ This step changes no generated output, and the existing suite covers it, so an i
 **Read side:**
 
 * `ErrorTypeFetcherClassGenerator.messageMethod` emits `ErrorRouter.matchesSource(ByType.<T>[i], thr, env.getGraphQlContext())` in place of `ByType.<T>[i].match(thr)`.
-* The `TypeResolver`, which walks `ByType` mappings after R777, makes the same swap using `env.getGraphQLContext()`. Note the graphql-java spelling differs from `DataFetchingEnvironment`'s.
+* The `TypeResolver`, which walks `ByType` mappings after the step above, makes the same swap using `env.getGraphQLContext()`. Note the graphql-java spelling differs from `DataFetchingEnvironment`'s.
 
 **Mapping mint** (`ErrorMappingsClassGenerator`): emit `DatabaseMapping` for the `DatabaseHandler` arm.
 
@@ -113,11 +118,11 @@ Collision semantics are accepted, not engineered away. The same `SQLException` i
 * **End to end, execution tier, Sakila on PostgreSQL.** PostgreSQL's `22003` text ("numeric field overflow") names no column either, so the bug reproduces for real on the `sqlState` path. Add a payload `@mutation` UPDATE on `film` that writes `rental_rate` (`numeric(4,2)`) and `replacement_cost` (`numeric(5,2)`), with an errors union of two `DATABASE` types `{sqlState: "22003", matches: "rental_rate", description: ...}` and `{sqlState: "22003", matches: "replacement_cost", description: ...}`. Check the jOOQ SQL text's column spelling at pickup and set `matches` to it. Cases:
   * an overflowing `rental_rate` returns `{film: null, errors: [{__typename: <rental type>, message: <its description>}]}`;
   * an overflowing `replacement_cost` resolves to the other type;
-  * an overflow on a column neither type names returns the redacted field error.
+  * a second payload `@mutation` with the same input whose errors union carries only the `rental_rate` type: an overflowing `replacement_cost` there returns the redacted field error, because the handler's `matches` text is not in that statement's SQL. (`film`'s other columns that can overflow are `smallint`, and those values pass GraphQL `Int` coercion and jOOQ's `Short` binding before PostgreSQL sees them, so none of them makes a dependable third column.)
 
   This proves dispatch, `TypeResolver` and `message` agree. That is the invariant the chain-root record holds, and nothing at build time ties the writer to its readers.
-* **Classification tier.** Existing `ErrorChannelClassificationTest` and `GraphitronSchemaBuilderTest` handler rows retarget to `DatabaseHandler`, one case per `Discriminator` arm. A new Rule 8 case shows `{GENERIC, className: "java.sql.SQLException", matches: X}` and `{DATABASE, matches: X}` on one channel are both admitted.
-* **Generator tier.** Update `ErrorRouterClassGeneratorTest` and `ErrorMappingsClassGeneratorTest` for the two-argument `match`, `DatabaseMapping` and `claim`, keeping their existing assertion style.
+* **Classification tier.** Existing `ErrorChannelClassificationTest` and `GraphitronSchemaBuilderTest` handler rows retarget to `DatabaseHandler`, one case per `Discriminator` arm. Two new Rule 8 cases: `{GENERIC, className: "java.sql.SQLException", matches: X}` and `{DATABASE, matches: X}` on one channel are both admitted, and two `{DATABASE, matches: X}` entries on one channel are rejected.
+* **Generator tier.** Update `ErrorRouterClassGeneratorTest` and `ErrorMappingsClassGeneratorTest` for the two-argument `match`, `DatabaseMapping` and `claim`, keeping their existing assertion style. For the `TypeResolver` step, assert that the emitted resolver names `ErrorMappings.ByType` and contains no `instanceof` on an exception class. The `bestGuess` drift then closes by construction, since the resolver no longer names the class. The union execution tests that exist today pin that the step changes no behaviour.
 * **sis acceptance.** `BankkontonummerErrorMappingTest.forMangeSifreMappesTilUgyldigBankkontonummer`, `...forMangeSifreMappesUavhengigAvDatabasensSprak` and `...forStortProsenttallMappesFortsattTilProsentmelding` pass. If their harness drives `ErrorRouter.dispatch` they pass unchanged. If it calls `Mapping.match` link by link, it moves to `ErrorRouter.claim` (the public entry for exactly that walk), because the single-argument `match` is retired. Tell the reporter which applies when this ships.
 
 ## Retired vocabulary
@@ -126,6 +131,7 @@ Collision semantics are accepted, not engineered away. The same `SQLException` i
 * `ErrorRouter.Mapping.match(Throwable)` (single argument)
 * `ErrorRouter.SqlStateMapping`, `ErrorRouter.VendorCodeMapping`, and the `SQL_STATE_MAPPING` / `VENDOR_CODE_MAPPING` constants on `ErrorRouterClassGenerator`
 * the inline mapping-by-cause double loop in `ErrorDispatchFragments.outcomeArm`
+* the `instanceof` ladder in `GraphitronSchemaClassGenerator.buildErrorPolymorphicResolver`, including prose saying the union resolver picks a type "by source class"
 
 ## Other solutions we've considered
 
@@ -143,10 +149,20 @@ Verdict: withhold; status stays `Spec`. The architecture (gate question 2) holds
 
 1. **The Goal overstates "behave as before" (gate question 1).** "Handlers whose `matches` targets the driver's own message ... behave as before" is not guaranteed. Dispatch is first-match-wins, so a `DATABASE` handler whose `matches` text also appears in the SQL statement (a table, column or schema name, a literal) now matches more throws than before. If it is declared ahead of a narrower handler, it takes throws that used to go to that handler. The Context's "two of 179 sis handlers depend on SQL text" says which handlers *need* the wrapper. It does not say the other 177 are *unaffected* by it. Please (a) qualify the Goal sentence and the `matches` docs row to say that a `matches` text which also appears in the SQL now matches more, and that this is Graphitron 9's rule; and (b) say whether the sis audit checked for this widening, or relies on sis's handlers having been written against Graphitron 9's wrapper matching. In-tree exposure is nil: the example and test schemas have no `DATABASE` handler with `matches`, only three bare `{handler: DATABASE}` entries.
 
+   *Response:* The Goal now states that `GENERIC` handlers and `DATABASE` handlers without `matches` behave as before. It says that a `DATABASE` `matches` text which also occurs in the SQL reaches further, and that first-match-wins order can move errors as a result. It names this as Graphitron 9's rule. The `matches` docs row warns authors to pick a specific text. Context answers (b): the audit identified which handlers need the SQL text and did not check the rest for wider matching. The case for the rest is Graphitron 9 parity.
+
 2. **The prerequisite is unspecified Backlog (sequencing, non-blocking).** R777 is `Backlog` with a one-paragraph body. This item cannot be picked up until R777 has gone through its own Spec, Ready, implementation and Done. R777's scope is small, changes no behaviour and touches one emission site, `GraphitronSchemaClassGenerator.buildErrorPolymorphicResolver`, which this item rewrites anyway. This item already plans to land its model change, which changes no behaviour, as its own first commit. Consider making the R777 change a second such commit here and dropping the dependency, or else get R777 specified so that the wait is visible on the board. The choice is yours.
+
+   *Response:* Folded in. The re-source is now Implementation, "TypeResolver: walk the mapping tables", a commit that changes no behaviour and lands after the model step. `depends-on` is empty, and R777 is discarded as absorbed by this item, with a changelog entry. Context also records the `bestGuess` drift that R777 named. The Tests section pins the new resolver shape, and the retired vocabulary lists the ladder.
 
 3. **Docs scope misses two sentences.** `error.adoc`'s `handler` row ("`DATABASE` matches any `java.sql.SQLException` in the cause chain, narrowed by `sqlState`/`code`/`matches`") should say how far `matches` now reaches. In `error-channel.adoc`, the paragraph after the per-type walk ("the union's type resolver picks the type by source class") goes stale along with the bullet the spec already names. List both under User documentation.
 
+   *Response:* Both are now under User documentation: the `handler` row gets a clause, and the per-type-walk paragraph is corrected along with the bullet.
+
 4. **Rule 8 needs the intra-variant case too.** The spec pins the cross-variant verdict. It should also say that the `DatabaseHandler` criteria key is `(discriminator, matches)`, so that two `{DATABASE, matches: X}` entries on one channel are still rejected as duplicates, as they are today when both lift to `ExceptionHandler(SQLException)`. Add a classification case for it next to the cross-variant one.
 
+   *Response:* The Rule 8 paragraph states the `(discriminator, matches)` key and keeps the duplicate rejection. The classification tier gains the rejection case next to the cross-variant admission.
+
 5. **The third end-to-end case names no column.** `film` has only two `numeric` columns, and the spec gives one to each type. The other columns that could overflow are `smallint` (`rental_duration`, `length`). Before such a value reaches PostgreSQL it passes GraphQL `Int` coercion and jOOQ's binding to `Short`, and it is not established that it arrives as a `22003` rather than failing earlier or being narrowed. Name the column and the value. Alternatively, cover the redaction case with a second mutation whose union carries only the `rental_rate` type, and overflow `replacement_cost`.
+
+   *Response:* Took the alternative. The third case is now a second mutation whose union carries only the `rental_rate` type, with `replacement_cost` overflowing. The `smallint` reasoning is recorded so nobody reaches for those columns.
