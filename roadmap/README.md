@@ -36,13 +36,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R1065` | An interface's own implements clause is dropped from the runtime schema | Spec | 2026-10-19 | [plan](interface-implements-interface-dropped-from-runtime-schema.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R1066` | Directives applied to a custom scalar are dropped from the runtime schema | Spec | 2026-10-19 | [plan](scalar-applied-directives-dropped-from-runtime-schema.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
+| `R1065` | An interface's own implements clause is dropped from the runtime schema | Ready | 2026-10-19 | [plan](interface-implements-interface-dropped-from-runtime-schema.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
@@ -667,7 +667,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1065` [**An interface's own implements clause is dropped from the runtime schema**](interface-implements-interface-dropped-from-runtime-schema.md) — Spec, bug
+- `R1065` [**An interface's own implements clause is dropped from the runtime schema**](interface-implements-interface-dropped-from-runtime-schema.md) — Ready, bug
 - `R1066` [**Directives applied to a custom scalar are dropped from the runtime schema**](scalar-applied-directives-dropped-from-runtime-schema.md) — Spec, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
