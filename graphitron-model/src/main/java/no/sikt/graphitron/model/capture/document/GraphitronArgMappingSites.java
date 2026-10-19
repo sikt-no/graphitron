@@ -13,7 +13,7 @@ import static org.jooq.impl.DSL.val;
  * The writer of {@code graphitron_argmapping_site}: where each written argMapping sits, inserted
  * from {@code graphitron_argmapping_site_rule} for one graph.
  *
- * <p>A step of the graphitron-ast anchor. Stored rather than read through the rule because every
+ * <p>A step of the graphitron anchor. Stored rather than read through the rule because every
  * reader of a mapping joins it into views of its own, and the climb evaluated inside each of them
  * costs an order of magnitude over a keyed table. Marked and swept: the statement upserts on the
  * reading's instant and the delete after it takes the mappings this reading no longer places.

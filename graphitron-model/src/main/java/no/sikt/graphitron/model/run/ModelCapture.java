@@ -14,7 +14,6 @@ import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
-import no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture;
 import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
@@ -87,7 +86,6 @@ public final class ModelCapture {
         GraphQLSourceCapture.reclaim(dsl, documents);
         // The post-synthesis schema, as soon as the anchor has resolved what the macros mint.
         var schemas = schemas(dsl, graph, assembled);
-        GraphitronAssemblyCapture.capture(dsl, graph.name(), readAt);
         // The store does not analyse itself, and ANALYZE commits: it runs outside the
         // derivations, never between a step's delete and its inserts.
         dsl.execute("ANALYZE");

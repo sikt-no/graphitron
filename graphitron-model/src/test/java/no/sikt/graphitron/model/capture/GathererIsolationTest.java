@@ -75,14 +75,13 @@ class GathererIsolationTest {
         roll.put("capture/sdl", Set.of("SdlFactCapture"));
         // Four gatherers in this package, one per stage of reading the corpus: the corpus reader
         // owns the store's record of what was read and hands the documents on, the two
-        // transcription faces write the as-written strata off that list, and the assembly asks the
-        // two questions no single document can answer and writes the verdicts down.
+        // transcription faces write the as-written strata off that list, the graphitron one
+        // anchoring and resolving what it decoded, and the assembly asks the two questions no
+        // single document can answer and writes the verdicts down.
         roll.put("capture/document", Set.of("GraphQLSourceCapture", "GraphQLAstCapture",
             "GraphitronAstCapture", "GraphQLAssemblyCapture"));
-        // Two here while the walk lasts: the stages that resolve, which are the gatherer, and
-        // the decode the walk drives one application at a time, which goes with the walk.
-        roll.put("capture/graphitron", Set.of("GraphitronAssemblyCapture",
-            "GraphitronFactCapture"));
+        // The decode the walk drives one application at a time, which goes with the walk.
+        roll.put("capture/graphitron", Set.of("GraphitronFactCapture"));
         // The federation library's versions and what each lets a link import.
         roll.put("capture/federation", Set.of("FederationCapture"));
         roll.put("capture/java", Set.of("JavaSourceFacts"));

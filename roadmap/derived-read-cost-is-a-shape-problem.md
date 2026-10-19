@@ -717,16 +717,20 @@ fetcher and its subtypes are written there.
 * **The decode runs before the anchor** `done`, 2026-10-19. It reads nothing from the store, only the
   documents merged in memory, which need no assembly; once it runs ahead, every step can follow
   the anchor in its present order. It goes altogether with "No `graphitron_*_entry` survives".
-* **The two are one in the meta** `open`, after the decode moves. One `meta_gatherer` row, the
+* **The two are one in the meta** `done`, 2026-10-20. One `meta_gatherer` row, the
   graphitron-ast owners moved to `graphitron`, its self-edge and duplicate edges gone, and
   `store_graph_progress`, `CaptureCommitsAsItGoesTest` and `GathererIsolationTest` following. The
   gatherer declares the corpora it reads, the SDL, the catalog, the classpath and the
   configuration, rather than none: keeping only the SDL makes the grain-corpus gate flag 34
   relations, and dropping it would claim it reads no corpus.
-* **Each `GraphitronAssemblyCapture` step moves into the anchor phase, marked and swept** `open`,
-  after the meta. In their present order, at the anchor's end; the eight that clear and refill
-  are marked and swept as they move.
-* **`GraphitronAssemblyCapture` is gone** `blocked`, on the steps.
+* **Each `GraphitronAssemblyCapture` step moves into the anchor phase** `done`, 2026-10-20. In
+  their present order, as the anchor's last step; the class is the anchor's helper in
+  `capture/document` and owns no progress row.
+* **The eight steps that clear and refill are marked and swept** `open`. `FieldPathApplications`,
+  `NodeKeyColumns`, `NodeIdCandidates`, `SpelledTables`, the two hop steps, `ResolvedTypeBindings`
+  and `FieldReferenceStepTargets`; one child per step, grown as each is tried.
+* **`GraphitronAssemblyCapture` is gone** `blocked`, on the eight. Its stages become the anchor's
+  own lines.
 
 #### `DerivationStratum` is gone, each step anchored by its owner
 

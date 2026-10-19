@@ -2420,7 +2420,7 @@ SELECT v.graph_name, v.source_name, v.source_line, v.source_column,
   LEFT JOIN graphql_ast_value_entry step
     ON step.graph_name = rv.graph_name AND step.source_name = rv.source_name
    AND step.source_line = rv.parent_line AND step.source_column = rv.parent_column;
-COMMENT ON VIEW graphitron_argmapping_site_rule IS 'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron-ast anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.';
+COMMENT ON VIEW graphitron_argmapping_site_rule IS 'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.';
 COMMENT ON COLUMN graphitron_argmapping_site_rule.graph_name IS 'the graph_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.graph_name';
 COMMENT ON COLUMN graphitron_argmapping_site_rule.source_name IS 'the source_name of a row of this rule, which the anchor writes into graphitron_argmapping_site.source_name';
 COMMENT ON COLUMN graphitron_argmapping_site_rule.source_line IS 'the source_line of a row of this rule, which the anchor writes into graphitron_argmapping_site.source_line';
@@ -3623,7 +3623,7 @@ CREATE TABLE graphitron_service_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_service_entry IS '@service on a field: the external service reference. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_service_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
+COMMENT ON TABLE graphitron_service_entry IS '@service on a field: the external service reference. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_service_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_service_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_service_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_service_entry.field_name IS 'the field name within the owning type';
@@ -3650,7 +3650,7 @@ CREATE TABLE graphitron_external_field_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_external_field_entry IS '@externalField on a field: the static jOOQ-Field method. The omitted-method fallback (the field name) is a derivation; argmapping is inert here (raw column only, its rejection is presence-triggered). Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_external_field_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
+COMMENT ON TABLE graphitron_external_field_entry IS '@externalField on a field: the static jOOQ-Field method. The omitted-method fallback (the field name) is a derivation; argmapping is inert here (raw column only, its rejection is presence-triggered). Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_external_field_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_external_field_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_external_field_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_external_field_entry.field_name IS 'the field name within the owning type';
@@ -3921,7 +3921,7 @@ CREATE TABLE graphitron_field_node_id_entry (
   FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_node_id_entry is the replacement, written by the graphitron-ast gatherer from the document the application sits in.';
+COMMENT ON TABLE graphitron_field_node_id_entry IS '@nodeId on a field or input field. Deprecated: written by the decode the incumbent walk drives, which goes when the decode reads the entry stratum instead of a registry. graphitron_ast_field_node_id_entry is the replacement, written by the graphitron gatherer from the document the application sits in.';
 COMMENT ON COLUMN graphitron_field_node_id_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_field_node_id_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_field_node_id_entry.field_name IS 'the field name within the owning type';
@@ -13619,12 +13619,11 @@ COMMENT ON COLUMN meta_gatherer.gatherer_class IS 'the fully qualified Java clas
 
 INSERT INTO meta_gatherer VALUES
   ('sdl', 'no.sikt.graphitron.model.capture.sdl.SdlFactCapture'),
-  ('graphitron', 'no.sikt.graphitron.model.capture.graphitron.GraphitronAssemblyCapture'),
+  ('graphitron', 'no.sikt.graphitron.model.capture.document.GraphitronAstCapture'),
   ('classpath-source', 'no.sikt.graphitron.model.capture.code.ClasspathSourceCapture'),
   ('code', 'no.sikt.graphitron.model.capture.code.CodeCapture'),
   ('graphql-source', 'no.sikt.graphitron.model.capture.document.GraphQLSourceCapture'),
   ('graphql-ast', 'no.sikt.graphitron.model.capture.document.GraphQLAstCapture'),
-  ('graphitron-ast', 'no.sikt.graphitron.model.capture.document.GraphitronAstCapture'),
   ('graphql-assembly', 'no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture'),
   ('federation', 'no.sikt.graphitron.model.capture.federation.FederationCapture'),
   ('jooq', 'no.sikt.graphitron.model.capture.jooq.JooqFactCapture'),
@@ -13664,7 +13663,7 @@ CREATE TABLE meta_gatherer_corpus (
   FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name),
   FOREIGN KEY (corpus_name) REFERENCES meta_corpus (corpus_name)
 );
-COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. A gatherer with no row here reads no corpus at all: it reads captured rows, and is thereby free to cross corpora, which is what the derivation gatherer and the graphitron gatherer both are. The second is worth naming because its family is a decode of the SDL and reads as a crawler until you ask what it reads: it reads the sdl gatherer''s transcription of the documents rather than the documents, and the catalog beside it, so a decode with a default to resolve resolves it here rather than pushing the question up a family.';
+COMMENT ON TABLE meta_gatherer_corpus IS 'One corpus a gatherer reads: a declared pairing of one gatherer with one outside input. For example the catalog gatherer carries two rows, catalog and classpath. A gatherer with at least one row here is a crawler, and this junction is the store''s definition of that word: a transcription pass whose rows about its own corpus may not vary with any other corpus''s contents. A gatherer with no row here reads no corpus at all: it reads captured rows, and is thereby free to cross corpora, which is what the derivation gatherer is. The graphitron gatherer is the one that is both: its capture phase decodes the documents'' graphitron directives as written, and its anchor phase resolves them against the catalog, the classpath and the configuration, so it declares all four and its edges say whose rows the anchor reads.';
 COMMENT ON COLUMN meta_gatherer_corpus.gatherer_name IS 'the reading gatherer, a meta_gatherer key';
 COMMENT ON COLUMN meta_gatherer_corpus.corpus_name IS 'the corpus read, a meta_corpus key';
 
@@ -13680,7 +13679,13 @@ INSERT INTO meta_gatherer_corpus VALUES
   -- its files is recorded where the match is made.
   ('graphql-source', 'configuration'),
   ('graphql-ast', 'sdl'),
-  ('graphitron-ast', 'sdl'),
+  -- The documents' graphitron directives are decoded as written, and the anchor then resolves them
+  -- against the catalog, the classpath and the configuration: the grains it anchors live in all
+  -- four.
+  ('graphitron', 'sdl'),
+  ('graphitron', 'catalog'),
+  ('graphitron', 'classpath'),
+  ('graphitron', 'configuration'),
   ('graphql-assembly', 'sdl'),
   -- The assembly judges the corpus as the generator composes it, and the composition is configured:
   -- the inputs' tags and notes reach the schema it judges, so its rows vary with the configuration
@@ -13700,7 +13705,7 @@ CREATE TABLE meta_gatherer_dependency (
   FOREIGN KEY (depends_on) REFERENCES meta_gatherer (gatherer_name),
   CHECK (gatherer_name <> depends_on)
 );
-COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. A crawler carries no edges at all: its rows about its own corpus may not vary with any other corpus''s contents, which is the same statement as depending on nobody, so the sdl and catalog gatherers stand independent of each other and of everything else. Every edge therefore runs from a gatherer that reads no corpus, and there are two of those: the graphitron gatherer, which decodes what the sdl gatherer transcribed and may read the catalog beside it, and the derivation gatherer downstream of them all. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy. What makes the order able to satisfy them is that each gatherer''s rows are flushed to the store before the next one starts, a flush inside the load''s one transaction being what lets a downstream gatherer read an upstream''s rows without publishing a partition mid-load.';
+COMMENT ON TABLE meta_gatherer_dependency IS 'One declared read edge between gatherers: the first may read rows the second produced. For example the derivation gatherer depends on every crawler, which is what running last means once it stops being a position. Declared rather than derived from the view bodies, deliberately: the declaration states the intended shape, and the view-ownership gate denies a declared view that reads outside its owner''s dependency set, so a view forking the shape fails instead of widening it. A crawler''s capture carries no edges: its rows about its own corpus may not vary with any other corpus''s contents, which is the same statement as depending on nobody, so the sdl and catalog gatherers stand independent of each other and of everything else. An edge runs from a gatherer that crosses corpora: the graphitron gatherer, whose anchor phase resolves what its capture phase decoded against the transcription, the catalog and the classpath, and the derivation gatherer downstream of them all. The roster drives no execution: the order gatherers run in is FactCapture.capture''s statement order, and these edges are what that order has to satisfy. What makes the order able to satisfy them is that each gatherer''s rows are flushed to the store before the next one starts, a flush inside the load''s one transaction being what lets a downstream gatherer read an upstream''s rows without publishing a partition mid-load.';
 COMMENT ON COLUMN meta_gatherer_dependency.gatherer_name IS 'the dependent gatherer, the one performing the read; a meta_gatherer key';
 COMMENT ON COLUMN meta_gatherer_dependency.depends_on IS 'the prerequisite gatherer whose rows may be read; a meta_gatherer key, and never the dependent itself, the CHECK refusing the length-one cycle';
 
@@ -13710,13 +13715,11 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- ask it read the transcription rather than the decode of what it says. The decode is a later and
   -- stricter reading, and a view asking it would answer differently depending on how far the pass
   -- had got.
+  -- And the decode keys each application to the node the transcription wrote at its position.
   ('graphitron', 'graphql-ast'),
+  -- What an application names is resolved in the anchor, so the anchor runs after the catalog and
+  -- the classpath have been read; before them it could only copy the author's strings.
   ('graphitron', 'jooq'),
-  -- The AST decode of what a graphitron directive says, which this gatherer's own anchoring has
-  -- read since it was written: GraphitronAnchor resolves every application against these entries.
-  -- The edge is new to the roster and not to the store, the gate inspecting view bodies alone and
-  -- every one of those reads having been in jOOQ, where no parse over a stored definition reaches.
-  ('graphitron', 'graphitron-ast'),
   -- A condition element routes by its method's signature, which the classpath reading captured.
   -- ModelCapture runs CodeCapture before this gatherer for that reason, and the chain resolution
   -- has read the signature across that boundary for as long as the arm has existed.
@@ -13727,26 +13730,17 @@ INSERT INTO meta_gatherer_dependency VALUES
   ('graphitron', 'federation'),
   ('graphitron', 'store'),
   -- The composition hands federation-jvm the link with the imports the anchor settled, so
-  -- ModelCapture runs the assembly after the graphitron decode.
+  -- ModelCapture runs the assembly after the graphitron gatherer.
   ('graphql-assembly', 'graphitron'),
   -- The tags the configuration applies are a rule over what each file's entry configures, which the
   -- source reading records. ModelCapture runs it first.
   ('graphitron', 'graphql-source'),
-  -- The graphitron decode keys each application to the node the transcription wrote at its position,
-  -- and its anchor resolves against the elements the transcription anchored.
-  ('graphitron-ast', 'graphql-ast'),
-  -- What an application names is resolved in the anchor, so the anchor runs after the catalog and
-  -- the classpath have been read. ModelCapture runs it after CodeCapture for that reason; before
-  -- them it could only copy the author's strings.
-  ('graphitron-ast', 'jooq'),
-  ('graphitron-ast', 'code'),
   ('code', 'classpath-source'),
   ('derivation', 'store'),
   ('derivation', 'classpath-source'),
   ('derivation', 'sdl'),
   ('derivation', 'graphql-source'),
   ('derivation', 'graphql-ast'),
-  ('derivation', 'graphitron-ast'),
   ('derivation', 'graphql-assembly'),
   ('derivation', 'graphitron'),
   ('derivation', 'jooq'),
@@ -14423,44 +14417,44 @@ INSERT INTO meta_relation VALUES
    'One argument an author passed to an application: the application''s own key and the formal argument the value binds.',
    'For example the fields: "id" of type Film @key(fields: "id") is one row.',
    'One relation for the reason the applications above are one, and by an easier argument: the five this replaces were identical but for the site key they copied down from their parent, so there was never a fact here that differed by site. The value is the rendered SDL literal rather than a parse of it, which is what makes an application legible without knowing what the directive means and what lets a consumer that does know read the same string the author typed. Nothing is ranked, an argument being named once inside one application; a document naming one twice is a schema problem and the upsert keeps the later of the two.'),
-  ('graphitron_ast_input_value_deprecated_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_input_value_deprecated_entry', 'sdl-declaration-site', 'graphitron',
    'What a deprecation marker on an input value says: the replacement hint the author gave, decoded.',
    'For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.',
    'A decode of one directive application, keyed by the application''s own position, so the input value it was written on and the file are one join away rather than columns here. @deprecated is not graphitron''s directive, and it is decoded here for the reason federation''s @key is: graphitron gives it a meaning GraphQL does not, unifying it with a docstring convention the specification has no room for, and a consumer asking whether something is deprecated should not have to know which of the two marked it. The decode is why this sits beside the applied-argument row rather than being read off it: that row carries the rendered literal, quotes and all, and recovering the text from it would mean re-reading SDL at every read.'),
 
-  ('graphitron_ast_table_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_table_entry', 'sdl-declaration-site', 'graphitron',
    'What an @table application says: the table this declaration is bound to, as written.',
    'For example type Film @table(name: "film") gives one row reading film.',
    'A decode of one directive application, keyed by the application''s own position. Nothing positional is duplicated: the type this is written on, the file, and whether the declaration was an extension are all one join away on the key, so a reader that wants them reads the AST row and this relation says only what the arguments meant. Two documents applying @table to one type are two rows and neither is refused, which is the whole difference from a relation keyed by the type name: a collision is a query over these rows, resolved oldest source first, rather than a first-write-wins the writer had to arbitrate. The split of the written name is a cut of the string and nothing else; whether the table exists is a question for the catalog and belongs where the resolving happens.'),
-  ('graphitron_ast_scalar_type_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_scalar_type_entry', 'sdl-declaration-site', 'graphitron',
    'What a @scalarType application says: the constant holding the scalar this declaration is bound to, as written.',
    'For example scalar Money @scalarType(scalar: "com.example.Scalars.MONEY") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The payload columns are nullable where the directive definition marks the argument required: a required argument the author left out is a schema problem the toolchain reports, and refusing the row here would lose the transcription of what they did write. Whether the named class holds such a field is a question for the classpath census and belongs where the resolving happens.'),
-  ('graphitron_code_reference_site', 'sdl-code-reference', 'graphitron-ast',
+  ('graphitron_code_reference_site', 'sdl-code-reference', 'graphitron',
    'Where one written Java code reference sits: the directive that wrote it, the element it is on, and the method it names once that site''s default applies.',
    'For example isEnglish: Boolean @externalField(reference: {className: "no.example.FilmExtensions"}) sits at Film.isEnglish under externalField and names isEnglish.',
    'What both the resolution and the defects that report it need to know about a reference and the written relation does not say: which directive wrote it and on what. Both are a fixed climb through keys the transcription declares, the holder of a value being the applied argument at any depth and an argument''s parent its application, so it is a view and not a grain. The @externalField default is stated here because both readers apply it; stated twice, the two could disagree about which method a reference names.'),
-  ('graphitron_code_reference', 'sdl-code-reference', 'graphitron-ast',
+  ('graphitron_code_reference', 'sdl-code-reference', 'graphitron',
    'The one method a written Java code reference names, where the graph''s classpath answers with exactly one.',
    'For example @service(service: {className: "no.example.CityService", method: "cityUppercase"}) draws one row naming the one cityUppercase that class declares, and a misspelt method draws none.',
-   'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Only a settled resolution is a row, on graphitron_tabletype''s terms: a reference naming nothing and one naming two overloads both draw none, so the anti-join against the written reference is every one that does not resolve, and graphitron_entry_defect says which of the three ways it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. A reference naming a class only is not in this population; its resolution is to a class. Written by the graphitron-ast anchor, which runs after the classpath is read.'),
-  ('graphitron_argmapping_site', 'sdl-written-value', 'graphitron-ast',
+   'The written reference met with the classpath, once for every site, as a reference into code_method rather than as the two strings again. Only a settled resolution is a row, on graphitron_tabletype''s terms: a reference naming nothing and one naming two overloads both draw none, so the anti-join against the written reference is every one that does not resolve, and graphitron_entry_defect says which of the three ways it failed. Resolved against every public method rather than a directive''s admission arm, because a method a site may not name is a different fault from one that does not exist. A reference naming a class only is not in this population; its resolution is to a class. Written by the graphitron anchor, which runs after the classpath is read.'),
+  ('graphitron_argmapping_site', 'sdl-written-value', 'graphitron',
    'Where one written argMapping sits: the directive and its repeat, the element it is written on, the code reference it is a field of and the path element that reference sits in.',
    'For example @reference(path: [{table: "film", condition: {className: "no.example.Conditions", method: "byActor", argMapping: "actorId: id"}}]) on Actor.films sits under reference at ordinal 0, on Actor.films, in the condition''s reference, at step 0.',
    'What a reader of the pair relation needs to know about a mapping and the string does not say. The decode the pair relation replaces carried it as one site literal welding the directive, the element kind and the path step together, and a reader filtered on nine spellings of it; these are the parts. Each is a fixed hop through keys the transcription declares, the holder of a value being its applied argument at any depth. Stored rather than left a view because every reader of a mapping joins it into a stack of views of its own, and H2 climbed it again inside each: the argMapping key-projection relations ran an order of magnitude slower over the view than over this table. The code reference is what the method a mapping binds into is resolved through, graphitron_code_reference holding it, so no reader matches a method by name again.'),
-  ('graphitron_argmapping_site_rule', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_argmapping_site_rule', 'sdl-written-value', 'graphitron',
    'One row the climb from a written argMapping to where it sits computes, in the shape graphitron_argmapping_site stores: the rule itself, evaluated on demand rather than read off disk.',
-   'For example the graphitron-ast anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_argmapping_site, which is the name every reader spells.',
    'The rule, kept in the catalog rather than in the anchor step that runs it, on graphitron_field_path_resolution_rule''s terms and for its reasons: the EXCEPT between this view and the table it fills stays runnable for as long as both exist.'),
-  ('graphitron_ast_argmapping_pair_entry', 'sdl-argmapping-pair', 'graphitron-ast',
+  ('graphitron_ast_argmapping_pair_entry', 'sdl-argmapping-pair', 'graphitron',
    'One entry of an argMapping as one document wrote it: at this position in this mapping, this parameter is bound to this.',
    'For example argMapping: "customerId: input.customerId, session: $session" gives two rows, customerId bound to input.customerId at position 0 and session to $session at 1.',
    'The mapping @routine, @service, @externalField and @condition all take, read once and one way. Each site used to read the string for itself, so what one site supported another did not. The string is the transcription''s already, verbatim at its own position, so this holds what a parse of it says and keys to that position: which directive or reference wrote it is a join, and the raw text is not repeated. Which strings are mappings is the vocabulary''s answer, by name, any argument or input field it calls argMapping. A sigil is recorded as written, admission being a rule about the site. A string that does not parse writes no rows, the transcription keeping it.'),
-  ('graphitron_ast_code_reference_entry', 'sdl-code-reference', 'graphitron-ast',
+  ('graphitron_ast_code_reference_entry', 'sdl-code-reference', 'graphitron',
    'A Java code reference as one document wrote it: this position names this class and, where it says, this method.',
    'For example @service(service: {className: "no.example.FilmService", method: "films"}) gives one row at the object value, and @enum(enumReference: {className: "no.example.Rating"}) gives one naming no method.',
    'The fact every site that names Java states, written once. Nine relations carried a class and a method under keys of one shape, one per site, and each was a decode a site wrote for itself, so a reader asking what Java a graph names unioned them. Which values are references is the vocabulary''s answer, read by type: anything it declares ExternalCodeReference, at whatever depth, plus @sourceRow, which spells one as two arguments. A site the vocabulary gains therefore writes rows here without new code. Keyed by the node the reference was written as, so the site, the directive and the argument are joins rather than columns, and the reference''s argMapping is the application''s fact and not this one''s.'),
-  ('graphitron_ast_enum_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_enum_entry', 'sdl-declaration-site', 'graphitron',
    'What an @enum application says: the external code reference this enum declaration is bound to, as written.',
    'For example enum Rating @enum(enumReference: {className: "com.example.Ratings"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the type it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed: whether the class is on the classpath and whether it declares that method are questions for the classpath census, which is a different relation and a different reading.'),
@@ -14504,180 +14498,180 @@ INSERT INTO meta_relation VALUES
    'One field a @defaultOrder sorts by, at its place in the order the rows are read in.',
    'For example @defaultOrder(fields: [{name: "title", collate: "xdanish_ai", direction: DESC}]) gives one row at position 0.',
    'Derived from the entry beside it, and the position is ranked again rather than copied, which is the one place the two strata disagree about a number. The position is the element''s own, read off the value stratum that numbers every element the author wrote, rather than counted here or copied from a decode that numbers only what it could read. An element the definition does not admit withdraws its whole application, so an admitted list is transcribed entire and the numbering has no hole to close. Dense numbering loses where the element sat and nothing reads that gap, so the anchor keeps what its readers have and the entry keeps what the author wrote. An element naming no field is dropped before the ranking, the name here being NOT NULL, and the positions close over it exactly as the walk''s counter did.'),
-  ('graphitron_ast_error_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_error_entry', 'sdl-declaration-site', 'graphitron',
    'One @error application, at its @ token.',
    'For example type FilmNotFound @error(handlers: [{handler: VALIDATION}]) gives one row, and its one handler is a row of graphitron_ast_error_handler_entry hanging off it.',
    'A decode of one directive application, keyed by the application''s own position. The directive''s only argument is the handler list, so the row carries its key and nothing else; it is stored because the handlers are a child relation and a child hangs off the decode of the application it was written inside, which is what lets a reader go from an application to its handlers by key and lets deleting the application take them. An application writing an empty list is a row with no handlers under it.'),
-  ('graphitron_ast_error_handler_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_error_handler_entry', 'sdl-written-value', 'graphitron',
    'One element of an @error application''s handlers list, with the kind it names.',
    'For example handlers: [{handler: DATABASE, sqlState: "23503"}, {handler: VALIDATION}] gives two rows, one of each kind, under the one application.',
    'The supertype of the per-kind relations: what every handler has whatever its kind, which is the element it decodes, the application holding it and the kind, so a reader wanting the handlers of an application, in order, joins one relation rather than unioning several. The kind is stored as written rather than read off which subtype holds a row: a VALIDATION element carries nothing else and so has no subtype of its own. Every object element of an admitted list is a row, and every GENERIC or DATABASE element is a row of its kind''s relation too, whatever it carries. The kind carries a CHECK that states, rather than enforces, what the legality gate already guarantees: only the three declared kinds reach this writer, and the constraint makes a drift in that gate fail at the row. The index is part of the element''s natural key, so it is copied here with the application and made unique beside it; it is a copy rather than a reference to graphql_ast_value_entry, whose position is NULL where a lone object was written for the list, an element this relation places at 0.'),
-  ('graphitron_ast_error_generic_handler_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_error_generic_handler_entry', 'sdl-written-value', 'graphitron',
    'A GENERIC handler of an @error application, at its position in the list, as written.',
    'For example {handler: GENERIC, className: "java.lang.IllegalStateException"} at position 0.',
    'One relation per handler kind, because the kind decides which fields mean anything. A GENERIC handler matches by class identity, so it carries a class name and nothing about SQL; the directive rejects sqlState and code on it outright. Every GENERIC element is a row whatever it carries, the class name NULL where none was written: entries capture rather than validate, and a handler naming no class is a defect for a detection to state. Merged with its siblings this would be six nullable columns of which a row fills three, and which three is a rule no constraint over that shape can state. A field an author wrote where their handler''s kind rejects it has no column here and is not lost: the whole handler list stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
-  ('graphitron_ast_error_database_handler_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_error_database_handler_entry', 'sdl-written-value', 'graphitron',
    'A DATABASE handler of an @error application, at its position in the list, as written.',
    'For example {handler: DATABASE, sqlState: "23503"} at position 0.',
    'One relation per handler kind, because the kind decides which fields mean anything. A DATABASE handler discriminates on one of two SQL codes and matches any SQLException, so it carries no class name; the directive rejects className on it outright. Merged with its siblings this would be six nullable columns of which a row fills two or three, and which of them is a rule no constraint over that shape can state. Both discriminators are columns here although the directive admits only one at a time, because refusing the row would lose what the author wrote and the conflict is a detection over these two columns.'),
-  ('graphitron_ast_field_binding_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_field_binding_entry', 'sdl-declaration-site', 'graphitron',
    'What a @field application on an output field says: the name that field is bound to, as written.',
    'For example title: String @field(name: "title") gives one row reading title.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. One of the three relations this directive draws, one per site its definition admits, because which kind of node an application sits on is settled while walking the document and a key names one table: this one hangs off graphql_ast_field_directive_entry and its siblings off the input-value and enum-value relations, so a reader wanting output fields reads one relation and joins nothing to exclude the rest. Two documents binding one field are two rows and neither is refused, a collision being a query over these rows resolved oldest source first. What the written name refers to, a column or a Java member, follows from what backs the field and is settled where the catalog and the classpath are read.'),
-  ('graphitron_ast_field_condition_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_field_condition_entry', 'sdl-declaration-site', 'graphitron',
    'What a @condition application on an output field says: the external method constraining the field''s query, as written.',
    'For example summary: String @condition(condition: {className: "no.example.Conditions", method: "visibleFilm"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed. The override flag is nullable and the definition''s own default is not filled in: what an omitted argument falls back to already stands in graphql_directive_argument.default_value_sdl, and supplying it here would lose the difference between a default taken and a value written, which is exactly the difference a reader reporting on an author''s intent needs. Whether the named class declares that method is a question for the classpath census, which is a different relation and a different reading.'),
-  ('graphitron_ast_field_condition_context_arg_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_field_condition_context_arg_entry', 'sdl-written-value', 'graphitron',
    'One contextArguments element of a @condition application on an output field, at its position in the list, as written.',
    'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
    'A list argument becomes rows rather than a column, because a reader asking which context values one application names should not be parsing a rendered literal. Keyed by the application''s position and the element''s index inside it, which is the whole of what identifies one element: the list is ordered and the order is the author''s. An element of some other shape makes the whole application one the definition does not admit, so none of it is transcribed and the question of what its neighbours are numbered does not arise; a reader wanting the literal an author wrote finds it verbatim in graphql_ast_applied_argument_entry. Whether the runtime context carries a value under a name here is not something any reading of a document can say.'),
-  ('graphitron_ast_reference_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_reference_entry', 'sdl-declaration-site', 'graphitron',
    'One application of a directive that carries a path, @reference or @referenceFor, at whichever site it was written.',
    'For example @reference(path: [{table: "film_actor"}, {table: "actor"}]) on Film.actors gives one row at its at sign.',
    'A key-only decode, and not empty for being one: a path''s elements hang from it and cascade with it, so a path has an application to belong to rather than reaching one through the value tree''s holder chain. Both directives carry the same path and are written at a field, an argument and an input field alike, so one relation serves the six combinations, the directive and the site being the applied-directive row''s to say.'),
-  ('graphitron_ast_reference_element_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_reference_element_entry', 'sdl-written-value', 'graphitron',
    'One element of the path an application of @reference or @referenceFor wrote, at its index in the list, whatever it says.',
    'For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.',
    'Entries capture and do not validate, so an element exists whatever it names: one naming none of a table, a key and a condition, which the element type allows, is a row here and a defect for a detection to state, where before it was in no relation at all and a path read through the step relations had a hole at its index. A field the element type does not declare is not admitted by the definition, so assembly reports it and DirectiveLegality keeps the application out of the entries. The step relations are its subtypes, one per thing an element can name.'),
-  ('graphitron_ast_reference_for_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_reference_for_entry', 'sdl-declaration-site', 'graphitron',
    'What a @referenceFor application says, at any site: the participant type whose join path this application replaces, as written.',
    'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.',
    'A decode of one directive application, keyed by the application''s own position. Unlike @reference this directive names something besides its path, so its application adds the participant to the path family''s application decode, at whichever site it was written; its path elements are the shared element and step entries, so a participant name is read without touching the steps. Repeated applications are independent, one per participant, where repeated @reference applications concatenate: that difference is a fact about what the two directives mean and shows up here only as a relation the steps reference. Declaring one participant twice is a build error and no key here states it, two documents naming one participant being two rows this relation transcribes and a detection reports.'),
-  ('graphitron_ast_reference_table_step_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_reference_table_step_entry', 'sdl-written-value', 'graphitron',
    'The table a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written.',
    'For example @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives two rows.',
    'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. Both directives that carry a path, at every site they are written at, write here: an element is one input type wherever it is spelled, and which directive and which site it sits under are facts of its application, reached through the element''s value entry, rather than of the element. So a rule over path elements is written once per fact and reads one relation. The rows hang off the element''s entry, which every element has whatever it says, so the application and the index it was written at are its columns and an element writing none of the three is still an element.'),
-  ('graphitron_ast_reference_key_step_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_reference_key_step_entry', 'sdl-written-value', 'graphitron',
    'The foreign key a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written.',
    'For example the second element of @reference(path: [{table: "film_actor"}, {table: "actor", key: "film_actor_actor_id_fk"}]) gives one row.',
    'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. Both directives that carry a path, at every site they are written at, write here: an element is one input type wherever it is spelled, and which directive and which site it sits under are facts of its application, reached through the element''s value entry, rather than of the element. So a rule over path elements is written once per fact and reads one relation. Whether the named constraint exists is a question for the catalog and belongs where the resolving happens.'),
-  ('graphitron_ast_reference_condition_step_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_reference_condition_step_entry', 'sdl-written-value', 'graphitron',
    'The condition a path element of a @reference or @referenceFor application names, at any site, at its position in the list, as written.',
    'For example {table: "actor", condition: {className: "no.example.Conditions", method: "liveActor"}} gives one row here and one in the table relation.',
    'A path element states a table, a key, a condition, or several of those at once, and each stated fact is a row of its own relation at the element''s shared position. That is what makes every column here total: the alternative is one relation of nine nullable columns whose legal combinations no constraint over that shape could state, which is the shape the @error handlers were split to avoid. A reader wanting the whole element joins the three on the position; a reader wanting only the tables a path names reads one relation and no predicate. Both directives that carry a path, at every site they are written at, write here: an element is one input type wherever it is spelled, and which directive and which site it sits under are facts of its application, reached through the element''s value entry, rather than of the element. So a rule over path elements is written once per fact and reads one relation. This is the one arm of an element that reaches the classpath where the others reach the catalog, which is why it carries a class and a method rather than a qualified name.'),
-  ('graphitron_ast_service_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_service_entry', 'sdl-declaration-site', 'graphitron',
    'What a @service application says: the external method resolving the field, as written.',
    'For example importFilms: [Film!] @service(service: {className: "no.example.FilmService", method: "importFilms"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The reference''s three fields are lifted into columns for the reason every site that carries one lifts them, an object literal not being a value a reader can query. This is the one site whose argument mapping admits a runtime sigil on the right-hand side, and that is a fact about how the string is later cut rather than about the string: the whole of it stands here as the author typed it, and the lexing that tells a sigil from an input path belongs where the segments are read, which is one derivation for every site that carries a mapping.'),
-  ('graphitron_ast_service_context_arg_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_service_context_arg_entry', 'sdl-written-value', 'graphitron',
    'One contextArguments element of a @service application, at its position in the list, as written.',
    'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
    'A list argument becomes rows rather than a column, on the terms its @condition twin states. Two relations rather than one shared by both directives, because an element hangs off the application it was written inside and the two applications live in different relations of the decode; a merged relation would carry a discriminator naming the directive, which is already a column of the row its key reaches. Keyed by the application''s position and the element''s index inside it, the list being ordered and the order the author''s.'),
-  ('graphitron_ast_external_field_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_external_field_entry', 'sdl-declaration-site', 'graphitron',
    'What an @externalField application says: the external method producing the field''s value, as written.',
    'For example awardCount: Int @externalField(reference: {className: "no.example.FilmFields", method: "awardCount"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The same three columns as the @service decode beside it and a relation of its own all the same: the two directives name a method the same way and mean different things by it, one resolving the field and one producing a value for a field the query already reached, and a shared relation would need a discriminator naming the directive that its key already reaches. Whether the named class declares that method is a question for the classpath census.'),
-  ('graphitron_ast_source_row_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_source_row_entry', 'sdl-declaration-site', 'graphitron',
    'What a @sourceRow application says: the static method producing the field''s batch key from a class-backed parent, as written.',
    'For example agency: Agency @sourceRow(className: "no.example.ActorRows", method: "agencyKey") gives one row.',
    'A decode of one directive application, keyed by the application''s own position. Two flat columns and no argument mapping, which is the directive''s own shape: this site names a class and a method directly where the others nest them inside an ExternalCodeReference, so a decode faithful to what the author wrote has two columns and not three. A relation rather than rows of something shared, because the decode of an application belongs beside the application: what the returned key must equal is derived from the site the directive sits on, and that derivation reads this relation together with the reference and routine decodes rather than instead of them.'),
-  ('graphitron_ast_connection_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_connection_entry', 'sdl-declaration-site', 'graphitron',
    'What an @asConnection application says: the page size the field defaults to and the Connection type name it overrides, as written.',
    'For example films: [Film!] @asConnection(defaultFirstValue: 25) gives one row reading 25.',
    'A decode of one directive application, keyed by the application''s own position. Both columns are nullable and the definition''s own defaults are not filled in, so a bare @asConnection is a row of two nulls: that row is what says the directive was applied with nothing said, which is a different fact from an application naming the default page size explicitly, and the fallback itself already stands in graphql_directive_argument.default_value_sdl. The connection name argument is deprecated and the deprecation is the directive definition''s to state; a transcription records what was written and says nothing about whether it should have been.'),
-  ('graphitron_ast_field_node_id_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_field_node_id_entry', 'sdl-declaration-site', 'graphitron',
    'What a @nodeId application on an output field says: the node type the identifier belongs to, as written.',
    'For example id: ID! @nodeId(typeName: "Film") gives one row reading Film.',
    'A decode of one directive application, keyed by the application''s own position. One of the two relations this directive draws, one per site the entry family separates, the other hanging off the input-value relation: an output field carrying @nodeId encodes an identifier where an argument or input field carrying one decodes it, so the two sites are read by different consumers and a merged relation would be discriminated by the row its key already reaches. The type name is nullable and nothing here supplies what an omitted one deduces to, the containing type on a plain field and the table''s node type on a referenced one being resolutions over other relations; a NULL is what says the author left the deduction to the build.'),
-  ('graphitron_ast_mutation_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_mutation_entry', 'sdl-declaration-site', 'graphitron',
    'What a @mutation application says: which write the field performs, over how many rows, against which table, as written.',
    'For example deleteFilm(input:): Boolean @mutation(typeName: DELETE, multiRow: true, table: "film") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. The operation is kept as the token the author typed and never checked against the vocabulary the definition declares: nothing upstream has validated it, so a CHECK would turn a typo into a constraint violation, and membership is a detection over this column. The table name is split by the grammar that cuts it and nothing more; what an omitted table resolves to is a resolution over the field''s own chain and belongs where that chain is walked.'),
-  ('graphitron_ast_pivot_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_pivot_entry', 'sdl-declaration-site', 'graphitron',
    'What a @pivot application says: the column whose values become fields, the column holding each value, and the enum naming the vocabulary, as written.',
    'For example ratingBreakdown: RatingBreakdown @pivot(on: "rating_code", value: "score", vocabulary: "Rating") gives one row.',
    'A decode of one directive application, keyed by the application''s own position. Three flat columns because the directive carries three flat arguments, two naming columns of the pivoted table and one naming a GraphQL enum whose values fix the vocabulary. All three are nullable although the definition marks two required, on the rule the whole family takes: a document that omits a required argument still applied the directive, the omission is a schema problem the toolchain reports, and refusing the row would lose the transcription of what the author did write. Whether either column exists, and whether the named enum is one, are questions for the catalog and the anchors.'),
-  ('graphitron_ast_default_order_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_default_order_entry', 'sdl-declaration-site', 'graphitron',
    'What a @defaultOrder application says: which of the three sorting surfaces the field defaults to, and in which direction, as written.',
    'For example films: [Film!] @defaultOrder(fields: [{name: "title"}]) gives one row whose three columns are all NULL, the sort being the child rows.',
    'A decode of one directive application, keyed by the application''s own position. The directive admits exactly one of an index, a field list and the primary key, and no constraint here states that: an application naming two is a document this relation transcribes and a detection reports, which is the rule every decode in this family takes about the arguments it was handed. The field list is the child relation rather than a rendered literal, so an application that took the third surface is a row here whose payload columns are all null and whose sort is the rows beside it. The directive-level direction stays a column here because it is the fallback each element''s own direction overrides.'),
-  ('graphitron_ast_default_order_field_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_default_order_field_entry', 'sdl-written-value', 'graphitron',
    'One fields element of a @defaultOrder application, at its position in the list, as written.',
    'For example fields: [{name: "title", collate: "xdanish_ai", direction: DESC}] gives one row at position 0.',
    'A list argument becomes rows rather than a column, and here the order is the answer: the position an element was written at is the sort order the author asked for, so a reader takes it from the key rather than from parsing a literal. Each element''s three fields become columns, the direction nullable because a NULL is what says the element takes the directive-level direction and filling one in would lose which of the two the author wrote. The collation is a database-specific name and resolves against nothing here.'),
-  ('graphitron_ast_routine_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_routine_entry', 'sdl-declaration-site', 'graphitron',
    'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
-  ('graphitron_ast_federation_key_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_federation_key_entry', 'sdl-declaration-site', 'graphitron',
    'What a federation @key application says: the field set naming the entity''s key, and whether the subgraph resolves it, as written.',
    'For example type Film @key(fields: "id reviews { id }") gives one row carrying that field set verbatim.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one type apart: the directive repeats and no ordinal is assigned here. The field set is kept whole in a column and parsed into the two relations below it, which is this family''s only grammar whose output is rows. The string stays because the parse is a reading of it and a re-emitter wants what was read. The rows exist because the anchors this derives into have held selections and segments since before the entry stratum did: the shape is transcribed rather than chosen here, and a decode that rendered the parse back into a dotted name would hand that derivation a string to take apart again. No reader outside those anchors consumes a key today, so what the rows are worth is a question the first one will settle.'),
-  ('graphitron_ast_routine_column_mapping_pair_entry', 'sdl-parsed-pair', 'graphitron-ast',
+  ('graphitron_ast_routine_column_mapping_pair_entry', 'sdl-parsed-pair', 'graphitron',
    'One pair the columnMapping string parsed into, at its index in that parse.',
    'For example columnMapping: "p_id: film_id, p_year: release_year" gives two rows, the first naming p_id and film_id.',
    'A grammar yields a list and a relation holds a set, so the order is a column, which is the same reading the parsed field set beside it takes. The pairs are decoded here rather than where the routine resolves because the grammar is a parse-boundary fact SQL cannot express, and stating them at the written position is what lets the resolved relation be derived rather than written twice. The string itself stays on the routine entry: this is its decode and not its replacement, so an author''s exact spelling survives a grammar that later reads it differently. A string the grammar rejects yields no rows here at all, which is the entry stratum''s rule that an application states what the definition admits and nothing else; the quarantine of that raw text belongs to the reader that reports it.'),
-  ('graphitron_ast_federation_key_selection_entry', 'sdl-parsed-selection', 'graphitron-ast',
+  ('graphitron_ast_federation_key_selection_entry', 'sdl-parsed-selection', 'graphitron',
    'One leaf selection the field set parsed into, at its index in that parse.',
    'For example "id reviews { id }" gives two rows, one for id and one for the id inside reviews.',
    'A grammar yields a list and a relation holds a set, so the order is a column. That is all the ordinal is. A decoded element that is a node the author wrote carries no such column, being identified by the position it was written at and ordered by the value stratum that records it; a field set is one string, so its selections have no position of their own and the ordinal is what makes them a list rather than a bag. A malformed field set yields whatever prefix parsed, so a selection missing from here is a defect a detection reports over the column beside it rather than an absence this relation asserts.'),
-  ('graphitron_ast_federation_key_segment_entry', 'sdl-parsed-selection-segment', 'graphitron-ast',
+  ('graphitron_ast_federation_key_segment_entry', 'sdl-parsed-selection-segment', 'graphitron',
    'One segment of one parsed selection, at its depth from the outermost inward.',
    'For example the selection reached by "reviews { id }" gives two rows, reviews then id.',
    'Nesting is part of federation''s grammar and survives the decode as segments, rather than being flattened into a dotted string. Two relations rather than one because a selection exists whether or not it nests: the selection row is what a reader counts and joins on, and the segments are how deep it went. That today''s generator rejects a nested key is a detection''s business and not a limit on what capture records, which is the same rule every decode in this family takes about input it is handed.'),
-  ('graphitron_ast_discriminate_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_discriminate_entry', 'sdl-declaration-site', 'graphitron',
    'What a @discriminate application says: the column whose value decides which subtype a row is, as written.',
    'For example interface Media @discriminate(on: "media_type") gives one row whose on_column is media_type.',
    'A decode of one directive application, keyed by the application''s own position. One end of a two-directive mechanism, and the relations are apart because the ends are: this one is written on the interface or union that has subtypes, and its counterpart on each object that is one, so they sit at different declarations and a reader joining them is asking a question about the corpus rather than reading one row. The column name is kept as the author typed it and resolves against nothing here; that the named column exists, and that every subtype claims a distinct value of it, are questions a detection asks of these rows together.'),
-  ('graphitron_ast_discriminator_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_discriminator_entry', 'sdl-declaration-site', 'graphitron',
    'What a @discriminator application says: the value of the discriminating column that means a row is this subtype, as written.',
    'For example type Book implements Media @discriminator(value: "BOOK") gives one row whose discriminator_value is BOOK.',
    'A decode of one directive application, keyed by the application''s own position, and the subtype end of the mechanism graphitron_ast_discriminate_entry opens. The value is a string whatever the SQL type of the column it will be compared against, because that is what an author can write in SDL and this relation states what was written; coercing it here would need the catalog, which no decode reads. An object implementing two discriminated interfaces writes one row per application, so the value is not assumed to be the object''s only one.'),
-  ('graphitron_ast_node_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_node_entry', 'sdl-declaration-site', 'graphitron',
    'What a @node application says: that the type is addressable by an opaque id, and what it calls itself inside one, as written.',
    'For example type Film @node(typeId: "F") gives one row whose type_id is F.',
    'A decode of one directive application, keyed by the application''s own position. A row is written for every application rather than only for those that wrote an argument, both arguments being optional and the key-column list being the child relation its elements hang off. The type id is kept as written and never defaulted: the directive documents an omitted typeId as meaning the type''s own name, and that substitution is a reading of the document rather than a fact of it, so a reader wanting the effective value joins the declaration and a reader wanting to know what the author chose asks this column.'),
-  ('graphitron_ast_node_keycolumn_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_node_keycolumn_entry', 'sdl-written-value', 'graphitron',
    'One keyColumns element of a @node application, as written.',
    'For example keyColumns: ["film_id"] gives one row, keyed where film_id was written.',
    'A list argument becomes rows rather than a column, and the row names the element it decodes rather than the application and an index into it. The order matters here as much as anywhere in the family, the directive stating that the positions are the order the columns take inside an id, and that is exactly why this relation does not restate it: the element''s own row carries its index already, and a second numbering would be a number a reader could only trust by reconstructing the list it came from. The list is optional, and its absence is the author asking for the database''s own primary key in the order the database has it, which is why an omitted list writes no row rather than a defaulted set. Every element is a string because the definition admits nothing else, an application writing anything else being refused before it reaches a decode at all.'),
-  ('graphitron_ast_link_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_link_entry', 'sdl-declaration-site', 'graphitron',
    'What a federation @link application says: the specification the schema opts in to, as written.',
    'For example a schema extension applying @link with federation v2.10 as its url argument gives one row carrying that string.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The URL is kept as the string the author typed and nothing is read out of it, the specification it names and the version in its last segment both being questions for a reader that knows what federation versions mean. A row is written for every application rather than only for those that wrote a URL, because the import list is the child relation and its elements need the parent to hang off.'),
-  ('graphitron_ast_federation_link_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_federation_link_entry', 'sdl-declaration-site', 'graphitron',
    'A @link application whose url names the federation specification, and the version it names.',
    'For example a schema extension applying @link with federation v2.10 as its url gives one row carrying v2.10, and a @link to any other specification gives none.',
    'The decode of what the url means, made where the specification''s prefix is a constant, so a reader asking whether a graph is federated joins a row rather than filtering urls with a literal of its own. A child of the link entry at the same key, the url being any specification''s and this the one the generator acts on.'),
-  ('graphitron_ast_link_import_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_link_import_entry', 'sdl-written-value', 'graphitron',
    'One import element of a @link application, at its position in the list, as written.',
    'For example import: ["@key", {name: "@shareable", as: "@federatedShareable"}] gives two rows, the second carrying an alias.',
    'A list argument becomes rows rather than a column, and this list is the one place in the family where an element admits two spellings: federation writes an import as a bare string or as an object binding it to a local name, and both are the same fact with the alias absent in the first. So the two spellings are one relation with a nullable alias rather than two relations or a column saying which was written, the spelling being syntax and the import being what a reader wants. An element that names nothing writes no row, the name being the import''s whole identity, and it costs its neighbours nothing: every element keys by where it was written rather than by a count, so a row missing here removes a row and not a number. @link is federation''s vocabulary and this generator declares no definition for it, so the legality rule does not reach these elements and that gap is the ordinary one a NOT NULL column makes.'),
-  ('graphitron_ast_compose_directive_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_compose_directive_entry', 'sdl-declaration-site', 'graphitron',
    'What a schema-level @composeDirective application says: the directive the schema asks the supergraph to carry, as written.',
    'For example extend schema @composeDirective(name: "@nodeType") gives one row whose directive_name is @nodeType.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications apart: the directive repeats and no ordinal is assigned here. Federation spells the directive two ways, @composeDirective where the schema''s @link imports it and @federation__composeDirective where it does not, and both are the same fact, so the writer reads both into this one relation rather than leaving every reader to ask twice. A row is written only for an application that wrote its name as a string: the argument is required, so an application without one asserts nothing a row can hold, and the applied-directive row already says it was applied. The question it answers is which directives a graph composes, which graphitron_synthesized_node_type_id asks of @nodeType; an import under an alias is not resolved and so is not recognised.'),
 
-  ('graphitron_ast_enum_value_binding_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_enum_value_binding_entry', 'sdl-declaration-site', 'graphitron',
    'What a @field application on an enum value says: the database column the value binds to, as written.',
    'For example TITLE @field(name: "title") gives one row whose name_ref is title.',
    'A decode of one directive application, keyed by the application''s own position. The directive is admitted at four sites and this relation holds one of them, the site being the key rather than a discriminator: a @field on an enum value names a sort column and a @field on an output field names the column the field reads, and the two have different consumers. The name is kept as the string the author typed and nothing is cut from it, an enum value''s binding naming one column and no qualified form. Whether a column of that name exists on the table the enclosing @order resolves against is the anchor''s question, which is why the second argument the directive declares is absent here: javaName concerns a generated accessor and not a column, and no reader of this site has asked for it.'),
-  ('graphitron_ast_index_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_index_entry', 'sdl-declaration-site', 'graphitron',
    'What an @index application says: the database index the enum value names, as written.',
    'For example TITLE_INDEX @index(name: "idx_film_title") gives one row whose index_ref is idx_film_title.',
    'A decode of one directive application, keyed by the application''s own position. The one argument the directive declares is its whole payload, so the column is NOT NULL and an application that wrote no name writes no row: such a row would carry its key and nothing else, which is what the applied-directive row already says, and that is the rule every single-argument decode in this family takes. The index name resolves against the catalog and not against anything here; an @index naming an index the database does not have is a document this relation transcribes and a detection reports.'),
-  ('graphitron_ast_order_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_order_entry', 'sdl-declaration-site', 'graphitron',
    'What an @order application says: which of the three sorting surfaces an enum value selects, as written.',
    'For example BY_TITLE @order(fields: [{name: "title"}]) gives one row whose two columns are both NULL, the sort being the child rows.',
    'A decode of one directive application, keyed by the application''s own position, and the enum-value twin of graphitron_ast_default_order_entry. The directive admits exactly one of an index, a field list and the primary key, and no constraint here states that: an application naming two is a document this relation transcribes and a detection reports. The field list is the child relation rather than a rendered literal, so an application that took that surface is a row here whose payload columns are both null and whose sort is the rows beside it, which is also why a row is written for every application rather than only for those that wrote an argument. The primary-key column is null where the author wrote nothing, the directive''s declared default being a generator constant rather than a fact about the document.'),
-  ('graphitron_ast_order_field_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_order_field_entry', 'sdl-written-value', 'graphitron',
    'One fields element of an @order application, at its position in the list, as written.',
    'For example fields: [{name: "title", collate: "xdanish_ai"}] gives one row at position 0.',
    'A list argument becomes rows rather than a column, and here the order is the answer: the position an element was written at is the sort order the author asked for, so a reader takes it from the key rather than from parsing a literal. FieldSort is the element type the directive definition declares, so an element of some other shape makes the whole application one @order does not admit and none of it is transcribed. Each field of the element becomes a column, all three nullable because an element may write only its name and because a NULL direction is what says the element takes the enclosing application''s, filling one in being a loss of which of the two the author wrote.'),
-  ('graphitron_ast_input_value_binding_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_input_value_binding_entry', 'sdl-declaration-site', 'graphitron',
    'What a @field application on an input value says: the column this argument or input field binds to, as written.',
    'For example films(titleFilter: String @field(name: "title")) gives one row reading title.',
    'A decode of one directive application, keyed by the application''s own position, so which input value it was written on and in which file are one join away rather than columns here. The site is one relation where the incumbent had two: an input object''s field and a field''s argument are the same node to the parser, and the incumbent routed the first down its field path, which is why an author writing @field on an input field met the field-site rules. What the three parents an input value can have are is a question the AST row answers, and it answers it with a position rather than a key, a parent in one of three relations being sound to reference and unspellable as a constraint.'),
-  ('graphitron_ast_input_value_condition_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_input_value_condition_entry', 'sdl-declaration-site', 'graphitron',
    'What a @condition application on an input value says: the external method deciding the predicate, as written.',
    'For example scope: ID @condition(condition: {className: "no.example.Conditions", method: "inScope"}) gives one row.',
    'A decode of one directive application, keyed by the application''s own position. The reference''s three fields are lifted into columns because an object literal is not a value a reader can query, and each is kept exactly as typed: whether the class is on the classpath and whether it declares that method are questions for the classpath census. The override argument is NULL where the author wrote none rather than carrying the definition''s false, which keeps the difference between a default taken and a value written; the default itself stands in graphql_directive_argument.default_value_sdl. The context arguments are a relation of their own, one row per list position, so deleting this row takes them.'),
-  ('graphitron_ast_input_value_condition_context_arg_entry', 'sdl-written-value', 'graphitron-ast',
+  ('graphitron_ast_input_value_condition_context_arg_entry', 'sdl-written-value', 'graphitron',
    'One contextArguments entry of a @condition application on an input value, at its position in the list.',
    'For example contextArguments: ["tenantId"] gives one row reading tenantId at position 0.',
    'A list argument becomes a relation of its own rather than a delimited column, so a reader asks for one key by name instead of splitting a string, and the position keeps the order the author wrote. Hung off the decode of the application it was written inside rather than off the AST row, so deleting that decode takes its elements and no row is left naming an application nobody decoded. What a context key must be present in the GraphQLContext at run time is not a question this relation answers or could.'),
-  ('graphitron_ast_input_value_node_id_entry', 'sdl-declaration-site', 'graphitron-ast',
+  ('graphitron_ast_input_value_node_id_entry', 'sdl-declaration-site', 'graphitron',
    'What a @nodeId application on an input value says: the type the identifier belongs to, as written.',
    'For example actorId: ID @nodeId(typeName: "Actor") gives one row naming Actor.',
    'A decode of one directive application, keyed by the application''s own position, so which input value it was written on and in which file are one join away rather than columns here. The argument is optional in the definition and NULL here says the author omitted it, which is a different fact from any name: what an omitted typeName deduces to is a resolution over the catalog and the node declarations, and supplying it here would put a resolution in a relation whose whole claim is that it performs none. Whether the named type carries @node is a question for the anchors on the same terms.'),

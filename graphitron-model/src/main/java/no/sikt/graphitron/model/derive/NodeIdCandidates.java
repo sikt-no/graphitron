@@ -28,8 +28,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_POLY_MEMBER;
  * authoritative where one answers, so an argument takes its field's return type whether or not it
  * also carries {@code @reference}.
  *
- * <p>Runs as a stage of the graphitron gatherer, after {@link Nodes}, which it keys into. The entries
- * are the graphitron-ast gatherer's and the elements the SDL's, both upstream.
+ * <p>Runs in the graphitron anchor, after {@link Nodes}, which it keys into. The entries are the
+ * same gatherer's capture and the elements the SDL's, both written before it.
  */
 public final class NodeIdCandidates {
 

@@ -72,7 +72,7 @@ import static org.jooq.impl.DSL.when;
  * The decode of the {@code graphitron_} family: {@code SdlFactCapture} drives it one application at
  * a time while it walks, filling every relation whose rows are a function of one document.
  *
- * <p>The stages that resolve used to sit here too, and are {@link GraphitronAssemblyCapture}'s now.
+ * <p>The stages that resolve used to sit here too, and are the graphitron anchor's last step now.
  * The two were one file because they share the vocabulary, not because they share a writer or a
  * moment: a decode is a function of one document and runs where the document is, where a resolution
  * needs the store whole and cannot run inside a walk at all.
@@ -122,8 +122,8 @@ public final class GraphitronFactCapture {
      * <p>What lets it run there is a property of the five methods below rather than a concession to
      * their caller: each reads the directive it is handed, buffers rows and queries nothing at all.
      * That is what "the rows are a function of one document" amounts to in code, and it is why the
-     * relations they write can be held to catalog-independence while the stages in
-     * {@link GraphitronAssemblyCapture} cannot.
+     * relations they write can be held to catalog-independence while the anchor's resolving stages
+     * cannot.
      */
     public static GraphitronFactCapture decodingInto(FactSink sink) {
         return new GraphitronFactCapture(sink);

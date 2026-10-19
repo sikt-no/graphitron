@@ -15,7 +15,7 @@ import static org.jooq.impl.DSL.val;
  * The writer of {@code graphitron_federation_link} and its imports: whether a graph opts in to
  * federation, and what its link imports, inserted from the two rules for one graph.
  *
- * <p>Two steps of the graphitron-ast anchor, either side of the emitted population. The opt-in comes
+ * <p>Two steps of the graphitron anchor, either side of the emitted population. The opt-in comes
  * first, the key mint reading it; the imports come after, being the authored ones plus what the mint
  * and the configuration apply. One relation for the two ways a graph opts in, the {@code @link} an
  * author writes and the one a {@code <schemaInput tag>} asks for, so a reader asks one question

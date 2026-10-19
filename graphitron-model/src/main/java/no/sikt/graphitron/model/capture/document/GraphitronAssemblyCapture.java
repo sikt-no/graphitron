@@ -1,6 +1,5 @@
-package no.sikt.graphitron.model.capture.graphitron;
+package no.sikt.graphitron.model.capture.document;
 
-import no.sikt.graphitron.model.sink.Progress;
 import no.sikt.graphitron.model.derive.FieldPathApplications;
 import no.sikt.graphitron.model.derive.FieldPathResolutions;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
@@ -24,22 +23,19 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * The stages that resolve: what graphitron makes of the whole store once every corpus in it has
- * been read.
+ * The stages that resolve: the tail of the graphitron anchor, what graphitron makes of the store
+ * once the documents, the catalog and the classpath have been read.
  *
- * <p>Runs last, and the ordering is a dependency rather than a preference. These stages read the
- * {@code graphql_} anchors for coordinates, the {@code graphitron_} entries for what each directive
- * application said, the {@code sql_} families for the tables and columns a spelling resolves
- * against, and {@code code_} for the methods one names. A pass that ran them earlier would resolve
- * against whichever of those it had so far.
- *
- * <p>Reads captured rows and no corpus of its own, which is what lets it cross corpora at all: a
- * crawler's rows about its own corpus may not vary with another's contents, and every rule here is
- * a crossing. That is the same reason it cannot be a stage of the gatherer whose entries it reads.
+ * <p>Last in the anchor, and the ordering is a dependency rather than a preference. These stages
+ * read the {@code graphql_} anchors for coordinates, the {@code graphitron_} entries for what each
+ * directive application said, the {@code sql_} families for the tables and columns a spelling
+ * resolves against, and {@code code_} for the methods one names, and several read the
+ * coordinate-keyed decode, which {@link no.sikt.graphitron.model.run.ModelCapture} runs ahead of
+ * the anchor for that reason.
  *
  * <h2>Why this is not the decode beside it</h2>
  *
- * <p>{@link GraphitronFactCapture} holds the decode, which restates one directive application in
+ * <p>{@link no.sikt.graphitron.model.capture.graphitron.GraphitronFactCapture} holds the decode, which restates one directive application in
  * graphitron's vocabulary and joins nothing. The two were one class because they share that
  * vocabulary, not because they share a writer or a moment: a decode is a function of one document
  * and runs where the document is, where a resolution needs the store whole and cannot run inside a
@@ -53,21 +49,13 @@ public final class GraphitronAssemblyCapture {
     private GraphitronAssemblyCapture() {}
 
     /**
-     * Resolves {@code graph}'s facts against everything the reading captured.
+     * Resolves {@code graph}'s facts against everything the reading captured, as the anchor's
+     * last step.
      *
      * <p>The instant is the caller's, on every gatherer's terms: the relations these stages mark and
      * sweep tell this reading's rows from the last one's by it.
      */
-    public static void capture(DSLContext dsl, String graph, LocalDateTime readAt) {
-        Progress.started(dsl, graph, GATHERER);
-        dsl.transaction(tx -> gather(tx.dsl(), graph, readAt));
-        Progress.completed(dsl, graph, GATHERER);
-    }
-
-    /** This gatherer's row in {@code store_graph_progress}. */
-    private static final String GATHERER = "graphitron";
-
-    private static void gather(DSLContext dsl, String graph, LocalDateTime readAt) {
+    public static void resolve(DSLContext dsl, String graph, LocalDateTime readAt) {
         // First of the stages: it reads the transcription alone, and the written order of a field's
         // applications is what everything below that walks a chain wants.
         FieldPathApplications.derive(dsl, graph);

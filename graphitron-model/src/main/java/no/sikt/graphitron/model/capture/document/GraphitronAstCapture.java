@@ -58,7 +58,7 @@ public final class GraphitronAstCapture {
     }
 
     /** This gatherer's row in {@code store_graph_progress}. */
-    private static final String GATHERER = "graphitron-ast";
+    private static final String GATHERER = "graphitron";
 
     private static void gather(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,
@@ -136,5 +136,7 @@ public final class GraphitronAstCapture {
         EmittedAnchor.derive(dsl, graph.name(), readAt);
         // What the link imports, which is what the author wrote plus what was just applied.
         FederationLinks.imports(dsl, graph.name(), readAt);
+        // Last, the stages that resolve against everything above and the catalog and classpath.
+        GraphitronAssemblyCapture.resolve(dsl, graph.name(), readAt);
     }
 }

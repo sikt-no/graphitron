@@ -35,8 +35,8 @@ class CaptureCommitsAsItGoesTest {
 
     /** Every gatherer a capture runs, in the order it runs them, and the capture as a whole. */
     private static final List<String> GATHERERS = List.of("capture", "store", "jooq",
-        "classpath-source", "code", "graphql-source", "graphql-ast", "graphql-assembly",
-        "federation", "graphitron-ast", "sdl", "graphitron", "derivation");
+        "classpath-source", "code", "graphql-source", "graphql-ast", "federation", "sdl",
+        "graphitron", "graphql-assembly", "derivation");
 
     @Test
     @DisplayName("a reading that runs to its end completes every gatherer's row and the capture's")
@@ -69,7 +69,6 @@ class CaptureCommitsAsItGoesTest {
                 .contains("Actor");
             var rows = finished(store.dsl());
             assertThat(rows).as("finished this reading, or not")
-                .containsEntry("graphitron-ast", true)
                 .containsEntry("sdl", true)
                 .containsEntry("graphitron", false)
                 .containsEntry("capture", false);

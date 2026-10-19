@@ -19,7 +19,7 @@ import static org.jooq.impl.DSL.val;
  * The writer of {@code graphitron_code_reference}: the one method each written Java code reference
  * names, where the graph's classpath answers with exactly one.
  *
- * <p>A step of the graphitron-ast anchor, which runs after the classpath has been read and declares
+ * <p>A step of the graphitron anchor, which runs after the classpath has been read and declares
  * {@code code} upstream of it. What a reference names is read off
  * {@code graphitron_code_reference_site}, which states the {@code @externalField} default once for
  * this and for the defects that report what does not resolve.
