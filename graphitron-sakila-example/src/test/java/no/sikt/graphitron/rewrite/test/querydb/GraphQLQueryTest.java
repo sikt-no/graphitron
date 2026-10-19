@@ -8514,11 +8514,11 @@ class GraphQLQueryTest {
     // The query-side @error fixture exists for visibility, not for exhaustive coverage of every
     // handler shape. Without an end-to-end driver the @error codepath in
     // GraphitronSchemaClassGenerator (per-@error-type path/message DataFetchers, the union's
-    // source-class TypeResolver) is invisible to compile-spec and execute-spec, which is what
+    // TypeResolver) is invisible to compile-spec and execute-spec, which is what
     // let an ambiguous-overload + removed-DataFetchingEnvironment.getObject() bug ship to
     // production. The three tests below drive the full pipeline against the real graphql-java
-    // engine: the per-fetcher catch arm into ErrorRouter.dispatch, the union's instanceof
-    // dispatch ladder into the right @error type, and the synthesized path/message fetchers
+    // engine: the per-fetcher catch arm into ErrorRouter.dispatch, the union's TypeResolver
+    // re-running the members' dispatch mappings into the right @error type, and the synthesized path/message fetchers
     // populating the SDL's [String!]! / String! contract. The happy-path test pins the
     // payload-factory's defaulted slot ('title' = null only on the catch arm; populated on the
     // straight return).
@@ -8535,7 +8535,7 @@ class GraphQLQueryTest {
         // id < 0 throws FilmLookupInvalidIdException; ErrorRouter.dispatch matches on the
         // ErrorMappings.FILM_LOOKUP_PAYLOAD ExceptionMapping for that class, places the throwable
         // into the errors list, and constructs new FilmLookupPayload(null, errors). graphql-java
-        // then walks the union via the source-class TypeResolver and resolves to FilmLookupInvalid.
+        // then walks the union via its TypeResolver and resolves to FilmLookupInvalid.
         Map<String, Object> data = execute("""
             {
                 filmLookup(id: -7) {
@@ -8737,7 +8737,7 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void filmLookup_zeroId_routesThroughNotFoundErrorType() {
         // The second handler in source order: FilmLookupNotFoundException → FilmLookupNotFound.
-        // Confirms the TypeResolver's instanceof ladder dispatches to the right branch, and that
+        // Confirms the TypeResolver's mapping walk dispatches to the right branch, and that
         // the per-@error path/message DataFetchers are wired for both @error types (not only the
         // first one in declaration order).
         Map<String, Object> data = execute("""
@@ -8801,7 +8801,7 @@ class GraphQLQueryTest {
         // rating outside [1,10] throws FilmReviewBadRatingException; ErrorRouter.dispatch
         // matches the ExceptionMapping for that class on ErrorMappings.FILM_REVIEW_PAYLOAD,
         // places the throwable into the errors list, and constructs new FilmReviewPayload(
-        // null, errors). graphql-java walks the union via the source-class TypeResolver and
+        // null, errors). graphql-java walks the union via its TypeResolver and
         // resolves to FilmReviewBadRating.
         Map<String, Object> data = execute("""
             mutation {
@@ -9249,7 +9249,7 @@ class GraphQLQueryTest {
         // GENERIC-handler mapping on FilmCreateConstraintViolation matches.
         // The catch arm returns Outcome.ErrorList around the throwable; the data field (Film)
         // renders null on that arm and the errors field reads the list back. graphql-java's
-        // source-class TypeResolver dispatches the union arm.
+        // TypeResolver dispatches the union arm.
         graphql.ExecutionResult result = executeRaw("""
             mutation {
                 createFilmWithErrors(in: { title: "R12-LC-FK-ERR", languageId: 99999 }) {

@@ -52,7 +52,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1060` | A DATABASE @error handler's matches never sees the SQL text jOOQ wraps around the SQLException | In Review | 2026-10-19 | [plan](database-error-matches-sees-wrapping-messages.md) |
 
 ---
 
@@ -810,7 +809,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R1060` [**A DATABASE @error handler's matches never sees the SQL text jOOQ wraps around the SQLException**](database-error-matches-sees-wrapping-messages.md)
 - `R825` [**A mutation test seeds film_actor rows a query test asserts the absence of**](film-actor-fixture-mutated-and-read-concurrently.md)
 - `R887` [**ColumnComparison's CatalogColumn overload has no caller, and a doc implies one**](column-comparison-catalog-column-overload-has-no-caller.md)
 - `R1055` [**GraphitronTransactionProvider closes the enclosing scope when a begin fails**](transaction-provider-failed-begin-closes-enclosing-scope.md)

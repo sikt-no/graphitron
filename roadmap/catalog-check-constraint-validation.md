@@ -36,7 +36,7 @@ Today the rewrite knows nothing about CHECK constraints. The four DML mutation
 emitters (`TypeFetcherGenerator.buildMutationInsertFetcher`, ...,
 `buildMutationUpsertFetcher`) hand a record to the database with whatever the
 caller supplied; constraint violations come back as `SQLException`s and are
-caught only by R12 §1's `SqlStateHandler("23514")`, which surfaces the
+caught only by a `{handler: DATABASE, sqlState: "23514"}` handler, which surfaces the
 database's check-name as the wire `message: String!`. That is correct but
 suboptimal:
 
@@ -801,11 +801,11 @@ against a principle; each is settled here so the implementer doesn't relitigate.
 - A pluggable recognizer. The five `Recognized` arms are fixed;
   extending the vocabulary is a code change, not a configuration knob.
   Per *Sealed hierarchies over enums*, a new shape adds a permit.
-- Replacing R12 §1's `SqlStateHandler("23514")` arm. CHECKs that the
+- Replacing the `{handler: DATABASE, sqlState: "23514"}` arm. CHECKs that the
   recognizer can't model (under strict-mode opt-out) still get caught at
   the database side and surfaced via R12's existing path. R92 is purely
-  additive: it shrinks the set of CHECKs that reach R12's
-  `SqlStateHandler` arm without removing the arm.
+  additive: it shrinks the set of CHECKs that reach that
+  `DATABASE` handler arm without removing the arm.
 
 ## Fact-base note (2026-08-06)
 

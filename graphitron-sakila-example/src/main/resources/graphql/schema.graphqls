@@ -1453,7 +1453,7 @@ type CustomerAddressSummary {
 }
 
 # R12 fixture (error-handling-parity.md): query-side @error end-to-end. Two @error types
-# in a union so the source-class TypeResolver dispatch ladder and the per-@error path/
+# in a union so the TypeResolver's mapping walk and the per-@error path/
 # message DataFetcher emission both have multi-branch coverage; the carrier classifier
 # resolves an ErrorChannel against the canonical (String, List<Object>) constructor on
 # FilmLookupPayload, and the per-fetcher catch arm routes through ErrorRouter.dispatch.

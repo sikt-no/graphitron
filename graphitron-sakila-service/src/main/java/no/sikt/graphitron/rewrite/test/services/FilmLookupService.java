@@ -7,7 +7,7 @@ package no.sikt.graphitron.rewrite.test.services;
  * forcing both compile-spec (sakila-example {@code mvn compile}) and execute-spec (real
  * PostgreSQL round-trip via {@code GraphQLQueryTest}) to exercise the synthesized per-
  * {@code @error}-type {@code DataFetcher}s for {@code path} and {@code message}, the union's
- * source-class-instanceof {@code TypeResolver}, and the per-fetcher try/catch route through
+ * mapping-table {@code TypeResolver}, and the per-fetcher try/catch route through
  * {@code ErrorRouter.dispatch}.
  *
  * <p>Four branches by input id:

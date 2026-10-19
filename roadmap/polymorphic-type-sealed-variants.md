@@ -36,7 +36,8 @@ system:
 - An all-`@error` union is conceptually an `ErrorType` (a type with `@error` is an
   `ErrorType`; a union of `ErrorType` is too), but it is classified as a `UnionType` with
   `@error` `Unbound` participants and special-cased downstream by
-  `GraphitronSchemaClassGenerator`'s `isErrorUnion` fork plus a source-class `TypeResolver`.
+  `GraphitronSchemaClassGenerator`'s `isErrorUnion` fork plus a `TypeResolver` that re-runs
+  the members' dispatch mappings.
 
 The interface side already shows the better shape: `TableInterfaceType` and `InterfaceType`
 are *distinct sealed variants*, not one type with a participant-role flag. The union side
@@ -68,7 +69,7 @@ Open threads to settle during Spec:
   `TypeBuilder.classifyType` never consults `bindings.resolveResult` for interfaces/unions,
   and the emitter has only three `TypeResolver` strategies (TableInterfaceType discriminator
   column; plain InterfaceType/UnionType `__typename` from a SQL result; `@error`-only
-  source-class), none for a service/reflection-populated non-error polymorphic type (whose
+  dispatch-mapping walk), none for a service/reflection-populated non-error polymorphic type (whose
   runtime objects carry no `__typename`). Spec must implement the strategy or reject the
   construct at validate time (the latter is the safe default per "validator mirrors
   classifier").
