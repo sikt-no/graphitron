@@ -1,11 +1,11 @@
 ---
 id: R1072
 title: "A node id over a DATE key column with a time part decodes to a different row"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 5
 theme: nodeid
-depends-on: []
+depends-on: [undecodable-key-value-reaches-the-database]
 created: 2026-10-19
 last-updated: 2026-10-19
 ---
@@ -14,19 +14,237 @@ last-updated: 2026-10-19
 
 ## Goal
 
-A node id whose key includes an Oracle `DATE` column decodes to the row it was encoded from,
-including the time part, so `node(id:)` returns the row the id was minted for.
+A node id whose key includes a column behind a jOOQ converter decodes to the value the id was
+minted from, so `node(id:)`, `nodes(ids:)`, `_entities` and every `@nodeId` argument reach the row
+the id names. The case that surfaced it is an Oracle `DATE` key column holding a time of day,
+mapped by the consumer's catalog to `LocalDateTime` through a converter: today two rows on the same
+day get distinct ids, but the id of the 02:24 row decodes to the 00:00 row and `node(id:)` returns
+the wrong person's record. After this item each id returns its own row. The wire format is
+unchanged, so ids clients already hold keep working.
+
+A node id is the Relay global id graphitron mints for a `@node` type: base64 of the type id and the
+row's key values, written and read by the generated `NodeIdEncoder`. A converter is the jOOQ
+`Converter<T, U>` a catalog attaches with `<forcedType>`: the database exchanges `T`, the generated
+column, and every value graphitron reads from it, has type `U`.
+
+```graphql
+# The sis shape: a person's national-id-number changes, keyed on (person, when the change was made).
+type Fodselsnummerendring implements Node @table(name: "FODSELSNUMMERENDRING") @node {
+    id: ID!
+    # DATO_FORETATT is an Oracle DATE (date plus time of day), mapped to LocalDateTime.
+}
+
+# Two rows for one person, DATO_FORETATT 2007-08-22 00:00 and 2007-08-22 02:24.
+{ node(id: "<id minted for the 02:24 row>") { ... on Fodselsnummerendring { id } } }
+# today:  the 00:00 row, whose id differs from the one asked for
+# after:  the 02:24 row
+```
 
 ## Evidence
 
 Surfaced by the sis v9 against v10 differential test on Oracle (2026-10-19). `Fodselsnummerendring`
 for one person has two rows whose key column `DATO_FORETATT` holds 2007-08-22 00:00 and 02:24. v10
 encodes them as distinct ids (v9 gave both the same id, which was worse), but `node(id: <the 02:24 id>)`
-returns the 00:00 row. Either the decode or the key comparison truncates to the date.
+returns the 00:00 row.
 
-## Questions for the plan
+### Mechanism
 
-Which side loses the time: the decoded value's Java type (an Oracle `DATE` mapped to `LocalDate`
-in the consumer's jOOQ catalog, while the encoder reads the raw value), or the bind. The plan pins
-encode and decode against the column's declared jOOQ type so both sides agree, and covers this in a
-test with a key column whose Java type drops information the database keeps.
+The encoder and the decoder read the column through different types.
+
+- **Encode** writes the value graphitron read from the record: `encode<Type>(r.get(T.COL))`, which
+  is the converter's user type `U` (`LocalDateTime`), rendered by `NodeIdEncoder.encode` as
+  `v.toString()`: `"2007-08-22T02:24"`. The distinct ids show the time reaches the encoder.
+- **Decode** coerces the slot text with the column's `DataType.convert(Object)`
+  (`NodeIdEncoderClassGenerator.buildPerTypeDecode`), or with `Record.fromArray` / `DSL.val(text,
+  col.getDataType())` on the other decode paths. On a converted data type all three parse the text
+  as the converter's *database* type `T` and then apply `converter.from`. When `T` is date-only, the
+  time is dropped before the converter ever sees it.
+
+A probe against jOOQ 3.20.11 (default dialect) reproduces it with the text the encoder writes,
+`"2007-08-22T02:24"`:
+
+| Column data type | Coerced value | Round trip |
+|---|---|---|
+| `LOCALDATETIME`, no converter | `2007-08-22T02:24` | yes |
+| `TIMESTAMP`, no converter | `2007-08-22 02:24:00.0` | yes |
+| `TIMESTAMP` converted to `LocalDateTime` | `2007-08-22T02:24` | yes |
+| `DATE` (`java.sql.Date`) converted to `LocalDateTime` | `2007-08-22T00:00` | no, truncated |
+| `LOCALDATE` converted to `LocalDateTime` | `2007-08-22T00:00` | no, truncated |
+| `OFFSETDATETIME` converted to `LocalDateTime` | `null` | no, lost |
+
+On the converted `DATE` row, `Record.fromArray` and `DSL.val(text, type)` give the same value as
+`convert`. A value that is already of the user type passes through unchanged: `DSL.val(LocalDateTime 02:24,
+convertedType)` keeps 02:24. So the loss is in parsing the text, and only on a converted column.
+
+What the probe settles: on an unconverted temporal column encode and decode agree, which points to
+the sis column being converter-backed with a date-only database type (`DATE` or `LOCALDATE`). What
+it cannot settle from here is whether the consumer's converter also loses the time when binding (`converter.to` producing a
+`java.sql.Date` the Oracle driver truncates). That side is the consumer's binding, the same one their
+own `WHERE` on that column uses, and not graphitron's to change; the implementer confirms against
+the sis catalog at pickup (the column's `getDataType()`, `getConverter().fromType()` and
+`toType()`), and if the bind also truncates, says so on the item rather than working around the
+consumer's converter.
+
+## Design
+
+### Parse a minted slot as the type it was encoded from
+
+The encoder writes the user type's `toString()`, so the decoder's inverse starts with a parse into
+the user type, not into the database type. R1067 decodes every server-minted slot (every key slot of
+a node id, tenant slot included) with a three-step *column trip* in `ColumnValues.exact`: the user
+value `type.convert(text)`, the database value `converter.to(user value)`, the canonical value
+`converter.from(database value)`, accepted only when the canonical value's `toString()` equals the
+slot text. On a converted column, step 1's `type.convert(text)` parses through the database type,
+which is this bug: on the sis column the trip runs on 00:00, and R1067 refuses the id rather than
+answering the 02:24 row. This item changes step 1 of `exact` only, so that the user value is the slot
+text parsed as the type it was encoded from. Steps 2 and 3, the acceptance check and the `coerce`
+rule are R1067's and stay as it specifies them.
+
+The parse type of each key slot is decided at generation time, from facts the catalog already
+captures (`JooqCatalog.ColumnEntry.columnClass`, the user type, and `databaseType`, the converter's
+`fromType()`):
+
+- **`ColumnType`**: no converter (`columnClass` equals `databaseType`). Parse with the column's own
+  data type, exactly as today; nothing changes for any unconverted column.
+- **`UserType`**: a converter whose user type jOOQ has a built-in text form for. Parse the text as
+  the user type, with that type's converter-free jOOQ data type; the trip then runs `converter.to`
+  on the typed value.
+- **`DatabaseType`**: a converter to any other class (a consumer's value class, a Java enum behind
+  an `EnumConverter`). jOOQ has no text form for such a class, so parse as the database type and
+  apply `converter.from`, which is today's path; the trip then decides whether the result is the
+  encoded value.
+
+"Has a built-in text form" is derived from jOOQ itself, not kept by hand: the set of `getType()`
+classes of `org.jooq.impl.SQLDataType`'s public static `DataType` constants, computed once in the
+generator, less `java.lang.Object` (the `OTHER` type), whose "parse" would accept any text. Probed
+on 3.20.11, the set covers every temporal, numeric, string and `UUID` type a key column plausibly
+uses, plus jOOQ's own (`JSON`, `XML`, unsigned and interval types); a member whose text form does not
+invert `toString()` is refused by R1067's trip, never misrouted. Asking jOOQ per class (`DefaultDataType.getDataType`) answers an unknown class by
+throwing and logging a warning, which is why the derivation reads the constants rather than probing.
+
+The fact is a small sealed `SlotParse` (`ColumnType | UserType | DatabaseType`), one per key slot,
+carried on `HelperRef.Decode` beside `outputColumnShape`. Emitters hand each slot's parse class to
+`ColumnValues.exact` as a class literal; `ColumnValues` itself takes no schema input. Being a
+captured fact, the arm a `@node` key takes is visible in the model, and is pinned per column by the
+pipeline test below, rather than appearing only when a request fails.
+
+How the parse and R1067's trip settle the cases in play:
+
+| Column | Slot text | Parse | Trip | Outcome |
+|---|---|---|---|---|
+| sis `DATO_FORETATT`, `DATE` to `LocalDateTime` | `2007-08-22T02:24` | `UserType`: 02:24 | to and from keep 02:24 | the 02:24 row |
+| same column today | `2007-08-22T02:24` | database type: 00:00 | n/a | the 00:00 row |
+| `ConverterCampusTerm.org_code`, `bigint` to `String` | `186` (minted) | `UserType`: `"186"` | `186`, back to `"186"` | decodes |
+| same | `abc` / `0186` | `UserType` | `to` throws / back to `"186"` | refused, as R1067 specifies |
+| a converter whose database type cannot hold the time (`LOCALDATE` to `LocalDateTime`) | `2007-08-22T02:24` | `UserType`: 02:24 | back to 00:00 | refused, never another row |
+
+The last row cannot arise from an id graphitron minted, since such a column never shows the encoder
+a time; it is there to show the composition never names a different row.
+
+### What does not change
+
+- The encoder and the wire format. Ids minted before this item decode to the value they always
+  should have.
+- The authored-value rule (`ColumnValues.coerce`, for tenant arguments and `@key` representation
+  values). Those are values a client typed against the database type's documented coercion
+  (`tenant-scoping.adoc` section 1), not text graphitron wrote from the user type.
+- `requireColumnAgreement`, which compares already-typed values; R1044 owns its converter question.
+- No build-time rejection or warning for the `DatabaseType` arm: a converter to a consumer class
+  whose database-side text agrees with its `toString()` decodes correctly, and one that does not is
+  refused as malformed, never misrouted. The documentation bullet below states the condition.
+
+## Implementation
+
+- **`HelperRef`**: a sealed `SlotParse` (`ColumnType`, `UserType`, `DatabaseType`), and a
+  `List<SlotParse>` on `HelperRef.Decode`, one per entry of `outputColumnShape`, checked equal in
+  size in the compact constructor.
+- **Where `HelperRef.Decode` is built** (the node type's `decodeMethod` and the catalog decodes
+  behind `GraphitronSchema.catalogNodeDecodes`): compute each slot's `SlotParse` from the key
+  column's `ColumnEntry`. `ColumnRef` stays as it is; the slot fact is the decode's, not the
+  column's. `TenantScopeClassifier` already reads `databaseType` the same way.
+- **The built-in text-form set**: one static derivation over `SQLDataType`'s constants, in the
+  generator beside the `SlotParse` computation.
+- **`ColumnValuesClassGenerator`** (from R1067): `exact` takes the slot's parse class and uses it
+  for step 1 of the column trip. `ColumnType` and `DatabaseType` slots keep `type.convert(text)`; a
+  `UserType` slot's user value is `DSL.val(text, parseClass).getValue()`, the public non-deprecated
+  route, and steps 2 and 3 run on it unchanged.
+- **The decode emitters** R1067 routes through `exact` (`NodeIdEncoder.decodeColumns` and
+  `decode<Type>`, the lookup binds in `HandleMethodBody.emitDecodeAndGroup`,
+  `RecordDecodeFragments.decodeHelper`, `JooqRecordInstantiationEmitter.emitKeyDecode`) pass each
+  slot's parse class from the `HelperRef.Decode` they already hold. R1067's
+  `decodeColumns(String, String, Field<?>... columns)` gains a parallel `Class<?>[]` of parse
+  classes, emitted as class literals; the lookup bind's `decodeColumns` call takes it from the node
+  type's `decodeMethod()`.
+- **`NodeIdEncoderClassGenerator`**: its class javadoc's wire-format paragraph gains one sentence:
+  each value is written as its column's Java type's `toString()` and parsed back as that type, so a
+  converter-backed key round-trips through its user type.
+
+If R1067 changes its column trip before it lands, this item restates its step 1 against what
+landed before implementation starts; the parse and the trip stay one rule in one primitive.
+
+## Documentation
+
+- `docs/manual/how-to/global-id.adoc`, "Constraints and pitfalls": one bullet. A key column behind a
+  jOOQ converter round-trips through its Java type: for the built-in value types (dates, times,
+  numbers, strings, UUIDs) the id decodes to exactly the value it was minted from, including a time
+  of day on an Oracle `DATE` mapped to `LocalDateTime`. For a converter to your own class, the id
+  decodes only if your converter's database-side text matches the class's `toString()`; otherwise
+  the id is refused as malformed.
+
+## Tests
+
+Write the tests first so they fail on the tree with R1067 landed and this item not.
+
+- **Execution tier, `graphitron-sakila-example`**: a new converter-backed temporal key fixture beside
+  `converter_campus_term` in `graphitron-sakila-db`'s `init.sql`. Postgres cannot store a time in a
+  `date`, so the fixture models the same mechanism with a database type whose text parse is lossy
+  for the user type's `toString()`: a domain over `timestamptz`, forced to `LocalDateTime` with a new
+  `OffsetDateTime`/`LocalDateTime` converter in `graphitron-fixtures-codegen` (both directions at
+  UTC, so the read and the write agree whatever the session time zone). Seed two rows for one
+  person on the same day, 00:00 and 02:24, and expose a `@node` type over them in `schema.graphqls`.
+  In `GraphQLQueryTest` (or a sibling execution test for converter keys):
+  - `node` with each row's id returns that row (on today's tree the 02:24 id answers `null`, per
+    the probe's last row; with R1067 alone it is refused, so also `null`);
+  - `nodes` over both ids returns both rows, in order;
+  - a `@nodeId` filter argument over the type selects the 02:24 row only.
+  The sis symptom itself (truncation to a different row rather than to `null`) needs a date-only
+  database type that stores time, which Postgres does not have; the unit test below pins that row
+  of the probe.
+- **Unit tier, against the generated `ColumnValues`** (R1067 already calls it directly over
+  `SQLDataType` types): `exact` over `SQLDataType.DATE` and `SQLDataType.LOCALDATE` converted to
+  `LocalDateTime`, text `"2007-08-22T02:24"`, parse class `LocalDateTime`: 02:24 for the `DATE`
+  converter that keeps milliseconds, `null` for the `LOCALDATE` one. A `DatabaseType` slot over a
+  converter to a fixture value class returns the converter's result when the texts agree and `null`
+  when they do not. A round-trip case per user type the sakila catalog and the new fixture use.
+- **Pipeline tier, `graphitron`**: the `SlotParse` of each key slot for an unconverted node
+  (`Customer`: `ColumnType`), `ConverterCampusTerm` (`org_code`: `UserType` `String`) and the new
+  temporal fixture (`UserType` `LocalDateTime`), plus a `DatabaseType` case over a converter to a
+  non-jOOQ class if the test catalog has one; add one to the pipeline test's own fixture if not.
+- **Regression guard**: `ConverterCampusTerm`'s converter-backed node tests
+  (`ConverterFilterExecutionTest`) stay green: minted ids decode, as the table above shows.
+
+## Neighbours, not absorbed
+
+- **R1067** (depends-on): the decode primitive and its converter trip. This item adds only the
+  parse step in front of the trip.
+- **Cursor decode**: `ConnectionHelper.decodeCursor` coerces cursor tokens with
+  `col.getDataType().convert(token)`, so paging ordered by such a column resumes at the truncated
+  value. R1067 names routing it through `exact` as a follow-up; it inherits this rule when it does.
+- **R267**: the deprecated `DataType.convert`. The `UserType` arm uses `DSL.val(text, parseClass)`
+  rather than `convert`, so it adds no new call to retire.
+
+## Other solutions we've considered
+
+- **Encode the database-side value** (`converter.to(v).toString()`) so both sides use `T`. It
+  changes the wire format of every converter-backed key, breaking ids clients hold, and it does not
+  even work here: `java.sql.Date.toString()` prints no time, so the two rows would collide again,
+  which is v9's behaviour.
+- **Decide the parse type at runtime**, from `type.getConverter().fromType()` and a hand-kept set
+  of value classes in the emitted `ColumnValues`. It re-derives per call a fact the catalog has
+  already captured, keeps a roster nothing checks against jOOQ, and leaves which arm a key takes
+  invisible until a request fails.
+- **Specify the converter trip here too.** R1067's column trip already decides it; deciding it in
+  two items would decide one rule twice.
+- **Fix it in the generated decode helpers directly**, without waiting for R1067. Every one of the
+  four decode paths R1067 rewrites would need the same branch, and the two items would collide on
+  each of them.
