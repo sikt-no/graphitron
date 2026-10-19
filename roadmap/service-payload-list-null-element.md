@@ -41,8 +41,10 @@ The rule is the one the manual already states for a service returning `@table` r
 no live row drops out ... that element is absent from a list result"), extended to a `null` element
 and applied to the carrier payload's list field, which today keeps a `null` slot for a key with no
 row instead. Under `[Film!]` that slot is a non-null violation that nulls the whole list, which is
-the same "committed rows hidden" failure by another route. A single-record result keeps resolving
-`null` for no row, as now.
+the same "committed rows hidden" failure by another route. A class-backed payload whose list
+accessor returns `@table` records follows the same rule for a key with no row, and a carrier's
+`[ID!]` field skips a `null` element the same way. A single-record result keeps resolving `null` for
+no row, as now.
 
 ## Evidence
 
@@ -93,31 +95,56 @@ Three generated sites read records off a service's returned list, and they disag
   the list arm at the `(Iterable<?>)` loop, the single arm at
   `GeneratorUtils.buildKeyExtractionThroughLocals`' first column read. Under the direct envelope
   the same `null` makes the payload itself `null` and graphql-java never reaches the field.
+* **ID carrier list field** (`ChildField.SingleRecordIdField`, a carrier's `ids: [ID!]` data
+  field that encodes each returned record's node key without a re-select, because the records may
+  be deleted rows). `FetcherEmitter.buildSingleRecordIdFetcherValue`'s list arm guards a `null`
+  list but loops `for (row : source) ids.add(encode(row.get(...)))` with no element check, so the
+  same `[filmA, null, filmB]` throws there too.
+
+How a `loadMany` result becomes the field's list is a property of the loader's dispatch, not of how
+the key was lifted. `LoaderRegistration.Dispatch.LOAD_MANY` is minted at three sites in
+`FieldBuilder`: the carrier re-fetch (`buildPayloadCarrierBatchedTableField`) and the two
+accessor-many arms (a class-backed payload whose typed list accessor returns `@table` records). Its
+consumers already disagree: `MultiTablePolymorphicEmitter.buildBatchedListFetcher` flattens per-key
+buckets, so the polymorphic accessor-many field drops a key with no row today, while
+`DataLoaderFetcherEmitter.dispatchCall`'s `LOAD_MANY` arm, which every `BatchedTableField` goes
+through, passes the `null` slots on.
 
 ## Implementation
 
 * `GeneratorUtils.buildProducedRecordsKeyMany`: skip a `null` element (`if (element == null)
   continue;` as the loop's first statement). The key list then holds only real records; positions
   no longer correspond to the service's list, which the drop below makes unobservable.
-* `TypeFetcherGenerator.buildBatchedDataFetcher`: when the field's lift is `KeyLift.ProducedRecords`
-  at `Arity.MANY`, compose a step directly after the `loadMany` dispatch that removes the `null`
-  slots, `.thenApply(rows -> rows.stream().filter(Objects::nonNull).toList())`, ahead of whichever
-  tail the builder picks. It sits before the tail rather than inside it so the fanned tail's
-  `collapseFanOut` still sees its `FanOutFailure` markers, which are non-null and survive the
-  filter. The fork reads the lift the builder already receives; no new model fact. Other
-  `LOAD_MANY` leaves (`KeyLift.Accessor` at `Arity.MANY`) keep their `null` slots: see the scope
-  note below. `Stream.toList` compiles at release 17.
+* `DataLoaderFetcherEmitter.dispatchCall`, `LOAD_MANY` arm: follow the `loadMany` call with
+  `.thenApply(rows -> rows.stream().filter(Objects::nonNull).toList())`, so every `LOAD_MANY`
+  consumer assembles its list the same way: a key with no row is absent, which is what the
+  polymorphic sibling already does by flattening. The rule then reads off the dispatch axis the
+  emitter already switches on, with no fork on the lift and no new model fact. It reaches the
+  accessor-many `BatchedTableField` too: a class-backed payload's list field now drops a key with no
+  row instead of rendering a `null` slot, which brings it in line with its polymorphic twin. The
+  rows methods keep returning one value per key (`scatterSingleByIdx`), as the DataLoader contract
+  requires; the drop happens after the loader answers. `Stream.toList` compiles at release 17.
+* `FetcherEmitter.buildSingleRecordIdFetcherValue`, list arm: skip a `null` `row` in the encode
+  loop. There is no re-select on this field, so the null element is the only case.
+* Javadoc made stale by the change, updated in the same commit:
+  `LoaderRegistration.Dispatch.LOAD_MANY` (it says only the accessor-many arm reaches the dispatch,
+  already false, and should state the drop), `KeyLift.ProducedRecords` (it says one `RowN` key per
+  element, false once `null` elements are skipped), and `ParentSourceBinding.OutcomeRecord` (it
+  says the backing object lives in `Success.value()`, which may now be `null` and escapes).
 * `TypeFetcherGenerator.emitServiceReentryLift`, list arm: skip a `null` `carried` in the loop, and
   move the empty gate after the loop as `if (keys.isEmpty())`, keeping the `result == null` half
   ahead of it. A list of only `null` elements then answers `[]` without issuing an empty `VALUES`.
   The single arm is unchanged: its `result == null` gate already answers `null`.
 * `ParentSourceBinding.OutcomeRecord.prelude`: escape when the narrowed value is `null` as well,
   `if (!(subject instanceof Success<?> success) || success.value() == null) return <escape>;`. This
-  is `DirectRecord`'s null-source guard on the wrapped arm; every caller already passes the escape
-  that means "no backing object" (`completedFuture(null)` on the batched builders, `null` on the
-  inline arm-switch in `FetcherEmitter.armSwitchedInlineDataFetcher`), so the field renders `null`
-  and `errors` stays `null` (a success with no data). The pattern variable is definitely assigned on
-  the right of `||`, so the shape compiles at release 17.
+  is `DirectRecord`'s null-source guard on the wrapped arm. The escape a caller passes already means
+  "no backing object" on every consumer of the binding, which is the `BINDING_SEAM_LEAVES` bucket of
+  the parent-source posture partition that `GeneratorCoverageTest` pins exhaustive; the
+  envelope-carrying leaves' twin (`FetcherEmitter.emitRecordSourceLocal` followed by their own
+  `source == null` checks) already escapes the same way. The net invariant is that a
+  `Success(null)` source throws in no child: the field renders `null` and `errors` stays `null`, a
+  success with no data. The pattern variable is definitely assigned on the right of `||`, so the
+  shape compiles at release 17.
 * `docs/manual/how-to/handle-services.adoc`: extend the "A key with no live row drops out" bullet
   and the matching gotcha bullet near the end of the page, per the draft below.
 
@@ -127,11 +154,17 @@ what `docs/manual/reference/directives/routine.adoc` already promises for a list
 re-read that finds no row renders an empty list"), and `mutation.adoc`'s "one entry per written row"
 stays true for every row the caller may read.
 
-Out of scope: the class-backed payload whose list member the classifier reads through an accessor
-(`KeyLift.Accessor` at `Arity.MANY`, `GeneratorUtils.buildAccessorKeyMany`). It throws on a `null`
-element too, but its key is a jOOQ `Record` built with `element.into(...)`, its comment records a
-deliberate choice to leave element nulls unguarded, and the author owns the backing class rather than
-returning bare records. It wants its own decision; this item does not change it.
+A `null` *whole list* from the service keeps the answer each path gives it today, now without a
+throw on the errors carrier: the root field resolves `[]` (the `result == null` gate), the direct
+carrier's payload is itself `null`, and the errors carrier renders `films: null, errors: null`. The
+three differ because the payload is or is not there to render; aligning them is not this item's.
+
+Out of scope: a `null` *element* in a class-backed payload's list member read through an accessor
+(`KeyLift.Accessor` at `Arity.MANY`, `GeneratorUtils.buildAccessorKeyMany`). It throws too, but key
+extraction is per lift arm, that arm's comment records a deliberate choice to leave element nulls
+unguarded, its key is a jOOQ `Record` built with `element.into(...)`, and the author owns the
+backing class rather than returning bare records. It wants its own decision. A key with *no row* on
+that arm is a dispatch question, and the `dispatchCall` change above does cover it.
 
 ## User documentation (first-client check)
 
@@ -168,6 +201,10 @@ inserts and deletes:
   Asserts `films: null`, `errors: null`, no field errors.
 * Root `@service` returning `[Film!]`, with a `null` element: asserts the known films; and with only
   `null` elements: asserts `[]` with no field error, pinning the moved empty gate.
+* ID carrier `[ID!]`, `null` element: asserts the encoded ids of the known records only.
+* Accessor-many class-backed payload (the existing `RateFilmsCheckedPayload`-style fixture, or a
+  sibling), a key with no row: asserts the list drops it, pinning that the drop lives on the
+  `LOAD_MANY` dispatch rather than on the carrier lift.
 
 The compilation tier needs nothing new: `graphitron-sakila-example` compiles the changed emissions at
 release 17 under `-Werror`. No generator-tier assertion is added; the emitted shape is covered by the
@@ -185,6 +222,13 @@ cases above, and body-text matching is banned.
 * **Reject the element with a message naming the field.** Turns a service's ordinary "not found"
   answer into a field error and loses the rows the mutation committed, which is the outcome the item
   exists to remove.
+* **Drop only on the carrier, forked on `KeyLift.ProducedRecords` in
+  `TypeFetcherGenerator.buildBatchedDataFetcher`.** Smaller blast radius, but `LOAD_MANY` would then
+  mean "drop" on the carrier and on the polymorphic accessor-many field and "keep a `null` slot" on
+  the `BatchedTableField` accessor-many field, a meaning recovered from the lift and arity rather
+  than read off the dispatch. If accessor-many genuinely needed `null` slots, that would be a
+  typed fact minted at the `LOAD_MANY` sites, not a fork in the emitter; nothing in the manual or the
+  tests asks for it.
 * **Dispatch a `null` element as an all-`null` key** that matches nothing in the `VALUES` join.
   Works without the skip, but pays a key row per `null` for an answer the fetcher already knows, and
   the drop step would discard it anyway.
