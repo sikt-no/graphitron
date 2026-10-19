@@ -239,11 +239,25 @@ which is what the `[_Entity]!` shape means.
     also means "a value does not fit". The typed `RecordN` return shape is kept, and every
     `decode<Type>` caller is untouched.
   - `decodeValues` stays: `reference/runtime-api.adoc` documents it as public runtime API returning
-    raw strings. No generated typed decode calls it directly any more.
+    raw strings. After this item no generated code calls it except `decodeColumns`. Today the
+    generator emits it in eight places: `buildPerTypeDecode`, `HandleMethodBody.emitDecodeAndGroup`,
+    `RecordDecodeFragments.decodeHelper`, the two arms of `JooqRecordInstantiationEmitter.emitKeyDecode`
+    and the three arms of `JooqRecordInstantiationEmitter.emitPrepare`. This item rewrites all eight.
 - **`RecordDecodeFragments.decodeHelper`** and **`JooqRecordInstantiationEmitter.emitKeyDecode`**:
   replace `decodeValues` plus `fromArray(String[], ...)` with `decodeColumns` plus
   `fromArray(Object[], ...)`, and keep the existing throw on `null`. Since `exact` refuses `null`,
   every value `fromArray` loads is non-null, so R534's null-flag erasure is not newly exposed.
+- **`JooqRecordInstantiationEmitter.emitPrepare`**, the prepare phase a jOOQ-record writer takes
+  when more than one writer lands on a column: the same swap in all three arms (top-level non-null,
+  nested non-null, nullable). The `<base>Keys` local becomes the `Object[]` from `decodeColumns`, and
+  the existing arity throw (`emitArityThrow`) also covers its `null`. `emitLoadPrepared` loads it with
+  `fromArray(Object[], ...)` unchanged. `emitAgreement` reads `<base>Keys[slot]` through
+  `agreeValueExpr` and needs no edit either. `requireColumnAgreement` now receives the canonical value
+  from a node-id writer and still the raw wire value from a plain writer. Both still pass through
+  `type.convert`, and `convert` leaves a value already of the user type unchanged. So for an id that
+  decodes, the comparison gives today's answer. A plain `"01"` still agrees with the id of bin 1.
+  What changes is that an id that does not decode fails at the arity throw before agreement runs. It
+  can no longer agree with the plain writer of the row it wrapped onto.
 - **`HandleMethodBody.emitDecodeAndGroup`**:
   - Node-id arm: `decodeColumns` replaces `decodeValues`, and `null` takes the existing `continue`.
   - `@key` (`Direct`) arm: `cols[i] = ColumnValues.coerce(<col>.getDataType(), rep.get(<field>))`,
@@ -328,6 +342,14 @@ before the fix.
 - A mutation-rail "never written" case for a non-tenant node: an update keyed by `Film:4294967297`
   errors, and film 1 is unchanged. Put it in `DmlBulkMutationsExecutionTest` or wherever the UPDATE
   rail's wrong-type cases live.
+- `NodeIdValueAgreementExecutionTest`, the `emitPrepare` rail over the `agreeStorageBin` fixture.
+  Both cases fail on today's tree, which answers `bin_id=1`:
+  - `agreeStorageBin(in: {binId: <StorageBin:4294967297>})` alone: the rail's decode failure, and the
+    service never runs. Assert that the way `serviceRecord_twoWritersDisagree_throwsAndServiceNeverRuns`
+    already does.
+  - The same id beside `binIdText: "1"`: the same failure. Today the wrapped key agrees with the
+    plain writer.
+  - The existing format-variant case (`binIdText: "01"` beside the bin 1 id) stays green unchanged.
 - The precision clause and the numeric-value choice: no sakila key column is narrow, so call the
   generated `ColumnValues` directly over `SQLDataType.SMALLINT`, `NUMERIC(4)`, `NUMERIC(4,1)`, and
   `BIGINT` converted through `OrgCodeStringConverter`. This covers both rules on the probe's rows,
@@ -343,7 +365,9 @@ before the fix.
   `ColumnValues` alone.
 - **R1044**: `requireColumnAgreement`'s converter-backed comparison. This item builds the emitted
   round-trip primitive R1044's notes ask about, but `requireColumnAgreement` and its `convert` stay
-  where they are; whether agreement compares through `ColumnValues` is R1044's to decide.
+  where they are; whether agreement compares through `ColumnValues` is R1044's to decide. On the
+  `emitPrepare` rail the node-id side of the comparison now arrives canonical. That leaves R1044's
+  question unchanged: a plain writer's raw value is still compared through `convert` alone.
 - **R534**: the null-flag erasure from `fromArray`, which is adjacent but unchanged here.
 - **Cursor decode and `ID` arguments bound by coercion.** Two more sites share this bug class and
   belong to a follow-up that routes them through `ColumnValues`. The first is
@@ -473,3 +497,12 @@ writer. Then confirm the boundary with R1044 still holds as the Neighbours secti
 execution case that fails on today's tree, for example in `NodeIdValueAgreementExecutionTest` over
 the `agreeStorageBin` fixture: a `StorageBin` id whose key wraps onto an existing bin, with or
 without a plain writer, gives the rail's decode failure and nothing is written.
+
+> **Author (round 2):** Addressed in Implementation and Tests. The `decodeValues` bullet now lists
+> all eight emitted call sites. A new `emitPrepare` bullet gives it the same `decodeColumns` swap in
+> all three arms, with `<base>Keys` as `Object[]` under the existing arity throw. It also says what
+> `requireColumnAgreement` receives: a canonical node-id value beside a plain writer's raw value,
+> both through `convert`, so an id that decodes compares as it does today. The R1044 neighbour bullet
+> says its question is unchanged. `NodeIdValueAgreementExecutionTest` gains two `agreeStorageBin`
+> cases that fail on today's tree: a wrapping `StorageBin` id alone, and the same id beside
+> `binIdText: "1"`.
