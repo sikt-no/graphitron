@@ -1643,8 +1643,30 @@ the store" and "Command rows beside leaves" in the register, one emitter at a ti
   * **Pivots** `open`. `PivotField`, `PivotSlotField`, `BatchedPivotField`.
   * **The errors field** `open`. `ErrorsField`.
 
+### A dev round costs what its reads' shapes ask
+
+Profiled on sis in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.md`.
+
+* **The federation link's added imports are driven from the version** `done`. The rule met every
+  directive application against every claimed source before the version filtered them, minutes a
+  round on sis; `FederationLinkTest` pins its answer.
+* **A stage table's graph filter cannot spoil its rule's plan** `open`.
+  `graphitron_field_source_table`'s `MERGE` filters its rule to the graph, and the pushed-down
+  filter turns 0.7 s into 24.
+* **The tag narrowing joins the coinage to its minted type before the fields** `open`. In any other
+  order the four-way read in `EmittedRegistry.narrowings` takes seconds for a few hundred rows.
+* **The walk's catalog lookups are not paid every round** `blocked`, on "The classified model
+  dissolves into the store". `JooqCatalog` scans every table by reflection per lookup, about 8 s a
+  round on sis.
+
 ### A capture reads only what changed
 
+* **A schema edit re-anchors only what the edited document feeds** `open`. One comment line reruns
+  every gatherer, the catalog's and the classpath's included.
+* **A classpath change reruns only the gatherers that read the classpath** `open`, and a round that
+  succeeds says so.
+* **A document that does not parse ends the round at the parse** `open`, not after anchoring and
+  derivation have run on the rest.
 * A directory can be compared at all `done`
 * The skip asks the store rather than the graph `done`, because no relation the classpath feeds
   carries a graph, so the rows are the store's.
