@@ -3,11 +3,11 @@ id: R1045
 title: "An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row"
 status: Backlog
 bucket: bug
-priority: 4
+priority: 1
 theme: classification-model
 depends-on: []
 created: 2026-10-15
-last-updated: 2026-10-15
+last-updated: 2026-10-19
 ---
 
 # An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row
@@ -25,3 +25,42 @@ A child field whose return type is bound to the same table as its parent, with n
 
 - Whether the unnarrowed shape (no `@condition`, no `@lookupKey`) should reject at every cardinality, or only at single cardinality, and what the inline same-row spelling is (a nesting type without `@table`, or a `{condition:}` path) that the rejection steers to.
 - Whether the narrowed list shape (`Bar.related` above) is a capability worth documenting as such, in which case R1043's "drop `@splitQuery`" remedy points at it.
+
+## Production evidence (sis v9 against v10 differential test, 2026-10-19)
+
+This shape returns wrong data in production. `Resultat.kandidatinformasjon` returns
+`ResultatKandidatinformasjon @table(name: "STUDENTVURDKOMBPROTOKOLL")` under a `Resultat` on the same
+table, with no `@reference`. The generated read is `DSL.multiset(select ... from <table> where DSL.noCondition() limit 1)`.
+For three results whose candidate numbers are `"3"`, `null`, `null` (v9, matching the SQL), v10
+returns `"100195"` three times. A production operation selects it. `Karakter.navnAlleSprak`
+(`KarakternavnAlleSprak @table(name: "KARAKTER")` under `Karakter`) returns null names for every grade
+where v9 returns the real ones. The same pattern exists, not confirmed by hand, on
+`FeideBruker.personProfil` (both `@table(name: "PERSON")`, so `_entities(FeideBruker)` would answer an
+arbitrary person) and `StudieprogramUtvekslingsavtaleKobling.gyldighetsperiode`.
+
+Graphitron 9 mapped such a child from the parent row's own columns
+(`DSL.row(parent.KANDIDATLOPENR).mapping(nullOnAllNull ...)`), which is the "parent's own row" reading
+in the goal. That is the reading these consumers depend on; a rejection alone would break four
+production fields at build time. Priority raised from 4 to 1.
+
+Confirmed by hand later the same day: `StudieprogramUtvekslingsavtaleKobling.gyldighetsperiode`
+returns `{fraDato: null, tilDato: null}` for all six rows where v9 and the database give real dates;
+eleven production documents select it. A schema scan finds exactly two same-table nested types in
+sis: this one and `Karakter.navnAlleSprak`.
+
+## Confirmed personal-data leak through `_entities`
+
+Confirmed by hand by the sis session the same day. `FeideBruker` (`@table(name: "PERSON")`, an
+entity owned by another subgraph; sis contributes `personProfil`) returns `PersonProfil`
+(`@table(name: "PERSON")`), the same-table shape. `_entities` with three `FeideBruker`
+representations for three different users returns the *same* person's name for all three on v10;
+v9 returns each user's own. Any caller resolving a `FeideBruker` entity receives another person's
+profile. sis's own entity test passed only because its single test user happens to be the row
+`limit 1` picks. No production `_entities(FeideBruker)` calls were seen in the last 30 days, so the
+exposure is latent, but releasing v10 as it stands would ship it.
+
+Requested interim safety net, ahead of the correlated mapping: reject at build time a
+single-cardinality child bound to its parent's own table with no `@reference`, `@condition` or
+`@lookupKey`, naming the field. That turns all four known sis fields into build errors rather than
+wrong answers until the parent-row mapping lands; the plan should decide whether the rejection
+ships first as its own step.

@@ -45,3 +45,8 @@ in a coercing that tolerates unknown values), whether an unmapped value is logge
 whether the behaviour is unconditional or opt-in per enum. A column whose declared type is a
 database enum with a known literal set could be checked at build time instead; a free-text column
 cannot.
+
+## Further evidence (sis student area, 2026-10-19)
+
+`Emne.emnetype` (stable) has database values `OBLIGKURS`, `EKS+ØV` and `ØVING` outside its mapping and
+gives the same unredacted "Can't serialize value" error per row.

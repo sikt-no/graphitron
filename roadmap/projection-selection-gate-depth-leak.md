@@ -74,3 +74,29 @@ key for different fields at different depths, across several stable root fields 
 That moves this item from over-projection hygiene to a correctness defect with production impact;
 the fix has to scope the result-key grouping to the unit's immediate children before either guard
 (`canonical`, `requireConsistentArguments`) runs.
+
+Further sis evidence (student area, same day): the consumer's scan counts 26 production
+operation/root-field pairs that reuse a response key at different depths, among them
+`StudenterGittFeideBrukere` (`n: nodes` against `n: navn`), a results query hit in 59 of 60 sampled
+windows, and an enrolment query. Their analysis also places the merge in
+`SelectionOccurrences.mergeByResultKey`.
+
+### Silent form: same field name, two reference paths
+
+Also from sis (studieprogram area, same day), and worse than the rejection because no error is
+raised. When one response key selects the *same* field name under two different inline (same-row)
+parents, `canonical` passes, and the merged bucket serves one parent's selection for both:
+`{ studieoppbygningsdelerGittStudieoppbygningsdelkoder(eierOrganisasjonskode: "1234", studieoppbygningsdelkoder: ["BAFY-OBL"]) { kode vektingskrav { minimumsvekting { verdi vektingstype { kode } } maksimumsvekting { verdi vektingstype { kode } } } } }`
+returns `minimumsvekting { verdi: 120, vektingstype: null }`, where v9 and the database say
+`vektingstype: { kode: "SP" }` (the minimum's type column is `SP`, the maximum's is null). Selecting
+only one `vektingstype`, aliasing one of them, or data where both types agree, each give the right
+answer. A high-volume production operation hits this shape (2 to 6 wrong rows per call on replay).
+
+The fix this item owes therefore has three observable obligations, not one: no over-projection
+(the original finding), no rejection of a valid document that reuses a key at different depths,
+and no cross-wiring of same-named fields under different parents. Scoping occurrences to the
+unit's immediate children (or keying them by path) should meet all three; each gets its own
+execution test.
+
+Further replayed production operations that fail on the rejection: `GetProgramDescriptionQuery`
+and `GetStudyProgramForSemester`.

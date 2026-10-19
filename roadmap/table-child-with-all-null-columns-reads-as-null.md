@@ -55,3 +55,13 @@ parent column". Here the parent's join column is set and the referenced row simp
 so the contract keeps the object. Both shapes come down to one decision: whether "absent" is judged
 by the join (v10's row-presence reading) or by the projected values (v9's `nullOnAllNull`). The plan
 makes that decision once and applies it to both the `@table` child and the nesting wrapper.
+
+## Further evidence (sis student area, 2026-10-19)
+
+- `Termin.studiesemesterPeriode` differs on 46 of 50 rows in a production operation's shape.
+- `PersonProfil.postadresse` takes the object form for 1543 of 2048 students in the local data set,
+  and a production operation selects it.
+- `ProgramStudierett.phd` returns `ProgramStudierettPhdData`, a wrapper holding a column, references
+  and a list. A study right that is not a PhD gives `{beregnetSluttdato: null}` where v9 gave `null`.
+  R1026 documents a wrapper holding a list as always resolving to an object; that divergence is now
+  observed in a consumer, and the plan should say whether it stands.

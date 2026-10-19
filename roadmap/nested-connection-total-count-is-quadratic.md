@@ -44,3 +44,9 @@ One `select __idx__, count(*) ... group by __idx__` per batch, computed the firs
 the rest. The plan should keep the laziness (no count when `totalCount` is not selected), say how
 the multi-tenant variant and the polymorphic batched path, which uses the same per-index count
 shape, are covered, and pin the statement count in a test rather than a timing.
+
+## Further evidence (sis studieprogram area, 2026-10-19)
+
+`studieprogramV2(first: N) { nodes { campuser(first: 50) { totalCount } } }`, v9 against v10: N=100
+about 1 s against 9 s; N=200 1.4 s against 38 to 40 s. A scan of the consumer's production log finds
+139 documents with a nested `totalCount`, some of them among the most frequent operations.
