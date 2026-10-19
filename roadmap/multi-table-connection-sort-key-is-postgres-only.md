@@ -30,16 +30,28 @@ returns the same two ids as page 1. The cursor decodes to `[1234,1000,11]` NUL `
 The same field also interleaves the participant types, ordering `...,10` before `...,1`, where v9
 grouped by type and then by key.
 
-## Probable cause
+## Cause
 
 `MultiTablePolymorphicEmitter` builds a `UNION ALL` of per-participant selects; for a composite key
 it projects `DSL.jsonbArray(pk0..pkN)` as the `__sort__` column and orders and seeks on
 `__sort__` plus `__typename`. Its own comment states the assumption: "PostgreSQL's JSONB
 lexicographic ordering reproduces the multi-column ordering". That holds on PostgreSQL, which orders
-`jsonb` arrays element by element with numeric comparison. On Oracle the column degrades to JSON
-text (or a type the seek predicate cannot compare), which explains both the text ordering and the
-seek that excludes nothing. This is a hypothesis to confirm against the rendered Oracle SQL of the
-page-2 request (whether the seek predicate is emitted at all, and what `__sort__` renders as).
+`jsonb` arrays element by element with numeric comparison.
+
+The rendered Oracle SQL of the page-2 request (captured by the sis session, 2026-10-19) shows two
+separate failures:
+
+- `__sort__` renders as `json_array("EMNEROLLE"."INSTITUSJONSNR_EIER", "EMNEROLLE"."PLNR", "EMNEROLLE"."ROLLENR")`,
+  which is `VARCHAR2` JSON text. `ORDER BY "__sort__"` therefore sorts text, giving `...,10` before `...,1`.
+- The seek predicate is emitted, but the cursor's `JSONB` value binds as `RAW`:
+  `where ("__sort__" >= hextoraw('5B313233342C313030302C31315D') and ("__sort__" > hextoraw(...) or ("__sort__" = hextoraw(...) and "__typename" > 'Undervisningsaktivitetsrolle')))`.
+  Oracle compares `VARCHAR2` with `RAW` by converting the `RAW` to its hex string, so the comparison
+  is `'[1234,1000,10]' > '5B3132...'`; `[` (0x5B) sorts above `5` (0x35), every row passes, and page 2
+  returns page 1's rows.
+
+Fixing the bind alone would not be enough: a correct text bind still pages wrongly on numeric keys,
+because the comparison is on text. The sort key has to stop being a JSON document on dialects
+without a structural JSON ordering.
 
 The validator already enforces a uniform key arity across participants, and the stage-1 select
 projects `__pk0__..__pkN__` beside `__sort__`, so ordering and seeking on the individual key columns
