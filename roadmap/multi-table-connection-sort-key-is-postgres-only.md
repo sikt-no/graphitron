@@ -82,7 +82,8 @@ because the comparison is on text. The sort key has to stop being a JSON documen
 `__pk0__..__pkN__` are already projected beside `__sort__` in every branch and aligned
 positionally (the validator enforces uniform key arity), so ordering and seeking on them asks
 nothing of the participants' columns that stage 1 does not already project. What it does ask is
-that each key position binds one way for every participant, which nothing checks today; see the key
+that each key position has one typing that is right for every participant's values, which nothing
+checks today: the emitter types every position by the first participant's key column. See the key
 slots below.
 
 ## Implementation
@@ -109,13 +110,46 @@ second, unchecked copy of it in the emitter:
   mapping every participant to its key column at that position. The emitter aliases key slots
   `__pkI__` (the alias stage 1 already projects and stage 2 dispatches on), not by
   `slotAlias`, so they are never projected twice.
-- `foldParticipantOrderings` mints `key` from each participant's primary key through the same
-  per-position (`sqlType`, `bindingType`) agreement check `foldOrder` applies to declared slots,
-  factored out of `foldOrder` into one helper both callers use. A disagreement rejects into
-  `participantFailures` with the position and both columns named, as a declared order does today.
-  This is a new rejection: such a schema builds today and binds every participant's cursor value
-  through the first participant's key type, which is the latent version of the defect this item
-  fixes.
+- `Slot` names its typing participant explicitly instead of taking the map's first entry:
+  `typingColumn()` reads that participant's column. Declared slots pass the first participant, so
+  their typing is unchanged; key slots pass the participant chosen by the key rule below.
+- `foldParticipantOrderings` mints `key` from each participant's primary key, one position at a
+  time, under a rule that differs from the declared-slot rule in one case. When every column at a
+  position binds, with no converter, to a built-in numeric class (`Byte`, `Short`, `Integer`,
+  `Long`, `BigInteger`, `BigDecimal`, in that order of width), the columns agree whatever their
+  `sqlType`, and the slot is typed by the widest of them. "No converter" is the catalog's existing
+  `ColumnEntry.databaseType()` equalling `columnClass()` (the converter's `fromType()` is the bound
+  type only on an identity converter), read through `JooqCatalog.findColumn` as
+  `TenantScopeClassifier` already does. `sqlType` is deliberately not compared in this case: jOOQ
+  binds an Oracle `NUMBER(p, 0)` by precision, and whether its codegen spells two precisions as
+  one SQL type is not something this plan can confirm. So nine legacy tables that declare the same
+  key column at different widths, as sis's `personroller` participants may, keep building whichever
+  way it spells them. A union of unconverted numeric columns is valid SQL on every dialect, and a
+  seek bound through the widest type compares correctly against every branch. Any other difference
+  in `sqlType` or `bindingType` rejects into `participantFailures` with the position and both
+  columns named, worded as `foldOrder`'s rejection is. The pairwise comparison is factored out of
+  `foldOrder` into one helper both callers use, with widening on for the key and off for declared
+  slots.
+- Why the key widens where declared slots do not: an author picks a declared order column and can
+  pick another one, but cannot pick the participants' keys, and a multi-table field always orders
+  by them. Rejecting a width difference would make the field unbuildable with no way around it.
+  Widening is also what makes the typing right. Today every position is typed by the first
+  participant, so a cursor holding a value from a wider participant (`40000` from a `NUMBER(9)`
+  key when the first participant's is `NUMBER(4)`) decodes through `Short` and fails. Stage 2 is
+  unaffected: `ValuesJoinRowBuilder.cellsCode` binds each dispatch value through the participant's
+  own column `DataType`, which converts.
+- What still rejects is new: a schema whose key positions differ in binding outside that case (an
+  `integer` key against a `varchar` key, or a converter-backed key against any other) builds today
+  and binds every cursor value through the first participant's key type, which is the latent
+  version of the defect this item fixes. The sakila root multi-table fixtures (`Searchable`, `Document`, `AddressOccupant`,
+  `LanguageStock`, `ConverterPlace`, `PagedItem`) all key on agreeing `integer` columns, so none
+  of them is affected.
+- A participant with no primary key, or with a different key arity, is absorbed rather than
+  rejected here, exactly as `foldOrder` absorbs a key-less participant today: the key is minted
+  only when every participant has a key of the first one's arity, and is empty otherwise. The
+  validator's primary-key and arity rejections stay the one message about either, and
+  `PolymorphicOrdering`'s totality check accepts an empty key. An empty key never reaches the
+  emitter, because the validator rejects every field that would produce one.
 - `SlotOrder.OnSyntheticKey` is renamed `SlotOrder.OnPrimaryKey`, with javadoc saying it orders by
   the key slots. `syntheticKeyDirection` is renamed to match. `foldOrder`'s detection of a
   primary-key-shaped order is otherwise unchanged.
@@ -176,7 +210,10 @@ The how-to pages describe the shape and change in the same commit:
 - `docs/manual/how-to/sort-results.adoc`, the multi-table paragraph: the combined result is
   ordered on the participants' primary-key columns, then the type name, on every database; an
   order that names the primary key sorts by those columns directly. The participants' key columns
-  must agree on SQL type and Java type at each position, as declared order columns already must.
+  must agree at each position: numeric keys of different widths (a `smallint` key beside an
+  `integer` one, or Oracle `NUMBER` keys of different precision) are fine and are compared at the
+  widest; any other difference, or a key column behind a converter that differs from the others,
+  is a build error naming the position and both columns.
 - `docs/manual/how-to/polymorphic-types.adoc`: the stage-1 projection is
   `(__typename, __pk0__ .. __pkN__)`; the composite-key `jsonbArray` sentence goes.
 - `docs/manual/how-to/connections.adoc`: the cross-reference stops naming `__sort__`.
@@ -198,17 +235,22 @@ end to end on PostgreSQL. Oracle behaviour itself is confirmed by the consumer, 
   `PagedA` and `PagedB` to their `k1` and `k2` columns, and no declared slot minted. This is the
   structural pin: an ordering whose key is a column list has no place to carry a computed sort
   value.
-- **Pipeline, rejection**: a union whose participants' key columns disagree on SQL type at one
-  position is rejected with the position and both columns named, mirroring
-  `MultiTableOrderingLoweringTest.intAgainstBigint_rejectsOnTheTypePair` for declared order
-  columns. Use a pair of tables that exists in the sakila catalog
-  if one fits; otherwise add two small tables to the init SQL.
-- **Retired vocabulary guard** (`RetiredVocabularyGuardTest`): register `SORT_COLUMN`,
-  `OnSyntheticKey` and `sortKeyClass` as retired tokens, so the reverse-enforcer fails the build
-  if the synthetic key comes back under its old names.
+- **Pipeline, rejection**: a union whose participants' key columns disagree outside the numeric
+  widening case at one position (an `integer` key against a `varchar` key; the sakila catalog has
+  both, e.g. `film` and a `varchar(50)`-keyed fixture table) is rejected with the position and both
+  columns named, mirroring `MultiTableOrderingLoweringTest.intAgainstBigint_rejectsOnTheTypePair`
+  for declared order columns.
+- **Pipeline, widening**: a union over a `smallint`-keyed and an `integer`-keyed participant, in
+  that branch order, builds, and its key slot has `slotClass` `java.lang.Integer` with the
+  `integer` participant as its typing column. A declared order over the same two columns still
+  rejects, which pins that widening is the key's rule only.
 - **Seed** (`graphitron-sakila-db` init SQL): add `paged_b (1, 10, 'B-1-10')`, and update the
   assertions that count or list `paged_a` / `paged_b` rows (`GraphQLQueryTest`'s
-  `pagedItemsConnection_*`, `MultiTableOrderingExecutionTest`'s composite-key case).
+  `pagedItemsConnection_*`, `MultiTableOrderingExecutionTest`'s composite-key case). Add two small
+  tables for the widening case, one keyed `smallint` and one keyed `integer`, the second seeded
+  with two keys above `Short.MAX_VALUE` (`40000`, `40001`, so the `40000` row is not the last),
+  with matching fixture types and a root connection
+  over them in the sakila example schema, the `smallint` participant first.
 - **Execution** (`MultiTableOrderingExecutionTest`): `pagedItems` paged forward and backward with
   `first` / `last: 2` visits every row exactly once in `(k1, k2, __typename)` order with `B-1-10`
   after `B-1-3`, and the last page reports `hasNextPage: false`. This passes before the change too,
@@ -216,6 +258,10 @@ end to end on PostgreSQL. Oracle behaviour itself is confirmed by the consumer, 
   reproduction of the defect. Rename
   `connection_overCompositeKeyParticipants_composesWithTheJsonbSyntheticKey` to drop the retired
   term; it keeps passing with the key fields as its tiebreaker.
+- **Execution, widening** (`MultiTableOrderingExecutionTest`): the widening connection paged with
+  `first: 1` visits every row exactly once, including a page fetched with `after:` the cursor of
+  the `40000` row. This one does reproduce a defect on PostgreSQL: today the key field is typed
+  by the first participant's `Short`, so that cursor does not decode.
 - **Unit** (`TypeFetcherGeneratorTest`): delete the assertions on emitted method-body text that pin
   `__sort__`, `jsonbArray` and the `Field<JSONB>` sort key (the composite-key cases and the
   single-key `FILM_ID.as("__sort__")` cases). They are code-string assertions on generated bodies,
@@ -250,8 +296,12 @@ rather than left implicit; the Done gate rests on the tests above.
 `MultiTablePolymorphicEmitter`, "PostgreSQL's (lexicographic) JSONB ordering",
 "(typename, pk0..pkN, sort)". Prose habitats to sweep beyond the emitter: `PolymorphicOrdering`
 and `FieldBuilder` javadoc, `DunderFreeEmissionPipelineTest`'s javadoc alias list,
-`GraphQLQueryTest` comments on `search` / `searchConnection` / `pagedItems`, and
-`MultiTableOrderingExecutionTest`'s class javadoc.
+`GraphQLQueryTest` comments on `search` / `searchConnection` / `pagedItems`,
+`MultiTableOrderingExecutionTest`'s class javadoc, `GeneratedSourcesLintTest`'s javadoc alias list,
+the comment above `paged_a` in `graphitron-sakila-db`'s `init.sql`, and the composite-key bullet of
+`docs/manual/how-to/polymorphic-types.adoc`'s limitations list ("a single typed `__sort__`
+column"). The names are not registered in `RetiredVocabularyGuardTest`: its registry admits a term
+once an audit finds it surviving a cleanup, and the Done-gate sweep is that audit.
 
 ## Other solutions we've considered
 
@@ -267,6 +317,14 @@ and `FieldBuilder` javadoc, `DunderFreeEmissionPipelineTest`'s javadoc alias lis
 - **Type the key fields in the emitter from the first participant, without key slots.** No new
   rejection, but it repeats the slot shape without the agreement check that makes one typing right
   for every branch, which is exactly the check declared order columns already get.
+- **Key slots under the declared-slot rule unchanged** (reject every `sqlType` or `bindingType`
+  difference, widths included). One rule for both kinds of slot, but it makes a multi-table field
+  unbuildable whenever the database declares one key column at different widths across tables,
+  which the author cannot change and which the motivating consumer may well have. Widening also
+  fixes the typing, which rejecting width differences would only avoid.
+- **Widen only within one `sqlType`.** Narrower, but it relies on how jOOQ's codegen names an
+  Oracle `NUMBER(p, 0)`, which the reactor cannot observe, and it would still reject PostgreSQL
+  `smallint` beside `integer`, whose union and seek are equally sound.
 - **An SQL-capture test asserting the stage-1 statement orders by plain columns.** It would pin
   the dialect-relevant property directly, but it asserts on SQL text, which the testing guide bans.
   The model-level pin covers the same property one layer up.
@@ -304,6 +362,15 @@ classes answer it), and if they do not, say what the plan does about it (for ins
 width-only disagreement within one SQL type should widen rather than reject, which is a different
 rule from the one declared slots get and would need saying as such).
 
+> Response (revision 1, author session 017intVzVV9E1eMdBXjS2A4g): the sis key columns are not
+> checkable from this repository, so the plan no longer depends on them. Model, key bullets: a key
+> position whose columns all bind, unconverted, to a built-in numeric class widens to the widest
+> instead of rejecting, whatever their `sqlType` (not "within one SQL type": whether jOOQ's codegen
+> spells two `NUMBER` precisions as one type is not observable here). The reason it differs from
+> the declared-slot rule is stated beside it. Widening also fixes a typing defect the old rule only
+> avoided, which the new widening tests reproduce on PostgreSQL. Other solutions records both
+> narrower rules; the sort-results doc bullet states the new rule.
+
 **Finding 2 (question two: fit with an existing mechanism). Registering the retired names in
 `RetiredVocabularyGuardTest` at landing contradicts the registry's admission rule.**
 
@@ -314,6 +381,9 @@ Retirement sweep says recurrently-surviving terms graduate into it. The Tests bu
 satisfy it: drop the bullet and let the `## Retired vocabulary` section and the Done-gate sweep do
 the work, or give the recurrence evidence that admits them.
 
+> Response (revision 1): bullet dropped. Retired vocabulary now says why the names are not
+> registered.
+
 **Non-blocking.**
 
 - Key minting in `foldParticipantOrderings` runs before the validator's primary-key and arity
@@ -321,7 +391,12 @@ the work, or give the recurrence evidence that admits them.
   type rejection; following `foldOrder`'s existing precedent (absorb, the validator owns the
   message) keeps those diagnostics where they are, and `PolymorphicOrdering`'s totality check
   will need to tolerate the absorbed case.
+
+  > Response (revision 1): adopted as a Model, key bullet (empty key when absorbed; the totality
+  > check accepts it).
 - Sweep habitats the Retired vocabulary list does not name, which the Done-gate grep for
   `__sort__` will still find: the `paged_a` comment in `graphitron-sakila-db`'s `init.sql` (states
   the JSONB assumption), `GeneratedSourcesLintTest`'s javadoc alias list, and
   `docs/manual/how-to/polymorphic-types.adoc` line 164 ("a single typed `__sort__` column").
+
+  > Response (revision 1): all three added to the Retired vocabulary habitats.
