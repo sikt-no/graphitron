@@ -1,8 +1,6 @@
 # What an @error application says, at the entry grain: one row per application at its @ token, and
-# one row per element of its handlers list naming the element's kind and the application holding
-# it. The element's index in the list is not a column of the handler row; it is read through the
-# element's own row of graphql_ast_value_entry, which is what every block naming a position below
-# joins.
+# one row per element of its handlers list naming the element's kind, its index in the list and the
+# application holding it.
 
 # One handler.
 type Lone @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalStateException"}]) {
@@ -18,9 +16,14 @@ type Mixed @error(handlers: [
   message: String
 }
 
-# A GENERIC handler naming no class is a handler of that kind, and its kind's relation, which
-# decodes a class, has nothing to hold for it.
-type Classless @error(handlers: [{handler: VALIDATION}, {handler: GENERIC}]) {
+# A GENERIC handler naming no class is still a row of its kind's relation, so what it does say is
+# kept; that it names none is a detection's business.
+type Classless @error(handlers: [{handler: VALIDATION}, {handler: GENERIC, matches: "no class named"}]) {
+  message: String
+}
+
+# A handlers value written as one object rather than a list is a list of that one object.
+type Single @error(handlers: {handler: GENERIC, className: "java.lang.UnsupportedOperationException"}) {
   message: String
 }
 
@@ -33,6 +36,7 @@ extend type Query {
   lone: Lone
   mixed: Mixed
   classless: Classless
+  single: Single
   empty: Empty
 }
 
@@ -50,6 +54,7 @@ extend schema @expectEquals(relation: "graphql_ast_element_entry", where: """
   Empty
   Lone
   Mixed
+  Single
   """)
 
 # The handlers of each application, by kind.
@@ -62,10 +67,10 @@ extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", wher
        AND t.source_line = n.parent_line AND t.source_column = n.parent_column
      WHERE t.coordinate = 'Mixed')
   """, rows: """
-  handler
-  DATABASE
-  VALIDATION
-  GENERIC
+  handler,    position
+  DATABASE,   0
+  VALIDATION, 1
+  GENERIC,    2
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", where: """
@@ -77,9 +82,9 @@ extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", wher
        AND t.source_line = n.parent_line AND t.source_column = n.parent_column
      WHERE t.coordinate = 'Classless')
   """, rows: """
-  handler
-  VALIDATION
-  GENERIC
+  handler,    position
+  VALIDATION, 0
+  GENERIC,    1
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", where: """
@@ -91,8 +96,40 @@ extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", wher
        AND t.source_line = n.parent_line AND t.source_column = n.parent_column
      WHERE t.coordinate = 'Lone')
   """, rows: """
-  handler
-  GENERIC
+  handler, position
+  GENERIC, 0
+  """)
+
+# The lone object is at 0, as the bracketed spelling of the same list would be.
+extend schema @expectEquals(relation: "graphitron_ast_error_handler_entry", where: """
+  (graph_name, source_name, application_line, application_column) IN (
+    SELECT n.graph_name, n.source_name, n.source_line, n.source_column
+      FROM graphql_ast_entry n
+      JOIN graphql_ast_element_entry t
+        ON t.graph_name = n.graph_name AND t.source_name = n.source_name
+       AND t.source_line = n.parent_line AND t.source_column = n.parent_column
+     WHERE t.coordinate = 'Single')
+  """, rows: """
+  handler, position
+  GENERIC, 0
+  """)
+
+# Which is why the position is a copy rather than a reference: the lone object is the argument's
+# root value, and the value stratum numbers no root.
+extend schema @expectEquals(relation: "graphql_ast_value_entry", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
+      FROM graphitron_ast_error_handler_entry h
+      JOIN graphql_ast_entry n
+        ON n.graph_name = h.graph_name AND n.source_name = h.source_name
+       AND n.source_line = h.application_line AND n.source_column = h.application_column
+      JOIN graphql_ast_element_entry t
+        ON t.graph_name = n.graph_name AND t.source_name = n.source_name
+       AND t.source_line = n.parent_line AND t.source_column = n.parent_column
+     WHERE t.coordinate = 'Single')
+  """, rows: """
+  parent_line, position
+  ,
   """)
 
 extend schema @assertEmpty(relation: "graphitron_ast_error_handler_entry", where: """
@@ -105,78 +142,26 @@ extend schema @assertEmpty(relation: "graphitron_ast_error_handler_entry", where
      WHERE t.coordinate = 'Empty')
   """)
 
-# Where in its list each handler of Mixed was written, read off the element's own row: the
-# DATABASE handler first, the VALIDATION second, the GENERIC third.
-extend schema @expectEquals(relation: "graphql_ast_value_entry", where: """
-  (graph_name, source_name, source_line, source_column) IN (
-    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
-      FROM graphitron_ast_error_handler_entry h
-      JOIN graphql_ast_entry n
-        ON n.graph_name = h.graph_name AND n.source_name = h.source_name
-       AND n.source_line = h.application_line AND n.source_column = h.application_column
-      JOIN graphql_ast_element_entry t
-        ON t.graph_name = n.graph_name AND t.source_name = n.source_name
-       AND t.source_line = n.parent_line AND t.source_column = n.parent_column
-     WHERE t.coordinate = 'Mixed' AND h.handler = 'DATABASE')
-  """, rows: """
-  position
-  0
+# Where the element was written in a list, the copy agrees with the value stratum's number.
+extend schema @assertEmpty(relation: "graphitron_ast_error_handler_entry", where: """
+  EXISTS (
+    SELECT 1
+      FROM graphql_ast_value_entry v
+     WHERE v.graph_name = graphitron_ast_error_handler_entry.graph_name
+       AND v.source_name = graphitron_ast_error_handler_entry.source_name
+       AND v.source_line = graphitron_ast_error_handler_entry.source_line
+       AND v.source_column = graphitron_ast_error_handler_entry.source_column
+       AND v.position <> graphitron_ast_error_handler_entry.position)
   """)
 
-extend schema @expectEquals(relation: "graphql_ast_value_entry", where: """
-  (graph_name, source_name, source_line, source_column) IN (
-    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
-      FROM graphitron_ast_error_handler_entry h
-      JOIN graphql_ast_entry n
-        ON n.graph_name = h.graph_name AND n.source_name = h.source_name
-       AND n.source_line = h.application_line AND n.source_column = h.application_column
-      JOIN graphql_ast_element_entry t
-        ON t.graph_name = n.graph_name AND t.source_name = n.source_name
-       AND t.source_line = n.parent_line AND t.source_column = n.parent_column
-     WHERE t.coordinate = 'Mixed' AND h.handler = 'VALIDATION')
-  """, rows: """
-  position
-  1
-  """)
-
-extend schema @expectEquals(relation: "graphql_ast_value_entry", where: """
-  (graph_name, source_name, source_line, source_column) IN (
-    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
-      FROM graphitron_ast_error_handler_entry h
-      JOIN graphql_ast_entry n
-        ON n.graph_name = h.graph_name AND n.source_name = h.source_name
-       AND n.source_line = h.application_line AND n.source_column = h.application_column
-      JOIN graphql_ast_element_entry t
-        ON t.graph_name = n.graph_name AND t.source_name = n.source_name
-       AND t.source_line = n.parent_line AND t.source_column = n.parent_column
-     WHERE t.coordinate = 'Mixed' AND h.handler = 'GENERIC')
-  """, rows: """
-  position
-  2
-  """)
-
-# And Classless's classless GENERIC handler, second in its list.
-extend schema @expectEquals(relation: "graphql_ast_value_entry", where: """
-  (graph_name, source_name, source_line, source_column) IN (
-    SELECT h.graph_name, h.source_name, h.source_line, h.source_column
-      FROM graphitron_ast_error_handler_entry h
-      JOIN graphql_ast_entry n
-        ON n.graph_name = h.graph_name AND n.source_name = h.source_name
-       AND n.source_line = h.application_line AND n.source_column = h.application_column
-      JOIN graphql_ast_element_entry t
-        ON t.graph_name = n.graph_name AND t.source_name = n.source_name
-       AND t.source_line = n.parent_line AND t.source_column = n.parent_column
-     WHERE t.coordinate = 'Classless' AND h.handler = 'GENERIC')
-  """, rows: """
-  position
-  1
-  """)
-
-# The per-kind relations hang off the supertype. The GENERIC rows are the two that name a class.
+# The per-kind relations hang off the supertype. Every GENERIC element is a row, the one naming no
+# class included.
 extend schema @expectEquals(relation: "graphitron_ast_error_generic_handler_entry", rows: """
-  class_name,                         matches
+  class_name,                               matches
   java.lang.IllegalStateException,
-  java.lang.IllegalArgumentException, boom
+  java.lang.IllegalArgumentException,       boom
+  ,                                         no class named
+  java.lang.UnsupportedOperationException,
   """)
 
 extend schema @expectEquals(relation: "graphitron_ast_error_database_handler_entry", rows: """

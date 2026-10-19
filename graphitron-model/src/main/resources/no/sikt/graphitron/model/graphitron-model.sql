@@ -1997,8 +1997,11 @@ CREATE TABLE graphitron_ast_error_handler_entry (
   touched_at         TIMESTAMP NOT NULL,
   application_line   INT     NOT NULL,
   application_column INT     NOT NULL,
+  position           INT     NOT NULL,
   handler            VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  UNIQUE (graph_name, source_name, application_line, application_column, position),
+  CHECK (position >= 0),
   CHECK (handler IN ('GENERIC', 'DATABASE', 'VALIDATION')),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
@@ -2012,11 +2015,12 @@ COMMENT ON TABLE graphitron_ast_error_handler_entry IS 'One element of an @error
 COMMENT ON COLUMN graphitron_ast_error_handler_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_error_handler_entry.source_name IS 'the file the element was written in, which is the application''s file too';
 COMMENT ON COLUMN graphitron_ast_error_handler_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_error_handler_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, which carries its index in the list, so the index is not restated here';
+COMMENT ON COLUMN graphitron_ast_error_handler_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry';
 COMMENT ON COLUMN graphitron_ast_error_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose application went is swept with the application row it hangs on';
 COMMENT ON COLUMN graphitron_ast_error_handler_entry.application_line IS 'source line of the @error application holding the list, the parent key into graphitron_ast_error_entry together with the column beside it';
 COMMENT ON COLUMN graphitron_ast_error_handler_entry.application_column IS 'source column of the same';
-COMMENT ON COLUMN graphitron_ast_error_handler_entry.handler IS 'the kind the element names. The CHECK states an invariant rather than judging input: DirectiveLegality admits no application whose element names another kind or none, so the constraint costs nothing while that gate holds and fails at the row if it ever drifts. A VALIDATION element carries nothing beyond its kind, so this row is the whole of it; a GENERIC element naming no class is a row here and none in its kind''s relation';
+COMMENT ON COLUMN graphitron_ast_error_handler_entry.position IS 'the index the element was written at in its list, from 0. A list written as one object rather than a list is a list of that one object, at 0';
+COMMENT ON COLUMN graphitron_ast_error_handler_entry.handler IS 'the kind the element names. The CHECK states an invariant rather than judging input: DirectiveLegality admits no application whose element names another kind or none, so the constraint costs nothing while that gate holds and fails at the row if it ever drifts. A VALIDATION element carries nothing beyond its kind, so this row is the whole of it';
 
 CREATE TABLE graphitron_ast_error_generic_handler_entry (
   graph_name    VARCHAR NOT NULL,
@@ -2024,7 +2028,7 @@ CREATE TABLE graphitron_ast_error_generic_handler_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  class_name    VARCHAR NOT NULL,
+  class_name    VARCHAR,
   matches       VARCHAR,
   description   VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
@@ -2039,7 +2043,7 @@ COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.source_name IS 'the
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.source_column IS 'source column of the same. The four columns are the key of graphitron_ast_error_handler_entry, which names the element''s row of graphql_ast_value_entry and the application holding it, so this relation carries what the kind reads and nothing the supertype does';
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; a handler whose whole application went is swept with the supertype row it hangs on';
-COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.class_name IS 'the exception class this handler matches on, as written. A GENERIC handler matches by class identity, so a handler naming none states nothing and writes no row';
+COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.class_name IS 'the exception class this handler matches on, as written, or NULL where none was. A GENERIC handler naming no class is still a row, so its other fields are not lost; that it names none is a detection''s business';
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.matches IS 'a substring the exception message must contain, as written, or NULL where the handler takes every exception of the class';
 COMMENT ON COLUMN graphitron_ast_error_generic_handler_entry.description IS 'the client-facing message this handler returns, as written, or NULL where the exception''s own message is used';
 
@@ -14735,11 +14739,11 @@ INSERT INTO meta_relation VALUES
   ('graphitron_ast_error_handler_entry', 'sdl-written-value', 'graphitron-ast',
    'One element of an @error application''s handlers list, with the kind it names.',
    'For example handlers: [{handler: DATABASE, sqlState: "23503"}, {handler: VALIDATION}] gives two rows, one of each kind, under the one application.',
-   'The supertype of the per-kind relations: what every handler has whatever its kind, which is the element it decodes, the application holding it and the kind, so a reader wanting the handlers of an application, in order, joins one relation rather than unioning several. The kind is stored as written rather than read off which subtype holds a row: a VALIDATION element carries nothing else and so has no subtype of its own, and a GENERIC element naming no class has no subtype row. Every object element of an admitted list is a row. The kind carries a CHECK that states, rather than enforces, what the legality gate already guarantees: only the three declared kinds reach this writer, and the constraint makes a drift in that gate fail at the row. The index stays on graphql_ast_value_entry, which numbers every element the author wrote; restating it here would be a second number to keep in step.'),
+   'The supertype of the per-kind relations: what every handler has whatever its kind, which is the element it decodes, the application holding it and the kind, so a reader wanting the handlers of an application, in order, joins one relation rather than unioning several. The kind is stored as written rather than read off which subtype holds a row: a VALIDATION element carries nothing else and so has no subtype of its own. Every object element of an admitted list is a row, and every GENERIC or DATABASE element is a row of its kind''s relation too, whatever it carries. The kind carries a CHECK that states, rather than enforces, what the legality gate already guarantees: only the three declared kinds reach this writer, and the constraint makes a drift in that gate fail at the row. The index is part of the element''s natural key, so it is copied here with the application and made unique beside it; it is a copy rather than a reference to graphql_ast_value_entry, whose position is NULL where a lone object was written for the list, an element this relation places at 0.'),
   ('graphitron_ast_error_generic_handler_entry', 'sdl-written-value', 'graphitron-ast',
    'A GENERIC handler of an @error application, at its position in the list, as written.',
    'For example {handler: GENERIC, className: "java.lang.IllegalStateException"} at position 0.',
-   'One relation per handler kind, because the kind decides which fields mean anything. A GENERIC handler matches by class identity, so it carries a class name and nothing about SQL; the directive rejects sqlState and code on it outright. Merged with its siblings this would be six nullable columns of which a row fills three, and which three is a rule no constraint over that shape can state. A field an author wrote where their handler''s kind rejects it has no column here and is not lost: the whole handler list stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
+   'One relation per handler kind, because the kind decides which fields mean anything. A GENERIC handler matches by class identity, so it carries a class name and nothing about SQL; the directive rejects sqlState and code on it outright. Every GENERIC element is a row whatever it carries, the class name NULL where none was written: entries capture rather than validate, and a handler naming no class is a defect for a detection to state. Merged with its siblings this would be six nullable columns of which a row fills three, and which three is a rule no constraint over that shape can state. A field an author wrote where their handler''s kind rejects it has no column here and is not lost: the whole handler list stands verbatim in graphql_ast_applied_argument_entry, which is where a reader reporting the rejection finds it.'),
   ('graphitron_ast_error_database_handler_entry', 'sdl-written-value', 'graphitron-ast',
    'A DATABASE handler of an @error application, at its position in the list, as written.',
    'For example {handler: DATABASE, sqlState: "23503"} at position 0.',

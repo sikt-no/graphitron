@@ -187,6 +187,28 @@ public final class GraphitronAstEntries {
         return elements;
     }
 
+    /** One value of one application's list argument, whatever its shape, at its index. */
+    record Listed(Directive application, Value<?> node, int position) {}
+
+    /**
+     * Every value in {@code argumentName} across {@code applications}, at its index. Unlike
+     * {@link #elementsOf} it keeps a value of any shape, for a relation stating that an element was
+     * written whether or not it parses; a lone value is a list of that one value, at 0.
+     */
+    static List<Listed> listedIn(List<Directive> applications, String argumentName) {
+        var listed = new ArrayList<Listed>();
+        for (Directive application : applications) {
+            int position = 0;
+            for (Object written : list(application, argumentName)) {
+                if (written instanceof Value<?> value) {
+                    listed.add(new Listed(application, value, position));
+                }
+                position++;
+            }
+        }
+        return listed;
+    }
+
     /** One string of one application's list argument, on {@link Element}'s terms. */
     record Written(Directive application, StringValue node) {
         String value() {

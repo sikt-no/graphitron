@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
+import graphql.language.ObjectValue;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.grammar.FieldSetGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
@@ -32,6 +33,7 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.cla
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.elementsOf;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.fieldPart;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.inside;
+import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.listedIn;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.naming;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.ofKind;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.string;
@@ -53,10 +55,11 @@ import static org.jooq.impl.DSL.val;
  * {@code @error}, {@code @node}, {@code @discriminate}, {@code @discriminator} and
  * federation's {@code @key}. {@code @error}'s row carries its key and nothing else, its only
  * argument being the handler list; it is there for the handlers to hang off. A handler is one row
- * of a supertype naming its kind and the application holding it, and one row of that kind's own
- * relation where the kind has one, because the kind decides which of the input's six fields mean
- * anything: GENERIC matches by class identity and DATABASE by one of two SQL discriminators, while
- * VALIDATION carries nothing beyond its kind and so is the supertype row alone.
+ * of a supertype naming its kind, its index and the application holding it, and one row of that
+ * kind's own relation where the kind has one, because the kind decides which of the input's six
+ * fields mean anything: GENERIC matches by class identity and DATABASE by one of two SQL
+ * discriminators, while VALIDATION carries nothing beyond its kind and so is the supertype row
+ * alone. Every GENERIC and DATABASE element is a row of its kind's relation whatever it carries.
  * {@code @defaultTenant} reaches this site too and gets no relation: it declares no argument, so its
  * applied-directive row is the whole fact.
  *
@@ -77,10 +80,10 @@ final class GraphitronTypeEntries {
         enums(dsl, graph, touchedAt, naming(applied(applications, "enum"), "enumReference"));
         var errors = applied(applications, "error");
         errors(dsl, graph, touchedAt, errors);
+        handlers(dsl, graph, touchedAt, listedIn(errors, "handlers").stream()
+            .filter(handler -> handler.node() instanceof ObjectValue).toList());
         var handlers = elementsOf(errors, "handlers");
-        handlers(dsl, graph, touchedAt, handlers);
-        genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC").stream()
-            .filter(handler -> stringOf(inside(handler.node(), "className")) != null).toList());
+        genericHandlers(dsl, graph, touchedAt, ofKind(handlers, "GENERIC"));
         databaseHandlers(dsl, graph, touchedAt, ofKind(handlers, "DATABASE"));
 
         var nodes = applied(applications, "node");
@@ -208,12 +211,11 @@ final class GraphitronTypeEntries {
     }
 
     /**
-     * Every object element of the list, with its kind. Only an admitted application reaches here, so
-     * the kind is one of the three the table's CHECK names. A GENERIC element naming no class is a
-     * row here though its kind's relation has none.
+     * Every object element of the list, with its kind and its index. Only an admitted application
+     * reaches here, so the kind is one of the three the table's CHECK names.
      */
     private static void handlers(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                 List<GraphitronAstEntries.Element> handlers) {
+                                 List<GraphitronAstEntries.Listed> handlers) {
         var t = GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
         var rows = handlers.stream().collect(Rows.toRowList(
             handler -> val(graph, t.GRAPH_NAME),
@@ -223,15 +225,17 @@ final class GraphitronTypeEntries {
             handler -> val(touchedAt, t.TOUCHED_AT),
             handler -> GraphQLAstEntries.sourceLine(handler.application()),
             handler -> GraphQLAstEntries.sourceColumn(handler.application()),
-            handler -> val(tokenOf(inside(handler.node(), "handler")), t.HANDLER)));
+            handler -> val(handler.position(), t.POSITION),
+            handler -> val(tokenOf(inside((ObjectValue) handler.node(), "handler")), t.HANDLER)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.APPLICATION_LINE, t.APPLICATION_COLUMN, t.HANDLER)
+                    t.TOUCHED_AT, t.APPLICATION_LINE, t.APPLICATION_COLUMN, t.POSITION, t.HANDLER)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.APPLICATION_LINE, excluded(t.APPLICATION_LINE))
                 .set(t.APPLICATION_COLUMN, excluded(t.APPLICATION_COLUMN))
+                .set(t.POSITION, excluded(t.POSITION))
                 .set(t.HANDLER, excluded(t.HANDLER)));
     }
 
