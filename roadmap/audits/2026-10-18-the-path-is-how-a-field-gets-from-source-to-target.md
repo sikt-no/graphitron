@@ -28,21 +28,36 @@ graphitron_ast_reference_condition_step_entry (element → graphitron_ast_refere
 graphitron_ast_reference_for_entry            (application → graphitron_ast_reference_entry, participant_type_ref)
 graphitron_ast_routine_entry                  (application → graphql_ast_field_directive_entry, …)
 
--- the field's ends
-graphitron_field_source_table (field, from_table → sql_table, basis)
-graphitron_field_target       (field PK, target_type, wrapper)
-graphitron_field_target_table (field, target_type → graphitron_field_target, basis)
+-- the field's source: what arrives at it, one row per field and kind
+graphitron_field_source        (field PK, kind CHECK (kind IN ('NONE', 'ROW', 'NESTED', 'OBJECT')))
+graphitron_field_source_table  (field PK → graphitron_field_source, table → sql_table)   -- ROW, a root's function among them
+graphitron_field_source_object (field PK → graphitron_field_source, class → code_class)  -- OBJECT
+-- NESTED has no subtype: the parent type binds nothing, and its rows are another field's
 
--- the path, one row per written element and source
-graphitron_field_path (field, source_table, position PK,
-                       element → graphql_ast_entry,
-                       from_table → sql_table,              -- where we come from
-                       to_table   → sql_table,              -- where we go
-                       constraint → sql_referential_constraint, fk_on_from   -- a foreign key, ridden one way
-                       | method → code_condition_method                      -- a join method, given both tables
-                       | function → sql_table)                               -- a function whose result is read
-graphitron_field_participant_path (same, per participant)
+-- the field's target
+graphitron_field_target        (field PK, target_type, wrapper)
+graphitron_field_target_table  (field, target_type → graphitron_field_target, basis)
+
+-- the paths, one row per written element
+graphitron_field_path          (field, position PK, field → graphitron_field_source_table,
+                                element → graphql_ast_entry,
+                                from_table → sql_table,              -- where we come from
+                                to_table   → sql_table,              -- where we go
+                                constraint → sql_referential_constraint, fk_on_from   -- a foreign key, ridden one way
+                                | method → code_condition_method                      -- a join method, given both tables
+                                | function → sql_table)                               -- a function whose result is read
+graphitron_nested_field_path   (field, entering_field, position PK,
+                                entering_field → graphitron_field_source_table, the same columns)
+graphitron_field_participant_path (field, participant, position PK, the same columns)
 ```
+
+**One pattern, separate relations.** An output field's path, a nested field's, a participant's, an
+argument's and an input field's follow the same pattern and differ where it matters: where each
+starts, what it is keyed by, and what it must reach. Forced under one supertype they would need
+nullable columns, a discriminator and keys no reader could join into, so each is its own relation
+and only the step from one table to the next is shared code. This audit covers the three at an
+output field; the argument's starts at its field's target and the input field's at each use site,
+and they are designed on their own.
 
 **Each family keeps its own vocabulary.** `graphql_ast_` and `graphql_` speak GraphQL and
 graphql-java; `graphitron_ast_` speaks the directives as users write them; `graphitron_` speaks our
@@ -58,10 +73,16 @@ cannot resolve is still a row, with nothing past its element, so a broken path i
 position. The last row's `to_table` is the target type's table, or the field has a defect; no
 relation is needed for that check.
 
-**The grain includes the source.** A field can have several: `FilmDetails` and `MoreDetails` on
-sakila are reached from `film` and from `customer`, so every field under them has two sources, and
-a path written there is walked once from each. Keyed by field and position alone, two walks would
-collide. This needs its own look before the path's key changes.
+**A nested field is walked once per field its rows entered by.** Only a field on a type with no
+table of its own can be reached from more than one table, through the fields that nest that type.
+Its path is walked from the source of the field the rows entered by, found by unwinding the nesting
+until a field with a source: `OccupantLocation.occupantDistrict` is walked from `customer` under
+`Customer.location` and from `store` under `Store.location`, the per-owner projections the
+generator already emits. So the nested path is keyed by the field and its entering field, and each
+start is a source row the entering field already has; no relation lists the tables per nested
+field. Two entering fields on one table are two walks. In fs-plattform a path on a single-parent
+nesting type is common (61 types in sis, 11 in utdanningsregisteret) and one on a multi-parent type
+does not occur; sakila's `OccupantLocation` pins it.
 
 **Spelling becomes the actual key in the path's own derivation.** The walk joins each element's
 entry to the catalog from the table it stands at: a key spelling to `sql_constraint`, then
@@ -81,17 +102,22 @@ method to its signature's tables. Every input is a stored table, so the recursio
 
 ## What changes
 
-* **`graphitron_field_path`** gains the three facts and, with them, the source in its key. Today
+* **`graphitron_field_path`** gains the three facts and references its field's source. Today
   `GraphitronAnchor` writes it from the entries alone, before anything resolves; the walk writes it
   after the sources, in written order, so the anchor's path writing moves into the walk. Readers:
   `graphitron_entry_defect_rule`, `graphitron_field_source_table_rule`, the reading.
-* **`graphitron_field_participant_path`**, the same, per participant. No reader today.
-* **`graphitron_field_source_table`** stops reading the path, which would otherwise be a cycle once
-  the path is derived after it. Its `INHERITED` arm asks whether the field reaching a type wrote a
-  path, which the step and routine entries answer; its `SOURCE_ROW` arm reads the first key's table
-  off the reading, which the key entry and `sql_constraint` answer, and it finds its fields by
-  filtering `graphql_directive_application` on `sourceRow`, where the `@sourceRow` entry already
-  states it.
+* **`graphitron_nested_field_path`** is new, the path of a field on a nested type per entering
+  field; its rows are the ones `graphitron_field_path` holds today for such fields.
+* **`graphitron_field_participant_path`**, the three facts, per participant. No reader today.
+* **`graphitron_field_source`** is the supertype, with the kinds above. Today's
+  `graphitron_field_source_table` holds one or several tables per field, its `INHERITED` arm
+  collecting a nested field's tables; with the `NESTED` kind it holds exactly one, and the
+  inherited tables go, the nested path reaching them through the entering field.
+* **The source rule** stops reading the path, which would otherwise be a cycle once the path is
+  derived after it. Its `INHERITED` arm, which asks whether the field reaching a type wrote a path,
+  goes with the `NESTED` kind; its `SOURCE_ROW` arm reads the first key's table off the reading,
+  which the key entry and `sql_constraint` answer, and it finds its fields by filtering
+  `graphql_directive_application` on `sourceRow`, where the `@sourceRow` entry already states it.
 * **`graphitron_entry_defect_rule`** reads the path's columns for its chain codes, where it reads
   the reading, the resolution and the target tables today. It also asks two directive names, whether
   a field carries `@routine` (through `graphitron_field_path_application`) and `@pivot` (through
