@@ -1,7 +1,7 @@
 ---
 id: R1063
 title: "An empty after cursor reads as the first page, as v9 read it"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness
