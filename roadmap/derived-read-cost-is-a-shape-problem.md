@@ -1382,6 +1382,12 @@ is "The generator builds no schema".
     * **No test reads its generated Java as text** `done`, but for `TenantAcquisitionFragmentsTest`,
       which goes with the fragments it reads. Each deleted case was covered by an execution test,
       two of them only once the node above landed.
+  * **`emit` imports no `render` class** `open`. The import rule's nine exceptions,
+    `ArgPathHelperRegistry`, `ProjectedKeyReads`, `RoutineCallEmitter`, `CatalogRefs`,
+    `ColumnComparison`, `ErrorDispatchFragments`, `FetcherResult`, `TenantHandDown` and
+    `ProjectionCall`, are one-spelling helpers old and new emitters share. They move into `emit`, the
+    old renderers import them from there, and the rule's exception list is empty, so `emit` stops
+    depending on a package that is emptying.
   * **The error-mapping constant is a store fact** `open`, after. `intent_field_error_channel` states
     whether a field has a channel and its transport, not the constant's name: the name deduplicates
     handler lists and the plain name goes to whichever channel was classified first, an order the
