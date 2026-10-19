@@ -165,14 +165,17 @@ public final class GraphitronFactCapture {
                 sink.add(record);
                 int position = 0;
                 for (Value<?> handler : list(directive, "handlers")) {
-                    if (!(handler instanceof ObjectValue object)) {
+                    // An element naming no kind is illegal against the definition, which assembly
+                    // reports; it is undecoded here rather than a row its NOT NULL kind would refuse.
+                    String kind = handler instanceof ObjectValue o ? tokenOf(field(o, "handler")) : null;
+                    if (!(handler instanceof ObjectValue object) || kind == null) {
                         undecoded(directive, "handlers", handler);
                         continue;
                     }
                     var row = sink.dsl().newRecord(GRAPHITRON_ERROR_HANDLER_ENTRY);
                     row.setTypeName(type);
                     row.setPosition(position++);
-                    row.setHandler(tokenOf(field(object, "handler")));
+                    row.setHandler(kind);
                     row.setClassName(stringOf(field(object, "className"), directive, "handlers"));
                     row.setCode(stringOf(field(object, "code"), directive, "handlers"));
                     row.setSqlState(stringOf(field(object, "sqlState"), directive, "handlers"));
