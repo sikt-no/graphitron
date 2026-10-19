@@ -39,6 +39,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  *       the legacy core (the traversal is injected by the caller so reachability keeps its one
  *       home), not the emit library, and not {@code command} / {@code plan} / {@code render}
  *       (facts sit below commands; the corpus will read facts without a plan).</li>
+ *   <li>{@code no.sikt.graphitron.emit} holds emitters that own their query: each reads the store
+ *       and renders from the rows. It names the store model, jOOQ, the emit library and the JDK,
+ *       nothing only the walk can answer ({@code GraphitronSchema}, the leaf model, {@code plan},
+ *       {@code command}, {@code render}), and beyond that only the named allowances, each with its
+ *       reason. Qualified names in code count as imports, and an unused allowance fails.</li>
  * </ul>
  *
  * <p>The guard also pins the minting site of {@code UnitRef} and {@code UnitMethodRef}: a unit
@@ -75,9 +80,8 @@ class PackageImportDirectionTest {
      * <p>The dial shrinks by conversion, not by exception, and the routine-write family is the
      * first entry to shrink it. That family used to borrow {@code RoutineChain}, then narrowed to
      * {@code TableRef}, {@code JoinSlot}, {@code On}, {@code TableExpr} and {@code JoinConditionRef};
-     * it now borrows none of them, its row carrying the catalog facts as captured names
-     * ({@code CatalogTable}, {@code CatalogColumn}, {@code JoinBasis}, {@code RoutineCall}) that the
-     * renderer lifts into emit types. The entries above survive on their other families' accounts
+     * it now borrows none of them, its emitter reading the catalog facts from the store as captured
+     * names. The entries above survive on their other families' accounts
      * alone, which is what the dial is for: it names what is still borrowed, so a family's
      * conversion is visible as a line leaving rather than as prose claiming one did.
      *
@@ -227,11 +231,101 @@ class PackageImportDirectionTest {
             return null;
         });
 
+        var emitUsed = new java.util.TreeSet<String>();
+        int emitFiles = scanReferences(sourceRoot.resolve("emit"), findings, (file, ref) -> {
+            String allowed = emitAllowanceFor(ref);
+            if (allowed != null) {
+                emitUsed.add(allowed);
+                return null;
+            }
+            if (ref.startsWith("java.") || ref.startsWith("javax.") || ref.startsWith("org.jooq.")
+                    || ref.startsWith("no.sikt.graphitron.model.")
+                    || ref.startsWith("no.sikt.graphitron.javapoet.")
+                    || ref.startsWith("no.sikt.graphitron.emit.")) {
+                return null;
+            }
+            return "emit owns its query and reads the store; it names nothing only the walk can"
+                + " answer (GraphitronSchema, the leaf model, plan, command, render) beyond the"
+                + " named allowances";
+        });
+
         assertThat(findings).as("package-triangle import-direction violations").isEmpty();
+        assertThat(emitFiles).as("emit sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(2);
+        assertThat(emitUsed)
+            .as("every emit allowance is in use; an unused one is a widening nobody needs")
+            .containsExactlyInAnyOrderElementsOf(EMIT_ALLOWANCES.keySet());
         assertThat(commandFiles).as("command sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(4);
         assertThat(planFiles).as("plan sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(3);
         assertThat(renderFiles).as("render sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(3);
         assertThat(factsFiles).as("facts sources scanned (walk must not be vacuous)").isGreaterThanOrEqualTo(5);
+    }
+
+    /**
+     * What {@code emit} may name beyond the store model, jOOQ, the emit library and the JDK, each
+     * by exact class with its reason. Per-class collectors the shell owns, and emission spellings
+     * the walk's emitters share, so one shape keeps one spelling while both kinds of emitter exist.
+     */
+    private static final java.util.Map<String, String> EMIT_ALLOWANCES = java.util.Map.of(
+        "no.sikt.graphitron.render.ArgPathHelperRegistry",
+            "the host class's collector of dotted-path descent helpers: a call and the helper it names land on one class",
+        "no.sikt.graphitron.render.ProjectedKeyReads",
+            "the method's node-id decodes, for an argument whose path projects a key column",
+        "no.sikt.graphitron.render.RoutineCallEmitter",
+            "a routine IN parameter's request read has one spelling, shared with the read chain's call",
+        "no.sikt.graphitron.render.CatalogRefs",
+            "the one decode of captured class and binding-type names, arrays included",
+        "no.sikt.graphitron.render.ColumnComparison",
+            "the one mint of a column equality, which reconciles a converter on one side",
+        "no.sikt.graphitron.render.ErrorDispatchFragments",
+            "the catch arm's dispositions and the Outcome wrap have one spelling",
+        "no.sikt.graphitron.render.FetcherResult",
+            "the DataFetcherResult envelope has one spelling",
+        "no.sikt.graphitron.render.TenantHandDown",
+            "the success envelope takes a hand-down so only tenant code fills localContext; a routine write hands none",
+        "no.sikt.graphitron.render.ProjectionCall",
+            "the $project call has one spelling");
+
+    /** The allowance {@code ref} falls under, or null. A nested or static member counts as its class. */
+    private static String emitAllowanceFor(String ref) {
+        return EMIT_ALLOWANCES.keySet().stream()
+            .filter(entry -> ref.equals(entry) || ref.startsWith(entry + "."))
+            .findFirst().orElse(null);
+    }
+
+    /** A fully qualified reference into the tree, outside an import: a qualified name in code. */
+    private static final Pattern QUALIFIED_REF =
+        Pattern.compile("\\bno\\.sikt\\.graphitron\\.[a-z_][\\w.]*\\.[A-Z]\\w*");
+
+    /**
+     * {@link #scan} over imports and over qualified references in the body as well, so a fully
+     * qualified name cannot step around the rule.
+     */
+    private static int scanReferences(Path packageRoot, List<Finding> findings, ImportRule rule)
+            throws IOException {
+        if (!Files.isDirectory(packageRoot)) {
+            return 0;
+        }
+        int count = 0;
+        try (Stream<Path> files = Files.walk(packageRoot)) {
+            for (Path file : files.filter(p -> p.toString().endsWith(".java")).toList()) {
+                count++;
+                for (String line : Files.readAllLines(file)) {
+                    var imported = IMPORT.matcher(line);
+                    if (imported.find()) {
+                        String violated = rule.check(file, imported.group(1));
+                        if (violated != null) findings.add(new Finding(file, imported.group(1), violated));
+                        continue;
+                    }
+                    if (line.startsWith("package ")) continue;
+                    var qualified = QUALIFIED_REF.matcher(line);
+                    while (qualified.find()) {
+                        String violated = rule.check(file, qualified.group());
+                        if (violated != null) findings.add(new Finding(file, qualified.group(), violated));
+                    }
+                }
+            }
+        }
+        return count;
     }
 
     private static boolean isBorrowedRef(String imp) {
