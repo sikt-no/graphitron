@@ -1,7 +1,7 @@
 ---
 id: R1060
 title: "A DATABASE @error handler's matches never sees the SQL text jOOQ wraps around the SQLException"
-status: Ready
+status: In Progress
 bucket: bug
 depends-on: []
 created: 2026-10-19
