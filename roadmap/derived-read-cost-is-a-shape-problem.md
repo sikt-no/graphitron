@@ -708,15 +708,24 @@ rest, which are declared `graphitron`'s; `GraphitronAssemblyCapture` then writes
 capture phase and its anchor phase, and `GraphitronAssemblyCapture` dissolves into the anchor. The
 fetcher and its subtypes are written there.
 
-* **What each assembly step reads is known** `open`, first. `GraphQLAssemblyCapture` and
-  `SdlFactCapture.decode` run between the anchor and `GraphitronAssemblyCapture`. A step reading
-  neither moves as it is; one that reads them says what orders it, and "The assembly runs as the
-  anchor's last step" may settle that.
-* **The two are one in the meta** `open`. One `meta_gatherer` row, the owners and the dependency
-  edges merged, and `store_graph_progress` following.
+* **What each assembly step reads is known** `done`, 2026-10-19. Of its fifteen steps four move as
+  they are (`FieldPathApplications`, `NodeKeyColumns`, `NodeIdCandidates`, `targets`); the other
+  eleven read the decoded coordinate-keyed entries `SdlFactCapture.decode` writes, directly or
+  through an earlier step. None reads `DerivationStratum`'s tables or `graphql_schema_problem`, and
+  nothing in the anchor reads what the assembly writes, so no move makes a first capture read
+  stale rows.
+* **The decode runs before the anchor** `open`, first. It reads nothing from the store, only the
+  documents merged in memory, which need no assembly; once it runs ahead, every step can follow
+  the anchor in its present order. It goes altogether with "No `graphitron_*_entry` survives".
+* **The two are one in the meta** `open`, after the decode moves. One `meta_gatherer` row, the
+  graphitron-ast owners moved to `graphitron`, its self-edge and duplicate edges gone, and
+  `store_graph_progress`, `CaptureCommitsAsItGoesTest` and `GathererIsolationTest` following. The
+  gatherer declares the corpora it reads, the SDL, the catalog, the classpath and the
+  configuration, rather than none: keeping only the SDL makes the grain-corpus gate flag 34
+  relations, and dropping it would claim it reads no corpus.
 * **Each `GraphitronAssemblyCapture` step moves into the anchor phase, marked and swept** `open`,
-  after the inventory. One child per step, grown as each is tried; `targets` early, since the
-  producers read `graphitron_field_target`.
+  after the meta. In their present order, at the anchor's end; the eight that clear and refill
+  are marked and swept as they move.
 * **`GraphitronAssemblyCapture` is gone** `blocked`, on the steps.
 
 #### `DerivationStratum` is gone, each step anchored by its owner
@@ -776,11 +785,14 @@ and the emitters read, and it goes when nothing reads what it builds.
     with Alf 2026-10-19. A producer produces a result and a reader reads from one. A result can be
     nested, so a reader can read what a reader read, and a producer can read a result to produce a
     new one. Each of the walk's field classes falls on one side: the root fields, the split
-    children, a child `@service`, `totalCount` and the facets produce; a column, an
-    `@externalField`, a record accessor, the ID encoders, a pivot slot, the errors field and the
-    inline table, interface, union and pivot children read, the last of them a nested result; a
-    `NestingField` reads the whole result. A field neither subtype explains is the defect a
-    totality gate finds. Written in the graphitron anchor phase, once the steps whose tables it
+    children, a child `@service`, `totalCount` and the facets produce, and so does a single-valued
+    interface, union or table-interface child, which runs its own statement per parent row; a
+    column, an `@externalField`, a record accessor, the ID encoders, a pivot slot, the errors field,
+    the connection's edges, nodes and page info, and the inline table and pivot children read, the
+    last two a nested result; a `NestingField` reads the whole result. A field neither subtype
+    explains is the defect a totality gate finds. The population is the output fields of object
+    types: an interface's fields and the input fields are in `graphitron_field` and are not
+    fetched. Written in the graphitron anchor phase, once the steps whose tables it
     reads have moved there; see "graphitron-ast and graphitron are one gatherer".
     `graphitron_fetcher`: one row per output field of
     `graphitron_field`, complete over them, the supertype the fetcher's facts reference. R333's
@@ -812,7 +824,12 @@ and the emitters read, and it goes when nothing reads what it builds.
     root that is not split, an `@externalField` and every projected field are not. `_entities`
     waits until it is stated, having no `graphitron_field` row. A field the rule finds two kinds
     for has no row and is a defect at the field; `@lookupKey` with `@routine` is deferred and has
-    none either. A producer that reads and lands on a
+    none either. A write or a service whose target is table-bound re-reads by key in the same
+    fetcher; that follows from its kind and its target and is not a second kind. A split `@routine`
+    child is `_routine`, splitting being delivery. Where the walk disagrees the store is right and
+    the walk is the defect: it decides the roots and `node` by name, so `schema { query: MyQuery }`
+    parts them, and it reads a `@service` on an errors field as a reader and drops its method. A
+    producer that reads and lands on a
     table-bound type leaves its window open, and every field below it that is not a producer is
     projected into its statement; a write closes it, the lock it takes being returned before anything
     more is read, and so does a `_service`. The hierarchy is by what executes and how it identifies
@@ -824,6 +841,9 @@ and the emitters read, and it goes when nothing reads what it builds.
         `@lookupKey`, `node`, `nodes`, `_entities`, and the re-read after a write over the keys it
         returned; arriving batched, a node type or a type carrying `@key`, is this fact, and comes
         from these producers once `node`, `nodes` and `_entities` are stated;
+      * `_count` and `_facets`, `totalCount` and a connection's facets, which read the statement
+        of the producer whose connection they sit on rather than its rows. A connection type can
+        serve several fields, so which producer that is belongs to the source, not to a key here;
       * `_insert`, values only, no row identified, returning the keys the database made;
       * the identifying write, with `matches`, `ONE` or `MANY` as `multiRow` was written, `ONE` by
         default: one row per input, or a filter per input that may match several. `_update` carries
