@@ -1,7 +1,7 @@
 ---
 id: R1045
 title: "An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: classification-model
@@ -51,7 +51,7 @@ type Bar @table(name: "bar") {
 
 The change is decided in one place: the `TableBoundReturnType` arm of `FieldBuilder.classifyObjectReturnChildField`, at the inline `TableField` mint, which runs after the arm's existing guards (the `@splitQuery` same-table guard, the `@lookupKey` gate, the split branch and the inline `@asConnection` rejection). The predicate is decided there once, from facts the arm already holds:
 
-- *same-row candidate*: `referencePath.elements()` is empty and the parent correlation is null (the carrier shape `TableField.checkCarrierInvariant` admits for an empty path). An empty path with no `@reference` only arises when the two tables are the same, because `parsePath` errors on a missing or ambiguous foreign key between different tables.
+- *same-row candidate*: `referencePath.elements()` is empty and the parent correlation is null (the carrier shape `ParentCorrelation.checkCarrierInvariant` admits for an empty path, as `TableField`'s constructor applies it). An empty path with no `@reference` only arises when the two tables are the same, because `parsePath` errors on a missing or ambiguous foreign key between different tables.
 - *narrowed*: `TableFieldComponents.Ok` carries a non-empty `filters()` (argument filters, argument or field-level `@condition`, `@nodeId` decodes) or a `lookup()` other than `LookupResolution.None`.
 - *argument-free*: the field declares no arguments, and the components carry `OrderBySpec.None` and no pagination.
 
@@ -87,7 +87,7 @@ The callee is the return type's existing anchor unit (`units.typeClass`), the sa
 
 The cost is one correlated subquery per parent row that touches no table, which PostgreSQL evaluates from the outer row. The implementer confirms with a first spike that jOOQ 3.20 renders the `FROM`-less inner select inside `multiset` on PostgreSQL and that nested multisets inside it (a list child of the return type) resolve; if it does not, the fallback is the nested `DSL.row(...)` shape below under "Other solutions", with the same reader contract.
 
-Memberships the leaf owes, each a build-enforced partition: `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` (it contributes to its parent's projection), the dual-arm kinds `GeneratorCoverageTest` pins (it both projects and has a fetcher), and an arm in `GraphitronSchemaValidator`'s exhaustive child-field switches. `FetcherEmitter` gets the fetcher arm; `TypeFetcherGenerator` and `FetcherRegistrationsEmitter` need nothing new, because the return type's fetchers are its own.
+Memberships the leaf owes, each a build-enforced partition: `ProjectionCommands.CONTRIBUTION_MINTING_LEAVES` (it contributes to its parent's projection, which puts it in the projected bucket `GeneratorCoverageTest` derives, beside `TableField`, `NestingField` and `PivotField`, whose fetchers `FetcherEmitter` also emits; it is not one of the dual-arm kinds, which are the leaves in `TypeFetcherGenerator.IMPLEMENTED_LEAVES` as well), and an arm in `GraphitronSchemaValidator`'s exhaustive child-field switches. `FetcherEmitter` gets the fetcher arm; `TypeFetcherGenerator` and `FetcherRegistrationsEmitter` need nothing new, because the return type's fetchers are its own.
 
 `uncorrelatedSameTableSplitMessage` and the `splitQuery.adoc` bullet change their first two remedies to "drop `@splitQuery` from a single-cardinality field with no arguments to read the parent's own row in the same statement" and keep the `@reference(path: [{condition: ...}])` remedy for a field that must stay split.
 
