@@ -248,3 +248,57 @@ Write the tests first so they fail on the tree with R1067 landed and this item n
 - **Fix it in the generated decode helpers directly**, without waiting for R1067. Every one of the
   four decode paths R1067 rewrites would need the same branch, and the two items would collide on
   each of them.
+
+## Reviewer findings
+
+### Round 1 (Spec → Ready): request revisions, session_01KyQUTS8fJEtUzfRkhf4Afs, 2026-10-19
+
+The goal is clear and viable. Every symbol, test class, fixture and doc section the spec names exists
+as named, and the jOOQ claims reproduce on 3.20.11: `SQLDataType`'s constants yield 39 distinct
+`getType()` classes, including `LocalDateTime`, `String` and `Object`; `DSL.val("2007-08-22T02:24",
+LocalDateTime.class)` keeps 02:24 and a `java.sql.Date` converter that keeps milliseconds carries it
+through `to` and `from`; the converted `DATE` type's `convert` truncates to 00:00; `OFFSETDATETIME`
+gives `null`; and `DefaultDataType.getDataType` on an unknown class logs a warning and throws
+`SQLDialectNotSupportedException`. One finding blocks.
+
+**F1 (question 2, fit): the per-slot fact sits on a carrier that three of the four decode paths do
+not hold.** The Implementation says the decode emitters "pass each slot's parse class from the
+`HelperRef.Decode` they already hold", and puts `List<SlotParse>` on `HelperRef.Decode` alone, built
+"where `HelperRef.Decode` is built (the node type's `decodeMethod` and the catalog decodes)". In the
+tree, only the `NodeIdEncoder` per-type decodes hold one. The other paths carry key columns as their
+own `List<ColumnRef>`:
+
+- `HandleMethodBody.emitDecodeAndGroup` reads `KeyAlternative.NodeId(expectedTypeId, columns, ...)`,
+  built in `EntityResolutionBuilder`, not a node type's `decodeMethod()`.
+- `JooqRecordInstantiationEmitter.emitKeyDecode` reads `CallSiteExtraction.RecordKeyDecode`, built in
+  `InputBeanResolver`.
+- `RecordDecodeFragments.decodeHelper` is handed a `HelperRef.Decode` that
+  `InputBeanInstantiationEmitter.buildRecordDecodeHelper` constructs at emit time from
+  `CallSiteExtraction.NodeIdDecodeRecord`. That record is built in `ServiceCatalog`, in
+  `InputBeanResolver`, and in `TypeFetcherGenerator.collectProjectionDecoders` from `KeyProjection`
+  rows. That last site is an emitter, with no catalog to read `databaseType` from.
+
+So a third `HelperRef.Decode` construction site exists that the plan does not list, and the
+size-checked compact constructor breaks there. More to the point, an implementer has to choose, while
+building, between threading `SlotParse` through four more carriers (`KeyAlternative.NodeId`,
+`RecordKeyDecode`, `NodeIdDecodeRecord`, `KeyProjection`) and their build sites, or moving the fact to
+where the carriers already meet. That choice bears on the spec's own premise, "the slot fact is the
+decode's, not the column's". The fact is computed from the column alone (`columnClass`,
+`databaseType`, and the jOOQ text-form set), and `ColumnRef` is the one thing every one of these
+carriers holds. A column fact parked on one decode carrier is the parallel-carrier shape the
+principles warn against.
+
+What would satisfy it: name the carrier the parse fact lives on so that every decode path R1067
+routes through `exact` reaches it, list every site that builds that carrier (catalog access
+included, or say how a site without it gets the fact), and restate "ColumnRef stays as it is" or its
+rationale against that choice. The pipeline test should then pin the fact on every carrier the
+emitters read, not only on the node type's `decodeMethod`.
+
+Non-blocking:
+
+- R1067 is still in Spec, and this plan is written against its `exact(DataType<T>, String)` and
+  `decodeColumns(String, String, Field<?>...)`. The contingency paragraph covers it. Signing off this
+  item before R1067 is Ready leaves the dependency's shape unsettled.
+- Execution-tier note: on the `timestamptz` fixture both seeded ids answer `null` on today's tree,
+  not only the 02:24 one, because neither slot text carries an offset. The test still fails first as
+  intended.
