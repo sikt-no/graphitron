@@ -1,7 +1,7 @@
 ---
 id: R1066
 title: "Directives applied to a custom scalar are dropped from the runtime schema"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 5
 theme: codegen-correctness
