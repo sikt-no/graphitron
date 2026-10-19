@@ -5,6 +5,7 @@ import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
 
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -32,9 +33,9 @@ import java.util.List;
  * coordinate whose emitted fetcher methods reference other generated units, produced after
  * conditions because a polymorphic root's glue targets are derived from the condition rows),
  * the type-keyed command relation ({@link TypeUnitRelation}: one row per per-type unit, the
- * generator families' membership loops replaced kind by kind), and the routine-write relation
- * ({@link RoutineWriteRelation}: one row per {@code @routine}-writing mutation coordinate,
- * carrying what its fetcher entry point emits), and the key-projection relation
+ * generator families' membership loops replaced kind by kind), the routine-write rows
+ * ({@link RoutineWriteQuery}: the routine-write emitter's own query, read once per run and carried
+ * here so the reachability check below and the emission read one answer), and the key-projection relation
  * ({@link no.sikt.graphitron.command.KeyProjectionRelation}: one row per {@code argMapping} binding
  * that decodes a node id and projects one of its key columns).
  * The shell folds over the rows and renders; membership decisions that used to sit in the shell
@@ -46,7 +47,7 @@ import java.util.List;
 public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions,
                        ProjectionRelation projections, LauncherRelation launchers,
                        FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits,
-                       RoutineWriteRelation routineWrites,
+                       RoutineWriteQuery.Rows routineWrites,
                        KeyProjectionRelation keyProjections) {
 
     public EmitPlan {
@@ -71,7 +72,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             throw new IllegalArgumentException("the plan carries the type-unit relation; an empty relation is a value, not null");
         }
         if (routineWrites == null) {
-            throw new IllegalArgumentException("the plan carries the routine-write relation; an empty relation is a value, not null");
+            throw new IllegalArgumentException("the plan carries the routine-write rows; no rows is a value, not null");
         }
         if (keyProjections == null) {
             throw new IllegalArgumentException("the plan carries the key-projection relation; an empty relation is a value, not null");
@@ -92,9 +93,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * rows writes its own query rather than borrowing one. A derivation two of them would share is
      * a fact missing from the model rather than a helper missing from this package, and pushing it
      * down is the fix: {@code graphitron_argument_reachable_input} is that move, and the query
-     * over it is four lines in the planner that wanted it. {@link RoutineWriteFacts} is the
-     * standing exception, a query surface built for reuse, and is the shape to dissolve rather
-     * than to copy.
+     * over it is four lines in the planner that wanted it.
      *
      * <p>A command relation is the result and holds no handle: {@link TypeUnitRelation} and its
      * siblings are immutable data a caller reads, never a thing that asks the store something.
@@ -160,7 +159,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.FACADE, units.rootUnit("Graphitron")));
         globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         var conditions = ConditionCommands.produce(schema, outputPackage);
-        var routineWrites = RoutineWriteCommands.produce(store, schema, outputPackage);
+        var routineWrites = store == null ? RoutineWriteQuery.Rows.empty() : RoutineWriteQuery.read(store);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
         var keyProjections = KeyProjectionCommands.produce(projections);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage);
@@ -194,7 +193,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * the shape fails the build naming its coordinate.
      */
     private static void requireEveryProjectionIsReachable(KeyProjectionRelation keyProjections,
-            RoutineWriteRelation routineWrites, LauncherRelation launchers,
+            RoutineWriteQuery.Rows routineWrites, LauncherRelation launchers,
             ConditionRelation conditions) {
         for (var projection : keyProjections.rows()) {
             String type = projection.coordinate().getTypeName();
@@ -244,10 +243,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
      * caller reaching for this arm is asserting its graph has no projected binding rather than
      * being handed that assumption silently.
      *
-     * <p>An empty routine-write relation is the sharper one: that relation is read from the store
-     * now, so a graph whose mutations do write through {@code @routine} plans no row for them here
-     * and every such coordinate falls through to its legacy builder. This arm is for callers that
-     * emit no mutation fetchers at all.
+     * <p>Holding no routine-write rows is the sharper one: they are read from the store, so a
+     * graph whose mutations do write through {@code @routine} has no row for them here and their
+     * emission fails by name. This arm is for callers that emit no mutation fetchers at all.
      */
     public static EmitPlan produceWithoutStore(GraphitronSchema schema,
                                                boolean federationLink,

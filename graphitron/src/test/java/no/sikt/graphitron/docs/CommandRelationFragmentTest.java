@@ -34,7 +34,7 @@ class CommandRelationFragmentTest {
             .as("the universe comes from the classpath, so an added relation appears here without "
                 + "anyone updating a list, and a renamed one fails the render rather than vanishing")
             .contains("ConditionRelation", "FetcherEdgeRelation", "KeyProjectionRelation",
-                      "LauncherRelation", "ProjectionRelation", "RoutineWriteRelation",
+                      "LauncherRelation", "ProjectionRelation",
                       "TypeUnitRelation");
     }
 

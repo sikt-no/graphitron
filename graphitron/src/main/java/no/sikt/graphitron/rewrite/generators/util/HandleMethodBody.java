@@ -267,8 +267,9 @@ final class HandleMethodBody {
             emitAltSwitch(b, entity);
             // Each filled slot carries the tenant its group was routed on, so the row's subtree
             // (an Inherited child, a @splitQuery below it) reads that tenant back.
-            emitSlotWrap(b, no.sikt.graphitron.render.TenantAcquisitionFragments.handDownRow(
-                routing.tenantConnections(), CodeBlock.of("($T) result[slot]", RECORD), "tenantKey"));
+            emitSlotWrap(b, CodeBlock.of("$T.$L($L, $L)", routing.tenantConnections(),
+                ConnectionRuntimeClassGenerator.HAND_DOWN_METHOD,
+                CodeBlock.of("($T) result[slot]", RECORD), "tenantKey"));
             b.endControlFlow();
             b.endControlFlow();
             return;

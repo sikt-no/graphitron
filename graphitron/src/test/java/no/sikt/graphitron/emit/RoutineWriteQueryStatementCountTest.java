@@ -1,4 +1,4 @@
-package no.sikt.graphitron.plan;
+package no.sikt.graphitron.emit;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
@@ -16,29 +16,26 @@ import org.junit.jupiter.api.io.TempDir;
 import java.nio.file.Path;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What producing the routine-write relation costs the store, counted rather than reasoned about.
- * Three statements at three grains, and three however many coordinates the graph holds, however
- * many hops their chains cross and however many arguments their routines take.
+ * What {@link RoutineWriteQuery#read} costs the store, counted rather than reasoned about. Three
+ * statements at three grains, and three however many coordinates the graph holds, however many
+ * hops their chains cross and however many arguments their routines take.
  *
- * <p>This is an enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for
- * being slow. It exists because the shape it pins is invisible from every other gate this producer
- * has. A fan-out into a statement per coordinate returns exactly the rows one statement does, so
- * {@link RoutineWriteRelationTest}'s agreement with the classifier stays green, the emitted output
- * is identical byte for byte, and the compile and execution tiers see nothing at all. A future
- * reader adding a fact to a row will reach for another query keyed by the coordinate, which is the
+ * <p>An enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for being
+ * slow. The shape it pins is invisible from every other gate. A fan-out into a statement per
+ * coordinate returns exactly the rows one statement does, so {@link RoutineWriteQueryTest} stays
+ * green, the emitted output is identical, and the compile and execution tiers see nothing. A reader
+ * adding a fact to a row will reach for another query keyed by the coordinate, which is the
  * natural move and the one this test refuses.
  *
- * <p>The count is asserted at the producer's grain rather than at
- * {@link RoutineWriteFacts#read}'s, so it also covers the producer growing a read of its own beside
- * the facts pass: the two folds that stay on the schema (the error channel's minted constant and
- * the run's tenant binding) are reads of a classified model and must cost the store nothing.
+ * <p>The query is the emission's only store read. The two facts still taken from the classified
+ * schema (the error channel and the tenancy) are read where the emitter is called, which holds no
+ * store handle, so they cost the store nothing by construction.
  */
 @PipelineTier
-class RoutineWriteProducerStatementCountTest {
+class RoutineWriteQueryStatementCountTest {
 
     /** The narrow corpus: one coordinate, one seat, a chain of one hop, two routine arguments. */
     private static final String ONE_COORDINATE = """
@@ -111,13 +108,11 @@ class RoutineWriteProducerStatementCountTest {
         // instead of one, a two-hop chain beside a one-hop chain: every one of those is a row
         // count, and none of them is a statement count.
         var counted = new AtomicInteger();
-        var model = TestSchemaHelper.buildBundle(MANY_COORDINATES).model();
-        RoutineWriteRelation relation;
+        RoutineWriteQuery.Rows rows;
         try (var store = capture(MANY_COORDINATES)) {
-            relation = RoutineWriteCommands.produce(counting(store, counted), model,
-                DEFAULT_OUTPUT_PACKAGE);
+            rows = RoutineWriteQuery.read(counting(store, counted));
         }
-        assertThat(relation.rows())
+        assertThat(rows.rows())
             .as("the wide corpus really is wider; an equality between two empty reads would hold"
                 + " for the wrong reason")
             .hasSize(3);
@@ -133,12 +128,11 @@ class RoutineWriteProducerStatementCountTest {
         assertThat(statementsToProduce(NO_ROUTINE_WRITE)).isEqualTo(GRAINS);
     }
 
-    /** The statements one {@link RoutineWriteCommands#produce} executes for {@code sdl}. */
+    /** The statements one {@link RoutineWriteQuery#read} executes for {@code sdl}. */
     private int statementsToProduce(String sdl) {
         var counted = new AtomicInteger();
-        var model = TestSchemaHelper.buildBundle(sdl).model();
         try (var store = capture(sdl)) {
-            RoutineWriteCommands.produce(counting(store, counted), model, DEFAULT_OUTPUT_PACKAGE);
+            RoutineWriteQuery.read(counting(store, counted));
         }
         return counted.get();
     }

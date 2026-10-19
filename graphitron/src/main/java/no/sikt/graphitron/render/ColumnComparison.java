@@ -1,6 +1,5 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.command.CatalogColumn;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -96,19 +95,14 @@ public final class ColumnComparison {
     }
 
     /**
-     * {@link #equality(String, ColumnRef, String, ColumnRef)} for a caller whose columns arrived as
-     * command rows rather than as walked model refs. Same rule; what differs is only that a
-     * {@link CatalogColumn} carries its bound Java type as the name jOOQ reports rather than as a
-     * decoded emit type, so the decode happens here. A store-sourced reader therefore sees the same
-     * divergence a catalog-sourced one does: {@code javaTypeName} is {@code Field.getType()}'s own
-     * name, which is the post-converter type.
+     * {@code <left>.eq(<right>)} over two column expressions whose bound Java types the caller
+     * decoded, coerced per the class rule. For a reader holding captured names rather than model
+     * refs: {@link CatalogRefs#decodeBindingType} decodes {@code Field.getType()}'s own name, the
+     * post-converter type, so a store-sourced reader sees the same divergence.
      */
-    public static CodeBlock equality(String leftAlias, CatalogColumn leftColumn,
-            String rightAlias, CatalogColumn rightColumn) {
-        var left = CodeBlock.of("$L.$L", leftAlias, leftColumn.javaName());
-        var right = CodeBlock.of("$L.$L", rightAlias, rightColumn.javaName());
-        return compare(left, CatalogRefs.decodeBindingType(leftColumn.javaTypeName()),
-            right, CatalogRefs.decodeBindingType(rightColumn.javaTypeName()));
+    public static CodeBlock equality(CodeBlock left, TypeName leftType, CodeBlock right,
+            TypeName rightType) {
+        return compare(left, leftType, right, rightType);
     }
 
     /**

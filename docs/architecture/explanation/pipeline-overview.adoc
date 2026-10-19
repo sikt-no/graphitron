@@ -47,7 +47,7 @@ Above the base relations the DDL defines the `intent_` stratum as views: the aut
 
 This layer is a functional core with an imperative shell, and two rules follow from that. A planner holds its own queries, decides what the run emits, and returns a command relation; the relation is immutable data, so it asks the store nothing and carries no handle to ask with. And what a planner needs is its own business, so two planners wanting the same rows each write their own query rather than sharing one. A derivation both would want is a fact missing from the model rather than a helper missing from this package, and the fix is to push it down.
 
-`RoutineWriteCommands` does not have this shape. It takes the handle and reads through `RoutineWriteFacts`, a query surface built for reuse. That is the older arrangement rather than the one to copy, and it dissolves as the arcs owning those commands reach them.
+The routine-write emitter has a different shape, and it is the direction of travel: it owns its query. `RoutineWriteQuery` reads the store once per run at the grain the emitter renders, and `RoutineWriteEmitter` renders each coordinate's entry point from its row, with no command record between them. Both live in `no.sikt.graphitron.emit`, which reads the store and names nothing only the walk can answer.
 
 == Render: the shell folds
 

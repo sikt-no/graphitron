@@ -6,7 +6,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.plan.FetchersPlanner;
 import no.sikt.graphitron.plan.LauncherCommands;
-import no.sikt.graphitron.plan.RoutineWriteCommands;
+import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.plan.TypeUnitRelation;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 
@@ -21,7 +21,7 @@ import java.util.List;
  * being orchestrated and made the emitter's main sources depend on the plan layer for a path
  * production never takes, production passing the plan's rows to the canonical method instead.
  *
- * <p>The routine-write relation is rowless because a fixture holding no store cannot read it. A
+ * <p>The routine-write rows are empty because a fixture holding no store cannot read them. A
  * {@code @routine}-writing coordinate reaching here therefore fails the dispatch's drift guard by
  * name rather than emitting something plausible; such a fixture wants the store-backed plan.
  */
@@ -38,7 +38,7 @@ public final class TypeFetcherRenderTestSupport {
                 ConditionCommands.produce(schema, outputPackage), outputPackage),
             typeUnits.fetchers(),
             typeUnits.errorFetchers(),
-            RoutineWriteCommands.produce(null, schema, outputPackage),
+            RoutineWriteQuery.Rows.empty(),
             KeyProjectionRelation.empty());
     }
 

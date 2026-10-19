@@ -1,6 +1,5 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.command.CatalogColumn;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -83,14 +82,16 @@ class ColumnComparisonTest {
     }
 
     @Test
-    void commandTierColumnsDecodeTheirBoundTypeAndApplyTheSameRule() {
-        var raw = new CatalogColumn("org_code", "ORG_CODE", "java.lang.Long");
-        var converted = new CatalogColumn("org_code", "ORG_CODE", "java.lang.String");
+    void capturedTypeNamesDecodeAndApplyTheSameRule() {
+        var left = CodeBlock.of("c0.ORG_CODE");
+        var right = CodeBlock.of("o0.ORG_CODE");
+        var raw = CatalogRefs.decodeBindingType("java.lang.Long");
+        var converted = CatalogRefs.decodeBindingType("java.lang.String");
 
-        assertThat(ColumnComparison.equality("c0", raw, "o0", raw).toString())
+        assertThat(ColumnComparison.equality(left, raw, right, raw).toString())
             .isEqualTo("c0.ORG_CODE.eq(o0.ORG_CODE)");
-        assertThat(ColumnComparison.equality("c0", raw, "o0", converted).toString())
-            .as("a store-sourced reader sees the divergence too: javaTypeName is the "
+        assertThat(ColumnComparison.equality(left, raw, right, converted).toString())
+            .as("a store-sourced reader sees the divergence too: the captured type is the "
                 + "post-converter type jOOQ reports")
             .isEqualTo("c0.ORG_CODE.eq(o0.ORG_CODE.coerce(c0.ORG_CODE))");
     }

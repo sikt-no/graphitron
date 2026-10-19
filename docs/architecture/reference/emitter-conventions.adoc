@@ -96,8 +96,8 @@ column and costs the index on it.
 | Entry point | When the right operand is
 
 | `equality`
-| another aliased table column. Overloaded for the walk's `ColumnRef` and the command tier's
-  `CatalogColumn`, which carries its bound type as a name and is decoded inside the mint.
+| another aliased table column. Overloaded for the walk's `ColumnRef` and for two column
+  expressions whose types a store-sourced reader decoded from captured names.
 
 | `equalityAgainstField`
 | some other `Field` expression typed by a known catalog column, typically a `parentInput.field(…)`

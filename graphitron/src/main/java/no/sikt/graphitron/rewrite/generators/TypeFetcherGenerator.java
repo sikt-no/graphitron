@@ -113,8 +113,8 @@ public class TypeFetcherGenerator {
      * plus its entry point), one without falls through to its legacy builder, so the
      * covered-family predicate lives in the producer alone; the pipeline surfaces the same
      * relation on the generation result so the bidirectional closure oracle can join it against
-     * the emitted units. {@code routineWrites} is the same arrangement for the two
-     * {@code @routine}-writing mutation shapes, whose entry points render wholly from their row.
+     * the emitted units. {@code routineWrites} is the run's routine-write rows, read once from the
+     * store, which the two {@code @routine}-writing mutation shapes render their entry points from.
      * {@code keyProjections} is the graph's projected {@code argMapping} bindings, the one relation
      * that comes from the fact store rather than the walk; a routine call whose IN parameter binds one
      * reads its column off a decoded node id instead of off the wire map.
@@ -126,7 +126,7 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.plan.LauncherRelation launchers,
             List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
             List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
@@ -168,7 +168,7 @@ public class TypeFetcherGenerator {
                 result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
                     assembled, outputPackage, schema, null,
                     nestingReachedLaunchers(nestedFields, outputPackage, launchers),
-                    // The run's own relation rather than one derived from these fields: a
+                    // The run's own rows rather than one derived from these fields: a
                     // nesting-reached type's children are never mutation roots, so every lookup
                     // against it comes back empty, which is exactly the behaviour this arm wants.
                     routineWrites,
@@ -257,7 +257,7 @@ public class TypeFetcherGenerator {
     private static TypeSpec generateForType(GraphitronSchema schema, String typeName, graphql.schema.GraphQLSchema assembled, String outputPackage,
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
@@ -448,11 +448,11 @@ public class TypeFetcherGenerator {
             null,
             no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage,
                 no.sikt.graphitron.command.CarrierDsl.ENV_ACQUIRED),
-            // Empty, and that is the overload's shape rather than a gap: the routine-write relation
-            // is read from the fact store, which a model-only caller has none of. A coordinate that
+            // Empty, and that is the overload's shape rather than a gap: the routine-write rows
+            // are read from the fact store, which a model-only caller has none of. A coordinate that
             // writes through @routine fails the dispatch's drift guard by name here, which is the
             // signal to render it through a store-backed plan instead.
-            no.sikt.graphitron.plan.RoutineWriteRelation.unrouted(java.util.List.of()),
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows.empty(),
             no.sikt.graphitron.command.KeyProjectionRelation.empty());
     }
 
@@ -462,10 +462,10 @@ public class TypeFetcherGenerator {
      * tenant-routing emitter each field's binding; {@code null} for unit-tier model-only callers.
      * {@code commands} is the per-run method-command registry; the non-canonical overloads
      * default it to a per-call throwaway. {@code launchers} is the launcher relation the root
-     * emission dispatches on and {@code routineWrites} the routine-write relation the two
-     * {@code @routine}-writing mutation arms render from; the schema-free overloads derive both
-     * from the fields themselves. {@code keyProjections} is the graph's projected {@code argMapping}
-     * bindings, which no walk-side caller can derive at all: it comes from the fact store, so the
+     * emission dispatches on and {@code routineWrites} the store's routine-write rows the two
+     * {@code @routine}-writing mutation arms render from; the schema-free overloads derive the
+     * launchers from the fields and pass no rows. {@code keyProjections} is the graph's projected
+     * {@code argMapping} bindings, which no walk-side caller can derive at all: it comes from the fact store, so the
      * schema-free overloads pass the empty relation.
      */
     static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
@@ -475,7 +475,7 @@ public class TypeFetcherGenerator {
             GraphitronSchema graphitronSchema,
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
@@ -753,15 +753,14 @@ public class TypeFetcherGenerator {
                 }
                 case MutationField.DmlTableField f -> builder.addMethod(buildDmlTableFetcher(ctx, f, outputPackage,
                     launchers.rowFor(f.parentTypeName(), f.name()).orElse(null), launchers.carrierDsl()));
-                // Both @routine-writing shapes render wholly from their command row and the
-                // relation's own tenancy axis. What still rides beside them are per-class
-                // collectors (the arg-path helpers, the projected-key host, the request-context
-                // seam), which are drains rather than decisions: an emitted call and the helper
-                // it names have to land on one class together.
+                // Both @routine-writing shapes render from their store row. What rides beside it
+                // are per-class collectors (the arg-path helpers, the projected-key host, the
+                // request-context seam), drains rather than decisions: an emitted call and the
+                // helper it names have to land on one class together.
                 case MutationField.MutationRoutineWriteField f ->
-                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
+                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
                 case MutationField.MutationRoutineWriteRecordField f ->
-                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites));
+                    builder.addMethod(renderRoutineWrite(ctx, f, routineWrites, outputPackage));
                 case MutationField.MutationServiceTableField f -> builder.addMethod(
                     buildMutationServiceTableFetcher(ctx, f,
                         serviceReentryRowOf(f, launchers), launchers.carrierDsl(), outputPackage));
@@ -1413,24 +1412,94 @@ public class TypeFetcherGenerator {
 
 
     /**
-     * Renders the fetcher entry point of one {@code @routine}-writing mutation coordinate off its
-     * command row ({@link no.sikt.graphitron.render.RoutineWriteFetcherRenderer}, total over the
-     * row's two arms) and the relation's own tenancy axis. This shell reads the leaf for its name
-     * alone; everything the body says, the connection it acquires included, comes off the plan.
+     * Renders the fetcher entry point of one {@code @routine}-writing mutation coordinate through
+     * {@link no.sikt.graphitron.emit.RoutineWriteEmitter}, from the coordinate's store row. The
+     * error channel and the tenancy are read off the classified schema here and handed over as
+     * values, the store not stating them yet; the generated names come from
+     * {@link no.sikt.graphitron.plan.GeneratedUnits} like every other reference to them.
      */
     private static MethodSpec renderRoutineWrite(TypeFetcherEmissionContext ctx,
             no.sikt.graphitron.rewrite.model.OutputField field,
-            no.sikt.graphitron.plan.RoutineWriteRelation routineWrites) {
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites, String outputPackage) {
         var row = routineWrites.rowFor(ctx.parentTypeName(), field.name())
             .orElseThrow(() -> new IllegalStateException(
                 "Graphitron generator bug (routine-write dispatch): coordinate '"
                 + ctx.parentTypeName() + "." + field.name() + "' has no routine-write row;"
-                + " the producer's membership and this dispatch have drifted. The relation is read"
-                + " from the fact store, so a caller that generated without one plans no row for"
+                + " the store's membership and this dispatch have drifted. The rows are read"
+                + " from the fact store, so a caller that generated without one has no row for"
                 + " any routine write and reaches this by construction"));
-        return no.sikt.graphitron.render.RoutineWriteFetcherRenderer.render(
-            row, routineWrites.tenancy(), ctx.argPathHelpers(), ctx.projectedKeyHost(),
-            ctx.requestContextRead());
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var coordinate = graphql.schema.FieldCoordinates.coordinates(ctx.parentTypeName(), field.name());
+        return no.sikt.graphitron.emit.RoutineWriteEmitter.render(row,
+            units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
+            className(units.typeClass(row.returnTypeName())),
+            routineWriteErrors(field, units), routineWriteTenancy(ctx, coordinate, units),
+            () -> ctx.requestContextRead().call(), ctx.argPathHelpers(),
+            ctx.projectedKeyHost().at(coordinate));
+    }
+
+    /**
+     * The routine write's error channel as the emitter's value. An absent channel takes the
+     * router's privacy disposition; a mapped one rides the typed {@code Outcome}. No other channel
+     * reaches here: a routine write's carrier is a directiveless structural payload, which has no
+     * developer payload class to instantiate.
+     */
+    private static no.sikt.graphitron.emit.RoutineWriteEmitter.Errors routineWriteErrors(
+            no.sikt.graphitron.rewrite.model.OutputField field, no.sikt.graphitron.plan.GeneratedUnits units) {
+        var channel = field instanceof no.sikt.graphitron.rewrite.model.WithErrorChannel withChannel
+            ? withChannel.errorChannel()
+            : Optional.<no.sikt.graphitron.rewrite.model.ErrorChannel>empty();
+        var router = className(units.errorRouter());
+        if (channel.isEmpty()) {
+            return new no.sikt.graphitron.emit.RoutineWriteEmitter.Errors.Redacting(router);
+        }
+        if (channel.get() instanceof no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped mapped) {
+            return new no.sikt.graphitron.emit.RoutineWriteEmitter.Errors.OutcomeWrapped(router,
+                className(units.errorMappings()), className(units.outcome()),
+                mapped.mappingsConstantName());
+        }
+        throw new IllegalStateException(
+            "a routine-write coordinate carries an error channel the routine-write emitter cannot"
+            + " state: " + channel.get().getClass().getSimpleName() + "; the routine-write carrier"
+            + " is a directiveless structural payload, so the classifier produces only the"
+            + " Outcome-wrapped channel here");
+    }
+
+    /**
+     * The routine write's connection. A single-tenant run reads the request context's; a
+     * multi-tenant run the fixed default source, which is the only binding a routine write
+     * classifies to: it mints no tenant slot, so a tenant-scoped one has no binding and the
+     * validator rejects it, and a write never classifies as a global read. Any other arm is drift
+     * between the classifier and this emission, refused rather than routed to a connection.
+     */
+    private static no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy routineWriteTenancy(
+            TypeFetcherEmissionContext ctx, graphql.schema.FieldCoordinates coordinate,
+            no.sikt.graphitron.plan.GeneratedUnits units) {
+        if (!TenantDslEmitter.isMultiTenant(ctx)) {
+            return new no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy.Unrouted();
+        }
+        var binding = ctx.graphitronSchema().tenantBindingOf(coordinate);
+        if (binding == null) {
+            throw new IllegalStateException(
+                "the routine-write coordinate " + coordinate + " reaches a tenant-scoped table with"
+                + " no tenant binding in scope; that is the classifier's noTenantBinding finding and"
+                + " the validator rejects it with a located error, so generation ran past"
+                + " validation, and acquiring the default source here would read another tenant's"
+                + " rows");
+        }
+        if (!(binding instanceof no.sikt.graphitron.rewrite.model.TenantBinding.Untenanted.DefaultSource)) {
+            throw new IllegalStateException(
+                "Graphitron generator bug (tenant routing): the routine-write coordinate " + coordinate
+                + " classifies as " + binding.getClass().getSimpleName() + "; a routine write mints"
+                + " no tenant slot and always classifies as running on the default source, so the"
+                + " classifier and this emission have drifted");
+        }
+        return new no.sikt.graphitron.emit.RoutineWriteEmitter.Tenancy.DefaultSource(
+            className(units.tenantConnections()));
+    }
+
+    private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {
+        return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
 

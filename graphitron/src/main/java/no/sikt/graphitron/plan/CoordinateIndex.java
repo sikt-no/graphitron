@@ -15,9 +15,8 @@ import java.util.function.Function;
  * order, the key rejection, and the per-coordinate lookup, declared once for every relation that
  * has that key rather than once per relation.
  *
- * <p>Three relations carry this key today ({@link LauncherRelation},
- * {@link RoutineWriteRelation}, {@link FetcherEdgeRelation}) and each had restated the same
- * duplicate-key loop with its own message. A fourth would have restated it again, which is what
+ * <p>Relations carrying this key ({@link LauncherRelation}, {@link FetcherEdgeRelation}) had each
+ * restated the same duplicate-key loop with its own message. A further one would restate it, which is what
  * makes this a carrier rather than a helper: the key is the invariant, so it belongs where the
  * key is declared, and a new coordinate-keyed relation gets the rejection by construction instead
  * of by remembering to copy it. Relations whose key is wider ({@code ConditionRelation}'s

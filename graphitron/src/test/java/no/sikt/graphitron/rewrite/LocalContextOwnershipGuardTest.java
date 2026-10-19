@@ -34,7 +34,6 @@ class LocalContextOwnershipGuardTest {
     /** The generator sources that own the slot, by file name. */
     private static final Set<String> OWNERS = Set.of(
         "TenantDslEmitter.java",
-        "TenantAcquisitionFragments.java",
         "ConnectionRuntimeClassGenerator.java",
         "TenantHandDown.java");
 

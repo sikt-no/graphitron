@@ -1,6 +1,5 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.command.RoutineCall;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.PathExpr;
@@ -73,40 +72,19 @@ public final class RoutineCallEmitter {
     }
 
     /**
-     * {@code Routines.<method>(<args>)} for a caller whose call arrived as a command row.
+     * One routine IN parameter's value read off {@code env} at the path the author wrote, typed
+     * {@code paramType}: a bare slot directly, a dotted path through a registered descent helper,
+     * and a path projecting a {@code @nodeId}'s key column off the decoded record in {@code keys}.
+     * For a caller holding the path as written rather than resolved; the per-segment list-lifting
+     * a resolved path also carries decides nothing here.
      *
-     * <p>Uncorrelated by construction, so the value overload is the only shape: a command-tier
-     * {@link RoutineCall} binds every parameter to a request value, there being no previous chain
-     * node at a mutation root for a column binding to name. That is the row's narrowing rather
-     * than an assumption made here, which is why this method takes no
-     * {@link PreviousNodeRef} to be given {@link PreviousNodeRef.None}.
-     *
-     * @param call       the routine call to emit
-     * @param argSource  where the argument values are read, the env-vs-SelectedField fork
+     * @param segments   the {@code argMapping} right-hand side split on the dot, outermost first
      * @param argHelpers collects the descent helper a dotted binding needs
-     * @param keys       the emitting method's node-id decodes, for a binding whose path projects a
-     *                   key column
+     * @param keys       the emitting method's node-id decodes
      */
-    public static CodeBlock emitCall(RoutineCall call, ArgumentValueSource argSource,
+    public static CodeBlock envArgumentRead(List<String> segments, TypeName paramType,
             ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
-        CodeBlock args = CodeBlock.join(call.arguments().stream()
-            .map(a -> argExpression(a, argSource, argHelpers, keys))
-            .toList(), ", ");
-        return CodeBlock.of("$T.$L($L)", CatalogRefs.className(call.routinesClassName()),
-            call.methodName(), args);
-    }
-
-    /**
-     * One argument of a command-tier call, read off the request at the path the row states.
-     *
-     * <p>The path arrives written rather than resolved, so the segment split happens here. That is
-     * the whole of what the resolved carrier was supplying: both reads below take segment names,
-     * and the per-segment list-lifting the carrier also holds is consulted by neither.
-     */
-    private static CodeBlock argExpression(RoutineCall.RoutineArgument argument,
-            ArgumentValueSource argSource, ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
-        var segments = argument.segments();
-        TypeName paramType = CatalogRefs.typeName(argument.javaTypeName());
+        var argSource = new ArgumentValueSource.Env();
         // Row presence decides, not a shape test on the path, for the reason the model-shaped arm
         // below states: a projected binding's path is spelled exactly like an ordinary dotted one.
         // Asked of a bare path too: a binding that stops on a @nodeId whose key is one column is a

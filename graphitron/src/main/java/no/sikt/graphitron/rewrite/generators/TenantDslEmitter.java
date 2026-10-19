@@ -56,14 +56,8 @@ import java.util.List;
  */
 final class TenantDslEmitter {
 
-    /**
-     * The local holding the divined tenant key when {@link Resolution#handsDownTenant()}. One
-     * home, shared with the command-driven emission that renders the same acquisition off a
-     * plan row ({@code TenantAcquisitionFragments}), so the two paths cannot mint two names for
-     * one generated local while both exist.
-     */
-    static final String TENANT_KEY_LOCAL =
-        no.sikt.graphitron.render.TenantAcquisitionFragments.TENANT_KEY_LOCAL;
+    /** The local holding the divined tenant key when {@link Resolution#handsDownTenant()}. */
+    static final String TENANT_KEY_LOCAL = "_divinedTenant";
 
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName RECORD = ClassName.get("org.jooq", "Record");
@@ -553,7 +547,7 @@ final class TenantDslEmitter {
                 .add(fold(keyType, "namedTenant", reads, tenantConnections))
                 .beginControlFlow("if ($L == null)", TENANT_KEY_LOCAL)
                 .addStatement("throw new $T($S)", clientExceptionClass(tenantConnections),
-                    no.sikt.graphitron.render.TenantAcquisitionFragments.noTenantMessage(
+                    noTenantMessage(
                         ctx.parentTypeName() + "." + fieldName, refuse.arguments()))
                 .endControlFlow()
                 .build();
@@ -616,6 +610,20 @@ final class TenantDslEmitter {
     private static ClassName clientExceptionClass(ClassName tenantConnections) {
         return ClassName.get(tenantConnections.packageName(),
             no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.CLASS_NAME);
+    }
+
+    /**
+     * The client-facing refusal for a request whose lists name no tenant:
+     * {@code Mutation.rateFilms names no tenant: its tenant is read from the elements of 'in',
+     * which is empty.}
+     */
+    static String noTenantMessage(String coordinate, List<String> arguments) {
+        var quoted = arguments.stream().map(a -> "'" + a + "'").toList();
+        String names = quoted.size() == 1
+            ? quoted.get(0)
+            : String.join(", ", quoted.subList(0, quoted.size() - 1)) + " and " + quoted.getLast();
+        return coordinate + " names no tenant: its tenant is read from the elements of " + names
+            + (quoted.size() == 1 ? ", which is empty." : ", which are empty.");
     }
 
     /**

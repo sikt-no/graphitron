@@ -1,7 +1,5 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.command.ErrorDispatch;
-import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -11,11 +9,9 @@ import no.sikt.graphitron.javapoet.TypeName;
  * The {@code catch} arm of a synchronous fetcher entry point: how a throw reaches the generated
  * error router, and what the router is asked to do with it.
  *
- * <p>Two levels, deliberately. {@link #catchArm} interprets an {@link ErrorDispatch} row, which is
- * what a renderer on the command seam holds. The named forms below it ({@link #redactArm},
- * {@link #outcomeArm}) are the primitives, and the unmigrated generator hosts read those directly
- * off the classifier's error channel, so each emitted disposition has one spelling while families
- * move across the seam one at a time.
+ * <p>The primitives ({@link #redactArm}, {@link #outcomeArm}) take the generated classes they
+ * name, so each emitted disposition has one spelling whoever decided it; the {@code outcome*}
+ * forms name the {@code Outcome} unit's arms and the router's {@code Mapping} interface once.
  */
 public final class ErrorDispatchFragments {
 
@@ -35,44 +31,29 @@ public final class ErrorDispatchFragments {
     /** The {@code Outcome} unit's success arm. */
     private static final String SUCCESS_CLASS = "Success";
 
-    /**
-     * The value type an entry point declares under {@code errors}: {@code Outcome<X>} on the
-     * {@link ErrorDispatch.OutcomeWrapped} arm, {@code valueType} itself on the redacting one.
-     */
-    public static TypeName declaredValueType(ErrorDispatch errors, TypeName valueType) {
-        return errors instanceof ErrorDispatch.OutcomeWrapped o
-            ? ParameterizedTypeName.get(className(o.outcome()), FetcherResult.boxed(valueType))
-            : valueType;
+    /** {@code Outcome<X>}: the value type an entry point on the {@code Outcome} transport declares. */
+    public static TypeName outcomeType(ClassName outcome, TypeName valueType) {
+        return ParameterizedTypeName.get(outcome, FetcherResult.boxed(valueType));
     }
 
     /**
-     * The success return under {@code errors}: the local wrapped in {@code Outcome.Success} on the
-     * {@link ErrorDispatch.OutcomeWrapped} arm, returned bare on the redacting one.
-     * {@code declaredType} is {@link #declaredValueType}'s answer for the same row.
+     * The success return on the {@code Outcome} transport: the local wrapped in
+     * {@code Outcome.Success}. {@code declaredType} is {@link #outcomeType}'s answer.
      */
-    public static CodeBlock successReturn(ErrorDispatch errors, TypeName declaredType,
+    public static CodeBlock outcomeSuccessReturn(ClassName outcome, TypeName declaredType,
             String payloadLocal, TenantHandDown handDown) {
-        return errors instanceof ErrorDispatch.OutcomeWrapped o
-            ? FetcherResult.outcomeSuccess(declaredType,
-                className(o.outcome()).nestedClass(SUCCESS_CLASS), payloadLocal, handDown)
-            : FetcherResult.success(declaredType, payloadLocal, handDown);
+        return FetcherResult.outcomeSuccess(declaredType, outcome.nestedClass(SUCCESS_CLASS),
+            payloadLocal, handDown);
     }
 
     /**
-     * The whole {@code catch} arm for one dispatch row. {@code valueType} is the entry point's
-     * declared {@code DataFetcherResult} value type: the {@code Outcome<X>} parameterisation on
-     * the {@link ErrorDispatch.OutcomeWrapped} arm, unread on the redacting one.
+     * {@link #outcomeArm} over the generated runtime units: the router's {@code Mapping} interface
+     * and the outcome's {@code ErrorList} arm are named here, once.
      */
-    public static CodeBlock catchArm(ErrorDispatch errors, TypeName valueType) {
-        return switch (errors) {
-            case ErrorDispatch.Redacting r -> redactArm(className(r.errorRouter()), "e");
-            case ErrorDispatch.OutcomeWrapped o -> {
-                var router = className(o.errorRouter());
-                yield outcomeArm(router.nestedClass(MAPPING_INTERFACE), className(o.errorMappings()),
-                    o.mappingsConstantName(), valueType,
-                    className(o.outcome()).nestedClass(ERROR_LIST_CLASS), router);
-            }
-        };
+    public static CodeBlock outcomeCatchArm(ClassName errorRouter, ClassName errorMappings,
+            String mappingsConstantName, TypeName declaredType, ClassName outcome) {
+        return outcomeArm(errorRouter.nestedClass(MAPPING_INTERFACE), errorMappings,
+            mappingsConstantName, declaredType, outcome.nestedClass(ERROR_LIST_CLASS), errorRouter);
     }
 
     /**
@@ -81,9 +62,7 @@ public final class ErrorDispatchFragments {
      * {@code ErrorList(List.of(cause))} as the entry point's data, which the payload's errors
      * field reads off its source. An unmatched throw falls through to {@link #redactArm}, the
      * same disposition a fetcher without a channel gets, so an unclaimed client exception
-     * surfaces its own message rather than redacting. One spelling for every producer on the {@code Outcome} transport: the
-     * command-seam renderers reach it through {@link #catchArm}, the unmigrated generator hosts
-     * call it directly.
+     * surfaces its own message rather than redacting. One spelling for every producer on the {@code Outcome} transport.
      */
     public static CodeBlock outcomeArm(ClassName mappingInterface, ClassName errorMappingsClass,
             String mappingsConstantName, TypeName valueType, ClassName errorListClass,
@@ -122,9 +101,5 @@ public final class ErrorDispatchFragments {
     /** {@link #redact} as the arm's whole {@code return} statement. */
     public static CodeBlock redactArm(ClassName errorRouterClass, String throwableVar) {
         return CodeBlock.of("return $L;\n", redact(errorRouterClass, throwableVar));
-    }
-
-    private static ClassName className(UnitRef unit) {
-        return ClassName.get(unit.packageName(), unit.simpleName());
     }
 }
