@@ -275,3 +275,53 @@ and `FieldBuilder` javadoc, `DunderFreeEmissionPipelineTest`'s javadoc alias lis
 
 File a Backlog item for the child-connection composite-key truncation (Out of scope, first
 bullet), alongside the move to Ready.
+
+## Reviewer findings
+
+### Round 1 (2026-10-19, Spec -> Ready, reviewer session 017intVzVV9E1eMdBXjS2A4g)
+
+Verdict: request revisions. One blocking finding on question one, one on question two; both are
+small. The goal reads cleanly on its own: a root multi-table connection over composite-key
+participants pages and orders by key on every dialect, and old composite cursors are refused. The
+diagnosis holds against the tree, every symbol, test and doc path the plan names exists as named,
+and the shape (key positions as `PolymorphicOrdering` slots through the existing agreement check,
+plain-column seek) extends what is there rather than standing beside it. I would hand the emitter
+and test plan to an implementer as-is.
+
+**Finding 1 (question one: viability for the consumer the goal names). The new key-type rejection
+is not checked against `personroller` / `studentvurderinger`.**
+
+The Goal's acceptance is sis's `personroller` page 2 on Oracle. The plan adds a rejection when
+participants' key columns disagree on (`sqlType`, `bindingType`) at a position, and `sqlType` is
+`DataType.getTypeName()`, so on Oracle every `NUMBER` column agrees on it and the check turns on
+`bindingType` alone. jOOQ binds an Oracle `NUMBER(p, 0)` by its precision (`Short`, `Integer`,
+`Long`, `BigInteger`), so nine legacy tables that declare `INSTITUSJONSNR_EIER`, `PLNR` or `ROLLENR`
+with different precisions build today and would be rejected after this lands: the item would stop
+the consumer that motivates it from building, rather than fix its paging. The spec says "such a
+schema builds today" without saying whether any known one does. What would satisfy it: state
+whether the participants of both sis fields agree per key position (the generated jOOQ table
+classes answer it), and if they do not, say what the plan does about it (for instance, whether a
+width-only disagreement within one SQL type should widen rather than reject, which is a different
+rule from the one declared slots get and would need saying as such).
+
+**Finding 2 (question two: fit with an existing mechanism). Registering the retired names in
+`RetiredVocabularyGuardTest` at landing contradicts the registry's admission rule.**
+
+The registry's javadoc sets the entry bar as demonstrated recurrence ("a term enters the registry
+when an audit finds it surviving a cleanup, not at every rename"), and `roadmap/workflow.adoc`'s
+Retirement sweep says recurrently-surviving terms graduate into it. The Tests bullet registers
+`SORT_COLUMN`, `OnSyntheticKey` and `sortKeyClass` before any survival is shown. What would
+satisfy it: drop the bullet and let the `## Retired vocabulary` section and the Done-gate sweep do
+the work, or give the recurrence evidence that admits them.
+
+**Non-blocking.**
+
+- Key minting in `foldParticipantOrderings` runs before the validator's primary-key and arity
+  checks, so it will meet a participant with no key or a different arity. The plan names only the
+  type rejection; following `foldOrder`'s existing precedent (absorb, the validator owns the
+  message) keeps those diagnostics where they are, and `PolymorphicOrdering`'s totality check
+  will need to tolerate the absorbed case.
+- Sweep habitats the Retired vocabulary list does not name, which the Done-gate grep for
+  `__sort__` will still find: the `paged_a` comment in `graphitron-sakila-db`'s `init.sql` (states
+  the JSONB assumption), `GeneratedSourcesLintTest`'s javadoc alias list, and
+  `docs/manual/how-to/polymorphic-types.adoc` line 164 ("a single typed `__sort__` column").
