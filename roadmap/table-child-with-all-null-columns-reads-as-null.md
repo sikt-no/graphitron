@@ -14,13 +14,20 @@ last-updated: 2026-10-20
 
 ## Goal
 
-A nullable field returning one object resolves to `null` when that object would hold nothing: every
-column it reads is `null`, every single reference in it finds no value, and every list in it is
-empty. This is how Graphitron 9 resolved it, so a client that reads `postadresse != null` as "has an
-address" keeps working across the upgrade. The rule is the same for a child with its own table
-(inline or `@splitQuery`) and for a nested object without one, and it is decided over every field of
-the type, whatever the query selects. A field declared non-null always resolves to an object, as
-today.
+A nullable field of a `@table` type, or of an object nested in one, that returns one object
+resolves to `null` when that object would hold nothing: every column it reads is `null`, every
+single reference in it finds no value, and every list in it is empty. This is how Graphitron 9
+resolved it, so a client that reads `postadresse != null` as "has an address" keeps working across
+the upgrade. The rule is the same for a child with its own table (inline or `@splitQuery`), for a
+same-table child reading its parent's row, and for a nested object without a table, and it is
+decided over every field of the type, whatever the query selects. A field declared non-null always
+resolves to an object, as today.
+
+The rule covers those four child kinds (`ChildField.NestingField`, `ChildField.SameRowTableField`,
+`ChildField.TableField` and `ChildField.BatchedTableField`, single-valued). It does not reach a root
+field, a single field returning an interface or union, or a `@service` field: they return what they
+fetch, as today. Graphitron 9 collapsed a root `@table` object too; that divergence is listed in the
+migration guide below and its fix is R1080, which builds on the per-type rule this item introduces.
 
 Three shapes from sis, the consumer whose Graphitron 9 against Graphitron 10 differential test
 found this (2026-10-19), all selected by production operations:
@@ -68,7 +75,9 @@ Absence is judged by value, by default, for every nullable single-row object. Th
   `@table`, inline or `@splitQuery`, in `Functions.nullOnAllNull` (`FetchDBMethodGenerator.createMapping`
   on the `graphitron-9-head` branch), built from every field of the type rather than the selection.
   Every migrating consumer was written against that reading; a per-field opt-in would make each of
-  them find and annotate every such field to get their old answers back.
+  them find and annotate every such field to get their old answers back. This item restores the
+  reading for the four child kinds named in the Goal, where every observed consumer shape sits; the
+  same `generateSelectRow` also wrapped a root object's row, which R1080 takes on.
 - **The schema already has the declaration.** A non-null field (`postadresse: Postadresse!`) always
   resolves to an object; a nullable one may resolve to `null`. An author who wants "the row exists"
   to mean "an object" declares the field non-null. No new directive is needed, and none is added.
@@ -99,6 +108,8 @@ is absent when every leaf is absent; a nullable single field over an absent obje
 | A single `@reference`, scalar or object, keyed or `condition:`-joined, inline or `@splitQuery` | a probe | no referenced row has a value (below) |
 | A list of a `@table` type taking no arguments, inline or `@splitQuery` | a probe | the list is empty |
 | A list taking arguments, a connection, an interface or union, an `@externalField`, a `@service` field, a `@pivot` child, a same-table child | none: blocks the collapse | (the object always resolves to an object) |
+| A reference or list whose path runs through a database routine (a lateral hop), or whose filters bind anything but request context | none: blocks the collapse | (as above) |
+| Every other field (a computed field, a record read, a pivot slot and the like) | none: blocks the collapse, through `SubtreePresence.over`'s `default` arm as today | (as above) |
 
 A **probe** is a correlated `EXISTS` over the field's own join path and filters, the ones its fetch
 already applies, so a probe can never disagree with the value the field would resolve to. For a
@@ -107,11 +118,19 @@ type is non-null; when the target type has no column leaves, or holds probes or 
 own, the row's existence alone counts. That last step errs toward keeping an object, never toward
 dropping a value, and it stops the rule from recursing through the schema.
 
+Two limits keep a probe renderable in a statement that may not select the field. Its path must be
+a `ReachPath`, the condition rail's join-path type, which refuses a lateral routine hop; a field
+reached through a routine blocks instead. And its filters must not read the field's own selection:
+a field for which `ProjectionCommands.readsSelectedFieldArguments` holds blocks, because an
+unselected field has no arguments to serve. An argument-free field's `@condition` that binds only
+request context passes, since the projection's `env` serves it.
+
 What changes against today's rule (`ChildField.NestingField.SubtreePresence.over`):
 
 - A single reference now counts by its value, not by its first hop's join columns. Today a set join
   column whose target row is missing keeps the object (the `studiesemesterPeriode` shape); a probe
-  answers it. A `condition:`-joined or lateral reference, which blocked, now probes too.
+  answers it. A `condition:`-joined reference, which blocked, now probes too; one reached through
+  a database routine still blocks.
 - A list taking no arguments, and a `@splitQuery` field, no longer block: they probe. A list
   counts as absent when it is empty. This is a deliberate rule rather than a restoration:
   Graphitron 9 gave a selected empty list as `[]`, which kept the object, and an unselected one as
@@ -120,7 +139,12 @@ What changes against today's rule (`ChildField.NestingField.SubtreePresence.over
   arguments still blocks, because its emptiness depends on the query.
 - `@splitQuery` is a delivery choice and does not change the answer: a `@splitQuery` reference or
   list inside an object probes exactly as its inline form does. The probe runs in the parent's
-  statement, guarded as below.
+  statement, guarded as below. This departs from Graphitron 9 in the one direction a client
+  notices: Graphitron 9's `generateSelectRow` put each resolver field's key row
+  (`getKeySetForResolverFields`) among the values `nullOnAllNull` saw, so a type holding a
+  `@splitQuery` field kept its object whenever that key was set, even when the split list was
+  empty or the split reference found no row. Here such an object resolves to `null`. The migration
+  guide lists it.
 - A child with its own table now has a contract at all. Today it is `null` only when no row matches
   (or, for `@splitQuery`, when its key is `null`).
 
@@ -138,7 +162,8 @@ counted every field of the type, so every field was `null` there, and today's ru
 (`GraphitronSchema.sameRowNullContract`) only keeps an all-null type as an object when one of its
 fields blocks: a reference, a list or a `@splitQuery` field, which this rule turns into probes, or
 one of the blockers it keeps. The implementer pins the shape first, with `navnAlleSprak`'s return
-type taken from sis as a fixture, and reports which field blocks. When it is a probe kind, this plan
+type taken from sis as a fixture (relayed through the sis session when the implementer has no sis
+checkout), and reports which field blocks. When it is a probe kind, this plan
 fixes it. When it is a kept blocker, the item names that divergence in the migration guide. When no
 field blocks, the fault is in how the same-row presence check is generated, and it is fixed here,
 since the same check then serves the `@table` child.
@@ -153,9 +178,10 @@ whose `nullOnAllNull` saw the same non-null value.
 to `null`", which the "Grouping columns into a nested object" and "Returning the parent's own row"
 sections then point at instead of stating their own rule:
 
-> A nullable field that returns one object resolves to `null` when the object would hold nothing:
-> every column it reads is `null`, every single `@reference` in it finds no value, and every list in
-> it is empty. A child with its own `@table` also resolves to `null` when no row matches. This is
+> A nullable field of a `@table` type, or of an object nested in one, that returns one object
+> resolves to `null` when the object would hold nothing: every column it reads is `null`, every
+> single `@reference` in it finds no value, and every list in it is empty. A child with its own
+> `@table` also resolves to `null` when no row matches. This is
 > decided over all of the type's fields, whatever the query selects, so `address { __typename }`
 > and `address { street }` agree on whether `address` is `null`. `@splitQuery` does not change the
 > answer.
@@ -168,28 +194,38 @@ sections then point at instead of stating their own rule:
 > ```
 >
 > Declare the field non-null to always get an object. A type holding a list that takes arguments, a
-> connection, an interface or union, an `@externalField` or a `@service` field always resolves to an
-> object, because whether it holds anything depends on the query or on code outside the database. A
-> type with a `@nodeId` field, or a field reading a column that is never `null`, never resolves to
-> `null` while its row exists.
+> connection, an interface or union, an `@externalField`, a `@service` field, or a field reached
+> through a database routine always resolves to an object, because whether it holds anything
+> depends on the query or on code outside the table's rows. A type with a `@nodeId` field, or a
+> field reading a column that is never `null`, never resolves to `null` while its row exists.
+>
+> The rule is for fields of table types. A field of `Query`, a field returning an interface or
+> union, and a `@service` field return what they fetch, so a row of nulls there is an object.
 
 `docs/manual/how-to/migrating-from-legacy.adoc` replaces the "Behavior divergence: nested objects
 holding a fetched field" section and the matching "Things that didn't change" bullet:
 
-> A nullable field returning one object resolves to `null` when the object would hold nothing, as in
-> Graphitron 9, for a nested object without `@table` and for a child with its own table alike; see
-> [Map types to tables] under "When a single object resolves to `null`". Two cases differ:
+> A nullable field of a table type returning one object resolves to `null` when the object would
+> hold nothing, as in Graphitron 9, for a nested object without `@table` and for a child with its
+> own table alike; see [Map types to tables] under "When a single object resolves to `null`". These
+> cases differ from Graphitron 9:
 >
 > - Graphitron 9 decided from the fields it fetched, so with `optionalSelect` an unselected list or
 >   reference counted as `null`, while a selected empty list kept the object. The rewrite decides
 >   over every field whatever the query selects, and counts an empty list as nothing.
+> - Graphitron 9 counted a `@splitQuery` field by the key it batched on, so an object holding one
+>   stayed an object whenever that key was set. The rewrite counts it by its value, the same as its
+>   inline form: an empty split list or a split reference that finds no row counts as nothing.
 > - A type holding a list that takes arguments, a connection, an interface or union, an
->   `@externalField` or a `@service` field always resolves to an object.
+>   `@externalField`, a `@service` field or a field reached through a database routine always
+>   resolves to an object.
+> - A field of `Query` returning one table object stays an object over a row of nulls, where
+>   Graphitron 9 returned `null`.
 >
 > A client that tested such a field for `null` should test the fields inside it instead.
 
-The docs read simply with one rule stated once and two exceptions named, which is the check this
-draft exists to pass.
+The docs state the rule once and name its exceptions in one list, which is the check this draft
+exists to pass. The last bullet goes when R1080 lands.
 
 ## Implementation
 
@@ -199,9 +235,14 @@ draft exists to pass.
 sealed, because its kinds carry different data and evaluate differently:
 
 - `Columns(List<ColumnRef>)`: own-row columns, absent when any is `null`.
-- `Probe(ChildField field, List<JoinStep> joinPath, ...)`: carries the same join and filter values
-  the field's fetch plan is built from, plus the target's column leaves for an object reference, so
-  the probe renderer reuses the fetch's join rendering rather than rebuilding it.
+- `Probe(ChildField field, List<JoinStep> joinPath, List<WhereFilter> filters, List<ColumnRef> targetColumns)`:
+  the path and filters the field's own fetch is built from, read off the field (a
+  `TableTargetField`'s `joinPath()` and `filters()`, a `ColumnBackedReferenceField`'s `joinPath()`
+  with no filters), and the target columns whose non-null value proves the reference present: the
+  scalar reference's own column, an object reference's target column leaves, or empty when row
+  existence alone counts (a list, or a target type with no column leaves or with probes or
+  blockers of its own). The constructor refuses a path with a lateral hop, the same refusal
+  `ReachPath` makes, so a blocked shape never reaches the renderer.
 
 `SubtreePresence.over` switches over the field kinds per the table above. `NullContract.of` keeps its
 shape; `CollapsesWhenAbsent` holds the sealed leaves and exposes `presenceColumns()` (the `Columns`
@@ -216,6 +257,37 @@ fold on the schema keyed by type: `GraphitronSchema.sameRowNullContract` general
 side (`plan/ProjectionCommands`) and the fetcher side (`FetcherEmitter`) both read the fold, as
 `SameRowTableField` already does.
 
+**The probe as a command.** A probe is a rendered expression under a derived alias, not a column of
+the row, so it does not ride the column vocabulary. `ParentRowDemand.parentRowColumns()` stays what
+it is, the base-name columns a fetcher reads off the parent row, and the parent-projection walks
+that enforce it and its other implementers (the polymorphic children, `TableInterfaceField`) are
+untouched. A new command record in `no.sikt.graphitron.command`, `PresenceProbe(String alias,
+List<ProbeTerm> terms)`, carries the probe column, with `ProbeTerm(ReachPath reach, GlueCall filter,
+List<ColumnRef> targetColumns)` for each `Probe` leaf. `ProjectionCommands` mints it from the
+contract: the `ReachPath` from the leaf's `joinPath`, the `GlueCall` through the same `glueFor` the
+`Multiset` arm's `filter` comes from, or `null` when the field has no filters. Each carrier gains it
+beside its column list, as an `Optional<PresenceProbe>`:
+
+- `CallWrap.Splice(List<ColumnRef> callerDemand, Optional<PresenceProbe> probe)`, filled from the
+  nesting field's contract where `callerDemand` is filled from `parentRowColumns()` today.
+- `CallWrap.SameRow(List<ColumnRef> presence, Optional<PresenceProbe> probe)`.
+- `CallWrap.Multiset` gains `List<ColumnRef> presence` and `Optional<PresenceProbe> probe`, both
+  empty unless `arity` is `SINGLE`; the constructor refuses them on a `LIST` arity, as it refuses
+  `limitByFirstArgument` on a `SINGLE` one.
+- The two `LaunchSource.Correlated.Projected` records, `CorrelatedChain` and
+  `CorrelatedLookupChain`, the batched rows method's source for a `@splitQuery` single child, gain
+  the same two components, read by `BatchedRowsFragments.body` where it builds `selectFields`.
+
+**Rendering a probe.** `ConditionGlueRenderer.reachExists` already renders a correlated `EXISTS` over
+a `ReachPath`, through `PathFragments`' hop helpers, for the FK-target `@condition`. It moves to
+`PathFragments` beside those helpers and takes the correlated alias as a parameter (today it is
+hard-wired to the projection's `table` local), so the condition rail and the probe call the one
+renderer. The inner condition of a probe term is the target columns' `isNotNull()` disjunction, or
+`DSL.noCondition()` when they are empty, conjoined with the filter's glue call against the terminal
+alias. The correlated alias is the unit's `table` local in the `Splice` and `SameRow` arms, and the
+child's terminal alias inside the `Multiset` arm and the batched rows method, where the probe sits in
+the child's own select list.
+
 **Projection.** Per collapsing field, its `Columns` leaves are projected, plus one probe column when
 it has probes, aliased so its fetcher can name it statically:
 
@@ -228,15 +300,17 @@ rendered through jOOQ's `DSL.when(...)` so it is dialect-neutral (no boolean sel
 Oracle before 23 lacks). The guard keeps the probes from running when a column already proves the
 object present. Where each lands:
 
-- A nested object without a table: as today, through `ParentRowDemand` and
-  `CallWrap.Splice.callerDemand` into the anchor's projection, with the probe column added to the
-  demand. The alias is derived from the nested type and field name, which is what a shared nested
-  type's single fetcher can read.
-- An inline single `@table` child (`TableField`): a presence slot on `CallWrap.Multiset`, rendered
-  inside the correlated single-row multiset beside `<Child>.$project(...)`, as `CallWrap.SameRow`
-  carries its presence columns today.
-- A `@splitQuery` single `@table` child (`BatchedTableField`, `emitsSingleRecordPerKey()`): added to
-  the rows method's `selectFields` in `BatchedRowsFragments`.
+- A nested object without a table: the columns as today, through `ParentRowDemand` and
+  `CallWrap.Splice.callerDemand`; the probe through `Splice.probe`, rendered in the same arm. The
+  alias is derived from the nested type and field name, which is what a shared nested type's
+  single fetcher can read.
+- A same-table child: `CallWrap.SameRow`'s presence columns as today, its probe inside the same
+  single-row multiset.
+- An inline single `@table` child (`TableField`): `CallWrap.Multiset`'s new presence slots,
+  rendered inside the correlated single-row multiset beside `<Child>.$project(...)`, the way
+  `sameRowArmBody` renders `SameRow`'s.
+- A `@splitQuery` single `@table` child (`BatchedTableField`, `emitsSingleRecordPerKey()`): the
+  `Correlated.Projected` slots, added to the rows method's `selectFields` in `BatchedRowsFragments`.
 
 **Fetchers.** `FetcherEmitter.presenceCheck` grows to read the probe column besides the leaf columns
 and stays plain `if` statements, since generated code targets Java 17:
@@ -272,12 +346,15 @@ measures it as a problem, deduplicating a probe against a selected leaf is a fol
 
 - **Model** (`NestingFieldNullContractTest`, moving with the types): the leaf kind each field kind
   yields, per the table, including a `@splitQuery` reference and an argument-free list as `Probe`, a
-  list with arguments and a connection as blockers, and an object-reference probe whose target has
-  non-column leaves counting row existence alone.
+  list with arguments and a connection as blockers, an object-reference probe whose target has
+  non-column leaves counting row existence alone, a `condition:`-joined reference as `Probe`, and a
+  field reached through a routine hop or whose filters read its selection as blockers.
 - **Pipeline** (`NestingFieldPipelineTest`, `SameTableInlineChildPipelineTest`, and a new
   `TableChildNullContractPipelineTest`): the contract for an inline and a `@splitQuery` single
   `@table` child, a non-null one as `AlwaysObject`, and a shared nested type with differing probes
-  rejected. Assertions are on the model, not on generated method bodies.
+  rejected; the `PresenceProbe` each carrier (`Splice`, `SameRow`, `Multiset`,
+  `Correlated.Projected`) receives, and none on a list-arity `Multiset`. Assertions are on the model
+  and the commands, not on generated method bodies.
 - **Execution** (`graphitron-sakila-example`, beside `NestingNullContractExecutionTest`), over a new
   fixture table whose rows exist with every mapped column `null`:
   - an inline and a `@splitQuery` single `@table` child with an all-null row resolves to `null`; one
@@ -289,7 +366,11 @@ measures it as a problem, deduplicating a probe against a selected leaf is a fol
     to `null` (the `studiesemesterPeriode` shape);
   - a nested object holding an argument-free list resolves to `null` when its columns are `null` and
     the list is empty, and to an object when the list is not empty (the `phd` shape);
+  - a nested object holding a `@splitQuery` list, whose key is set and whose list is empty,
+    resolves to `null` exactly as its inline form does (the Graphitron 9 divergence the migration
+    guide lists);
   - the `@splitQuery` collapse adds no statement (counted, as existing batching tests count them);
+  - the FK-target `@condition` tests stay green across `reachExists`' move to `PathFragments`;
   - a nullable same-table child shaped like `Karakter.navnAlleSprak`, over a row whose columns it
     reads are all `null`, resolves to `null` (beside `SameRowTableChildExecutionTest`).
 - The existing `NestingNullContractExecutionTest`, `SameTableInlineChildPipelineTest` and
@@ -303,6 +384,7 @@ measures it as a problem, deduplicating a probe against a selected leaf is a fol
   `ChildField.NestingField.NullContract` (moved, not deleted; the nested names go)
 - `ChildField.NestingField.referenceLeaf`
 - `GraphitronSchema.sameRowNullContract` (generalised to the per-type fold)
+- `ConditionGlueRenderer.reachExists` (moved to `PathFragments`, the name may stay)
 - In the manual: "always resolves to an object" for a nested type holding a list, a `@splitQuery`
   field or a `condition:`-joined reference; "counts as present whenever its join columns are set"
 
@@ -365,6 +447,13 @@ in Spec.
    (or the plan brings root single fields in), and the migration draft lists every reading that
    differs from Graphitron 9, the `@splitQuery` key case among them.
 
+   *Author, round 1:* scoped rather than widened. The Goal now names the four child kinds the rule
+   covers and the field kinds it does not reach (root, single interface or union, `@service`); the
+   decision's "everywhere" bullet says the same, and the root case is filed as R1080, which depends
+   on this item's per-type fold. Both manual drafts state the scope, and the migration draft lists
+   four differences, the `@splitQuery` key case and the root field among them. "The presence rule"
+   carries the `@splitQuery` key departure where the rule is stated.
+
 2. **Question 2: the plan does not say what carries a probe through the projection contract.** It
    says the probe column is "added to the demand" through `ParentRowDemand` and
    `CallWrap.Splice.callerDemand`, and that the new `CallWrap.Multiset` slot works "as
@@ -379,6 +468,17 @@ in Spec.
    read it and where the probe's `EXISTS` is rendered (`ConditionGlueRenderer` already renders a
    correlated `EXISTS` over a join path for the FK-target `@condition`, which may be the shape to
    extend).
+
+   *Author, round 1:* the plan now has a "The probe as a command" section. `ParentRowDemand` stays
+   the base-name column demand, untouched. A new `PresenceProbe(alias, List<ProbeTerm>)` command,
+   with `ProbeTerm(ReachPath, GlueCall, List<ColumnRef>)`, rides beside the column list as an
+   `Optional` on `CallWrap.Splice`, `CallWrap.SameRow`, `CallWrap.Multiset` (single arity only) and
+   the two `LaunchSource.Correlated.Projected` records. "Rendering a probe" moves
+   `ConditionGlueRenderer.reachExists` into `PathFragments` with the correlated alias as a parameter,
+   so both rails share it. Taking `ReachPath` brought two limits into the presence table: a path
+   through a routine hop blocks, and so does a field whose filters read its own selection
+   (`ProjectionCommands.readsSelectedFieldArguments`). The table also gained the "every other
+   field" row from the non-blocking note.
 
 Non-blocking: the presence table's last row lists the blockers but not the remaining child kinds
 (`ComputedField`, `RecordReadField`, `ServiceRecordField`, `PivotSlotField` and the like), which
