@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.test;
 
 import graphql.language.ArrayValue;
 import graphql.language.Directive;
+import graphql.language.NullValue;
 import graphql.language.SchemaDefinition;
 import graphql.language.StringValue;
 import graphql.language.Value;
@@ -147,13 +148,15 @@ class FactExpectationTest {
         var allDivergences = new ArrayList<String>();
 
         for (var document : graphs.plain().entrySet()) {
-            var configuration = StatedConfiguration.of(List.of(document.getValue().sdl()));
+            var texts = List.of(document.getValue().sdl());
+            var configuration = StatedConfiguration.of(texts);
+            var catalog = StatedConfiguration.catalog(texts, jooq);
             if (captured == null) {
                 captured = CapturedStore.ofCatalogWith(tmp, document.getKey(),
-                    full(document.getValue()), jooq, corpus, configuration);
+                    full(document.getValue()), catalog, corpus, configuration);
             } else {
-                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), jooq, corpus,
-                    configuration);
+                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), catalog,
+                    corpus, configuration);
             }
         }
         var plainBlocks = CorpusExpectations.blocks(captured.dsl()).stream()
@@ -186,9 +189,10 @@ class FactExpectationTest {
                         files.add(file);
                     }
                 });
+                var texts = List.copyOf(standing.values());
                 var sourceNames = captured.andCatalogGraphReadAt(graph.getKey(), written, files,
-                    Instant.ofEpochSecond(instant), jooq, corpus,
-                    StatedConfiguration.of(List.copyOf(standing.values())));
+                    Instant.ofEpochSecond(instant), StatedConfiguration.catalog(texts, jooq), corpus,
+                    StatedConfiguration.of(texts));
                 var writtenNow = written.keySet().stream()
                     .filter(file -> !PRELUDE_FILE.equals(file))
                     .map(sourceNames::get)
@@ -227,19 +231,40 @@ class FactExpectationTest {
         private static final String DIRECTIVE = "withConfiguration";
 
         static SubjectConfig of(List<String> texts) {
+            return application(texts).map(StatedConfiguration::decode).orElse(SubjectConfig.none());
+        }
+
+        /**
+         * The catalog the graph is captured against. The harness's own where the configuration
+         * leaves {@code jooqPackage} out, which every document stating nothing about a catalog
+         * relies on; the package it names; or none where it writes {@code jooqPackage: null}, a run
+         * that declared no catalog. All documents share one store, so a graph with no catalog of
+         * its own still sits beside the rows the others' catalog wrote.
+         */
+        static CatalogInput catalog(List<String> texts, CatalogInput fixture) {
+            var argument = application(texts)
+                .map(directive -> directive.getArgument("jooqPackage"))
+                .orElse(null);
+            if (argument == null) {
+                return fixture;
+            }
+            if (argument.getValue() instanceof NullValue) {
+                return null;
+            }
+            return new CatalogInput(text(argument.getValue(), "jooqPackage"), fixture.loader());
+        }
+
+        private static Optional<Directive> application(List<String> texts) {
             var applications = texts.stream()
                 .flatMap(text -> new Parser().parseDocument(text).getDefinitions().stream())
                 .flatMap(definition -> definition instanceof SchemaDefinition schema
                     ? schema.getDirectives(DIRECTIVE).stream() : java.util.stream.Stream.empty())
                 .toList();
-            if (applications.isEmpty()) {
-                return SubjectConfig.none();
-            }
             if (applications.size() > 1) {
                 throw new AssertionError("a graph states its configuration once; found "
                     + applications.size() + " @" + DIRECTIVE + " applications");
             }
-            return decode(applications.getFirst());
+            return applications.stream().findFirst();
         }
 
         private static SubjectConfig decode(Directive directive) {

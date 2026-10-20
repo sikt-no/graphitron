@@ -10833,8 +10833,12 @@ SELECT h.graph_name, h.member,
   LEFT JOIN graphitron_type_backing tb
     ON tb.graph_name = h.graph_name AND tb.type_name = h.member
    AND tb.declared_via IN ('PRODUCER', 'ACCESSOR')
+  -- Only in a catalog this graph claims: another graph in the store can generate a record class
+  -- under the same name.
   LEFT JOIN sql_table st
     ON st.record_class_fqn = tb.class_name
+   AND EXISTS (SELECT 1 FROM store_graph_source gs
+                WHERE gs.graph_name = h.graph_name AND gs.source_name = st.source_name)
  WHERE dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL
     OR b.type_name IS NOT NULL OR st.table_name IS NOT NULL OR h.shape IS NOT NULL
     OR h.producer_kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'FACETS')

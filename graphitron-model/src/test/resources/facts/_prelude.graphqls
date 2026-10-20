@@ -38,7 +38,13 @@ directive @assertEmpty(relation: String!, where: String) repeatable on SCHEMA
 # configuration rather than finding it. A document without it is a run that declared nothing. The
 # output coordinates travel together, all three or none; the schema files are always the document's
 # own. In a graph read in steps, a reading takes it from the files as they then stand.
+#
+# jooqPackage is the catalog the graph is captured against. Left out, it is the fixture catalog every
+# other graph reads; jooqPackage: null is a run that declared no catalog. All graphs share one store,
+# so a graph without the fixture catalog still sits beside the rows the others' reading of it wrote,
+# which is what a claim on whose catalog a rule reads is tested against.
 directive @withConfiguration(
+  jooqPackage: String,
   supergraph: String,
   tenantColumn: String,
   outputPackage: String,

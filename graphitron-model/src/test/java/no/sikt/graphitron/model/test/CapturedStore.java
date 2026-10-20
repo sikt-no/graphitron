@@ -351,13 +351,12 @@ public final class CapturedStore implements AutoCloseable {
     /**
      * The same under a configuration the caller states. The recipe is still this fixture's, the
      * graph's own file; the rest of {@code configuration} is what the reading is told the run was
-     * configured with.
+     * configured with, and a null {@code jooq} is a run that declared no catalog.
      */
     public static CapturedStore ofCatalogWith(Path directory, String graphName, String sdl,
                                               CatalogInput jooq, List<ClasspathEntry> classpath,
                                               SubjectConfig configuration) {
-        return openAndCapture(directory, graphName, sdl, Objects.requireNonNull(jooq, "jooq"),
-            classpath, configuration);
+        return openAndCapture(directory, graphName, sdl, jooq, classpath, configuration);
     }
 
     /**
@@ -469,14 +468,14 @@ public final class CapturedStore implements AutoCloseable {
     /**
      * The same under a configuration the caller states. The recipe is still this fixture's, the
      * graph's own file; the rest of {@code configuration} is what the reading is told the run was
-     * configured with.
+     * configured with, and a null {@code jooq} is a run that declared no catalog.
      */
     public CapturedStore andCatalogGraphWith(String otherGraph, String sdl, CatalogInput jooq,
                                             List<ClasspathEntry> classpath,
                                             SubjectConfig configuration) {
         Path other = write(directory, otherGraph, sdl);
-        captureFiles(store.dsl(), List.of(other), directory, otherGraph,
-            Objects.requireNonNull(jooq, "jooq"), false, classpath, LocalDateTime.now(), configuration);
+        captureFiles(store.dsl(), List.of(other), directory, otherGraph, jooq, false, classpath,
+            LocalDateTime.now(), configuration);
         return this;
     }
 

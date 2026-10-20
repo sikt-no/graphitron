@@ -1,0 +1,30 @@
+# Which table a record class carries a row of is read from the catalogs this graph claims, never
+# from one another graph in the store read. This graph declares no catalog, so the service handing
+# back FilmRecord hands back an object: film is in the store, claimed by every other graph, and by
+# none of this one's.
+
+extend schema @withConfiguration(jooqPackage: null)
+
+"Backed by FilmRecord through the service that produces it."
+type FilmDetailsCarrier { filmId: Int @field(name: "film_id") }
+
+extend type Query {
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+}
+
+# The graph claims no catalog, which is what the claims below are about.
+extend schema @assertEmpty(relation: "store_graph_source", where: "source_name LIKE 'no.sikt.graphitron.rewrite.test.jooq%'")
+
+# The class still backs the type: the classpath is read whatever the catalog.
+extend schema @assertContains(relation: "graphitron_type_backing", rows: """
+  type_name,          class_name
+  FilmDetailsCarrier, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  """)
+
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'FilmDetailsCarrier'", rows: """
+  type_name,          shape
+  FilmDetailsCarrier, OBJECT
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_result_table")
