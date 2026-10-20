@@ -5140,6 +5140,120 @@ CREATE INDEX ix_resolved_type_binding_type ON graphitron_resolved_type_binding
   (graph_name, type_name);
 COMMENT ON INDEX ix_resolved_type_binding_type IS 'Serves the type probe every reader of this relation makes: a rule holding a type name and asking which table stands for it. The registration shipped without one, which cost nothing while every reader spelled its type expression inline, H2 pushing that expression down into the probe. It stopped costing nothing the moment intent_field_navigated_type projected the expression into a column of its own: a join onto a projected column is a join the planner is free to satisfy by scanning, and its readers, graphitron_field_scope_table_rule among them, each began visiting more rows through this table than through the view it replaced. That is the same mirror the condition family met on graphitron_field_scope_table, arriving on a third relation: an inlined view can be evaluated restricted where a table can only be scanned, so an unkeyed target is not a faster shape but a differently shaped one, and which of the two wins depends on what the reader has in hand. The index is what makes the table probeable on the key its readers actually hold, and with it the projection costs no reader anything.';
 
+-- The datafetcher axis: every output field of an object type has one fetcher, and it either
+-- produces a result or reads one. The supertype carries the key and the side; each side states its
+-- own facts in a subtype keyed to it, so a field neither subtype explains is an absent row a gate can
+-- find rather than a NULL nobody asked about.
+CREATE TABLE graphitron_fetcher (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  side       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  UNIQUE (graph_name, type_name, field_name, side),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (side IN ('PRODUCER', 'READER'))
+);
+COMMENT ON TABLE graphitron_fetcher IS 'An output field''s fetcher, and whether it produces a result or reads one: one row per field. For example Query.films selects and so produces, and Film.title reads a column of the row its parent produced.';
+COMMENT ON COLUMN graphitron_fetcher.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_fetcher.type_name IS 'the object type declaring the field';
+COMMENT ON COLUMN graphitron_fetcher.field_name IS 'the field; with the type, a graphitron_field key';
+COMMENT ON COLUMN graphitron_fetcher.side IS 'PRODUCER where resolving the field runs something, READER where it reads from a result another fetcher produced. The subtype tables key to it with the side pinned, so a field is stated on one side only';
+COMMENT ON COLUMN graphitron_fetcher.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote, which are the fields that stopped being fetched';
+
+CREATE TABLE graphitron_producer (
+  graph_name VARCHAR   NOT NULL,
+  type_name  VARCHAR   NOT NULL,
+  field_name VARCHAR   NOT NULL,
+  side       VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, side)
+    REFERENCES graphitron_fetcher (graph_name, type_name, field_name, side) ON DELETE CASCADE,
+  CHECK (side = 'PRODUCER'),
+  CHECK (kind IN ('SELECT', 'LOOKUP', 'COUNT', 'FACETS', 'INSERT', 'UPDATE', 'DELETE',
+                  'ROUTINE', 'SERVICE'))
+);
+COMMENT ON TABLE graphitron_producer IS 'A field whose fetcher runs something, and what kind of thing it runs: one row per field. For example Query.films with nothing written is a SELECT, Mutation.addFilm @mutation(typeName: INSERT) an INSERT, and the totalCount of the connection a field returns a COUNT over that field''s statement.';
+COMMENT ON COLUMN graphitron_producer.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_producer.type_name IS 'the object type declaring the field';
+COMMENT ON COLUMN graphitron_producer.field_name IS 'the field; with the type, a graphitron_fetcher key';
+COMMENT ON COLUMN graphitron_producer.side IS 'always PRODUCER, carried so the foreign key into graphitron_fetcher holds the side as well as the field';
+COMMENT ON COLUMN graphitron_producer.kind IS 'what the fetcher runs. SELECT, the rows a condition matches; LOOKUP, the rows for an ordered list of keys; COUNT and FACETS, aggregates over the statement of the producer whose connection they sit on; INSERT, UPDATE and DELETE, a write; ROUTINE, SQL around a database routine; SERVICE, a Java method. Neither the root the field sits on nor the type it produces is a column: the first is a join to graphql_root_operation and the second is graphitron_field_target';
+COMMENT ON COLUMN graphitron_producer.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- What a field's written directives say it runs, before any rule decides between them: a field
+-- with one claim is a producer of that kind, and a field with two is the defect.
+CREATE VIEW graphitron_producer_claim (graph_name, type_name, field_name, kind) AS
+-- @service, wherever it is written.
+SELECT f.graph_name, f.type_name, f.field_name, 'SERVICE'
+  FROM graphitron_field f
+  JOIN graphitron_directive_application da
+    ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+   AND da.directive_name = 'service'
+UNION
+-- @routine on a query or mutation root field, or on a child @splitQuery takes out of its parent's
+-- statement. Below a root and not split, a routine is a lateral in the parent's statement, which
+-- the field reads.
+SELECT f.graph_name, f.type_name, f.field_name, 'ROUTINE'
+  FROM graphitron_field f
+  JOIN graphitron_directive_application da
+    ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+   AND da.directive_name = 'routine'
+ WHERE EXISTS (SELECT 1 FROM graphql_root_operation ro
+                WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                  AND ro.operation IN ('QUERY', 'MUTATION'))
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application s
+                WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
+                  AND s.directive_name = 'splitQuery')
+UNION
+-- @mutation on a mutation-root field, by the verb written. Upsert is retired and claims nothing.
+SELECT f.graph_name, f.type_name, f.field_name, m.operation
+  FROM graphitron_field f
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'MUTATION'
+  JOIN graphitron_directive_application da
+    ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+   AND da.directive_name = 'mutation'
+  JOIN graphitron_ast_mutation_entry m
+    ON m.graph_name = da.graph_name AND m.source_name = da.source_name
+   AND m.source_line = da.source_line AND m.source_column = da.source_column
+ WHERE m.operation IN ('INSERT', 'UPDATE', 'DELETE')
+UNION
+-- @lookupKey on an argument, at the query root or on a split child; inline below a root, the keys
+-- narrow the parent's statement and the field reads.
+SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP'
+  FROM graphitron_field f
+  JOIN graphitron_argument a
+    ON a.graph_name = f.graph_name AND a.type_name = f.type_name AND a.field_name = f.field_name
+  JOIN graphitron_directive_application da
+    ON da.graph_name = a.graph_name AND da.coordinate = a.coordinate
+   AND da.directive_name = 'lookupKey'
+ WHERE EXISTS (SELECT 1 FROM graphql_root_operation ro
+                WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                  AND ro.operation = 'QUERY')
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application s
+                WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
+                  AND s.directive_name = 'splitQuery')
+UNION
+-- node and nodes, by their signature: a query-root field returning the Node interface, the ids it
+-- is handed being the keys.
+SELECT f.graph_name, f.type_name, f.field_name, 'LOOKUP'
+  FROM graphitron_field f
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name AND ro.operation = 'QUERY'
+  JOIN graphitron_type t
+    ON t.graph_name = f.graph_name AND t.type_name = f.named_type AND t.kind = 'INTERFACE'
+ WHERE f.named_type = 'Node';
+COMMENT ON VIEW graphitron_producer_claim IS 'One kind of producer a field''s written directives claim it runs: one row per field and kind. For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field carrying neither has none.';
+COMMENT ON COLUMN graphitron_producer_claim.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_claim.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_producer_claim.field_name IS 'the field claimed';
+COMMENT ON COLUMN graphitron_producer_claim.kind IS 'the graphitron_producer kind the claim names; SERVICE, ROUTINE, INSERT, UPDATE, DELETE or LOOKUP, the kinds a directive or the node signature decides';
+
 CREATE TABLE graphitron_method_reference_entry (
   graph_name    VARCHAR NOT NULL,
   site          VARCHAR NOT NULL,
@@ -9669,6 +9783,18 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
                              WHERE re.graph_name = o.graph_name AND re.type_name = o.type_name
                                AND re.field_name = o.field_name))
 UNION ALL
+-- A field whose written directives claim two kinds of producer, at the field's own declaration: a
+-- fetcher runs one thing. @lookupKey with @routine is deferred rather than refused.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'PRODUCER_KINDS_CONFLICT', CAST(NULL AS VARCHAR)
+  FROM (SELECT graph_name, type_name, field_name
+          FROM graphitron_producer_claim
+         GROUP BY graph_name, type_name, field_name
+        HAVING COUNT(*) > 1
+           AND NOT (COUNT(*) = 2 AND MIN(kind) = 'LOOKUP' AND MAX(kind) = 'ROUTINE')) c
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
+UNION ALL
 -- A field on the subscription root, at the field's own declaration. Meaningful under the
 -- specification and under the directives alike: graphitron generates no subscription resolver
 -- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
@@ -10041,6 +10167,118 @@ COMMENT ON COLUMN graphitron_type_backing.touched_at IS 'when the reading that l
 CREATE INDEX graphitron_type_backing_class_ix ON graphitron_type_backing (graph_name, class_name, type_name);
 COMMENT ON INDEX graphitron_type_backing_class_ix IS 'The class is a join key for the readers that go from a class to the types it backs: a generated record read back as its table, and the members a class offers. The primary key puts the type before the class and cannot serve that, so the planner probed the graph''s whole backing once per catalog column. The type closes the index because those readers also filter on it, and without it the planner preferred the primary key for its type list. Measured: the language server''s diagnostics statement over forty bound types scanned twelve thousand rows here through the primary key and eight hundred through this index.';
 COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answered, a closed three-value domain: BOUND_TABLE for the resolved table binding read through its table''s record class, PRODUCER for a class a @service or @externalField method delivers for the field''s type or takes for an argument''s, ACCESSOR for a class reached by reading a field off a class already backing its parent. Provenance, never a preference: a type the populations answer differently has a row from each, and a reader wanting one filters on this column';
+
+-- Which kind of producer each field is: its one claim where it has exactly one, and otherwise what
+-- its position and its target make it. A field with two claims is no producer here and a defect in
+-- graphitron_entry_defect_rule; @lookupKey with @routine is deferred and has no row either.
+CREATE VIEW graphitron_producer_rule (graph_name, type_name, field_name, kind) AS
+WITH claim_count (graph_name, type_name, field_name, claims, kind) AS (
+  SELECT graph_name, type_name, field_name, COUNT(*), MIN(kind)
+    FROM graphitron_producer_claim
+   GROUP BY graph_name, type_name, field_name
+),
+bound (graph_name, type_name) AS (
+  SELECT DISTINCT graph_name, type_name FROM graphitron_resolved_type_binding
+),
+-- A type a statement lands on: bound itself, or a union or interface with a bound participant.
+landing (graph_name, type_name) AS (
+  SELECT graph_name, type_name FROM bound
+  UNION
+  SELECT pm.graph_name, pm.container_name
+    FROM graphql_poly_member pm
+    JOIN bound b ON b.graph_name = pm.graph_name AND b.type_name = pm.member_type_name
+),
+-- The payloads a write, a routine or a service returns, types with no table of their own whose
+-- table-bound fields re-read by the keys that producer handed back.
+payload (graph_name, type_name) AS (
+  SELECT DISTINCT c.graph_name, ft.target_type_name
+    FROM claim_count c
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = c.graph_name AND ft.type_name = c.type_name
+     AND ft.field_name = c.field_name
+   WHERE c.claims = 1 AND c.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
+     AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                      WHERE b.graph_name = c.graph_name AND b.type_name = ft.target_type_name)
+),
+-- The operation a root type serves; a type serving two answers with one.
+root (graph_name, type_name, operation) AS (
+  SELECT graph_name, type_name, MIN(operation)
+    FROM graphql_root_operation
+   GROUP BY graph_name, type_name
+)
+SELECT graph_name, type_name, field_name, kind
+  FROM claim_count
+ WHERE claims = 1
+UNION ALL
+SELECT graph_name, type_name, field_name, kind
+  FROM (
+    SELECT f.graph_name, f.type_name, f.field_name,
+           CASE
+             -- A query-root field with nothing written selects, where its target lands anywhere.
+             WHEN ro.operation = 'QUERY' THEN
+               CASE WHEN EXISTS (SELECT 1 FROM landing l
+                                  WHERE l.graph_name = f.graph_name
+                                    AND l.type_name = ft.target_type_name)
+                    THEN 'SELECT' END
+             -- Any other root field runs only what is written on it.
+             WHEN ro.operation IS NOT NULL THEN NULL
+             WHEN f.field_name = 'totalCount' AND EXISTS (
+                    SELECT 1 FROM graphitron_field_target w
+                     WHERE w.graph_name = f.graph_name AND w.wrapper_type_name = f.type_name)
+               THEN 'COUNT'
+             WHEN f.field_name = 'facets' AND EXISTS (
+                    SELECT 1 FROM graphitron_field_target w
+                     WHERE w.graph_name = f.graph_name AND w.wrapper_type_name = f.type_name)
+               THEN 'FACETS'
+             -- The re-read on a payload's data field, over the keys its producer returned.
+             WHEN EXISTS (SELECT 1 FROM payload p
+                           WHERE p.graph_name = f.graph_name AND p.type_name = f.type_name)
+              AND EXISTS (SELECT 1 FROM bound b
+                           WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
+               THEN 'LOOKUP'
+             -- Taken out of the parent's statement: split, fanned out across tenants, or a child
+             -- connection, which is always split.
+             WHEN EXISTS (SELECT 1 FROM graphitron_directive_application s
+                           WHERE s.graph_name = f.graph_name AND s.coordinate = f.coordinate
+                             AND s.directive_name IN ('splitQuery', 'tenantFanOut'))
+               OR ft.wrapper_type_name IS NOT NULL
+               THEN 'SELECT'
+             -- A union or an interface with a table-bound participant runs a statement of its own
+             -- per participant, batched or not.
+             WHEN tt.kind IN ('INTERFACE', 'UNION') AND EXISTS (
+                    SELECT 1 FROM landing l
+                     WHERE l.graph_name = f.graph_name AND l.type_name = ft.target_type_name)
+               THEN 'SELECT'
+             -- A table-bound child of a record-backed parent, which hands its keys over.
+             WHEN EXISTS (SELECT 1 FROM bound b
+                           WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
+              AND NOT EXISTS (SELECT 1 FROM bound b
+                               WHERE b.graph_name = f.graph_name AND b.type_name = f.type_name)
+              AND EXISTS (SELECT 1 FROM graphitron_type_backing tb
+                           WHERE tb.graph_name = f.graph_name AND tb.type_name = f.type_name
+                             AND tb.declared_via IN ('PRODUCER', 'ACCESSOR'))
+               THEN 'SELECT'
+           END AS kind
+      FROM graphitron_field f
+      JOIN graphitron_type pt
+        ON pt.graph_name = f.graph_name AND pt.type_name = f.type_name AND pt.kind = 'OBJECT'
+      JOIN graphitron_field_target ft
+        ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name
+       AND ft.field_name = f.field_name
+      LEFT JOIN graphitron_type tt
+        ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+      LEFT JOIN root ro
+        ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+     WHERE NOT EXISTS (SELECT 1 FROM claim_count c
+                        WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
+                          AND c.field_name = f.field_name)
+  ) unclaimed
+ WHERE kind IS NOT NULL;
+COMMENT ON VIEW graphitron_producer_rule IS 'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_producer_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_rule.type_name IS 'the object type declaring the field';
+COMMENT ON COLUMN graphitron_producer_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_producer_rule.kind IS 'what its fetcher runs, a graphitron_producer kind';
 
 CREATE VIEW graphitron_field_source_table_rule
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
@@ -13836,6 +14074,9 @@ INSERT INTO meta_grain VALUES
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
+  ('producer-claim',
+   'one kind of producer one field''s written directives claim, in one graph',
+   'graph_name, type_name, field_name, kind', 'sdl'),
   ('field-scope-table',
    'one table one field''s own generated SQL binds against, in one graph',
    'graph_name, type_name, field_name, table_source_name, table_schema, table_name',
@@ -14246,7 +14487,9 @@ INSERT INTO graphitron_defect_type VALUES
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
    'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on a synthetic key, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
-   'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.');
+   'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.'),
+  ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',
+   'A field''s directives name two things for its fetcher to run, such as @service and @routine, and a fetcher runs one.');
 
 INSERT INTO meta_relation VALUES
   ('build_warning_stale_module_hint', 'stale-module-hint', 'derivation',
@@ -14968,6 +15211,22 @@ INSERT INTO meta_relation VALUES
    'One row the field target-table rule computes, in the shape graphitron_field_target_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_target_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where ViewReferences and the gates reading stored definitions can see what it reads, and so an EXCEPT between the target and this view stays runnable for as long as both exist.'),
+  ('graphitron_fetcher', 'graph-field', 'graphitron',
+   'An output field''s fetcher, and whether it produces a result or reads one: one row per field.',
+   'For example Query.films selects and so produces, and Film.title reads a column of the row its parent produced.',
+   'The datafetcher axis every emitter dispatches on: a field runs something or reads what something ran, and a field neither side explains is an absent subtype row a gate can find. The supertype the fetcher''s facts reference, so the source, the target and the operations key to it rather than each keying the field afresh. Written in the graphitron anchor phase.'),
+  ('graphitron_producer', 'graph-field', 'graphitron',
+   'A field whose fetcher runs something, and what kind of thing it runs: one row per field.',
+   'For example Query.films with nothing written is a SELECT, Mutation.addFilm @mutation(typeName: INSERT) an INSERT, and the totalCount of the connection a field returns a COUNT over that field''s statement.',
+   'The payload, the carrier and the error channel are facts about a producer, and each was restated by a relation that folded the producer away. Stated once here, at the field, from what was written and where; the rule is graphitron_producer_rule and the anchor inserts its rows.'),
+  ('graphitron_producer_claim', 'producer-claim', 'graphitron',
+   'One kind of producer a field''s written directives claim it runs: one row per field and kind.',
+   'For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field carrying neither has none.',
+   'Kept apart from the rule so the conflict and the kind read one statement of what was claimed: the rule takes a field with one claim, and the entry defects report a field with two.'),
+  ('graphitron_producer_rule', 'graph-field', 'graphitron',
+   'One row the producer rule computes, in the shape graphitron_producer stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_field_target', 'graph-field', 'graphitron',
    'A field''s target type, unwrapped from a connection where the field returns one, with the connection beside it: one row per field.',
    'For example films: [Film!]! @asConnection has the target Film and the wrapper the macro minted, and title: String has the target String and no wrapper.',

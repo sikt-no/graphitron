@@ -861,6 +861,17 @@ and the emitters read, and it goes when nothing reads what it builds.
     the decoded entries and, for the bare `@splitQuery`, `graphitron_directive_application`; the
     deprecated coordinate-keyed `graphitron_split_query_entry`, `graphitron_service_entry` and
     `graphitron_routine_entry` are not read. Marked and swept from the start.
+    * **The kind is stated** `done`, 2026-10-20. `graphitron_fetcher` on its producer side and
+      `graphitron_producer` with its kind, written by `Fetchers` as the anchor's last stage from
+      `graphitron_producer_rule`. What the written directives claim is `graphitron_producer_claim`;
+      a field claiming two kinds is `PRODUCER_KINDS_CONFLICT` at its declaration. A payload's data
+      field is a `_lookup` only where the payload has no table of its own, so a write returning its
+      table is one row. Pinned by the `fetcher-producers` fact document, whose prelude root field now
+      runs a routine.
+    * **What each kind runs is stated, resolved** `open`. A subtype per kind: the write's mutated
+      table and `matches`, the routine's first application and routine, the service's application
+      and method. A row only where the reference resolved; where it did not, the code-reference and
+      table defects already say why.
 
     First of its siblings, decided with Alf 2026-10-19: the payload, the carrier and the error
     channel are all facts about a producer, and each is restated today by a relation that folded the

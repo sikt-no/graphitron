@@ -8,6 +8,7 @@ import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
+import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
@@ -89,8 +90,10 @@ public final class GraphitronAssemblyCapture {
         // to. Stored rather than left a view because two readers walk it, the line below and the
         // entry defects at the tail of the derivation stratum.
         FieldPathResolutions.derive(dsl, graph, readAt);
-        // Last of all, keeping the one reading per link that both walks reach.
+        // Keeping the one reading per link that both walks reach.
         FieldTableLinks.derive(dsl, graph, readAt);
+        // Last, each output field's fetcher, off the targets, bindings and backings above.
+        Fetchers.derive(dsl, graph, readAt);
     }
 
     /**

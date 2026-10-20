@@ -402,7 +402,11 @@ class SupertypeSignatureGateTest {
         // typed element in the schema in order to state a rule that reads one column of two of
         // them, and the recursion would still want the arms apart, a reach seeding from arguments
         // alone and never from the fields it steps through.
-        "graphitron_argument_reachable_input|graphitron_argument,graphitron_field");
+        "graphitron_argument_reachable_input|graphitron_argument,graphitron_field",
+        // The producer claims, every arm of which answers at the field: a @lookupKey is written on
+        // an argument and claims the field it belongs to, so the argument is a hop to its field and
+        // not a member of a set the view rebuilds.
+        "graphitron_producer_claim|graphitron_argument,graphitron_field");
 
     @Test
     @DisplayName("the capture tables sharing a payload are exactly the recorded subtype sets")

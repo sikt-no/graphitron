@@ -418,6 +418,10 @@ class RelationRegistrationGateTest {
         registrations.put("intent_column_match_claim", Arm.DERIVED);
         registrations.put("graphitron_field_column_scope", Arm.DERIVED);
         registrations.put("graphitron_field_target_rule", Arm.DERIVED);
+        registrations.put("graphitron_fetcher", Arm.DERIVED);
+        registrations.put("graphitron_producer", Arm.DERIVED);
+        registrations.put("graphitron_producer_claim", Arm.DERIVED);
+        registrations.put("graphitron_producer_rule", Arm.DERIVED);
         registrations.put("graphitron_field_target_table", Arm.DERIVED);
         registrations.put("graphitron_field_target_table_rule", Arm.DERIVED);
         registrations.put("graphitron_field_source_table", Arm.DERIVED);
