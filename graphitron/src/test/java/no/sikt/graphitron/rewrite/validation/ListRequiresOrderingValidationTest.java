@@ -68,14 +68,14 @@ class ListRequiresOrderingValidationTest {
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of("Field 'Parent.films': " + LIST_ORDERING_ERROR)),
 
         CHILD_LIST_WITH_DEFAULT_ORDER("Child-position list TableField with Fixed ordering — admit",
             new TableField("Parent", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(), List.of(), PK_ORDER, null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of());
 
         private final String description;

@@ -62,26 +62,26 @@ class InlineLookupValidationTest {
         SINGLE_NOW_PROJECTED("single return — no validator errors; classifier rejection prevents reaching this state",
             new TableField("Language", "film", null, filmReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null,
                 KEYED_LOOKUP,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         LIST_PROJECTED("list return — inline-projected, no validator errors",
             new TableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)), List.of(), List.of(), PK_ORDER, null,
                 KEYED_LOOKUP,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
             new TableField("Language", "films", null, filmReturn(new FieldWrapper.List(true, true)),
                 CONDITION_PATH,
                 List.of(), PK_ORDER, null, KEYED_LOOKUP,
-                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         CONNECTION_BLOCKED("connection return — not valid on lookup field (validator mirror of classifier rejection)",
             new TableField("Language", "films", null, filmReturn(new FieldWrapper.Connection(true, 100)), List.of(), List.of(), new OrderBySpec.None(), null,
                 KEYED_LOOKUP,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of("Field 'Language.films': lookup fields must not return a connection"));
 
         private final String description;

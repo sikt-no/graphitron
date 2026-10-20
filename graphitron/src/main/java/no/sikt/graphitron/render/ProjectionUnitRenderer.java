@@ -66,9 +66,9 @@ public final class ProjectionUnitRenderer {
         ArgPathHelperRegistry.collectInto(builder, argHelpers -> {
             switch (row) {
                 case ProjectionCommand.AnchorUnit a -> builder.addMethod(
-                    buildTableContextMethod(argHelpers, a.table(), a.contributions(), outputPackage));
+                    buildTableContextMethod(argHelpers, a.table(), a.contributions(), false, outputPackage));
                 case ProjectionCommand.NestedUnit n -> builder.addMethod(
-                    buildTableContextMethod(argHelpers, n.table(), n.contributions(), outputPackage));
+                    buildTableContextMethod(argHelpers, n.table(), n.contributions(), true, outputPackage));
                 case ProjectionCommand.PivotUnit p -> builder.addMethod(buildPivotMethod(p, argHelpers));
             }
         });
@@ -90,8 +90,15 @@ public final class ProjectionUnitRenderer {
     // The table-context $project method (anchor and nested units)
     // ------------------------------------------------------------------------------------------
 
+    /**
+     * The anchor and nested units' {@code $project} method. A nested unit writes into its
+     * anchor's row, so it takes one more parameter, {@link #RK_PATH}: the result keys from the
+     * row's owner down to this nesting occurrence, each followed by the path delimiter, which its
+     * {@link no.sikt.graphitron.rewrite.model.AliasScope.Spliced} terms put between the prefix and
+     * their own key so every selection set spliced into one row gets its own alias space.
+     */
     private static MethodSpec buildTableContextMethod(ArgPathHelperRegistry argHelpers, TableRef tableRef,
-            List<Contribution> contributions,
+            List<Contribution> contributions, boolean nestedUnit,
             String outputPackage) {
         var fieldWildcard = fieldWildcard();
         var builder = MethodSpec.methodBuilder(ProjectionCall.METHOD_NAME)
@@ -99,8 +106,11 @@ public final class ProjectionUnitRenderer {
             .returns(listOfFieldWildcard())
             .addParameter(groupedType(), "grouped")
             .addParameter(CatalogRefs.tableClass(tableRef), "table")
-            .addParameter(ENV, "env")
-            .addStatement("$T<$T> fields = new $T<>()", LINKED_HASH_SET, fieldWildcard, LINKED_HASH_SET);
+            .addParameter(ENV, "env");
+        if (nestedUnit) {
+            builder.addParameter(String.class, RK_PATH);
+        }
+        builder.addStatement("$T<$T> fields = new $T<>()", LINKED_HASH_SET, fieldWildcard, LINKED_HASH_SET);
 
         var selectionOccurrences = ProjectionCall.selectionOccurrencesClass(outputPackage);
         builder.addCode("for ($T $L : grouped.entrySet()) {\n", entryType(), "entry");
@@ -108,7 +118,7 @@ public final class ProjectionUnitRenderer {
             SELECTED_FIELD, selectionOccurrences);
         builder.addCode("    switch (sf.getName()) {\n");
         for (var contribution : contributions) {
-            emitArm(argHelpers, builder, contribution, outputPackage);
+            emitArm(argHelpers, builder, contribution, nestedUnit, outputPackage);
         }
         builder.addCode("        default -> { } // unhandled fields\n");
         builder.addCode("    }\n");
@@ -127,28 +137,49 @@ public final class ProjectionUnitRenderer {
     }
 
     /**
-     * The emitted alias prefix for one contribution: the reserved result-key prefix composed
-     * with the contribution's stamped {@link no.sikt.graphitron.rewrite.model.AliasOwner}. Every
-     * arm below reads it here rather than spelling the prefix, so a qualified participant field
-     * and its fetcher's read cannot disagree.
+     * The emitted alias expression for one contribution's result-key-aliased terms: the reserved
+     * prefix composed with the contribution's stamped
+     * {@link no.sikt.graphitron.rewrite.model.AliasOwner}, then, for a
+     * {@link no.sikt.graphitron.rewrite.model.AliasScope.Spliced} contribution, the nested unit's
+     * {@link #RK_PATH}, then the runtime result key. Every arm below reads it here rather than
+     * spelling the alias, so the write and its fetcher's read cannot disagree.
      */
-    private static String rkPrefix(Contribution contribution) {
-        return ReservedAliases.resultKeyPrefix(contribution.aliasOwner());
+    private static CodeBlock rkAlias(Contribution contribution) {
+        String prefix = ReservedAliases.resultKeyPrefix(contribution.aliasOwner());
+        return switch (contribution.aliasScope()) {
+            case no.sikt.graphitron.rewrite.model.AliasScope.RowOwner ignored ->
+                CodeBlock.of("$S + entry.getKey()", prefix);
+            case no.sikt.graphitron.rewrite.model.AliasScope.Spliced ignored ->
+                CodeBlock.of("$S + $L + entry.getKey()", prefix, RK_PATH);
+        };
     }
 
+    /**
+     * The nested unit's path parameter name; distinct from every local the arms bind
+     * ({@code entry}, {@code sf}, {@code fields}, the hop aliases' letter-and-index run).
+     */
+    private static final String RK_PATH = "rkPath";
+
     /** One switch arm per contribution, total over the {@link Contribution} and wrap/term arms. */
-    private static void emitArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder, Contribution contribution, String outputPackage) {
+    private static void emitArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder,
+            Contribution contribution, boolean nestedUnit, String outputPackage) {
         switch (contribution) {
             case Contribution.Project p -> emitProjectArm(argHelpers, builder, p);
             case Contribution.Call c -> {
                 switch (c.wrap()) {
                     // A spliced nesting unit's terms are declared on the nested type, which owns
                     // its own namespace verdict; nothing here is aliased, so no prefix applies.
+                    // The callee writes into this unit's row, so it takes the path from the row's
+                    // owner down to this nesting occurrence: this unit's own path (empty for an
+                    // anchor) plus this occurrence's result key.
                     // The calling field's own demand lands first under base names, the identity
                     // the callee's column leaves project under, so a column both select lands once.
                     case CallWrap.Splice s -> {
+                        var path = nestedUnit
+                            ? CodeBlock.of("$L + entry.getKey() + $S", RK_PATH, ReservedAliases.RESULT_KEY_PATH_DELIMITER)
+                            : CodeBlock.of("entry.getKey() + $S", ReservedAliases.RESULT_KEY_PATH_DELIMITER);
                         var callee = ProjectionCall.fromOccurrences(c.callee(),
-                            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage);
+                            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), path, outputPackage);
                         if (s.callerDemand().isEmpty()) {
                             builder.addCode("        case $S -> fields.addAll($L);\n", c.field(), callee);
                         } else {
@@ -188,7 +219,7 @@ public final class ProjectionUnitRenderer {
     private static void emitProjectArm(ArgPathHelperRegistry argHelpers, MethodSpec.Builder builder, Contribution.Project p) {
         if (p.terms().size() == 1) {
             var pre = CodeBlock.builder();
-            var expr = termExpression(argHelpers, p.terms().get(0), pre, rkPrefix(p));
+            var expr = termExpression(argHelpers, p.terms().get(0), pre, rkAlias(p));
             var preamble = pre.build();
             if (preamble.isEmpty()) {
                 builder.addCode("        case $S -> fields.add($L);\n", p.field(), expr);
@@ -206,7 +237,7 @@ public final class ProjectionUnitRenderer {
         builder.addCode("        case $S -> {\n", p.field());
         for (var term : p.terms()) {
             var pre = CodeBlock.builder();
-            var expr = termExpression(argHelpers, term, pre, rkPrefix(p));
+            var expr = termExpression(argHelpers, term, pre, rkAlias(p));
             builder.addCode("$L", pre.build());
             builder.addCode("            fields.add($L);\n", expr);
         }
@@ -215,30 +246,29 @@ public final class ProjectionUnitRenderer {
 
     /**
      * The term's projected-field expression. {@code preamble} receives any statements the
-     * expression needs in scope first (a subselect's hop-alias declarations); {@code rkPrefix} is
-     * the contribution's composed result-key prefix, which the result-key-aliased arms
-     * concatenate the runtime key onto.
+     * expression needs in scope first (a subselect's hop-alias declarations); {@code rkAlias} is
+     * the contribution's composed result-key alias expression ({@link #rkAlias}), which the
+     * result-key-aliased arms alias their term by.
      */
     private static CodeBlock termExpression(ArgPathHelperRegistry argHelpers, SelectTerm term,
-            CodeBlock.Builder preamble, String rkPrefix) {
+            CodeBlock.Builder preamble, CodeBlock rkAlias) {
         return switch (term) {
             case SelectTerm.Column c -> switch (c.alias()) {
                 case BY_COLUMN_IDENTITY -> CodeBlock.of("table.$L", c.column().javaName());
-                case BY_RESULT_KEY -> CodeBlock.of("table.$L.as($S + entry.getKey())",
-                    c.column().javaName(), rkPrefix);
+                case BY_RESULT_KEY -> CodeBlock.of("table.$L.as($L)",
+                    c.column().javaName(), rkAlias);
             };
             case SelectTerm.HelperCall h ->
                 // Alias by the runtime result key so aliased duplicate selections stay distinct.
-                CodeBlock.of("$T.$L(table).as($S + entry.getKey())",
+                CodeBlock.of("$T.$L(table).as($L)",
                     ClassName.bestGuess(h.method().className()), h.method().methodName(),
-                    rkPrefix);
+                    rkAlias);
             case SelectTerm.ScalarSubselect s -> {
                 var aliases = PathFragments.generateAliases(s.path());
                 declareHopAliases(argHelpers, preamble, s.path(), aliases, "            ");
                 var inner = PathFragments.scalarInnerSelect(s, aliases, "table");
                 yield s.asName() == null
-                    ? CodeBlock.of("$T.field($L).as($S + entry.getKey())",
-                        DSL, inner, rkPrefix)
+                    ? CodeBlock.of("$T.field($L).as($L)", DSL, inner, rkAlias)
                     : CodeBlock.of("$T.field($L).as($S)", DSL, inner, s.asName());
             }
             case SelectTerm.Aggregate a ->
@@ -305,8 +335,8 @@ public final class ProjectionUnitRenderer {
             declareHopAliases(argHelpers, code, m.path(), aliases, "");
         }
 
-        code.addStatement("fields.add($T.multiset($L).as($S + entry.getKey()))",
-            DSL, multisetInnerSelect(c, m, terminalAlias, outputPackage), rkPrefix(c));
+        code.addStatement("fields.add($T.multiset($L).as($L))",
+            DSL, multisetInnerSelect(c, m, terminalAlias, outputPackage), rkAlias(c));
         return code.build();
     }
 
@@ -405,11 +435,11 @@ public final class ProjectionUnitRenderer {
         // Empty input short-circuits in Java, not SQL (jOOQ rejects DSL.values([])): a
         // falseCondition multiset keeps the aliased slot on the parent record for the reader.
         code.beginControlFlow("if (rows.length == 0)");
-        code.addStatement("fields.add($T.multiset($T.select($L).from($L).where($T.falseCondition())).as($S + entry.getKey()))",
+        code.addStatement("fields.add($T.multiset($T.select($L).from($L).where($T.falseCondition())).as($L))",
             DSL, DSL,
             ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
                 CodeBlock.of("$L", terminalAlias), outputPackage),
-            terminalAlias, DSL, rkPrefix(c));
+            terminalAlias, DSL, rkAlias(c));
         code.nextControlFlow("else");
 
         // VALUES derived-table alias: "idx" + one column per lookup key, labelled by SQL name so
@@ -420,9 +450,9 @@ public final class ProjectionUnitRenderer {
 
         var onCondition = LookupRows.onCondition(lm.mapping(), terminalAlias, "input", diagnostic);
 
-        code.addStatement("fields.add($T.multiset($L).as($S + entry.getKey()))",
+        code.addStatement("fields.add($T.multiset($L).as($L))",
             DSL, lookupInnerSelect(c, lm, aliases, terminalAlias, onCondition, outputPackage),
-            rkPrefix(c));
+            rkAlias(c));
         code.endControlFlow();
         return code.build();
     }
@@ -484,11 +514,11 @@ public final class ProjectionUnitRenderer {
         // Uniform multiset envelope (single row: the aggregate over the correlated set
         // collapses on its own), aliased by the runtime result key; the reader unwraps
         // Result.get(0).
-        code.addStatement("fields.add($T.multiset($T.select($L).from($L).where($L)).as($S + entry.getKey()))",
+        code.addStatement("fields.add($T.multiset($T.select($L).from($L).where($L)).as($L))",
             DSL, DSL,
             ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
                 CodeBlock.of("$L", aliasVar), outputPackage),
-            aliasVar, correlation.build(), rkPrefix(c));
+            aliasVar, correlation.build(), rkAlias(c));
         return code.build();
     }
 
@@ -524,7 +554,7 @@ public final class ProjectionUnitRenderer {
             var project = (Contribution.Project) contribution;
             for (var term : project.terms()) {
                 builder.addCode("    case $S -> fields.add($L);\n", project.field(),
-                    termExpression(argHelpers, term, CodeBlock.builder(), rkPrefix(project)));
+                    termExpression(argHelpers, term, CodeBlock.builder(), rkAlias(project)));
             }
         }
         builder.addCode("    default -> { } // non-slot selections (__typename) project nothing\n");

@@ -41,7 +41,7 @@ class ArgumentValidationTest {
 
     private static TableField tableField(List<WhereFilter> filters) {
         return new TableField("Film", "actors", null, FILM_RETURN, List.of(), filters, new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-            /* parentCorrelation */ null, AliasOwner.shared());
+            /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
     }
 
     enum Case implements ValidatorCase {

@@ -26,6 +26,8 @@ public enum GlobalUnitKind {
     /** Present exactly when the schema is federated and uses {@code @oneOf}. */
     ONE_OF_DIRECTIVE_SDL,
     SELECTION_OCCURRENCES,
+    /** The schema's nesting coordinates and the result-key alias path walk over them. */
+    NESTING_COORDINATES,
     ORDER_BY_RESULT,
     GRAPHITRON_CONTEXT,
     /** Commits the connection-runtime unit set; a session-state hook implementation joins it when configured. */

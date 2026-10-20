@@ -301,9 +301,11 @@ public sealed interface ChildField extends OutputField
         List<JoinStep> joinPath,
         CallSiteCompaction compaction,
         ParentCorrelation parentCorrelation,
-        AliasOwner aliasOwner
+        AliasOwner aliasOwner,
+        AliasScope aliasScope
     ) implements ChildField, ResultKeyAliasedField {
         public ColumnBackedReferenceField {
+            java.util.Objects.requireNonNull(aliasScope, "aliasScope");
             java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
             columns = List.copyOf(columns);
             if (columns.isEmpty()) {
@@ -417,9 +419,11 @@ public sealed interface ChildField extends OutputField
         PaginationSpec pagination,
         LookupResolution lookup,
         ParentCorrelation parentCorrelation,
-        AliasOwner aliasOwner
+        AliasOwner aliasOwner,
+        AliasScope aliasScope
     ) implements TableTargetField, ResultKeyAliasedField {
         public TableField {
+            java.util.Objects.requireNonNull(aliasScope, "aliasScope");
             java.util.Objects.requireNonNull(lookup, "lookup");
             java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
             ParentCorrelation.checkCarrierInvariant(parentCorrelation, joinPath, "TableField");
@@ -1246,9 +1250,11 @@ public sealed interface ChildField extends OutputField
         SourceLocation location,
         OperationMember.Pivot pivot,
         PivotSpec spec,
-        AliasOwner aliasOwner
+        AliasOwner aliasOwner,
+        AliasScope aliasScope
     ) implements PivotSpecField, ResultKeyAliasedField {
         public PivotField {
+            java.util.Objects.requireNonNull(aliasScope, "aliasScope");
             java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
             PivotSpec.checkMemberAgreement(pivot, spec, "PivotField");
         }
@@ -1694,9 +1700,11 @@ public sealed interface ChildField extends OutputField
         ReturnTypeRef returnType,
         List<JoinStep> joinPath,
         MethodRef method,
-        AliasOwner aliasOwner
+        AliasOwner aliasOwner,
+        AliasScope aliasScope
     ) implements ChildField, MethodBackedField, ResultKeyAliasedField {
         public ComputedField {
+            java.util.Objects.requireNonNull(aliasScope, "aliasScope");
             java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
         }
         @Override public DomainReturnType domainReturnType() {

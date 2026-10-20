@@ -299,6 +299,14 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "SelectionOccurrences");
     }
 
+    /**
+     * {@code <pkg>.util.NestingCoordinates}: the generated per-schema nesting-coordinate set and
+     * the runtime walk that composes a spliced field's result-key alias path from it.
+     */
+    public UnitRef nestingCoordinates() {
+        return unit(SUB_UTIL, "NestingCoordinates");
+    }
+
     /** {@code <pkg>.util.ConnectionHelper} — the generated pagination runtime. */
     public UnitRef connectionHelper() {
         return unit(SUB_UTIL, "ConnectionHelper");

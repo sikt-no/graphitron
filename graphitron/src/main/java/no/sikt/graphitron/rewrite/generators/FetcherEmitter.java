@@ -576,13 +576,13 @@ public final class FetcherEmitter {
                 // Env-dependent: the single-record multiset is aliased __rk_<resultKey>, so unwrap
                 // the Result read by the runtime result key (aliased duplicates each read their own).
                 CodeBlock body = CodeBlock.builder()
-                    .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
-                        RECORD, GeneratorUtils.resultKeyPrefix(tf.aliasOwner()), resultClass)
+                    .add("Object raw = (($T) env.getSource()).get($L, $T.class);\n",
+                        RECORD, resultKeyAliasRead(tf, outputPackage), resultClass)
                     .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
                     .build();
                 return envDependent(field.name(), fetchersClass, body);
             }
-            return columnByAlias(field.name(), fetchersClass, tf.aliasOwner());
+            return columnByAlias(field.name(), fetchersClass, tf, outputPackage);
         }
         if (field instanceof ChildField.PivotField pvf) {
             // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
@@ -592,8 +592,8 @@ public final class FetcherEmitter {
             var resultClass = ClassName.get("org.jooq", "Result");
             var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
             CodeBlock body = CodeBlock.builder()
-                .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
-                    RECORD, GeneratorUtils.resultKeyPrefix(pvf.aliasOwner()), resultClass)
+                .add("Object raw = (($T) env.getSource()).get($L, $T.class);\n",
+                    RECORD, resultKeyAliasRead(pvf, outputPackage), resultClass)
                 .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
                 .build();
             return envDependent(field.name(), fetchersClass, body);
@@ -610,7 +610,7 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.ComputedField cmp) {
             // Wired by name: the type's $project unit inlines the developer's method call
             // aliased to the result key; the read picks the result Record up by that alias.
-            return columnByAlias(field.name(), fetchersClass, cmp.aliasOwner());
+            return columnByAlias(field.name(), fetchersClass, cmp, outputPackage);
         }
         if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {
             // Cross-table participant field on a TableInterfaceType participant: the interface
@@ -630,7 +630,7 @@ public final class FetcherEmitter {
             // NodeIdEncodeKeys instance never reaches emission: the validator rejects it as
             // deferred, and one leaking through falls to the ResultKeyAliasedField guard below
             // and fails loudly.
-            return columnByAlias(field.name(), fetchersClass, crf.aliasOwner());
+            return columnByAlias(field.name(), fetchersClass, crf, outputPackage);
         }
         // A ResultKeyAliasedField reaching here would fall through to a plain method-backed
         // reference and never read its __rk_ alias, silently mis-resolving aliased duplicates.
@@ -664,10 +664,32 @@ public final class FetcherEmitter {
      * quoted-name reference addresses the projected alias whatever characters it carries.
      */
     private static FetcherBinding columnByAlias(String name, ClassName fetchersClass,
-            no.sikt.graphitron.rewrite.model.AliasOwner aliasOwner) {
+            ResultKeyAliasedField field, String outputPackage) {
         return envDependent(name, fetchersClass,
-            CodeBlock.of("return (($T) env.getSource()).get($T.field($T.name($S + env.getField().getResultKey())));\n",
-                RECORD, DSL, DSL, GeneratorUtils.resultKeyPrefix(aliasOwner)));
+            CodeBlock.of("return (($T) env.getSource()).get($T.field($T.name($L)));\n",
+                RECORD, DSL, DSL, resultKeyAliasRead(field, outputPackage)));
+    }
+
+    /**
+     * The read half of a result-key alias, the expression a reader addresses its term by:
+     * the prefix composed from the field's stamped
+     * {@link no.sikt.graphitron.rewrite.model.AliasOwner}, then, for a
+     * {@link no.sikt.graphitron.rewrite.model.AliasScope.Spliced} field (written into an
+     * ancestor's row by a spliced nesting unit), the alias path the generated
+     * {@code NestingCoordinates.rkPath} composes from the execution step chain, then the runtime
+     * result key. The write half is the projection renderer's alias composition; both read the
+     * same two stamps off the same field.
+     */
+    private static CodeBlock resultKeyAliasRead(ResultKeyAliasedField field, String outputPackage) {
+        String prefix = GeneratorUtils.resultKeyPrefix(field.aliasOwner());
+        return switch (field.aliasScope()) {
+            case no.sikt.graphitron.rewrite.model.AliasScope.RowOwner ignored ->
+                CodeBlock.of("$S + env.getField().getResultKey()", prefix);
+            case no.sikt.graphitron.rewrite.model.AliasScope.Spliced ignored ->
+                CodeBlock.of("$S + $T.rkPath(env) + env.getField().getResultKey()", prefix,
+                    ClassName.get(outputPackage + "." + no.sikt.graphitron.plan.GeneratedUnits.SUB_UTIL,
+                        no.sikt.graphitron.rewrite.generators.util.NestingCoordinatesClassGenerator.CLASS_NAME));
+        };
     }
 
     /**

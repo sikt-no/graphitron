@@ -99,6 +99,18 @@ public final class ProjectionCall {
             className(unit), METHOD_NAME, selectionOccurrencesClass(outputPackage), occurrencesExpr, tableExpr);
     }
 
+    /**
+     * {@code <Unit>.$project(SelectionOccurrences.mergeByResultKey(<occurrences>), <table>, env,
+     * <rkPath>)}: the splice into a nested unit, which takes the alias path of the row it writes
+     * into.
+     */
+    public static CodeBlock fromOccurrences(UnitRef unit, CodeBlock occurrencesExpr, CodeBlock tableExpr,
+            CodeBlock rkPathExpr, String outputPackage) {
+        return CodeBlock.of("$T.$L($T.mergeByResultKey($L), $L, env, $L)",
+            className(unit), METHOD_NAME, selectionOccurrencesClass(outputPackage), occurrencesExpr,
+            tableExpr, rkPathExpr);
+    }
+
     /** {@code <Unit>.$project(<grouped>, <table>, env)} for an already-grouped map expression. */
     public static CodeBlock fromGrouped(ClassName unitClass, CodeBlock groupedExpr, CodeBlock tableExpr) {
         return CodeBlock.of("$T.$L($L, $L, env)",

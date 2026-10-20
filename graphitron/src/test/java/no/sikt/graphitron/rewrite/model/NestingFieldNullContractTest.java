@@ -53,7 +53,7 @@ class NestingFieldNullContractTest {
         return new ChildField.ComputedField("Release", name, null,
             new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)), List.of(),
             TestFixtures.staticOnlyMethodRef("test.Helpers", name, ClassName.get(String.class)),
-            AliasOwner.shared());
+            AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
     }
 
     private static JoinStep.Hop fkHop(List<ColumnRef> source, TableRef target, List<ColumnRef> targetSide,
@@ -66,7 +66,7 @@ class NestingFieldNullContractTest {
         return new ChildField.TableField("Release", name, null,
             new ReturnTypeRef.TableBoundReturnType("Language", TestFixtures.languageTable(), wrapper),
             path, List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-            TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared());
+            TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
     }
 
     private static ChildField.TableField singleReference(String name, JoinStep.Hop... path) {
@@ -215,7 +215,7 @@ class NestingFieldNullContractTest {
                 List.of(COUNTRY_ID), TestFixtures.joinTarget("country"), List.of(COUNTRY_ID), null, "c_1"));
         var scalar = new ChildField.ColumnBackedReferenceField("Release", "countryName", null,
             List.of(NAME), path, new CallSiteCompaction.Direct(),
-            TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared());
+            TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
         var nf = nullable("release", scalar);
         assertThat(nf.nullContract()).isEqualTo(new NullContract.CollapsesWhenAbsent(List.of(
             new PresenceLeaf(List.of(LANGUAGE_ID)))));

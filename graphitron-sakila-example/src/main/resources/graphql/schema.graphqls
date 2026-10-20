@@ -2684,6 +2684,11 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # @externalField expression at nested depth, mirroring the flat languageName / isEnglish
     # above so an execution test can assert the two agree.
     projected:   FilmProjectedLeaves
+    # Sibling nesting fields sharing one row: both nesting types declare `language`, over the
+    # film's language and original language respectively. Each spliced unit writes into the film's
+    # row, so the two `language` terms are told apart only by the path of result keys to them.
+    spoken:      FilmSpokenLanguage
+    original:    FilmOriginalLanguage
     # NestingField + inline table/lookup-keyed child fixture: exercises the sfName
     # parameter threaded into the inline emitters. Nested field arms resolve against the
     # outer Film table alias via $project recursion at depth 1, so they reference sf1
@@ -3018,6 +3023,16 @@ type FilmProjectedLeaves {
     # The same two leaves one level deeper: the inner unit is minted against the inner
     # anchor, so a correlation that leaked the outer table would surface here.
     inner: FilmProjectedLeavesInner
+}
+
+type FilmSpokenLanguage {
+    language: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# Every seeded film's original_language_id is NULL, so this side reads null where its sibling
+# reads English.
+type FilmOriginalLanguage {
+    language: Language @reference(path: [{key: "film_original_language_id_fkey"}])
 }
 
 type FilmProjectedLeavesInner {
@@ -3956,6 +3971,10 @@ type FanAlpha implements FanItem @table(name: "fan_base") @discriminator(value: 
         @reference(path: [{key: "fan_mark_alpha_base_id_fkey"}]) @defaultOrder(primaryKey: true)
     details(first: Int): [FanDetail!]!
         @reference(path: [{key: "fan_detail_fan_base_id_fkey"}]) @defaultOrder(primaryKey: true)
+    # A participant's nesting field: its spliced leaf lands in the fold's one row beside
+    # FanBeta.betaPlacement's same-named leaf, which reads over the other FK. The two aliases are
+    # told apart by their splice chains (alphaPlacement/target, betaPlacement/target).
+    alphaPlacement: FanAlphaPlacement
 }
 
 type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "BETA") {
@@ -3968,6 +3987,15 @@ type FanBeta implements FanItem @table(name: "fan_base") @discriminator(value: "
         @reference(path: [{key: "fan_mark_beta_base_id_fkey"}]) @defaultOrder(primaryKey: true)
     details(first: Int): [FanDetail!]!
         @reference(path: [{key: "fan_detail_fan_base_id_fkey"}]) @defaultOrder(primaryKey: true)
+    betaPlacement: FanBetaPlacement
+}
+
+type FanAlphaPlacement {
+    target: FanTarget @reference(path: [{key: "fan_base_alpha_target_id_fkey"}])
+}
+
+type FanBetaPlacement {
+    target: FanTarget @reference(path: [{key: "fan_base_beta_target_id_fkey"}])
 }
 
 # The two participants' 'target' destination, one table reached over two different FKs.

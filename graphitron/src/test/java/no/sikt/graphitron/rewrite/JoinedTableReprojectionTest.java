@@ -72,7 +72,7 @@ class JoinedTableReprojectionTest {
         return new ChildField.ColumnBackedReferenceField("Individual", name, LOC, List.of(baseColumn),
             List.of(hop), new CallSiteCompaction.Direct(),
             new no.sikt.graphitron.rewrite.model.ParentCorrelation.OnFkSlots(hop),
-            no.sikt.graphitron.rewrite.model.AliasOwner.shared());
+            no.sikt.graphitron.rewrite.model.AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
     }
 
     @Test

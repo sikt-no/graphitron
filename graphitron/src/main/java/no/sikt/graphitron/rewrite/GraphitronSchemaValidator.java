@@ -151,10 +151,11 @@ public class GraphitronSchemaValidator {
      * alias silently lose one of the two projections. The alias qualifier this generator stamps
      * closes that for a name the participant type declares itself; what it cannot close is a name
      * the interface declares (every arm mints the interface-qualified alias, which is exactly what
-     * makes the agreeing case collapse to one term) or a name a spliced nesting unit contributes
-     * (no anchor-dependent alias exists that the nesting type's one registered fetcher could
-     * read). Those two are what this census rejects, so no shape covered by the
-     * correct-or-build-error promise resolves to a silent drop.
+     * makes the agreeing case collapse to one term) or a leaf a spliced nesting unit contributes
+     * over the same chain of nesting field names (a spliced alias is qualified by its path of
+     * result keys, not by participant, and the conflict's field name is that chain plus the leaf,
+     * as in {@code location/district}). Those two are what this census rejects, so no shape covered
+     * by the correct-or-build-error promise resolves to a silent drop.
      *
      * <p>Deferred, not an author error: the divergent schema is legal and meaningful, and
      * qualifying every arm per participant would emit it. The rejection says the generator does

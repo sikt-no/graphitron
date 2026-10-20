@@ -20,6 +20,7 @@ import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_
 import static no.sikt.graphitron.rewrite.TestFixtures.col;
 import static no.sikt.graphitron.rewrite.TestFixtures.filmTable;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Per-arm unit tests for {@link ProjectionUnitRenderer}: a total function whose inputs are
@@ -94,7 +95,7 @@ class ProjectionUnitRendererTest {
         var row = filmRow(List.of(new Contribution.Project("id", List.of(
             new SelectTerm.Column(col("id_1", "ID_1", "java.lang.Integer"), TermAlias.BY_COLUMN_IDENTITY),
             new SelectTerm.Column(col("id_2", "ID_2", "java.lang.Integer"), TermAlias.BY_COLUMN_IDENTITY)),
-            AliasOwner.shared())));
+            AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("case \"id\" ->");
         assertThat(body).contains("fields.add(table.ID_1)");
@@ -108,7 +109,7 @@ class ProjectionUnitRendererTest {
         var row = filmRow(List.of(new Contribution.Project("original", List.of(
             new SelectTerm.Column(col("original_id", "ORIGINAL_ID", "java.lang.Integer"),
                 TermAlias.BY_RESULT_KEY)),
-            AliasOwner.shared())));
+            AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("table.ORIGINAL_ID.as(\"__rk_\" + entry.getKey())");
     }
@@ -120,7 +121,7 @@ class ProjectionUnitRendererTest {
         var row = filmRow(List.of(new Contribution.Project("original", List.of(
             new SelectTerm.Column(col("original_id", "ORIGINAL_ID", "java.lang.Integer"),
                 TermAlias.BY_RESULT_KEY)),
-            AliasOwner.qualifiedBy("FanAlpha"))));
+            AliasOwner.qualifiedBy("FanAlpha"), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("table.ORIGINAL_ID.as(\"__rk_FanAlpha$\" + entry.getKey())");
     }
@@ -134,7 +135,7 @@ class ProjectionUnitRendererTest {
         // several anchors and graphql-java registers one fetcher per coordinate.
         var row = filmRow(List.of(new Contribution.Call("details",
             UNITS.nestingUnit("Film", "FilmDetails"), new CallWrap.Splice(List.of()),
-            AliasOwner.qualifiedBy("FanAlpha"))));
+            AliasOwner.qualifiedBy("FanAlpha"), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("case \"details\" -> fields.addAll(");
         assertThat(body).doesNotContain("__rk_");
@@ -150,11 +151,75 @@ class ProjectionUnitRendererTest {
             List.of(new Contribution.Project("title", List.of(
                 new SelectTerm.Column(col("title", "TITLE", "java.lang.String"),
                     TermAlias.BY_COLUMN_IDENTITY)),
-                AliasOwner.shared())));
+                AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var spec = render(row);
         assertThat(spec.name()).isEqualTo("FilmFilmDetails");
         assertThat(projectMethod(spec).parameters()).extracting(p -> p.type().toString())
             .contains(DEFAULT_JOOQ_PACKAGE + ".public_.tables.Film");
+    }
+
+    private static Contribution.Project resultKeyColumn(String field,
+            no.sikt.graphitron.rewrite.model.AliasScope scope) {
+        return new Contribution.Project(field, List.of(
+            new SelectTerm.Column(col("title", "TITLE", "java.lang.String"), TermAlias.BY_RESULT_KEY)),
+            AliasOwner.shared(), scope);
+    }
+
+    private static ProjectionCommand.NestedUnit nestedRow(List<Contribution> contributions) {
+        return new ProjectionCommand.NestedUnit(
+            UNITS.nestingUnit("Film", "FilmDetails"),
+            filmTable(List.of(col("id", "ID", "java.lang.Integer"))),
+            contributions);
+    }
+
+    @Test
+    void nestedUnit_takesThePathOfTheRowItWritesIntoAndQualifiesItsSplicedAliases() {
+        var m = projectMethod(render(nestedRow(List.of(
+            resultKeyColumn("heading", no.sikt.graphitron.rewrite.model.AliasScope.spliced())))));
+        assertThat(m.parameters()).extracting(p -> p.name())
+            .containsExactly("grouped", "table", "env", "rkPath");
+        assertThat(m.code().toString())
+            .as("a spliced term's alias is the prefix, the path to its row, then its own key")
+            .contains("table.TITLE.as(\"__rk_\" + rkPath + entry.getKey())");
+    }
+
+    @Test
+    void anchorUnit_takesNoPathAndKeepsTheUnqualifiedAlias() {
+        var m = projectMethod(render(filmRow(List.of(
+            resultKeyColumn("heading", no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())))));
+        assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("grouped", "table", "env");
+        assertThat(m.code().toString()).contains("table.TITLE.as(\"__rk_\" + entry.getKey())");
+    }
+
+    @Test
+    void splice_passesThePathFromTheRowsOwnerDownToThisOccurrence() {
+        var splice = new Contribution.Call("details", UNITS.nestingUnit("Film", "FilmDetails"),
+            new CallWrap.Splice(List.of()), AliasOwner.shared(),
+            no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
+        assertThat(projectMethod(render(filmRow(List.of(splice)))).code().toString())
+            .as("an anchor starts the path at this occurrence's key")
+            .contains("entry.getValue()), table, env, entry.getKey() + \"/\")");
+        assertThat(projectMethod(render(nestedRow(List.of(splice)))).code().toString())
+            .as("a nested unit extends its own path")
+            .contains("entry.getValue()), table, env, rkPath + entry.getKey() + \"/\")");
+    }
+
+    @Test
+    void unitKindAndAliasScopeCannotDisagree() {
+        var spliced = resultKeyColumn("heading", no.sikt.graphitron.rewrite.model.AliasScope.spliced());
+        var rowOwned = resultKeyColumn("heading", no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
+        assertThatThrownBy(() -> filmRow(List.of(spliced)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("AnchorUnit")
+            .hasMessageContaining("'heading' is stamped Spliced");
+        assertThatThrownBy(() -> nestedRow(List.of(rowOwned)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("NestedUnit")
+            .hasMessageContaining("'heading' is stamped RowOwner");
+        // A term that writes no result-key alias carries no path, whatever its stamp.
+        nestedRow(List.of(new Contribution.Project("title", List.of(
+            new SelectTerm.Column(col("title", "TITLE", "java.lang.String"), TermAlias.BY_COLUMN_IDENTITY)),
+            AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
     }
 
     @Test
@@ -167,7 +232,7 @@ class ProjectionUnitRendererTest {
                     col("title_txt", "TITLE_TXT", "java.lang.String"),
                     col("lang_code", "LANG_CODE", "java.lang.String"),
                     "nn", "nn")),
-                AliasOwner.shared())));
+                AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var spec = render(row);
         assertThat(spec.name()).isEqualTo("FilmTitleTexts");
         var body = projectMethod(spec).code().toString();

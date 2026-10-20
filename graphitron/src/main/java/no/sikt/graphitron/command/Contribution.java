@@ -1,6 +1,7 @@
 package no.sikt.graphitron.command;
 
 import no.sikt.graphitron.rewrite.model.AliasOwner;
+import no.sikt.graphitron.rewrite.model.AliasScope;
 
 import java.util.List;
 import java.util.Objects;
@@ -26,6 +27,11 @@ import java.util.Objects;
  * composes, and the field's fetcher composes the same prefix from the same stamped value, so the
  * write and read halves of an aliased term cannot drift. An arm that mints no result-key-aliased
  * term carries {@link AliasOwner.Shared}, which the mint answers with the bare prefix.
+ *
+ * <p>{@link #aliasScope()} is the field's other stamped alias verdict, copied the same way: a
+ * {@link AliasScope.Spliced} term is written into an ancestor's row and its alias carries the
+ * path of result keys to it. An arm that mints no result-key-aliased term carries
+ * {@link AliasScope.RowOwner}.
  */
 public sealed interface Contribution {
 
@@ -38,11 +44,26 @@ public sealed interface Contribution {
      */
     AliasOwner aliasOwner();
 
+    /**
+     * Where the row the field's result-key-aliased terms are written into starts, as stamped on
+     * the model leaf. See {@link no.sikt.graphitron.rewrite.model.ResultKeyAliasedField#aliasScope()}.
+     */
+    AliasScope aliasScope();
+
+    /**
+     * Whether this contribution writes a term under a result-key alias: a column or helper term
+     * aliased by result key, an unnamed scalar subselect, or a multiset envelope. A splice writes
+     * none of its own (its callee's terms carry their own), and neither does a plain column.
+     */
+    boolean writesResultKeyAlias();
+
     /** Terms this unit builds from its own table context. */
-    record Project(String field, List<SelectTerm> terms, AliasOwner aliasOwner) implements Contribution {
+    record Project(String field, List<SelectTerm> terms, AliasOwner aliasOwner, AliasScope aliasScope)
+            implements Contribution {
         public Project {
             requireField(field, "Project");
             Objects.requireNonNull(aliasOwner, "aliasOwner");
+            Objects.requireNonNull(aliasScope, "aliasScope");
             terms = List.copyOf(terms);
             if (terms.isEmpty()) {
                 throw new IllegalArgumentException(
@@ -50,15 +71,32 @@ public sealed interface Contribution {
                     + "nothing has no contribution");
             }
         }
+
+        @Override
+        public boolean writesResultKeyAlias() {
+            return terms.stream().anyMatch(term -> switch (term) {
+                case SelectTerm.Column c -> c.alias() == TermAlias.BY_RESULT_KEY;
+                case SelectTerm.HelperCall ignored -> true;
+                case SelectTerm.ScalarSubselect sub -> sub.asName() == null;
+                case SelectTerm.Aggregate ignored -> false;
+            });
+        }
     }
 
     /** Fields another projection unit decides, arriving per {@link CallWrap}. */
-    record Call(String field, UnitRef callee, CallWrap wrap, AliasOwner aliasOwner) implements Contribution {
+    record Call(String field, UnitRef callee, CallWrap wrap, AliasOwner aliasOwner, AliasScope aliasScope)
+            implements Contribution {
         public Call {
             requireField(field, "Call");
             Objects.requireNonNull(callee, "callee");
             Objects.requireNonNull(wrap, "wrap");
             Objects.requireNonNull(aliasOwner, "aliasOwner");
+            Objects.requireNonNull(aliasScope, "aliasScope");
+        }
+
+        @Override
+        public boolean writesResultKeyAlias() {
+            return !(wrap instanceof CallWrap.Splice);
         }
     }
 

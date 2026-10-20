@@ -9,6 +9,9 @@ import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
+import java.util.SortedSet;
+import java.util.TreeSet;
 
 /**
  * The nesting/pivot reach fold: every type reached as a nesting projection (or a pivot
@@ -28,11 +31,18 @@ import java.util.Map;
  * divergence is a recorded fact of the retired two-pass emitter, named here rather than
  * silently fused (its repair is a key widening on the type-unit relation, tracked on the
  * roadmap).
+ *
+ * <p>{@link #nestingCoordinates} is every nesting edge the same walk visits, as
+ * {@code <parent type>.<field>}, not only the representatives: the set the generated
+ * {@code NestingCoordinates} walk reads to compose a spliced field's result-key alias path at
+ * runtime.
  */
-public record NestingReach(Map<String, ChildField.NestingField> representatives) {
+public record NestingReach(Map<String, ChildField.NestingField> representatives,
+        SortedSet<String> nestingCoordinates) {
 
     public NestingReach {
         representatives = Map.copyOf(representatives);
+        nestingCoordinates = java.util.Collections.unmodifiableSortedSet(new TreeSet<>(nestingCoordinates));
     }
 
     /** The reached type names in walk order (first-occurrence). */
@@ -56,6 +66,7 @@ public record NestingReach(Map<String, ChildField.NestingField> representatives)
 
     static NestingReach compute(GraphitronSchema schema) {
         var representatives = new LinkedHashMap<String, ChildField.NestingField>();
+        var coordinates = new TreeSet<String>();
         schema.types().entrySet().stream()
             .filter(e -> e.getValue() instanceof GraphitronType.TableBackedType)
             .sorted(Map.Entry.comparingByKey())
@@ -67,20 +78,31 @@ public record NestingReach(Map<String, ChildField.NestingField> representatives)
                 // recursion (which descended NestingFields alone); widening that reach is an
                 // emission change, not a relocation.
                 if (f instanceof ChildField.NestingField nf) {
-                    collect(nf, representatives);
+                    collect(nf, representatives, coordinates);
                 }
+                // The pivot wiring is not a nesting edge: its row is the pivot subselect's own,
+                // so its coordinates stay out of the set, or the alias-path walk would cross a
+                // pivot row boundary.
                 if (f instanceof ChildField.PivotSpecField p) {
-                    collect(pivotWiring(p), representatives);
+                    collect(pivotWiring(p), representatives, new TreeSet<>());
                 }
             }));
-        return new NestingReach(representatives);
+        return new NestingReach(representatives, coordinates);
     }
 
-    private static void collect(ChildField.NestingField nf, Map<String, ChildField.NestingField> out) {
+    /**
+     * Records the edge's representative and its coordinate, then descends. The coordinate is the
+     * edge's parent type and field name: the table-backed type for a root-level edge, the
+     * enclosing nesting type for an inner one, which is what the runtime step chain reports as
+     * the step's object type.
+     */
+    private static void collect(ChildField.NestingField nf, Map<String, ChildField.NestingField> out,
+            Set<String> coordinates) {
         out.putIfAbsent(nf.returnType().returnTypeName(), nf);
+        coordinates.add(nf.parentTypeName() + "." + nf.name());
         for (var nested : nf.nestedFields()) {
             if (nested instanceof ChildField.NestingField inner) {
-                collect(inner, out);
+                collect(inner, out, coordinates);
             }
         }
     }

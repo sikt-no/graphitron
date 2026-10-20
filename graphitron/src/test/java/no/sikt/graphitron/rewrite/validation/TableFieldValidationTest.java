@@ -47,21 +47,21 @@ class TableFieldValidationTest {
 
         NO_PATH("no @reference — FK auto-inference will be attempted at code-generation time",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(), List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         WITH_FK_PATH("explicit FK path — key resolved to a jOOQ ForeignKey",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 FK_PATH,
                 List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
+                TestFixtures.pcFor(FK_PATH, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         SINGLE_WITH_CONDITION_ONLY("single cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)),
                 CONDITION_PATH,
                 List.of(), new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         LIST_WITH_CONDITION_ONLY("list cardinality with condition-only join step — classifies and emits a correlated subquery (R232)",
@@ -70,21 +70,21 @@ class TableFieldValidationTest {
                 List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true),
                 null, LookupResolution.None.INSTANCE,
-                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared()),
+                TestFixtures.pcFor(CONDITION_PATH, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED("resolved @condition on field — adds WHERE clause",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         FIELD_CONDITION_RESOLVED_OVERRIDE("resolved @condition with override:true — override applied at build time",
             new TableField("Film", "actors", null, actorReturn(new FieldWrapper.Single(true)), List.of(),
                 List.of(new ConditionFilter("com.example.Conditions", "actorCondition", List.of())),
                 new OrderBySpec.None(), null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         DEFAULT_ORDER_FIELDS("@defaultOrder with explicit fields",
@@ -93,7 +93,7 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true),
                 null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         DEFAULT_ORDER_INDEX("@defaultOrder with named index",
@@ -102,7 +102,7 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("last_name", "LAST_NAME", "java.lang.String"), null, OrderBySpec.SortDirection.ASC)), true),
                 null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         DEFAULT_ORDER_PRIMARY_KEY("@defaultOrder with primaryKey mode",
@@ -111,7 +111,7 @@ class TableFieldValidationTest {
                 List.of(), List.of(),
                 new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("actor_id", "ACTOR_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true),
                 null, LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         PAGINATED_WITH_ORDERING("connection with pagination and ordering",
@@ -124,7 +124,7 @@ class TableFieldValidationTest {
                     null,
                     new PaginationSpec.PaginationArg("String", false),
                     null), LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         PAGINATED_WITHOUT_ORDERING("connection with pagination but no ordering — error",
@@ -137,7 +137,7 @@ class TableFieldValidationTest {
                     null,
                     new PaginationSpec.PaginationArg("String", false),
                     null), LookupResolution.None.INSTANCE,
-                /* parentCorrelation */ null, AliasOwner.shared()),
+                /* parentCorrelation */ null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of("Field 'Film.actors': paginated fields must have ordering (add @defaultOrder or @orderBy)"));
 
         private final String description;

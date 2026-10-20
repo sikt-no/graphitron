@@ -26,6 +26,15 @@ import no.sikt.graphitron.rewrite.model.AliasOwner;
  * composes a client-minted result key no build-time check can enumerate. PostgreSQL's 63-byte
  * identifier limit bounds both, and the qualifier consumes more of that budget without changing
  * the exposure in kind.
+ *
+ * <p>The third axis is the alias <em>path</em> ({@link no.sikt.graphitron.rewrite.model.AliasScope}):
+ * a term a spliced nesting unit writes into an ancestor's row carries the result keys from the
+ * row's owner down to its nesting occurrence, each followed by {@link #RESULT_KEY_PATH_DELIMITER},
+ * between the prefix and its own key: {@code __rk_} + optional {@code <owner>$} + path + key. The
+ * delimiter is outside the GraphQL name grammar and differs from the owner delimiter, so the
+ * composition is injective for the same reason the owner qualifier is; it is not {@code .},
+ * because the generated reads address the alias as a plain field name, where a dot risks being
+ * read as a qualifier.
  */
 public final class ReservedAliases {
 
@@ -36,7 +45,23 @@ public final class ReservedAliases {
      */
     private static final String OWNER_DELIMITER = "$";
 
+    /**
+     * The path segment delimiter of a path-qualified result-key alias: the separator graphql-java
+     * itself uses for selection paths. Written by the spliced projection units and composed by the
+     * generated {@code NestingCoordinates} read; both spell it from here.
+     */
+    public static final String RESULT_KEY_PATH_DELIMITER = "/";
+
     private ReservedAliases() {}
+
+    /**
+     * One segment of a result-key alias path: a nesting occurrence's result key followed by the
+     * {@link #RESULT_KEY_PATH_DELIMITER}. The build-time census composes the default-key path
+     * through this too, so its claim keys spell what the runtime writes.
+     */
+    public static String resultKeyPathSegment(String resultKey) {
+        return resultKey + RESULT_KEY_PATH_DELIMITER;
+    }
 
     /**
      * The emitted alias prefix for one {@link AliasOwner}: the

@@ -59,6 +59,7 @@ import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.NestingCoordinatesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.SelectionOccurrencesClassGenerator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -607,6 +608,7 @@ public class GraphQLRewriteGenerator {
             case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null);
             case ONE_OF_DIRECTIVE_SDL -> OneOfDirectiveSdlGenerator.generate(outputPackage);
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
+            case NESTING_COORDINATES -> NestingCoordinatesClassGenerator.generate(schema.nestingReach());
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
             case GRAPHITRON_CONTEXT -> GraphitronContextInterfaceGenerator.generate();
             case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType, tenantColumn);

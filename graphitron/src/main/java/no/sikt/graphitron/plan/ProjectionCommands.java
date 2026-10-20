@@ -6,12 +6,14 @@ import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.GlueCall;
 import no.sikt.graphitron.command.ProjectionCommand;
+import no.sikt.graphitron.command.ReservedAliases;
 import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.command.TermAlias;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.AliasOwner;
+import no.sikt.graphitron.rewrite.model.AliasScope;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -166,7 +168,7 @@ public final class ProjectionCommands {
                 cf.columns().stream()
                     .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
                     .toList(),
-                aliasOwnerOf(cf)));
+                aliasOwnerOf(cf), aliasScopeOf(cf)));
             case ChildField.ColumnBackedReferenceField crf -> {
                 if (crf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys) {
                     throw new IllegalStateException(
@@ -182,7 +184,7 @@ public final class ProjectionCommands {
                         ? new SelectTerm.Column(crf.columns().get(0), TermAlias.BY_RESULT_KEY)
                         : new SelectTerm.ScalarSubselect(
                             crf.joinPath(), crf.parentCorrelation(), crf.columns().get(0))),
-                    aliasOwnerOf(crf)));
+                    aliasOwnerOf(crf), aliasScopeOf(crf)));
             }
             // The table-target family's one arm: the delivery fork and the
             // Multiset-vs-LookupMultiset fork are member and delivery reads, never leaf
@@ -194,7 +196,7 @@ public final class ProjectionCommands {
             case ChildField.NestingField nf -> {
                 var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
                 yield Optional.of(new Contribution.Call(nf.name(), nested2,
-                    new CallWrap.Splice(nf.parentRowColumns()), aliasOwnerOf(nf)));
+                    new CallWrap.Splice(nf.parentRowColumns()), aliasOwnerOf(nf), aliasScopeOf(nf)));
             }
             // The parent's own row through the return type's anchor unit, in a record scope of its
             // own; the presence columns are the null contract's, read off the same schema fold the
@@ -204,12 +206,12 @@ public final class ProjectionCommands {
                 new CallWrap.SameRow(schema.sameRowNullContract(srf).presenceColumns()),
                 aliasOwnerOf(srf)));
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
-                List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp)));
+                List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp), aliasScopeOf(cmp)));
             case ChildField.PivotField pf -> {
                 var pivotUnit = mintPivotUnit(pf, units, census);
                 yield Optional.of(new Contribution.Call(pf.name(), pivotUnit,
                     new CallWrap.PivotMultiset(pf.pivot().table(), pf.spec().pairs()),
-                    aliasOwnerOf(pf)));
+                    aliasOwnerOf(pf), aliasScopeOf(pf)));
             }
             // The batched pivot delivers through the DataLoader seam (the projection itself is
             // still this coordinate's pivot unit, which the batched rows method consumes), so
@@ -296,7 +298,7 @@ public final class ProjectionCommands {
                     mapping,
                     units.inputRowsMethod(owner, ttf.name()),
                     glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod)),
-                aliasOwnerOf(ttf)));
+                aliasOwnerOf(ttf), aliasScopeOf(ttf)));
         }
         return Optional.of(new Contribution.Call(ttf.name(),
             units.typeClass(ttf.returnType().returnTypeName()),
@@ -310,7 +312,7 @@ public final class ProjectionCommands {
                     && ttf.pagination() != null && ttf.pagination().first() != null,
                 glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod),
                 readsSelectedFieldArguments(ttf)),
-            aliasOwnerOf(ttf)));
+            aliasOwnerOf(ttf), aliasScopeOf(ttf)));
     }
 
     /**
@@ -322,6 +324,15 @@ public final class ProjectionCommands {
      */
     private static AliasOwner aliasOwnerOf(ChildField field) {
         return field instanceof ResultKeyAliasedField rk ? rk.aliasOwner() : AliasOwner.shared();
+    }
+
+    /**
+     * The field's stamped alias scope, read off the model leaf like {@link #aliasOwnerOf}: the
+     * {@link ResultKeyAliasedField} members carry one, everything else writes no result-key alias
+     * and answers {@link AliasScope#rowOwner()}.
+     */
+    private static AliasScope aliasScopeOf(ChildField field) {
+        return field instanceof ResultKeyAliasedField rk ? rk.aliasScope() : AliasScope.rowOwner();
     }
 
     /**
@@ -367,7 +378,7 @@ public final class ProjectionCommands {
             .map(slot -> (Contribution) new Contribution.Project(slot.name(), List.of(
                 new SelectTerm.Aggregate(pivot.value(), pivot.discriminator(),
                     pivot.tokenBySlot().get(slot.name()), slot.readName())),
-                AliasOwner.shared()))
+                AliasOwner.shared(), AliasScope.rowOwner()))
             .toList();
         census.add(new ProjectionCommand.PivotUnit(unit, pivot.table(), contributions),
             "@pivot coordinate '" + field.parentTypeName() + "." + field.name() + "'");
@@ -484,7 +495,7 @@ public final class ProjectionCommands {
             columns.stream().distinct()
                 .map(col -> (SelectTerm) new SelectTerm.Column(col, TermAlias.BY_COLUMN_IDENTITY))
                 .toList(),
-            AliasOwner.shared()));
+            AliasOwner.shared(), AliasScope.rowOwner()));
     }
 
     // ------------------------------------------------------------------------------------------
@@ -645,11 +656,12 @@ public final class ProjectionCommands {
                     if (cf instanceof ResultKeyAliasedField rk
                             && rk.aliasOwner() instanceof AliasOwner.QualifiedBy owner
                             && owner.owner().equals(iface.name())) {
-                        claim(conflicts, interfaceOwned, iface.name(), cf, tb.typeName(),
+                        claim(conflicts, interfaceOwned, iface.name(), cf.name(), cf, tb.typeName(),
                             "declared on interface '" + iface.name() + "'");
                     }
                     if (cf instanceof ChildField.NestingField nf) {
-                        collectSplicedClaims(conflicts, spliced, iface.name(), tb.typeName(), nf);
+                        collectSplicedClaims(conflicts, spliced, iface.name(), tb.typeName(), nf,
+                            ReservedAliases.resultKeyPathSegment(nf.name()));
                     }
                 }
             }
@@ -661,20 +673,31 @@ public final class ProjectionCommands {
      * Walks one spliced nesting subtree, claiming every result-key alias its units contribute.
      * Recurses through further nesting fields, because a splice chain lands every level's terms in
      * the same enclosing field set and therefore in the fold's one namespace.
+     *
+     * <p>A spliced alias is path-qualified by the result keys of its splice chain
+     * ({@link no.sikt.graphitron.rewrite.model.AliasScope.Spliced}), so the claim key is that
+     * chain of nesting field names plus the leaf name: the composed alias at the default
+     * (unaliased) result keys. A client alias on a participant's nesting field cannot make two
+     * participants compose one alias over divergent SQL behind this census's back, because the
+     * fold keeps every nesting field's occurrences whole across participants
+     * ({@link no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.SelectionRestriction}), so
+     * two different nesting fields under one client key meet in one arm and are rejected at
+     * runtime. Narrowing that exemption means revisiting this key in the same change.
      */
     private static void collectSplicedClaims(List<SiblingProjectionConflict> conflicts,
             LinkedHashMap<String, ProjectionClaim> claims, String interfaceName,
-            String participantTypeName, ChildField.NestingField nesting) {
+            String participantTypeName, ChildField.NestingField nesting, String chain) {
         for (var nested : nesting.nestedFields()) {
             if (!(nested instanceof ChildField cf)) {
                 continue;
             }
             if (cf instanceof ResultKeyAliasedField) {
-                claim(conflicts, claims, interfaceName, cf, participantTypeName,
+                claim(conflicts, claims, interfaceName, chain + cf.name(), cf, participantTypeName,
                     "reached through nesting type '" + nesting.returnType().returnTypeName() + "'");
             }
             if (cf instanceof ChildField.NestingField deeper) {
-                collectSplicedClaims(conflicts, claims, interfaceName, participantTypeName, deeper);
+                collectSplicedClaims(conflicts, claims, interfaceName, participantTypeName, deeper,
+                    chain + ReservedAliases.resultKeyPathSegment(deeper.name()));
             }
         }
     }
@@ -685,18 +708,18 @@ public final class ProjectionCommands {
      * the fold's own first-wins collapse, so the message names the surviving projection first.
      */
     private static void claim(List<SiblingProjectionConflict> conflicts,
-            LinkedHashMap<String, ProjectionClaim> claims, String interfaceName,
+            LinkedHashMap<String, ProjectionClaim> claims, String interfaceName, String key,
             ChildField field, String participantTypeName, String origin) {
         var incoming = new ProjectionClaim(participantTypeName, origin,
             projectionIdentity(field), field.location());
-        var existing = claims.putIfAbsent(field.name(), incoming);
+        var existing = claims.putIfAbsent(key, incoming);
         if (existing == null || existing.typeName().equals(participantTypeName)) {
             return;
         }
         if (existing.identity().equals(incoming.identity())) {
             return;
         }
-        conflicts.add(new SiblingProjectionConflict(interfaceName, field.name(), origin,
+        conflicts.add(new SiblingProjectionConflict(interfaceName, key, origin,
             existing.typeName(), existing.location(), participantTypeName, incoming.location()));
     }
 

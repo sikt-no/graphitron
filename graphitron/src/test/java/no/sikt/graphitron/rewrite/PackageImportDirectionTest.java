@@ -133,7 +133,12 @@ class PackageImportDirectionTest {
         // renderer, the reserved-alias holder composes the emitted prefix from it, and the
         // fetcher's read composes the same prefix off the same stamped field. A command-tier copy
         // would be a second derivation with nothing enforcing agreement.
-        "no.sikt.graphitron.rewrite.model.AliasOwner"
+        "no.sikt.graphitron.rewrite.model.AliasOwner",
+        // The alias's second stamp, borrowed for the same reason: whether a term's alias carries
+        // the path of the row it is spliced into. The contribution carries it to the renderer,
+        // the unit-kind constructors check it, and the fetcher's read composes the same path off
+        // the same stamped field.
+        "no.sikt.graphitron.rewrite.model.AliasScope"
     );
 
     /**
@@ -148,6 +153,7 @@ class PackageImportDirectionTest {
     private static final Set<String> BORROWED_COMPONENT_CLOSURE = Set.of(
         "no.sikt.graphitron.rewrite.PathExpr",
         "no.sikt.graphitron.rewrite.model.AliasOwner",
+        "no.sikt.graphitron.rewrite.model.AliasScope",
         "no.sikt.graphitron.rewrite.model.CallParam",
         "no.sikt.graphitron.rewrite.model.CallSiteExtraction",
         "no.sikt.graphitron.rewrite.model.ConditionFilter",

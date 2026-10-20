@@ -137,6 +137,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                 units.singleton(GeneratedUnits.SUB_UTIL, "OneOfDirectiveSdl")));
         }
         globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES, units.selectionOccurrences()));
+        globals.add(one(GlobalUnitKind.NESTING_COORDINATES, units.nestingCoordinates()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
         globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
         globals.add(connectionRuntime(units, schema.sessionHooks(), schema.requestTenantKeyType().isPresent()));

@@ -35,7 +35,7 @@ class ComputedFieldValidationTest {
             new ComputedField("Film", "fullTitle", null,
                 new ReturnTypeRef.ScalarReturnType("Film", new FieldWrapper.Single(true)),
                 List.of(),
-                DUMMY_METHOD, AliasOwner.shared()),
+                DUMMY_METHOD, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of()),
 
         WITH_LIFT_CONDITION("lift condition with a resolved method — DEFERRED until the lift form ships",
@@ -46,7 +46,7 @@ class ComputedFieldValidationTest {
                         ClassName.get("org.jooq", "Condition"), List.of()),
                     TestFixtures.filmTable(),
                     "")),
-                DUMMY_METHOD, AliasOwner.shared()),
+                DUMMY_METHOD, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()),
             List.of("Field 'Film.fullTitle': @externalField with a @reference path "
                 + "(condition-join lift form) is not yet supported"));
 

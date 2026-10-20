@@ -381,6 +381,69 @@ class ParticipantAliasOwnerPipelineTest {
             .noneMatch(e -> e.message().contains("reached through nesting type"));
     }
 
+    @Test
+    void differentlyNamedNestingFieldsWithTheSameLeaf_areAccepted() {
+        // A spliced alias is path-qualified by its splice chain, so two participants reaching the
+        // same leaf name through differently named nesting fields write two different aliases
+        // (alphaDetail/target and betaDetail/target) and the fold carries both terms.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Item @table(name: "fan_base") @discriminate(on: "fan_kind") {
+                fanBaseId: Int! @field(name: "fan_base_id")
+            }
+            type Alpha implements Item @table(name: "fan_base") @discriminator(value: "ALPHA") {
+                fanBaseId: Int! @field(name: "fan_base_id")
+                alphaDetail: AlphaDetail
+            }
+            type Beta implements Item @table(name: "fan_base") @discriminator(value: "BETA") {
+                fanBaseId: Int! @field(name: "fan_base_id")
+                betaDetail: BetaDetail
+            }
+            type AlphaDetail {
+                target: Target @reference(path: [{key: "fan_base_alpha_target_id_fkey"}])
+            }
+            type BetaDetail {
+                target: Target @reference(path: [{key: "fan_base_beta_target_id_fkey"}])
+            }
+            type Target @table(name: "fan_target") { fanTargetId: Int! @field(name: "fan_target_id") }
+            type Query { items: [Item!]! }
+            """);
+        assertThat(new GraphitronSchemaValidator().validate(schema))
+            .noneMatch(e -> e.message().contains("reached through nesting type"));
+    }
+
+    @Test
+    void aSplicedLeafIsStampedSplicedAndBothHalvesComposeItsPath() {
+        // The alias-scope stamp sits beside the owner stamp: a field declared on a nesting type is
+        // written into its anchor's row, so the nested unit writes it under the path it is handed
+        // and its fetcher composes the same path from the execution step chain.
+        var schema = TestSchemaHelper.buildSchema(OWNER_SDL);
+        var nesting = (no.sikt.graphitron.rewrite.model.ChildField.NestingField)
+            schema.fieldsOf("Alpha").stream()
+                .filter(f -> f instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField)
+                .findFirst().orElseThrow();
+        var leaf = nesting.nestedFields().stream()
+            .filter(f -> f instanceof ResultKeyAliasedField).map(f -> (ResultKeyAliasedField) f)
+            .findFirst().orElseThrow();
+        assertThat(leaf.aliasScope()).isEqualTo(new no.sikt.graphitron.rewrite.model.AliasScope.Spliced());
+        assertThat(schema.fieldsOf("Alpha")).filteredOn(f -> f instanceof ResultKeyAliasedField)
+            .allSatisfy(f -> assertThat(((ResultKeyAliasedField) f).aliasScope())
+                .isEqualTo(new no.sikt.graphitron.rewrite.model.AliasScope.RowOwner()));
+
+        String nestedType = nesting.returnType().returnTypeName();
+        var projections = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
+        assertThat(projections.stream().filter(t -> t.name().equals("Alpha" + nestedType))
+                .findFirst().orElseThrow().toString())
+            .contains("+ rkPath + entry.getKey()");
+        var read = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals(nestedType + "Fetchers"))
+            .findFirst().orElseThrow()
+            .methodSpecs().stream()
+            .filter(m -> m.name().equals(((no.sikt.graphitron.rewrite.model.GraphitronField) leaf).name()))
+            .map(MethodSpec::toString)
+            .findFirst().orElseThrow();
+        assertThat(read).contains("NestingCoordinates.rkPath(env)");
+    }
+
     /**
      * The stamped verdict for a field declared on a nesting type. Nesting children live on their
      * {@code NestingField}'s own list rather than the schema's flat coordinate map, so the read

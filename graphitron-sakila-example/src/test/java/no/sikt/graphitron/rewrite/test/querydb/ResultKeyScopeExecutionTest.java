@@ -29,6 +29,12 @@ import static org.assertj.core.api.Assertions.tuple;
  * same holds across type conditions in {@code Query.nodes} and the single-table discriminated
  * fold.
  *
+ * <p>The second half is the row a nesting field's children are read from: a nesting type has no
+ * table of its own, so every selection set spliced into one SQL row (sibling nesting fields, one
+ * nesting field under two aliases, nesting inside nesting, two participants' nesting fields in the
+ * fold) writes its result-key-aliased terms under the path of result keys to it, and reads them
+ * back under the same path, so no reader is handed another selection set's value.
+ *
  * <p>Fixture rows ({@code init.sql}): active customers Mary (address 1, Alberta), Patricia
  * (address 2, Lazio) and Linda (address 3, Alberta); store 1 owns Mary, Patricia and Barbara;
  * content rows are two FILM rows ('ACADEMY DINOSAUR (extended)', 'ACE GOLDFINGER (extended)') and
@@ -185,7 +191,104 @@ class ResultKeyScopeExecutionTest {
                 tuple("ShortContent", "Dawn over a city"), tuple("ShortContent", "Quiet jazz piece"));
     }
 
+    // ===== No cross-wiring: selection sets spliced into one row =====
+
+    @Test
+    void siblingNestingFields_eachReadTheirOwnSameNamedLeaf() {
+        // Both nesting types declare `language` and both are spliced into the film's row; every
+        // seeded film has an English language and no original language. An all-null nesting
+        // object collapses to null, which is how the original side answers. `original` is selected
+        // first, so a collapse of the two terms onto one alias would hand `spoken` its null term.
+        var films = list(execute(
+            "{ filmsOrdered { original { language { name } } spoken { language { name } } } }"),
+            "filmsOrdered");
+        assertThat(films).isNotEmpty().allSatisfy(film -> {
+            assertThat(name(map(map(film, "spoken"), "language"))).isEqualTo("English");
+            assertThat(map(film, "original")).isNull();
+        });
+    }
+
+    @Test
+    void oneNestingFieldUnderTwoAliases_eachAliasReadsItsOwnSubSelection() {
+        var films = list(execute(
+            "{ filmsOrdered { a: spoken { language { name } } b: spoken { language { languageId } } } }"),
+            "filmsOrdered");
+        assertThat(films).isNotEmpty().allSatisfy(film -> {
+            assertThat(map(map(film, "a"), "language")).containsOnlyKeys("name");
+            assertThat(name(map(map(film, "a"), "language"))).isEqualTo("English");
+            assertThat(map(map(film, "b"), "language")).containsExactly(Map.entry("languageId", 1));
+        });
+    }
+
+    @Test
+    void nestedNesting_aKeyReusedAtTwoDepthsOfOneRow() {
+        // projected and projected.inner both splice into the film's row; the outer `a` and the
+        // inner `a` are different fields.
+        var films = list(execute(
+            "{ filmsOrdered { projected { a: languageName inner { a: isEnglish } } } }"), "filmsOrdered");
+        assertThat(films).isNotEmpty().allSatisfy(film -> {
+            assertThat(((String) map(film, "projected").get("a")).trim()).isEqualTo("English");
+            assertThat(map(map(film, "projected"), "inner").get("a")).isEqualTo(true);
+        });
+    }
+
+    @Test
+    void sharedNestingType_twoAliasesResolveUnderEitherAnchor() {
+        // One nesting type registered once, read under two anchors: the write side threads the
+        // path through the anchor's splice, the read side composes it from the step chain.
+        var customers = list(execute(
+            "{ customers(active: true) { a: location { address { addressId } } b: location { address { district } } } }"),
+            "customers");
+        assertThat(customers)
+            .extracting(c -> map(map(c, "a"), "address").get("addressId"),
+                c -> map(map(c, "b"), "address").get("district"))
+            .containsExactly(tuple(1, "Alberta"), tuple(2, "Lazio"), tuple(3, "Alberta"));
+
+        var stores = (List<Map<String, Object>>) map(execute(
+            "{ stores { nodes { a: location { address { addressId } } b: location { address { district } } } } }"),
+            "stores").get("nodes");
+        assertThat(stores)
+            .extracting(s -> map(map(s, "a"), "address").get("addressId"),
+                s -> map(map(s, "b"), "address").get("district"))
+            .contains(tuple(1, "Alberta"), tuple(2, "Lazio"));
+    }
+
+    @Test
+    void discriminatedFold_participantsSplicingTheSameLeafNameReadTheirOwn() {
+        // Each participant's nesting field splices a `target` leaf into the fold's one row over
+        // its own FK; the splice chain keeps the two aliases apart.
+        var items = list(execute("""
+            { allFanItems { label
+                ... on FanAlpha { alphaPlacement { target { targetLabel } } }
+                ... on FanBeta { betaPlacement { target { targetLabel } } } } }
+            """), "allFanItems");
+        assertThat(items).extracting(i -> i.get("label"), i -> map(map(i,
+                i.containsKey("alphaPlacement") ? "alphaPlacement" : "betaPlacement"), "target").get("targetLabel"))
+            .contains(
+                tuple("Alpha one", "Alpha target"), tuple("Alpha two", "Alpha target"),
+                tuple("Beta one", "Beta target"), tuple("Beta two", "Beta target"));
+    }
+
+    @Test
+    void discriminatedFold_oneKeyForTwoParticipantsNestingFields_staysRejected() {
+        // The carve-out: two different fields that write a shared alias in the fold's one row,
+        // under one key, would collapse to one term; canonical rejects them loudly instead.
+        var result = executeRaw("""
+            { allFanItems {
+                ... on FanAlpha { k: alphaPlacement { target { targetLabel } } }
+                ... on FanBeta { k: betaPlacement { target { targetLabel } } } } }
+            """);
+        assertThat(result.getErrors()).isNotEmpty()
+            .anySatisfy(e -> assertThat(e.getMessage())
+                .contains("Result key 'k' selects two different fields"));
+    }
+
     // ===== helpers =====
+
+    /** {@code language.name} is a fixed-width {@code char(20)} column. */
+    private static String name(Map<String, Object> language) {
+        return ((String) language.get("name")).trim();
+    }
 
     private static Map<String, Object> map(Map<String, Object> parent, String field) {
         return (Map<String, Object>) parent.get(field);

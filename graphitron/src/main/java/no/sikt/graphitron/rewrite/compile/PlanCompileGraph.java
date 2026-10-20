@@ -85,7 +85,8 @@ public final class PlanCompileGraph {
      * is a pruning-harmless superset (ABI gating never fires on a node whose ABI is stable).
      * {@code NODE_ID_ENCODER} is deliberately absent: it gains an encode/decode method pair per
      * {@code @node} type, so it is reached by the precise and leaf-derived edges instead of the
-     * blanket.
+     * blanket. {@code NESTING_COORDINATES} belongs here although its content is per schema: the
+     * coordinate set is a private field behind one fixed public method, so its ABI is stable.
      */
     public static final Set<GlobalUnitKind> FROZEN_SCAFFOLD_KINDS = Collections.unmodifiableSet(EnumSet.of(
         GlobalUnitKind.GRAPHITRON_VALUES,
@@ -94,6 +95,7 @@ public final class PlanCompileGraph {
         GlobalUnitKind.CONNECTION_RESULT,
         GlobalUnitKind.CONNECTION_HELPER,
         GlobalUnitKind.SELECTION_OCCURRENCES,
+        GlobalUnitKind.NESTING_COORDINATES,
         GlobalUnitKind.ORDER_BY_RESULT,
         GlobalUnitKind.OUTCOME,
         GlobalUnitKind.CONSTRAINT_VIOLATIONS,
@@ -254,7 +256,7 @@ public final class PlanCompileGraph {
             switch (fixed.kind()) {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
                      CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL,
-                     SELECTION_OCCURRENCES, ORDER_BY_RESULT, GRAPHITRON_CONTEXT,
+                     SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT, GRAPHITRON_CONTEXT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
                 // Every decode<Type> refuses a key value through the column trip.

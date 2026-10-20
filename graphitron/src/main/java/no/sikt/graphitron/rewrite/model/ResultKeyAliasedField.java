@@ -55,4 +55,12 @@ public interface ResultKeyAliasedField {
      * fetcher's read composes the same prefix from the same value off the same field instance.
      */
     AliasOwner aliasOwner();
+
+    /**
+     * Where the row this field's alias is written into starts: on the declaring type's own row,
+     * or spliced into an ancestor's row through a nesting type, in which case the alias carries
+     * the path of result keys to it. Both halves read this one stamped value, like
+     * {@link #aliasOwner()}.
+     */
+    AliasScope aliasScope();
 }

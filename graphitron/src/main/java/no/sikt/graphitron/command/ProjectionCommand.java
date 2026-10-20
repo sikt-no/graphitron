@@ -1,6 +1,7 @@
 package no.sikt.graphitron.command;
 
 import no.sikt.graphitron.model.jooq.TableRef;
+import no.sikt.graphitron.rewrite.model.AliasScope;
 
 import java.util.List;
 import java.util.Objects;
@@ -47,6 +48,8 @@ public sealed interface ProjectionCommand {
         public AnchorUnit {
             requireCore(unit, table);
             contributions = List.copyOf(contributions);
+            requireScope(contributions, AliasScope.RowOwner.class, "AnchorUnit " + unit.fqcn()
+                + " writes into its own row, so none of its result-key aliases is path-qualified");
         }
     }
 
@@ -65,6 +68,9 @@ public sealed interface ProjectionCommand {
         public NestedUnit {
             requireCore(unit, table);
             contributions = List.copyOf(contributions);
+            requireScope(contributions, AliasScope.Spliced.class, "NestedUnit " + unit.fqcn()
+                + " is spliced into its anchor's row, so every result-key alias it writes is"
+                + " path-qualified");
         }
     }
 
@@ -92,6 +98,20 @@ public sealed interface ProjectionCommand {
                         "PivotUnit contributions are slot aggregates (Project with Aggregate "
                         + "terms only); got " + c);
                 }
+            }
+        }
+    }
+
+    /**
+     * The stamp and the unit kind cannot disagree: every result-key-aliased contribution of the
+     * unit carries the {@link AliasScope} its kind entails.
+     */
+    private static void requireScope(List<Contribution> contributions,
+            Class<? extends AliasScope> expected, String why) {
+        for (Contribution c : contributions) {
+            if (c.writesResultKeyAlias() && !expected.isInstance(c.aliasScope())) {
+                throw new IllegalArgumentException(why + "; '" + c.field() + "' is stamped "
+                    + c.aliasScope().getClass().getSimpleName());
             }
         }
     }

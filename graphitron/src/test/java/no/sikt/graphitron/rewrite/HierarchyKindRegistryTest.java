@@ -215,6 +215,9 @@ class HierarchyKindRegistryTest {
         // Carried on the alias-minting leaves like LookupResolution is carried on the table
         // targets, and labelled by the capability's provenance rather than by its holder's.
         Map.entry(no.sikt.graphitron.rewrite.model.AliasOwner.class, HierarchyKind.RESOLVED_VIEW),
+        // Where the row an aliased field is written into starts: a pure function of whether the
+        // declaring type is a nesting edge target, resolved beside the owner verdict.
+        Map.entry(no.sikt.graphitron.rewrite.model.AliasScope.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(MethodRef.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(AccessorResolution.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(KeyAlternative.class, HierarchyKind.RESOLVED_VIEW),

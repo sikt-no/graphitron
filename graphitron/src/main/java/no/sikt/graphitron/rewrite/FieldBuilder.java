@@ -1819,7 +1819,8 @@ class FieldBuilder {
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                 tfc.lookup(),
-                tbtParentCorrelation, aliasOwnerOf(parentTypeName, name));
+                tbtParentCorrelation, aliasOwnerOf(parentTypeName, name),
+                aliasScopeOf(parentTypeName));
         }
 
         if (tableBacked instanceof TableInterfaceType tableInterfaceType) {
@@ -2226,7 +2227,8 @@ class FieldBuilder {
                 split.sourceKey(), split.lift(), split.loaderRegistration(), correlation);
         }
         return new ChildField.PivotField(parentTypeName, name, location, pivot, spec,
-            aliasOwnerOf(parentTypeName, name));
+            aliasOwnerOf(parentTypeName, name),
+                aliasScopeOf(parentTypeName));
     }
 
     /**
@@ -4650,7 +4652,8 @@ class FieldBuilder {
                 }
                 yield new TableField(parentTypeName, name, location, walk.tb().returnType(),
                     walk.steps(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
-                    LookupResolution.None.INSTANCE, pc, aliasOwnerOf(parentTypeName, name));
+                    LookupResolution.None.INSTANCE, pc, aliasOwnerOf(parentTypeName, name),
+                aliasScopeOf(parentTypeName));
             }
         };
     }
@@ -9395,7 +9398,8 @@ class FieldBuilder {
                     new UnclassifiedField(parentTypeName, name, location, r.rejection());
                 case ExternalFieldDirectiveResolver.Resolved.Success s ->
                     new ComputedField(parentTypeName, name, location, s.returnType(), externalPath.elements(),
-                        s.method(), aliasOwnerOf(parentTypeName, name));
+                        s.method(), aliasOwnerOf(parentTypeName, name),
+                aliasScopeOf(parentTypeName));
             };
         }
 
@@ -9486,7 +9490,8 @@ class FieldBuilder {
             var crfParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) crfPcResolution).correlation();
             return new ColumnBackedReferenceField(parentTypeName, name, location, List.of(column.get()), refPath.elements(),
                 new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
-                crfParentCorrelation, aliasOwnerOf(parentTypeName, name));
+                crfParentCorrelation, aliasOwnerOf(parentTypeName, name),
+                aliasScopeOf(parentTypeName));
         }
 
         boolean isScalarId = !(GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList)
@@ -9734,7 +9739,8 @@ class FieldBuilder {
         var nodeRefPcResolution = ctx.buildParentCorrelation(joinPath, parentTable);
         var nodeRefParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) nodeRefPcResolution).correlation();
         return new ColumnBackedReferenceField(parentTypeName, name, location, keys, joinPath, compaction,
-            nodeRefParentCorrelation, aliasOwnerOf(parentTypeName, name));
+            nodeRefParentCorrelation, aliasOwnerOf(parentTypeName, name),
+                aliasScopeOf(parentTypeName));
     }
 
     /**
@@ -10180,6 +10186,19 @@ class FieldBuilder {
     private AliasOwner aliasOwnerOf(String parentTypeName, String fieldName) {
         var owner = ctx.aliasOwnerByParticipant.getOrDefault(parentTypeName, Map.of()).get(fieldName);
         return owner != null ? owner : AliasOwner.shared();
+    }
+
+    /**
+     * The coordinate's alias scope, stamped beside {@link #aliasOwnerOf} onto every
+     * {@link no.sikt.graphitron.rewrite.model.ResultKeyAliasedField} this builder mints: a field
+     * declared on a nesting type is written into an ancestor's row by its spliced projection
+     * unit, so its alias is path-qualified; every other field is written into its declaring
+     * type's own row.
+     */
+    private no.sikt.graphitron.rewrite.model.AliasScope aliasScopeOf(String parentTypeName) {
+        return typeBuilder.isNestingEdgeTarget(parentTypeName)
+            ? no.sikt.graphitron.rewrite.model.AliasScope.spliced()
+            : no.sikt.graphitron.rewrite.model.AliasScope.rowOwner();
     }
 
     /**

@@ -88,9 +88,9 @@ class ColumnBackedFieldInvariantTest {
         var path = fkPath();
         var pc = TestFixtures.pcFor(path, TestFixtures.filmTable());
         var single = new ChildField.ColumnBackedReferenceField(
-            "Child", "parentId", LOC, List.of(ID_1), path, ENCODE, pc, AliasOwner.shared());
+            "Child", "parentId", LOC, List.of(ID_1), path, ENCODE, pc, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
         var composite = new ChildField.ColumnBackedReferenceField(
-            "Child", "parentId", LOC, List.of(ID_1, ID_2), path, ENCODE, pc, AliasOwner.shared());
+            "Child", "parentId", LOC, List.of(ID_1, ID_2), path, ENCODE, pc, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
         assertThat(single.isComposite()).isFalse();
         assertThat(composite.isComposite()).isTrue();
     }
@@ -100,7 +100,7 @@ class ColumnBackedFieldInvariantTest {
         var path = fkPath();
         assertThatThrownBy(() -> new ChildField.ColumnBackedReferenceField(
                 "Child", "parentId", LOC, List.of(), path, ENCODE,
-                TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared()))
+                TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("at least one column");
     }
@@ -111,7 +111,7 @@ class ColumnBackedFieldInvariantTest {
         assertThatThrownBy(() -> new ChildField.ColumnBackedReferenceField(
                 "Child", "parentId", LOC, List.of(ID_1, ID_2), path,
                 new CallSiteCompaction.Direct(),
-                TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared()))
+                TestFixtures.pcFor(path, TestFixtures.filmTable()), AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("NodeIdEncodeKeys");
     }
@@ -122,7 +122,7 @@ class ColumnBackedFieldInvariantTest {
         // ParentCorrelation.checkCarrierInvariant for every arity, composite included —
         // the merged construction site derives the correlation arity-independently.
         assertThatThrownBy(() -> new ChildField.ColumnBackedReferenceField(
-                "Child", "parentId", LOC, List.of(ID_1, ID_2), fkPath(), ENCODE, null, AliasOwner.shared()))
+                "Child", "parentId", LOC, List.of(ID_1, ID_2), fkPath(), ENCODE, null, AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner()))
             .isInstanceOf(NullPointerException.class)
             .hasMessageContaining("parentCorrelation must not be null");
     }
