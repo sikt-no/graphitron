@@ -103,8 +103,8 @@ is that subtract's prerequisite, and a node that adds says which line it retires
 * Producers twice: `graphitron_producer` beside `intent_field_payload_producer`, both every capture.
   Ends at "Subtract what the carrier replaces".
 * Nesting twice: `graphitron_result_table` beside the `INHERITED` arm of
-  `graphitron_field_source_table`. Ends with "A field's source has kinds", which reads its kinds off
-  `graphitron_result`.
+  `graphitron_field_source_table`. Ends at "A field's source is its parent's result", which joins
+  `graphitron_result` instead.
 * The per-member fit for a polymorphic id. Ends at "The per-member fit goes".
 * Walk and store shadows, both sides in production: `RoutineDirectiveResolver.bindArgs` and
   `graphitron_argmapping_match` (R950), the column match, the input occurrences, and
