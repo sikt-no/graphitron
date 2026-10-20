@@ -39,9 +39,16 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Only absence changes. A malformed node id, and one encoded for another node type, still fail
  * the request before the routine or the condition runs, which the last two cases assert.
+ *
+ * <p>Every root field here reads the whole {@code film} table, which other classes write while this
+ * one runs, so each case asserts over the seeded films only; the module's
+ * {@code junit-platform.properties} says why the tier shares one database.
  */
 @ExecutionTier
 class OptionalNodeIdProjectionExecutionTest {
+
+    /** The films {@code init.sql} seeds, in {@code film_id} order. */
+    private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
 
     static PostgreSQLContainer postgres;
     static DSLContext dsl;
@@ -139,7 +146,7 @@ class OptionalNodeIdProjectionExecutionTest {
 
         assertThat(omitted)
             .as("the method received null and constrained nothing")
-            .isNotEmpty()
+            .isEqualTo(SEEDED_FILM_IDS)
             .isEqualTo(english);
         assertThat(italian)
             .as("and it does constrain when it is handed a key, so the null arm is the method's own"
@@ -175,10 +182,16 @@ class OptionalNodeIdProjectionExecutionTest {
         return NodeIdEncoder.encode("LanguageNode", languageId);
     }
 
+    /**
+     * The seeded film ids the root field returned, in the order it returned them. The fields read the
+     * whole {@code film} table and other classes insert and delete films concurrently, so a row
+     * outside the seed is another class's and says nothing about this one.
+     */
     @SuppressWarnings("unchecked")
     private static List<Integer> filmIds(Map<String, Object> data, String field) {
         return ((List<Map<String, Object>>) data.get(field)).stream()
             .map(row -> (Integer) row.get("filmId"))
+            .filter(SEEDED_FILM_IDS::contains)
             .toList();
     }
 
