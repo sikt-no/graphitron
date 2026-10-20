@@ -1,7 +1,7 @@
 ---
 id: R1073
 title: "A null element in a node-id list filter matches nothing instead of failing the field"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 5
 theme: nodeid
