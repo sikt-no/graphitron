@@ -31,21 +31,20 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.INPUT_VALUE_DEFINIT
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 
 /**
- * LSP inlay-hint provider. Three arms, each gated by an independent config toggle:
+ * LSP inlay-hint provider. Three arms, each gated by an independent config toggle, each reading only
+ * stored relations and no classification:
  * <ul>
- *   <li><b>Inferred-directive arm</b>: at {@code @table} / {@code @field} / {@code @reference}
- *       sites where the author omitted the canonical argument ({@code name:} for the first two,
- *       {@code path:} for the third), renders the resolved value as a resolution overlay: text
- *       drawn beside the buffer that the buffer does not contain.</li>
- *   <li><b>Classification arm</b>: at a field or type declaration the claim stratum has an
- *       opinion about, renders the classifiers claiming it. At a type declaration no claim names,
- *       renders instead the class the store backs it with, which is what graphitron knows a
- *       producer's payload type to be when no directive says anything about it.</li>
+ *   <li><b>Inferred-directive arm</b>: at {@code @table} / {@code @field} sites where the author
+ *       omitted {@code name:}, renders the resolved value as a resolution overlay: text drawn beside
+ *       the buffer that the buffer does not contain. {@code @reference}'s omitted {@code path:}
+ *       renders nothing until the path discovery implies is stored.</li>
+ *   <li><b>Label arm</b>: at a type declaration, what it holds, the table whose rows it holds or the
+ *       class whose instances it does; at a field declaration, what it reads, its column, the method
+ *       it calls or the table its statement lands on.</li>
  *   <li><b>Separate-fetch arm</b>: at a field whose rows come from a statement of its own,
- *       renders one marker word. Its own toggle rather than a second label on the classification
- *       arm, because whether a field costs a round trip is a delivery fact rather than a
- *       classifier, and an author auditing a schema for query cost wants that one signal without
- *       a classifier beside every declaration.</li>
+ *       renders one marker word. Its own toggle rather than a second label, because whether a field
+ *       costs a round trip is a delivery fact, and an author auditing a schema for query cost wants
+ *       that one signal without a label beside every declaration.</li>
  * </ul>
  *
  * <h2>Collect, resolve, render</h2>
@@ -63,13 +62,9 @@ import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
  *
  * <p>The inferred-directive arm always asks the tree-sitter AST whether the canonical argument is
  * present in the buffer, and differs by directive in where it reads the value the author omitted.
- * {@code @table} reads {@link no.sikt.graphitron.lsp.facts.BoundTables the binding relation} and
- * {@code @field} the member its own name reaches, which is the settled column match at the coordinate
- * where the parent is a table's and a slot of the parent's backing class where it is not
- * ({@link InlayFacts.Answers#memberName}). {@code @reference} fires only where the path is omitted, so
- * what it renders is the foreign key the generator discovers between the field's two endpoints
- * ({@link InlayFacts.Answers#discoveredForeignKey}), and it names one only where the discovery is
- * certain, a coordinate several keys connect being one the generator refuses to join at all.
+ * {@code @table} reads the type's binding, and {@code @field} the member its own name reaches, which
+ * is the column the field reads where the parent holds a table's row and a slot of the parent's
+ * backing class where it does not ({@link InlayFacts.Answers#memberName}).
  *
  * <p>One cadence results, the capture's, and every overlay is silent where what it reads is absent. No
  * arm here reads a projection a generator pass built, so this surface answers in a workspace that has
@@ -89,10 +84,10 @@ public final class InlayHints {
 
         Position position();
 
-        /** The classifiers claiming a visible type declaration, or the class standing for it. */
+        /** What a visible type declaration holds: its table, or the class of its instances. */
         record TypeLabel(Position position, String typeName) implements Pending {}
 
-        /** The classifiers claiming a visible field declaration. */
+        /** What a visible field declaration reads: its column, the method it calls, or its target table. */
         record FieldLabel(Position position, String typeName, String fieldName) implements Pending {}
 
         /** The round-trip marker at a visible field declaration. */
@@ -108,9 +103,6 @@ public final class InlayHints {
         record MemberName(Position position, String typeName, String fieldName, String argName)
             implements Pending {}
 
-        /** A present {@code @reference} whose omitted path the discovery may fill in. */
-        record ReferencePath(Position position, String typeName, String fieldName, String argName)
-            implements Pending {}
     }
 
     /**
@@ -137,8 +129,7 @@ public final class InlayHints {
      */
     private static final Map<String, InferredDirectiveCollector> INFERRED_RENDERERS = Map.of(
         "table", InlayHints::collectInferredTableName,
-        "field", InlayHints::collectInferredFieldName,
-        "reference", InlayHints::collectInferredReferencePath
+        "field", InlayHints::collectInferredFieldName
     );
 
     /** Directive names with a registered present-arm renderer; the coverage-test oracle. */
@@ -183,19 +174,10 @@ public final class InlayHints {
     /** One intent's overlay, or none where what it needed is not in the answer. */
     private static void render(Pending intent, InlayFacts.Answers answers, List<InlayHint> out) {
         switch (intent) {
-            case Pending.TypeLabel(var position, var typeName) -> {
-                var classifiers = answers.typeClassifiers(typeName);
-                String label = classifiers.isEmpty()
-                    ? simpleName(answers.backingClass(typeName).orElse(null))
-                    : String.join(", ", classifiers);
-                if (label != null) out.add(makeHint(position, label));
-            }
-            case Pending.FieldLabel(var position, var typeName, var fieldName) -> {
-                var classifiers = answers.fieldClassifiers(typeName, fieldName);
-                if (!classifiers.isEmpty()) {
-                    out.add(makeHint(position, String.join(", ", classifiers)));
-                }
-            }
+            case Pending.TypeLabel(var position, var typeName) ->
+                answers.typeLabel(typeName).ifPresent(label -> out.add(makeHint(position, label)));
+            case Pending.FieldLabel(var position, var typeName, var fieldName) ->
+                answers.fieldLabel(typeName, fieldName).ifPresent(label -> out.add(makeHint(position, label)));
             case Pending.FetchMarker(var position, var typeName, var fieldName) -> {
                 if (answers.marksSeparateFetch(typeName, fieldName)) {
                     out.add(makeHint(position, SEPARATE_FETCH_LABEL));
@@ -210,13 +192,10 @@ public final class InlayHints {
             case Pending.MemberName(var position, var typeName, var fieldName, var argName) ->
                 answers.memberName(typeName, fieldName).ifPresent(memberName -> out.add(
                     makeHint(position, argName + ": \"" + memberName + "\"")));
-            case Pending.ReferencePath(var position, var typeName, var fieldName, var argName) ->
-                answers.discoveredForeignKey(typeName, fieldName).ifPresent(key -> out.add(
-                    makeHint(position, argName + ": [{key: \"" + key + "\"}]")));
         }
     }
 
-    // ===== Classification arm =====
+    // ===== Label arm =====
 
     /**
      * One visible declaration name the arm may annotate: a type when {@code fieldName} is null,
@@ -226,28 +205,12 @@ public final class InlayHints {
     private record ClaimSite(String typeName, String fieldName, Node nameNode) {}
 
     /**
-     * Renders the classifiers claiming each visible declaration, one label per site, the
-     * classifiers comma-joined where more than one claims a coordinate. A declaration no
-     * classifier claims gets no hint: the arm marks where graphitron has an opinion about a
-     * declaration, and silence is the honest reading of a plain SDL object or a field nothing
-     * bound.
-     *
-     * <p>The label is the store's own classifier vocabulary and nothing else. The facts the
-     * incumbent single-word label folded in (which table, which column, which join path, whether a
-     * fetch batches) are what the hover renders, each from the relation that owns it, because a
-     * word naming their combinations would be a taxonomy this arm had to keep in step with the
-     * generator by hand.
-     *
-     * <p>One type-declaration label is not a classifier, and it is here because the alternative was
-     * silence at a type graphitron has a firm opinion about. A payload type reached through a
-     * {@code @service} return carries no type directive, so no claim names it, and what the store
-     * knows about it is a backing class. That is not a claim (nothing authored declares it; the
-     * {@code @record} directive that once did is deprecated and ignored), so it renders as the
-     * class's own simple name rather than as a category word minted for the occasion. The
-     * CamelCase reads as a class where a classifier reads as a category, and the class is the
-     * answer an author actually wants at such a type. It shows only where no claim does, the label
-     * having room for one answer: a claimed type's backing, and a contested type's candidates, are
-     * the hover's to state.
+     * Labels each visible declaration with what the store states it is: a type with the table whose
+     * rows it holds, or the simple name of the class whose instances it holds; a field with the
+     * column it reads, the method it calls, or the table its statement lands on. A declaration the
+     * store states none of gets no hint, and neither does a type holding several, which is the
+     * hover's to list. The label names a fact, never a category, so it cannot fall out of step with
+     * the generator.
      */
     private static void collectClassificationLabels(
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file, List<ClaimSite> sites
@@ -255,9 +218,6 @@ public final class InlayHints {
         for (var site : sites) {
             var position = positionOf(file, site.nameNode());
             if (site.fieldName() == null) {
-                // The backing question is asked for every visible type, not only for the ones no claim
-                // names, because which of the two labels a type is decided after both arms answer;
-                // narrowing it here would make one arm conditional on another's rows.
                 questions.typeDeclaration(site.typeName());
                 out.add(new Pending.TypeLabel(position, site.typeName()));
                 continue;
@@ -265,12 +225,6 @@ public final class InlayHints {
             questions.declaration(site.typeName());
             out.add(new Pending.FieldLabel(position, site.typeName(), site.fieldName()));
         }
-    }
-
-    /** The trailing segment of a binary class name, or null for no class at all. */
-    private static String simpleName(String className) {
-        if (className == null) return null;
-        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     // ===== Separate-fetch arm =====
@@ -372,8 +326,7 @@ public final class InlayHints {
      * produced by a class-returning field is the other, and the store answers it now; it gets no
      * overlay because an overlay renders a directive an author could have written, and no directive
      * carries a backing class any more, {@code @record} being deprecated and ignored. What shows
-     * that binding is the classification arm's type label, which is why the label is a class name
-     * there rather than a category.
+     * that binding is the label arm's type label, which is why the label is a class name there.
      *
      * <p>The one absent arm there is, rather than a strategy per entry with two of the three left
      * null. The other two would each overlay most of the file: {@code @field} every column-bound
@@ -455,33 +408,6 @@ public final class InlayHints {
         if (fieldName == null) return;
         questions.memberSite(typeName, fieldName);
         out.add(new Pending.MemberName(
-            positionOf(file, directive.nameNode()), typeName, fieldName, canonicalArgName));
-    }
-
-    /**
-     * Keyed on the coordinate for the same reason the {@code @field} pass is, and answered by the
-     * discovery relation: the foreign key connecting the field's own endpoints, which is what the
-     * generator joins on where the author wrote no element. A single hop, because discovery never
-     * searches past one; a path of several elements is one the author states, and a present
-     * {@code path:} argument leaves this pass nothing to fill in.
-     */
-    private static void collectInferredReferencePath(
-        List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
-        Directives.Directive directive, String canonicalArgName
-    ) {
-        if (hasNamedArg(directive, canonicalArgName, file.source())) return;
-        var enclosingField = TypeContext.enclosingFieldDefinition(directive.outer())
-            .or(() -> enclosingInputValueDefinition(directive.outer())).orElse(null);
-        if (enclosingField == null) return;
-        var enclosingType = DeclarationKind.enclosing(enclosingField).orElse(null);
-        if (enclosingType == null) return;
-        String typeName = TypeContext.declaredNameOf(enclosingType, file.source()).orElse(null);
-        if (typeName == null) return;
-        Node nameNode = Nodes.childOfKind(enclosingField, NAME);
-        if (nameNode == null) return;
-        String fieldName = Nodes.text(nameNode, file.source());
-        questions.referencePathSite(typeName, fieldName);
-        out.add(new Pending.ReferencePath(
             positionOf(file, directive.nameNode()), typeName, fieldName, canonicalArgName));
     }
 

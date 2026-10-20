@@ -37,9 +37,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * bound", and pinning either would take a derivation that does not exist. The prohibition lives in
  * the arm's own javadoc, where it outlives this test.
  *
- * <p>The other two passes have siblings of their own, reading the store as these cases do:
- * {@code InferredFieldHintsTest} for {@code @field} and {@code InferredReferenceHintsTest} for
- * {@code @reference}.
+ * <p>The {@code @field} pass has a sibling of its own, reading the store as these cases do:
+ * {@code InferredFieldHintsTest}.
  */
 class InferredTableHintsTest {
 

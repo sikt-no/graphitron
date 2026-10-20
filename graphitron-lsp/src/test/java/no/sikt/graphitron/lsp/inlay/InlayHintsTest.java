@@ -15,9 +15,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * What {@code compute} answers before any arm gets a say: nothing at all with every toggle off, and
  * nothing at all with no store, whatever the toggles say. Both are properties of the provider rather
  * than of any one arm, which is why they are not in the per-arm classes
- * ({@code ClassificationHintsTest}, {@code SeparateFetchHintsTest}, and
- * {@code InferredTableHintsTest} / {@code InferredFieldHintsTest} /
- * {@code InferredReferenceHintsTest} for the three inferred-directive passes).
+ * ({@code LabelHintsTest}, {@code SeparateFetchHintsTest}, and {@code InferredTableHintsTest} /
+ * {@code InferredFieldHintsTest} for the two inferred-directive passes).
  *
  * <p>This class used to hold the one renderer that read the schema snapshot, and with it the cases
  * asserting that the store-backed arms did not. Both are gone: the provider takes no snapshot, so

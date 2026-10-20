@@ -16,18 +16,26 @@ import java.util.Optional;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
-import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_DISCOVERY;
-import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_COLUMN_SCOPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESULT_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
+import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.falseCondition;
 import static org.jooq.impl.DSL.multiset;
+import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
+import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -50,24 +58,20 @@ import static org.jooq.impl.DSL.selectOne;
  * Those four questions are asked of four relations sharing no key, so they were always askable at
  * once, and the chain was in the reading rather than in the facts.
  *
- * <p>Two arms deliberately return rows no renderer will read. The bindings are asked for every type a
- * member site names as well as every type an overlay might render a {@code @table} for, and the
- * backings for every visible declaration as well as every member site's type, because narrowing
- * either would mean an arm asserting a precedence its reader owns: which of a claim and a backing
- * labels a type, and whether a binding or a class scopes a name, are decisions
- * {@link TypeBackingClass#resolve} and {@link TypeMemberScope#resolve} make after every arm has
- * returned. The cost is rows in a payload rather than a round trip.
+ * <p>Every arm reads a stored relation and none a view: a region is asked about on every scroll, and
+ * a view evaluated whole per request would make that cost grow with the graph.
  *
- * <p>The discovery arm brings back rows no renderer will read for a different reason, and it is the
- * same discipline: a coordinate whose endpoints several foreign keys connect has a row per key, and
- * which of them an overlay may name is the arity's reading rather than the arm's. Filtering to the
- * certain ones here would put the refusal in the query, where nothing else that refuses lives.
+ * <p>Two arms deliberately return rows no renderer will read. The bindings are asked for every type a
+ * member site names, and the backings for every member site's type, because narrowing either would
+ * mean an arm asserting a precedence its reader owns: whether a binding or a class scopes a name is
+ * the decision {@link TypeMemberScope#resolve} makes after every arm has returned. The cost is rows
+ * in a payload rather than a round trip.
  */
 final class InlayFacts {
 
     private InlayFacts() {}
 
-    /** A field coordinate, which is what the two field-grain arms are keyed on. */
+    /** A field coordinate, which is what the member-site arms are keyed on. */
     record FieldCoord(String typeName, String fieldName) {}
 
     /**
@@ -82,17 +86,13 @@ final class InlayFacts {
         private final Set<String> boundTableTypeNames = new LinkedHashSet<>();
         private final Set<String> memberTypeNames = new LinkedHashSet<>();
         private final Set<FieldCoord> memberSites = new LinkedHashSet<>();
-        private final Set<FieldCoord> referenceSites = new LinkedHashSet<>();
 
-        /** A visible declaration of any kind, which the claim and round-trip arms are keyed on. */
+        /** A visible declaration of any kind, which the label and round-trip arms are keyed on. */
         void declaration(String typeName) {
             declaredTypeNames.add(typeName);
         }
 
-        /**
-         * A visible type declaration. Its label falls back to the class standing for the type where no
-         * claim names it, so the type grain asks one question the field grain does not.
-         */
+        /** A visible type declaration, whose label is the result it holds. */
         void typeDeclaration(String typeName) {
             declaredTypeNames.add(typeName);
             backingTypeNames.add(typeName);
@@ -107,41 +107,44 @@ final class InlayFacts {
         }
 
         /**
-         * A site where a {@code @field} overlay may render. A member name resolves against the site's
-         * own match first and against the type's scope second, and that scope is the type's bindings,
-         * its backing class and the tables that class is a record of, so asking about the site is
-         * asking about all four.
+         * A site where a {@code @field} overlay may render. A member name resolves against the column
+         * the field reads first, which the type-keyed column arm answers, and against the type's scope
+         * second, which is the type's bindings, its backing class and the tables that class is a
+         * record of, so asking about the site is asking about all of them.
          */
         void memberSite(String typeName, String fieldName) {
             memberSites.add(new FieldCoord(typeName, fieldName));
+            declaredTypeNames.add(typeName);
             memberTypeNames.add(typeName);
             backingTypeNames.add(typeName);
             boundTableTypeNames.add(typeName);
         }
 
-        /**
-         * A site where a {@code @reference} overlay may render. What such a site wants is the join
-         * the generator makes where the author wrote no path, which is one relation's own question
-         * and asks nothing of the type grain.
-         */
-        void referencePathSite(String typeName, String fieldName) {
-            referenceSites.add(new FieldCoord(typeName, fieldName));
-        }
-
         boolean isEmpty() {
             return declaredTypeNames.isEmpty() && backingTypeNames.isEmpty()
-                && boundTableTypeNames.isEmpty() && memberSites.isEmpty()
-                && referenceSites.isEmpty();
+                && boundTableTypeNames.isEmpty() && memberSites.isEmpty();
         }
     }
 
     // ===== The rows the arms return =====
 
-    /** One classifier standing at a type declaration; several rows are what makes it contested. */
-    record TypeClaimRow(String typeName, String classifier) {}
+    /** A table whose rows a type holds; several rows are a type reached from several tables. */
+    record ResultTableRow(String typeName, String tableName) {}
 
-    /** One classifier standing at a field coordinate, on the same terms. */
-    record FieldClaimRow(String typeName, String fieldName, String classifier) {}
+    /** A class whose instances a type holds; several rows are producers returning different classes. */
+    record ResultClassRow(String typeName, String className) {}
+
+    /** The column a scalar field with no path reads, on one table its read departs from. */
+    record TargetColumnRow(String typeName, String fieldName, String tableName, String columnName) {}
+
+    /** A column a scalar field with a path names on the table the path lands on. */
+    record PathColumnRow(String typeName, String fieldName, String columnName) {}
+
+    /** A method a code reference written at a field resolves to. */
+    record MethodRow(String typeName, String fieldName, String className, String methodName) {}
+
+    /** A table a field's statement lands on. */
+    record TargetTableRow(String typeName, String fieldName, String tableName) {}
 
     /** One field below a root whose fetcher runs a statement of its own. */
     record ProducerRow(String typeName, String fieldName) {}
@@ -152,8 +155,8 @@ final class InlayFacts {
     /**
      * One table a type's {@code @table} resolves to.
      *
-     * @param candidates the binding's own arity, read from the view rather than counted here, which is
-     *                   what lets an overlay refuse to speak where two tables answer to one name
+     * @param candidates the binding's own arity, read from the relation rather than counted here,
+     *                   which is what lets an overlay refuse to speak where two tables answer to one name
      */
     record BoundTableRow(
         String typeName, Integer candidates,
@@ -166,50 +169,57 @@ final class InlayFacts {
         String tableSourceName, String tableSchema, String tableName
     ) {}
 
-    /** The column the match reduction settled on at a coordinate. */
-    record ColumnMatchRow(String typeName, String fieldName, String columnName) {}
-
     /** One member slot a backing class offers, keyed by class because a slot is a fact about one. */
     record SlotRow(String className, String slotName) {}
 
-    /**
-     * One foreign key an omitted {@code @reference} path could have discovered at a coordinate.
-     *
-     * @param candidates how many keys connect the two endpoints, read from the view rather than
-     *                   counted here, which is what lets an overlay refuse to name one of several
-     */
-    record DiscoveryRow(
-        String typeName, String fieldName, String constraintName, Integer candidates
-    ) {}
-
     /** Every question the region asked, answered. */
     record Answers(
-        List<TypeClaimRow> typeClaims,
-        List<FieldClaimRow> fieldClaims,
+        List<ResultTableRow> resultTables,
+        List<ResultClassRow> resultClasses,
+        List<TargetColumnRow> targetColumns,
+        List<PathColumnRow> pathColumns,
+        List<MethodRow> methods,
+        List<TargetTableRow> targetTables,
         List<ProducerRow> producers,
         List<BackingRow> backingSeeds,
         List<BackingRow> backingReached,
         List<BoundTableRow> boundTables,
         List<RedirectRow> redirects,
-        List<ColumnMatchRow> columnMatches,
-        List<SlotRow> slots,
-        List<DiscoveryRow> discoveries
+        List<SlotRow> slots
     ) {
 
-        /** The classifiers claiming a type, in the classifier order the arm returned them in. */
-        List<String> typeClassifiers(String typeName) {
-            return typeClaims.stream()
-                .filter(row -> row.typeName().equals(typeName))
-                .map(TypeClaimRow::classifier)
-                .toList();
+        /**
+         * What a type holds, as one word: the table whose rows it holds, else the simple name of the
+         * class whose instances it holds, and nothing where it holds several or none.
+         */
+        Optional<String> typeLabel(String typeName) {
+            var tables = resultTables.stream().filter(row -> row.typeName().equals(typeName))
+                .map(ResultTableRow::tableName).distinct().toList();
+            if (tables.size() == 1) return Optional.of(tables.getFirst());
+            if (!tables.isEmpty()) return Optional.empty();
+            var classes = resultClasses.stream().filter(row -> row.typeName().equals(typeName))
+                .map(ResultClassRow::className).distinct().toList();
+            return classes.size() == 1 ? Optional.of(simpleName(classes.getFirst())) : Optional.empty();
         }
 
-        /** The classifiers claiming a field coordinate. */
-        List<String> fieldClassifiers(String typeName, String fieldName) {
-            return fieldClaims.stream()
+        /**
+         * What a field reads, as one phrase: the column, else the method it calls, else the table its
+         * statement lands on. Several columns, one per table the read departs from, are listed.
+         */
+        Optional<String> fieldLabel(String typeName, String fieldName) {
+            var columns = targetColumns.stream()
                 .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
-                .map(FieldClaimRow::classifier)
-                .toList();
+                .map(row -> row.tableName() + "." + row.columnName()).toList();
+            if (!columns.isEmpty()) return Optional.of(String.join(", ", columns));
+            var called = methods.stream()
+                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
+                .map(row -> simpleName(row.className()) + "." + row.methodName()).distinct().toList();
+            if (!called.isEmpty()) return Optional.of(String.join(", ", called));
+            var landed = targetTables.stream()
+                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
+                .map(TargetTableRow::tableName).distinct().toList();
+            if (!landed.isEmpty()) return Optional.of("\u2192 " + String.join(", ", landed));
+            return Optional.empty();
         }
 
         /**
@@ -230,7 +240,7 @@ final class InlayFacts {
 
         /**
          * The one table a type is bound to, absent where the binding is ambiguous. The arity is the
-         * view's own column, so an overlay never re-derives it from the rows this arm brought back.
+         * relation's own column, so an overlay never re-derives it from the rows this arm brought back.
          */
         Optional<CatalogTable> certainBoundTable(String typeName) {
             return boundTables.stream()
@@ -242,17 +252,22 @@ final class InlayFacts {
 
         /**
          * The member a field's own name reaches, spelled as an author would write it into
-         * {@code @field(name:)}. Two arms over rows already in hand: the site's settled column first,
-         * then the type's scope, which answers only where that scope is a class's. A scope that turned
-         * out to be a table's has no answer here, the match for such a site not being derived by any
-         * relation, and the absence is the store's rather than this reader's.
+         * {@code @field(name:)}. Over rows already in hand: the column the field reads, or for a field
+         * with a path the one column of that name where the path lands, then the type's scope, which
+         * answers only where that scope is a class's.
          */
         Optional<String> memberName(String typeName, String fieldName) {
-            var column = columnMatches.stream()
+            var column = targetColumns.stream()
                 .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
-                .findFirst()
-                .map(ColumnMatchRow::columnName);
-            if (column.isPresent()) return column;
+                .map(TargetColumnRow::columnName)
+                .distinct()
+                .toList();
+            if (column.size() == 1) return Optional.of(column.getFirst());
+            var pathColumn = pathColumns.stream()
+                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
+                .map(PathColumnRow::columnName)
+                .toList();
+            if (pathColumn.size() == 1) return Optional.of(pathColumn.getFirst());
             var scope = TypeMemberScope.resolve(
                 boundTablesOf(typeName),
                 () -> backingClass(typeName),
@@ -265,21 +280,6 @@ final class InlayFacts {
                     && row.slotName().equals(fieldName))
                 .findFirst()
                 .map(SlotRow::slotName);
-        }
-
-        /**
-         * The foreign key an omitted path at this coordinate discovers, absent where the endpoints are
-         * connected by several keys or by none. The arity is the view's own column, and refusing on it
-         * is the same rule the contested backing follows: the generator rejects a coordinate whose
-         * discovery is ambiguous, so it joins on neither key, and naming one would render a join that
-         * is not made.
-         */
-        Optional<String> discoveredForeignKey(String typeName, String fieldName) {
-            return discoveries.stream()
-                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName)
-                    && Integer.valueOf(1).equals(row.candidates()))
-                .findFirst()
-                .map(DiscoveryRow::constraintName);
         }
 
         private List<CatalogTable> boundTablesOf(String typeName) {
@@ -315,8 +315,8 @@ final class InlayFacts {
      * render is silent, and that is one policy rather than a branch per renderer.
      */
     static Answers none() {
-        return new Answers(List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(), List.of(), List.of(), List.of());
+        return new Answers(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
+            List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /** Every question the region asked, answered in one statement. */
@@ -325,22 +325,12 @@ final class InlayFacts {
         String graph = store.graphName();
         return store.dsl()
             .select(
-                multiset(selectDistinct(INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME,
-                        INTENT_AUTHORED_TYPE_CLAIM.CLASSIFIER)
-                    .from(INTENT_AUTHORED_TYPE_CLAIM)
-                    .where(INTENT_AUTHORED_TYPE_CLAIM.GRAPH_NAME.eq(graph))
-                    .and(INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME.in(questions.declaredTypeNames))
-                    .orderBy(INTENT_AUTHORED_TYPE_CLAIM.TYPE_NAME,
-                        INTENT_AUTHORED_TYPE_CLAIM.CLASSIFIER))
-                    .convertFrom(rows -> rows.map(Records.mapping(TypeClaimRow::new))),
-                multiset(selectDistinct(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME,
-                        INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME, INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER)
-                    .from(INTENT_RESOLVED_FIELD_CLAIM)
-                    .where(INTENT_RESOLVED_FIELD_CLAIM.GRAPH_NAME.eq(graph))
-                    .and(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME.in(questions.declaredTypeNames))
-                    .orderBy(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME,
-                        INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME, INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER))
-                    .convertFrom(rows -> rows.map(Records.mapping(FieldClaimRow::new))),
+                resultTableArm(store, questions.declaredTypeNames),
+                resultClassArm(store, questions.declaredTypeNames),
+                targetColumnArm(store, questions.declaredTypeNames),
+                pathColumnArm(store, questions.memberSites),
+                methodArm(store, questions.declaredTypeNames),
+                targetTableArm(store, questions.declaredTypeNames),
                 multiset(selectDistinct(GRAPHITRON_PRODUCER.TYPE_NAME, GRAPHITRON_PRODUCER.FIELD_NAME)
                     .from(GRAPHITRON_PRODUCER)
                     .where(GRAPHITRON_PRODUCER.GRAPH_NAME.eq(graph))
@@ -354,9 +344,7 @@ final class InlayFacts {
                 backingArm(store, questions.backingTypeNames, TypeBackingClass.REACHED),
                 boundTableArm(store, questions.boundTableTypeNames),
                 redirectArm(store, questions.memberTypeNames),
-                columnMatchArm(store, questions.memberSites),
-                slotArm(store, questions.memberTypeNames),
-                discoveryArm(store, questions.referenceSites))
+                slotArm(store, questions.memberTypeNames))
             .fetchOne(Records.mapping(Answers::new));
     }
 
@@ -387,14 +375,13 @@ final class InlayFacts {
     private static Field<List<BoundTableRow>> boundTableArm(
         StoreHandle store, Collection<String> typeNames
     ) {
-        return multiset(selectDistinct(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.CANDIDATES,
-                INTENT_BOUND_TABLE.TABLE_SOURCE_NAME, INTENT_BOUND_TABLE.TABLE_SCHEMA,
-                INTENT_BOUND_TABLE.TABLE_NAME)
-            .from(INTENT_BOUND_TABLE)
-            .where(INTENT_BOUND_TABLE.GRAPH_NAME.eq(store.graphName()))
-            .and(INTENT_BOUND_TABLE.TYPE_NAME.in(typeNames))
-            .orderBy(INTENT_BOUND_TABLE.TYPE_NAME, INTENT_BOUND_TABLE.TABLE_SCHEMA,
-                INTENT_BOUND_TABLE.TABLE_NAME))
+        var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        return multiset(selectDistinct(b.TYPE_NAME, b.CANDIDATES,
+                b.TABLE_SOURCE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME)
+            .from(b)
+            .where(b.GRAPH_NAME.eq(store.graphName()))
+            .and(b.TYPE_NAME.in(typeNames))
+            .orderBy(b.TYPE_NAME, b.TABLE_SCHEMA, b.TABLE_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(BoundTableRow::new)));
     }
 
@@ -420,29 +407,6 @@ final class InlayFacts {
     }
 
     /**
-     * The column the match reduction settled on at each site, read through the resolved claim rather
-     * than raw: a coordinate an authored directive claims is one the generator reads no column at, and
-     * the raw reading is for a surface explaining an override rather than for one naming the member.
-     */
-    private static Field<List<ColumnMatchRow>> columnMatchArm(
-        StoreHandle store, Collection<FieldCoord> sites
-    ) {
-        var claim = INTENT_COLUMN_MATCH_CLAIM;
-        var resolved = INTENT_RESOLVED_FIELD_CLAIM;
-        return multiset(selectDistinct(claim.TYPE_NAME, claim.FIELD_NAME, claim.COLUMN_NAME)
-            .from(claim)
-            .join(resolved)
-            .on(resolved.GRAPH_NAME.eq(claim.GRAPH_NAME))
-            .and(resolved.TYPE_NAME.eq(claim.TYPE_NAME))
-            .and(resolved.FIELD_NAME.eq(claim.FIELD_NAME))
-            .and(resolved.CLASSIFIER.eq(claim.CLASSIFIER))
-            .where(claim.GRAPH_NAME.eq(store.graphName()))
-            .and(coordinateIn(claim.TYPE_NAME, claim.FIELD_NAME, sites))
-            .orderBy(claim.TYPE_NAME, claim.FIELD_NAME, claim.COLUMN_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(ColumnMatchRow::new)));
-    }
-
-    /**
      * The slots every candidate backing class of the region's member-site types offers, keyed by class
      * rather than by type: which class a type resolves to is the grounding rule's answer, applied after
      * this arm has returned, and a slot is a fact about a class either way.
@@ -459,23 +423,87 @@ final class InlayFacts {
             .convertFrom(rows -> rows.map(Records.mapping(SlotRow::new)));
     }
 
+    /** The tables whose rows the region's types hold. */
+    private static Field<List<ResultTableRow>> resultTableArm(StoreHandle store, Collection<String> typeNames) {
+        var t = GRAPHITRON_RESULT_TABLE;
+        return multiset(selectDistinct(t.TYPE_NAME, t.TABLE_NAME).from(t)
+            .where(t.GRAPH_NAME.eq(store.graphName()), t.TYPE_NAME.in(typeNames))
+            .orderBy(t.TYPE_NAME, t.TABLE_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(ResultTableRow::new)));
+    }
+
+    /** The classes whose instances the region's types hold. */
+    private static Field<List<ResultClassRow>> resultClassArm(StoreHandle store, Collection<String> typeNames) {
+        var c = GRAPHITRON_RESULT_CLASS;
+        return multiset(selectDistinct(c.TYPE_NAME, c.CLASS_NAME).from(c)
+            .where(c.GRAPH_NAME.eq(store.graphName()), c.TYPE_NAME.in(typeNames))
+            .orderBy(c.TYPE_NAME, c.CLASS_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(ResultClassRow::new)));
+    }
+
+    /** The columns the region's scalar fields with no path read. */
+    private static Field<List<TargetColumnRow>> targetColumnArm(StoreHandle store, Collection<String> typeNames) {
+        var c = GRAPHITRON_FIELD_TARGET_COLUMN;
+        return multiset(selectDistinct(c.TYPE_NAME, c.FIELD_NAME, c.FROM_TABLE, c.COLUMN_NAME).from(c)
+            .where(c.GRAPH_NAME.eq(store.graphName()), c.TYPE_NAME.in(typeNames))
+            .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.FROM_TABLE))
+            .convertFrom(rows -> rows.map(Records.mapping(TargetColumnRow::new)));
+    }
+
     /**
-     * The foreign keys an omitted {@code @reference} path discovers at each site, every candidate and
-     * not just the certain ones: which of them an overlay may speak for is the arity's reading, and the
-     * arity is a column of the same rows. Ordered by key name so the arm is stable, an overlay only
-     * ever naming a key where there is one.
+     * The column each member site with a path names where the path lands, by its own name, the SQL
+     * name before the generated one as the target column matches it. A field with a path has no
+     * target column yet, the landing being the forward walk's to state; the column scope's terminal
+     * table is where it reads until then.
      */
-    private static Field<List<DiscoveryRow>> discoveryArm(
-        StoreHandle store, Collection<FieldCoord> sites
-    ) {
-        var discovery = INTENT_FIELD_REFERENCE_DISCOVERY;
-        return multiset(selectDistinct(discovery.TYPE_NAME, discovery.FIELD_NAME,
-                discovery.CONSTRAINT_NAME, discovery.CANDIDATES)
-            .from(discovery)
-            .where(discovery.GRAPH_NAME.eq(store.graphName()))
-            .and(coordinateIn(discovery.TYPE_NAME, discovery.FIELD_NAME, sites))
-            .orderBy(discovery.TYPE_NAME, discovery.FIELD_NAME, discovery.CONSTRAINT_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(DiscoveryRow::new)));
+    private static Field<List<PathColumnRow>> pathColumnArm(StoreHandle store, Collection<FieldCoord> sites) {
+        var sc = GRAPHITRON_FIELD_COLUMN_SCOPE;
+        var c = SQL_COLUMN;
+        return multiset(selectDistinct(sc.TYPE_NAME, sc.FIELD_NAME, c.COLUMN_NAME).from(sc)
+            .join(c).on(c.SOURCE_NAME.eq(sc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(sc.TABLE_SCHEMA),
+                c.TABLE_NAME.eq(sc.TABLE_NAME), c.COLUMN_NAME_UPPER.eq(upper(sc.FIELD_NAME)))
+            .where(sc.GRAPH_NAME.eq(store.graphName()), sc.BASIS.eq("PATH_TERMINAL"))
+            .and(coordinateIn(sc.TYPE_NAME, sc.FIELD_NAME, sites))
+            .orderBy(sc.TYPE_NAME, sc.FIELD_NAME, c.COLUMN_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(PathColumnRow::new)));
+    }
+
+    /**
+     * The methods the code references written at the region's fields resolve to. A reference is
+     * keyed by the object value it was written as, two levels under the directive.
+     */
+    private static Field<List<MethodRow>> methodArm(StoreHandle store, Collection<String> typeNames) {
+        var f = GRAPHITRON_FIELD;
+        var d = GRAPHITRON_DIRECTIVE_APPLICATION;
+        var arg = GRAPHQL_AST_ENTRY.as("inlay_arg");
+        var val = GRAPHQL_AST_ENTRY.as("inlay_val");
+        var r = GRAPHITRON_CODE_REFERENCE;
+        return multiset(selectDistinct(f.TYPE_NAME, f.FIELD_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME).from(f)
+            .join(d).on(d.GRAPH_NAME.eq(f.GRAPH_NAME), d.COORDINATE.eq(f.COORDINATE), d.ORIGIN.eq("AUTHORED"))
+            .join(arg).on(arg.GRAPH_NAME.eq(d.GRAPH_NAME), arg.SOURCE_NAME.eq(d.SOURCE_NAME),
+                arg.PARENT_LINE.eq(d.SOURCE_LINE), arg.PARENT_COLUMN.eq(d.SOURCE_COLUMN))
+            .join(val).on(val.GRAPH_NAME.eq(arg.GRAPH_NAME), val.SOURCE_NAME.eq(arg.SOURCE_NAME),
+                val.PARENT_LINE.eq(arg.SOURCE_LINE), val.PARENT_COLUMN.eq(arg.SOURCE_COLUMN))
+            .join(r).on(r.GRAPH_NAME.eq(val.GRAPH_NAME), r.SOURCE_NAME.eq(val.SOURCE_NAME),
+                r.SOURCE_LINE.eq(val.SOURCE_LINE), r.SOURCE_COLUMN.eq(val.SOURCE_COLUMN))
+            .where(f.GRAPH_NAME.eq(store.graphName()), f.TYPE_NAME.in(typeNames))
+            .orderBy(f.TYPE_NAME, f.FIELD_NAME, r.METHOD_CLASS_NAME, r.METHOD_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(MethodRow::new)));
+    }
+
+    /** The tables the region's fields' statements land on, through the type that binds each. */
+    private static Field<List<TargetTableRow>> targetTableArm(StoreHandle store, Collection<String> typeNames) {
+        var tt = GRAPHITRON_FIELD_TARGET_TABLE;
+        var b = GRAPHITRON_RESOLVED_TYPE_BINDING;
+        return multiset(selectDistinct(tt.TYPE_NAME, tt.FIELD_NAME, b.TABLE_NAME).from(tt)
+            .join(b).on(b.GRAPH_NAME.eq(tt.GRAPH_NAME), b.TYPE_NAME.eq(tt.ARRIVING_TYPE_NAME))
+            .where(tt.GRAPH_NAME.eq(store.graphName()), tt.TYPE_NAME.in(typeNames))
+            .orderBy(tt.TYPE_NAME, tt.FIELD_NAME, b.TABLE_NAME))
+            .convertFrom(rows -> rows.map(Records.mapping(TargetTableRow::new)));
+    }
+
+    private static String simpleName(String className) {
+        return className.substring(className.lastIndexOf('.') + 1);
     }
 
     /** A disjunction over whole coordinates, which is what keys the arm a site's own match comes from. */

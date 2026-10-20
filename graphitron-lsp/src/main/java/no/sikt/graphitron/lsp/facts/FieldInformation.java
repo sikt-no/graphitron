@@ -23,6 +23,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_READER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
@@ -43,8 +45,8 @@ import static org.jooq.impl.DSL.selectOne;
  * evaluating one whole for every hover because it cannot push the coordinate into a window or a
  * recursive CTE; a stored relation answers a key in the time it takes to find it.
  *
- * <p>One statement, a multiset per relation, as {@link ClaimFacts} does it: nothing is joined
- * across lines, so no line's fan-out multiplies another's.
+ * <p>One statement, a multiset per relation: nothing is joined across lines, so no line's fan-out
+ * multiplies another's.
  */
 public final class FieldInformation {
 
@@ -76,9 +78,15 @@ public final class FieldInformation {
     /** One argument of an added directive, in the form it is printed. */
     public record Argument(String name, String valueSdl) {}
 
+    /**
+     * The field's fetcher: what it runs where it produces a result, how it reads its parent's where
+     * it reads one, and neither where the store states no fetcher for it.
+     */
+    public record Fetch(String produces, String reads) {}
+
     /** Everything one statement read about the field. */
     public record Information(
-        Signature signature, Target target, List<Column> columns, List<TargetTable> targetTables,
+        Signature signature, Fetch fetch, Target target, List<Column> columns, List<TargetTable> targetTables,
         List<Source> sources, List<Node> nodes, List<Method> methods, List<String> routines,
         List<Added> added, int pathElements, List<String> defects
     ) {
@@ -89,6 +97,8 @@ public final class FieldInformation {
     }
 
     private final Field<List<Signature>> signature;
+    private final Field<List<String>> produces;
+    private final Field<List<String>> reads;
     private final Field<List<Target>> target;
     private final Field<List<Column>> columns;
     private final Field<List<TargetTable>> targetTables;
@@ -109,6 +119,17 @@ public final class FieldInformation {
             .where(f.GRAPH_NAME.eq(graph), f.TYPE_NAME.eq(typeName), f.FIELD_NAME.eq(fieldName)))
             .convertFrom(rows -> rows.map(Records.mapping(Signature::new)))
             .as("info_signature");
+
+        var pr = GRAPHITRON_PRODUCER;
+        produces = multiset(select(pr.KIND).from(pr)
+            .where(pr.GRAPH_NAME.eq(graph), pr.TYPE_NAME.eq(typeName), pr.FIELD_NAME.eq(fieldName)))
+            .convertFrom(rows -> rows.map(Record1::value1))
+            .as("info_produces");
+        var rd = GRAPHITRON_READER;
+        reads = multiset(select(rd.READS).from(rd)
+            .where(rd.GRAPH_NAME.eq(graph), rd.TYPE_NAME.eq(typeName), rd.FIELD_NAME.eq(fieldName)))
+            .convertFrom(rows -> rows.map(Record1::value1))
+            .as("info_reads");
 
         var t = GRAPHITRON_FIELD_TARGET;
         var kind = GRAPHITRON_TYPE;
@@ -254,13 +275,16 @@ public final class FieldInformation {
 
     /** The arms, in the order the block renders them. */
     public List<Field<?>> fields() {
-        return List.of(signature, target, columns, targetTables, sources, nodes, methods, routines,
+        return List.of(signature, produces, reads, target, columns, targetTables, sources, nodes, methods, routines,
             added, pathElements, defects);
     }
 
     /** The information, read off the record the caller's statement returned. */
     public Information read(Record row) {
-        return new Information(first(row.get(signature)), first(row.get(target)), row.get(columns),
+        String producer = first(row.get(produces));
+        String reader = first(row.get(reads));
+        var fetch = producer == null && reader == null ? null : new Fetch(producer, reader);
+        return new Information(first(row.get(signature)), fetch, first(row.get(target)), row.get(columns),
             row.get(targetTables), row.get(sources), row.get(nodes), row.get(methods), row.get(routines),
             row.get(added), row.get(pathElements), row.get(defects));
     }

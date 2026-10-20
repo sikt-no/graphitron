@@ -117,21 +117,6 @@ class InlayHintStatementCountTest {
     }
 
     @Test
-    void anOmittedReferencePathCostsOneStatement() {
-        var source = """
-            type Film @table(name: "film") {
-                content: Content @reference
-            }
-            """;
-        // Asserted to render before the count is taken, so the case cannot pass on an arm that
-        // answered nothing: a renderer reading no relation at all would also cost one statement.
-        assertThat(hints(store.handle(), source))
-            .extracting(hint -> hint.getLabel().getLeft())
-            .contains("path: [{key: \"content_film_id_fkey\"}]");
-        assertThat(statementsFor(source)).isEqualTo(1);
-    }
-
-    @Test
     void theCountDoesNotTrackTheRegionsSize() {
         int ten = statementsFor(fields(10));
         int forty = statementsFor(fields(40));

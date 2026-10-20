@@ -21,21 +21,17 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * What one declaration hover costs the store, counted rather than reasoned about. The
- * classification block is one statement at either grain, and stays one statement however many claims
- * stand at the coordinate.
+ * What one declaration hover costs the store, counted rather than reasoned about. Either grain's
+ * information is one statement, whatever stands at the coordinate.
  *
  * <p>This is an enforcer, not a benchmark: no timing, no fixture scale, nothing that could fail for
- * being slow. It exists because the shape it pins is invisible from any behavioural assertion. Every
- * hover test passed while the block cost a statement per claim on top of three, since a fan-out into
- * separate round trips returns exactly the same text as one statement does. A future reader adding a
- * fact to the block will reach for another query, which is the natural move and the one this test
- * refuses.
+ * being slow. It exists because the shape it pins is invisible from any behavioural assertion: a
+ * fan-out into separate round trips returns exactly the same text as one statement does. A future
+ * reader adding a line to the hover will reach for another query, which is the natural move and the
+ * one this test refuses.
  *
- * <p>Every hover runs under an unavailable snapshot, and the count is still one with both blocks in it.
- * That is the point rather than a detail of the fixture: the classification block and the description
- * overlay are arms of one statement, so a session that has captured but never generated pays for a
- * hover exactly what one that has generated pays, and neither block is gated on a build.
+ * <p>Every hover runs under an unavailable snapshot, and the count is still one, so a session that
+ * has captured but never generated pays for a hover exactly what one that has generated pays.
  */
 class DeclarationHoverStatementCountTest {
 
@@ -43,9 +39,9 @@ class DeclarationHoverStatementCountTest {
 
     /**
      * One coordinate per shape the count must hold for: a plain column match, a coordinate two
-     * directives both claim, a field claimed by nothing that still carries a join path and a
-     * round-trip rule, a field whose {@code @routine} names a generated call, a claimed type, a type
-     * no claim names that a producer's return backs, and a type two producers back differently.
+     * directives meet at, a split child field with a path, a field whose {@code @routine} names a
+     * generated call, a table type, a type a producer returns, and a type two producers return
+     * differently.
      */
     private static final String SDL = """
         type Query {
@@ -119,8 +115,7 @@ class DeclarationHoverStatementCountTest {
 
     @Test
     void aFieldNoClaimReachesCostsOneStatement() {
-        // The claim-independent facts are read beside the claims rather than under them, so a
-        // coordinate with no claim at all pays the same one statement and still answers.
+        // A split child reaching another table through a path pays the same one statement.
         var file = file("""
             type Film @table(name: "film") {
                 language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
@@ -166,7 +161,7 @@ class DeclarationHoverStatementCountTest {
         // covering the second block: a hover that rendered only the classification would also cost one.
         var hover = hover(file, 0, "type Fi".length());
         assertThat(hover).isPresent();
-        assertThat(hover.get()).contains("TABLE").contains("rental catalogue");
+        assertThat(hover.get()).contains("**Holds** a row of").contains("rental catalogue");
         assertThat(statementsForHoverAt(file, 0, "type Fi".length())).isEqualTo(1);
     }
 
@@ -181,7 +176,7 @@ class DeclarationHoverStatementCountTest {
             """);
         var hover = hover(file, 0, "type FilmCa".length());
         assertThat(hover).isPresent();
-        assertThat(hover.get()).contains("Backed by:");
+        assertThat(hover.get()).contains("**Holds** an instance of");
         assertThat(statementsForHoverAt(file, 0, "type FilmCa".length())).isEqualTo(1);
     }
 
@@ -196,7 +191,7 @@ class DeclarationHoverStatementCountTest {
             """);
         var hover = hover(file, 0, "type Conte".length());
         assertThat(hover).isPresent();
-        assertThat(hover.get()).contains("Backing contested");
+        assertThat(hover.get()).contains("R157FilmPojo").contains("R157FilmRecord");
         assertThat(statementsForHoverAt(file, 0, "type Conte".length())).isEqualTo(1);
     }
 

@@ -25,6 +25,7 @@ final class FieldInformationMarkdown {
             sb.append("\n\n").append(info.signature().description().strip());
         }
         var lines = new ArrayList<String>();
+        if (info.fetch() != null) lines.add(line("Fetch", fetch(info.fetch())));
         value(info, lines);
         for (var source : info.sources()) {
             lines.add(line("Source", "`" + source.table() + "`, " + basis(source.basis(), coordinate)));
@@ -84,6 +85,29 @@ final class FieldInformationMarkdown {
         lines.add(line("Target", sb.toString()));
     }
 
+    /** What the fetcher runs, or how it reads the result its parent holds. */
+    private static String fetch(FieldInformation.Fetch fetch) {
+        if (fetch.produces() != null) {
+            return switch (fetch.produces()) {
+                case "SELECT" -> "runs a `SELECT` of the rows a condition matches";
+                case "LOOKUP" -> "runs a `LOOKUP` of the rows for a list of keys";
+                case "COUNT" -> "runs a `COUNT` over its connection's statement";
+                case "FACETS" -> "runs the `FACETS` of its connection's statement";
+                case "INSERT", "UPDATE", "DELETE" -> "runs an `" + fetch.produces() + "`";
+                case "ROUTINE" -> "runs SQL around a database routine";
+                case "SERVICE" -> "calls a Java method";
+                default -> "runs `" + fetch.produces() + "`";
+            };
+        }
+        return switch (fetch.reads()) {
+            case "COLUMN" -> "reads a column of its parent's row";
+            case "EXPRESSION" -> "reads an expression projected into its parent's statement";
+            case "NESTED" -> "reads a row nested in its parent's";
+            case "ACCESSOR" -> "reads an accessor on its parent's object";
+            default -> "reads `" + fetch.reads() + "`";
+        };
+    }
+
     private static String basis(String basis, String coordinate) {
         String type = coordinate.substring(0, coordinate.indexOf('.'));
         return switch (basis) {
@@ -95,7 +119,7 @@ final class FieldInformationMarkdown {
         };
     }
 
-    private static String directive(FieldInformation.Added added) {
+    static String directive(FieldInformation.Added added) {
         if (added.arguments().isEmpty()) return "@" + added.directive();
         return "@" + added.directive() + "(" + added.arguments().stream()
             .map(a -> a.name() + ": " + a.valueSdl())
@@ -135,7 +159,7 @@ final class FieldInformationMarkdown {
         return out;
     }
 
-    private static String line(String label, String value) {
+    static String line(String label, String value) {
         return "**" + label + "** " + value;
     }
 }

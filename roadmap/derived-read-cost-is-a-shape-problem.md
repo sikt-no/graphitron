@@ -1322,15 +1322,31 @@ and the emitters read, and it goes when nothing reads what it builds.
         type, wrapper and table, the source table and its basis in words, the target's node id and
         key columns, the methods its code references resolve to, the directives graphitron adds,
         the written path's length and the defects at the field, one statement over stored tables.
-        `FieldHoverReadsNoViewTest` fails if a field hover's statement names a view, with the type
-        hover as its control; `FieldInformationHoverTest` pins the lines. On a 2026-10-17 sis store
-        the statement takes 4.1 ms at the median and 28 ms at worst over 302 fields. Not yet: what
-        produces the field, which waits on `graphitron_producer` being stored; the walked route,
-        which waits on the forward walk; and a method's doc comment, which `java_method_declaration`
-        cannot answer by key.
-      * **A type's hover is its information** `open`. Its binding, nodehood, backing class and
-        defects, in place of the claim block and the overlay, which still read `intent_` views.
-      * **The inlay hints show the same facts** `open`, through `InlayFacts`.
+        Its first line is the fetch, what the fetcher runs from `graphitron_producer` or how it
+        reads its parent's result from `graphitron_reader`. `EditorReadsNoViewTest` fails if a
+        hover's or an inlay request's statement names a view, with go-to-definition, which still
+        resolves through `intent_bound_table`, as its control; `FieldInformationHoverTest` pins the
+        lines. On a 2026-10-17 sis store the statement takes 4.1 ms at the median and 28 ms at worst
+        over 302 fields. Not yet: the walked route, which waits on the forward walk; and a method's
+        doc comment, which `java_method_declaration` cannot answer by key.
+      * **A type's hover is its information** `done`. `TypeInformation` reads the signature and
+        description, the result the type holds from `graphitron_result` with a row of a table and
+        its comment or an instance of a class, the node id and key columns, an `@error` type's
+        handlers, the directives graphitron adds and the defects at the type's declarations, one
+        statement over stored tables. The claim block and the description overlay go, and
+        `ClaimFacts` with them; `TypeInformationHoverTest` pins the lines. A class's doc comment is
+        not shown, `java_class_declaration` answering by file rather than by class.
+      * **The inlay hints show the same facts** `done`. A type is labelled with the table whose
+        rows it holds or the class of its instances, a field with its column, the method it calls
+        or the table its statement lands on, and `@table` and `@field` fill in from
+        `graphitron_resolved_type_binding`, `graphitron_field_target_column` and, for a field with a
+        path, `graphitron_field_column_scope`'s terminal table. A type backed by a table's record
+        now gets its `@field` name, a gap `InferredFieldHintsTest` had pinned. `LabelHintsTest`
+        pins the labels.
+      * **An omitted `@reference` path is filled in from the stored path** `blocked`, on the path
+        discovery implies being a row of `graphitron_field_path`. The hint read
+        `intent_field_reference_discovery` and is dropped until then;
+        `InlayHintRendererCoverageTest` names `reference` as waiting.
     * **The claims go** `open`, after the editor. A claim is a field's row in the walk's classified
       vocabulary and its classifier the variant, whose precedence is the fetcher's fact under "Every
       field has one fetcher": `intent_authored_field_claim` restates the producing entries,

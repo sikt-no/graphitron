@@ -170,16 +170,13 @@ class SourceCadenceHoverAndDefinitionTest {
     }
 
     /**
-     * The declaration-name arm, whose two halves ask one parsed declaration two questions: hover
-     * overlays its doc comment, goto jumps to its position. The type name is the only handle either
-     * surface has here, the coordinate being a declaration rather than a directive argument.
-     *
-     * <p>Bound to {@code actor} for the reason the table-hover case above gives: the overlay's table
-     * arm prefers the database comment, so only a commentless table lets a parsed doc comment be the
-     * text under assertion.
+     * The declaration name: goto jumps to the parsed declaration's position, and the hover states
+     * what the store holds about the type, which a parsed doc comment is no part of, a class's doc
+     * comment being no key lookup. The type name is the only handle either surface has here, the
+     * coordinate being a declaration rather than a directive argument.
      */
     @Test
-    void declarationNameHoverAndGotoBothReadTheParsedDeclaration(@TempDir Path srcRoot) {
+    void declarationNameGotoReadsTheParsedDeclarationAndHoverTheStore(@TempDir Path srcRoot) {
         var file = file("type Actor @table(name: \"actor\") { first_name: String }");
         // Cursor on the 'c' of the Actor declaration's own name token.
         var namePos = new Point(0, "type Ac".length());
@@ -192,9 +189,9 @@ class SourceCadenceHoverAndDefinitionTest {
                     public final Object FIRST_NAME = null;
                 }
                 """);
-            // Which declaration the type name binds to is the store's answer off the captured
-            // binding, and so is everything either surface then says about it.
-            assertThat(hoverText(store, file, namePos, true)).contains("The actor table.");
+            assertThat(hoverText(store, file, namePos, true))
+                .contains("**Holds** a row of `public.actor`")
+                .doesNotContain("The actor table.");
 
             var loc = DeclarationDefinitions.compute(file, store.handle(), namePos).orElseThrow();
             assertThat(loc.getUri()).endsWith("Actor.java");

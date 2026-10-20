@@ -15,24 +15,22 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * A type declaration's hover classification block, over a real capture. The block is the classifiers
- * claiming the type plus the facts behind each, read from the relations that own them: there is no
- * projection variant name in it and no per-variant payload record behind it. A field's hover carries
- * no classification; {@code FieldInformationHoverTest} covers it.
- *
- * <p>Every assertion runs under an unavailable snapshot, which is how the class states that this
- * block's source is the store. The overlay beneath it still needs the snapshot, and its coverage
- * stays with {@code DeclarationHoverOverlayParityTest}.
+ * A type declaration's hover, over a real capture: what the store states about the type, a line per
+ * fact, with no classification in it. The cases are the results a type can hold, a row of a table,
+ * an instance of the class a producer returns, two classes at once, and nothing at all, and the
+ * lines a node type and an error type add.
  */
-class ClassificationHoverTest {
+class TypeInformationHoverTest {
 
     /**
-     * A schema covering each shape the block answers: a claimed type, an error type, types a
-     * producer backs once and twice over, and declarations nothing reaches at all.
+     * A schema covering each result a type can hold: a table type, a node over one, an error type,
+     * types a producer returns once and twice over, and a type nothing reaches.
      */
     private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
 
     private static final String SDL = """
+        interface Node { id: ID! }
+
         type Query {
             films: [Film] @service(service: {className: "com.example.FilmService", method: "all"})
             card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
@@ -52,7 +50,9 @@ class ClassificationHoverTest {
             language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
         }
 
-        type Language @table(name: "language") {
+        "A language a film is spoken in."
+        type Language implements Node @table(name: "language") @node {
+            id: ID!
             name: String
         }
 
@@ -89,16 +89,30 @@ class ClassificationHoverTest {
     }
 
     @Test
-    void aClaimedTypeNamesTheTableItBindsTo() {
+    void aTableTypeHoldsARowOfItsTable() {
         var file = file("""
             type Film @table(name: "film") {
                 title: String
             }
             """);
         assertThat(hoverAt(file, 0, "type Fi".length()))
-            .contains("**TABLE**")
-            .contains("`Film`")
-            .contains("Table: `film`");
+            .contains("`type Film`")
+            .contains("**Holds** a row of `public.film`")
+            .doesNotContain("TABLE**")
+            .doesNotContain("**Node**");
+    }
+
+    @Test
+    void aNodeTypeNamesItsIdAndKeys() {
+        var file = file("""
+            type Language implements Node @table(name: "language") @node {
+                id: ID!
+            }
+            """);
+        assertThat(hoverAt(file, 0, "type Langu".length()))
+            .contains("A language a film is spoken in.")
+            .contains("**Holds** a row of `public.language`")
+            .contains("**Node** id `Language` · keys `language_id`");
     }
 
     @Test
@@ -109,51 +123,43 @@ class ClassificationHoverTest {
             }
             """);
         assertThat(hoverAt(file, 0, "type FilmEr".length()))
-            .contains("**ERROR**")
-            .contains("Handler: `GENERIC java.lang.RuntimeException`");
+            .contains("**Handles** `GENERIC java.lang.RuntimeException`");
     }
 
     @Test
-    void anUnclaimedTypeNamesTheClassBackingIt() {
-        // The payload type the block used to be silent about. No claim names it, so no heading, and
-        // the class its producer hands back is what the store knows it to be.
+    void aTypeAProducerReturnsHoldsTheClassItReturns() {
         var file = file("""
             type FilmCard {
                 title: String
             }
             """);
         assertThat(hoverAt(file, 0, "type FilmCa".length()))
-            .doesNotContain("**")
-            .contains("`FilmCard`")
-            .contains("Backed by: `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
+            .contains("`type FilmCard`")
+            .contains("**Holds** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
     }
 
     @Test
-    void aTypeTwoProducersBackDifferentlySaysSoRatherThanPickingOne() {
-        // The population with no surface at all before this: every reader that needs one class is
-        // silent, so without this line the author sees a payload type rendering like a plain object.
+    void aTypeTwoProducersReturnDifferentlyHoldsBothRatherThanOne() {
         var file = file("""
             type Contested {
                 title: String
             }
             """);
         assertThat(hoverAt(file, 0, "type Conte".length()))
-            .contains("`Contested`")
-            .contains("Backing contested, so nothing binds:")
-            .contains("R157FilmPojo")
-            .contains("R157FilmRecord");
+            .contains("**Holds** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmPojo`")
+            .contains("**Holds** an instance of `no.sikt.graphitron.lsp.fixtures.R157FilmRecord`");
     }
 
     @Test
-    void aDeclarationNothingReachesGetsNoHover() {
-        // Claimed by nothing and backed by nothing: a plain nesting object, which is the population
-        // the backing lines must stay quiet about or they would fire on most of a schema.
+    void aTypeNothingReachesHoldsNothing() {
         var file = file("""
             type Note {
                 text: String
             }
             """);
-        assertThat(hover(file, 0, "type No".length())).isEmpty();
+        assertThat(hoverAt(file, 0, "type No".length()))
+            .contains("`type Note`")
+            .doesNotContain("**Holds**");
     }
 
     @Test
@@ -183,13 +189,13 @@ class ClassificationHoverTest {
     @Test
     void anExtensionSiteReadsTheTypeItExtends() {
         // Both grains are name-keyed on the type, so an extension whose base declaration lives in
-        // another file resolves the same claims the base does.
+        // another file reads what the base does.
         var file = file("""
             extend type Film {
                 title: String
             }
             """);
-        assertThat(hoverAt(file, 0, "extend type Fi".length())).contains("**TABLE**");
+        assertThat(hoverAt(file, 0, "extend type Fi".length())).contains("**Holds** a row of `public.film`");
         assertThat(hoverAt(file, 1, "    titl".length())).contains("**Column** `film.title`");
     }
 

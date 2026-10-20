@@ -36,10 +36,7 @@ import java.util.Optional;
  *
  * <p>One request is one statement: {@link DeclarationFacts} answers what the coordinate resolves
  * against and what the java-source family holds about every declaration it could resolve to, and the
- * jump is a lookup over those rows. Hover's overlay reads the same rows for the same declaration's doc
- * comment, so the parity between the two surfaces is a property of the family rather than of two
- * readers agreeing, with one asymmetry left standing: a declaration the parse positioned but wrote no
- * doc comment for jumps without overlaying anything.
+ * jump is a lookup over those rows.
  */
 public final class DeclarationDefinitions {
 
@@ -64,9 +61,8 @@ public final class DeclarationDefinitions {
 
     /**
      * Projects the shared {@link DeclTarget} to the editor jump for its declaration, out of the rows
-     * the same statement brought back. Public so {@code DeclarationHoverOverlayParityTest} can assert,
-     * per variant, that this jump is present exactly when the declaration-name hover overlay is (the
-     * parity property), without a tree-sitter round-trip.
+     * the same statement brought back. Public so {@code DeclarationDefinitionsTest} can assert per
+     * variant without a tree-sitter round-trip.
      *
      * <p>Every arm reads the java-source family and nothing else, which is why the rows can answer for
      * all of them: what separates a table's jump from a column's is which of that family's three

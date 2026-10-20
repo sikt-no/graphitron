@@ -174,20 +174,18 @@ class InferredFieldHintsTest {
     }
 
     /**
-     * The gap, pinned so it cannot be mistaken for a rule. {@code FilmRow} is grounded on the row type
-     * jOOQ generated for {@code film}, so a name written in it resolves against that table's columns
-     * and {@code TypeMemberScope} offers them. The column arm reaches the site's table from a
-     * {@code @table} binding or an authored path and never from the parent's backing class, so the
-     * match is not derived at this coordinate; closing it is a rule in the scope relation.
+     * {@code FilmRow} is grounded on the row type jOOQ generated for {@code film}, so it reads its
+     * fields off that table's record, and the target column states the column a name written in it
+     * reads, as it does for a {@code @table} type.
      */
     @Test
-    void aParentScopedThroughItsBackingRowTypeIsNotReachedYet() {
+    void aParentScopedThroughItsBackingRowTypeNamesItsColumn() {
         var file = file("""
             type FilmRow {
                 title: String @field
             }
             """);
-        assertThat(labels(file)).isEmpty();
+        assertThat(labels(file)).containsExactly("name: \"title\"");
     }
 
     @Test

@@ -92,6 +92,7 @@ class FieldInformationHoverTest {
         assertThat(hoverAt(file, 1, "    titl".length()))
             .contains("`Film.title: String`")
             .contains("The film's title.")
+            .contains("**Fetch** reads a column of its parent's row")
             .contains("**Column** `film.title` varchar")
             .contains("not null")
             .contains("**Source** `film`, the parent type's table")
@@ -185,6 +186,7 @@ class FieldInformationHoverTest {
             """.formatted(FIXTURE_SERVICE));
         assertThat(hoverAt(file, 1, "    car".length()))
             .contains("**Calls** `@service` `R157Service.makeFilmRecord(")
+            .contains("**Fetch** calls a Java method")
             .doesNotContain("**Source**");
     }
 

@@ -11,18 +11,14 @@ import java.util.Optional;
  * The Java declaration an SDL <em>declaration-name</em> coordinate (a type-name
  * or field-name token, the trigger {@link SdlDeclaration} owns) binds to, named
  * independently of how a consumer projects it. Goto-definition projects each
- * variant to a source {@code Location}; the declaration-name hover arm projects
- * each to a Javadoc overlay.
+ * variant to a source {@code Location}.
  *
- * <p>Sharing the resolution is what keeps the two consumers pointing at one
- * declaration: a single scope-switch ({@link #of}) produces the target,
- * and each consumer switches over the <em>same</em> {@code DeclTarget}
- * exhaustively, so a new {@link TypeMemberScope.Scope} arm breaks both switches
- * at compile time. What differs is only which fact each then reads about the
- * declaration, and both read it out of the same {@link DeclarationFacts} rows,
- * one for a doc comment and one for a position. The variants name the resolved
- * declaration and nothing else, so neither read can be short-circuited by a
- * value the resolution happened to have in hand.
+ * <p>A single scope-switch ({@link #of}) produces the target, and the consumer
+ * switches over it exhaustively, so a new {@link TypeMemberScope.Scope} arm breaks
+ * the switch at compile time. The position is read out of the same
+ * {@link DeclarationFacts} rows. The variants name the resolved declaration and
+ * nothing else, so the read cannot be short-circuited by a value the resolution
+ * happened to have in hand.
  *
  * <p>What a coordinate resolves against is {@link TypeMemberScope}'s, shared with
  * completion, hover's coordinate arm and the field-member diagnostic. Which Java method a

@@ -56,10 +56,8 @@ import static org.jooq.impl.DSL.selectCount;
  * <p>Every arm reads the fact store, the declaration-name arm around the coordinate dispatch
  * included: the classpath census and the java-source family for the arms that answer about Java, the
  * catalog census for those that answer about the database, and the graph's own {@code @node}
- * declarations for one more. The declaration-name arm's classification block is the claim stratum's
- * and the description overlay beneath it resolves through
- * {@link no.sikt.graphitron.lsp.parsing.DeclTarget}, so the whole popup renders with no generator
- * pass behind it.
+ * declarations for one more. The declaration-name hover is {@link DeclarationHovers}', over stored
+ * relations, so the whole popup renders with no generator pass behind it.
  *
  * <p>Coordinates without a specific {@link Behavior} arm fall through to
  * the SDL-docstring hover, and so do the two name tokens the coordinate walk does not key: the

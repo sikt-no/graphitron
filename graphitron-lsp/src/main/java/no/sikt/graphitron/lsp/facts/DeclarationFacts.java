@@ -50,8 +50,8 @@ import static org.jooq.impl.DSL.selectDistinct;
  *
  * <h2>Why the declarations ride along</h2>
  *
- * <p>Three arms answer about the java-source family, which holds the doc comment a hover overlays and
- * the position an editor jumps to. What either surface wants is that family's answer about the
+ * <p>Three arms answer about the java-source family, which holds the position an editor jumps to.
+ * What go-to-definition wants is that family's answer about the
  * <em>one</em> declaration the coordinate resolved to, and which declaration that is only becomes
  * known once the resolution has run over the arms above. So these arms answer for every declaration
  * the coordinate <em>could</em> resolve to, admitted by whichever relation could name it, and the

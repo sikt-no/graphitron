@@ -182,8 +182,9 @@ class SeparateFetchHintsTest {
         var hints = InlayHints.compute(new InlayHintConfig(false, true, true, false), file,
             Optional.of(store.handle()), fullRange());
         assertThat(labels(hints))
-            .as("the type's classifier, then the field's, then the field's delivery marker")
-            .containsExactly("TABLE", "SERVICE", InlayHints.SEPARATE_FETCH_LABEL);
+            .as("the type's table, then the field's delivery marker; com.example.FilmService is on no"
+                + " classpath, so no method resolves to label the field with")
+            .containsExactly("film", InlayHints.SEPARATE_FETCH_LABEL);
     }
 
     @Test

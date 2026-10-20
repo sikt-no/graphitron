@@ -19,36 +19,36 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The inlay-hint provider's classification arm, over a real capture. The label is the classifier
- * the claim stratum carries and nothing more: which table, which column and which join path are
- * the hover's business, read from the relations that own them, so a compact annotation cannot fall
- * behind a taxonomy it would otherwise have to restate.
- *
- * <p>Every assertion runs against the store alone, this arm having no other source; the provider
- * takes no schema snapshot at all now that its last snapshot-reading renderer moved onto a relation.
+ * The inlay-hint provider's label arm, over a real capture. A type is labelled with what it holds,
+ * the table whose rows it holds or the class whose instances it does, and a field with what it
+ * reads, its column, the method it calls or the table its statement lands on. Each label names a
+ * fact a stored relation states, never a category.
  */
-class ClassificationHintsTest {
+class LabelHintsTest {
 
     /**
-     * A schema whose coordinates cover every shape the arm answers: a claimed type, a field the
-     * structural classifier reaches, a field an authored claim masks it at, a coordinate two
-     * claims land on, and declarations nothing claims at all.
+     * A schema whose coordinates cover every label the arm renders and the places it stays quiet:
+     * a table type and its column, a field reaching another table, a field calling a method, a type
+     * a producer returns, one two producers return differently, and declarations nothing reaches.
      */
     private static final String FIXTURE_SERVICE = "no.sikt.graphitron.lsp.fixtures.R157Service";
 
     private static final String SDL = """
         type Query {
             placeholder: Int
+            films: [Film]
             card: FilmCard @service(service: {className: "%1$s", method: "makeFilmRecord"})
-            row: FilmRow @service(service: {className: "%1$s", method: "makeFilmRow"})
             left: Contested @service(service: {className: "%1$s", method: "makeFilmRecord"})
             right: Contested @service(service: {className: "%1$s", method: "makeFilmPojo"})
         }
 
         type Film @table(name: "film") {
             title: String
-            rating: String @service(service: {className: "com.example.FilmService", method: "rating"})
-            filmId: ID @nodeId(typeName: "Film") @service(service: {className: "com.example.FilmService", method: "id"})
+            language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+        }
+
+        type Language @table(name: "language") {
+            name: String
         }
 
         type Note {
@@ -59,16 +59,8 @@ class ClassificationHintsTest {
             title: String
         }
 
-        type FilmRow @table(name: "film") {
-            title: String
-        }
-
         type Contested {
             title: String
-        }
-
-        type FilmError @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
-            message: String
         }
         """.formatted(FIXTURE_SERVICE);
 
@@ -88,55 +80,38 @@ class ClassificationHintsTest {
     }
 
     @Test
-    void aClaimedTypeAndItsColumnMatchedFieldAreLabelledWithTheirClassifiers() {
+    void aTableTypeIsLabelledWithItsTableAndAFieldWithItsColumn() {
         var file = file("""
             type Film @table(name: "film") {
                 title: String
             }
             """);
-        assertThat(labels(file, fullRange())).containsExactly("TABLE", "TABLE_COLUMN");
+        assertThat(labels(file, fullRange())).containsExactly("film", "film.title");
     }
 
     @Test
-    void anAuthoredClaimIsTheLabelWhereItMasksTheStructuralReading() {
-        // `rating` is a column of `film`, so the structural classifier reaches this coordinate;
-        // the label is SERVICE because the reduction masks it, not because the arm ranks the two.
+    void anObjectFieldIsLabelledWithTheTableItsStatementLandsOn() {
         var file = file("""
             type Film @table(name: "film") {
-                rating: String
+                language: Language @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
             }
             """);
-        assertThat(labels(file, fullRange())).containsExactly("TABLE", "SERVICE");
+        assertThat(labels(file, fullRange())).containsExactly("film", "\u2192 language");
     }
 
     @Test
-    void twoClaimsAtOneCoordinateAreBothTheLabel() {
-        // The conflict rendered as what it is. A single word naming the fact that a coordinate was
-        // claimed twice would say strictly less than the two classifiers that claimed it.
+    void aServiceFieldIsLabelledWithTheMethodItCalls() {
         var file = file("""
-            type Film @table(name: "film") {
-                filmId: ID
+            type Query {
+                card: FilmCard @service(service: {className: "%s", method: "makeFilmRecord"})
             }
-            """);
-        assertThat(labels(file, fullRange())).containsExactly("TABLE", "NODE_ID, SERVICE");
+            """.formatted(FIXTURE_SERVICE));
+        assertThat(labels(file, fullRange())).containsExactly("R157Service.makeFilmRecord");
     }
 
     @Test
-    void anErrorTypeCarriesItsOwnClassifier() {
-        var file = file("""
-            type FilmError {
-                message: String
-            }
-            """);
-        // The type is claimed; its field is not, no table being bound to read a column off.
-        assertThat(labels(file, fullRange())).containsExactly("ERROR");
-    }
-
-    @Test
-    void aTypeNoClaimNamesIsLabelledWithTheClassBackingIt() {
-        // The payload type this arm used to be silent about. Nothing is authored at the
-        // declaration: the label comes from the class a producer elsewhere in the schema hands
-        // back, which is the whole of what the store knows the type to be.
+    void aTypeAProducerReturnsIsLabelledWithTheClassItHolds() {
+        // Its field reads an accessor on the instance, which is no column to name.
         var file = file("""
             type FilmCard {
                 title: String
@@ -146,21 +121,8 @@ class ClassificationHintsTest {
     }
 
     @Test
-    void aClaimBeatsABackingAtTheSameType() {
-        // FilmRow is bound to a table and grounded on that table's generated record, so both
-        // populations answer. The label is the claim, the backing following from it.
-        var file = file("""
-            type FilmRow @table(name: "film") {
-                title: String
-            }
-            """);
-        assertThat(labels(file, fullRange())).containsExactly("TABLE", "TABLE_COLUMN");
-    }
-
-    @Test
-    void aTypeTwoProducersBackDifferentlyGetsNoLabel() {
-        // Two producers naming different classes leaves nothing to prefer, and a label showing one
-        // would name the class the generator does not bind. The hover states the disagreement.
+    void aTypeHoldingTwoClassesGetsNoLabel() {
+        // A label has room for one answer; the hover lists both.
         var file = file("""
             type Contested {
                 title: String
@@ -170,9 +132,7 @@ class ClassificationHintsTest {
     }
 
     @Test
-    void aDeclarationNoClassifierClaimsGetsNoLabel() {
-        // Note is claimed by nothing and backed by nothing: no producer returns it and no member
-        // of a backed class delivers it, so the arm has no opinion to render at either grain.
+    void aTypeNothingReachesGetsNoLabel() {
         var file = file("""
             type Note {
                 text: String
@@ -182,9 +142,7 @@ class ClassificationHintsTest {
     }
 
     @Test
-    void aRootTypeIsNotClaimedByTheTypeGrain() {
-        // A root classifies before any type directive is read, which is why the claim view masks
-        // the three root names out; the arm inherits that rather than restating it.
+    void aRootTypeHoldsNothingToLabel() {
         var file = file("""
             type Query { placeholder: Int }
             """);
@@ -204,7 +162,7 @@ class ClassificationHintsTest {
         // A range holding the second declaration only: the arm collects its sites before asking
         // the store anything, so the first type is not merely unrendered but never asked about.
         var visible = new Range(new Position(3, 0), new Position(5, 1));
-        assertThat(labels(file, visible)).containsExactly("TABLE", "TABLE_COLUMN");
+        assertThat(labels(file, visible)).containsExactly("film", "film.title");
     }
 
     @Test
@@ -220,7 +178,7 @@ class ClassificationHintsTest {
 
     // ===== Test helpers =====
 
-    /** The classification arm alone: the inferred-directive arm has a test class of its own. */
+    /** The label arm alone: the inferred-directive arm has a test class of its own. */
     private static InlayHintConfig config() {
         return new InlayHintConfig(false, true, false, false);
     }
