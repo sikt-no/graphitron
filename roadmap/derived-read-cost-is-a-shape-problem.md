@@ -876,10 +876,14 @@ and the emitters read, and it goes when nothing reads what it builds.
       returning a table interface by `DmlTableInterfaceReturnExecutionTest`; an update, a delete and
       a service re-reading have no pin. A deferred constraint trigger that rewrites the row at
       commit is one test for all of them: the re-read sees the rewrite only after the commit.
-    * **What each kind runs is stated, resolved** `open`. A subtype per kind: the write's mutated
-      table and `matches`, the routine's first application and routine, the service's application
-      and method. A row only where the reference resolved; where it did not, the code-reference and
-      table defects already say why.
+    * **What each kind runs is stated, resolved** `done`, 2026-10-20. `graphitron_producer_write`
+      with the `@mutation` application, `matches` and the mutated table, by the generator's
+      precedence: the return's own `@table`, read off `graphitron_tabletype` and not the resolved
+      binding, which also holds what a `@routine` returning the type lands on, or the one data field
+      a payload re-reads by, then `@mutation(table:)`. `graphitron_producer_routine` with the first
+      `@routine` and its routine, `graphitron_producer_service` with the reference and its method.
+      A row only where the reference resolved; where it did not, the code-reference and table
+      defects already say why. On sis every write and every service resolves.
 
     First of its siblings, decided with Alf 2026-10-19: the payload, the carrier and the error
     channel are all facts about a producer, and each is restated today by a relation that folded the

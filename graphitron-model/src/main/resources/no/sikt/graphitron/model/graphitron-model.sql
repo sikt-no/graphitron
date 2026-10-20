@@ -5171,6 +5171,7 @@ CREATE TABLE graphitron_producer (
   kind       VARCHAR   NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
+  UNIQUE (graph_name, type_name, field_name, kind),
   FOREIGN KEY (graph_name, type_name, field_name, side)
     REFERENCES graphitron_fetcher (graph_name, type_name, field_name, side) ON DELETE CASCADE,
   CHECK (side = 'PRODUCER'),
@@ -10280,6 +10281,283 @@ COMMENT ON COLUMN graphitron_producer_rule.type_name IS 'the object type declari
 COMMENT ON COLUMN graphitron_producer_rule.field_name IS 'the field';
 COMMENT ON COLUMN graphitron_producer_rule.kind IS 'what its fetcher runs, a graphitron_producer kind';
 
+-- What each kind of producer runs, resolved: a subtype per kind keyed to the producer with its kind
+-- pinned. A row only where the reference resolved to one thing; where it did not, the
+-- code-reference and table defects already say why.
+CREATE TABLE graphitron_producer_write (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  matches           VARCHAR,
+  source_name       VARCHAR   NOT NULL,
+  source_line       INT       NOT NULL,
+  source_column     INT       NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, kind)
+    REFERENCES graphitron_producer (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_mutation_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind IN ('INSERT', 'UPDATE', 'DELETE')),
+  CHECK (matches IN ('ONE', 'MANY')),
+  -- An insert identifies no row; an identifying write always says how many it may match.
+  CHECK ((kind = 'INSERT') = (matches IS NULL))
+);
+COMMENT ON TABLE graphitron_producer_write IS 'What a write producer writes: its @mutation application, the table it mutates and, for an identifying write, how many rows one input may match; one row per write whose table resolved. For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from public.film, matching MANY.';
+COMMENT ON COLUMN graphitron_producer_write.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_write.type_name IS 'the mutation-root type declaring the field';
+COMMENT ON COLUMN graphitron_producer_write.field_name IS 'the field; with the type and the kind, a graphitron_producer key';
+COMMENT ON COLUMN graphitron_producer_write.kind IS 'INSERT, UPDATE or DELETE, pinned so the foreign key holds the producer to a write';
+COMMENT ON COLUMN graphitron_producer_write.matches IS 'ONE or MANY as multiRow was written, ONE by default: one row per input, or a filter per input that may match several. NULL on an insert, which identifies no row. The model records the intention; how a MANY update tells its filter from its values is the emitter''s';
+COMMENT ON COLUMN graphitron_producer_write.source_name IS 'the file the @mutation was written in; with the line and column, its graphitron_ast_mutation_entry';
+COMMENT ON COLUMN graphitron_producer_write.source_line IS 'the @mutation''s source line';
+COMMENT ON COLUMN graphitron_producer_write.source_column IS 'the @mutation''s source column';
+COMMENT ON COLUMN graphitron_producer_write.table_source_name IS 'the catalog the mutated table is read from; with the schema and the name, an sql_table key';
+COMMENT ON COLUMN graphitron_producer_write.table_schema IS 'the mutated table''s schema';
+COMMENT ON COLUMN graphitron_producer_write.table_name IS 'the mutated table. The table the return''s @table names for an insert or an update, directly or through the one data field its payload re-reads by, and otherwise the table @mutation(table:) names. It is not the produced type, which is the field''s target: a delete mutates a table and produces ids';
+COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_producer_routine (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  source_name       VARCHAR   NOT NULL,
+  source_line       INT       NOT NULL,
+  source_column     INT       NOT NULL,
+  routine_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  routine_name      VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, kind)
+    REFERENCES graphitron_producer (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_routine_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (routine_source_name, table_schema, routine_name)
+    REFERENCES sql_routine (source_name, table_schema, routine_name) ON DELETE CASCADE,
+  CHECK (kind = 'ROUTINE')
+);
+COMMENT ON TABLE graphitron_producer_routine IS 'What a routine producer calls: its first @routine application and the database routine that names; one row per routine producer whose routine resolved to one callable. For example Query.filmsForActor @routine(name: "films_for_actor") calls public.films_for_actor.';
+COMMENT ON COLUMN graphitron_producer_routine.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_routine.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_producer_routine.field_name IS 'the field; with the type and the kind, a graphitron_producer key';
+COMMENT ON COLUMN graphitron_producer_routine.kind IS 'always ROUTINE, pinned so the foreign key holds the producer to a routine';
+COMMENT ON COLUMN graphitron_producer_routine.source_name IS 'the file the first @routine was written in; with the line and column, its graphitron_ast_routine_entry. The applications after it are elements of the field''s reference path, not producers';
+COMMENT ON COLUMN graphitron_producer_routine.source_line IS 'the first @routine''s source line';
+COMMENT ON COLUMN graphitron_producer_routine.source_column IS 'the first @routine''s source column';
+COMMENT ON COLUMN graphitron_producer_routine.routine_source_name IS 'the catalog the routine is read from; with the schema and the name, an sql_routine key';
+COMMENT ON COLUMN graphitron_producer_routine.table_schema IS 'the routine''s schema';
+COMMENT ON COLUMN graphitron_producer_routine.routine_name IS 'the routine, the one callable the written name resolves to';
+COMMENT ON COLUMN graphitron_producer_routine.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_producer_service (
+  graph_name         VARCHAR   NOT NULL,
+  type_name          VARCHAR   NOT NULL,
+  field_name         VARCHAR   NOT NULL,
+  kind               VARCHAR   NOT NULL,
+  source_name        VARCHAR   NOT NULL,
+  source_line        INT       NOT NULL,
+  source_column      INT       NOT NULL,
+  method_source_name VARCHAR   NOT NULL,
+  method_class_name  VARCHAR   NOT NULL,
+  method_name        VARCHAR   NOT NULL,
+  method_descriptor  VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, kind)
+    REFERENCES graphitron_producer (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_code_reference (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (kind = 'SERVICE')
+);
+COMMENT ON TABLE graphitron_producer_service IS 'What a service producer calls: the reference its @service wrote and the one method that resolves to; one row per service producer whose reference resolved. For example Query.uppercased @service(service: {className: "FilmService", method: "titleUppercase"}) calls FilmService.titleUppercase.';
+COMMENT ON COLUMN graphitron_producer_service.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_service.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_producer_service.field_name IS 'the field; with the type and the kind, a graphitron_producer key';
+COMMENT ON COLUMN graphitron_producer_service.kind IS 'always SERVICE, pinned so the foreign key holds the producer to a service';
+COMMENT ON COLUMN graphitron_producer_service.source_name IS 'the file the reference was written in; with the line and column, its graphitron_code_reference';
+COMMENT ON COLUMN graphitron_producer_service.source_line IS 'the reference''s source line';
+COMMENT ON COLUMN graphitron_producer_service.source_column IS 'the reference''s source column';
+COMMENT ON COLUMN graphitron_producer_service.method_source_name IS 'the classpath entry the method was read from; with the class, the name and the descriptor, a code_method key';
+COMMENT ON COLUMN graphitron_producer_service.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_producer_service.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_producer_service.method_descriptor IS 'the method''s descriptor, which tells overloads apart';
+COMMENT ON COLUMN graphitron_producer_service.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+-- The write a mutation-root field runs and the table it mutates, by the generator's precedence:
+-- for an insert or an update, the table the return's @table names, directly or through the one data field
+-- its payload re-reads by; otherwise the table @mutation(table:) names. Where both are present and
+-- disagree, or either is ambiguous, there is no row.
+CREATE VIEW graphitron_producer_write_rule
+  (graph_name, type_name, field_name, kind, matches, source_name, source_line, source_column,
+   table_source_name, table_schema, table_name) AS
+WITH write_application (graph_name, type_name, field_name, kind, matches,
+                        source_name, source_line, source_column, table_ref) AS (
+  SELECT p.graph_name, p.type_name, p.field_name, p.kind,
+         CASE WHEN p.kind = 'INSERT' THEN NULL
+              WHEN m.multi_row THEN 'MANY' ELSE 'ONE' END,
+         m.source_name, m.source_line, m.source_column, m.table_ref
+    FROM graphitron_producer p
+    JOIN graphitron_field f
+      ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+    JOIN graphitron_directive_application da
+      ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+     AND da.directive_name = 'mutation'
+    JOIN graphitron_ast_mutation_entry m
+      ON m.graph_name = da.graph_name AND m.source_name = da.source_name
+     AND m.source_line = da.source_line AND m.source_column = da.source_column
+   WHERE p.kind IN ('INSERT', 'UPDATE', 'DELETE')
+),
+-- The table the return names with its own @table: the target's, or that of the one re-reading
+-- data field of a payload the write returns. The author's binding and not the resolved one, which
+-- also holds the table a @routine returning the same type lands on.
+returned (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
+  SELECT w.graph_name, w.type_name, w.field_name, b.table_source_name, b.table_schema, b.table_name
+    FROM write_application w
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = w.graph_name AND ft.type_name = w.type_name AND ft.field_name = w.field_name
+    JOIN graphitron_tabletype b
+      ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name
+   WHERE w.kind IN ('INSERT', 'UPDATE')
+  UNION ALL
+  SELECT w.graph_name, w.type_name, w.field_name, b.table_source_name, b.table_schema, b.table_name
+    FROM write_application w
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = w.graph_name AND ft.type_name = w.type_name AND ft.field_name = w.field_name
+    JOIN graphitron_producer reread
+      ON reread.graph_name = ft.graph_name AND reread.type_name = ft.target_type_name
+     AND reread.kind = 'LOOKUP'
+    JOIN graphitron_field_target rt
+      ON rt.graph_name = reread.graph_name AND rt.type_name = reread.type_name
+     AND rt.field_name = reread.field_name
+    JOIN graphitron_tabletype b
+      ON b.graph_name = rt.graph_name AND b.type_name = rt.target_type_name
+   WHERE w.kind IN ('INSERT', 'UPDATE')
+     -- A payload has no @table of its own; a table type's lookups are its children, not a re-read.
+     AND NOT EXISTS (SELECT 1 FROM graphitron_tabletype own
+                      WHERE own.graph_name = ft.graph_name AND own.type_name = ft.target_type_name)
+     AND (SELECT COUNT(*) FROM graphitron_producer r2
+           WHERE r2.graph_name = ft.graph_name AND r2.type_name = ft.target_type_name
+             AND r2.kind = 'LOOKUP') = 1
+),
+named (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
+  SELECT w.graph_name, w.type_name, w.field_name, s.table_source_name, s.table_schema, s.table_name
+    FROM write_application w
+    JOIN graphitron_spelled_table s
+      ON s.graph_name = w.graph_name AND s.spelling = w.table_ref AND s.candidates = 1
+)
+SELECT w.graph_name, w.type_name, w.field_name, w.kind, w.matches,
+       w.source_name, w.source_line, w.source_column,
+       COALESCE(r.table_source_name, n.table_source_name),
+       COALESCE(r.table_schema, n.table_schema),
+       COALESCE(r.table_name, n.table_name)
+  FROM write_application w
+  LEFT JOIN returned r
+    ON r.graph_name = w.graph_name AND r.type_name = w.type_name AND r.field_name = w.field_name
+  LEFT JOIN named n
+    ON n.graph_name = w.graph_name AND n.type_name = w.type_name AND n.field_name = w.field_name
+ WHERE COALESCE(r.table_name, n.table_name) IS NOT NULL
+   AND (r.table_name IS NULL OR n.table_name IS NULL
+        OR (r.table_source_name = n.table_source_name AND r.table_schema = n.table_schema
+            AND r.table_name = n.table_name));
+COMMENT ON VIEW graphitron_producer_write_rule IS 'One row the write rule computes, in the shape graphitron_producer_write stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_write, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_producer_write_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_write_rule.type_name IS 'the mutation-root type declaring the field';
+COMMENT ON COLUMN graphitron_producer_write_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_producer_write_rule.kind IS 'INSERT, UPDATE or DELETE';
+COMMENT ON COLUMN graphitron_producer_write_rule.matches IS 'ONE or MANY, NULL on an insert';
+COMMENT ON COLUMN graphitron_producer_write_rule.source_name IS 'the file the @mutation was written in';
+COMMENT ON COLUMN graphitron_producer_write_rule.source_line IS 'the @mutation''s source line';
+COMMENT ON COLUMN graphitron_producer_write_rule.source_column IS 'the @mutation''s source column';
+COMMENT ON COLUMN graphitron_producer_write_rule.table_source_name IS 'the catalog the mutated table is read from';
+COMMENT ON COLUMN graphitron_producer_write_rule.table_schema IS 'the mutated table''s schema';
+COMMENT ON COLUMN graphitron_producer_write_rule.table_name IS 'the mutated table';
+
+-- The routine a routine producer calls: its first @routine, in the order the field writes them,
+-- resolved by the spelling to the one callable the catalog holds under it.
+CREATE VIEW graphitron_producer_routine_rule
+  (graph_name, type_name, field_name, kind, source_name, source_line, source_column,
+   routine_source_name, table_schema, routine_name) AS
+SELECT p.graph_name, p.type_name, p.field_name, p.kind,
+       r.source_name, r.source_line, r.source_column,
+       sr.source_name, sr.table_schema, sr.routine_name
+  FROM graphitron_producer p
+  JOIN graphitron_field f
+    ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+  JOIN graphitron_directive_application da
+    ON da.graph_name = f.graph_name AND da.coordinate = f.coordinate
+   AND da.directive_name = 'routine'
+   AND da.ordinal = (SELECT MIN(d2.ordinal) FROM graphitron_directive_application d2
+                      WHERE d2.graph_name = da.graph_name AND d2.coordinate = da.coordinate
+                        AND d2.directive_name = 'routine')
+  JOIN graphitron_ast_routine_entry r
+    ON r.graph_name = da.graph_name AND r.source_name = da.source_name
+   AND r.source_line = da.source_line AND r.source_column = da.source_column
+  JOIN graphitron_spelled_table s
+    ON s.graph_name = r.graph_name AND s.spelling = r.routine_ref
+  JOIN sql_routine sr
+    ON sr.source_name = s.table_source_name AND sr.table_schema = s.table_schema
+   AND sr.routine_name = s.table_name AND sr.routines_class_fqn IS NOT NULL
+ WHERE p.kind = 'ROUTINE'
+   AND (SELECT COUNT(*) FROM graphitron_spelled_table s2
+          JOIN sql_routine sr2
+            ON sr2.source_name = s2.table_source_name AND sr2.table_schema = s2.table_schema
+           AND sr2.routine_name = s2.table_name AND sr2.routines_class_fqn IS NOT NULL
+         WHERE s2.graph_name = r.graph_name AND s2.spelling = r.routine_ref) = 1;
+COMMENT ON VIEW graphitron_producer_routine_rule IS 'One row the routine rule computes, in the shape graphitron_producer_routine stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_routine, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_producer_routine_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_routine_rule.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_producer_routine_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_producer_routine_rule.kind IS 'always ROUTINE';
+COMMENT ON COLUMN graphitron_producer_routine_rule.source_name IS 'the file the first @routine was written in';
+COMMENT ON COLUMN graphitron_producer_routine_rule.source_line IS 'the first @routine''s source line';
+COMMENT ON COLUMN graphitron_producer_routine_rule.source_column IS 'the first @routine''s source column';
+COMMENT ON COLUMN graphitron_producer_routine_rule.routine_source_name IS 'the catalog the routine is read from';
+COMMENT ON COLUMN graphitron_producer_routine_rule.table_schema IS 'the routine''s schema';
+COMMENT ON COLUMN graphitron_producer_routine_rule.routine_name IS 'the routine';
+
+-- The method a service producer calls: the reference its @service wrote, as the classpath
+-- resolved it. graphitron_code_reference holds a settled resolution only, so an overload or a
+-- missing method is no row here.
+CREATE VIEW graphitron_producer_service_rule
+  (graph_name, type_name, field_name, kind, source_name, source_line, source_column,
+   method_source_name, method_class_name, method_name, method_descriptor) AS
+SELECT p.graph_name, p.type_name, p.field_name, p.kind,
+       cr.source_name, cr.source_line, cr.source_column,
+       cr.method_source_name, cr.method_class_name, cr.method_name, cr.method_descriptor
+  FROM graphitron_producer p
+  JOIN graphitron_code_reference_site site
+    ON site.graph_name = p.graph_name AND site.type_name = p.type_name
+   AND site.field_name = p.field_name AND site.directive_name = 'service'
+  JOIN graphitron_code_reference cr
+    ON cr.graph_name = site.graph_name AND cr.source_name = site.source_name
+   AND cr.source_line = site.source_line AND cr.source_column = site.source_column
+ WHERE p.kind = 'SERVICE';
+COMMENT ON VIEW graphitron_producer_service_rule IS 'One row the service rule computes, in the shape graphitron_producer_service stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_service, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_producer_service_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_service_rule.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_producer_service_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_producer_service_rule.kind IS 'always SERVICE';
+COMMENT ON COLUMN graphitron_producer_service_rule.source_name IS 'the file the reference was written in';
+COMMENT ON COLUMN graphitron_producer_service_rule.source_line IS 'the reference''s source line';
+COMMENT ON COLUMN graphitron_producer_service_rule.source_column IS 'the reference''s source column';
+COMMENT ON COLUMN graphitron_producer_service_rule.method_source_name IS 'the classpath entry the method was read from';
+COMMENT ON COLUMN graphitron_producer_service_rule.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_producer_service_rule.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_producer_service_rule.method_descriptor IS 'the method''s descriptor';
+
 CREATE VIEW graphitron_field_source_table_rule
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
 -- An object type with no table of its own is read on the table the field reaching it departs from,
@@ -15219,6 +15497,30 @@ INSERT INTO meta_relation VALUES
    'A field whose fetcher runs something, and what kind of thing it runs: one row per field.',
    'For example Query.films with nothing written is a SELECT, Mutation.addFilm @mutation(typeName: INSERT) an INSERT, and the totalCount of the connection a field returns a COUNT over that field''s statement.',
    'The payload, the carrier and the error channel are facts about a producer, and each was restated by a relation that folded the producer away. Stated once here, at the field, from what was written and where; the rule is graphitron_producer_rule and the anchor inserts its rows.'),
+  ('graphitron_producer_write', 'graph-field', 'graphitron',
+   'What a write producer writes: its @mutation application, the table it mutates and, for an identifying write, how many rows one input may match; one row per write whose table resolved.',
+   'For example Mutation.dropFilms @mutation(typeName: DELETE, multiRow: true, table: "film") deletes from public.film, matching MANY.',
+   'A produced type and a mutated type are two facts: a delete mutates a table and produces ids. The mutated table is stated here once, by the precedence the generator writes by, so no reader derives it again from the return or the spelling.'),
+  ('graphitron_producer_routine', 'graph-field', 'graphitron',
+   'What a routine producer calls: its first @routine application and the database routine that names; one row per routine producer whose routine resolved to one callable.',
+   'For example Query.filmsForActor @routine(name: "films_for_actor") calls public.films_for_actor.',
+   'The routine a producer calls, resolved once at the field, where the routine views each re-resolved the spelling. Only the first @routine makes the producer; the applications after it are the reference path''s.'),
+  ('graphitron_producer_service', 'graph-field', 'graphitron',
+   'What a service producer calls: the reference its @service wrote and the one method that resolves to; one row per service producer whose reference resolved.',
+   'For example Query.uppercased @service(service: {className: "FilmService", method: "titleUppercase"}) calls FilmService.titleUppercase.',
+   'The method a producer calls, keyed to the producer rather than to the reference, so a reader holding a field reaches the method in one join.'),
+  ('graphitron_producer_write_rule', 'graph-field', 'graphitron',
+   'One row the write rule computes, in the shape graphitron_producer_write stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_write, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+  ('graphitron_producer_routine_rule', 'graph-field', 'graphitron',
+   'One row the routine rule computes, in the shape graphitron_producer_routine stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_routine, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+  ('graphitron_producer_service_rule', 'graph-field', 'graphitron',
+   'One row the service rule computes, in the shape graphitron_producer_service stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_service, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_producer_claim', 'producer-claim', 'graphitron',
    'One kind of producer a field''s written directives claim it runs: one row per field and kind.',
    'For example a field carrying both @service and @routine has two rows, which is the conflict the entry defects report, and a field carrying neither has none.',

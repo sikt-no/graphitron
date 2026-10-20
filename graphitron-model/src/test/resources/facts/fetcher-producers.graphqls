@@ -6,6 +6,8 @@ type Film @table(name: "film") {
   title: String
   "Split, so it runs a statement of its own over the keys its parents hand it: a producer."
   language: Language @splitQuery
+  "A split lookup on a table type, which a write returning Film must not take for its re-read."
+  languagesByKey(languageId: [Int!] @lookupKey): [Language]! @splitQuery
   "An expression inlined into the parent's statement: a reader."
   titleUppercase: String
     @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.services.FilmService"})
@@ -35,6 +37,9 @@ extend type Query {
   "A Java method."
   uppercased: [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  "A service whose method the class does not declare: still a producer, with nothing to say it calls."
+  unresolved: [Film!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "noSuchMethod"})
   "Two kinds written on one field: no producer row, and a defect at the field."
   conflicted: [Film!]!
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
@@ -46,8 +51,15 @@ type Mutation {
   addFilm(input: FilmInput): Film @mutation(typeName: INSERT)
   "An identifying write, one row per input as multiRow was not written."
   renameFilm(input: FilmInput): Film @mutation(typeName: UPDATE)
-  "The same verb on a filter that may match several; it produces ids and mutates film."
-  dropFilms(input: [FilmInput!]!): [ID!]! @mutation(typeName: DELETE, multiRow: true)
+  "The same verb on a filter that may match several; it produces ids and mutates the table it names."
+  dropFilms(input: [FilmInput!]!): [ID!]! @mutation(typeName: DELETE, multiRow: true, table: "film")
+  "A payload with no table of its own: the insert mutates the table its one data field re-reads."
+  addFilmWithPayload(input: FilmInput): AddFilmPayload @mutation(typeName: INSERT)
+}
+
+type AddFilmPayload {
+  "The re-read, over the keys the insert returned."
+  film: Film
 }
 
 # Each producer is a fetcher on the producer side. The readers are the next relation's.
@@ -68,19 +80,23 @@ extend schema @assertEmpty(relation: "graphitron_producer", where: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_producer", where: """
-  type_name IN ('Query', 'Mutation', 'Film', 'QueryPagedFilmsConnection')
+  type_name IN ('Query', 'Mutation', 'Film', 'QueryPagedFilmsConnection', 'AddFilmPayload')
   """, rows: """
-  type_name,                 field_name,    kind
-  Query,                     ping,          ROUTINE
-  Query,                     films,         SELECT
-  Query,                     filmsById,     LOOKUP
-  Query,                     pagedFilms,    SELECT
-  Query,                     filmsForActor, ROUTINE
-  Query,                     uppercased,    SERVICE
-  Mutation,                  addFilm,       INSERT
-  Mutation,                  renameFilm,    UPDATE
-  Mutation,                  dropFilms,     DELETE
+  type_name,                 field_name,         kind
+  Query,                     ping,               ROUTINE
+  Query,                     films,              SELECT
+  Query,                     filmsById,          LOOKUP
+  Query,                     pagedFilms,         SELECT
+  Query,                     filmsForActor,      ROUTINE
+  Query,                     uppercased,         SERVICE
+  Query,                     unresolved,         SERVICE
+  Mutation,                  addFilm,            INSERT
+  Mutation,                  renameFilm,         UPDATE
+  Mutation,                  dropFilms,          DELETE
+  Mutation,                  addFilmWithPayload, INSERT
+  AddFilmPayload,            film,               LOOKUP
   Film,                      language,      SELECT
+  Film,                      languagesByKey, LOOKUP
   QueryPagedFilmsConnection, totalCount,    COUNT
   QueryPagedFilmsConnection, facets,        FACETS
   """)
@@ -94,3 +110,34 @@ extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: ""
   coordinate,       code
   Query.conflicted, PRODUCER_KINDS_CONFLICT
   """)
+
+# What each kind runs, resolved. A produced type is not here: it is the field's target, so the
+# delete that produces ids still names the table it mutates.
+extend schema @expectEquals(relation: "graphitron_producer_write", where: """
+  type_name = 'Mutation'
+  """, rows: """
+  type_name, field_name,         kind,   matches, table_schema, table_name
+  Mutation,  addFilm,            INSERT,        , public,       film
+  Mutation,  renameFilm,         UPDATE, ONE,     public,       film
+  Mutation,  dropFilms,          DELETE, MANY,    public,       film
+  Mutation,  addFilmWithPayload, INSERT,        , public,       film
+  """)
+
+# The first @routine is the producer's; the prelude's ping is one more routine producer.
+extend schema @expectEquals(relation: "graphitron_producer_routine", rows: """
+  type_name, field_name,    table_schema,  routine_name
+  Query,     ping,          multischema_b, ms_ping
+  Query,     filmsForActor, public,        films_for_actor
+  """)
+
+# A reference that resolved is a row; Query.unresolved, whose method is missing, is a producer
+# with no row here, the code-reference defect saying why.
+extend schema @expectEquals(relation: "graphitron_producer_service", rows: """
+  type_name, field_name, method_class_name,                                    method_name
+  Query,     uppercased, no.sikt.graphitron.rewrite.test.services.FilmService, titleUppercase
+  """)
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  coordinate,       code
+  Query.unresolved, CODE_REFERENCE_METHOD_NOT_FOUND
+  """)
+
