@@ -477,7 +477,7 @@ Where the code departs from the plan, and why:
   `ProjectionCall.fromLauncher(unit, table, row)`, which reads the ref and derives
   `ProjectionCall.SelectionScope` from `row.result()`. The legacy emitters hold the output
   package and pass `SelectionScope.of(<connection fact>)` (`MultiTablePolymorphicEmitter` reads
-  `includeSortKey`, which is exactly its connection arm). `RoutineWriteEmitter.render` takes the
+  `includeKey`, which is exactly its connection arm). `RoutineWriteEmitter.render` takes the
   scaffold's class from its caller like its other runtime units. The discriminated fold reads
   the scaffold off `SelectionRestriction.helper`, which now names `SelectionOccurrences`.
 * **`sharedAliasFieldNames` is "not qualified by the participant", not "qualified by the

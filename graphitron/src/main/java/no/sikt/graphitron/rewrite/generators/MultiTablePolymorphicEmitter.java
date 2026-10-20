@@ -2176,7 +2176,7 @@ public final class MultiTablePolymorphicEmitter {
         // Field projection: <TypeName>.$project(...) plus the synthetic __typename literal so
         // the schema-class TypeResolver routes each row back to its concrete GraphQL type.
         // The fetched field's selection, scoped to the participants' level (the node level for a
-        // connection, which is exactly when the sort key rides along), is restricted to this
+        // connection, which is exactly when the key columns ride along), is restricted to this
         // participant's occurrences via SelectionOccurrences.restrictTo, so the per-typename
         // SELECT projects only columns actually requested for this variant and a key another
         // participant's fragment reuses for a different field never reaches this one.
@@ -2187,7 +2187,7 @@ public final class MultiTablePolymorphicEmitter {
             arrayListOfField, arrayListOfField,
             ProjectionCall.fromGrouped(typeClass,
                 CodeBlock.of("$T.restrictTo($L, $S)", occurrences,
-                    ProjectionCall.envSelection(occurrences, ProjectionCall.SelectionScope.of(includeSortKey)),
+                    ProjectionCall.envSelection(occurrences, ProjectionCall.SelectionScope.of(includeKey)),
                     participant.typeName()),
                 CodeBlock.of("$L", tableLocal)));
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
