@@ -571,12 +571,10 @@ INSERT INTO fan_mark (alpha_base_id, beta_base_id, mark_label) VALUES
     (NULL, 2, 'beta-mark-1'),  (NULL, 2, 'beta-mark-2'),  (NULL, 2, 'beta-mark-3'),
     (NULL, 4, 'beta-mark-4');
 
--- R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
--- paged_a + paged_b share a (Integer, Integer) composite PK shape so the polymorphic emitter
--- can project DSL.jsonbArray(k1, k2) as the synthetic __sort__ column and type it as JSONB;
--- PostgreSQL's lexicographic JSONB ordering reproduces the multi-column ordering and the
--- cursor encoder round-trips JSONB through JSONB.toString() + Convert.convert(String, JSONB.class).
--- Six rows total (3 + 3) is enough to paginate with default first: 3.
+-- Composite-PK participants in @asConnection multi-table polymorphic. paged_a + paged_b share a
+-- (Integer, Integer) composite PK shape, so the polymorphic emitter orders and seeks the union on
+-- the key columns (k1, k2) then the type name. Seven rows (3 + 4) paginate with default first: 3;
+-- B-1-10 sorts after B-1-3 by key, where a text rendering of the key would put it first.
 CREATE TABLE paged_a (
     k1   integer     NOT NULL,
     k2   integer     NOT NULL,
@@ -591,7 +589,7 @@ CREATE TABLE paged_b (
     name varchar(50) NOT NULL,
     PRIMARY KEY (k1, k2)
 );
-INSERT INTO paged_b (k1, k2, name) VALUES (1, 1, 'B-1-1'), (1, 3, 'B-1-3'), (3, 1, 'B-3-1');
+INSERT INTO paged_b (k1, k2, name) VALUES (1, 1, 'B-1-1'), (1, 3, 'B-1-3'), (1, 10, 'B-1-10'), (3, 1, 'B-3-1');
 
 -- R36 item 2 fixture: composite-PK parent for child interface @asConnection. Sakila has no
 -- junction-as-parent shape (film_actor and film_category are pure junctions with no children

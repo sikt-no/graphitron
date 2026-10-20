@@ -957,7 +957,7 @@ type Query {
     # stub-interface-union-fetchers.md Track B (B2): QueryInterfaceField fixture.
     # Searchable is a multi-table interface implemented by Film and Actor — heterogeneous
     # tables, no shared discriminator column. The generator emits a two-stage fetcher:
-    # stage 1 narrow UNION ALL projecting (__typename, __pk0__, __sort__) per branch;
+    # stage 1 narrow UNION ALL projecting (__typename, __pk0__) per branch, ordered on the key;
     # stage 2 per-typename batched lookup using the dispatcher-shape ValuesJoinRowBuilder.
     # Records carry __typename so the TypeResolver routes per row.
     search: [Searchable!]!
@@ -994,9 +994,8 @@ type Query {
     # interface as Query.search, but wrapped in @asConnection so the schema-transform exposes
     # SearchableConnection / SearchableEdge / pageInfo / totalCount. The polymorphic emitter
     # wraps the per-branch UNION ALL in a derived table 'pages' so cursor decode + .seek + LIMIT
-    # N+1 apply uniformly across the union; per-typename stage 2 additionally projects __sort__
-    # so ConnectionHelper.encodeCursor can read it back per edge. totalCount is null on this
-    # path until B4c lands the polymorphic count query.
+    # N+1 apply uniformly across the union; per-typename stage 2 additionally projects the key
+    # columns as __pk0__.. so ConnectionHelper.encodeCursor can read them back per edge.
     searchConnection: [Searchable!]! @asConnection(defaultFirstValue: 5)
 
     # B4a union-variant fixture, mirrors searchConnection.
@@ -1063,7 +1062,7 @@ type Query {
     # last_name and store_id at one SQL type and one bound Java type, so each declaration below
     # resolves per participant and lowers onto the UNION ALL branches as order slots. store_id ties
     # across participants in the seed (both stores hold customers and a staff member), which is
-    # what the appended __sort__ / __typename tiebreakers are for.
+    # what the appended key-column / __typename tiebreakers are for.
     occupantsByLastName: [AddressOccupant!]! @defaultOrder(fields: [{name: "last_name"}])
 
     # The runtime half: the argument picks among the named orders; its absence falls back to the
@@ -1072,7 +1071,7 @@ type Query {
         @defaultOrder(fields: [{name: "last_name"}])
 
     # @orderBy with no @defaultOrder: the base is the participants' primary keys, which the
-    # classifier recognises and orders by the synthetic key rather than projecting slots for.
+    # classifier recognises and orders by the key columns rather than projecting slots for.
     occupantsOrderedByKey(orderBy: OccupantOrderBy @orderBy): [AddressOccupant!]!
 
     # A list-valued @orderBy argument: one direction per element, tiebreakers ascending.
@@ -1094,7 +1093,7 @@ type Query {
         @asConnection(defaultFirstValue: 10)
         @defaultOrder(fields: [{name: "org_code"}])
 
-    # Composite-key participants: the order slot composes with the JSONB __sort__ tiebreaker.
+    # Composite-key participants: the order slot composes with the (k1, k2) key-column tiebreaker.
     pagedItemsByName(first: Int, after: String, last: Int, before: String): [PagedItem!]!
         @asConnection(defaultFirstValue: 2)
         @defaultOrder(fields: [{name: "name"}], direction: DESC)
@@ -1148,12 +1147,13 @@ type Query {
     # owns the predicate and is handed the branch's own table.
     stockByLanguageOverride(filter: LanguageStockOverrideFilter): [LanguageStock!]!
 
-    # R36 item 1 fixture: composite-PK participants in connection-mode. paged_a + paged_b have
-    # composite (Integer, Integer) PKs; the polymorphic emitter projects DSL.jsonbArray(k1, k2)
-    # as the synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic
-    # JSONB ordering reproduces the multi-column ordering across the union, and the cursor
-    # encoder/decoder round-trips JSONB through JSONB.toString() + Convert.convert(String, JSONB.class).
-    pagedItems: [PagedItem!]! @asConnection(defaultFirstValue: 3)
+    # Composite-PK participants in connection mode. paged_a + paged_b have composite
+    # (Integer, Integer) PKs; stage 1 orders and seeks the union on the key columns
+    # (__pk0__, __pk1__) then __typename, a plain multi-column seek every dialect renders, and
+    # the cursor carries one value per key column. The pagination arguments are spelled out so the
+    # backward half (last / before) is available.
+    pagedItems(first: Int, after: String, last: Int, before: String): [PagedItem!]!
+        @asConnection(defaultFirstValue: 3)
 
     # R36 item 2 fixture: composite-PK parent for child interface @asConnection. Project has
     # composite PK (org_id, project_id); ProjectNote and ProjectEvent are single-PK children
@@ -2199,7 +2199,7 @@ type ConverterCampus @table(name: "converter_campus") {
 # row-value shapes of the generated filter rail run against; converter_campus is keyed on a plain
 # serial, so its filters can only reach the scalar shapes.
 # A second participant carrying the converter-backed org_code, keyed on a plain serial so the
-# ordering test pages on the order slot rather than on a converter-backed synthetic key.
+# ordering test pages on the order slot rather than on a converter-backed key column.
 type ConverterSite @table(name: "converter_site") {
     siteId:   Int!    @field(name: "SITE_ID")
     siteName: String! @field(name: "SITE_NAME")
@@ -4104,9 +4104,9 @@ input ContentUpdateInput {
     description: String  @field(name: "SHORT_DESCRIPTION")
 }
 
-# R36 item 1 fixture: composite-PK participants in @asConnection multi-table polymorphic.
-# Two tables share the same composite (Integer, Integer) PK shape so the polymorphic emitter
-# can produce JSONB-typed __sort__ across both branches without per-branch coercion.
+# Composite-PK participants in @asConnection multi-table polymorphic. Two tables share the same
+# composite (Integer, Integer) PK shape, so each key position binds alike on both branches and
+# the union orders and seeks on the key columns directly.
 interface PagedItem {
     name: String!
 }
@@ -4126,7 +4126,7 @@ type PagedB implements PagedItem @table(name: "paged_b") {
 # R36 item 2 fixture: composite-PK parent for child interface @asConnection.
 # Project's PK is (org_id, project_id); items wraps a polymorphic child (ProjectNote +
 # ProjectEvent) auto-discovered via composite FKs back to project. Stays single-PK on the
-# participant side so item 1's JSONB-cursor concern is out of scope here.
+# participant side, so the participant key's arity is not exercised here.
 interface ProjectItem {
     label: String!
 }

@@ -25,13 +25,19 @@ import java.util.SequencedMap;
  *
  * <p>Not an {@link OrderBySpec} arm: no arm of that type can carry a per-participant column map.
  *
- * <p>Every primary-key-shaped order ({@code @order(primaryKey: true)},
- * {@code @defaultOrder(primaryKey: true)}, and the implicit fallback) is an
- * {@link SlotOrder.OnSyntheticKey}: it projects no slot and orders by the synthetic key every branch
- * already projects, which is the same order.
+ * <p>The participants' primary keys are slots too, the {@link #key()}: one per key position, each
+ * carrying every participant's key column at that position. Every branch already projects its key
+ * for stage 2 to dispatch on, so the union orders and seeks on those columns directly, after any
+ * declared order and before the type name, and no computed value stands in for the key. Every
+ * primary-key-shaped order ({@code @order(primaryKey: true)}, {@code @defaultOrder(primaryKey: true)},
+ * and the implicit fallback) is an {@link SlotOrder.OnPrimaryKey}: it orders by the key slots and
+ * projects no declared slot.
  *
  * @param participants the table-bound participants every slot is total over, in branch order
  * @param surface      where the ordering is chosen: fixed at build time, or by an argument at runtime
+ * @param key          the primary-key slots, one per key position, a slot's index being its
+ *                     position; empty when a participant has no primary key or a different key
+ *                     arity, which the validator rejects with its own message
  * @param slots        the projected order columns; a slot's index in this list is its ordinal
  * @param namedOrders  the argument's named orders in declaration order; empty on {@link Surface.Fixed}
  * @param base         the {@code @defaultOrder}, or the primary-key fallback
@@ -39,6 +45,7 @@ import java.util.SequencedMap;
 public record PolymorphicOrdering(
     List<ParticipantRef.TableBound> participants,
     Surface surface,
+    List<Slot> key,
     List<Slot> slots,
     List<SlotOrder> namedOrders,
     SlotOrder base
@@ -46,6 +53,7 @@ public record PolymorphicOrdering(
     public PolymorphicOrdering {
         participants = List.copyOf(participants);
         Objects.requireNonNull(surface, "surface");
+        key = List.copyOf(key);
         slots = List.copyOf(slots);
         namedOrders = List.copyOf(namedOrders);
         Objects.requireNonNull(base, "base");
@@ -61,18 +69,8 @@ public record PolymorphicOrdering(
             }
         }
         var participantSet = new HashSet<>(participants);
-        for (int i = 0; i < slots.size(); i++) {
-            var slot = slots.get(i);
-            if (slot.ordinal() != i) {
-                throw new IllegalArgumentException(
-                    "slot at position " + i + " carries ordinal " + slot.ordinal());
-            }
-            if (!slot.columnByParticipant().keySet().equals(participantSet)
-                    || slot.columnByParticipant().size() != participants.size()) {
-                throw new IllegalArgumentException(
-                    "slot " + i + " is not total over the participant set");
-            }
-        }
+        requireTotalAndOrdinal("key slot", key, participantSet, participants.size());
+        requireTotalAndOrdinal("slot", slots, participantSet, participants.size());
         for (var order : allOrders(namedOrders, base)) {
             if (order instanceof SlotOrder.OnSlots onSlots) {
                 for (var entry : onSlots.entries()) {
@@ -81,6 +79,22 @@ public record PolymorphicOrdering(
                             "order entry names slot " + entry.slotOrdinal() + ", which does not exist");
                     }
                 }
+            }
+        }
+    }
+
+    private static void requireTotalAndOrdinal(String kind, List<Slot> slots,
+            java.util.Set<ParticipantRef.TableBound> participantSet, int participantCount) {
+        for (int i = 0; i < slots.size(); i++) {
+            var slot = slots.get(i);
+            if (slot.ordinal() != i) {
+                throw new IllegalArgumentException(
+                    kind + " at position " + i + " carries ordinal " + slot.ordinal());
+            }
+            if (!slot.columnByParticipant().keySet().equals(participantSet)
+                    || slot.columnByParticipant().size() != participantCount) {
+                throw new IllegalArgumentException(
+                    kind + " " + i + " is not total over the participant set");
             }
         }
     }
@@ -116,7 +130,8 @@ public record PolymorphicOrdering(
      * participant. A slot's identity is its whole per-participant column map, so two order entries
      * share a slot exactly when they resolve to the same column on every participant.
      *
-     * @param ordinal             the slot's position in {@link #slots()}, which names its alias
+     * @param ordinal             the slot's position in {@link #slots()}, or in {@link #key()} for a
+     *                            key slot, which names its alias
      * @param slotClass           the one bound Java type every participant's column agrees on
      * @param columnByParticipant the column each participant projects into the slot; the first
      *                            entry's column types the emitted slot field
@@ -162,10 +177,13 @@ public record PolymorphicOrdering(
             }
         }
 
-        /** A primary-key-shaped order: it orders by the synthetic key and projects no slot. */
-        record OnSyntheticKey(String name, OrderBySpec.SortDirection direction, boolean uniformAsc)
+        /**
+         * A primary-key-shaped order: it orders by the {@link PolymorphicOrdering#key() key slots}, in
+         * key order under one direction, and projects no declared slot.
+         */
+        record OnPrimaryKey(String name, OrderBySpec.SortDirection direction, boolean uniformAsc)
                 implements SlotOrder {
-            public OnSyntheticKey {
+            public OnPrimaryKey {
                 Objects.requireNonNull(direction, "direction");
             }
         }

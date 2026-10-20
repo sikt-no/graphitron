@@ -50,8 +50,9 @@ import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.*;
  * {@link QueryField.QueryUnionField} (multi-table polymorphism).
  *
  * <p>Stage 1 is one SQL statement: a narrow UNION ALL across participant tables projecting
- * {@code (__typename, __pk0__, ..., __sortN__)} per branch. The database does ORDER BY in one
- * shot. Stage 2 dispatches per {@code __typename} using {@link ValuesJoinRowBuilder} (the same
+ * {@code (__typename, __pk0__, ..., __pkN__)} per branch, plus any order slots. The database
+ * orders the union in one shot, on plain columns: any declared order slots, then the key columns,
+ * then {@code __typename}, which every dialect compares the same way. Stage 2 dispatches per {@code __typename} using {@link ValuesJoinRowBuilder} (the same
  * shape the federation {@code _entities} dispatcher uses): one
  * {@code SELECT <Type>.$project(...) FROM t JOIN VALUES(...) ON t.PK = input.PK ORDER BY idx} per
  * non-empty group. Result records carry the synthetic {@code __typename} column projected as a
@@ -69,7 +70,7 @@ public final class MultiTablePolymorphicEmitter {
     // (__name__) is collision avoidance: these names live in the result-set column namespace
     // alongside real table columns, which the consumer's DB schema controls, so the wrapping keeps
     // a synthetic alias from colliding with a real column named `sort`, `idx`, `typename`, etc.
-    // They reach generated code only as string literals (.as("__sort__"), r.get("__typename")),
+    // They reach generated code only as string literals (.as("__pk0__"), r.get("__typename")),
     // never as Java identifiers, so DunderFreeEmissionPipelineTest (which scans for
     // dunder-prefixed identifiers) leaves them alone.
 
@@ -96,8 +97,6 @@ public final class MultiTablePolymorphicEmitter {
      */
     public static final String DISCRIMINATOR_COLUMN =
         no.sikt.graphitron.command.ReservedAliases.DISCRIMINATOR;
-    /** Stage-1 sort key column alias. Single PK projects the column directly; composite PKs use {@code DSL.jsonbArray(...)}. */
-    public static final String SORT_COLUMN = "__sort__";
     /**
      * Stage-1 parent-index column alias; drives the Java-side scatter back to the originating
      * parent row. The literal's one home is
@@ -111,7 +110,11 @@ public final class MultiTablePolymorphicEmitter {
      * {@link no.sikt.graphitron.command.ReservedAliases#ROW_NUMBER}.
      */
     public static final String RN_COLUMN = no.sikt.graphitron.command.ReservedAliases.ROW_NUMBER;
-    /** Stage-1 PK projection alias prefix; per-slot index appended ({@code __pk0__}, {@code __pk1__}, …). */
+    /**
+     * Stage-1 key projection alias prefix; the key position is appended ({@code __pk0__},
+     * {@code __pk1__}, …). Stage 2 dispatches on these columns, and the union orders and seeks on
+     * them; see {@link #keyAlias}.
+     */
     public static final String PK_COLUMN_PREFIX = "__pk";
     /** Stage-1 PK projection alias suffix. */
     public static final String PK_COLUMN_SUFFIX = "__";
@@ -125,6 +128,16 @@ public final class MultiTablePolymorphicEmitter {
 
     private static String slotAlias(PolymorphicOrdering.Slot slot) {
         return ORDER_SLOT_PREFIX + slot.ordinal() + PK_COLUMN_SUFFIX;
+    }
+
+    /** The alias a branch projects its key column at {@code position} under. */
+    private static String keyAlias(int position) {
+        return PK_COLUMN_PREFIX + position + PK_COLUMN_SUFFIX;
+    }
+
+    /** The emitted local holding the typed key field at {@code position}. */
+    private static String keyLocal(int position) {
+        return "key" + position;
     }
 
     private static final ClassName ARRAY_LIST          = ClassName.get("java.util", "ArrayList");
@@ -147,7 +160,6 @@ public final class MultiTablePolymorphicEmitter {
     private static final ClassName BATCH_LOADER_ENV    = ClassName.get("org.dataloader", "BatchLoaderEnvironment");
     private static final ClassName COMPLETABLE_FUTURE  = ClassName.get("java.util.concurrent", "CompletableFuture");
     private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
-    private static final ClassName JSONB                = ClassName.get("org.jooq", "JSONB");
     /** Stage-1 derived-table alias used by the connection-mode UNION-ALL wrapper. */
     private static final String CONNECTION_PAGES_ALIAS = "pages";
     /** Local variable name carrying the UNION-ALL derived table — referenced by both the page query and {@code ConnectionResult.table()} for {@code totalCount}. */
@@ -189,7 +201,7 @@ public final class MultiTablePolymorphicEmitter {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, List.of(), outputPackage));
         }
         if (ordering.isPresent() && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildOrderingHelper(parentTypeName, fieldName, tableBoundParticipants, ordering.get(), outputPackage));
+            methods.add(buildOrderingHelper(parentTypeName, fieldName, ordering.get(), outputPackage));
         }
         return methods;
     }
@@ -630,8 +642,9 @@ public final class MultiTablePolymorphicEmitter {
      * fetcher returns a {@code DataFetcherResult<ConnectionResult>}; stage 1 wraps the
      * UNION-ALL of per-branch projections in a derived table {@code pages} so cursor decode +
      * seek + LIMIT N+1 apply uniformly across the union; stage 2 reuses the VALUES-JOIN
-     * dispatch and projects {@code __sort__} on each typed Record so
-     * {@code ConnectionHelper.encodeCursor} can read the sort key. {@code totalCount} runs a
+     * dispatch and projects the key columns as {@code __pk0__..__pkN__} on each typed Record so
+     * {@code ConnectionHelper.encodeCursor} reads the cursor values by the names the seek uses.
+     * {@code totalCount} runs a
      * polymorphic {@code SELECT count(*) FROM (UNION ALL) AS pages} via the same UNION-ALL
      * derived table the page query uses, lazy on selection.
      *
@@ -639,8 +652,7 @@ public final class MultiTablePolymorphicEmitter {
      * leaves' connection cardinality), whose emission is the root fetcher with no filters.
      *
      * <p>Scope: forward/backward pagination ({@code first}/{@code last}/{@code after}/
-     * {@code before}); single-PK participants only (validator rejects composite-PK
-     * participants; the JSONB cursor round-trip is unsupported).
+     * {@code before}) over participant keys of any arity.
      */
     public static List<MethodSpec> emitRootConnectionMethods(
             TypeFetcherEmissionContext ctx,
@@ -666,7 +678,7 @@ public final class MultiTablePolymorphicEmitter {
                 outputPackage));
         }
         if (ordering.isPresent() && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildOrderingHelper(parentTypeName, fieldName, tableBoundParticipants, ordering.get(), outputPackage));
+            methods.add(buildOrderingHelper(parentTypeName, fieldName, ordering.get(), outputPackage));
         }
         return methods;
     }
@@ -677,7 +689,7 @@ public final class MultiTablePolymorphicEmitter {
      * {@code DataLoader}-registering main fetcher ({@link #buildBatchedConnectionFetcher}) plus
      * a {@code rows<Field>(List<K>, env)} rows method
      * ({@link #buildBatchedConnectionRowsMethod}, which documents the windowed-CTE SQL shape),
-     * plus the per-typename stage-2 helpers projecting {@code __sort__}. The capability
+     * plus the per-typename stage-2 helpers projecting the key columns for the cursor. The capability
      * parameter is non-null by type; the root regime has its own entry point rather than a
      * null-keyed fork here.
      *
@@ -806,7 +818,7 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Root-side fetcher (no parent-FK WHERE, no batching). Runs stage 1 (narrow UNION ALL of
-     * per-branch {@code (typename, pk0..pkN, sort)} projections), groups results by
+     * per-branch {@code (typename, pk0..pkN)} projections), groups results by
      * {@code __typename} into binding tuples, dispatches per typename to the per-branch stage-2
      * helper, and merges the typed Records back in stage-1 order via the {@code Object[] result}
      * scatter pattern shared with the federation dispatcher.
@@ -853,21 +865,20 @@ public final class MultiTablePolymorphicEmitter {
         builder.addCode(nodeIdDispatchGuard(nodeIdArgDispatches, registry, outputPackage));
 
         // The outer order: the lowered ordering's sort list when the read has one (a list), else
-        // the synthetic key; either way __typename follows as the cross-participant tiebreaker.
+        // the key columns; either way __typename follows as the cross-participant tiebreaker.
+        int pkArity = participants.get(0).table().primaryKeyColumns().size();
         CodeBlock outerOrder;
         if (ordering.isPresent()) {
             builder.addStatement("$T ordering = $L(env)", orderByResultClass(outputPackage),
                 orderingHelperName(parentTypeName, fieldName, outputPackage));
             outerOrder = CodeBlock.of("ordering.sortFields()");
         } else {
-            outerOrder = CodeBlock.of("$T.field($T.name($S)), $T.field($T.name($S))",
-                DSL, DSL, SORT_COLUMN, DSL, DSL, TYPENAME_COLUMN);
+            outerOrder = keyOrderReferences(pkArity, true);
         }
         builder.addCode(buildStage1Block(participants, Map.of(), participantFilters,
             parentTypeName, fieldName, outputPackage, null, null,
             ordering.map(PolymorphicOrdering::slots).orElse(List.of()), outerOrder));
 
-        int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
         builder.addCode(buildPerTypenameDispatcher(participants, fieldName, pkArity));
 
@@ -978,12 +989,12 @@ public final class MultiTablePolymorphicEmitter {
 
         // Child polymorphic fields carry no field-level filter surface (filters are root-only),
         // so the parent/field names feed no glue derivation on this path.
-        // No slots and today's synthetic-key-only order: this child coordinate lowers no ordering.
+        // No slots and a key-only order: this child coordinate lowers no ordering.
+        int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addCode(buildStage1Block(participants, participantJoinPaths, Map.of(),
             null, fieldName, outputPackage, parentSourceKey, parentKeyOwnerTable,
-            List.of(), CodeBlock.of("$T.field($T.name($S))", DSL, DSL, SORT_COLUMN)));
+            List.of(), keyOrderReferences(pkArity, false)));
 
-        int pkArity = participants.get(0).table().primaryKeyColumns().size();
         builder.addStatement("Object[] result = new Object[stage1.size()]");
         builder.addCode(buildPerTypenameDispatcher(participants, fieldName, pkArity));
 
@@ -1022,7 +1033,7 @@ public final class MultiTablePolymorphicEmitter {
         var pksBuilder = CodeBlock.builder().add("new Object[]{");
         for (int s = 0; s < pkArity; s++) {
             if (s > 0) pksBuilder.add(", ");
-            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+            pksBuilder.add("r.get($S)", keyAlias(s));
         }
         pksBuilder.add("}");
         b.addStatement("Object[] pks = $L", pksBuilder.build());
@@ -1045,7 +1056,7 @@ public final class MultiTablePolymorphicEmitter {
      * {@code .orderBy/.seek/.limit} from a {@code ConnectionHelper.PageRequest} so cursor
      * decoding and page-size + 1 over-fetch happen against the union as a whole; stage 2
      * dispatches per-typename and the resulting typed Records carry both {@code __typename}
-     * (for the schema-class TypeResolver) and {@code __sort__} (for
+     * (for the schema-class TypeResolver) and the {@code __pk0__..__pkN__} key columns (for
      * {@code ConnectionHelper.encodeCursor}).
      *
      * <p>{@code ConnectionResult} is constructed with {@code (table, condition) =
@@ -1055,9 +1066,10 @@ public final class MultiTablePolymorphicEmitter {
      * the field). The empty-participants defensive path keeps {@code (null, null)} since there
      * is no derived table to count.
      *
-     * <p>Root-only: child interface/union connections route through
-     * {@link #buildBatchedConnectionFetcher} via the {@code parentKey != null} arm of
-     * {@link #emitConnectionMethods}.
+     * <p>The order and the cursor columns come from the field's lowered ordering. The one caller
+     * without an ordering is the degenerate all-unbound child connection, which lowers none; it
+     * orders by the key columns, typed by the first participant's, then {@code __typename}, which
+     * is the order the primary-key fallback lowers to on a root.
      */
     private static MethodSpec buildRootConnectionFetcher(
             TypeFetcherEmissionContext ctx,
@@ -1108,44 +1120,39 @@ public final class MultiTablePolymorphicEmitter {
         // silently page empty instead of surfacing the client error.
         builder.addCode(nodeIdDispatchGuard(nodeIdArgDispatches, registry, outputPackage));
 
-        // Sort-key Field<T>: validator enforces uniform PK arity across participants.
-        // Single-PK participants project the PK column directly and the sort key is typed as the
-        // PK class. Composite-PK participants project {@code DSL.jsonbArray(pk0..pkN)} and the
-        // sort key is typed as JSONB; PostgreSQL's JSONB lexicographic ordering reproduces the
-        // multi-column ordering, and the cursor round-trips JSONB through
-        // {@code ConnectionHelper.encodeCursor / decodeCursor} via {@code JSONB.toString()} +
-        // {@code Convert.convert(String, JSONB.class)}.
-        int pkArity = participants.get(0).table().primaryKeyColumns().size();
-        TypeName pkColumnClass = sortKeyClass(participants);
-        var sortFieldType = ParameterizedTypeName.get(FIELD, pkColumnClass);
+        // The key fields, typed by DataType: the stage-1 outer select reads them, and on the
+        // ordering-less arm they are the order and the cursor columns as well.
+        var keyTyping = ordering.map(MultiTablePolymorphicEmitter::keyTypingColumns)
+            .orElseGet(() -> firstParticipantKeyTypingColumns(participants,
+                participants.get(0).table().primaryKeyColumns().size()));
+        int pkArity = keyTyping.size();
+        builder.addCode(declareKeyFields(keyTyping));
         var listOfSortField = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(SORT_FIELD,
             WildcardTypeName.subtypeOf(Object.class)));
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var listOfFieldWildcard = ParameterizedTypeName.get(LIST, fieldWildcard);
 
-        builder.addStatement("$T sortField = $T.field($T.name($S), $T.class)",
-            sortFieldType, DSL, DSL, SORT_COLUMN, pkColumnClass);
-        // __typename ASC is appended as a secondary sort and as a seek tiebreaker so rows with
-        // identical PKs across participants (e.g. Film(1) and Actor(1)) order deterministically
-        // and the cursor "after sort=3" resolves consistently across pages. Without it, ties
-        // resolve undefined-order on the database side, and pagination at a tie boundary can
+        // __typename ASC follows the key as a secondary sort and as a seek tiebreaker so rows with
+        // identical keys across participants (e.g. Film(1) and Actor(1)) order deterministically
+        // and a cursor at a tie resolves consistently across pages. Without it, ties resolve
+        // undefined-order on the database side, and pagination at a tie boundary can
         // double-count or skip rows depending on the planner.
-        var fieldOfString = ParameterizedTypeName.get(FIELD, ClassName.get(String.class));
         if (ordering.isPresent()) {
             // The lowered ordering chooses the page order and the cursor columns together: the
             // seek derives from extraFields positionally, so the two lists must never diverge.
-            // The helper appends __sort__ and __typename after the author's slots.
+            // The helper appends the key fields and __typename after the author's slots.
             builder.addStatement("$T ordering = $L(env)", orderByResultClass(outputPackage),
                 orderingHelperName(parentTypeName, fieldName, outputPackage));
             builder.addStatement("$T orderBy = ordering.sortFields()", listOfSortField);
             builder.addStatement("$T extraFields = new $T<>(ordering.columns())",
                 listOfFieldWildcard, ARRAY_LIST);
         } else {
-            builder.addStatement("$T tieField = $T.field($T.name($S), String.class)",
-                fieldOfString, DSL, DSL, TYPENAME_COLUMN);
-            builder.addStatement("$T orderBy = $T.of(sortField.asc(), tieField.asc())", listOfSortField, LIST);
-            builder.addStatement("$T extraFields = new $T<>($T.<$T>of(sortField, tieField))",
-                listOfFieldWildcard, ARRAY_LIST, LIST, fieldWildcard);
+            builder.addCode(declareTieField());
+            var keyAndTie = keyAndTieLocals(pkArity);
+            builder.addStatement("$T orderBy = $T.of($L)", listOfSortField, LIST,
+                CodeBlock.join(keyAndTie.stream().map(l -> CodeBlock.of("$L.asc()", l)).toList(), ", "));
+            builder.addStatement("$T extraFields = new $T<>($T.<$T>of($L))",
+                listOfFieldWildcard, ARRAY_LIST, LIST, fieldWildcard, String.join(", ", keyAndTie));
         }
 
         builder.addStatement("$T first = env.getArgument($S)", ClassName.get(Integer.class), "first");
@@ -1160,7 +1167,7 @@ public final class MultiTablePolymorphicEmitter {
         // Stage 1: UNION ALL of branches as derived table; outer SELECT applies .orderBy/.seek/.limit.
         builder.addCode(buildStage1ConnectionBlock(participants, participantFilters,
             parentTypeName, fieldName, outputPackage,
-            ordering.map(PolymorphicOrdering::slots).orElse(List.of())));
+            ordering.map(PolymorphicOrdering::slots).orElse(List.of()), pkArity));
 
         // Stage 1.5: group stage-1 rows by __typename into (idx, pks) bindings. Reads all
         // {@code __pk0__..__pkN__} columns per row so the per-typename helper has the full PK
@@ -1175,7 +1182,7 @@ public final class MultiTablePolymorphicEmitter {
         var pksBuilder = CodeBlock.builder().add("new Object[]{");
         for (int s = 0; s < pkArity; s++) {
             if (s > 0) pksBuilder.add(", ");
-            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+            pksBuilder.add("r.get($S)", keyAlias(s));
         }
         pksBuilder.add("}");
         builder.addStatement("Object[] pks = $L", pksBuilder.build());
@@ -1192,7 +1199,7 @@ public final class MultiTablePolymorphicEmitter {
         }
 
         // Merge: walk result[] in stage-1 order; each non-null entry is a typed Record carrying
-        // __typename and __sort__. ConnectionResult.trimmedResult() trims to pageSize.
+        // __typename and the key columns. ConnectionResult.trimmedResult() trims to pageSize.
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         builder.addStatement("$T payload = new $T<>(stage1.size())", listOfRecord, ARRAY_LIST);
         builder.beginControlFlow("for (Object o : result)");
@@ -1213,8 +1220,8 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Connection-mode stage 1: emits the per-branch UNION ALL of {@code (typename, pk0, sort)}
-     * projections as a derived table {@code pages} held in a local variable
+     * Connection-mode stage 1: emits the per-branch UNION ALL of {@code (typename, pk0..pkN)}
+     * projections (plus any order slots) as a derived table {@code pages} held in a local variable
      * {@code pagesTable} (typed {@code Table<?>}); the page query then runs
      * {@code dsl.select(...).from(pagesTable).orderBy().seek().limit().fetch()} so cursor
      * decoding and page-size + 1 over-fetch happen uniformly across the union.
@@ -1224,12 +1231,15 @@ public final class MultiTablePolymorphicEmitter {
      * {@code ConnectionHelper.totalCount} can issue {@code SELECT count(*) FROM pagesTable}
      * lazily on selection. The carrier condition is {@code DSL.noCondition()}; root
      * connections have no parent restriction.
+     *
+     * <p>The outer select reads the {@code key<I>} fields {@link #declareKeyFields} declared, so
+     * the key columns it fetches are typed exactly as the seek binds them.
      */
     private static CodeBlock buildStage1ConnectionBlock(
             List<ParticipantRef.TableBound> participants,
             Map<String, List<WhereFilter>> participantFilters,
             String parentTypeName, String fieldName, String outputPackage,
-            List<PolymorphicOrdering.Slot> slots) {
+            List<PolymorphicOrdering.Slot> slots, int pkArity) {
         var b = CodeBlock.builder();
 
         for (var participant : participants) {
@@ -1264,22 +1274,14 @@ public final class MultiTablePolymorphicEmitter {
         }
         b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);
 
-        // PK columns: type each {@code __pk_i__} by the participant's PK column class. Validator
-        // enforces uniform PK arity across participants; we read PK column types from the first
-        // participant since uniform-PK-types-across-participants is implicit in the union (jOOQ's
-        // UNION ALL would fail to compile otherwise).
-        var firstParticipantPks = participants.get(0).table().primaryKeyColumns();
-        int pkArity = firstParticipantPks.size();
         var resultBound = ParameterizedTypeName.get(RESULT, WildcardTypeName.subtypeOf(RECORD));
         b.add("$T stage1 = dsl\n", resultBound);
         b.add("    .select(\n");
-        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
+        b.add("        $T.field($T.name($S), $T.class)", DSL, DSL, TYPENAME_COLUMN, ClassName.get(String.class));
         for (int s = 0; s < pkArity; s++) {
-            TypeName pkColClass = CatalogRefs.columnType(firstParticipantPks.get(s));
-            b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL,
-                PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX, pkColClass);
+            b.add(",\n        $L", keyLocal(s));
         }
-        b.add("        sortField)\n");
+        b.add(")\n");
         b.add("    .from($L)\n", CONNECTION_PAGES_LOCAL);
         b.add("    .orderBy(page.effectiveOrderBy())\n");
         b.add("    .seek(page.seekFields())\n");
@@ -1291,8 +1293,8 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Emits the stage-1 SELECT chain: one branch per participant, glued by {@code .unionAll(...)}.
      * Each branch projects {@code DSL.inline("<TypeName>").as("__typename")} plus the participant's
-     * PK columns aliased to {@code __pk0__..__pkN__}, plus a {@code __sort__} key. The composite-PK
-     * sort key uses {@code DSL.jsonbArray(...)}; single-column PKs project the column directly.
+     * PK columns aliased to {@code __pk0__..__pkN__}, plus any order slots; {@code outerOrder}
+     * orders the union by those aliases.
      *
      * <p>For the child-fetcher form, each branch additionally carries a
      * {@code .where(<parent-FK predicate>)} restricting that participant to rows whose FK
@@ -1617,8 +1619,8 @@ public final class MultiTablePolymorphicEmitter {
     }
 
     /**
-     * Builds the per-branch projection list (typename literal + PK columns + sort key + order
-     * slots) used inside one {@code dsl.select(...)} clause of the stage-1 union. Each slot
+     * Builds the per-branch projection list (typename literal + key columns + order slots) used
+     * inside one {@code dsl.select(...)} clause of the stage-1 union. Each slot
      * projects this participant's own column under the slot's alias, so every branch carries the
      * same slots in the same positions.
      */
@@ -1628,19 +1630,7 @@ public final class MultiTablePolymorphicEmitter {
         var b = CodeBlock.builder();
         b.add("$T.inline($S).as($S)", DSL, participant.typeName(), TYPENAME_COLUMN);
         for (int s = 0; s < pks.size(); s++) {
-            b.add(", $L.$L.as($S)", tableAlias, pks.get(s).javaName(), PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
-        }
-        // Sort key: single column projects the PK directly; composite uses jsonbArray for
-        // element-wise comparison in PostgreSQL.
-        if (pks.size() == 1) {
-            b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), SORT_COLUMN);
-        } else {
-            var jsonbArgs = CodeBlock.builder();
-            for (int s = 0; s < pks.size(); s++) {
-                if (s > 0) jsonbArgs.add(", ");
-                jsonbArgs.add("$L.$L", tableAlias, pks.get(s).javaName());
-            }
-            b.add(", $T.jsonbArray($L).as($S)", DSL, jsonbArgs.build(), SORT_COLUMN);
+            b.add(", $L.$L.as($S)", tableAlias, pks.get(s).javaName(), keyAlias(s));
         }
         for (var slot : slots) {
             b.add(", $L.$L.as($S)", tableAlias, slotColumn(slot, participant).javaName(), slotAlias(slot));
@@ -1826,14 +1816,14 @@ public final class MultiTablePolymorphicEmitter {
      * <p>Stage-1 shape:
      * <pre>{@code
      * Table<?> pagesTable =
-     *     dsl.select(<typename, pk0, sort, parentInput.idx>)
+     *     dsl.select(<typename, pk0, parentInput.idx>)
      *        .from(stage1_Customer).join(parentInput).on(stage1_Customer.address_id = parentInput.address_id)
      *     .unionAll(
      *     dsl.select(<...>)
      *        .from(stage1_Staff).join(parentInput).on(stage1_Staff.address_id = parentInput.address_id))
      *     .asTable("pages");
      * Table<?> ranked = dsl
-     *     .select(__typename, __pk0__, __sort__, __idx__,
+     *     .select(__typename, __pk0__, __idx__,
      *             ROW_NUMBER() OVER (PARTITION BY __idx__ ORDER BY page.effectiveOrderBy()) AS __rn__)
      *     .from(pagesTable)
      *     .orderBy(page.effectiveOrderBy())
@@ -1885,10 +1875,6 @@ public final class MultiTablePolymorphicEmitter {
         TypeName keysListType = ParameterizedTypeName.get(LIST, keyType);
         TypeName listOfConnectionResult = ParameterizedTypeName.get(LIST, connectionResultClass);
 
-        // Participant PK (single column for connection mode — validator enforces).
-        ColumnRef firstParticipantPk = participants.get(0).table().primaryKeyColumns().get(0);
-        TypeName participantPkClass = CatalogRefs.columnType(firstParticipantPk);
-
         var b = CodeBlock.builder();
 
         // Empty-input short-circuit — before touching the DSL context.
@@ -1911,28 +1897,24 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T after = env.getArgument($S)", stringClass, "after");
         b.addStatement("$T before = env.getArgument($S)", stringClass, "before");
 
-        // Sort fields — sortField is typed by the participant PK class (validator enforces
-        // single-column participant PK in connection mode); tieField gives deterministic
-        // ordering for cross-participant PK ties.
-        TypeName sortFieldType = ParameterizedTypeName.get(FIELD, participantPkClass);
-        b.addStatement("$T sortField = $T.field($T.name($S), $T.class)",
-            sortFieldType, DSL, DSL, SORT_COLUMN, participantPkClass);
-        TypeName fieldOfString = ParameterizedTypeName.get(FIELD, stringClass);
-        b.addStatement("$T tieField = $T.field($T.name($S), String.class)",
-            fieldOfString, DSL, DSL, TYPENAME_COLUMN);
+        // Order and cursor columns: the first key column, typed by the first participant's, then
+        // tieField for deterministic ordering of cross-participant key ties. This arm reads only
+        // the first key column throughout (projection, binding and order).
+        b.add(declareKeyFields(firstParticipantKeyTypingColumns(participants, 1)));
+        b.add(declareTieField());
         TypeName listOfSortField = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
         TypeName fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         TypeName listOfFieldWildcard = ParameterizedTypeName.get(LIST, fieldWildcard);
-        b.addStatement("$T orderBy = $T.of(sortField.asc(), tieField.asc())", listOfSortField, LIST);
-        b.addStatement("$T extraFields = new $T<>($T.<$T>of(sortField, tieField))",
-            listOfFieldWildcard, ARRAY_LIST, LIST, fieldWildcard);
+        b.addStatement("$T orderBy = $T.of($L.asc(), tieField.asc())", listOfSortField, LIST, keyLocal(0));
+        b.addStatement("$T extraFields = new $T<>($T.<$T>of($L, tieField))",
+            listOfFieldWildcard, ARRAY_LIST, LIST, fieldWildcard, keyLocal(0));
 
         b.addStatement("$T page = $T.pageRequest(first, last, after, before, $L,\n"
             + "        orderBy, extraFields, $T.of())",
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
-        // Stage 1: per-branch UNION ALL projecting (typename, pk0, sort, idx) plus JOIN parentInput.
+        // Stage 1: per-branch UNION ALL projecting (typename, pk0, idx) plus JOIN parentInput.
         // Wrap as derived table "pages". The same pagesTable reference is shared across every
         // per-parent ConnectionResult; per-parent totalCount filters with __idx__.eq(i).
         TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
@@ -1968,8 +1950,7 @@ public final class MultiTablePolymorphicEmitter {
         b.add("$T<?> ranked = dsl\n", TABLE);
         b.add("    .select(\n");
         b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, TYPENAME_COLUMN, stringClass);
-        b.add("        $T.field($T.name($S), $T.class),\n", DSL, DSL, PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX, participantPkClass);
-        b.add("        sortField,\n");
+        b.add("        $L,\n", keyLocal(0));
         b.add("        idxField,\n");
         b.add("        $T.rowNumber().over($T.partitionBy(idxField).orderBy(page.effectiveOrderBy())).as($S))\n",
             DSL, DSL, RN_COLUMN);
@@ -1997,7 +1978,7 @@ public final class MultiTablePolymorphicEmitter {
         b.addStatement("$T r = stage1.get(outerIdx)", RECORD);
         b.addStatement("parentIdxByOuter[outerIdx] = r.get($S, $T.class)", IDX_COLUMN, integerClass);
         b.addStatement("String tn = r.get($S, String.class)", TYPENAME_COLUMN);
-        b.addStatement("Object[] pks = new Object[]{r.get($S)}", PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
+        b.addStatement("Object[] pks = new Object[]{r.get($S)}", keyAlias(0));
         b.addStatement("byType.computeIfAbsent(tn, k -> new $T<>()).add(new Object[]{outerIdx, pks})", ARRAY_LIST);
         b.endControlFlow();
 
@@ -2048,15 +2029,14 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * Batched connection per-branch projection: same shape as {@link #branchProjection} but
      * additionally projects {@code parentInput.field(0).as(IDX_COLUMN)} so the windowed CTE can
-     * partition by the parent index. Single-PK participants only (validator-enforced for connection mode);
-     * the {@code __sort__} alias is the participant PK directly.
+     * partition by the parent index. Projects the first key column only, which is all this arm
+     * orders, seeks and dispatches on.
      */
     private static CodeBlock batchedBranchProjection(ParticipantRef.TableBound participant, String tableAlias) {
         var pks = participant.table().primaryKeyColumns();
         var b = CodeBlock.builder();
         b.add("$T.inline($S).as($S)", DSL, participant.typeName(), TYPENAME_COLUMN);
-        b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), PK_COLUMN_PREFIX + 0 + PK_COLUMN_SUFFIX);
-        b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), SORT_COLUMN);
+        b.add(", $L.$L.as($S)", tableAlias, pks.get(0).javaName(), keyAlias(0));
         b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), IDX_COLUMN);
         return b.build();
     }
@@ -2162,7 +2142,7 @@ public final class MultiTablePolymorphicEmitter {
      */
     private static MethodSpec buildPerTypenameSelect(
             String fieldName, ParticipantRef.TableBound participant,
-            boolean includeSortKey,
+            boolean includeKey,
             List<PolymorphicOrdering.Slot> slots,
             String outputPackage) {
         var jooqTableClass = CatalogRefs.tableClass(participant.table());
@@ -2212,23 +2192,14 @@ public final class MultiTablePolymorphicEmitter {
                 CodeBlock.of("$L", tableLocal)));
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 
-        // Connection mode: project the synthetic {@code __sort__} alias
-        // on each typed stage-2 Record so {@code ConnectionHelper.encodeCursor(record,
-        // [DSL.field("__sort__")])} can read it back when emitting per-edge cursors and
-        // pageInfo.start/endCursor. Single-PK projects the PK column directly (typed by the PK
-        // column class); composite-PK projects {@code DSL.jsonbArray(pk0..pkN)} so the value
-        // round-trips through PostgreSQL's lexicographic JSONB ordering.
-        if (includeSortKey) {
+        // Connection mode: project each key column under its stage-1 alias on each typed stage-2
+        // Record, so {@code ConnectionHelper.encodeCursor} reads the cursor values by the names the
+        // seek uses when emitting per-edge cursors and pageInfo.start/endCursor. The VALUES input is
+        // aliased by the key columns' SQL names, so nothing collides.
+        if (includeKey) {
             var pks = participant.table().primaryKeyColumns();
-            if (pks.size() == 1) {
-                b.addStatement("fields.add($L.$L.as($S))", tableLocal, pks.get(0).javaName(), SORT_COLUMN);
-            } else {
-                var jsonbArgs = CodeBlock.builder();
-                for (int i = 0; i < pks.size(); i++) {
-                    if (i > 0) jsonbArgs.add(", ");
-                    jsonbArgs.add("$L.$L", tableLocal, pks.get(i).javaName());
-                }
-                b.addStatement("fields.add($T.jsonbArray($L).as($S))", DSL, jsonbArgs.build(), SORT_COLUMN);
+            for (int i = 0; i < pks.size(); i++) {
+                b.addStatement("fields.add($L.$L.as($S))", tableLocal, pks.get(i).javaName(), keyAlias(i));
             }
         }
         // The lowered ordering's slots ride the stage-2 record too: the per-edge cursor encodes
@@ -2409,7 +2380,7 @@ public final class MultiTablePolymorphicEmitter {
         var pksBuilder = CodeBlock.builder().add("new Object[]{");
         for (int s = 0; s < participantPkArity; s++) {
             if (s > 0) pksBuilder.add(", ");
-            pksBuilder.add("r.get($S)", PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+            pksBuilder.add("r.get($S)", keyAlias(s));
         }
         pksBuilder.add("}");
         b.addStatement("Object[] pks = $L", pksBuilder.build());
@@ -2450,14 +2421,14 @@ public final class MultiTablePolymorphicEmitter {
      * List-arm per-branch projection: typename literal + ALL participant PK columns
      * ({@code __pk0__..__pkN__}) + {@code __idx__}. Differs from the connection-arm projection
      * ({@link #batchedBranchProjection}) by projecting the full PK arity (not just the first
-     * column) and by skipping {@code __sort__} (no cursor encoding on the list arm).
+     * column).
      */
     private static CodeBlock batchedListBranchProjection(ParticipantRef.TableBound participant, String tableAlias) {
         var pks = participant.table().primaryKeyColumns();
         var b = CodeBlock.builder();
         b.add("$T.inline($S).as($S)", DSL, participant.typeName(), TYPENAME_COLUMN);
         for (int s = 0; s < pks.size(); s++) {
-            b.add(", $L.$L.as($S)", tableAlias, pks.get(s).javaName(), PK_COLUMN_PREFIX + s + PK_COLUMN_SUFFIX);
+            b.add(", $L.$L.as($S)", tableAlias, pks.get(s).javaName(), keyAlias(s));
         }
         b.add(", parentInput.field(0, $T.class).as($S)", ClassName.get(Integer.class), IDX_COLUMN);
         return b.build();
@@ -2466,13 +2437,83 @@ public final class MultiTablePolymorphicEmitter {
     // ===== Lowered ordering =====
 
     /**
-     * The synthetic sort key's Java type: the first participant's primary-key column class at
-     * arity 1, {@code JSONB} (the {@code DSL.jsonbArray} of the key) at composite arity. The
-     * validator enforces uniform key arity across participants.
+     * The typing column of each key slot, in key order. The validator rejects every field whose
+     * lowered key is empty, so an empty one reaching the emitter is a generator bug.
      */
-    private static TypeName sortKeyClass(List<ParticipantRef.TableBound> participants) {
-        var pks = participants.get(0).table().primaryKeyColumns();
-        return pks.size() == 1 ? CatalogRefs.columnType(pks.get(0)) : JSONB;
+    private static List<Map.Entry<ParticipantRef.TableBound, ColumnRef>> keyTypingColumns(
+            PolymorphicOrdering ordering) {
+        if (ordering.key().isEmpty()) {
+            throw new IllegalStateException("Graphitron generator bug: a lowered multitable ordering"
+                + " reached the emitter with no key slots; the validator rejects key-less and"
+                + " mixed-arity participants");
+        }
+        return ordering.key().stream().map(PolymorphicOrdering.Slot::typingColumn).toList();
+    }
+
+    /**
+     * The first participant's first {@code arity} key columns as typing columns, for the paths that
+     * carry no lowered ordering and so no key slots.
+     */
+    private static List<Map.Entry<ParticipantRef.TableBound, ColumnRef>> firstParticipantKeyTypingColumns(
+            List<ParticipantRef.TableBound> participants, int arity) {
+        var first = participants.get(0);
+        return first.table().primaryKeyColumns().subList(0, arity).stream()
+            .map(column -> Map.entry(first, column))
+            .toList();
+    }
+
+    /**
+     * Declares one {@code Field<?> key<I>} local per key position, named by the {@code __pk<I>__}
+     * alias every branch projects and typed by the position's typing column {@code DataType}, the
+     * typing {@link #buildOrderingHelper} gives declared slots: a converter on a key column rides
+     * the cursor decode, and the seek binds the database type.
+     */
+    private static CodeBlock declareKeyFields(List<Map.Entry<ParticipantRef.TableBound, ColumnRef>> typingColumns) {
+        var b = CodeBlock.builder();
+        for (int i = 0; i < typingColumns.size(); i++) {
+            b.add(typedFieldDeclaration(keyLocal(i), keyAlias(i), typingColumns.get(i)));
+        }
+        return b.build();
+    }
+
+    /** {@code Field<?> <local> = DSL.field(DSL.name("<alias>"), <Table>.<COLUMN>.getDataType())}. */
+    private static CodeBlock typedFieldDeclaration(String local, String alias,
+            Map.Entry<ParticipantRef.TableBound, ColumnRef> typing) {
+        var table = typing.getKey().table();
+        return CodeBlock.builder().addStatement("$T $L = $T.field($T.name($S), $T.$L.$L.getDataType())",
+            ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class)), local, DSL, DSL, alias,
+            CatalogRefs.constantsClass(table), table.javaFieldName(), typing.getValue().javaName()).build();
+    }
+
+    /** {@code Field<String> tieField}, the {@code __typename} tiebreaker. */
+    private static CodeBlock declareTieField() {
+        return CodeBlock.builder().addStatement("$T tieField = $T.field($T.name($S), $T.class)",
+            ParameterizedTypeName.get(FIELD, ClassName.get(String.class)), DSL, DSL, TYPENAME_COLUMN,
+            String.class).build();
+    }
+
+    /** {@code key0, ..., key<arity-1>, tieField}: the key fields then the type-name tiebreaker. */
+    private static List<String> keyAndTieLocals(int arity) {
+        var locals = new ArrayList<String>();
+        for (int i = 0; i < arity; i++) locals.add(keyLocal(i));
+        locals.add("tieField");
+        return locals;
+    }
+
+    /**
+     * The key columns as untyped name references, optionally followed by {@code __typename}: the
+     * order of a stage-1 union that seeks nothing, and so binds no value that would need a
+     * {@code DataType}. The aliases are the ones {@link #branchProjection} projects.
+     */
+    private static CodeBlock keyOrderReferences(int arity, boolean withTypename) {
+        var refs = new ArrayList<CodeBlock>();
+        for (int i = 0; i < arity; i++) {
+            refs.add(CodeBlock.of("$T.field($T.name($S))", DSL, DSL, keyAlias(i)));
+        }
+        if (withTypename) {
+            refs.add(CodeBlock.of("$T.field($T.name($S))", DSL, DSL, TYPENAME_COLUMN));
+        }
+        return CodeBlock.join(refs, ", ");
     }
 
     private static ClassName orderByResultClass(String outputPackage) {
@@ -2493,36 +2534,31 @@ public final class MultiTablePolymorphicEmitter {
      * union's slot fields, so the choice among named orders happens at runtime while every branch's
      * projection stays fixed.
      *
-     * <p>Each slot field is typed by its first participant's column {@code DataType}, never by a
-     * class, so a converter rides the cursor decode and the seek binds the database type; the
-     * classifier's agreement rule is what makes that one column's type right for every branch.
-     * {@code __sort__} and {@code __typename} follow the author's columns as the deterministic
-     * tiebreaker, and flip with a runtime {@code direction:} exactly where the order itself does
+     * <p>Each slot field, the key slots included, is typed by its first participant's column
+     * {@code DataType}, never by a class, so a converter rides the cursor decode and the seek binds
+     * the database type; the classifier's agreement rules are what make that one column's type
+     * right for every branch. The key fields and {@code __typename} follow the author's columns as
+     * the deterministic tiebreaker, and flip with a runtime {@code direction:} exactly where the
+     * order itself does
      * (a uniformly ascending order under a single-valued argument), so a descending request is the
      * exact reverse of an ascending one, ties included. Collation is carried on the model and, as
      * on every other ordering path, not emitted.
      */
     private static MethodSpec buildOrderingHelper(String parentTypeName, String fieldName,
-            List<ParticipantRef.TableBound> participants, PolymorphicOrdering ordering, String outputPackage) {
+            PolymorphicOrdering ordering, String outputPackage) {
         var resultClass = orderByResultClass(outputPackage);
         var builder = MethodSpec.methodBuilder(orderingHelperName(parentTypeName, fieldName, outputPackage))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(resultClass)
             .addParameter(ENV, "env");
-        TypeName keyClass = sortKeyClass(participants);
-        builder.addStatement("$T sortField = $T.field($T.name($S), $T.class)",
-            ParameterizedTypeName.get(FIELD, keyClass), DSL, DSL, SORT_COLUMN, keyClass);
-        builder.addStatement("$T tieField = $T.field($T.name($S), $T.class)",
-            ParameterizedTypeName.get(FIELD, ClassName.get(String.class)), DSL, DSL, TYPENAME_COLUMN, String.class);
+        int keyArity = keyTypingColumns(ordering).size();
+        builder.addCode(declareKeyFields(keyTypingColumns(ordering)));
+        builder.addCode(declareTieField());
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         for (var slot : ordering.slots()) {
-            var typing = slot.typingColumn();
-            var table = typing.getKey().table();
-            builder.addStatement("$T $L = $T.field($T.name($S), $T.$L.$L.getDataType())",
-                fieldWildcard, slotLocal(slot), DSL, DSL, slotAlias(slot),
-                CatalogRefs.constantsClass(table), table.javaFieldName(), typing.getValue().javaName());
+            builder.addCode(typedFieldDeclaration(slotLocal(slot), slotAlias(slot), slot.typingColumn()));
         }
-        var base = orderResultExpr(ordering.base(), null, resultClass);
+        var base = orderResultExpr(ordering.base(), null, resultClass, keyArity);
         switch (ordering.surface()) {
             case PolymorphicOrdering.Surface.Fixed _ -> builder.addStatement("return $L", base);
             case PolymorphicOrdering.Surface.Argument arg when !arg.list() -> {
@@ -2534,7 +2570,7 @@ public final class MultiTablePolymorphicEmitter {
                 builder.addCode("$>");
                 for (var order : ordering.namedOrders()) {
                     builder.addCode("case $S -> $L;\n", order.name(),
-                        orderResultExpr(order, CodeBlock.of("desc"), resultClass));
+                        orderResultExpr(order, CodeBlock.of("desc"), resultClass, keyArity));
                 }
                 builder.addCode("default -> $L;\n", base);
                 builder.addCode("$<");
@@ -2555,7 +2591,7 @@ public final class MultiTablePolymorphicEmitter {
                 for (var order : ordering.namedOrders()) {
                     builder.addCode("case $S -> {\n$>", order.name());
                     var flip = order.uniformAsc() ? CodeBlock.of("desc") : null;
-                    for (var part : orderedParts(order, flip, false)) {
+                    for (var part : orderedParts(order, flip, false, keyArity)) {
                         builder.addStatement("sortParts.add($L)", part.sort());
                         builder.addStatement("colParts.add($L)", part.column());
                     }
@@ -2565,10 +2601,10 @@ public final class MultiTablePolymorphicEmitter {
                 builder.addCode("$<");
                 builder.addCode("}\n");
                 builder.endControlFlow();
-                builder.addStatement("sortParts.add(sortField.asc())");
-                builder.addStatement("sortParts.add(tieField.asc())");
-                builder.addStatement("colParts.add(sortField)");
-                builder.addStatement("colParts.add(tieField)");
+                for (var local : keyAndTieLocals(keyArity)) {
+                    builder.addStatement("sortParts.add($L.asc())", local);
+                    builder.addStatement("colParts.add($L)", local);
+                }
                 builder.addStatement("return new $T(sortParts, colParts)", resultClass);
             }
         }
@@ -2583,12 +2619,12 @@ public final class MultiTablePolymorphicEmitter {
     private record OrderedPart(CodeBlock sort, CodeBlock column) {}
 
     /**
-     * The sort terms of one declared order, optionally followed by the {@code __sort__} /
+     * The sort terms of one declared order, optionally followed by the key-field /
      * {@code __typename} tiebreakers. {@code flip} is the runtime-descending expression when the
      * order is flipped by a runtime direction, else {@code null}.
      */
     private static List<OrderedPart> orderedParts(PolymorphicOrdering.SlotOrder order, CodeBlock flip,
-            boolean withTiebreakers) {
+            boolean withTiebreakers, int keyArity) {
         var parts = new ArrayList<OrderedPart>();
         switch (order) {
             case PolymorphicOrdering.SlotOrder.OnSlots onSlots -> {
@@ -2597,12 +2633,18 @@ public final class MultiTablePolymorphicEmitter {
                     parts.add(new OrderedPart(sortTerm(local, entry.direction(), flip), CodeBlock.of("$L", local)));
                 }
                 if (withTiebreakers) {
-                    parts.add(new OrderedPart(sortTerm("sortField", OrderBySpec.SortDirection.ASC, flip),
-                        CodeBlock.of("sortField")));
+                    for (int i = 0; i < keyArity; i++) {
+                        parts.add(new OrderedPart(sortTerm(keyLocal(i), OrderBySpec.SortDirection.ASC, flip),
+                            CodeBlock.of("$L", keyLocal(i))));
+                    }
                 }
             }
-            case PolymorphicOrdering.SlotOrder.OnSyntheticKey key ->
-                parts.add(new OrderedPart(sortTerm("sortField", key.direction(), flip), CodeBlock.of("sortField")));
+            case PolymorphicOrdering.SlotOrder.OnPrimaryKey key -> {
+                for (int i = 0; i < keyArity; i++) {
+                    parts.add(new OrderedPart(sortTerm(keyLocal(i), key.direction(), flip),
+                        CodeBlock.of("$L", keyLocal(i))));
+                }
+            }
         }
         if (withTiebreakers) {
             parts.add(new OrderedPart(sortTerm("tieField", OrderBySpec.SortDirection.ASC, flip),
@@ -2620,8 +2662,9 @@ public final class MultiTablePolymorphicEmitter {
      * {@code new OrderByResult(List.of(<sort terms>), List.of(<cursor columns>))} for one declared
      * order with its tiebreakers. {@code flip} applies only to a uniformly ascending order.
      */
-    private static CodeBlock orderResultExpr(PolymorphicOrdering.SlotOrder order, CodeBlock flip, ClassName resultClass) {
-        var parts = orderedParts(order, order.uniformAsc() ? flip : null, true);
+    private static CodeBlock orderResultExpr(PolymorphicOrdering.SlotOrder order, CodeBlock flip,
+            ClassName resultClass, int keyArity) {
+        var parts = orderedParts(order, order.uniformAsc() ? flip : null, true, keyArity);
         var sorts = CodeBlock.join(parts.stream().map(OrderedPart::sort).toList(), ", ");
         var cols = CodeBlock.join(parts.stream().map(OrderedPart::column).toList(), ", ");
         return CodeBlock.of("new $T($T.of($L), $T.of($L))", resultClass, LIST, sorts, LIST, cols);

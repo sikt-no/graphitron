@@ -1290,10 +1290,20 @@ class FieldBuilder {
      * {@link PolymorphicOrdering.Slot}. A slot's identity is its whole per-participant column map,
      * so two entries share a slot exactly when they resolve to the same column on every participant.
      *
+     * <p>The participants' primary keys fold into {@link PolymorphicOrdering#key()}, one slot per key
+     * position, which every order ends on before the type name. A key slot is typed by its first
+     * participant's column as a declared slot is, and rejects, per disagreeing participant into
+     * {@code failures}, when a column at its position binds to another Java type or to another
+     * database type behind a converter: the typed {@code UNION ALL} needs the first, and decoding a
+     * cursor value through the typing column's converter for every branch needs the second. It does
+     * not compare {@code sqlType}: the author cannot choose the participants' keys, and keys that
+     * bind alike under different type names ({@code text} beside {@code varchar}) union and compare
+     * correctly. The key is minted only when every participant has a key of the first one's arity,
+     * and is empty otherwise; the validator's primary-key and arity rejections own that message.
+     *
      * <p>An order whose entries are, on every participant, exactly that participant's primary key
-     * in key order under one direction is {@link PolymorphicOrdering.SlotOrder.OnSyntheticKey}: it
-     * orders by the synthetic key every branch already projects, which is the same order. That
-     * covers {@code @order(primaryKey: true)}, {@code @defaultOrder(primaryKey: true)} and the
+     * in key order under one direction is {@link PolymorphicOrdering.SlotOrder.OnPrimaryKey}: it
+     * orders by the key slots, which is the same order. That covers {@code @order(primaryKey: true)}, {@code @defaultOrder(primaryKey: true)} and the
      * implicit fallback alike, none of which carries provenance. A participant with no primary key
      * resolves the fallback to {@link OrderBySpec.None}; that is absorbed too, the validator's
      * primary-key rejection being the one message about that absence.
@@ -1319,12 +1329,13 @@ class FieldBuilder {
             .filter(spec -> spec instanceof OrderBySpec.Argument)
             .map(spec -> (OrderBySpec.Argument) spec)
             .findFirst();
+        var key = foldKey(participants, failures);
         var slots = new ArrayList<PolymorphicOrdering.Slot>();
         if (argument.isEmpty()) {
             var base = foldOrder(null, orderings, slots, failures);
-            if (base == null) return Optional.empty();
+            if (!failures.isEmpty() || base == null) return Optional.empty();
             return Optional.of(new PolymorphicOrdering(participants, new PolymorphicOrdering.Surface.Fixed(),
-                slots, List.of(), base));
+                key, slots, List.of(), base));
         }
         var arg = argument.get();
         var named = new ArrayList<PolymorphicOrdering.SlotOrder>();
@@ -1346,7 +1357,86 @@ class FieldBuilder {
         return Optional.of(new PolymorphicOrdering(participants,
             new PolymorphicOrdering.Surface.Argument(arg.name(), arg.typeName(), arg.nonNull(), arg.list(),
                 arg.sortFieldName(), arg.directionFieldName()),
-            slots, named, base));
+            key, slots, named, base));
+    }
+
+    /**
+     * The key slots: one per primary-key position, each carrying every participant's key column at
+     * that position. Empty when a participant has no primary key or a key of another arity than the
+     * first participant's (absorbed; the validator owns both messages), and after adding the
+     * disagreeing participants to {@code failures} when a position's columns differ in bound Java
+     * type or in the database type behind a converter.
+     */
+    private List<PolymorphicOrdering.Slot> foldKey(List<ParticipantRef.TableBound> participants,
+            List<ParticipantFailure> failures) {
+        int arity = participants.getFirst().table().primaryKeyColumns().size();
+        if (arity == 0 || participants.stream()
+                .anyMatch(p -> p.table().primaryKeyColumns().size() != arity)) {
+            return List.of();
+        }
+        var key = new ArrayList<PolymorphicOrdering.Slot>();
+        boolean rejected = false;
+        for (int i = 0; i < arity; i++) {
+            var columnByParticipant = new LinkedHashMap<ParticipantRef.TableBound, ColumnRef>();
+            for (var p : participants) {
+                columnByParticipant.put(p, p.table().primaryKeyColumns().get(i));
+            }
+            boolean agrees = positionAgrees("the primary key", i, columnByParticipant,
+                (participant, column) -> {
+                    var facts = ctx.columnFacts(participant.table(), column);
+                    String databaseType = ctx.catalog.findColumn(participant.table().tableName(), column.sqlName())
+                        .map(JooqCatalog.ColumnEntry::databaseType)
+                        .orElse(facts.bindingType());
+                    return new ColumnTyping(java.util.Arrays.asList(facts.bindingType(), databaseType),
+                        Objects.equals(databaseType, facts.bindingType())
+                            ? facts.bindingType()
+                            : facts.bindingType() + " converted from " + databaseType);
+                },
+                "a multitable interface/union orders and seeks its participant branches on their"
+                    + " primary-key columns through one column per position, so every participant's key"
+                    + " column there has to bind to the same Java type over the same database type",
+                failures);
+            if (!agrees) {
+                rejected = true;
+                continue;
+            }
+            var typingParticipant = participants.getFirst();
+            key.add(new PolymorphicOrdering.Slot(i,
+                ctx.columnFacts(typingParticipant.table(), columnByParticipant.get(typingParticipant)).bindingType(),
+                columnByParticipant));
+        }
+        return rejected ? List.of() : key;
+    }
+
+    /** What one rule compares about a column, and how its message describes the column. */
+    private record ColumnTyping(List<String> compared, String description) {}
+
+    /**
+     * Whether every participant's column at one position agrees with the first participant's under
+     * {@code typing}; adds each disagreeing participant to {@code failures} with the position, both
+     * columns and {@code reason} named.
+     */
+    private boolean positionAgrees(String label, int position,
+            SequencedMap<ParticipantRef.TableBound, ColumnRef> columnByParticipant,
+            java.util.function.BiFunction<ParticipantRef.TableBound, ColumnRef, ColumnTyping> typing,
+            String reason, List<ParticipantFailure> failures) {
+        var typingEntry = columnByParticipant.firstEntry();
+        var typingParticipant = typingEntry.getKey();
+        var typingColumn = typingEntry.getValue();
+        var expected = typing.apply(typingParticipant, typingColumn);
+        boolean agrees = true;
+        for (var e : columnByParticipant.entrySet()) {
+            if (e.getKey().equals(typingParticipant)) continue;
+            var actual = typing.apply(e.getKey(), e.getValue());
+            if (!actual.compared().equals(expected.compared())) {
+                failures.add(new ParticipantFailure(e.getKey().typeName(), Rejection.structural(
+                    label + " position " + (position + 1) + ": column '" + e.getValue().sqlName() + "' is "
+                    + actual.description() + ", but column '" + typingColumn.sqlName() + "' on participant '"
+                    + typingParticipant.typeName() + "' is " + expected.description() + "; " + reason)));
+                agrees = false;
+            }
+        }
+        return agrees;
     }
 
     /**
@@ -1365,12 +1455,12 @@ class FieldBuilder {
         if (first == null) {
             // Every participant resolved None: no primary key and nothing declared. Absorbed; the
             // validator's primary-key rejection owns the message.
-            return new PolymorphicOrdering.SlotOrder.OnSyntheticKey(orderName, OrderBySpec.SortDirection.ASC, true);
+            return new PolymorphicOrdering.SlotOrder.OnPrimaryKey(orderName, OrderBySpec.SortDirection.ASC, true);
         }
-        var syntheticDirection = syntheticKeyDirection(perParticipant);
-        if (syntheticDirection != null) {
-            return new PolymorphicOrdering.SlotOrder.OnSyntheticKey(orderName, syntheticDirection,
-                syntheticDirection == OrderBySpec.SortDirection.ASC);
+        var primaryKeyDirection = primaryKeyDirection(perParticipant);
+        if (primaryKeyDirection != null) {
+            return new PolymorphicOrdering.SlotOrder.OnPrimaryKey(orderName, primaryKeyDirection,
+                primaryKeyDirection == OrderBySpec.SortDirection.ASC);
         }
         var firstEntry = perParticipant.firstEntry();
         int arity = columnsOf(firstEntry.getValue()).size();
@@ -1394,30 +1484,22 @@ class FieldBuilder {
             for (var e : perParticipant.entrySet()) {
                 columnByParticipant.put(e.getKey(), columnsOf(e.getValue()).get(i).column());
             }
-            var typingParticipant = firstEntry.getKey();
-            var typingColumn = columnByParticipant.get(typingParticipant);
-            var typingFacts = ctx.columnFacts(typingParticipant.table(), typingColumn);
-            boolean positionRejected = false;
-            for (var e : columnByParticipant.entrySet()) {
-                if (e.getKey().equals(typingParticipant)) continue;
-                var facts = ctx.columnFacts(e.getKey().table(), e.getValue());
-                if (!Objects.equals(facts.sqlType(), typingFacts.sqlType())
-                        || !Objects.equals(facts.bindingType(), typingFacts.bindingType())) {
-                    failures.add(new ParticipantFailure(e.getKey().typeName(), Rejection.structural(
-                        label + " position " + (i + 1) + ": column '" + e.getValue().sqlName() + "' is "
-                        + facts.sqlType() + " bound to " + facts.bindingType() + ", but column '"
-                        + typingColumn.sqlName() + "' on participant '" + typingParticipant.typeName()
-                        + "' is " + typingFacts.sqlType() + " bound to " + typingFacts.bindingType()
-                        + "; a multitable interface/union orders its participant branches through one"
-                        + " column per position, so every participant's column there has to share"
-                        + " both the SQL type and the bound Java type")));
-                    positionRejected = true;
-                }
-            }
-            if (positionRejected) {
+            boolean agrees = positionAgrees(label, i, columnByParticipant,
+                (participant, column) -> {
+                    var facts = ctx.columnFacts(participant.table(), column);
+                    return new ColumnTyping(java.util.Arrays.asList(facts.sqlType(), facts.bindingType()),
+                        facts.sqlType() + " bound to " + facts.bindingType());
+                },
+                "a multitable interface/union orders its participant branches through one"
+                    + " column per position, so every participant's column there has to share"
+                    + " both the SQL type and the bound Java type",
+                failures);
+            if (!agrees) {
                 rejected = true;
                 continue;
             }
+            var typingParticipant = firstEntry.getKey();
+            var typingFacts = ctx.columnFacts(typingParticipant.table(), columnByParticipant.get(typingParticipant));
             int ordinal = -1;
             for (var slot : slots) {
                 if (slot.columnByParticipant().equals(columnByParticipant)) {
@@ -1449,7 +1531,7 @@ class FieldBuilder {
      * primary key in key order (or {@link OrderBySpec.None}, the key-less fallback); {@code null}
      * when the order is anything else.
      */
-    private static OrderBySpec.SortDirection syntheticKeyDirection(
+    private static OrderBySpec.SortDirection primaryKeyDirection(
             SequencedMap<ParticipantRef.TableBound, OrderBySpec> perParticipant) {
         OrderBySpec.SortDirection direction = null;
         for (var e : perParticipant.entrySet()) {

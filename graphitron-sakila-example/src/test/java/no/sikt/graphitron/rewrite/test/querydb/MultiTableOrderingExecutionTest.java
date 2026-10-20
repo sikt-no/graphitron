@@ -27,8 +27,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Stephens (staff 2), Williams (customer 3), so a result that kept every customer before every
  * staff member, or that stayed in primary-key order, fails. It ties across participants on
  * {@code store_id} (store 1 holds customers 1, 2, 4 and staff 1; store 2 holds customers 3, 5 and
- * staff 2), and customer 1 and staff 1 share the synthetic key value 1 besides, which is what the
- * appended {@code __sort__} / {@code __typename} tiebreakers are for.
+ * staff 2), and customer 1 and staff 1 share the key value 1 besides, which is what the appended
+ * key-column / {@code __typename} tiebreakers are for.
+ *
+ * <p>{@code PagedItem = PagedA | PagedB} carries a two-column key {@code (k1, k2)}. The union
+ * orders and seeks on the key columns themselves, so {@code (1, 10)} sorts after {@code (1, 3)}:
+ * the order a comparison of the key's text would get wrong.
  */
 @ExecutionTier
 class MultiTableOrderingExecutionTest {
@@ -43,13 +47,19 @@ class MultiTableOrderingExecutionTest {
         ... on Staff { staffId }
         """;
 
+    private static final String PAGED_ITEM = """
+        __typename
+        ... on PagedA { name }
+        ... on PagedB { name }
+        """;
+
     /** The seed in {@code last_name} order. */
     private static final List<String> BY_LAST_NAME = List.of("C5", "S1", "C2", "C4", "C1", "S2", "C3");
 
-    /** The seed in {@code store_id} order, ties broken by the synthetic key and then the typename. */
+    /** The seed in {@code store_id} order, ties broken by the key and then the typename. */
     private static final List<String> BY_STORE = List.of("C1", "S1", "C2", "C4", "S2", "C3", "C5");
 
-    /** The primary-key order the synthetic key delivers, the typename breaking the {@code 1 = 1} tie. */
+    /** The primary-key order, the typename breaking the {@code 1 = 1} tie. */
     private static final List<String> BY_KEY = List.of("C1", "S1", "C2", "S2", "C3", "C4", "C5");
 
     @BeforeAll
@@ -126,7 +136,7 @@ class MultiTableOrderingExecutionTest {
 
     /**
      * {@code @orderBy} with no {@code @defaultOrder}: the base is the participants' primary keys,
-     * which the classifier maps onto the synthetic key rather than projecting slots for. A request
+     * which the classifier maps onto the key columns rather than projecting slots for. A request
      * with no argument returns the primary-key order it always has.
      */
     @Test
@@ -135,7 +145,7 @@ class MultiTableOrderingExecutionTest {
             .containsExactlyElementsOf(BY_KEY);
         assertThat(occupants("{ occupantsOrderedByKey(orderBy: {field: OCCUPANT_ID, direction: DESC}) { "
             + OCCUPANT + " } }", "occupantsOrderedByKey"))
-            .as("the primary-key named order reverses through the synthetic key")
+            .as("the primary-key named order reverses through the key columns")
             .containsExactlyElementsOf(reversed(BY_KEY));
     }
 
@@ -191,17 +201,26 @@ class MultiTableOrderingExecutionTest {
         assertThat(pageBackward("converterPlacesConnection", "", 2, place)).containsExactlyElementsOf(expected);
     }
 
-    /** Composite-key participants: the order slot composes with the JSONB synthetic-key tiebreaker. */
+    /** Composite-key participants: the order slot composes with the key-column tiebreaker. */
     @Test
-    void connection_overCompositeKeyParticipants_composesWithTheJsonbSyntheticKey() {
-        var item = """
-            __typename
-            ... on PagedA { name }
-            ... on PagedB { name }
-            """;
-        var expected = List.of("B-3-1", "B-1-3", "B-1-1", "A-2-1", "A-1-2", "A-1-1");
-        assertThat(pageForward("pagedItemsByName", "", 2, item)).containsExactlyElementsOf(expected);
-        assertThat(pageBackward("pagedItemsByName", "", 2, item)).containsExactlyElementsOf(expected);
+    void connection_overCompositeKeyParticipants_composesWithTheKeyColumns() {
+        var expected = List.of("B-3-1", "B-1-3", "B-1-10", "B-1-1", "A-2-1", "A-1-2", "A-1-1");
+        assertThat(pageForward("pagedItemsByName", "", 2, PAGED_ITEM)).containsExactlyElementsOf(expected);
+        assertThat(pageBackward("pagedItemsByName", "", 2, PAGED_ITEM)).containsExactlyElementsOf(expected);
+    }
+
+    /**
+     * The implicit primary-key order over composite keys: paging forward and backward visits every
+     * row exactly once in {@code (k1, k2, __typename)} order, and the forward walk ends on a page
+     * reporting {@code hasNextPage: false}. PostgreSQL would order a JSON rendering of the key the
+     * same way, so this covers the plain-column shape rather than reproducing the dialect defect;
+     * {@code B-1-10} after {@code B-1-3} is the row a text comparison would misplace.
+     */
+    @Test
+    void connection_overCompositeKeys_pagesInKeyOrder_forwardAndBackward() {
+        var expected = List.of("A-1-1", "B-1-1", "A-1-2", "B-1-3", "B-1-10", "A-2-1", "B-3-1");
+        assertThat(pageForward("pagedItems", "", 2, PAGED_ITEM)).containsExactlyElementsOf(expected);
+        assertThat(pageBackward("pagedItems", "", 2, PAGED_ITEM)).containsExactlyElementsOf(expected);
     }
 
     // ===== The child that shares the stage-1 builder =====
@@ -209,7 +228,7 @@ class MultiTableOrderingExecutionTest {
     /**
      * The inline single-cardinality child over the same union shares the root list arm's stage-1
      * builder. It lowers no ordering and gains no tiebreaker, so it delivers the row it always has:
-     * address 3 holds staff 1 and customer 3, and the synthetic key picks staff 1.
+     * address 3 holds staff 1 and customer 3, and the key order picks staff 1.
      */
     @Test
     @SuppressWarnings("unchecked")

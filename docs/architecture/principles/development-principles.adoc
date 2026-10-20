@@ -329,7 +329,7 @@ generator emits:
 - *No `__`-prefixed Java identifiers in emitted code.* Every name in scope is knowable at
   generation time, so a readable deterministic prefix (`arg_<name>`) always beats a blanket `__`.
   The `__`-prefix legitimately survives only as *string literals* (synthetic SQL column aliases
-  like `__sort__`; spec-defined external names like jOOQ's `__NODE_*` and federation scalars);
+  like `__typename`; spec-defined external names like jOOQ's `__NODE_*` and federation scalars);
   the identifier-vs-literal discriminator and its full semantics live on
   `GeneratedSourcesLintTest`.
 

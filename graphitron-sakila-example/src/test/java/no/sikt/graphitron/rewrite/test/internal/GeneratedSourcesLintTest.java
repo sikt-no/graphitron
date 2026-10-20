@@ -220,7 +220,7 @@ class GeneratedSourcesLintTest {
      * at generation time; author-derived identifiers namespace with a readable, deterministic
      * prefix ({@code arg_<name>}, {@code c_<name>}), never a blanket {@code __}.
      *
-     * <p>Synthetic SQL column aliases ({@code __sort__}, {@code __idx__}, {@code __rn__},
+     * <p>Synthetic SQL column aliases ({@code __idx__}, {@code __rn__},
      * {@code __typename}, {@code __pkN__}) share the result-set column
      * namespace with consumer-controlled table columns and wrap in {@code __} precisely to
      * avoid colliding with a real column. They reach generated code only as string literals,
@@ -293,7 +293,7 @@ class GeneratedSourcesLintTest {
      * not treated as a string. After masking, only genuine code characters remain, so a
      * subsequent identifier scan cannot be fooled by a dunder that lives in a comment (e.g. an
      * inline {@code // re-key by __idx__} note) or a synthetic-column string literal
-     * ({@code .as("__sort__")}).
+     * ({@code .as("__pk0__")}).
      */
     static String maskCommentsAndLiterals(String src) {
         StringBuilder out = new StringBuilder(src.length());

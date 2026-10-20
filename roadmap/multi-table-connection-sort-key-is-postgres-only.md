@@ -327,6 +327,24 @@ once an audit finds it surviving a cleanup, and the Done-gate sweep is that audi
 File a Backlog item for the child-connection composite-key truncation (Out of scope, first
 bullet), alongside the move to Ready.
 
+## Implementation notes
+
+- **The root connection fetcher's no-ordering arm is kept, not deleted.** The plan read it as
+  unreachable for a valid root connection, which holds, but `buildRootConnectionFetcher` also
+  serves the degenerate all-unbound child connection (`ChildField.InterfaceField` /
+  `ChildField.UnionField` with a connection wrapper), which `TypeFetcherGenerator` calls with
+  `Optional.empty()`. That arm now orders and seeks on the key fields, typed through
+  `declareKeyFields` from the first participant's key columns, then `__typename`: the order the
+  primary-key fallback lowers to on a root, and the same typing the batched child-connection arm
+  gets. The ordering helper stays the only producer of the seek and cursor columns on every root.
+- **`pagedItems` spells out `first` / `after` / `last` / `before`**, as `pagedItemsByName` does, so
+  the execution test can page it backward.
+- **Sweep candidates outside the named habitats.** The unlowerable-ordering diagnostic
+  (`UnlowerableOrderings.fanOutMessage`, its text in `graphitron-model.sql`, and the tests and
+  corpus descriptions quoting it) still says child-path rows are "combined on a synthetic key".
+  Those paths never lowered an ordering and now order on the key columns; the phrase is loose
+  rather than false, and rewording a user-facing diagnostic was left to the Done-gate sweep.
+
 ## Reviewer findings
 
 ### Round 1 (2026-10-19, Spec -> Ready, reviewer session 017intVzVV9E1eMdBXjS2A4g)

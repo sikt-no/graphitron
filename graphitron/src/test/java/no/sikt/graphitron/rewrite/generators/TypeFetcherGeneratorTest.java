@@ -1507,7 +1507,7 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_emitsTwoStageStructure() {
-        // Stage 1: narrow UNION ALL projecting (__typename, __pk0__, __sort__) per branch.
+        // Stage 1: narrow UNION ALL projecting (__typename, __pk0__) per branch.
         // Stage 2: per-typename dispatch into select<Participant>For<Field> helpers.
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
@@ -1522,9 +1522,6 @@ class TypeFetcherGeneratorTest {
         assertThat(body)
             .as("stage 1: PK projection alias")
             .contains("\"__pk0__\"");
-        assertThat(body)
-            .as("stage 1: ordered by sort key")
-            .contains("\"__sort__\"");
         assertThat(body)
             .as("stage 2 dispatch into per-typename helpers")
             .contains("selectFilmForSearch(")
@@ -1608,27 +1605,6 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryInterfaceField_compositePkParticipant_emitsJsonbArraySortKey() {
-        // Composite-key sort projects DSL.jsonbArray(pk1, pk2, ...).as("__sort__").
-        // JSONB arrays compare element-wise in PostgreSQL, so composite ordering reduces to a
-        // single comparable column at no extra Java cost.
-        var compositeTable = TestFixtures.tableRef("bar", "BAR", "Bar",
-            List.of(
-                new ColumnRef("id_1", "ID_1", "java.lang.Integer"),
-                new ColumnRef("id_2", "ID_2", "java.lang.Integer")));
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("Bar", compositeTable, null));
-        var field = queryInterfaceField("compositeSearch", true, participants);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "compositeSearch").code().toString();
-        assertThat(body)
-            .as("composite PK sort key uses jsonbArray(...)")
-            .contains("jsonbArray(")
-            .contains(".as(\"__sort__\")");
-    }
-
-    @Test
     void queryUnionField_emitsTwoStageStructure_likeInterfaceField() {
         // QueryUnionField shares MultiTablePolymorphicEmitter with QueryInterfaceField; the
         // emitted bodies are identical apart from the participant-list source. This pin
@@ -1659,10 +1635,8 @@ class TypeFetcherGeneratorTest {
     // The connection emit path mirrors the list path but: (a) returns
     // DataFetcherResult<ConnectionResult>, (b) wraps stage 1's UNION ALL in a derived table
     // 'pages' so .orderBy/.seek/.limit apply uniformly across the union, (c) calls
-    // ConnectionHelper.pageRequest to derive PageRequest, (d) appends __typename ASC as a
-    // secondary sort + cursor tiebreaker so rows with tied sort keys order deterministically,
-    // and (e) per-typename stage 2 helpers project the participant PK aliased as __sort__
-    // so ConnectionHelper.encodeCursor can read the sort key off each typed Record.
+    // ConnectionHelper.pageRequest to derive PageRequest. The order itself (key columns, then
+    // __typename) is pinned by the execution tier's paging tests, not by body text here.
 
     private static QueryField.QueryInterfaceField queryInterfaceConnectionField(String name,
                                                                                  List<ParticipantRef> participants,
@@ -1729,25 +1703,6 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void queryInterfaceField_connection_perTypenameHelperProjectsSortKey() {
-        // Each typed stage-2 Record carries the participant PK aliased as __sort__ so
-        // ConnectionHelper.encodeCursor (which reads the orderByColumns by Field<?> identity)
-        // finds the sort key on each row when emitting per-edge cursors and pageInfo
-        // start/endCursor.
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var film = method(spec, "selectFilmForSearchConnection").code().toString();
-        assertThat(film)
-            .as("Film stage-2 helper aliases its PK as __sort__")
-            .contains("FILM_ID.as(\"__sort__\")");
-        var actor = method(spec, "selectActorForSearchConnection").code().toString();
-        assertThat(actor)
-            .as("Actor stage-2 helper aliases its PK as __sort__")
-            .contains("ACTOR_ID.as(\"__sort__\")");
-    }
-
-    @Test
     void queryInterfaceField_connection_wrapsResultInConnectionResult() {
         // ConnectionResult takes (List<Record>, PageRequest, Table<?>, Condition). The emitter
         // binds (payload, page, pagesTable, DSL.noCondition()) so ConnectionHelper.totalCount can run
@@ -1777,68 +1732,6 @@ class TypeFetcherGeneratorTest {
         assertThat(body)
             .as("the page query references the local pagesTable")
             .contains(".from(pagesTable)");
-    }
-
-    @Test
-    void queryInterfaceField_connection_addsTypenameTiebreakerToOrderBy() {
-        // Without a tiebreaker, two rows with the same __sort__ value (e.g. Film(1) and Actor(1))
-        // resolve in undefined order and pagination at a tie boundary can double-count or skip.
-        // The emitter appends __typename ASC as a secondary ordering and cursor seek field.
-        var field = queryInterfaceConnectionField("searchConnection", filmAndActorParticipants(), 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "searchConnection").code().toString();
-        assertThat(body)
-            .as("orderBy combines sort key + typename tiebreaker")
-            .contains("List.of(sortField.asc(), tieField.asc())");
-        assertThat(body)
-            .as("extraFields drives both cursor encoding and seek; both columns appear")
-            .contains("of(sortField, tieField)");
-    }
-
-    @Test
-    void queryInterfaceField_connection_compositePkParticipant_typesSortFieldAsJsonb() {
-        // When any connection-mode participant has composite PK, the emitter types
-        // sortField as Field<JSONB> instead of Field<ParticipantPkClass>. The synthetic __sort__
-        // column is then projected as DSL.jsonbArray(...) per branch (see branchProjection +
-        // buildPerTypenameSelect) and PostgreSQL's lexicographic JSONB ordering reproduces the
-        // multi-column ordering across the union.
-        var compositeTable = TestFixtures.tableRef("paged_a", "PAGED_A", "PagedA",
-            List.of(
-                new ColumnRef("k1", "K1", "java.lang.Integer"),
-                new ColumnRef("k2", "K2", "java.lang.Integer")));
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("PagedA", compositeTable, null));
-        var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var body = method(spec, "compositeConnection").code().toString();
-        assertThat(body)
-            .as("sortField is typed as Field<JSONB> for composite-PK participants")
-            .contains("org.jooq.Field<org.jooq.JSONB> sortField")
-            .contains("org.jooq.JSONB.class");
-    }
-
-    @Test
-    void queryInterfaceField_connection_compositePkParticipant_perTypenameHelperProjectsJsonbArraySortKey() {
-        // The per-typename stage-2 helper must project DSL.jsonbArray(pk0..pkN) under the
-        // __sort__ alias on each typed Record so ConnectionHelper.encodeCursor reads the same
-        // JSONB value the stage-1 sort key produced. Without this, page-2 cursors would decode
-        // back to a partial sort key and the seek predicate would skip or repeat rows.
-        var compositeTable = TestFixtures.tableRef("paged_a", "PAGED_A", "PagedA",
-            List.of(
-                new ColumnRef("k1", "K1", "java.lang.Integer"),
-                new ColumnRef("k2", "K2", "java.lang.Integer")));
-        var participants = List.<ParticipantRef>of(
-            new ParticipantRef.TableBound("PagedA", compositeTable, null));
-        var field = queryInterfaceConnectionField("compositeConnection", participants, 5);
-        var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
-            DEFAULT_OUTPUT_PACKAGE);
-        var perTypename = method(spec, "selectPagedAForCompositeConnection").code().toString();
-        assertThat(perTypename)
-            .as("per-typename helper projects jsonbArray(...) as __sort__ on each typed Record")
-            .contains("jsonbArray(")
-            .contains(".as(\"__sort__\")");
     }
 
     @Test
@@ -1880,8 +1773,6 @@ class TypeFetcherGeneratorTest {
             .contains("ConnectionHelper.pageRequest(")
             .contains(".seek(page.seekFields())")
             .contains(".util.ConnectionResult(payload, page, pagesTable, org.jooq.impl.DSL.noCondition())");
-        assertThat(method(spec, "selectFilmForDocumentsConnection").code().toString())
-            .contains("FILM_ID.as(\"__sort__\")");
     }
 
     // ===== ChildField.InterfaceField / ChildField.UnionField (multi-table polymorphic child) =====

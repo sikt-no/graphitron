@@ -756,8 +756,8 @@ public class GraphitronSchemaValidator {
      *   <li>Every {@link no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound} participant
      *       must declare a primary key. Stage 1 needs row identity per branch.</li>
      *   <li>All TableBound participants must share the same PK arity. Stage 1 projects
-     *       {@code (typename, pk0..pkN-1, sort)} per branch, and the column count must align
-     *       across UNION ALL branches; the emitter does not NULL-pad.</li>
+     *       {@code (typename, pk0..pkN-1)} per branch and orders on those key columns, and the
+     *       column count must align across UNION ALL branches; the emitter does not NULL-pad.</li>
      * </ul>
      *
      * <p>{@link no.sikt.graphitron.rewrite.model.ParticipantRef.Unbound} participants are
@@ -843,11 +843,12 @@ public class GraphitronSchemaValidator {
             return; // one collision is enough; subsequent ones are noise
         }
 
-        // Not enforced here: MultiTablePolymorphicEmitter's connection-rows method types its
-        // sortField by the first PK column only, silently truncating composite participant PKs.
-        // Promoting that truncation to a validator rejection would break composite-PK connection
-        // participants that work today (graphitron-sakila-example's Query.pagedItems), so the
-        // validator stays silent on it.
+        // Not enforced here: on a child connection, MultiTablePolymorphicEmitter's batched
+        // connection-rows method projects, orders, seeks and dispatches on the first key column
+        // only, so a composite-key participant under a child connection pages and dispatches on a
+        // truncated key. Root connections order and seek on every key column and are unaffected.
+        // Full-key dispatch on the batched arm, or a validate-time rejection of composite keys on
+        // child connections, is open work; until then the validator stays silent on it.
     }
 
     /**

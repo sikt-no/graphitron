@@ -6318,9 +6318,8 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void search_orderedBySortKey_acrossParticipants() {
-        // Stage 1's ORDER BY runs database-side on the synthetic __sort__ column. Single-PK
-        // participants project their PK directly, so the result interleaves Film and Actor
-        // rows by their PK values. Actor PKs cap at 4 while the film table reaches past it, so
+        // Stage 1's ORDER BY runs database-side on the projected key column __pk0__, so the
+        // result interleaves Film and Actor rows by their PK values. Actor PKs cap at 4 while the film table reaches past it, so
         // the leading rows carry both types and the highest sort key belongs to a Film.
         Map<String, Object> data = execute("""
             { search {
@@ -6340,10 +6339,10 @@ class GraphQLQueryTest {
     // searchConnection wraps the same Searchable interface as Query.search but in @asConnection
     // form. The emitter wraps the per-branch UNION ALL in a derived table 'pages' so cursor
     // decode + .seek + LIMIT N+1 apply uniformly across the union; each typed stage-2 Record
-    // carries both __typename and __sort__ so ConnectionHelper.encodeCursor can read the sort
-    // key on each edge. Default page size is 5 (set in fixture) so a default-args query returns
-    // exactly 5 of the 8 total rows. The emitter adds (sortField ASC, typenameField ASC) as a
-    // composite ORDER BY so rows tied on sort key (e.g. Film(1)/Actor(1)) order deterministically.
+    // carries both __typename and its key column so ConnectionHelper.encodeCursor can read the
+    // cursor values on each edge. Default page size is 5 (set in fixture) so a default-args query
+    // returns exactly 5 of the 8 total rows. The emitter orders by (key ASC, __typename ASC) so
+    // rows tied on the key (e.g. Film(1)/Actor(1)) order deterministically.
 
     @Test
     @SuppressWarnings("unchecked")
@@ -6552,18 +6551,15 @@ class GraphQLQueryTest {
     // ===== Composite-PK participants in connection mode =====
     //
     // pagedItems wraps `interface PagedItem` (PagedA + PagedB, both composite (Integer, Integer)
-    // PK) in @asConnection. The polymorphic emitter projects DSL.jsonbArray(k1, k2) as the
-    // synthetic __sort__ column and types it as JSONB so PostgreSQL's lexicographic JSONB
-    // ordering reproduces the multi-column ordering across the union, and
-    // ConnectionHelper.encodeCursor / decodeCursor round-trip JSONB through JSONB.toString()
-    // and Convert.convert(String, JSONB.class).
+    // PK) in @asConnection. Stage 1 orders and seeks the union on the key columns (k1, k2) then
+    // __typename, and the cursor carries one value per key column.
     //
     // Seed (init.sql):
     //   paged_a (k1, k2, name): (1,1,'A-1-1'), (1,2,'A-1-2'), (2,1,'A-2-1')
-    //   paged_b (k1, k2, name): (1,1,'B-1-1'), (1,3,'B-1-3'), (3,1,'B-3-1')
-    // JSONB lexicographic order is element-wise: [1,1] < [1,2] < [1,3] < [2,1] < [3,1]. With the
-    // (sort ASC, typename ASC) tiebreaker, the global order is:
-    //   PagedA[1,1], PagedB[1,1], PagedA[1,2], PagedB[1,3], PagedA[2,1], PagedB[3,1].
+    //   paged_b (k1, k2, name): (1,1,'B-1-1'), (1,3,'B-1-3'), (1,10,'B-1-10'), (3,1,'B-3-1')
+    // Key order compares column by column, numerically: (1,1) < (1,2) < (1,3) < (1,10) < (2,1)
+    // < (3,1). With the typename tiebreaker, the global order is:
+    //   PagedA[1,1], PagedB[1,1], PagedA[1,2], PagedB[1,3], PagedB[1,10], PagedA[2,1], PagedB[3,1].
 
     @Test
     @SuppressWarnings("unchecked")
@@ -6593,9 +6589,9 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void pagedItemsConnection_afterCursor_returnsNextPage() {
-        // Page 1 (first: 3) + after endCursor → page 2 (first: 3) returns the next 3 by sort.
-        // The cursor encodes the JSONB sort value of the last row on page 1, base64-wrapped via
-        // ConnectionHelper.encodeCursor; decodeCursor parses it back as a JSONB Field for seek.
+        // Page 1 (first: 3) + after endCursor → page 2 (first: 3) returns the next 3 by key.
+        // The cursor encodes the last row's key columns and type name, base64-wrapped via
+        // ConnectionHelper.encodeCursor; decodeCursor parses them back for the seek.
         Map<String, Object> page1Data = execute("""
             { pagedItems(first: 3) { pageInfo { endCursor } } }
             """);
@@ -6610,25 +6606,26 @@ class GraphQLQueryTest {
         List<Map<String, Object>> nodes2 = (List<Map<String, Object>>) conn2.get("nodes");
         assertThat(nodes2).hasSize(3);
         assertThat(nodes2).extracting(i -> i.get("__typename") + ":" + i.get("k1") + "," + i.get("k2"))
-            .containsExactly("PagedB:1,3", "PagedA:2,1", "PagedB:3,1");
+            .as("(1,10) sorts after (1,3), by key rather than by the text of the key")
+            .containsExactly("PagedB:1,3", "PagedB:1,10", "PagedA:2,1");
         var pageInfo2 = (Map<String, Object>) conn2.get("pageInfo");
-        // 6 total - 3 (page1) - 3 (page2) = 0 remaining → hasNextPage false.
-        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(false);
+        // 7 total - 3 (page1) - 3 (page2) = 1 remaining → hasNextPage true.
+        assertThat(pageInfo2.get("hasNextPage")).isEqualTo(true);
     }
 
     @Test
     @SuppressWarnings("unchecked")
     void pagedItemsConnection_lastPage_hasNextPageFalse() {
-        // first: 6 returns all 6 rows; over-fetch sees 6 rows (< pageSize+1 = 7) → hasNextPage false.
+        // first: 7 returns all 7 rows; over-fetch sees 7 rows (< pageSize+1 = 8) → hasNextPage false.
         Map<String, Object> data = execute("""
-            { pagedItems(first: 6) {
+            { pagedItems(first: 7) {
                 nodes { __typename }
                 pageInfo { hasNextPage }
             } }
             """);
         var conn = (Map<String, Object>) data.get("pagedItems");
         List<Map<String, Object>> nodes = (List<Map<String, Object>>) conn.get("nodes");
-        assertThat(nodes).hasSize(6);
+        assertThat(nodes).hasSize(7);
         var pageInfo = (Map<String, Object>) conn.get("pageInfo");
         assertThat(pageInfo.get("hasNextPage")).isEqualTo(false);
     }
@@ -6637,12 +6634,12 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void pagedItemsConnection_totalCount_returnsTotalAcrossCompositePkParticipants() {
         // totalCount runs SELECT count(*) FROM (UNION ALL paged_a + paged_b) AS pages,
-        // independent of the page window. 3 + 3 = 6.
+        // independent of the page window. 3 + 4 = 7.
         Map<String, Object> data = execute("""
             { pagedItems(first: 1) { totalCount } }
             """);
         var conn = (Map<String, Object>) data.get("pagedItems");
-        assertThat(conn.get("totalCount")).isEqualTo(6);
+        assertThat(conn.get("totalCount")).isEqualTo(7);
     }
 
     // ===== ChildField.UnionField =====

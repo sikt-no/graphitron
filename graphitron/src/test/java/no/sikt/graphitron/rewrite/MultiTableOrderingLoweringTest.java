@@ -142,35 +142,59 @@ class MultiTableOrderingLoweringTest {
             .extracting(c -> c.sqlName()).containsExactly("event_id", "note_id");
     }
 
-    // ===== Primary-key-shaped orders select the synthetic key =====
+    // ===== Primary-key-shaped orders select the key slots =====
 
+    /**
+     * The key is a list of columns, one slot per key position mapping every participant to its own
+     * key column there. That is the structural pin on the stage-1 order being dialect-independent:
+     * an ordering whose key is a column list has no place to carry a computed sort value.
+     */
     @Test
-    void everyPrimaryKeyShapedOrder_isOnSyntheticKeyAndMintsNoSlot() {
+    void everyPrimaryKeyShapedOrder_isOnPrimaryKeyAndMintsNoSlot() {
         var named = orderingOf(rootField(OCCUPANT_UNION + SORT + """
             type Query { occupants(orderBy: OccupantOrderBy @orderBy): [Occupant!]! }
             """, "occupants"));
         assertThat(named.namedOrders().getFirst())
             .as("@order(primaryKey: true)")
-            .isEqualTo(new SlotOrder.OnSyntheticKey("OCCUPANT_ID", SortDirection.ASC, true));
+            .isEqualTo(new SlotOrder.OnPrimaryKey("OCCUPANT_ID", SortDirection.ASC, true));
         assertThat(named.base())
             .as("the fallback base of a field with @orderBy and no @defaultOrder")
-            .isEqualTo(new SlotOrder.OnSyntheticKey(null, SortDirection.ASC, true));
+            .isEqualTo(new SlotOrder.OnPrimaryKey(null, SortDirection.ASC, true));
+        assertKey(named, List.of(List.of("customer_id", "staff_id")));
 
         var fixed = orderingOf(rootField(OCCUPANT_UNION + """
             type Query { occupants: [Occupant!]! @defaultOrder(primaryKey: true, direction: DESC) }
             """, "occupants"));
         assertThat(fixed.base())
             .as("@defaultOrder(primaryKey: true)")
-            .isEqualTo(new SlotOrder.OnSyntheticKey(null, SortDirection.DESC, false));
+            .isEqualTo(new SlotOrder.OnPrimaryKey(null, SortDirection.DESC, false));
         assertThat(fixed.slots()).isEmpty();
+        assertKey(fixed, List.of(List.of("customer_id", "staff_id")));
 
         var undeclared = orderingOf(rootField(OCCUPANT_UNION + """
             type Query { occupants: [Occupant!]! }
             """, "occupants"));
         assertThat(undeclared.base())
             .as("the undeclared list read, whose resolved ordering is the implicit fallback")
-            .isEqualTo(new SlotOrder.OnSyntheticKey(null, SortDirection.ASC, true));
+            .isEqualTo(new SlotOrder.OnPrimaryKey(null, SortDirection.ASC, true));
         assertThat(undeclared.slots()).isEmpty();
+        assertKey(undeclared, List.of(List.of("customer_id", "staff_id")));
+
+        var composite = orderingOf(rootField("""
+            interface PagedItem { name: String! }
+            type PagedA implements PagedItem @table(name: "paged_a") { name: String! }
+            type PagedB implements PagedItem @table(name: "paged_b") { name: String! }
+            type Query { pagedItems: [PagedItem!]! @asConnection(defaultFirstValue: 3) }
+            """, "pagedItems"));
+        assertThat(composite.base())
+            .as("the composite-key connection's implicit fallback")
+            .isEqualTo(new SlotOrder.OnPrimaryKey(null, SortDirection.ASC, true));
+        assertThat(composite.slots()).as("no declared slot minted").isEmpty();
+        assertThat(composite.key())
+            .as("one key slot per key position, PagedA then PagedB")
+            .allSatisfy(slot -> assertThat(slot.columnByParticipant().keySet())
+                .extracting(p -> p.typeName()).containsExactly("PagedA", "PagedB"));
+        assertKey(composite, List.of(List.of("k1", "k1"), List.of("k2", "k2")));
     }
 
     @Test
@@ -245,6 +269,44 @@ class MultiTableOrderingLoweringTest {
             .contains("varchar");
     }
 
+    /**
+     * Key slots compare what their typing has to be right about. An {@code integer} key against a
+     * {@code varchar} one binds to different Java types, which the typed {@code UNION ALL} cannot
+     * compile.
+     */
+    @Test
+    void keysOfDifferentBoundTypes_rejectAtThePositionNamingBothColumns() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") { title: String }
+            type XlatParent @table(name: "xlat_parent") { name: String }
+            union Keyed = Film | XlatParent
+            type Query { keyed: [Keyed!]! }
+            """);
+        assertThat(schema.field("Query", "keyed")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(participantDiagnostic(schema, "Query.keyed/XlatParent").message())
+            .contains("the primary key position 1: column 'pk_id' is java.lang.String,"
+                + " but column 'film_id' on participant 'Film' is java.lang.Integer");
+    }
+
+    /**
+     * The converter case the bound type alone misses: {@code converter_org}'s key is a bigint domain
+     * bound to {@code String} through a converter, {@code xlat_parent}'s an unconverted
+     * {@code varchar} also bound to {@code String}. Their {@code UNION ALL} fails in the database.
+     */
+    @Test
+    void keysBindingAlikeOverDifferentDatabaseTypes_rejectAtThePosition() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Org @table(name: "converter_org") { orgName: String @field(name: "org_name") }
+            type XlatParent @table(name: "xlat_parent") { name: String }
+            union Keyed = Org | XlatParent
+            type Query { keyed: [Keyed!]! }
+            """);
+        assertThat(schema.field("Query", "keyed")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(participantDiagnostic(schema, "Query.keyed/XlatParent").message())
+            .contains("the primary key position 1: column 'pk_id' is java.lang.String,"
+                + " but column 'org_code' on participant 'Org' is java.lang.String converted from java.lang.Long");
+    }
+
     // ===== The census =====
 
     /**
@@ -283,6 +345,16 @@ class MultiTableOrderingLoweringTest {
         type PlainSite @table(name: "plain_org_site") { orgCode: String @field(name: "org_code") }
         union Site = ConverterSite | PlainSite
         """;
+
+    /** Each key slot's columns' SQL names, in participant order, one list per key position. */
+    private static void assertKey(PolymorphicOrdering ordering, List<List<String>> expected) {
+        assertThat(ordering.key()).extracting(PolymorphicOrdering.Slot::ordinal)
+            .as("a key slot's ordinal is its key position")
+            .containsExactlyElementsOf(java.util.stream.IntStream.range(0, expected.size()).boxed().toList());
+        assertThat(ordering.key())
+            .extracting(slot -> slot.columnByParticipant().values().stream().map(c -> c.sqlName()).toList())
+            .containsExactlyElementsOf(expected);
+    }
 
     private static GraphitronField rootField(String sdl, String name) {
         return TestSchemaHelper.buildSchema(sdl).field("Query", name);

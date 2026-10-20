@@ -107,6 +107,6 @@ The `totalCount` consequence cited above applies here: split-connection carriers
 * xref:../reference/directives/defaultOrder.adoc[`@defaultOrder`] anchors the cursor.
 * xref:../reference/directives/orderBy.adoc[`@orderBy`] supplies dynamic order.
 * xref:sort-results.adoc[How-to: Sort results] covers cursor stability, tie-breakers, and the collation pitfalls that bite at scale.
-* xref:polymorphic-types.adoc[How-to: Polymorphic types] covers union/interface connection emission and the multi-table `__sort__` shape.
+* xref:polymorphic-types.adoc[How-to: Polymorphic types] covers union/interface connection emission and how a multi-table connection orders and seeks on its participants' primary-key columns.
 
 xref:index.adoc[← How-to index]
