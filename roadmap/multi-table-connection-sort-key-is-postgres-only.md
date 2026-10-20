@@ -1,13 +1,13 @@
 ---
 id: R1062
 title: "A multi-table interface or union connection pages and orders correctly only on PostgreSQL"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-19
+last-updated: 2026-10-20
 ---
 
 # A multi-table interface or union connection pages and orders correctly only on PostgreSQL
@@ -463,3 +463,27 @@ and could be a Backlog item. The choice is the author's.
 > `Slot` typing-participant bullet went with widening; key slots are typed by their first
 > participant like declared slots. A second rejection test covers the database-type half
 > (`converter_org` against a `varchar(50)`-keyed table).
+
+### Round 3 (2026-10-20, Spec -> Ready, reviewer session 01UL8b3XLUBMrqTDv46Aehhd)
+
+Verdict: sign off. The goal stands on its own: a root multi-table list or connection orders and
+seeks on its participants' key columns rather than on a JSON rendering of them, so composite-key
+fields page and order by key on Oracle as on PostgreSQL, and old composite-key cursors are refused
+by `decodeCursor`'s strict arity while single-column cursors keep their shape. The diagnosis
+matches `MultiTablePolymorphicEmitter` as it stands, every symbol, test, fixture and doc path the
+plan names exists as named, and the shape extends what is there: key positions become
+`PolymorphicOrdering` slots through `foldOrder`'s agreement check, typed by `DataType` as declared
+slots already are, and the seek is the plain multi-column seek single-table connections already
+send. The round-2 response is adopted as stated.
+
+**Non-blocking.**
+
+- The database-type half of the key rule is a little stronger than its stated reason. Equal
+  `databaseType` is what a shared converter guarantees; two distinct converter classes mapping keys
+  of different numeric widths to one user type (`Converter<Integer, String>` beside
+  `Converter<Long, String>`) compile, union and seek correctly today and would now be rejected, so
+  "no field that builds and runs today stops building" holds for every shape in the tree and in sis
+  as far as is known, not universally. Conversely, two different converters over one database type
+  pass the rule while the typing column's converter decodes the other branch's cursor values. Both
+  cases are rare enough that the rule as written is a sound place to start; worth a sentence in
+  the sort-results doc bullet if the implementer sees a cheap way to say it.
