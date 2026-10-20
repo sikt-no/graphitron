@@ -1,7 +1,7 @@
 ---
 id: R708
 title: "The $project selection gate fires on names selected at any depth below its unit"
-status: In Progress
+status: In Review
 bucket: correctness
 priority: 1
 theme: codegen-correctness
@@ -461,6 +461,59 @@ exposure (`ReservedAliases` already notes the 63-byte budget for owner-qualified
 does not create a new kind of risk. Neighbor, not a dependency: R752
 (`JoinedTableReprojection` first-wins drop) is another same-alias collision, in the
 discriminated fold rather than across nesting siblings.
+
+## Implementation notes
+
+Landed in two commits, one per half, each with its execution tests green:
+`R708: scope every projection to its own level of the selection` and
+`R708: path-qualify the result-key aliases spliced into a shared row`.
+
+Where the code departs from the plan, and why:
+
+* **The scaffold rides the command.** `render` may not see `plan` and every generated unit name
+  enters through `GeneratedUnits` (`PackageImportDirectionTest`), so the launcher renderers
+  cannot mint `SelectionOccurrences` themselves. `LauncherCommand` gains a
+  `selectionOccurrences` unit ref, and the one launcher entry is
+  `ProjectionCall.fromLauncher(unit, table, row)`, which reads the ref and derives
+  `ProjectionCall.SelectionScope` from `row.result()`. The legacy emitters hold the output
+  package and pass `SelectionScope.of(<connection fact>)` (`MultiTablePolymorphicEmitter` reads
+  `includeSortKey`, which is exactly its connection arm). `RoutineWriteEmitter.render` takes the
+  scaffold's class from its caller like its other runtime units. The discriminated fold reads
+  the scaffold off `SelectionRestriction.helper`, which now names `SelectionOccurrences`.
+* **`sharedAliasFieldNames` is "not qualified by the participant", not "qualified by the
+  interface".** Same set on every schema the stamp produces today, and safe if a shared-owner
+  aliased field ever reaches a participant.
+* **The restriction always runs in the fold**, also when the shared set is empty: that is what
+  makes the type-scoped reuse of plain columns resolve.
+* **`AliasScope` is minted off `TypeBuilder.isNestingEdgeTarget(declaring type)`**, the same
+  classification that builds the `NestingField`. The `NestedUnit` / `AnchorUnit` constructor
+  checks apply to contributions that write a result-key alias
+  (`Contribution.writesResultKeyAlias()`); a plain column or a splice carries no path.
+* **`NestingCoordinates` is a frozen scaffold kind** in `PlanCompileGraph`: its coordinate set is
+  a private field behind one fixed public method, so its ABI is the same for every schema.
+* **Test queries changed shape, not intent.** GraphQL field-merging validation rejects one key
+  for two fields of different types or nullability, so the plan's `k: length` against
+  `k: description` is invalid as written. The fold tests reuse `k` for `FilmContent.heading` (a
+  new nullable String leaf over the title column) against `ShortContent.description`.
+* **Fixtures added:** `OccupantLocation.district`; `Film.spoken` / `Film.original` over two
+  nesting types that both declare `language`; `FanAlpha.alphaPlacement` / `FanBeta.betaPlacement`,
+  two participants' nesting fields splicing the same leaf name over different FKs (the old census
+  would have rejected this schema). The carve-out pin uses those two nesting fields under one key.
+
+Tests: `ResultKeyScopeExecutionTest` (15 cases, every goal bullet plus both carve-outs' rejection
+and the shared-nesting-type agreement under `Customer` and `Store`);
+`ConnectionSharedResultKeyProjectionTest` unchanged and green; the new lint rule
+`GeneratedSourcesLintTest.emittedSourcesReadNoSelectionAtUnboundedDepth`; unit and pipeline pins
+in `RootLauncherRendererTest`, `ProjectionUnitRendererTest`, `SelectionOccurrencesClassEmitTest`,
+`NestingCoordinatesClassEmitTest` and `ParticipantAliasOwnerPipelineTest` (census both ways,
+both halves of the spliced alias).
+
+Expected generated-name changes, not behaviour changes: every launcher now calls
+`SelectionOccurrences.ownFields` / `connectionNodes` where it called
+`getFieldsGroupedByResultKey()`; nested units' `$project` take a trailing `String rkPath`; spliced
+`__rk_` aliases gain the path (`__rk_location/address`); the fold declares `foldSelection` and
+`sharedAliasFields` locals; `PolymorphicSelectionSet` is no longer emitted and
+`NestingCoordinates` is.
 
 ## Reviewer findings
 
