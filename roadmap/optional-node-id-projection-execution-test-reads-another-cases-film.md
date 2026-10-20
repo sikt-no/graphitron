@@ -7,7 +7,7 @@ priority: 6
 theme: testing
 depends-on: []
 created: 2026-09-18
-last-updated: 2026-09-18
+last-updated: 2026-10-20
 ---
 
 # An execution case reads a film another case inserted, so its two queries disagree
@@ -29,3 +29,9 @@ the films it seeds, is the shape; widening the fixture's isolation is not.
 Filed in passing while implementing another item, on a failure seen once in a full verification build
 and not reproduced on a re-run of the class alone, which is what a race between parallel classes looks
 like from the outside.
+
+It has since failed trunk CI: run #6820 (`9cc26bd`, 2026-10-18) compared `[1, 2, 3, 4, 5]` against
+`[1, 2, 3, 4, 5, 41]`. `SingleRecordPayloadDmlTest`, which inserts and commits `film` rows with
+`language_id = 1` and deletes them in cleanup, started just before this class and finished after it,
+so it is one writer the fix has to account for. CI builds the reactor fresh from a clean checkout, so
+this occurrence is not the stale-artifact reading R825 raises about its own evidence.
