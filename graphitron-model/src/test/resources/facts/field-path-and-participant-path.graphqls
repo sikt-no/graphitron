@@ -34,10 +34,12 @@ extend type Query {
   films: [Film!]!
 }
 
+# The prelude's root field is a path of one element, its @routine.
 extend schema @expectEquals(relation: "graphitron_field_path", rows: """
   type_name, field_name, position
   Film,      actors,     0
   Film,      actors,     1
+  Query,     ping,       0
   """)
 
 extend schema @expectEquals(relation: "graphitron_field_participant_path", rows: """

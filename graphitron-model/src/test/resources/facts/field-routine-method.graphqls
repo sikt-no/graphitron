@@ -13,6 +13,7 @@ extend type Query {
   qualified: [String] @routine(name: "multischema_b.ms_ping")
 }
 
+# Every graph also holds the prelude's ping, a qualified routine of no parameters.
 extend schema @expectEquals(relation: "intent_field_routine_method", rows: """
   field_name, ordinal, table_schema,  routine_name,    class_name,                                               method_name,   parameters, candidates
   ambiguous,  0,       multischema_a, ms_ping,         no.sikt.graphitron.rewrite.test.jooq.multischema_a.Routines, msPing,        0,          2
@@ -20,6 +21,7 @@ extend schema @expectEquals(relation: "intent_field_routine_method", rows: """
   chained,    0,       public,        films_for_actor, no.sikt.graphitron.rewrite.test.jooq.public_.Routines,       filmsForActor, 2,          1
   chained,    1,       public,        rent_film,       no.sikt.graphitron.rewrite.test.jooq.public_.Routines,       rentFilm,      2,          1
   films,      0,       public,        films_for_actor, no.sikt.graphitron.rewrite.test.jooq.public_.Routines,       filmsForActor, 2,          1
+  ping,       0,       multischema_b, ms_ping,         no.sikt.graphitron.rewrite.test.jooq.multischema_b.Routines, msPing,        0,          1
   qualified,  0,       multischema_b, ms_ping,         no.sikt.graphitron.rewrite.test.jooq.multischema_b.Routines, msPing,        0,          1
   """)
 

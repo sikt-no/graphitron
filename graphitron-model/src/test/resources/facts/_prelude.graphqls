@@ -50,7 +50,9 @@ directive @withConfiguration(
   unmount: String
 ) on SCHEMA
 
-type Query { ping: String }
+# The root field runs something, as every output field must: a routine of no parameters, named
+# with its schema so it resolves to one callable whichever schemas the catalog holds.
+type Query { ping: String @routine(name: "multischema_b.ms_ping") }
 
 # Every document's graph derives its facts, the prelude's own field among them. A document that
 # parses but whose graph derives nothing would otherwise pass every claim it states about absence.
