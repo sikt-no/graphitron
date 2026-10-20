@@ -1,7 +1,7 @@
 ---
 id: R708
 title: "The $project selection gate fires on names selected at any depth below its unit"
-status: In Review
+status: Ready
 bucket: correctness
 priority: 1
 theme: codegen-correctness
@@ -561,3 +561,54 @@ Non-blocking: `NestingReach.compute` visits every `NestingField`, but it keeps o
 representative per nesting type and drops the parent coordinate. Reading `NestingCoordinates` "off
 the existing fold" therefore means extending the fold to collect `(parent type, field)` pairs. A
 sentence saying so would spare the implementer the surprise.
+
+### Round 2 (In Review → Done): request rework, session_01Su4ZZxie8o3AYWe5DL6npX, 2026-10-20
+
+**Question 2 fails on one approval precondition: the delivery adds new code-string assertions on
+generated method bodies.** The execution evidence is sound and complete: `ResultKeyScopeExecutionTest`
+(15 cases) covers every Goal bullet, both carve-outs and the shared nesting type under `Customer`
+and `Store`; `ConnectionSharedResultKeyProjectionTest` holds with only its javadoc changed;
+`SameRowTableChildExecutionTest`'s shared-key case is restored; the verification build is green.
+The code matches the approved plan, and the departures are recorded under Implementation notes.
+The retirement sweep comes up clean in code and prose.
+
+The precondition is "no code-string assertions on generated method bodies anywhere in the delivered
+tests" (development-principles.adoc: "Asserting on generated Java or SQL text is banned"). The spec
+approved *updating* existing body assertions for the new names ("Tests", last paragraph). It did not
+approve new ones, and it kept the new emit tests structural on purpose. These are new:
+
+* `ProjectionUnitRendererTest`: `nestedUnit_takesThePathOfTheRowItWritesIntoAndQualifiesItsSplicedAliases`,
+  `anchorUnit_takesNoPathAndKeepsTheUnqualifiedAlias` and
+  `splice_passesThePathFromTheRowsOwnerDownToThisOccurrence` match `$project` body text
+  (`table.TITLE.as("__rk_" + rkPath + ...)`, `entry.getKey() + "/"`).
+* `ParticipantAliasOwnerPipelineTest.aSplicedLeafIsStampedSplicedAndBothHalvesComposeItsPath`
+  matches `"+ rkPath + entry.getKey()"` and `"NestingCoordinates.rkPath(env)"` in a projection
+  `TypeSpec` and a fetcher `MethodSpec`. That is pipeline tier, where testing.adoc lists body
+  matching as banned by name.
+* `RootLauncherRendererTest.connectionShape_projectsTheNodeLevelOfTheSelection`, plus the new
+  `containsOnlyOnce("foldSelection = ...ownFields(...)")` and
+  `for (...Map.Entry<...> rkEntry : foldSelection.entrySet())` lines added to the existing fold
+  tests.
+
+What would satisfy it: remove these body matches, or replace them with structural or data
+assertions. Every behaviour they pin is already pinned at the execution tier. Some cases can be
+kept in a structural form. The `rkPath` parameter list is structural, and its assertions are fine
+as they stand. `unitKindAndAliasScopeCannotDisagree` asserts on constructor exceptions, which is
+fine too. The scope derivation can be asserted as data:
+`ProjectionCall.SelectionScope.of(ResultShape)` returns `CONNECTION_NODES` for a connection. The
+model-stamp half of the `ParticipantAliasOwnerPipelineTest` case (`aliasScope()` on the leaf and
+on the row-owned fields) is data, so it stays. Updates to body assertions that existed before this
+item stay as the spec allowed.
+
+Non-blocking:
+
+* Implementation notes name the two landing commits by subject. Give their SHAs (`3f498d3`,
+  `c239d5f`) and the follow-ups (`2a6c588`, `45fc6af`, `820a223`), so the changelog line at Done
+  can cite them directly.
+* `GeneratorUtils`'s javadoc on `RESULT_KEY_PREFIX` still says result keys are "unique per
+  flattened selection map". That is stale now that the maps are per level. Reword it if you touch
+  the file.
+* Build note for the next reviewer: a trunk sync that moves `init.sql` leaves the sandbox DB stale.
+  `MultiTableOrderingExecutionTest` and the `pagedItemsConnection_*` cases in `GraphQLQueryTest` then
+  fail on a missing `B-1-10` row. Re-seed as `.claude/web-environment.md` describes. These failures
+  are not R708's.
