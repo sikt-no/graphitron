@@ -1,7 +1,7 @@
 ---
 id: R1067
 title: "A node id or tenant value that does not fit its column is not caught at decode"
-status: In Review
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid
@@ -555,3 +555,51 @@ Non-blocking, for the implementer:
   test over that type should pin.
 - `TenantConnections` is emitted in the `schema` sub-package and `ColumnValues` in `util`, so
   `ColumnValues` and its two methods are public.
+
+### Round 4 (In Review → Ready): request rework, session_01Th9aVUVqAvRX94isXsEQnJ, 2026-10-20
+
+The runtime change is the one the spec approved, and it works. `ColumnValues` holds the column trip
+with `exact` and `coerce` as specified. `decodeColumns` replaces `decodeValues` at all eight emitted
+sites (the generator now emits `decodeValues` only from inside `decodeColumns`). The `@key` arm
+coerces, and the tenant group key is canonicalised before grouping. `roundTrip`,
+`TENANT_COLUMN_CONVERTER` and the `divinedTenant(tenantEntry.getKey())` call are gone from the source
+tree, so the retirement sweep is clean. The user docs say what the Documentation section asked for.
+Every test the Tests section names exists and passes, and together they demonstrate the goal: the
+`Customer:4294967297` lookup answers `null`, the wrapping `StorageBin` and `Film`-reference writes
+fail with nothing written, the tenant-slot `abc` on `_entities` leaves `data` intact, and
+`ColumnValuesTest` pins the precision, scale and converter-side refusals. The choices listed under
+Implementation notes (unit tier for `ColumnValuesTest`, `isNumeric()` on the precision clause,
+target columns on the jOOQ-record rails) are recorded in the plan body, so they are not findings.
+
+Verification: `mvnd install -Plocal-db` on bad00d4 (the delivery plus incoming trunk). After a
+re-seed for R1062's `init.sql` change, which this rebase brought in, every R1067 test passed. The one
+failure left, `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`,
+saw a film row another test had inserted while the suites ran concurrently. It passes when
+`GraphQLQueryTest` runs alone (482 run, 0 failures), and it is outside this item's surface.
+
+**F1 (question 1: the delivery adds assertions on generated Java text).** The Tests section says these
+tests pin "outcomes and not generated text", and `docs/architecture/how-to/testing.adoc` bans
+code-string body matching at the pipeline tier. `TenantRoutedFetcherPipelineTest` renders the
+generated `handle<Type>` body with `MethodSpec::toString`. Two of its tests match that text. The
+emitted shape changed, and the delivery rewrote those matches to pin the new body instead of retiring
+them:
+
+- `tenantScopedDispatchGroupsPerTenantAtTheDecodedPosition` adds
+  `contains("TenantConnections.tenantKeyOrNull(cols[1])")`, `contains("if (tenantOfRep == null) continue;")`,
+  `contains(".computeIfAbsent(tenantOfRep, k -> new java.util.ArrayList<>())")` and
+  `doesNotContain("divinedTenant(")`;
+- `directKeyEntityDispatchGroupsPerTenantAtTheRepFieldPosition` adds `contains("ColumnValues.coerce(")`,
+  `contains("rep.get(\"filmId\"))")`, `contains("if (cols[1] == null) continue;")`,
+  `contains("TenantConnections.tenantKeyOrNull(cols[1])")` and `contains(".computeIfAbsent(tenantOfRep, ")`.
+
+This is the pattern R1066's Done round sent back. The execution tier already pins the node-id arm's
+behaviour, in `TenantDivinedRoutingExecutionTest`'s three tenant-slot `abc` cases on `node`, `nodes`
+and `_entities`. The `@key` arm's coercion is pinned by
+`FederationEntitiesDispatchTest.entities_directKeyValueWrapsItsColumn_yieldsNullSlotNotTheWrappedRow`.
+
+What would satisfy it: remove the text assertions this delivery added or rewrote in those two tests.
+Where a test is left with no behavioural assertion, delete the test, or replace it with a structural
+check on the `TypeSpec` (method names and signatures). Do not pin the body again. If the `@key` arm
+over a tenant-scoped key column is judged to need its own outcome pin once the text goes, add it at
+the execution tier. The spec does not demand that case, so it is the implementer's call. Nothing else
+in the delivery needs to change.
