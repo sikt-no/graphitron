@@ -70,7 +70,6 @@ intent_field_producer_method
 intent_field_producer_reference
 intent_field_reference_discovery
 intent_field_routine_method
-intent_field_separate_fetch
 intent_foreign_key_column_pair
 intent_mutation_routine_seat
 intent_node_container_member

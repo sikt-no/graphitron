@@ -1,10 +1,10 @@
-# Which coordinates cost a statement of their own rather than a column of their parent's. Five rules
-# answer, each its own SELECT in the relation's union: the two markers an author writes, the non-root @service, membership of a
-# bound root operation type, and the implicit split under a parent a producer hands back as a Java
-# object, where a child naming a table of its own has no enclosing statement to be projected out of.
+# Which fields run a statement of their own rather than being read out of their parent's: the
+# producers below a root. The two markers an author writes, a non-root @service, and a table-bound
+# child of a payload a service hands back as a Java object, which has no enclosing statement to be
+# projected out of and re-reads by the keys the object carries.
 #
-# One graph holding every rule, the fields no rule reaches beside them, so a rule that reaches too far
-# fails as loudly as a missing one. A coordinate several rules reach is several rows.
+# One graph holding each, the fields that read beside them, so a rule that reaches too far fails as
+# loudly as a missing one.
 
 type Language @table(name: "language") { name: String }
 
@@ -24,8 +24,8 @@ type Film @table(name: "film") {
 type Plain { name: String }
 
 # Handed back as a Java record by summaries below. A scalar read off the record and a child whose
-# type is bound to no table draw nothing; a child naming a table splits; and films, which three more
-# rules also reach, is four rows.
+# type is bound to no table read it; a child naming a table re-reads by the record's keys; and films,
+# which also carries both markers, runs its @service, one claim and one kind.
 type Payload {
   label: String
   plain: Plain
@@ -34,11 +34,12 @@ type Payload {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
 }
 
-# The same table-bound child under a parent nothing hands, so the enclosing statement exists.
+# The same table-bound child under a parent nothing returns: no result reaches it, so nothing
+# fetches it at all.
 type Bare { film: Film }
 
 # The closure backs an input object too, a producer's parameter grounding the argument's type, and
-# an input coordinate is not a fetch, so its table-bound field draws nothing.
+# an input coordinate is not a fetch, so its table-bound field is no producer.
 input FilmInput @table(name: "film") { title: String }
 input Assign { film: FilmInput }
 
@@ -55,19 +56,18 @@ type Mutation {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignFilmRecord"})
 }
 
-extend schema @expectEquals(relation: "intent_field_separate_fetch", rows: """
-  type_name, field_name, rule
-  Query,     ping,       ROOT_OPERATION
-  Query,     films,      ROOT_OPERATION
-  Query,     summaries,  ROOT_OPERATION
-  Query,     byIds,      ROOT_OPERATION
-  Mutation,  assign,     ROOT_OPERATION
-  Film,      deferred,   SPLIT_QUERY
-  Film,      fanned,     TENANT_FAN_OUT
+extend schema @expectEquals(relation: "graphitron_producer", rows: """
+  type_name, field_name, kind
+  Query,     ping,       ROUTINE
+  Query,     films,      SELECT
+  Query,     summaries,  SERVICE
+  Query,     byIds,      SERVICE
+  Mutation,  assign,     SERVICE
+  Film,      deferred,   SELECT
+  Film,      fanned,     SELECT
   Film,      rated,      SERVICE
-  Payload,   film,       RECORD_HANDED_PARENT
-  Payload,   films,      SPLIT_QUERY
-  Payload,   films,      TENANT_FAN_OUT
+  Payload,   film,       LOOKUP
   Payload,   films,      SERVICE
-  Payload,   films,      RECORD_HANDED_PARENT
   """)
+
+extend schema @assertEmpty(relation: "graphitron_fetcher", where: "type_name IN ('Bare', 'FilmInput', 'Assign')")

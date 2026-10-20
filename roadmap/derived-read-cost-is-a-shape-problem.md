@@ -100,7 +100,11 @@ is that subtract's prerequisite, and a node that adds says which line it retires
 * The type dictionary: `code_type` and `code_type_element`. Ends at "`code_type` and
   `code_type_element` are gone".
 * Clear-and-recompute steps in `DerivationStratum`. Ends at "The class and its order gate are gone".
-* Producer views: `intent_field_separate_fetch`. Ends at "Subtract what the producers replace".
+* Producers twice: `graphitron_producer` beside `intent_field_payload_producer`, both every capture.
+  Ends at "Subtract what the carrier replaces".
+* Nesting twice: `graphitron_result_table` beside the `INHERITED` arm of
+  `graphitron_field_source_table`. Ends with "A field's source has kinds", which reads its kinds off
+  `graphitron_result`.
 * The per-member fit for a polymorphic id. Ends at "The per-member fit goes".
 * Walk and store shadows, both sides in production: `RoutineDirectiveResolver.bindArgs` and
   `graphitron_argmapping_match` (R950), the column match, the input occurrences, and
@@ -1358,8 +1362,12 @@ reads nothing off the classpath that capture has already read, and builds no sch
     field that is not one.
   * **Subtract what the producers replace** `blocked`, on the emitters that read them. Each relation the new ones replace goes once its readers
     read the replacement:
-    * `intent_field_separate_fetch`, replaced by `graphitron_producer`, read by the editor's
-      `ClaimFacts` and `InlayFacts`;
+    * `intent_field_separate_fetch` `done`, 2026-10-20. The editor's inlay marker reads the
+      producers below a root, and the view, `SeparateFetchRule` and its vocabulary test went; the
+      agreement with the walk's delivery is `ProducerDeliveryTest`, and the fact documents are
+      `producer-out-of-the-parent-statement` and `producer-root-by-binding`. A record-handed
+      parent's table child is a `LOOKUP` there, the payload's re-read, where the view called it its
+      own rule;
     * whatever the generator's own classification stops being asked.
 
     The producer-method views, `intent_field_producer_method` and its neighbours, are the reference
@@ -2307,8 +2315,10 @@ conversion frees one.
   * **`ArgumentReferenceStepTargetTest`** waits on "The path is stated at the argument and
     input-field grains".
 * **The code-reference subject's conversions so far** `open`. `CarrierDataFieldPopulationTest` and
-  `SeparateFetchRuleTest` are fact documents; the second keeps one Java case, a contested binding
-  that needs the multischema catalog, which no document can vary. Of what no capture reaches, one
+  `SeparateFetchRuleTest` are fact documents; the second's one Java case, a contested binding
+  that needed the multischema catalog, went with the view it pinned, a relation keyed by the field
+  answering once by construction. A document can now vary its catalog, `@withConfiguration`'s
+  `jooqPackage`. Of what no capture reaches, one
   type at two root slots went, the specification forbidding it; an input field of an output type
   became an input field of a `@table` input, the legal shape of the same guard; and the sibling-graph
   case is the harness's own, every document being its own graph checked alone.

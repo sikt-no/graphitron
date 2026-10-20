@@ -213,16 +213,13 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       {@code no.sikt.graphitron.rewrite.derive.InputOccurrenceShadowTest} binds the input
  *       occurrence-path pair to a structural reference enumeration and to the walk's use-keyed
  *       cascade verdicts;
- *       {@code no.sikt.graphitron.rewrite.derive.SeparateFetchTest} binds
- *       {@code intent_field_separate_fetch}'s two marker arms to the walk's own gathered delivery
- *       relation over a real capture, and pins the record-handed arm reaching a backing the
- *       graphitron gatherer anchored from a captured census, with
- *       the fact documents {@code separate-fetch.graphqls} and
- *       {@code separate-fetch-renamed-root.graphqls}, with
- *       {@code no.sikt.graphitron.model.intent.SeparateFetchRuleTest}, carrying what the view makes
- *       of those rows: each of the five rules as its own arm, the two boundaries the record-handed
- *       one draws, and the arity a coordinate several rules reach carries against the single row a
- *       rule reaching one coordinate twice still answers with;
+ *       {@code no.sikt.graphitron.rewrite.derive.ProducerDeliveryTest} binds
+ *       {@code graphitron_producer}'s split and fan-out fields to the walk's own gathered delivery
+ *       relation over a real capture, and pins a service payload's table child reaching a backing
+ *       the graphitron gatherer anchored from a captured census, with the fact documents
+ *       {@code producer-out-of-the-parent-statement.graphqls} and
+ *       {@code producer-root-by-binding.graphqls} carrying what the producer rule makes of those
+ *       rows;
  *       {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest} binds the
  *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
  *       the view does not produce, the re-aimed anchor left standing after the corpus shadow

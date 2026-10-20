@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.inlay;
 
 import no.sikt.graphitron.lsp.facts.CatalogTable;
-import no.sikt.graphitron.lsp.facts.SeparateFetchRule;
 import no.sikt.graphitron.lsp.facts.TypeBackingClass;
 import no.sikt.graphitron.lsp.facts.TypeMemberScope;
 import no.sikt.graphitron.model.read.StoreHandle;
@@ -21,13 +20,15 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_DISCOVERY;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_SEPARATE_FETCH;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ROOT_OPERATION;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.falseCondition;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.selectDistinct;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * Everything one inlay-hint request asks the store, in one statement. A projection and not a view: it
@@ -142,8 +143,8 @@ final class InlayFacts {
     /** One classifier standing at a field coordinate, on the same terms. */
     record FieldClaimRow(String typeName, String fieldName, String classifier) {}
 
-    /** One rule by which a field's rows come from a statement of their own. */
-    record RuleRow(String typeName, String fieldName, String rule) {}
+    /** One field below a root whose fetcher runs a statement of its own. */
+    record ProducerRow(String typeName, String fieldName) {}
 
     /** One candidate class standing for a type, from either of the two backing populations. */
     record BackingRow(String typeName, String className) {}
@@ -185,7 +186,7 @@ final class InlayFacts {
     record Answers(
         List<TypeClaimRow> typeClaims,
         List<FieldClaimRow> fieldClaims,
-        List<RuleRow> separateFetchRules,
+        List<ProducerRow> producers,
         List<BackingRow> backingSeeds,
         List<BackingRow> backingReached,
         List<BoundTableRow> boundTables,
@@ -211,12 +212,14 @@ final class InlayFacts {
                 .toList();
         }
 
-        /** Whether a round-trip marker at this coordinate would tell a reader something. */
+        /**
+         * Whether the field runs a statement of its own, which is a round trip worth marking. A root
+         * field is no producer here: every one of its siblings is one too, so a marker on each would
+         * say nothing.
+         */
         boolean marksSeparateFetch(String typeName, String fieldName) {
-            return SeparateFetchRule.marksInline(separateFetchRules.stream()
-                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
-                .map(RuleRow::rule)
-                .toList());
+            return producers.stream()
+                .anyMatch(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName));
         }
 
         /** The class standing for a type, by the grounding rule the backing reader owns. */
@@ -338,14 +341,15 @@ final class InlayFacts {
                     .orderBy(INTENT_RESOLVED_FIELD_CLAIM.TYPE_NAME,
                         INTENT_RESOLVED_FIELD_CLAIM.FIELD_NAME, INTENT_RESOLVED_FIELD_CLAIM.CLASSIFIER))
                     .convertFrom(rows -> rows.map(Records.mapping(FieldClaimRow::new))),
-                multiset(selectDistinct(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME,
-                        INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME, INTENT_FIELD_SEPARATE_FETCH.RULE)
-                    .from(INTENT_FIELD_SEPARATE_FETCH)
-                    .where(INTENT_FIELD_SEPARATE_FETCH.GRAPH_NAME.eq(graph))
-                    .and(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME.in(questions.declaredTypeNames))
-                    .orderBy(INTENT_FIELD_SEPARATE_FETCH.TYPE_NAME,
-                        INTENT_FIELD_SEPARATE_FETCH.FIELD_NAME, INTENT_FIELD_SEPARATE_FETCH.RULE))
-                    .convertFrom(rows -> rows.map(Records.mapping(RuleRow::new))),
+                multiset(selectDistinct(GRAPHITRON_PRODUCER.TYPE_NAME, GRAPHITRON_PRODUCER.FIELD_NAME)
+                    .from(GRAPHITRON_PRODUCER)
+                    .where(GRAPHITRON_PRODUCER.GRAPH_NAME.eq(graph))
+                    .and(GRAPHITRON_PRODUCER.TYPE_NAME.in(questions.declaredTypeNames))
+                    .andNotExists(selectOne().from(GRAPHQL_ROOT_OPERATION)
+                        .where(GRAPHQL_ROOT_OPERATION.GRAPH_NAME.eq(GRAPHITRON_PRODUCER.GRAPH_NAME))
+                        .and(GRAPHQL_ROOT_OPERATION.TYPE_NAME.eq(GRAPHITRON_PRODUCER.TYPE_NAME)))
+                    .orderBy(GRAPHITRON_PRODUCER.TYPE_NAME, GRAPHITRON_PRODUCER.FIELD_NAME))
+                    .convertFrom(rows -> rows.map(Records.mapping(ProducerRow::new))),
                 backingArm(store, questions.backingTypeNames, TypeBackingClass.GROUNDED),
                 backingArm(store, questions.backingTypeNames, TypeBackingClass.REACHED),
                 boundTableArm(store, questions.boundTableTypeNames),

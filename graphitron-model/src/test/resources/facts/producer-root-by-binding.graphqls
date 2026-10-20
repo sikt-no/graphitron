@@ -1,0 +1,27 @@
+# Membership of a root operation is read off the binding and never off the name. Api is the query
+# root here, so a field of it that returns a table-bound type selects with nothing written on it;
+# Query is a type bound to no slot, so the same field there is no root's, and no result reaches
+# Query to hand on, so it is fetched by nothing. A @service runs wherever it is written.
+
+schema { query: Api }
+
+type Film @table(name: "film") { title: String }
+
+type Api {
+  films: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  allFilms: [Film!]!
+}
+
+extend type Query {
+  rated: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  notRoot: [Film!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_producer", where: "type_name IN ('Api', 'Query')", rows: """
+  type_name, field_name, kind
+  Api,       films,      SERVICE
+  Api,       allFilms,   SELECT
+  Query,     rated,      SERVICE
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_fetcher", where: "type_name = 'Query' AND field_name = 'notRoot'")
