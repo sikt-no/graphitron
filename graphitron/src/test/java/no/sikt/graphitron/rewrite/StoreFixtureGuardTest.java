@@ -117,7 +117,8 @@ class StoreFixtureGuardTest {
         new Exempt("graphitron-model/src/test/java/no/sikt/graphitron/model/boot/"
             + "GraphitronModelStoreTest.java",
             Why.LIFETIME, "the open itself is the subject: it opens one home twice to pin the "
-                + "once-per-JVM sweep guard, and builds homes the store must refuse"),
+                + "once-per-JVM sweep guard, builds homes the store must refuse, and reads what "
+                + "the last handle's compaction reports"),
 
         // Permanent: capture oracles, which drive capture themselves per arm.
         new Exempt("graphitron/src/test/java/no/sikt/graphitron/rewrite/capture/FactCaptureAgreementTest.java",

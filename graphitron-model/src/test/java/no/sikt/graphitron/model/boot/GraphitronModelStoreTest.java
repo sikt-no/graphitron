@@ -205,4 +205,47 @@ class GraphitronModelStoreTest {
         Files.writeString(marker, lastUsed.toString());
         Files.setLastModifiedTime(marker, FileTime.from(lastUsed));
     }
+
+    // What a compaction says about itself, in each of the ways it can end. H2 refuses
+    // intermittently and the store tries once more, so a refusal a second attempt cleared has to
+    // stay readable: the race behind it is the thing worth noticing.
+
+    private static final Path COMPACTED_HOME = Path.of("/store");
+    private static final String REFUSED = "50000 General error: AssertionError";
+
+    @Test
+    @DisplayName("a compaction that succeeded first time reports its cost")
+    void aFirstAttemptReportsItsCost() {
+        assertThat(new GraphitronModelStore.Compaction(12, 4 * 1024 * 1024, 1024 * 1024, null, null)
+                .report(COMPACTED_HOME))
+            .hasValue("Compacted the fact store under /store in 12 ms: 4 MB -> 1 MB");
+    }
+
+    @Test
+    @DisplayName("a compaction a second attempt cleared names the refusal it recovered from")
+    void aSecondAttemptNamesTheFirstRefusal() {
+        assertThat(new GraphitronModelStore.Compaction(12, 4 * 1024 * 1024, 1024 * 1024, null, REFUSED)
+                .report(COMPACTED_HOME))
+            .hasValueSatisfying(line -> assertThat(line)
+                .startsWith("Compacted the fact store under /store")
+                .endsWith("on a second attempt; the first was refused: " + REFUSED));
+    }
+
+    @Test
+    @DisplayName("a compaction refused twice names both refusals")
+    void twoRefusalsAreBothNamed() {
+        assertThat(new GraphitronModelStore.Compaction(12, 4 * 1024 * 1024, 5 * 1024 * 1024,
+                "50000 refused again", REFUSED).report(COMPACTED_HOME))
+            .hasValue("Could not compact the fact store under /store: 50000 refused again, on a"
+                + " second attempt; the first was refused: " + REFUSED);
+    }
+
+    @Test
+    @DisplayName("a compaction whose sizes could not be read reports nothing, unless it was refused")
+    void unreadableSizesReportOnlyARefusal() {
+        assertThat(new GraphitronModelStore.Compaction(12, -1, -1, null, null).report(COMPACTED_HOME))
+            .isEmpty();
+        assertThat(new GraphitronModelStore.Compaction(12, -1, -1, REFUSED, null).report(COMPACTED_HOME))
+            .hasValue("Could not compact the fact store under /store: " + REFUSED);
+    }
 }

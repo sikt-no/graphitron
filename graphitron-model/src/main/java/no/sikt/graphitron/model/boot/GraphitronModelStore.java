@@ -210,8 +210,11 @@ public final class GraphitronModelStore implements AutoCloseable {
      * @param bytesAfter  the file's size after it, or {@code -1} where it could not be read
      * @param failure     what H2 said when it refused the compaction, or {@code null} where it
      *                    compacted; a refused compaction leaves the file as a plain close does
+     * @param retriedAfter what H2 said when it refused the first attempt, where a second was made,
+     *                    or {@code null} where the first compacted
      */
-    public record Compaction(long millis, long bytesBefore, long bytesAfter, String failure) {
+    public record Compaction(long millis, long bytesBefore, long bytesAfter, String failure,
+                             String retriedAfter) {
 
         /**
          * One line naming the store and what it cost, or why it was not compacted; empty where it
@@ -220,13 +223,17 @@ public final class GraphitronModelStore implements AutoCloseable {
          */
         public Optional<String> report(Path home) {
             if (failure != null) {
-                return Optional.of("Could not compact the fact store under " + home + ": " + failure);
+                return Optional.of("Could not compact the fact store under " + home + ": " + failure
+                    + (retriedAfter == null ? "" : ", on a second attempt; the first was refused: "
+                        + retriedAfter));
             }
             if (bytesBefore < 0 || bytesAfter < 0) {
                 return Optional.empty();
             }
             return Optional.of("Compacted the fact store under " + home + " in " + millis
-                + " ms: " + humanBytes(bytesBefore) + " -> " + humanBytes(bytesAfter));
+                + " ms: " + humanBytes(bytesBefore) + " -> " + humanBytes(bytesAfter)
+                + (retriedAfter == null ? "" : ", on a second attempt; the first was refused: "
+                    + retriedAfter));
         }
 
         private static String humanBytes(long bytes) {
@@ -604,6 +611,13 @@ public final class GraphitronModelStore implements AutoCloseable {
      * hundred times reclaims nothing, so the file grows without bound while the rows in it do not.
      * {@code SHUTDOWN COMPACT} rewrites the live pages and drops the rest.
      *
+     * <p>A refused compaction is tried once more, on the file reopened. H2 2.4's compaction copies
+     * the tables into a fresh store on several threads and commits partway once the copy outgrows
+     * its buffer, and a commit landing while another thread is still copying trips H2's own page
+     * bookkeeping, intermittently and more often under load. Neither the buffer nor the threads can
+     * be set from outside, and compacting in place reclaims a fraction of what the copy does, so
+     * the copy stays and the race is met by trying again. Both refusals are recorded.
+     *
      * <p>It runs inside {@link Map#compute} deliberately: the lock that call holds for the key is
      * what stops an opener reserving this location while the database is being shut down. The cost
      * is recorded rather than logged, because this package reports and its callers log.
@@ -615,18 +629,34 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
             long before = fileBytes();
             long startedAt = System.nanoTime();
+            String retriedAfter = shutdownCompact(connection);
             String failure = null;
-            try (Statement statement = connection.createStatement()) {
-                statement.execute("SHUTDOWN COMPACT");
-            } catch (SQLException e) {
-                // A store that will not compact is a store that keeps its dead pages: never worth
-                // failing a build that has already produced its output, and always worth saying.
-                failure = e.getErrorCode() + " " + e.getMessage();
+            if (retriedAfter != null) {
+                try (Connection again = connect(url)) {
+                    failure = shutdownCompact(again);
+                } catch (SQLException | RuntimeException e) {
+                    failure = e.getMessage();
+                }
             }
             compaction = new Compaction(
-                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes(), failure);
+                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes(), failure,
+                retriedAfter);
             return null;
         });
+    }
+
+    /**
+     * Shuts the database down compacting it, answering what H2 said if it refused, or {@code null}.
+     * A store that will not compact is a store that keeps its dead pages: never worth failing a
+     * build that has already produced its output, and always worth saying.
+     */
+    private static String shutdownCompact(Connection connection) {
+        try (Statement statement = connection.createStatement()) {
+            statement.execute("SHUTDOWN COMPACT");
+            return null;
+        } catch (SQLException e) {
+            return e.getErrorCode() + " " + e.getMessage();
+        }
     }
 
     /** The database file's size right now, or {@code -1} where it cannot be read. */
