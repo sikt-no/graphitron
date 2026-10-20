@@ -298,3 +298,17 @@ measures it as a problem, deduplicating a probe against a selected leaf is a fol
   forms equal.
 - **Judging by the projected values only.** Rejected: the projection depends on the selection (a
   `{ __typename }`-only selection projects a sentinel and no column), so the answer would too.
+
+## Consumer input (2026-10-20)
+
+Relayed from the sis session as the user's decision on the Backlog question, recorded here for the
+Spec review: collapse by value by default (this plan's choice), with a per-field way to keep "exists
+but empty" distinguishable (this plan answers that with a non-null declaration rather than a
+directive; the reviewer should confirm that suffices), and the list-holding wrapper (`phd`)
+collapsing too unless the plan finds a reason not to.
+
+One further case from sis's retest on trunk after R1045 landed: `Karakter.navnAlleSprak`, a
+same-table child that R1045 now reads from the parent's row, returns `{nb: null, en: null}` for a
+grade with no name where Graphitron 9 returns `null`. The plan's table lists a same-table child as
+blocking the collapse when it sits *inside* an object; it should also say what happens when the
+same-table child *is* the nullable object, which is this shape.
