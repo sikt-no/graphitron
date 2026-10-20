@@ -1,7 +1,7 @@
 ---
 id: R1079
 title: "A node-key column whose converter does not round-trip makes its ids resolve to null with no diagnostic"
-status: Spec
+status: Ready
 bucket: dx
 priority: 3
 theme: nodeid
