@@ -26,8 +26,9 @@ import no.sikt.graphitron.model.jooq.TableRef;
  *
  * <p>Every component is a captured fact. The row carries no reference to a generated method and no
  * encoder class, which is what keeps it a fact carrier rather than half an emission decision: the
- * decode this projection's read performs is {@code NodeIdEncoder.decodeColumns(typeId, wire, columns)},
- * whose only inputs are the wire id, the type id beside it and the key columns, and the encoder class those live on is a
+ * decode this projection's read performs is {@code NodeIdEncoder.decodeColumns(typeId, wire, parseClasses, columns)},
+ * whose only inputs are the wire id, the type id beside it and the key columns (each parse class
+ * being a function of its column), and the encoder class those live on is a
  * function of generator configuration that render already holds. A per-type
  * {@code decode<TypeName>} name is not involved at all.
  *

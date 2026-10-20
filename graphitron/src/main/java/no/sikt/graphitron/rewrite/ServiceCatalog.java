@@ -95,7 +95,7 @@ class ServiceCatalog {
 
     Optional<ColumnRef> resolveKeyColumn(String colName, String tableSqlName) {
         return ctx.catalog.findColumn(tableSqlName, colName)
-            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
+            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()));
     }
 
     Optional<ColumnRef> resolveColumn(String columnName, TableBackedType tableType) {
@@ -153,7 +153,7 @@ class ServiceCatalog {
 
     Optional<ColumnRef> resolveColumnInTable(String columnName, String tableSqlName) {
         return ctx.catalog.findColumn(tableSqlName, columnName)
-            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
+            .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()));
     }
 
     /**

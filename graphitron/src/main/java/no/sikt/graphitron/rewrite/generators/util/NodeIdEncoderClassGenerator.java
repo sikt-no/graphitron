@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
@@ -28,7 +29,9 @@ import java.util.stream.Collectors;
  * <pre>{@code
  * "typeId:v1,v2,..."  ->  base64-url (no padding, UTF-8)
  * }</pre>
- * Commas inside values are escaped as {@code %2C}. The generic {@code encode} returns
+ * Commas inside values are escaped as {@code %2C}. Each value is written as its column's Java
+ * type's {@code toString()} and parsed back as that type, so a converter-backed key round-trips
+ * through its user type (see {@link SlotParse}). The generic {@code encode} returns
  * {@code null} when any value is {@code null}, so the GraphQL field resolves to {@code null}
  * rather than emitting a malformed ID.
  *
@@ -142,21 +145,27 @@ public class NodeIdEncoderClassGenerator {
             .build();
 
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        var classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
+            WildcardTypeName.subtypeOf(TypeName.OBJECT));
         var decodeColumns = MethodSpec.methodBuilder("decodeColumns")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object[].class)
             .addParameter(String.class, "expectedTypeId")
             .addParameter(String.class, "base64Id")
+            .addParameter(no.sikt.graphitron.javapoet.ArrayTypeName.of(classWildcard), "parseClasses")
             .addParameter(no.sikt.graphitron.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
             .varargs(true)
             .addJavadoc("The id's key values as values of {@code columns}, in key order, or {@code null} when\n"
                 + "the id is malformed, names another type, has the wrong arity, or carries a value that\n"
-                + "is not exactly what {@link #encode} writes for a value of its column.\n")
+                + "is not exactly what {@link #encode} writes for a value of its column.\n"
+                + "{@code parseClasses[i]}, when the array and the element are non-null, is the user type\n"
+                + "of a converter on {@code columns[i]}, which that slot's text is parsed as.\n")
             .addStatement("$T values = decodeValues(expectedTypeId, base64Id)", String[].class)
             .addStatement("if (values == null || values.length != columns.length) return null")
             .addStatement("Object[] decoded = new Object[values.length]")
             .beginControlFlow("for (int i = 0; i < values.length; i++)")
-                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(), values[i])", columnValues)
+                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(),\n"
+                    + "parseClasses == null ? null : parseClasses[i], values[i])", columnValues)
                 .addStatement("if (decoded[i] == null) return null")
             .endControlFlow()
             .addStatement("return decoded")
@@ -269,10 +278,11 @@ public class NodeIdEncoderClassGenerator {
         Object[] tablesRefs = new Object[n];
         for (int i = 0; i < n; i++) tablesRefs[i] = tablesClass;
 
-        Object[] decodeArgs = new Object[n + 1];
+        Object[] decodeArgs = new Object[n + 2];
         decodeArgs[0] = ref.typeId();
-        System.arraycopy(tablesRefs, 0, decodeArgs, 1, n);
-        b.addStatement("Object[] values = decodeColumns($S, base64Id, " + fieldsList + ")", decodeArgs);
+        decodeArgs[1] = SlotParse.parseClasses(ref.outputColumnShape());
+        System.arraycopy(tablesRefs, 0, decodeArgs, 2, n);
+        b.addStatement("Object[] values = decodeColumns($S, base64Id, $L, " + fieldsList + ")", decodeArgs);
         b.addStatement("if (values == null) return null");
 
         // Declared with the explicit record type rather than `var`; generated sources avoid `var`

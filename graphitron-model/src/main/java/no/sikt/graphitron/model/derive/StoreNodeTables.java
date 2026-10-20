@@ -180,7 +180,7 @@ public final class StoreNodeTables {
     /** Every column of the bound table, in the declaration order {@code sql_column.ordinal} states. */
     private static List<ColumnRef> allColumns(DSLContext dsl, Binding binding) {
         var c = SQL_COLUMN;
-        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE)
+        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
             .from(c)
             .where(c.SOURCE_NAME.eq(binding.sourceName()),
                 c.TABLE_SCHEMA.eq(binding.tableSchema()),
@@ -194,7 +194,7 @@ public final class StoreNodeTables {
         var pk = SQL_PRIMARY_KEY;
         var cc = SQL_CONSTRAINT_COLUMN;
         var c = SQL_COLUMN;
-        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE)
+        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
             .from(pk)
             .join(cc).on(cc.SOURCE_NAME.eq(pk.SOURCE_NAME), cc.TABLE_SCHEMA.eq(pk.TABLE_SCHEMA),
                 cc.TABLE_NAME.eq(pk.TABLE_NAME), cc.CONSTRAINT_NAME.eq(pk.CONSTRAINT_NAME))
@@ -222,7 +222,7 @@ public final class StoreNodeTables {
                                               String nodeTypeName) {
         var k = GRAPHITRON_NODE_KEYCOLUMN;
         var c = SQL_COLUMN;
-        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE)
+        return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
             .from(k)
             .join(c).on(c.SOURCE_NAME.eq(k.TABLE_SOURCE_NAME),
                 c.TABLE_SCHEMA.eq(k.TABLE_SCHEMA), c.TABLE_NAME.eq(k.TABLE_NAME),
@@ -241,6 +241,7 @@ public final class StoreNodeTables {
         String sqlName = row.get(SQL_COLUMN.COLUMN_NAME);
         String javaName = row.get(SQL_COLUMN.JOOQ_NAME);
         String bindingType = row.get(SQL_COLUMN.BINDING_TYPE);
-        return new ColumnRef(sqlName, javaName, bindingType);
+        String databaseType = row.get(SQL_COLUMN.DATABASE_TYPE);
+        return new ColumnRef(sqlName, javaName, bindingType, databaseType);
     }
 }

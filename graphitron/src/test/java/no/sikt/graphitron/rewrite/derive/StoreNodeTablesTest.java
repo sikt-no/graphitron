@@ -105,6 +105,31 @@ class StoreNodeTablesTest {
             .containsExactly("film_id", "actor_id");
     }
 
+    /**
+     * A converter-backed key column comes out with the type behind its converter as well as the type
+     * it binds, which a node-id decode reads to parse the slot as the type it was encoded from. Both
+     * are captured off the live {@code Field}, so only the store carries them to a reader with no
+     * catalog.
+     */
+    @Test
+    void aConvertedKeyColumnCarriesItsDatabaseType() {
+        var key = read("""
+            type ConverterCampusTerm implements Node @table(name: "converter_campus_term") @node {
+                id: ID!
+            }
+            type Query { term: ConverterCampusTerm }
+            """).get("ConverterCampusTerm").orElseThrow().keyColumns();
+
+        assertThat(key).extracting(ColumnRef::sqlName).containsExactly("org_code", "term_no");
+        assertThat(key.getFirst().columnClass()).isEqualTo("java.lang.String");
+        assertThat(key.getFirst().databaseType())
+            .as("the bigint domain behind OrgCodeStringConverter")
+            .isEqualTo("java.lang.Long");
+        assertThat(key.getLast().databaseType())
+            .as("no converter: the bound type itself")
+            .isEqualTo(key.getLast().columnClass());
+    }
+
     /** The type-id tier an author writes: {@code @node(typeId:)} wins outright wherever declared. */
     @Test
     void anAuthoredTypeIdWins() {

@@ -5370,6 +5370,7 @@ CREATE TABLE sql_column (
   jooq_name    VARCHAR NOT NULL,
   sql_type     VARCHAR NOT NULL,
   binding_type VARCHAR NOT NULL,
+  database_type VARCHAR NOT NULL,
   nullable     BOOLEAN NOT NULL,
   declared_length INT CHECK (declared_length > 0),
   description  VARCHAR,
@@ -5388,6 +5389,7 @@ COMMENT ON COLUMN sql_column.ordinal IS 'column position in the table definition
 COMMENT ON COLUMN sql_column.jooq_name IS 'the generated jOOQ Java field name; the one column here written in the reader''s vocabulary rather than SQL''s';
 COMMENT ON COLUMN sql_column.sql_type IS 'the column''s SQL type as jOOQ reports it';
 COMMENT ON COLUMN sql_column.binding_type IS 'the fully qualified Java type jOOQ binds the column to, as Field.getType() reports it; read off the live Field during the catalog walk and unrecoverable afterwards, since nothing outside the codegen classpath can resolve a configured binding. Hover renders it beside the SQL type, which is why a column needs both and why keeping only one of them capped what the editor could say about a column.';
+COMMENT ON COLUMN sql_column.database_type IS 'the fully qualified Java type jOOQ exchanges with the database for the column, the converter''s fromType() off the live Field; equal to binding_type on a column with no converter, and the type behind the conversion on one with a converter, java.lang.Long for a bigint bound to java.lang.String. Captured beside binding_type for the same reason, that only the codegen classpath can answer it. A node-id decode reads the pair: a key value is written as the binding type''s text, and parsing that text as the database type instead can drop what the binding type carries, the time of day of a date-only database type bound to LocalDateTime';
 COMMENT ON COLUMN sql_column.nullable IS 'whether the column admits NULL';
 COMMENT ON COLUMN sql_column.declared_length IS 'the length the column''s type declares, as jOOQ reports it, for example 255 for film.title''s varchar(255); in the dialect''s own unit, characters on PostgreSQL and bytes or characters on Oracle by the column''s length semantics, which the catalog does not say; null when the type declares no length';
 COMMENT ON COLUMN sql_column.description IS 'the database comment on the column, when present';

@@ -464,11 +464,12 @@ final class FactWrites {
                          t.JOOQ_NAME,
                          t.SQL_TYPE,
                          t.BINDING_TYPE,
+                         t.DATABASE_TYPE,
                          t.NULLABLE,
                          t.DECLARED_LENGTH,
                          t.DESCRIPTION,
                          t.TOUCHED_AT)
-                .values(markers(12)))
+                .values(markers(13)))
                 .onDuplicateKeyIgnore());
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.SOURCE_NAME),
@@ -479,6 +480,7 @@ final class FactWrites {
                                row.get(t.JOOQ_NAME),
                                row.get(t.SQL_TYPE),
                                row.get(t.BINDING_TYPE),
+                               row.get(t.DATABASE_TYPE),
                                row.get(t.NULLABLE),
                                row.get(t.DECLARED_LENGTH),
                                row.get(t.DESCRIPTION),

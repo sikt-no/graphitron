@@ -16,7 +16,7 @@
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
         <!-- Increment when init.sql changes to force jOOQ regeneration on incremental builds -->
-        <jooq.codegen.schema.version>2.41</jooq.codegen.schema.version>
+        <jooq.codegen.schema.version>2.42</jooq.codegen.schema.version>
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
@@ -132,6 +132,17 @@
                                             <userType>java.lang.String</userType>
                                             <converter>no.sikt.graphitron.rewrite.fixtures.codegen.OrgCodeStringConverter</converter>
                                             <includeTypes>org_code_domain</includeTypes>
+                                        </forcedType>
+                                        <!-- A converter-backed temporal key: the
+                                             change_instant_domain (timestamptz) columns map to
+                                             java.time.LocalDateTime via UtcLocalDateTimeConverter,
+                                             standing in for an Oracle DATE key column a consumer
+                                             maps to LocalDateTime. A node id over it decodes only
+                                             when its slot is parsed as the user type. -->
+                                        <forcedType>
+                                            <userType>java.time.LocalDateTime</userType>
+                                            <converter>no.sikt.graphitron.rewrite.fixtures.codegen.UtcLocalDateTimeConverter</converter>
+                                            <includeTypes>change_instant_domain</includeTypes>
                                         </forcedType>
                                     </forcedTypes>
                                 </database>

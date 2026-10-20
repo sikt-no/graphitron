@@ -591,7 +591,7 @@ final class InputBeanResolver {
                 // f.isDeprecated() is the native @deprecated directive on the SDL leaf, the same read
                 // InputTypeGenerator makes when it re-emits the marker onto the generated input type.
                 plainLeaves.add(new PlainLeaf(path,
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()),
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()),
                     f.isDeprecated()));
             }
         }

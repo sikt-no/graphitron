@@ -1323,6 +1323,26 @@ INSERT INTO converter_campus_term (org_code, term_no, term_name) VALUES
     (1120, 1, 'Autumn NTNU'),
     (1120, 2, 'Spring NTNU');
 
+-- Composite primary key whose second column is a converter-backed timestamp, the sis shape of a
+-- national-id-number change keyed on (person, when the change was made). changed_at is the
+-- change_instant_domain the type-selected forcedType maps to java.time.LocalDateTime through
+-- UtcLocalDateTimeConverter, so a node id writes the key's time as LocalDateTime text, which the
+-- database type (timestamptz, read as OffsetDateTime) does not parse. Two rows for one person on
+-- one day, at 00:00 and 02:24, so an id that decodes to the wrong time names the other row.
+-- Exercised through the ConverterIdChange node type in the example schema.
+CREATE DOMAIN change_instant_domain AS timestamptz;
+
+CREATE TABLE converter_id_change (
+    person_id   integer               NOT NULL,
+    changed_at  change_instant_domain NOT NULL,
+    new_value   varchar(20)           NOT NULL,
+    PRIMARY KEY (person_id, changed_at)
+);
+
+INSERT INTO converter_id_change (person_id, changed_at, new_value) VALUES
+    (1, '2007-08-22 00:00:00+00', 'midnight'),
+    (1, '2007-08-22 02:24:00+00', 'small hours');
+
 -- Converter-diverged foreign key fixture. The converter above is selected by type
 -- (`includeTypes: org_code_domain`), so it lands on both ends of the converter_campus FK at once
 -- and both sides generate as Field<String>. A consumer whose jOOQ codegen selects by column path

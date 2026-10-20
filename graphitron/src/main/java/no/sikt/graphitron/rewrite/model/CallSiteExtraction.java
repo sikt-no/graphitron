@@ -266,7 +266,7 @@ public sealed interface CallSiteExtraction
      * NodeId wire decode at the root, opposite downstream projection. Where {@link NodeIdDecodeKeys}
      * decomposes the decoded key tuple into scalar column values for a predicate / SET body, this
      * arm materialises a {@link org.jooq.TableRecord}: it calls
-     * {@code encoderClass.decodeColumns(typeId, nodeId, Tables.<T>.<col1>, ...)}, which answers
+     * {@code encoderClass.decodeColumns(typeId, nodeId, parseClasses, Tables.<T>.<col1>, ...)}, which answers
      * each key value as a value of its column (or {@code null} when one is not), and loads those
      * values positionally onto the target record's key columns with a single
      * {@code record.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...)} call. The
@@ -701,7 +701,7 @@ public sealed interface CallSiteExtraction
 
     /**
      * One {@code @nodeId} decode of a {@link JooqRecord}: the wire NodeId is decoded
-     * ({@code encoderClass.decodeColumns(typeId, nodeId, targetColumns...)}) and the decoded values load into
+     * ({@code encoderClass.decodeColumns(typeId, nodeId, parseClasses, targetColumns...)}) and the decoded values load into
      * {@code targetColumns} on the enclosing {@link JooqRecord#table()}. Only the projection target
      * differs from {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
      *

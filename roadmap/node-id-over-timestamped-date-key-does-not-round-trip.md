@@ -305,6 +305,27 @@ Write the tests first so they fail on the tree with R1067 landed and this item n
   four decode paths R1067 rewrites would need the same branch, and the two items would collide on
   each of them.
 
+## Implementation notes
+
+- **The sis catalog check is still open.** The implementing session had no access to the sis
+  catalog, so whether `DATO_FORETATT`'s converter also drops the time when binding (`converter.to`
+  producing a `java.sql.Date` the Oracle driver truncates) is unconfirmed. The decode side no longer
+  loses it: the slot parses as `LocalDateTime` and keeps 02:24 through any converter whose database
+  value carries the time (`ColumnValuesTest` pins the `java.sql.Date` converter that keeps
+  milliseconds). If the sis bind truncates, the id is now refused rather than answering the 00:00
+  row, and that is the consumer's converter to fix.
+- **The execution fixture** is `converter_id_change (person_id, changed_at)` over a new
+  `change_instant_domain` (`timestamptz`), forced to `LocalDateTime` by
+  `UtcLocalDateTimeConverter`, exposed as the `ConverterIdChange` node type and tested in
+  `ConverterTemporalKeyExecutionTest`. `jooq.codegen.schema.version` went from 2.41 to 2.42 for the
+  DDL.
+- **Emitted shape:** `decodeColumns` gets the parse classes as a `Class<?>[]` before the columns, a
+  bare `null` when no slot is a `UserType` (every key with no converter), so generated code for
+  unconverted keys gains only a `null` argument.
+- **Checked that the tests fail first:** with `SlotParse.parseClasses` forced to `null`,
+  `ConverterTemporalKeyExecutionTest` fails all three cases (`node` answers `null`, the filter
+  argument is the malformed-id client error).
+
 ## Reviewer findings
 
 ### Round 1 (Spec → Ready): request revisions, session_01KyQUTS8fJEtUzfRkhf4Afs, 2026-10-19

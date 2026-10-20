@@ -849,6 +849,26 @@ class TestServiceStub {
     }
 
     /**
+     * Root composite key over a converter-backed column: a jOOQ {@code ConverterCampusTermRecord}
+     * whose {@code org_code} binds {@code String} over a {@code bigint} domain, bound directly as a
+     * {@code @service} input param.
+     */
+    public static String modifyConverterCampusTermRecord(
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ConverterCampusTermRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Root composite key over a converter-backed temporal column: a jOOQ
+     * {@code ConverterIdChangeRecord} whose {@code changed_at} binds {@code LocalDateTime} over a
+     * {@code timestamptz} domain.
+     */
+    public static String modifyConverterIdChangeRecord(
+            no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ConverterIdChangeRecord in) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Child coordinate parity: a child {@code @service} rows-method on a {@code @table} parent,
      * taking the parent key (Sources, {@code List<Row1<Integer>>}) plus a {@link FilmRecord} arg. The
      * arg classifies to {@code CallSiteExtraction.JooqRecord} exactly as the root param does, and the

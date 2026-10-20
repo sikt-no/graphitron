@@ -1685,6 +1685,7 @@ public final class SeededStore {
             .set(SQL_COLUMN.JOOQ_NAME, jooqName)
             .set(SQL_COLUMN.SQL_TYPE, "character varying")
             .set(SQL_COLUMN.BINDING_TYPE, bindingType)
+            .set(SQL_COLUMN.DATABASE_TYPE, bindingType)
             .set(SQL_COLUMN.NULLABLE, true)
             .execute();
     }

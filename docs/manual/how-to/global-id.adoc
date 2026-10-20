@@ -274,6 +274,7 @@ Both entry points only project the fields the client actually selects. The frame
 * `@nodeId` is a binding directive, not a projection. The slot's GraphQL type must be `ID!`, `ID`, `[ID!]`, or `[ID!]!`.
 * On argument decode, an ID's embedded `typeId` must match the declared `typeName:`; mismatches fail the request. On `Query.node`/`Query.nodes`, the same mismatch returns `null`.
 * An ID whose key value is not exactly the text graphitron writes for a value of its column (non-numeric, out of range or precision, padded or reformatted) is malformed, on every surface: `null` on the lookups, a client error on an argument. Hand-built IDs must spell each key value the way the column's Java type prints it.
+* A key column behind a jOOQ converter round-trips through its Java type. For the built-in value types (dates, times, numbers, strings, UUIDs) the ID decodes to exactly the value it was minted from, including a time of day on an Oracle `DATE` mapped to `LocalDateTime`. For a converter to your own class, the ID decodes only if your converter's database-side text matches the class's `toString()`; otherwise the ID is refused as malformed.
 * On a same-table `@nodeId` argument, xref:../reference/directives/lookupKey.adoc[`@lookupKey`] is implicit; the rewrite emits the `VALUES`-join shape automatically. Explicit `@lookupKey` is permitted but redundant.
 
 == See also

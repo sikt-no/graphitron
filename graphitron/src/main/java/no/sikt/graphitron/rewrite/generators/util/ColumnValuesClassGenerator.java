@@ -22,7 +22,8 @@ import java.util.List;
  *
  * <p>Both entry points run the value on the <em>column trip</em>, read off the column's
  * {@code DataType} and its converter (jOOQ's identity converter when the column has none, so there
- * is one emitted shape): the user value {@code type.convert(input)}, the database value
+ * is one emitted shape): the user value {@code type.convert(input)}, or the input parsed as the
+ * parse class {@code exact} is handed for a converter's user type, the database value
  * {@code converter.to(user)}, and the canonical value {@code converter.from(database)}. The trip
  * fails when a step gives {@code null} or throws {@code IllegalArgumentException} or
  * {@code DataTypeException}; any other exception is a fault in the consumer's converter and
@@ -31,10 +32,14 @@ import java.util.List;
  * fail at bind time.
  *
  * <ul>
- *   <li>{@code exact(type, text)} is the inverse of {@code NodeIdEncoder.encode}, for server-minted
- *       text: the trip succeeds, the canonical value's {@code toString()} is the text, and the
- *       value fits the column's declared precision. It refuses a wrapped number, a padded or
- *       reformatted one, and any text the encoder never writes.</li>
+ *   <li>{@code exact(type, parseClass, text)} is the inverse of {@code NodeIdEncoder.encode}, for
+ *       server-minted text: the trip succeeds, the canonical value's {@code toString()} is the
+ *       text, and the value fits the column's declared precision. It refuses a wrapped number, a
+ *       padded or reformatted one, and any text the encoder never writes. A non-null
+ *       {@code parseClass} is the converter's user type, and the trip's first step then parses the
+ *       text as that type rather than through {@code convert}, which on a converted type parses as
+ *       the database type and can drop what the user type's text carries (see
+ *       {@link no.sikt.graphitron.render.SlotParse}).</li>
  *   <li>{@code coerce(type, value)} is the documented wire coercion for authored values (a tenant
  *       argument, a federation {@code @key} field): the trip succeeds, a value that reads as a
  *       number lands on that number or its integral part (so {@code "1.5"} binds as {@code 1} on an
@@ -52,6 +57,7 @@ public class ColumnValuesClassGenerator {
     private static final ClassName DATA_TYPE           = ClassName.get("org.jooq", "DataType");
     private static final ClassName CONVERTER           = ClassName.get("org.jooq", "Converter");
     private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
+    private static final ClassName DSL                 = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName BIG_DECIMAL         = ClassName.get(BigDecimal.class);
     private static final ClassName BIG_INTEGER         = ClassName.get(BigInteger.class);
     private static final ClassName ROUNDING_MODE       = ClassName.get(RoundingMode.class);
@@ -64,18 +70,22 @@ public class ColumnValuesClassGenerator {
         TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(TypeName.OBJECT));
         TypeName tripOfT = ParameterizedTypeName.get(TRIP, t);
         TypeName tripWildcard = ParameterizedTypeName.get(TRIP, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        TypeName classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
+            WildcardTypeName.subtypeOf(TypeName.OBJECT));
 
         var exact = MethodSpec.methodBuilder("exact")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .addTypeVariable(t)
             .returns(t)
             .addParameter(dataTypeOfT, "type")
+            .addParameter(classWildcard, "parseClass")
             .addParameter(String.class, "text")
             .addJavadoc("The value server-minted {@code text} names in a column of {@code type}, or {@code null}\n"
                 + "when it names none: the text must be exactly what {@code NodeIdEncoder.encode} writes for\n"
-                + "that value, and the value must fit the column.\n")
+                + "that value, and the value must fit the column. A non-null {@code parseClass} is the\n"
+                + "converter's user type, which the text is parsed as before the converter runs on it.\n")
             .addStatement("if (text == null) return null")
-            .addStatement("$T trip = trip(type, text)", tripOfT)
+            .addStatement("$T trip = trip(type, parseClass, text)", tripOfT)
             .addStatement("if (trip == null || !trip.canonical.toString().equals(text)) return null")
             .addStatement("return fitsPrecision(type, numericValue(trip)) ? trip.canonical : null")
             .build();
@@ -90,7 +100,7 @@ public class ColumnValuesClassGenerator {
                 + "when it binds as none: the column's own coercion, except that a number which would\n"
                 + "wrap, or which does not fit the column's precision, is refused.\n")
             .addStatement("if (value == null) return null")
-            .addStatement("$T trip = trip(type, value)", tripOfT)
+            .addStatement("$T trip = trip(type, null, value)", tripOfT)
             .addStatement("if (trip == null) return null")
             .addStatement("$T number = numericValue(trip)", BIG_DECIMAL)
             .addStatement("$T input = readNumber(value)", BIG_DECIMAL)
@@ -107,9 +117,11 @@ public class ColumnValuesClassGenerator {
             .addTypeVariable(t)
             .returns(tripOfT)
             .addParameter(dataTypeOfT, "type")
+            .addParameter(classWildcard, "parseClass")
             .addParameter(Object.class, "input")
             .beginControlFlow("try")
-            .addStatement("$T user = type.convert(input)", t)
+            .addStatement("$T user = parseClass == null ? type.convert(input)\n"
+                + ": type.getType().cast($T.val(input, parseClass).getValue())", t, DSL)
             .addStatement("return user == null ? null : roundTrip(type.getConverter(), user)")
             .nextControlFlow("catch ($T | $T e)", IllegalArgumentException.class, DATA_TYPE_EXCEPTION)
             .addStatement("return null")

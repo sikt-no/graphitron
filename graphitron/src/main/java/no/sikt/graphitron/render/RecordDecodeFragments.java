@@ -261,8 +261,8 @@ public final class RecordDecodeFragments {
             .beginControlFlow("if (!(wire instanceof String nodeId))")
             .addStatement("return null")
             .endControlFlow()
-            .addStatement("$T values = $T.decodeColumns($S, nodeId$L)",
-                Object[].class, encoderClass, typeId, fields.build())
+            .addStatement("$T values = $T.decodeColumns($S, nodeId, $L$L)",
+                Object[].class, encoderClass, typeId, SlotParse.parseClasses(keyColumns), fields.build())
             .beginControlFlow("if (values == null)")
             .addCode(mismatchThrow)
             .endControlFlow()

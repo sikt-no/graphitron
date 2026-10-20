@@ -525,6 +525,10 @@ type Query {
     # on BodyParam.RowEq and the list one on BodyParam.RowIn.
     converterCampusTermByNodeId(filter: ConverterCampusTermSingularNodeIdFilter): [ConverterCampusTerm!]!
     converterCampusTermsByNodeIds(filter: ConverterCampusTermCompositeNodeIdFilter): [ConverterCampusTerm!]!
+    # A converter-backed temporal key, read and filtered by id. The listing hands out the minted
+    # ids; the filter is a @nodeId argument over the same key.
+    converterIdChanges: [ConverterIdChange!]! @defaultOrder(primaryKey: true)
+    converterIdChangeByNodeId(filter: ConverterIdChangeNodeIdFilter): [ConverterIdChange!]!
     filmsConnection(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
@@ -2235,6 +2239,20 @@ input ConverterCampusTermSingularNodeIdFilter {
 # BodyParam.RowIn, emitting `DSL.row(t.ORG_CODE, t.TERM_NO).in(decodedRows)` over the same key.
 input ConverterCampusTermCompositeNodeIdFilter {
     ids: [ID!] @nodeId(typeName: "ConverterCampusTerm")
+}
+
+# Composite key whose second column, changed_at, is a timestamptz domain forced to LocalDateTime
+# by a converter. The id writes the time as LocalDateTime text, so it decodes to its own row only
+# when the slot is parsed as LocalDateTime; parsed as the database type it names no row (here) or
+# another row on the same day (an Oracle DATE). The two seeded rows sit at 00:00 and 02:24.
+type ConverterIdChange implements Node @table(name: "converter_id_change") @node {
+    id:       ID!     @nodeId
+    personId: Int!    @field(name: "PERSON_ID")
+    newValue: String! @field(name: "NEW_VALUE")
+}
+
+input ConverterIdChangeNodeIdFilter {
+    id: ID! @nodeId(typeName: "ConverterIdChange")
 }
 
 # Converter-diverged foreign key fixtures. diverged_ref_child.org_code is declared as plain bigint

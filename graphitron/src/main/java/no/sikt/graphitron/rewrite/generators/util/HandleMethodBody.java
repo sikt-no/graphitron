@@ -5,6 +5,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
@@ -176,8 +177,9 @@ final class HandleMethodBody {
                 // key value that is not a value of its column (a wrapped number would resolve
                 // another row). Each becomes a skipped rep (null slot), matching the
                 // null-not-error contract.
-                b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L)",
-                    nodeIdEncoder, nodeId.expectedTypeId(), columnRefs(entity, nodeId.columns()));
+                b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L, $L)",
+                    nodeIdEncoder, nodeId.expectedTypeId(), SlotParse.parseClasses(nodeId.columns()),
+                    columnRefs(entity, nodeId.columns()));
                 b.addStatement("if (cols == null) continue");
             }
             case KeyAlternative.Direct direct -> {

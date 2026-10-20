@@ -1229,7 +1229,7 @@ public class JooqCatalog {
                     + "' which does not belong to this table");
             }
             var e = col.get();
-            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()));
+            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()));
         }
         return new NodeIdMetadataLookup.Present(new NodeIdMetadata(typeId, List.copyOf(resolved)));
     }
@@ -1326,6 +1326,7 @@ public class JooqCatalog {
                     f.getName(),
                     dataType.getTypeName(),
                     col.getType().getName(),
+                    col.getConverter().fromType().getName(),
                     dataType.nullable(),
                     comment == null ? "" : comment,
                     dataType.lengthDefined() && dataType.length() > 0 ? dataType.length() : null);
@@ -1383,9 +1384,10 @@ public class JooqCatalog {
 
     /**
      * A column's full discovery facts: SQL name, jOOQ Java field name, SQL data-type name, the Java
-     * type jOOQ binds the column to, nullability, comment (empty when codegen captured none), and
-     * the length the column's type declares (null when it declares none). See
-     * {@link #columnFactsOf}.
+     * type jOOQ binds the column to, the Java type it exchanges with the database (the converter's
+     * {@code fromType()}, equal to the binding type with no converter), nullability, comment (empty
+     * when codegen captured none), and the length the column's type declares (null when it
+     * declares none). See {@link #columnFactsOf}.
      *
      * <p>Carries every fact {@link ColumnEntry} does. The one thing it does not carry is that
      * record's {@code columnType}, which is the javapoet rendering of the same binding type rather
@@ -1395,7 +1397,8 @@ public class JooqCatalog {
      * is what {@link ColumnEntry} is not.
      */
     public record ColumnFacts(String sqlName, String javaName, String sqlType, String bindingType,
-                              boolean nullable, String comment, Integer declaredLength) {}
+                              String databaseType, boolean nullable, String comment,
+                              Integer declaredLength) {}
 
     /**
      * An index's name and its SQL column names in index order. See {@link #indexFactsOf}.
@@ -1617,7 +1620,7 @@ public class JooqCatalog {
             return pk.getFields().stream()
                 .map(f -> catalog.findColumn(table, f.getName()))
                 .<ColumnEntry>flatMap(Optional::stream)
-                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()))
                 .toList();
         }
 
@@ -1634,7 +1637,8 @@ public class JooqCatalog {
                 .filter(f -> org.jooq.Field.class.isAssignableFrom(f.getType()))
                 .map(f -> {
                     var col = (org.jooq.Field<?>) instanceFieldValue(f, table);
-                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName());
+                    return new ColumnRef(col.getName(), f.getName(), col.getType().getName(),
+                        col.getConverter().fromType().getName());
                 })
                 .toList();
         }

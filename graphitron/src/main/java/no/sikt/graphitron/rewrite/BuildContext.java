@@ -1518,7 +1518,7 @@ class BuildContext {
         return fields.stream()
             .map(f -> catalog.findColumn(table, f.getName()))
             .<JooqCatalog.ColumnEntry>flatMap(Optional::stream)
-            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass()))
+            .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()))
             .toList();
     }
 
@@ -3080,7 +3080,7 @@ class BuildContext {
         if (colEntry.isPresent()) {
             var e = colEntry.get();
             Optional<ArgConditionRef> cond = buildInputFieldCondition(field, parentTypeName, name, conditionFailures);
-            var column = new ColumnRef(e.sqlName(), e.javaName(), e.columnClass());
+            var column = new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType());
             // @condition(override: true) means the explicit method owns the predicate entirely, so
             // the carrier is ConditionOwnedField (both classification outcomes, column resolved and
             // column missing, mint the same carrier). The resolved column rides it on the binding
@@ -3178,7 +3178,8 @@ class BuildContext {
                 .filter(f -> f.sqlName().equalsIgnoreCase(column.sqlName()))
                 .findFirst())
             .orElseGet(() -> new JooqCatalog.ColumnFacts(
-                column.sqlName(), column.javaName(), null, column.columnClass(), true, "", null));
+                column.sqlName(), column.javaName(), null, column.columnClass(), column.databaseType(),
+                true, "", null));
     }
 
     /**
@@ -3466,7 +3467,7 @@ class BuildContext {
         if (targetObj.hasAppliedDirective(DIR_NODE)) {
             String typeId = argString(targetObj, DIR_NODE, ARG_TYPE_ID).orElse(refTypeName);
             var pkCols = catalog.findPkColumns(targetTableName).stream()
-                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass()))
+                .map(e -> new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()))
                 .toList();
             if (pkCols.isEmpty()) {
                 return new TargetKeys.Rejected(
@@ -3494,7 +3495,7 @@ class BuildContext {
      * {@code Rejection}.
      *
      * <p>No {@code decode<TypeName>} method name is resolved here: the materialization calls
-     * {@code decodeColumns(typeId, nodeId, columns...)}, never {@code decode<Type>}. What {@link Resolved} does
+     * {@code decodeColumns(typeId, nodeId, parseClasses, columns...)}, never {@code decode<Type>}. What {@link Resolved} does
      * carry beside the body's facts is the {@code typeName} of the {@code @nodeId(typeName:)}
      * target, a node type or a {@code @table} type over a table with catalog node metadata, which is
      * the decode's identity downstream, the emit side keying both its collection and its helper name

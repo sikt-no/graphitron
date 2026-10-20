@@ -20,7 +20,7 @@ import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
  *
  * <p>Nothing about the generated encoder appears on the way through, which is the other half of the
  * same rule. The projection's emitted read decodes through {@code NodeIdEncoder.decodeColumns(typeId,
- * wire, columns)}, so the only decode input a command row needs is the type id; the class those live on is a
+ * wire, parseClasses, columns)}, the parse classes a function of the columns, so the only decode input a command row needs is the type id; the class those live on is a
  * function of generator configuration and belongs to render, which holds that configuration already.
  */
 public final class KeyProjectionCommands {
