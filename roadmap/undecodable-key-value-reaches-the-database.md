@@ -1,7 +1,7 @@
 ---
 id: R1067
 title: "A node id or tenant value that does not fit its column is not caught at decode"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
