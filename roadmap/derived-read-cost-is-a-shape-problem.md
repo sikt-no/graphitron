@@ -323,7 +323,7 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   mixes them.
 
   The walk's answer is the path itself: each row says where it comes from, where it goes and how
-  it joins, a foreign key ridden one way, a join method or a function, so no relation beside the
+  it joins, column pairs with the key they came from or a join method, so no relation beside the
   path holds the resolution. The pattern is shared and the relations are not: an output field's
   path, a nested field's, a participant's, an argument's and an input field's each start somewhere
   different and are keyed differently, so each is its own relation and only the step from one
@@ -344,34 +344,51 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   lift (`CustomerAddressSummary.address`), and a service result's `TableRecord` member
   (tilgangsstyring's `DeaktiverApplikasjonerPayload.applikasjoner`, a `List<SubjektRecord>`). A root
   field's argument or input field with a path is a filter and walks from the field's target.
-  * **What an element names is stated at the entry grain** `open`. One row per written element of
-    either directive at a field, an argument or an input field, keyed by its written position: the
-    constraint a key spelling resolves to, by SQL name or `Keys` constant, qualified or not; the
-    table a table spelling resolves to; the method a condition names and the two tables its
-    signature declares; the result a routine reads. No direction, no source and no target, since
-    none of them is a fact about what was written. The input-value step entries gain their first
-    reader.
+  * **What an element names is stated at the entry grain** `open`. Designed with Alf 2026-10-20.
+    Resolved from its spelling once, so spelling lives only in the entries, and in the author's
+    terms, since a key is what the author named:
+    ```sql
+    graphitron_path_element_key    (element PK → graphitron_ast_reference_key_step_entry,
+                                    constraint → sql_referential_constraint)
+    graphitron_path_element_table  (element PK → graphitron_ast_reference_table_step_entry,
+                                    table → sql_table)
+    graphitron_path_element_method (element PK → graphitron_ast_reference_condition_step_entry,
+                                    method → code_condition_method)
+    ```
+    A key resolves by its SQL name or its jOOQ constant, each qualified by schema or not; a table by
+    its name, qualified or not; a method by its class and name. One candidate, or a defect at the
+    element. No direction, no source and no target, none of them being a fact about what was
+    written, and no site: an element names the same thing at a field, an argument or an input
+    field. Measured 2026-10-20 on sakila and the four Graphitron 10 subgraphs of fs-plattform:
+    every key, table and condition spelling resolves to one candidate, none to several. opptak
+    writes 88 of its 218 keys as schema-qualified jOOQ constants
+    (`soknad_v2.SOKNADS_KVITTERING_ALTERNATIV__…_FK`), which the generator resolves and today's
+    reading, admitting a jOOQ constant only unqualified, does not.
     * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
       `graphitron_ast_routine_entry` at its written position, one candidate only, with no target
       check; `graphitron_field_routine` and `FieldRoutines` went. Cases in `field-path-routine`.
-  * **Each element kind has a step rule** `open`. Small and separate, one per kind, each the answer
-    to "this element, from this table":
-    * a key, ridden from the table the walk stands at to its other end, one direction only between
-      two tables;
-    * a table, the one key between the table the walk stands at and the named one, failing on none
-      or several;
-    * a condition, the two tables its method's signature declares, the first admitting the table
-      the walk stands at.
+  * **Each element kind has a step rule** `open`, as the walk's arms. Designed with Alf
+    2026-10-20: a step is one join from the table the walk stands at, over what the element names
+    and the catalog's stored relations, so it needs no relation of its own; a relation of every
+    move an element could make is what `graphitron_field_reference_step_hop` was. Per kind, "this
+    element, from this table":
+    * a key: the named key's columns, read from the end the walk stands at to the other, paired by
+      position from `sql_constraint_column` and the referenced constraint's columns;
+    * a table: the one key between the table the walk stands at and the named one, its columns as
+      above, failing on none or several; from a function's result, the named table's key matched
+      by column name, which `sql_name_matched_key_column` pairs already;
+    * a condition alone: the method, its first parameter admitting the table the walk stands at
+      and its second naming where it lands;
+    * a condition beside a key or a table: a filter on that step.
 
-    One step relation for every site. Today an argument steps over
-    `intent_argument_reference_step_hop`, from the dissolving `intent_` family, while a field and an
-    input field step over `graphitron_field_reference_step_hop`; an element names the same thing
-    whichever site it is written at, so the step is one relation and the sites differ only in where
-    the walk starts.
+    Every site walks the same arms; they differ only in where the walk starts. Today an argument
+    steps over `intent_argument_reference_step_hop` and a field and an input field over
+    `graphitron_field_reference_step_hop`, which both go.
     * **A self-referencing key is oriented by R1037's rule** `open`, R1037's to do. Both ends of the key are one table, so
-      where the walk stands cannot say which way it rides. It rides forward unless the element
-      writes `inverse: true`; until R1037 lands the step takes the field's cardinality as the
-      generator does, and R1037 changes both, with the `@reference` reference page. Nothing in R876
+      where the walk stands cannot say which way it rides; the way it rides is which of its
+      columns is the step's `from_column`. It rides forward unless the element writes
+      `inverse: true`; until R1037 lands the step takes the field's cardinality as the generator
+      does, and R1037 changes both, with the `@reference` reference page. Nothing in R876
       waits on it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
   * **A path carries where each row comes from** `open`, after the step rules and "A field's source
     is its parent's result". Designed with Alf 2026-10-19 and 2026-10-20. Two relations for an output
@@ -385,15 +402,39 @@ running from the participant's table toward a `@nodeId` target in key hops alone
       and two fields nesting the type on one table share one walk. One relation and not two,
       because a nested field and a bound one start from the same fact keyed the same way.
     * `graphitron_routine_field_path`, keyed by the field and the position, the field a reference
-      into `graphitron_producer_routine`: the path of a root field led by `@routine`, whose query
-      starts on the routine's result. Position 0 is the routine, from nothing to its result table,
-      and every element after it walks on from there.
+      into `graphitron_producer_routine`: the path of a root field led by `@routine`. Its start is
+      the routine's table, a table-valued function being a `FUNCTION` row of `sql_table` that the
+      producer's routine shares its key with, so the routine is where the query starts and not a
+      step: the rows are the elements written after it, at their written positions, the first
+      leaving the function's table. A routine with nothing after it has no rows, its field's type
+      being bound to the function's table itself, or a payload whose data field refetches as a
+      `LOOKUP`: on sakila the eight mutation routines returning a payload write the routine alone,
+      and the six returning a table type (`Mutation.rentFilm` to `Rental`, `rentFilmCustomer` on to
+      `Customer`) walk on from the function's table.
 
     Both are written after `Fetchers`, which writes the results and the routine producers they
     reference. The reference into the result holds across captures, a result being marked and swept
     and keeping its key while a reading still reaches it.
 
-    Each row adds `from_table`, `to_table` and how it joins. The walk exists in part today:
+    A path speaks columns, ruled with Alf 2026-10-20: a join is column pairs, and the key it rode is
+    where they came from. Each row says where it comes from and where it goes, `from_table` and
+    `to_table`, never null, and how it joins, in children keyed by the row:
+    ```sql
+    graphitron_field_path_column (…, position, ordinal PK, from_column → sql_column,
+                                  to_column → sql_column)              -- the join's column pairs
+    graphitron_field_path_key    (…, position PK, constraint → sql_referential_constraint)
+                                                                        -- the key the columns came from
+    graphitron_field_path_method (…, position PK, method → code_condition_method)
+    ```
+    A foreign key ridden either way and a function's result matched by name are both column pairs,
+    so the path has one join form and no direction flag; a step with no column rows joins by its
+    method, and a method beside column rows is a filter on them, read from the rows rather than
+    stated twice. The key row is there wherever the step rode one, written, inferred from a table or
+    discovered where nothing was written, so the editor and the messages can name it; whether the
+    author wrote it is whether the element has a `graphitron_path_element_key` row. A match by name
+    has no key. The routine path has the same children.
+
+    The walk exists in part today:
     `FieldReferenceStepTargets` walks forward over `ReferenceStepWalk` from the parent type's own
     table only, so on sakila it misses 38 fields with a path, read 2026-10-16: the 21 led by
     `@routine`, the fields under types with no table of their own (`FilmDetails`, `FilmInfo`,
@@ -1072,8 +1113,8 @@ and the emitters read, and it goes when nothing reads what it builds.
     * **A field's target is its target type** `done`. `graphitron_field_target` holds one row per
       field: its target type unwrapped from list, non-null and connection wrapping, scalars
       included, with the connection beside it; kind, participants and table are joins on the target
-      type. A mutation's target is its payload type; its refetch stays
-      `graphitron_carrier_data_field`'s fact.
+      type. A mutation's target is its payload type; its refetch is the payload's data field, a
+      `LOOKUP` producer, `graphitron_producer`'s fact.
     * **The duplicate statements of a field's tables dissolve** `open`. A field's target and its
       source are each stated several times at several grains, and each statement goes when its
       readers have moved:
@@ -1162,11 +1203,18 @@ and the emitters read, and it goes when nothing reads what it builds.
         the first is tilgangsstyring's `DeaktiverApplikasjonerPayload` and its two siblings, plain
         types a root `@service` returns, whose `applikasjoner` member is a `List<SubjektRecord>`, so
         `subjekt` is its source and each participant's one key reaches its own table. It is the
-        consume phase a `_select` producer reads its keys by, so the fetcher's DataLoader is
-        generated from it, and once `graphitron_producer` is stated its field references that.
+        consume phase a producer reads its keys by, so the fetcher's DataLoader is generated from
+        it, and its field references `graphitron_producer`, which serves two kinds: a split child
+        `SELECT`, its keys off the parent's row, and a `LOOKUP` under an OBJECT parent, its keys off
+        the handed record, a `RecordN` or `RowN`, or `@sourceRow`. `RECORD` waits on "A table with
+        no record class says so": until the sql family states that absence, the record class
+        `org.jooq.Record` names every table jOOQ generated no class for.
       * **A consumed key is a source** `open`, after the consume step. The forward walk waits on it.
-        `graphitron_field_source_table` gains `CONSUMED`, read off `graphitron_field_source_key`'s
-        table, and holds no fact about a record class or a method. Until then the two regressions are
+        Under an OBJECT parent, which has a `graphitron_result_class` row and no
+        `graphitron_result_table` row, a path can start only at the table a consumed key matches:
+        that start is `graphitron_field_source_key`'s table, read by the walk where it reads the
+        parent's result table for a row, and stated in no relation of its own, its source table
+        dissolving into `graphitron_result_table`. Until then the two regressions are
         held by an interim, the rules `RECORD_CLASS` and `SOURCE_ROW` stated in the source table's
         own rule, which go here: `FilmDetailsCarrier` from `film` through `FilmRecord`, and
         `CustomerAddressSummary.address` from `customer`. `NO_ROUTE_FROM_DEPARTURE` is 0 on sakila
