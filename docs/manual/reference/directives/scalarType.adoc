@@ -31,7 +31,7 @@ type Invoice @table(name: "invoice") {
 }
 ----
 
-The generator produces an input record with a `java.math.BigDecimal` component, a `Field<BigDecimal>` projection for SELECT paths, and registers `ExtendedScalars.GraphQLBigDecimal` via `.additionalType(...)` on the synthesized schema. Consumer code does not need to wire the scalar in its `buildSchema` hook.
+The generator produces an input record with a `java.math.BigDecimal` component, a `Field<BigDecimal>` projection for SELECT paths, and registers a `BigDecimal` scalar on the synthesized schema. The registered scalar is a copy of `ExtendedScalars.GraphQLBigDecimal` carrying the SDL declaration's description and directives (a `@tag`, a `@specifiedBy(url:)`) in place of the constant's own. Consumer code does not need to wire the scalar in its `buildSchema` hook, and must not: registering the constant again fails schema build.
 
 == Resolution order
 

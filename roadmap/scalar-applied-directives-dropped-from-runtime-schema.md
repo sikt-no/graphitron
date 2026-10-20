@@ -118,11 +118,12 @@ whose `buildSchema(...)` customizer still registers a constant Graphitron alread
 `@scalarType` migration already told consumers to remove those calls, and the custom-scalars page
 says not to) was tolerated so far, because graphql-java accepts the identical instance twice. After
 this change the duplicate fails schema build with graphql-java's "You have redefined the type"
-assertion, on the first regeneration and independently of what the SDL carries. Two places say so:
-one sentence in `docs/manual/how-to/custom-scalars.adoc`, where it says the constant is registered
-automatically (the registered scalar is a copy carrying the SDL declaration's directives, and
-registering the constant again from the customizer fails the build), and a migration note in the
-item's `roadmap/changelog.md` entry at Done.
+assertion, on the first regeneration and independently of what the SDL carries. Three places say
+so: one sentence in `docs/manual/how-to/custom-scalars.adoc`, where it says the constant is
+registered automatically (the registered scalar is a copy carrying the SDL declaration's
+directives, and registering the constant again from the customizer fails the build), the matching
+sentence in `docs/manual/reference/directives/scalarType.adoc`, and a migration note in the item's
+`roadmap/changelog.md` entry at Done.
 
 The description follows the SDL too: a scalar backed by a library constant that carries its own
 description (every `ExtendedScalars` constant does) now introspects with the SDL declaration's
@@ -203,6 +204,13 @@ that `Money` registers and is not the `MONEY` constant. Do not keep the test by 
 strings. The pre-existing text assertions in the neighbouring tests are not this item's to
 clean up.
 
+> Response: deleted `scalarRegistration_directiveResolvesConsumerScalar_registersCopyOfConstant`
+> rather than recasting it. The copy-of-constant behaviour is the `Resolved` head, which the
+> execution tier pins on `BigDecimal` (`serviceSdlExposesScalarAppliedDirectives`,
+> `builtInScalarsKeepIdentityAndCustomScalarsCarrySpecifiedBy`, `emittedSdlMatchesRuntimeSchema`).
+> Classifying a consumer constant as `Resolved` is a classifier fact that `GraphitronSchemaBuilderTest`
+> already covers. The delivery now authors no assertion on generated Java text.
+
 **Finding 2 (question one: a user-facing reference page still states the old mechanism).**
 `docs/manual/reference/directives/scalarType.adoc` line 34 still says the generator "registers
 `ExtendedScalars.GraphQLBigDecimal` via `.additionalType(...)`". After this change the constant
@@ -212,6 +220,13 @@ This page paraphrases the mechanism the delivery replaced, which is what the Don
 retirement-sweep skim is meant to catch. To satisfy: restate the sentence to match
 `custom-scalars.adoc` (registered automatically, as a copy carrying the SDL declaration's
 description and directives).
+
+> Response: rewrote the sentence in `scalarType.adoc` to say the registered `BigDecimal` is a copy
+> of the constant carrying the declaration's description and directives, and that registering the
+> constant again fails schema build. "Consumer-facing consequence" above now names this page as
+> the third place that says so. A grep of `docs/` and `graphitron/src/main` for prose stating that the constant
+> itself is registered found nothing else. The `ScalarTypeResolver` javadoc that names
+> `additionalType(<constant>)` explains why the alias case is `Synthesised`, which still holds.
 
 Non-blocking: the verification build on trunk `31839d5` failed once, in
 `OptionalNodeIdProjectionExecutionTest.anOmittedNodeIdReachesAConditionMethodAsNull` (film 79
