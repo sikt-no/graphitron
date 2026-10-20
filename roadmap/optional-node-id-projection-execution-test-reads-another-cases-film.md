@@ -1,7 +1,7 @@
 ---
 id: R959
 title: "An execution case reads a film another case inserted, so its two queries disagree"
-status: In Progress
+status: In Review
 bucket: cleanup
 priority: 6
 theme: testing
