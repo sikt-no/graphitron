@@ -46,7 +46,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | Ready | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1066` | Directives applied to a custom scalar are dropped from the runtime schema | In Progress | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](scalar-applied-directives-dropped-from-runtime-schema.md) |
+| `R1066` | Directives applied to a custom scalar are dropped from the runtime schema | In Review | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](scalar-applied-directives-dropped-from-runtime-schema.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -662,7 +662,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1066` [**Directives applied to a custom scalar are dropped from the runtime schema**](scalar-applied-directives-dropped-from-runtime-schema.md) — In Progress, bug
+- `R1066` [**Directives applied to a custom scalar are dropped from the runtime schema**](scalar-applied-directives-dropped-from-runtime-schema.md) — In Review, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
