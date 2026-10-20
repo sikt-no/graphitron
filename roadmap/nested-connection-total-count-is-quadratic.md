@@ -1,7 +1,7 @@
 ---
 id: R1070
 title: "A nested connection totalCount runs one count per parent, each over every parent's rows"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: codegen-correctness
@@ -241,3 +241,26 @@ describes). This item rewrites those passages to the behaviour it ships.
   page statement filters by cursor and `__rn__ <= limit` before the outer select, so the window would
   have to sit below the seek, and the count would then be paid on every query whether `totalCount`
   is selected or not, losing the laziness the manual promises.
+
+## Implementation notes
+
+Landed at `df4b61c`. Where the code reads differently from the plan above:
+
+* `ConnectionResult` gains a private storing constructor carrying the `TotalCount` slot; the public
+  assigning constructor keeps its signature and derives `Scoped` from a non-null `(table, condition)`
+  pair. The four nested type names are constants on `ConnectionResultClassGenerator`
+  (`TOTAL_COUNT_CLASS_NAME`, `SCOPED_CLASS_NAME`, `BATCH_COUNTS_CLASS_NAME`, `SLOT_CLASS_NAME`).
+* `projectItemsConnection_totalCount_isParentScoped` pins its one extra statement against a baseline
+  run of the same query selecting `items { __typename }`, which still runs the rows method.
+* The new `BatchCountsExecutionTest` asserts the retained failure is the same exception instance on
+  the second slot (`isSameAs`), and that the failing statement ran once.
+* Unit-tier string assertions in `TypeFetcherGeneratorTest` on the polymorphic rows body moved to the
+  `BatchCounts` / `counts.slot(i)` shape; `TenantDivinedRoutingExecutionTest` stayed green unchanged.
+
+Verification: full `mvn install -Plocal-db` green on the R1070 tree at four successive trunk bases
+while trunk moved under each run. Two runs failed only on shared-database races already filed
+(`OptionalNodeIdProjectionExecutionTest`, R959, since Done; and
+`inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds`, named in R863), one on a cgroup
+OOM kill in `graphitron-lsp`, one on a stale `rewrite_test` after a rebase moved `init.sql`. The final
+base added a sakila-db forcedType and fixture disjoint from this change; that was covered by a
+`-Pquick` reactor install plus the full `graphitron-sakila-example` tier (1210 tests, green).
