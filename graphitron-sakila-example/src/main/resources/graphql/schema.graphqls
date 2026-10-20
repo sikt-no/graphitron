@@ -2541,7 +2541,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     sameTableById(filmId: Int @condition(condition: {
         className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
         method: "filmIdKeyEquals"
-    })): [FilmSameRow!]!
+    }, override: true)): [FilmSameRow!]!
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
     # film_price attribute tables. titleTranslations / taglineTranslations reuse one projection
     # type with different value columns through the PivotLang vocabulary enum; prices uses the
