@@ -40,7 +40,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | Spec | 2026-10-19 | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
+| `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | Spec | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
