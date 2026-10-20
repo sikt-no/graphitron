@@ -1,7 +1,7 @@
 ---
 id: R1070
 title: "A nested connection totalCount runs one count per parent, each over every parent's rows"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: codegen-correctness
@@ -264,3 +264,48 @@ while trunk moved under each run. Two runs failed only on shared-database races 
 OOM kill in `graphitron-lsp`, one on a stale `rewrite_test` after a rebase moved `init.sql`. The final
 base added a sakila-db forcedType and fixture disjoint from this change; that was covered by a
 `-Pquick` reactor install plus the full `graphitron-sakila-example` tier (1210 tests, green).
+
+## Reviewer findings
+
+### Round 1 (In Review → Done): request rework, session_011EHY9DAEWrPEXhGxnQXQq8, 2026-10-20
+
+**Question 2 fails on one approval precondition: the delivery adds a new code-string assertion on a
+generated method body.** Everything else holds. The emitted `BatchCounts` matches the plan: a
+synchronized lazy memo, absent groups count 0, and a failure is kept and rethrown. Both producers
+bind `counts.slot(i)`, and the helper's `totalCount` is the planned null check plus one call. The
+spec's own completeness evidence is in place and green:
+`splitQueryConnection_totalCount_isLazyOnSelection` (2 / 3) and `_isParentScoped` (3 statements for
+five films) are the two-against-five comparison; the `addressOccupantsConnection` twin keeps three
+parents equal to two with `totalCount` selected; `projectItemsConnection_totalCount_isParentScoped`
+pins one extra statement; `BatchCountsExecutionTest` covers the empty slot and the retained failure.
+The manual passages are rewritten as the spec drafted them, and no retired wording survives in code
+or docs. Verification build `mvn install -Plocal-db` is green on trunk `583d515` (after
+re-seeding a sandbox DB left stale by the trunk sync; that failure was not R1070's).
+
+The precondition is "no code-string assertions on generated method bodies anywhere in the delivered
+tests" (development-principles.adoc: "Asserting on generated Java or SQL text is banned";
+testing.adoc names body matching as banned). The spec's Tests section is all execution tier and
+approves no unit-tier body matches. `TypeFetcherGeneratorTest.childInterfaceField_connection_perParentConnectionResultsCarryBatchCountSlot`
+adds a new one: `.contains(".util.ConnectionResult.BatchCounts counts = new ... .util.ConnectionResult.BatchCounts(pagesTable, idxField, keys.size())")`
+against `method(spec, "rowsRelatedConnection").code().toString()`. The Implementation notes describe
+this as moving existing assertions to the new shape. The two rewritten
+`ConnectionResult(buckets.get(i), page, counts.slot(i))` matches fit that description, but the
+`BatchCounts counts = new` line is an addition, not a move.
+
+What would satisfy it: delete the added `BatchCounts counts = new ...` assertion. The behaviour it
+pins (one memo per batch, grouped on `idxField`) is already pinned at the execution tier by the
+polymorphic twin and `projectItemsConnection_totalCount_isParentScoped`. The two updated
+`counts.slot(i)` matches maintain assertions that existed before this item. As in R708's round 2
+ruling, they may stay, though deleting them is equally acceptable for the same reason. Record the
+change in Implementation notes. No other rework is needed.
+
+Non-blocking:
+
+* The rewritten class javadoc, the `tableField` comment and the `totalCountMethod` comment still say
+  the empty-participants path is the only producer that binds no count. `TypeFetcherGenerator.emptyBatchedResult`
+  (from R1042) also builds a carrier with no `(table, condition)` and no slot, so a batched parent
+  whose key cannot match reads `totalCount` as `null`. That includes a structural connection
+  declaring `totalCount: Int!`. The gap predates this item; reword the three comments if you touch
+  them, and consider a Backlog item for counting 0 there.
+* Implementation notes say "Landed at `df4b61c`"; give the In Review commit (`16ded97`) too, so the
+  changelog line at Done can cite both.

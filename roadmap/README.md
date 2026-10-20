@@ -20,8 +20,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
+| `R1070` | A nested connection totalCount runs one count per parent, each over every parent's rows | Ready | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](nested-connection-total-count-is-quadratic.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R1070` | A nested connection totalCount runs one count per parent, each over every parent's rows | In Review | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](nested-connection-total-count-is-quadratic.md) |
 | `R1068` | A database value outside an enum's mapping reads as null instead of a per-row serialization error | Spec | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](unmapped-enum-value-from-database-reads-as-null.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
@@ -636,7 +636,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### codegen-correctness
 
 - `R708` [**The $project selection gate fires on names selected at any depth below its unit**](projection-selection-gate-depth-leak.md) — In Review, correctness
-- `R1070` [**A nested connection totalCount runs one count per parent, each over every parent's rows**](nested-connection-total-count-is-quadratic.md) — In Review, bug
+- `R1070` [**A nested connection totalCount runs one count per parent, each over every parent's rows**](nested-connection-total-count-is-quadratic.md) — Ready, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R1037` [**A @reference key element can ride its key inverted**](reference-key-rides-inverted.md) — Backlog, feature
