@@ -42,7 +42,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | In Review | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -510,7 +509,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R1033` [**The @nodeId decode census covers a @table-only target with catalog node metadata**](nodeid-census-of-table-only-targets.md) — Backlog, architecture
 - `R1044` [**Two-writer column agreement compares converter-backed values by their database value**](column-agreement-follows-the-database-value.md) — Backlog, bug
-- `R1072` [**A node id over a DATE key column with a time part decodes to a different row**](node-id-over-timestamped-date-key-does-not-round-trip.md) — In Review, bug, blocked by [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
