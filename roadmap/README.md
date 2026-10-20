@@ -40,12 +40,12 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
-| `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | Spec | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
+| `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | Ready | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1073` | A null element in a node-id list filter matches nothing instead of failing the field | In Progress | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](null-element-in-node-id-list-filter-matches-nothing.md) |
@@ -520,7 +520,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
 - `R1033` [**The @nodeId decode census covers a @table-only target with catalog node metadata**](nodeid-census-of-table-only-targets.md) — Backlog, architecture
 - `R1044` [**Two-writer column agreement compares converter-backed values by their database value**](column-agreement-follows-the-database-value.md) — Backlog, bug
-- `R1072` [**A node id over a DATE key column with a time part decodes to a different row**](node-id-over-timestamped-date-key-does-not-round-trip.md) — Spec, bug, blocked by [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)
+- `R1072` [**A node id over a DATE key column with a time part decodes to a different row**](node-id-over-timestamped-date-key-does-not-round-trip.md) — Ready, bug, blocked by [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)
 - `R1073` [**A null element in a node-id list filter matches nothing instead of failing the field**](null-element-in-node-id-list-filter-matches-nothing.md) — In Progress, bug
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
