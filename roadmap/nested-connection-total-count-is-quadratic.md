@@ -1,7 +1,7 @@
 ---
 id: R1070
 title: "A nested connection totalCount runs one count per parent, each over every parent's rows"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: codegen-correctness
