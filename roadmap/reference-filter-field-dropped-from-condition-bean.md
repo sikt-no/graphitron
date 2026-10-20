@@ -1,7 +1,7 @@
 ---
 id: R1071
 title: "A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: codegen-correctness

@@ -14,8 +14,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R1071` | A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives | In Progress | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](reference-filter-field-dropped-from-condition-bean.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-15 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
+| `R1071` | A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives | In Review | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](reference-filter-field-dropped-from-condition-bean.md) |
 | `R1045` | An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row | In Review | 2026-10-20 <sub>created 2026-10-15</sub> | [plan](inline-same-table-child-reads-an-arbitrary-row.md) |
 | `R708` | The $project selection gate fires on names selected at any depth below its unit | In Review | 2026-10-20 <sub>created 2026-08-18</sub> | [plan](projection-selection-gate-depth-leak.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
@@ -641,7 +641,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R1071` [**A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives**](reference-filter-field-dropped-from-condition-bean.md) — In Progress, bug
+- `R1071` [**A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives**](reference-filter-field-dropped-from-condition-bean.md) — In Review, bug
 - `R708` [**The $project selection gate fires on names selected at any depth below its unit**](projection-selection-gate-depth-leak.md) — In Review, correctness
 - `R1070` [**A nested connection totalCount runs one count per parent, each over every parent's rows**](nested-connection-total-count-is-quadratic.md) — In Progress, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
