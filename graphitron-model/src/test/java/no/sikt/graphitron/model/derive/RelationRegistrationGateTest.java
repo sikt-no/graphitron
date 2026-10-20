@@ -445,6 +445,12 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_producer_service", Arm.DERIVED);
         registrations.put("graphitron_producer_service_rule", Arm.DERIVED);
         registrations.put("graphitron_field_target_table", Arm.DERIVED);
+        registrations.put("graphitron_path_element_key", Arm.DERIVED);
+        registrations.put("graphitron_path_element_key_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_element_table", Arm.DERIVED);
+        registrations.put("graphitron_path_element_table_rule", Arm.DERIVED);
+        registrations.put("graphitron_path_element_method", Arm.DERIVED);
+        registrations.put("graphitron_path_element_method_rule", Arm.DERIVED);
         registrations.put("graphitron_field_target_table_rule", Arm.DERIVED);
         registrations.put("graphitron_field_source_table", Arm.DERIVED);
         registrations.put("graphitron_field_source_table_rule", Arm.DERIVED);

@@ -344,26 +344,33 @@ running from the participant's table toward a `@nodeId` target in key hops alone
   lift (`CustomerAddressSummary.address`), and a service result's `TableRecord` member
   (tilgangsstyring's `DeaktiverApplikasjonerPayload.applikasjoner`, a `List<SubjektRecord>`). A root
   field's argument or input field with a path is a filter and walks from the field's target.
-  * **What an element names is stated at the entry grain** `open`. Designed with Alf 2026-10-20.
+  * **What an element names is stated at the entry grain** `done`. Designed with Alf 2026-10-20.
     Resolved from its spelling once, so spelling lives only in the entries, and in the author's
     terms, since a key is what the author named:
     ```sql
-    graphitron_path_element_key    (element PK → graphitron_ast_reference_key_step_entry,
-                                    constraint → sql_referential_constraint)
-    graphitron_path_element_table  (element PK → graphitron_ast_reference_table_step_entry,
-                                    table → sql_table)
-    graphitron_path_element_method (element PK → graphitron_ast_reference_condition_step_entry,
-                                    method → code_condition_method)
+    graphitron_path_element_key    (element, constraint PK → sql_referential_constraint,
+                                    element → graphitron_ast_reference_key_step_entry)
+    graphitron_path_element_table  (element, table PK → sql_table,
+                                    element → graphitron_ast_reference_table_step_entry)
+    graphitron_path_element_method (element, method PK → code_condition_method,
+                                    element → graphitron_ast_reference_condition_step_entry)
     ```
-    A key resolves by its SQL name or its jOOQ constant, each qualified by schema or not; a table by
-    its name, qualified or not; a method by its class and name. One candidate, or a defect at the
-    element. No direction, no source and no target, none of them being a fact about what was
-    written, and no site: an element names the same thing at a field, an argument or an input
-    field. Measured 2026-10-20 on sakila and the four Graphitron 10 subgraphs of fs-plattform:
-    every key, table and condition spelling resolves to one candidate, none to several. opptak
-    writes 88 of its 218 keys as schema-qualified jOOQ constants
-    (`soknad_v2.SOKNADS_KVITTERING_ALTERNATIV__…_FK`), which the generator resolves and today's
-    reading, admitting a jOOQ constant only unqualified, does not.
+    Written by `PathElements` from a rule view each, marked and swept, at the bottom of the
+    reference stratum; pinned by `path-element`. A key resolves as the generator's lookup does: its
+    SQL name wherever one in the graph's catalogs answers, the generated Keys constant only where
+    none does, and a written schema binding the schema of the table holding the key; a table by its
+    name, qualified or not; a method by its class and name. One row per candidate, as the generator
+    narrows a name two schemas share by the table its walk stands at, so the walk narrows here too
+    (`note_event_fk` names both `multischema_a`'s and `multischema_b`'s). No direction, no source
+    and no target, none of them being a fact about what was written, and no site: an element names
+    the same thing at a field, an argument or an input field. Measured 2026-10-20 on sakila and the
+    four Graphitron 10 subgraphs of fs-plattform: every key, table and condition spelling resolves
+    to one candidate, none to several. opptak writes 88 of its 218 keys as schema-qualified jOOQ
+    constants (`soknad_v2.SOKNADS_KVITTERING_ALTERNATIV__…_FK`), which the generator and now these
+    relations resolve and today's reading, admitting a jOOQ constant only unqualified, does not.
+    * **An element naming nothing is a defect at the element** `open`. A spelling with no candidate
+      is a code at its position; one several candidates still answer where the walk stands is the
+      step's.
     * **The routine reading is read at the element** `done`. A `@routine` element's reading joins
       `graphitron_ast_routine_entry` at its written position, one candidate only, with no target
       check; `graphitron_field_routine` and `FieldRoutines` went. Cases in `field-path-routine`.

@@ -5446,6 +5446,10 @@ COMMENT ON COLUMN sql_constraint.table_schema_upper IS 'the upper-cased form of 
 COMMENT ON COLUMN sql_constraint.constraint_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored key reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_constraint on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_constraint.jooq_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored key reference, eligible only where no SQL constraint name answers it. NULL where jooq_name is, which is the constraint that resolves to no constant and therefore matches no reference. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_constraint on its key rather than by having it forwarded through a derived view';
 COMMENT ON COLUMN sql_constraint.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+CREATE INDEX sql_constraint_name_upper_ix ON sql_constraint (constraint_name_upper, source_name);
+COMMENT ON INDEX sql_constraint_name_upper_ix IS 'A written key meets the catalog by its folded SQL name, the primary key leading with the source and the table and so serving none of it. Measured on a sis capture of 2026-10-21, 453 key elements against 1737 constraints: graphitron_path_element_key_rule took 0.6 to 1.7 s with no index here and 8 to 80 ms with this one and its jOOQ-name sibling.';
+CREATE INDEX sql_constraint_jooq_name_upper_ix ON sql_constraint (jooq_name_upper, source_name);
+COMMENT ON INDEX sql_constraint_jooq_name_upper_ix IS 'The same match by the folded Keys constant, which a written key falls back to where no SQL name answers it, and which opptak writes for most of its keys.';
 
 CREATE TABLE sql_constraint_column (
   source_name     VARCHAR NOT NULL,
@@ -7617,6 +7621,179 @@ COMMENT ON COLUMN graphitron_spelled_table.table_source_name IS 'the resolved ta
 COMMENT ON COLUMN graphitron_spelled_table.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one spelling apart';
 COMMENT ON COLUMN graphitron_spelled_table.table_name IS 'the resolved table''s SQL name. With the two columns above this is sql_table''s full key';
 COMMENT ON COLUMN graphitron_spelled_table.candidates IS 'how many tables the spelling resolves to, this row being one of them; 1 on an unambiguous spelling';
+
+CREATE TABLE graphitron_path_element_key (
+  graph_name             VARCHAR NOT NULL,
+  source_name            VARCHAR NOT NULL,
+  source_line            INT     NOT NULL,
+  source_column          INT     NOT NULL,
+  constraint_source_name VARCHAR NOT NULL,
+  constraint_schema      VARCHAR NOT NULL,
+  constraint_table       VARCHAR NOT NULL,
+  constraint_name        VARCHAR NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column,
+               constraint_source_name, constraint_schema, constraint_table, constraint_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_key_step_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_element_key IS 'A foreign key a path element names: one row per element and candidate key. For example {key: "film_actor_actor_id_fkey"} names public.film_actor''s key to actor, and an unqualified {key: "note_event_fk"} names both schemas'' note_event_fk.';
+COMMENT ON COLUMN graphitron_path_element_key.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_key.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_key.source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_path_element_key.source_column IS 'the element''s source column. With the three columns before it, the element''s key in graphitron_ast_reference_key_step_entry, which holds the spelling this row resolves';
+COMMENT ON COLUMN graphitron_path_element_key.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_path_element_key.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_path_element_key.constraint_table IS 'the table holding the key, the referencing side';
+COMMENT ON COLUMN graphitron_path_element_key.constraint_name IS 'the key''s SQL name. With the three columns before it, sql_referential_constraint''s key';
+COMMENT ON COLUMN graphitron_path_element_key.touched_at IS 'when the reading that last found this candidate ran: the mark the sweep reads, so a candidate no longer found goes';
+
+CREATE VIEW graphitron_path_element_key_rule
+  (graph_name, source_name, source_line, source_column,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name) AS
+-- The generator's precedence: a written name is a key's SQL name wherever one in the graph's
+-- catalogs answers it, and only where none does is it the generated Keys constant. A schema written
+-- before the name binds the schema of the table holding the key, after that choice and never
+-- instead of it. Both sides are stored folded columns, so each match is an equality.
+SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
+       c.source_name, c.table_schema, c.table_name, c.constraint_name
+  FROM graphitron_ast_reference_key_step_entry k
+  JOIN store_graph_source m ON m.graph_name = k.graph_name
+  JOIN sql_constraint c
+    ON c.source_name = m.source_name AND c.constraint_name_upper = k.key_ref_name_part_upper
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = c.source_name AND rc.table_schema = c.table_schema
+   AND rc.table_name = c.table_name AND rc.constraint_name = c.constraint_name
+ WHERE k.key_ref_namespace_part_upper IS NULL OR c.table_schema_upper = k.key_ref_namespace_part_upper
+UNION ALL
+SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
+       c.source_name, c.table_schema, c.table_name, c.constraint_name
+  FROM graphitron_ast_reference_key_step_entry k
+  JOIN store_graph_source m ON m.graph_name = k.graph_name
+  JOIN sql_constraint c
+    ON c.source_name = m.source_name AND c.jooq_name_upper = k.key_ref_name_part_upper
+  JOIN sql_referential_constraint rc
+    ON rc.source_name = c.source_name AND rc.table_schema = c.table_schema
+   AND rc.table_name = c.table_name AND rc.constraint_name = c.constraint_name
+ WHERE (k.key_ref_namespace_part_upper IS NULL OR c.table_schema_upper = k.key_ref_namespace_part_upper)
+   AND NOT EXISTS (SELECT 1 FROM sql_constraint s
+                     JOIN sql_referential_constraint src
+                       ON src.source_name = s.source_name AND src.table_schema = s.table_schema
+                      AND src.table_name = s.table_name AND src.constraint_name = s.constraint_name
+                     JOIN store_graph_source sm ON sm.source_name = s.source_name
+                    WHERE sm.graph_name = k.graph_name
+                      AND s.constraint_name_upper = k.key_ref_name_part_upper);
+COMMENT ON VIEW graphitron_path_element_key_rule IS 'One row the path element key rule computes, in the shape graphitron_path_element_key stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_path_element_key, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_path_element_key_rule.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_key_rule.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_key_rule.source_line IS 'the element''s source line';
+COMMENT ON COLUMN graphitron_path_element_key_rule.source_column IS 'the element''s source column';
+COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_source_name IS 'the catalog partition of the table holding the candidate key';
+COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_table IS 'the table holding the candidate key';
+COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_name IS 'the candidate key''s SQL name';
+
+CREATE TABLE graphitron_path_element_table (
+  graph_name        VARCHAR NOT NULL,
+  source_name       VARCHAR NOT NULL,
+  source_line       INT     NOT NULL,
+  source_column     INT     NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column,
+               table_source_name, table_schema, table_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_table_step_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_element_table IS 'A table a path element names: one row per element and candidate table. For example {table: "film_actor"} names public.film_actor, and {table: "multischema_a.note"} names that schema''s note alone.';
+COMMENT ON COLUMN graphitron_path_element_table.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_table.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_table.source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_path_element_table.source_column IS 'the element''s source column. With the three columns before it, the element''s key in graphitron_ast_reference_table_step_entry, which holds the spelling this row resolves';
+COMMENT ON COLUMN graphitron_path_element_table.table_source_name IS 'the named table''s catalog partition';
+COMMENT ON COLUMN graphitron_path_element_table.table_schema IS 'the named table''s SQL schema';
+COMMENT ON COLUMN graphitron_path_element_table.table_name IS 'the named table''s SQL name. With the two columns before it, sql_table''s key';
+COMMENT ON COLUMN graphitron_path_element_table.touched_at IS 'when the reading that last found this candidate ran: the mark the sweep reads, so a candidate no longer found goes';
+
+CREATE VIEW graphitron_path_element_table_rule
+  (graph_name, source_name, source_line, source_column,
+   table_source_name, table_schema, table_name) AS
+-- A qualified name binds the schema and the name; an unqualified one, whose namespace half is null,
+-- matches on its name in any of the graph's catalogs. Both sides are stored folded columns.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       st.source_name, st.table_schema, st.table_name
+  FROM graphitron_ast_reference_table_step_entry t
+  JOIN store_graph_source m ON m.graph_name = t.graph_name
+  JOIN sql_table st
+    ON st.source_name = m.source_name AND st.table_name_upper = t.table_ref_name_part_upper
+ WHERE t.table_ref_namespace_part_upper IS NULL OR st.table_schema_upper = t.table_ref_namespace_part_upper;
+COMMENT ON VIEW graphitron_path_element_table_rule IS 'One row the path element table rule computes, in the shape graphitron_path_element_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_path_element_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_path_element_table_rule.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_table_rule.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_table_rule.source_line IS 'the element''s source line';
+COMMENT ON COLUMN graphitron_path_element_table_rule.source_column IS 'the element''s source column';
+COMMENT ON COLUMN graphitron_path_element_table_rule.table_source_name IS 'the candidate table''s catalog partition';
+COMMENT ON COLUMN graphitron_path_element_table_rule.table_schema IS 'the candidate table''s SQL schema';
+COMMENT ON COLUMN graphitron_path_element_table_rule.table_name IS 'the candidate table''s SQL name';
+
+CREATE TABLE graphitron_path_element_method (
+  graph_name         VARCHAR NOT NULL,
+  source_name        VARCHAR NOT NULL,
+  source_line        INT     NOT NULL,
+  source_column      INT     NOT NULL,
+  method_source_name VARCHAR NOT NULL,
+  method_class_name  VARCHAR NOT NULL,
+  method_name        VARCHAR NOT NULL,
+  method_descriptor  VARCHAR NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column,
+               method_source_name, method_class_name, method_name, method_descriptor),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_reference_condition_step_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_condition_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_element_method IS 'A condition method a path element names: one row per element and candidate method. For example {condition: {className: "no.example.Conditions", method: "liveActor"}} names that class''s liveActor, one row per overload.';
+COMMENT ON COLUMN graphitron_path_element_method.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_method.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_method.source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_path_element_method.source_column IS 'the element''s source column. With the three columns before it, the element''s key in graphitron_ast_reference_condition_step_entry, which holds the class and method this row resolves';
+COMMENT ON COLUMN graphitron_path_element_method.method_source_name IS 'the classpath entry the method was read from';
+COMMENT ON COLUMN graphitron_path_element_method.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_path_element_method.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_path_element_method.method_descriptor IS 'the method''s descriptor, telling overloads apart. With the three columns before it, code_condition_method''s key';
+COMMENT ON COLUMN graphitron_path_element_method.touched_at IS 'when the reading that last found this candidate ran: the mark the sweep reads, so a candidate no longer found goes';
+
+CREATE VIEW graphitron_path_element_method_rule
+  (graph_name, source_name, source_line, source_column,
+   method_source_name, method_class_name, method_name, method_descriptor) AS
+-- The class and method as written, among the condition methods the graph's classpath declares; an
+-- element naming no class or no method names nothing.
+SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
+       cm.source_name, cm.class_name, cm.method_name, cm.descriptor
+  FROM graphitron_ast_reference_condition_step_entry c
+  JOIN store_graph_source m ON m.graph_name = c.graph_name
+  JOIN code_condition_method cm
+    ON cm.source_name = m.source_name AND cm.class_name = c.class_name AND cm.method_name = c.method;
+COMMENT ON VIEW graphitron_path_element_method_rule IS 'One row the path element method rule computes, in the shape graphitron_path_element_method stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_path_element_method, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_path_element_method_rule.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_method_rule.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_method_rule.source_line IS 'the element''s source line';
+COMMENT ON COLUMN graphitron_path_element_method_rule.source_column IS 'the element''s source column';
+COMMENT ON COLUMN graphitron_path_element_method_rule.method_source_name IS 'the candidate method''s classpath entry';
+COMMENT ON COLUMN graphitron_path_element_method_rule.method_class_name IS 'the class declaring the candidate method';
+COMMENT ON COLUMN graphitron_path_element_method_rule.method_name IS 'the candidate method';
+COMMENT ON COLUMN graphitron_path_element_method_rule.method_descriptor IS 'the candidate method''s descriptor';
 
 CREATE VIEW intent_bound_table
   (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
@@ -14579,6 +14756,10 @@ COMMENT ON COLUMN meta_family_headline.relation_name IS 'the headline relation''
 COMMENT ON COLUMN meta_family_headline.ordinal IS 'the headline''s position within its own family''s roster, 0-based; dense from zero within each family (gated), which is the schema-gate convention here because uniqueness alone would let a gap through and a gap is how a dropped row hides. Every family carries at least one row, single-relation families listing their one resident.';
 
 CREATE VIEW meta_family_bridge (relation_name, spelled_prefix, census_prefix, rule) AS VALUES
+  ('graphitron_path_element_key_rule', 'graphitron_', 'sql_',
+   'A written key meets the foreign keys of the graph''s catalogs case-insensitively, the SQL name answering first and the generated Keys constant only where no SQL name does, a written schema binding the schema of the table holding the key.'),
+  ('graphitron_path_element_table_rule', 'graphitron_', 'sql_',
+   'A written table name meets the graph''s catalogs case-insensitively, a written schema binding the schema and an unqualified name matching in any.'),
   ('graphitron_spelled_table', 'graphitron_', 'sql_',
    'A written table reference meets the catalog census by case-insensitive match on pre-normalized spelling columns, one row per candidate.'),
   ('graphitron_field_reference_step_hop', 'graphitron_', 'sql_',
@@ -15072,6 +15253,15 @@ INSERT INTO meta_grain VALUES
   ('reference-step-hop',
    'one candidate route one field-site @reference path element could take, foreign-key or not, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
+  ('path-element-key-candidate',
+   'one key a path element names, in one graph',
+   'graph_name, source_name, source_line, source_column, constraint_source_name, constraint_schema, constraint_table, constraint_name', 'catalog'),
+  ('path-element-table-candidate',
+   'one table a path element names, in one graph',
+   'graph_name, source_name, source_line, source_column, table_source_name, table_schema, table_name', 'catalog'),
+  ('path-element-method-candidate',
+   'one condition method a path element names, in one graph',
+   'graph_name, source_name, source_line, source_column, method_source_name, method_class_name, method_name, method_descriptor', 'classpath'),
   ('spelled-table-candidate',
    'one author spelling resolved to one catalog table, in one graph',
    'graph_name, spelling, table_source_name, table_schema, table_name', 'catalog'),
@@ -16069,6 +16259,30 @@ INSERT INTO meta_relation VALUES
    'Where one link of a field''s chain departs and where it arrives, toward one of the field''s targets: one row per written link per target, with the constraint it joins through where it joins through one.',
    'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws two rows toward the film target, actor to film_actor and then film_actor to film.',
    'Where every link of a chain departs and arrives, which no relation held: the whole chain''s endpoints were stated first because more readers want the pair than want the hops, and the route was left to be walked at read time. Two views walked it, one seeded from a type''s binding and one from a @routine result, and neither could answer for the other''s shape. Keyed per target because that is what varies: graphitron_field_path states the order once at the coordinate, the order being the same whichever table a field''s rows come from, and where each link stands is a resolution that begins at the enclosing type''s binding and so belongs to one target. Resolved sequentially, each link departing where the one before it arrived, which is what collapses the candidacy the read-time rule carried: a named foreign key is a hop in either direction and which one an element means is only answerable where the chain stands, so both were rows and a walk narrowed them. Here the departure is known and the orientation follows. The constraint travels with the endpoints rather than being dropped, which is the complaint the read-time relation makes about itself: two foreign keys may join one pair of tables, so the endpoints do not name the constraint. via discriminates honestly, a link having one route however many facts the element states: a condition beside a key filters that hop rather than routing it.'),
+  ('graphitron_path_element_key', 'path-element-key-candidate', 'graphitron',
+   'A foreign key a path element names: one row per element and candidate key.',
+   'For example {key: "film_actor_actor_id_fkey"} names public.film_actor''s key to actor, and an unqualified {key: "note_event_fk"} names both schemas'' note_event_fk.',
+   'What an element names, resolved from its spelling once so spelling lives only in the entry, and in the author''s terms, a key being what the author named. One row per candidate rather than a decline: the generator narrows a name two schemas share by the table its walk stands at, so the walk narrows here too, and none or several left is a defect at the step. Keyed by the element, so it is the same at every site.'),
+  ('graphitron_path_element_key_rule', 'path-element-key-candidate', 'graphitron',
+   'One row the path element key rule computes, in the shape graphitron_path_element_key stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_path_element_key, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_path_element_table', 'path-element-table-candidate', 'graphitron',
+   'A table a path element names: one row per element and candidate table.',
+   'For example {table: "film_actor"} names public.film_actor, and {table: "multischema_a.note"} names that schema''s note alone.',
+   'What an element names, resolved from its spelling once and keyed by the element rather than by the spelling as graphitron_spelled_table is, so a reader starts from the element it holds. One row per candidate; the walk takes the one key from where it stands to the named table, and an element naming no table or several is a defect.'),
+  ('graphitron_path_element_table_rule', 'path-element-table-candidate', 'graphitron',
+   'One row the path element table rule computes, in the shape graphitron_path_element_table stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_path_element_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_path_element_method', 'path-element-method-candidate', 'graphitron',
+   'A condition method a path element names: one row per element and candidate method.',
+   'For example {condition: {className: "no.example.Conditions", method: "liveActor"}} names that class''s liveActor, one row per overload.',
+   'What an element names, resolved once against the condition methods the graph''s classpath declares. A method alone is the steps join, its signature saying which tables it joins; beside a key or a table it is a filter on that step. One row per overload, the generator choosing among them by the arguments it maps.'),
+  ('graphitron_path_element_method_rule', 'path-element-method-candidate', 'graphitron',
+   'One row the path element method rule computes, in the shape graphitron_path_element_method stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_path_element_method, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_spelled_table', 'spelled-table-candidate', 'graphitron',
    'How a written table name resolves against the catalog census: one row per candidate table, keyed on the spelling itself rather than on any one site that wrote it.',
    'For example a schema writing @table(name: "film") and a @reference path element naming film draws one row between them, and a name two schemas both declare draws two rows saying two candidates.',

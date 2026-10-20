@@ -1,0 +1,107 @@
+# What a path element names, resolved from its spelling once and keyed by the element. A key is its
+# SQL name wherever one in the graph's catalogs answers, and the generated Keys constant only where
+# none does; a written schema binds the schema of the table holding the key. An unqualified name two
+# schemas share is a row for each, the walk narrowing it by the table it stands at. A table matches
+# its name, qualified or not, and a condition its class and method.
+
+type Film @table(name: "film") {
+  title: String
+  bySqlName: Language @reference(path: [{key: "film_language_id_fkey"}])
+  byKeysConstant: Language @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+  bySchemaAndConstant: Language @reference(path: [{key: "public.FILM__FILM_LANGUAGE_ID_FKEY"}])
+  bySchemaAndSqlName: Language @reference(path: [{key: "public.film_language_id_fkey"}])
+  byNothing: Language @reference(path: [{key: "no_such_fkey"}])
+  throughJunction: [Actor!]! @reference(path: [{table: "film_actor"}, {table: "actor"}])
+  byCondition: [Actor!]! @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+    method: "filmActorsViaCondition"}}])
+}
+type Language @table(name: "language") { name: String }
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+type Event @table(name: "multischema_a.event") { eventId: Int @field(name: "event_id") }
+type Note @table(name: "multischema_a.note") {
+  anyEvent: Event @reference(path: [{key: "note_event_fk"}])
+  thisSchemasEvent: Event @reference(path: [{key: "multischema_a.note_event_fk"}])
+}
+
+extend type Query { films: [Film!]! notes: [Note!]! }
+
+# The SQL name.
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'film_language_id_fkey')
+  """, rows: """
+  constraint_schema, constraint_table, constraint_name
+  public,            film,             film_language_id_fkey
+  """)
+
+# The Keys constant, where no SQL name answers.
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'FILM__FILM_LANGUAGE_ID_FKEY')
+  """, rows: """
+  constraint_schema, constraint_table, constraint_name
+  public,            film,             film_language_id_fkey
+  """)
+
+# The Keys constant with its schema, as opptak writes most of its keys.
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'public.FILM__FILM_LANGUAGE_ID_FKEY')
+  """, rows: """
+  constraint_schema, constraint_table, constraint_name
+  public,            film,             film_language_id_fkey
+  """)
+
+# The SQL name with its schema.
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'public.film_language_id_fkey')
+  """, rows: """
+  constraint_schema, constraint_table, constraint_name
+  public,            film,             film_language_id_fkey
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'note_event_fk')
+  """, rows: """
+  constraint_schema, constraint_table, constraint_name
+  multischema_a,     note,             note_event_fk
+  multischema_b,     note,             note_event_fk
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'multischema_a.note_event_fk')
+  """, rows: """
+  constraint_schema, constraint_table, constraint_name
+  multischema_a,     note,             note_event_fk
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_path_element_key", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'no_such_fkey')
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_table", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphitron_ast_reference_table_step_entry WHERE table_ref IN ('film_actor', 'actor'))
+  """, rows: """
+  table_schema, table_name
+  public,       actor
+  public,       film_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_path_element_method", rows: """
+  method_class_name,                                                         method_name
+  no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures, filmActorsViaCondition
+  """)

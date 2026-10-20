@@ -11,6 +11,7 @@ import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
+import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TypeBackings;
@@ -69,6 +70,9 @@ public final class GraphitronAssemblyCapture {
         // take, which read it. Every input either was captured before this gatherer ran or is a
         // plain view over facts that were, so nothing here reads a table a later step writes.
         SpelledTables.derive(dsl, graph);
+        // What each path element names, its spelling resolved against the catalog and classpath
+        // once, keyed by the element.
+        PathElements.derive(dsl, graph, readAt);
         FieldReferenceStepHops.deriveKeyed(dsl, graph);
         FieldReferenceStepHops.deriveKeyless(dsl, graph);
         // Then the bindings, which the routine arm reaches through the hops just written, and then
