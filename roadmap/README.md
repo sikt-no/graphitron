@@ -15,7 +15,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R1071` | A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives | Spec | 2026-10-19 | [plan](reference-filter-field-dropped-from-condition-bean.md) |
-| `R708` | The $project selection gate fires on names selected at any depth below its unit | Spec | 2026-10-19 <sub>created 2026-08-18</sub> | [plan](projection-selection-gate-depth-leak.md) |
+| `R708` | The $project selection gate fires on names selected at any depth below its unit | Spec | 2026-10-20 <sub>created 2026-08-18</sub> | [plan](projection-selection-gate-depth-leak.md) |
 | `R1045` | An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row | Ready | 2026-10-19 <sub>created 2026-10-15</sub> | [plan](inline-same-table-child-reads-an-arbitrary-row.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-15 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |

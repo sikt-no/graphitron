@@ -7,7 +7,7 @@ priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-08-18
-last-updated: 2026-10-19
+last-updated: 2026-10-20
 ---
 
 # The $project selection gate fires on names selected at any depth below its unit
@@ -38,13 +38,27 @@ level, and every value it puts on a shared row is named by its full path from th
 owner.** Nothing changes in schemas, directives, or results that are correct today, except the
 names Graphitron gives its own generated SQL columns.
 
-One shape stays rejected, deliberately: one key for two *different* fields under `edges
-{ node { ... } }` and under `nodes { ... }` of the *same* connection (`edges { node { x: title } }
-nodes { x: releaseYear }`). Both paths are served from one SQL row by one node reader, so the
-shape is unrepresentable without treating the connection wrapper as a path segment, and the
-existing message says exactly that. Every production shape the sis scans reported reuses a key
-under different parents, not across these two connection paths; a consumer report of the
-connection shape gets its own item.
+The same holds across type conditions. `{ allContent { ... on FilmContent { k: length } ... on
+ShortContent { k: description } } }` resolves, as does the same reuse under `Query.nodes` and
+`_entities`. The fold that merges single-table discriminated participants into one statement is
+included.
+
+Two shapes stay rejected, deliberately. Both are one key for two *different* fields whose values
+would have to share one SQL alias in one row, and the existing message names the merge:
+
+* Under `edges { node { ... } }` and `nodes { ... }` of the *same* connection (`edges { node
+  { x: title } } nodes { x: releaseYear }`). Both paths are served from one SQL row by one node
+  reader, so the shape is unrepresentable without treating the connection wrapper as a path
+  segment.
+* Under two participants' fragments in a single-table discriminated fold, when each of the two
+  fields writes a *shared* alias, meaning an interface-declared aliased field (a reference, a
+  computed field) or a nesting field. Every participant's terms land in one select
+  list, and a shared alias is not qualified by participant, so the two would collapse to one
+  term. Qualifying those namespaces per participant is the deferral `siblingProjectionConflicts`
+  already documents for the build-time half of the same collision.
+
+Every production shape the sis scans reported reuses a key under different parents, not across
+these two merges. A consumer report of either shape gets its own item.
 
 ## Evidence
 
@@ -169,9 +183,39 @@ the all-depth map, keeping entries whose `getObjectTypeNames()` contain the conc
 filtering the connection's own `edges` / `nodes` fields by participant type would drop them. So
 the restriction becomes a static `Map -> Map` filter over the scoped map, in a two-argument
 form and a selective form. It lives on `SelectionOccurrences`, the class that owns
-occurrence-list semantics, and keeps the selective form's rule: an exempt name passes through
-whole, and the predicate reads `SelectedField.getName()`, never the client-minted key. The
-proxy class and its generator are deleted. Its javadoc said a map argument "would not survive
+occurrence-list semantics. The predicate still reads `SelectedField.getName()`, never the
+client-minted key. The proxy class and its generator are deleted.
+
+**The selective form keeps whole only what a shared alias needs.** The fold restricts
+selectively so that every arm writing one shared alias sees one occurrence set ("a shared alias
+requires a shared occurrence set", `LaunchSource.DiscriminatedTable.SelectionRestriction`).
+Today it gets there by inversion: it filters only the participant-qualified names
+(`perTypeFieldNames`) and passes everything else through whole. That includes plain columns,
+which write no alias at all, because they are read by column identity. So `... on FilmContent
+{ k: length } ... on ShortContent { k: description }` reaches both arms as one mixed bucket, and
+`canonical` rejects it. The set is turned the right way round. `LauncherCommands.selectionRestriction`
+collects `sharedAliasFieldNames` instead: the names of every `ResultKeyAliasedField` whose
+`AliasOwner` is `QualifiedBy` the interface, plus every `NestingField` name on any participant,
+because a nesting field's spliced leaves write unqualified aliases into the fold's one row. Per
+bucket and per participant, the filter works in two steps:
+
+1. It keeps the occurrences whose `getObjectTypeNames()` contain the participant.
+2. If any kept occurrence names a shared-alias field, it also keeps every occurrence in the bucket
+   that names a shared-alias field, whatever its type.
+
+Step 2 is today's union, scoped to the occurrences that actually share the alias. Two fragments
+selecting one interface field with different sub-selections still merge into one term that
+serves both. Two *different* shared-alias fields under one key meet in one arm, and `canonical`
+rejects them loudly instead of letting the fold's set collapse them silently; that is the Goal's
+second carve-out. A participant-local field and a shared-alias field under one key do not meet,
+because they write different aliases. The test reads every occurrence, not the first, so bucket
+order cannot change the verdict.
+
+This is also what keeps the census change below sound. Two participants' nesting fields under one
+client key always reach `canonical` together (step 2), so a client alias on a nesting field cannot make
+two participants compose one spliced alias over divergent SQL. The census only has to judge
+default keys. A later item that narrows this exemption must revisit the census in the same
+change. Its javadoc said a map argument "would not survive
 the nested-projection recursion". That is not true of the `$project` contract, which only ever
 takes a map. Callers: `MultiTablePolymorphicEmitter.buildPerTypenameSelect`,
 `DiscriminatedTableFragments.fieldsList`, `LaunchSource.DiscriminatedTable.SelectionRestriction`'s
@@ -182,15 +226,19 @@ projects `<Type>` from the env of `_entities`, `Query.node` or `Query.nodes`, wh
 fields include every concrete type's fragment fields. With no restriction, `... on Customer
 { k: firstName } ... on Film { k: title }` puts both into one bucket and `canonical` rejects
 a valid document. This is the same defect, scoped by type instead of depth. The site applies
-the two-argument restriction for its concrete type. That makes the rule hold for every
-launcher: a unit's map contains only its own type's fields at its own level.
+the two-argument restriction for its concrete type. With the selective form above, the rule
+holds for every launcher: a unit's map contains only its own type's fields at its own level,
+apart from the shared-alias buckets the fold keeps whole on purpose.
 
 **The discriminated fold's other two depth-unbounded gates.** `DiscriminatedTableFragments`
 reads the selection twice outside `$project`. Both reads switch to the scoped map. The fold
 computes the scoped map once into a local (`ownFields` or `connectionNodes`, depending on the
 host), and every read in the fold uses it:
 
-* the `InheritedRef` base-slice loop (`for (rkEntry : env.getSelectionSet().getFieldsGroupedByResultKey()...)`);
+* the `InheritedRef` base-slice loop (`for (rkEntry : env.getSelectionSet().getFieldsGroupedByResultKey()...)`).
+  Its bucket test also moves from the first occurrence's name to *any* occurrence's name. Once
+  the arms stop rejecting mixed buckets, a bucket can carry another participant's field first,
+  and a first-occurrence test would silently drop the base term;
 * `typeConditionedGate`, today `containsAnyOf("<Type>.<f>", "**/<Type>.<f>")`. The `**/`
   exists to reach `edges/node/<Type>.<f>`, and it also matches the same type-conditioned field
   anywhere deeper. It becomes a membership test on the scoped map: some occurrence has name
@@ -259,9 +307,12 @@ nesting field), and folding them would multiply arms into Shared/Qualified by ow
   `NestingCoordinates` in `<outputPackage>.util` (emitted by a
   `NestingCoordinatesClassGenerator`, name minted beside the other util class names), holds the
   set and the walk. It cannot live on `SelectionOccurrences`, whose statics are identical for
-  every schema by contract. The set is read off the existing nesting reach fold
-  (`NestingReach.compute` already visits every `NestingField`), not a fourth scan of the
-  model, and it excludes the pivot projection wirings that fold also carries, or the walk would
+  every schema by contract. The set comes from the existing nesting reach fold, not from a
+  fourth scan of the model. `NestingReach.compute` already visits every `NestingField`, but it
+  keeps only one representative per nesting type and drops the parent coordinate. So the fold
+  is extended to also collect `(parent type, field name)` for every nesting edge it visits: the
+  table-backed type for a root-level edge, and the enclosing nesting type for an inner one. The
+  collected set excludes the pivot projection wirings the fold also carries, or the walk would
   cross a pivot row boundary.
 * **There is no static alternative.** Fetchers are registered per nesting *type*
   (first-parent-wins, see R323's changelog entry) while a nested unit is per *(anchor, type)*,
@@ -333,6 +384,15 @@ implementer's judgment). None of them asserts on SQL text.
   change gets a `GraphitronSchemaValidator` test: two participants whose nesting fields have
   different names now validate clean, and two with the same nesting field name and divergent
   leaves are still rejected.
+* **Type-scoped reuse in the fold.** On `Content`,
+  `{ allContent { ... on FilmContent { k: length } ... on ShortContent { k: description } } }`
+  resolves each row's own value; today it is rejected. A connection variant on
+  `allContentConnection` covers the fold's `connectionNodes` host. The second carve-out is pinned
+  in the same class: two different shared-alias fields under one key across two participants'
+  fragments still fail with `canonical`'s message. `FanItem` declares one interface-level
+  aliased field today (`details`), so the pin either adds a second one there (for example a
+  scalar `@reference` off `fan_base`) or uses two participants' nesting fields if the
+  participant-splice fixture above lands, at the implementer's judgment.
 
 Enforcers: `GeneratedSourcesLintTest` gains a rule that fails on any emitted
 `getFieldsGroupedByResultKey(` and on any `"**/` glob literal in emitted sources, which is what
@@ -350,6 +410,8 @@ behaviour changes and are called out in the In Review notes.
 ## Retired vocabulary
 
 * `PolymorphicSelectionSet` (the generated class) and `PolymorphicSelectionSetClassGenerator`.
+* `perTypeFieldNames` on `LaunchSource.DiscriminatedTable.SelectionRestriction` (and the emitted
+  local that carries it): replaced by `sharedAliasFieldNames`, the inverted set.
 * The emitted `getFieldsGroupedByResultKey()` call: after this item, no emitted source calls
   it.
 * The `**/<Type>.<field>` glob in `typeConditionedGate`.
@@ -360,6 +422,17 @@ behaviour changes and are called out in the In Review notes.
 
 ## Other solutions we've considered
 
+* **Leave the discriminated fold's selective restriction as it is, and carve the fold out
+  wholesale.** This was the smallest change. But it would keep rejecting the commonest
+  type-scoped reuse, different plain columns under one key in two fragments, whose terms never
+  share an alias. Narrowing the exemption to shared-alias names costs one inverted set and a
+  two-step filter.
+* **Qualify spliced and interface-owned aliases per participant, so the fold needs no
+  exemption.** This would close the second carve-out too. But the nesting type sits under
+  several anchors with one registered reader, so its alias would need a participant segment
+  composed at runtime, and interface-owned aliases would stop collapsing to one term. That is
+  the redesign `siblingProjectionConflicts` already defers; it gets its own item if a consumer
+  hits the shape.
 * **Restrict the bucket to immediate children, with no connection adapter.** This is the
   Backlog body's first sketch. It breaks every connection, because the node fields sit under
   `edges/node` and `nodes` and are found today only through flattening.
