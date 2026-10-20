@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1075` | An LSP round-trip test times out on a 5-second wait while the reactor saturates the runner | Ready | 2026-10-20 | [plan](lsp-round-trip-test-times-out-under-reactor-contention.md) |
+| `R1075` | An LSP round-trip test times out on a 5-second wait while the reactor saturates the runner | In Progress | 2026-10-20 | [plan](lsp-round-trip-test-times-out-under-reactor-contention.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1067` | A node id or tenant value that does not fit its column is not caught at decode | In Review | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](undecodable-key-value-reaches-the-database.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -801,7 +801,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R944` [**The read-cost gate fails on how loaded the machine is, which has held trunk CI red and the docs site undeployed since 2026-09-09**](read-cost-budget-floor-is-a-machine-fact.md) — Backlog, testing
 - `R946` [**A mutation fixture writing film_actor is visible to a concurrent read test**](execution-tier-film-actor-isolation.md) — Backlog, bug
 - `R892` [**A pipeline test pins a generated fetcher body with code strings**](generated-body-code-string-pins-in-single-record-payload-test.md) — Backlog, hygiene
-- `R1075` [**An LSP round-trip test times out on a 5-second wait while the reactor saturates the runner**](lsp-round-trip-test-times-out-under-reactor-contention.md) — Ready, cleanup
+- `R1075` [**An LSP round-trip test times out on a 5-second wait while the reactor saturates the runner**](lsp-round-trip-test-times-out-under-reactor-contention.md) — In Progress, cleanup
 - `R561` [**ConditionGluePipelineTest still scans glue bodies for the shared decode-helper call**](condition-glue-pipeline-body-scans.md) — Backlog, test-quality
 - `R707` [**JooqRecordServiceParamPipelineTest asserts on generated helper body strings**](jooq-record-param-pipeline-body-string-assertions.md) — Backlog, tech-debt
 - `R809` [**LspTraceTest cases share the trace seams static state and fail each other**](trace-static-state-leaks-between-cases.md) — Backlog, bug
