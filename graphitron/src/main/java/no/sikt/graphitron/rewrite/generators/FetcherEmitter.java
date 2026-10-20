@@ -456,9 +456,9 @@ public final class FetcherEmitter {
     /**
      * The same-row child's fetcher body: unwrap the single-row multiset aliased
      * {@code __rk_<resultKey>} (the projection's same-row arm), then apply the null contract over
-     * the presence columns projected inside it. The row handed on holds exactly the return type's
-     * projection, as a root or multiset read of that type does, so the return type's own fetchers
-     * read it unchanged.
+     * the presence columns projected inside it. The row handed on holds the return type's
+     * projection, as a root or multiset read of that type does, plus those presence columns, so
+     * the return type's own fetchers read it unchanged.
      */
     private static CodeBlock sameRowBody(ChildField.SameRowTableField srf, NullContract contract) {
         var resultClass = ClassName.get("org.jooq", "Result");
