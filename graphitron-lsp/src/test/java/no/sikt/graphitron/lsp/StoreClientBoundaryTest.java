@@ -220,7 +220,7 @@ class StoreClientBoundaryTest {
      * wrong place would pass by reaching nothing; the file-count floors are the second half of that
      * defence.
      */
-    private static Path moduleRoot() {
+    static Path moduleRoot() {
         Path cwd = Path.of("").toAbsolutePath();
         for (Path p = cwd; p != null; p = p.getParent()) {
             if (Files.isRegularFile(p.resolve("roadmap/workflow.adoc"))) {

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.server;
 
+import no.sikt.graphitron.lsp.HangGuard;
 import org.eclipse.lsp4j.Diagnostic;
 import org.eclipse.lsp4j.InitializeParams;
 import org.eclipse.lsp4j.InitializeResult;
@@ -27,7 +28,6 @@ import java.util.List;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.logging.Handler;
 import java.util.logging.Level;
@@ -101,9 +101,7 @@ class LauncherFactoryTest {
                 var proxy = clientLauncher(clientSocket).getRemoteProxy();
 
                 proxy.shutdown();
-                assertThat(entered.await(5, TimeUnit.SECONDS))
-                    .as("the handler is in flight, so the response is still owed")
-                    .isTrue();
+                HangGuard.await("the handler to be in flight, so the response is still owed", entered);
 
                 // Exactly what teardown does to an in-flight request: the socket the response
                 // will be written to is closed while the handler is still running.
@@ -226,13 +224,10 @@ class LauncherFactoryTest {
         }
 
         void awaitAttemptAfter(int baseline) throws InterruptedException {
-            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-            while (attempts.get() <= baseline && System.nanoTime() < deadline) {
-                Thread.sleep(10);
-            }
-            assertThat(attempts.get())
-                .as("lsp4j attempted the write, so the absence of records means suppression")
-                .isGreaterThan(baseline);
+            HangGuard.until(
+                () -> "lsp4j to attempt the write, so the absence of records means suppression "
+                    + "(attempts " + attempts.get() + ", baseline " + baseline + ")",
+                () -> attempts.get() > baseline);
         }
 
         @Override

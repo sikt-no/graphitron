@@ -30,7 +30,6 @@ import java.util.List;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
-import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -112,15 +111,15 @@ class TextDocumentServiceTest {
         var workspace = new Workspace();
         workspace.setStore(access);
         var proxy = startServer(new GraphitronLanguageServer(workspace));
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+        HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
 
         String uri = SourceUri.of(fixture.sourceName());
         proxy.getTextDocumentService()
             .didOpen(new DidOpenTextDocumentParams(new TextDocumentItem(uri, "graphql", 1, source)));
 
-        var result = proxy.getTextDocumentService()
-            .completion(new CompletionParams(new TextDocumentIdentifier(uri), cursor))
-            .get(5, TimeUnit.SECONDS);
+        var result = HangGuard.answer("completion at " + cursor.getLine() + ":" + cursor.getCharacter(),
+            proxy.getTextDocumentService()
+                .completion(new CompletionParams(new TextDocumentIdentifier(uri), cursor)));
 
         assertThat(result.isLeft()).isTrue();
         return result.getLeft().stream().map(CompletionItem::getLabel).toList();
@@ -132,7 +131,7 @@ class TextDocumentServiceTest {
         var server = new GraphitronLanguageServer(workspace);
         var proxy = startServer(server);
 
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+        HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
 
         String uri = "file:///schema.graphqls";
         var item = new TextDocumentItem(uri, "graphql", 1, "type Foo { x: Int }\n");
@@ -146,9 +145,9 @@ class TextDocumentServiceTest {
         ));
 
         // Notifications are fire-and-forget; round-trip a request to flush.
-        proxy.getTextDocumentService().completion(new CompletionParams(
-            new TextDocumentIdentifier(uri), new Position(0, 0)
-        )).get(5, TimeUnit.SECONDS);
+        HangGuard.answer("the completion that flushes the didChange",
+            proxy.getTextDocumentService().completion(new CompletionParams(
+                new TextDocumentIdentifier(uri), new Position(0, 0))));
 
         String content = workspace.withView(uri, null, v -> new String(v.source()));
         int version = workspace.withView(uri, -1, FileSnapshot::version);
@@ -169,7 +168,7 @@ class TextDocumentServiceTest {
             var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
-            proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+            HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
 
             String uri = SourceUri.of(fixture.sourceName());
             String source = """
@@ -180,9 +179,9 @@ class TextDocumentServiceTest {
 
             // Notifications are fire-and-forget; round-trip a request to flush
             // the queued didOpen + diagnostic publish.
-            proxy.getTextDocumentService().completion(new CompletionParams(
-                new TextDocumentIdentifier(uri), new Position(0, 0))
-            ).get(5, TimeUnit.SECONDS);
+            HangGuard.answer("the completion that flushes the didOpen",
+                proxy.getTextDocumentService().completion(new CompletionParams(
+                    new TextDocumentIdentifier(uri), new Position(0, 0))));
 
             var diagnostics = clientStub.latestDiagnostics.get(uri);
             assertThat(diagnostics).isNotNull();
@@ -208,7 +207,7 @@ class TextDocumentServiceTest {
             var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
-            proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+            HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
 
             String uri = SourceUri.of(fixture.sourceName());
             proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
@@ -217,7 +216,7 @@ class TextDocumentServiceTest {
             // Cursor inside the "film" string value.
             var hoverParams = new org.eclipse.lsp4j.HoverParams(
                 new TextDocumentIdentifier(uri), new Position(0, source.indexOf("film") + 1));
-            var hover = proxy.getTextDocumentService().hover(hoverParams).get(5, TimeUnit.SECONDS);
+            var hover = HangGuard.answer("hover", proxy.getTextDocumentService().hover(hoverParams));
 
             assertThat(hover).isNotNull();
             var md = hover.getContents().getRight().getValue();
@@ -245,7 +244,7 @@ class TextDocumentServiceTest {
             var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
-            proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+            HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
 
             String uri = SourceUri.of(fixture.sourceName());
             String source = "type Foo @table(name: \"film\") { bar: Int }\n";
@@ -256,7 +255,7 @@ class TextDocumentServiceTest {
                 new TextDocumentIdentifier(uri),
                 new Position(0, source.indexOf("film") + 1)
             );
-            var result = proxy.getTextDocumentService().definition(defParams).get(5, TimeUnit.SECONDS);
+            var result = HangGuard.answer("definition", proxy.getTextDocumentService().definition(defParams));
 
             assertThat(result.isLeft()).isTrue();
             assertThat(result.getLeft()).hasSize(1);
@@ -289,7 +288,7 @@ class TextDocumentServiceTest {
             var workspace = new no.sikt.graphitron.lsp.state.Workspace();
             workspace.setStore(access);
             var proxy = startServer(new GraphitronLanguageServer(workspace));
-            var initialized = proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+            var initialized = HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
             assertThat(initialized.getCapabilities().getReferencesProvider())
                 .as("an editor only sends the request to a server that advertises it")
                 .isNotNull();
@@ -319,28 +318,29 @@ class TextDocumentServiceTest {
         var params = new org.eclipse.lsp4j.ReferenceParams(
             new TextDocumentIdentifier(uri), position,
             new org.eclipse.lsp4j.ReferenceContext(includeDeclaration));
-        return proxy.getTextDocumentService().references(params).get(5, TimeUnit.SECONDS);
+        return HangGuard.answer("references (includeDeclaration " + includeDeclaration + ")",
+            proxy.getTextDocumentService().references(params));
     }
 
     @Test
     void didCloseClearsDiagnosticsForFile() throws Exception {
         var server = new GraphitronLanguageServer(new no.sikt.graphitron.lsp.state.Workspace());
         var proxy = startServer(server);
-        proxy.initialize(new InitializeParams()).get(5, TimeUnit.SECONDS);
+        HangGuard.answer("initialize", proxy.initialize(new InitializeParams()));
 
         String uri = "file:///clean.graphqls";
         proxy.getTextDocumentService().didOpen(new DidOpenTextDocumentParams(
             new TextDocumentItem(uri, "graphql", 1, "type Foo @table(name: \"MISSING\") { bar: Int }\n")));
-        proxy.getTextDocumentService().completion(new CompletionParams(
-            new TextDocumentIdentifier(uri), new Position(0, 0))
-        ).get(5, TimeUnit.SECONDS);
+        HangGuard.answer("the completion that flushes the didOpen",
+            proxy.getTextDocumentService().completion(new CompletionParams(
+                new TextDocumentIdentifier(uri), new Position(0, 0))));
 
         proxy.getTextDocumentService().didClose(new org.eclipse.lsp4j.DidCloseTextDocumentParams(
             new TextDocumentIdentifier(uri)));
         // Round-trip again to flush the close + cleared diagnostics.
-        proxy.getTextDocumentService().completion(new CompletionParams(
-            new TextDocumentIdentifier(uri), new Position(0, 0))
-        ).get(5, TimeUnit.SECONDS);
+        HangGuard.answer("the completion that flushes the didClose",
+            proxy.getTextDocumentService().completion(new CompletionParams(
+                new TextDocumentIdentifier(uri), new Position(0, 0))));
 
         var diagnostics = clientStub.latestDiagnostics.get(uri);
         assertThat(diagnostics).isNotNull();

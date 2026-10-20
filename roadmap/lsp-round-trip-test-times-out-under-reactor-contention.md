@@ -152,3 +152,20 @@ strings.
 Completion is then: `FixedWaitGuardTest` green over the module's tests with no exemptions beyond
 `HangGuard`; `StoreOutOfBudgetTest` declares no `HANG_GUARD` of its own; the full module suite
 green under the verification build, which runs it under `-T 1C`.
+
+## Implementation notes
+
+Shipped as planned. `HangGuard`, `HangGuardTest` and `FixedWaitGuardTest` sit in
+`no.sikt.graphitron.lsp`'s test sources; every wait in the inventory goes through `HangGuard`, and
+`StoreOutOfBudgetTest` reads `HangGuard.BOUND`. Three points where the code settled a detail the
+plan left open:
+
+- `FixedWaitGuardTest` needs no exemption at all, `HangGuard` included: its own waits are bounded
+  by a `Duration` parameter, which the literal-only match passes. The scan blanks comments, strings
+  and text blocks before matching, which is what lets its inline-source cases live in the file it
+  scans. Run against the pre-change tree it reports exactly the inventory above, 23 sites.
+- The latch and polling failures read "waited 60 s for <what>, which never came", so their `what`
+  strings are phrased as what was awaited ("the drain to reach its publish while the mutator had
+  already returned"), keeping the former `.as(...)` sentences.
+- `FixedWaitGuardTest` finds the module directory through `StoreClientBoundaryTest.moduleRoot()`,
+  now package-private, rather than a second copy of the walk to the repository root.

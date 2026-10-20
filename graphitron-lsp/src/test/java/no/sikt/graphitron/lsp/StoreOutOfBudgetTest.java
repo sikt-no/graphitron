@@ -29,7 +29,6 @@ import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 
 import java.nio.file.Path;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CompletableFuture;
@@ -75,9 +74,6 @@ class StoreOutOfBudgetTest {
      */
     private static final ReadBudget ANNOTATION = new ReadBudget.Bounded(900);
 
-    /** How long a read against a runaway relation may run before the case calls it a hang. */
-    private static final Duration HANG_GUARD = Duration.ofSeconds(60);
-
     /** How H2 reports the statement budget of the session a read is running on. */
     private static final String QUERY_TIMEOUT =
         "SELECT setting_value FROM information_schema.settings WHERE setting_name = 'QUERY_TIMEOUT'";
@@ -117,7 +113,7 @@ class StoreOutOfBudgetTest {
             // The drain resolves each queued document's graph membership before it reads a fact, so
             // this is the first statement of every drain from here on.
             fixture.makeRunaway("store_graph_source");
-            assertTimeoutPreemptively(HANG_GUARD, workspace::markAllForRecalculation);
+            assertTimeoutPreemptively(HangGuard.BOUND, workspace::markAllForRecalculation);
 
             assertThat(client.published)
                 .as("nothing at all on the wire, so the client keeps rendering what it has; an "
@@ -145,7 +141,7 @@ class StoreOutOfBudgetTest {
 
             // The relation the directive surface is read from.
             fixture.makeRunaway("graphql_directive");
-            assertTimeoutPreemptively(HANG_GUARD, workspace::markAllForRecalculation);
+            assertTimeoutPreemptively(HangGuard.BOUND, workspace::markAllForRecalculation);
 
             assertThat(workspace.vocabulary())
                 .as("the same instance, not an empty replacement")
@@ -175,7 +171,7 @@ class StoreOutOfBudgetTest {
             boundary.setLevel(Level.DEBUG);
             boundary.addAppender(recorded);
             try {
-                var answer = assertTimeoutPreemptively(HANG_GUARD, () -> access.answeringAll(
+                var answer = assertTimeoutPreemptively(HangGuard.BOUND, () -> access.answeringAll(
                     StoreRead.DIAGNOSTICS, List.of(fixture.sourceName()), handles -> "unreached"));
                 String sql = switch (answer) {
                     case StoreAnswer.OutOfBudget<String> expired -> expired.sql();
@@ -243,7 +239,7 @@ class StoreOutOfBudgetTest {
                 var params = new InlayHintParams(new TextDocumentIdentifier(uri),
                     new Range(new Position(0, 0), new Position(SDL.split("\n").length, 0)));
 
-                assertThat(assertTimeoutPreemptively(HANG_GUARD, () -> service.inlayHint(params).get()))
+                assertThat(assertTimeoutPreemptively(HangGuard.BOUND, () -> service.inlayHint(params).get()))
                     .as("no hints, the read having been aborted before it annotated anything")
                     .isEmpty();
 

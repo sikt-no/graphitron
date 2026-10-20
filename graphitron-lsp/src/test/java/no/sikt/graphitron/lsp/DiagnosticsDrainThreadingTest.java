@@ -56,9 +56,8 @@ class DiagnosticsDrainThreadingTest {
             // The first mutator returns while its own drain is still held on the latch, which is
             // the whole claim: inline, this call could not have returned before publishing.
             workspace.didOpen(URI_A, 1, SDL);
-            assertThat(client.enteredGate.await(5, TimeUnit.SECONDS))
-                .as("the drain reached its publish while the mutator had already returned")
-                .isTrue();
+            HangGuard.await("the drain to reach its publish while the mutator had already returned",
+                client.enteredGate);
 
             // A second notification handler returns while the latch is still held, and nothing
             // has been published yet.
@@ -89,7 +88,7 @@ class DiagnosticsDrainThreadingTest {
             service.setClient(client);
 
             workspace.didOpen(URI_A, 1, SDL);
-            assertThat(client.enteredGate.await(5, TimeUnit.SECONDS)).isTrue();
+            HangGuard.await("the drain to reach its publish", client.enteredGate);
 
             // Five build swaps land while the first drain is held. The queue already collapses
             // their URIs; this pins that the submits collapse too.
@@ -126,14 +125,14 @@ class DiagnosticsDrainThreadingTest {
 
         var drain = new Thread(tasks.poll(), "test-diagnostics-drain");
         drain.start();
-        assertThat(client.enteredGate.await(5, TimeUnit.SECONDS)).isTrue();
+        HangGuard.await("the drain to reach its publish", client.enteredGate);
 
         // The drain has walked both files and is held publishing the first; the close lands in
         // the window between its walk and its publish of the second.
         service.didClose(new DidCloseTextDocumentParams(new TextDocumentIdentifier(URI_B)));
 
         client.release.countDown();
-        drain.join(TimeUnit.SECONDS.toMillis(5));
+        drain.join(HangGuard.BOUND);
         assertThat(drain.isAlive()).isFalse();
 
         var forB = client.published.stream().filter(p -> p.getUri().equals(URI_B)).toList();
@@ -190,10 +189,9 @@ class DiagnosticsDrainThreadingTest {
     }
 
     private static void awaitPublished(GatedClient client, int count) throws InterruptedException {
-        long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
-        while (client.published.size() < count && System.nanoTime() < deadline) {
-            Thread.sleep(5);
-        }
+        HangGuard.until(
+            () -> count + " publishes, of which only these arrived: " + client.published,
+            () -> client.published.size() >= count);
         assertThat(client.published).hasSize(count);
     }
 
@@ -216,7 +214,10 @@ class DiagnosticsDrainThreadingTest {
             if (diagnostics.getUri().equals(gatedUri) && enteredGate.getCount() > 0) {
                 enteredGate.countDown();
                 try {
-                    release.await(10, TimeUnit.SECONDS);
+                    // Never shorter than the test-side waits this gate sits under, or a test thread
+                    // starved past it would find the gate already open. Unasserted: a failure
+                    // thrown on the drain thread would be swallowed.
+                    release.await(HangGuard.BOUND.toMillis(), TimeUnit.MILLISECONDS);
                 } catch (InterruptedException e) {
                     Thread.currentThread().interrupt();
                 }
