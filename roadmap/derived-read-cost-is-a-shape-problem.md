@@ -1454,17 +1454,13 @@ reads nothing off the classpath that capture has already read, and builds no sch
       imported `@tag` alone while the mint put `@key` on every `@node` type, refused as undeclared.
       Closed by "The effective imports are graphitron's rule": the link imports what the mint
       writes.
-  * **A link's imported definitions are captured where the link is** `open`, a regression.
-    Reported 2026-10-15 from a live session. With the authored federation `@link` in place,
-    generate accepts `@tag` and `@key` but the editor flags each as "Unknown directive":
-    `DiagnosticFacts.directiveName` judges against `graphql_directive`, which holds only
-    definitions written in a document, while `FederationLinkApplier` adds the imported ones to the
-    generator's registry alone. The store has the link (`graphitron_federation_link`) and not what
-    it imports. The imported definitions are captured as base facts, sourced to the link, so the
-    editor and the generator read one vocabulary; the sibling node above reads the same fact.
-    Federation's side is "Federation is a gatherer of its own"; the editor reading the effective
-    vocabulary is the emitted directive anchors. After "The effective imports are graphitron's
-    rule" (done), whose imports are the vocabulary the editor reads.
+  * **A link's imported definitions are captured where the link is** `done`. The editor judges
+    directives against `graphitron_directive` and `graphitron_directive_argument`, the written
+    directives plus the federation definitions the link brings in under the names the library gives
+    them, read from `federation_version_definition`.
+    * **The MCP lists the composed vocabulary** `open`. `DirectivesResource` still reads
+      `graphql_directive`, because it lists locations too and graphitron's vocabulary carries none;
+      a `graphitron_directive_location` beside the other two closes it.
   * **`graphitron_synthesized_node_type_id` is named in the mint's vocabulary** `open`, its author's
     to rename.
 * **Federation is a gatherer of its own** `open`. Federation's facts are neither the SDL's nor
@@ -2463,6 +2459,30 @@ nothing when it fails: the budget warns, the other two say nothing at all.
   written; the emitted schema is decided in capture; a path is one forward walk from source to
   target; and the generator's shape is whatever that first node decides. R983 rewrites the same
   pages' vocabulary and lands with it or first. R333's body is in git history.
+
+### The build cannot hang or fail on its own fixtures `open`
+
+A build that hangs or fails for reasons no change caused costs every session a rerun and makes a
+real failure look like noise.
+
+* **Class initialization cannot deadlock in javapoet** `open`, first: a build hang. Found
+  2026-10-20: a `graphitron` module run hung for ten hours, five test threads waiting on class
+  initialization monitors. `TypeName`'s static initializer builds `ClassName` instances (`OBJECT`
+  and the `BOXED_*` constants), and `ClassName` extends `TypeName`, so a thread that starts with
+  `ClassName` holds it while waiting for `TypeName`, and one that starts with `TypeName` holds it
+  while waiting for `ClassName`. `CatalogRefs` and `ScalarTypeResolver` queue behind them.
+  Parallel test classes make the order a race; a generator or editor initializing these on two
+  threads can meet the same cycle. The fix breaks the cycle in the fork: no subclass is built in
+  `TypeName`'s initializer. A test that initializes the two from opposite ends on two threads pins
+  it, a test-only warm-up being the symptom's cure rather than the cycle's.
+* **A refused compaction does not depend on luck** `open`. H2 2.4's `SHUTDOWN COMPACT` copies the
+  store on several threads and commits partway once the copy outgrows its buffer, and a commit
+  landing mid-copy trips H2's own page bookkeeping, an assert, so only under `-ea`. Neither the
+  buffer nor the threads can be set from outside, and compacting in place leaves six times what the
+  copy does. `compactIfLast` retries once and reports both refusals, which a module run at a load
+  near 19 showed clearing three refusals of five. What closes it is a compaction that cannot meet
+  the race: H2's asserts off in the test JVM, which is how a build runs them, or an H2 that fixes
+  it.
 
 ## Tests
 
