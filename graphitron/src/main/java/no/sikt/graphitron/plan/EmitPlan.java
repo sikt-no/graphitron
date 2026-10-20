@@ -136,10 +136,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             globals.add(one(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL,
                 units.singleton(GeneratedUnits.SUB_UTIL, "OneOfDirectiveSdl")));
         }
-        globals.add(one(GlobalUnitKind.POLYMORPHIC_SELECTION_SET,
-            units.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet")));
-        globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES,
-            units.singleton(GeneratedUnits.SUB_UTIL, "SelectionOccurrences")));
+        globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES, units.selectionOccurrences()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
         globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
         globals.add(connectionRuntime(units, schema.sessionHooks(), schema.requestTenantKeyType().isPresent()));

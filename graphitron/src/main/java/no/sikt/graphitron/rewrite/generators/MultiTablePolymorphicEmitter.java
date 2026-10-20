@@ -9,7 +9,6 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
-import no.sikt.graphitron.rewrite.generators.util.PolymorphicSelectionSetClassGenerator;
 import no.sikt.graphitron.render.ColumnComparison;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.render.ProjectionCall;
@@ -2176,19 +2175,20 @@ public final class MultiTablePolymorphicEmitter {
 
         // Field projection: <TypeName>.$project(...) plus the synthetic __typename literal so
         // the schema-class TypeResolver routes each row back to its concrete GraphQL type.
-        // The parent's flattened DataFetchingFieldSelectionSet is restricted to this
-        // participant's SelectedFields via PolymorphicSelectionSet.restrictTo, so the per-typename
-        // SELECT projects only columns actually requested for this variant. Unfiltered selection
-        // set would over-select shared-name fields from inactive branches.
+        // The fetched field's selection, scoped to the participants' level (the node level for a
+        // connection, which is exactly when the sort key rides along), is restricted to this
+        // participant's occurrences via SelectionOccurrences.restrictTo, so the per-typename
+        // SELECT projects only columns actually requested for this variant and a key another
+        // participant's fragment reuses for a different field never reaches this one.
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
-        var polymorphicSelectionSet = ClassName.get(
-            outputPackage + ".util", PolymorphicSelectionSetClassGenerator.CLASS_NAME);
+        var occurrences = ProjectionCall.selectionOccurrencesClass(outputPackage);
         b.addStatement("$T fields = new $T($L)",
             arrayListOfField, arrayListOfField,
-            ProjectionCall.fromSelectionSet(typeClass,
-                CodeBlock.of("$T.restrictTo(env.getSelectionSet(), $S)",
-                    polymorphicSelectionSet, participant.typeName()),
+            ProjectionCall.fromGrouped(typeClass,
+                CodeBlock.of("$T.restrictTo($L, $S)", occurrences,
+                    ProjectionCall.envSelection(occurrences, ProjectionCall.SelectionScope.of(includeSortKey)),
+                    participant.typeName()),
                 CodeBlock.of("$L", tableLocal)));
         b.addStatement("fields.add($T.inline($S).as($S))", DSL, participant.typeName(), TYPENAME_COLUMN);
 

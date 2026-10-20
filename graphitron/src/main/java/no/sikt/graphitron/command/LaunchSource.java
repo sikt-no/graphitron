@@ -334,37 +334,34 @@ public sealed interface LaunchSource {
         /**
          * How the fold scopes each participant's {@code $project} input, as one whole-query fact.
          *
-         * <p>The fold hands every branch the <em>same</em> grouped selection, so a participant's
-         * arm fires for a result key another participant's fragment selected. That is harmless
-         * while every arm mints the same alias over the same occurrence set, and wrong data the
-         * moment either half diverges: an aliased jOOQ field compares equal on its alias alone, so
-         * two arms rendering different SQL under one alias collapse to whichever landed first.
+         * <p>Every participant's projection lands in <em>one</em> select list, and an aliased jOOQ
+         * field compares equal on its alias alone, so two arms rendering different SQL under one
+         * alias collapse to whichever landed first. Hence the invariant this slot exists to make
+         * structural: <em>a shared alias requires a shared occurrence set.</em>
          *
-         * <p>Hence the invariant this slot exists to make structural: <em>a shared alias requires
-         * a shared occurrence set.</em> {@link #perTypeFieldNames} is exactly the field names whose
-         * alias the participant type qualifies (their stamped
-         * {@link no.sikt.graphitron.rewrite.model.AliasOwner} is the participant's own type name),
-         * so those and only those get their occurrences filtered to the declaring participant. A
-         * name every arm aliases identically, whether an interface-declared key qualified by the
-         * interface or a bare key a spliced nesting unit contributes, keeps every occurrence in
-         * every arm, which is what it has always done. An empty set means the fold restricts
-         * nothing, the pre-existing behaviour, and every schema with no participant-local
-         * result-key-aliased field lands there.
+         * <p>Each branch reads the scoped selection restricted to its participant (the generated
+         * {@code SelectionOccurrences.restrictTo}): occurrences whose object types include the
+         * participant, so a key reused across two participants' fragments for different fields
+         * reaches each arm as that participant's own field. {@link #sharedAliasFieldNames} are the
+         * exceptions, the field names whose term lands under an alias no participant qualifies:
+         * a result-key-aliased field whose stamped
+         * {@link no.sikt.graphitron.rewrite.model.AliasOwner} is not the participant's own type
+         * (an interface-declared reference or computed field), and every nesting field on any
+         * participant, whose spliced leaves write unqualified aliases into the fold's one row. A
+         * bucket in which the participant keeps such a field also keeps every other occurrence in
+         * the bucket naming such a field, whatever its type, so every arm writing one shared
+         * alias sees one occurrence set; two <em>different</em> shared-alias fields under one key
+         * then meet in one arm and are rejected loudly rather than collapsed silently. A plain
+         * column writes no alias at all (it is read by column identity), so it never needs the
+         * exemption.
          *
-         * <p>{@link #helper} is the generated {@code PolymorphicSelectionSet} view the restriction
-         * runs through; a bare filtered map would not survive the {@code $project} contract, which
-         * recurses through {@code SelectedField.getSelectionSet()}. It is the same view, and the
-         * same call, the multi-table stage-2 per-typename SELECT already feeds that contract.
+         * <p>{@link #helper} is the generated {@code SelectionOccurrences} scaffold the
+         * restriction runs through, the same one the multi-table per-typename select calls.
          */
-        public record SelectionRestriction(UnitRef helper, List<String> perTypeFieldNames) {
+        public record SelectionRestriction(UnitRef helper, List<String> sharedAliasFieldNames) {
             public SelectionRestriction {
                 Objects.requireNonNull(helper, "helper");
-                perTypeFieldNames = List.copyOf(perTypeFieldNames);
-            }
-
-            /** {@code true} when the fold hands every branch the unrestricted selection. */
-            public boolean isEmpty() {
-                return perTypeFieldNames.isEmpty();
+                sharedAliasFieldNames = List.copyOf(sharedAliasFieldNames);
             }
         }
 

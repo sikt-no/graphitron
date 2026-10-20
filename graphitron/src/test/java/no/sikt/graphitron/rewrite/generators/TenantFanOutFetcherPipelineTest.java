@@ -78,7 +78,7 @@ class TenantFanOutFetcherPipelineTest {
         var launcher = render(schema, "QueryFetchers", "rowsFilms");
         assertThat(launcher)
             .contains("fake.code.generated.schema.TenantConnections.fanOutRows(env, dsl -> dsl")
-            .contains("selectFields = fake.code.generated.types.Film.$project(env.getSelectionSet().getFieldsGroupedByResultKey(), filmTable, env)")
+            .contains("selectFields = fake.code.generated.types.Film.$project(fake.code.generated.util.SelectionOccurrences.ownFields(env.getSelectionSet()), filmTable, env)")
             .contains(".select(selectFields)")
             .contains(".where(condition)")
             .contains(".orderBy(orderBy)")

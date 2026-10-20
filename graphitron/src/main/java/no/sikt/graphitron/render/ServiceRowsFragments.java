@@ -207,7 +207,7 @@ final class ServiceRowsFragments {
         body.addStatement("$T boundTable = $T.$L.as($S)",
             CatalogRefs.tableClass(table), CatalogRefs.constantsClass(table), table.javaFieldName(), fieldName);
         body.addStatement("$T selectFields = new $T<>($L)",
-            listOfField, ARRAY_LIST, ProjectionCall.fromEnvSelection(typeClass, "boundTable"));
+            listOfField, ARRAY_LIST, ProjectionCall.fromLauncher(typeClass, "boundTable", row));
         body.addStatement("selectFields.add(projectionInput.field(0, $T.class).as($S))",
             Integer.class, no.sikt.graphitron.command.ReservedAliases.IDX);
         var onCond = CodeBlock.builder();

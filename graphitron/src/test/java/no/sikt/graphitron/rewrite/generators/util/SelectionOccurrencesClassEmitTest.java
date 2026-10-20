@@ -17,12 +17,13 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>The helper is emitted once per code-generation run via
  * {@link SelectionOccurrencesClassGenerator#generate(String)} and lands at
- * {@code <outputPackage>.util.SelectionOccurrences}, alongside {@code PolymorphicSelectionSet}.
+ * {@code <outputPackage>.util.SelectionOccurrences}.
  * Downstream the compilation tier (the {@code graphitron-sakila-example} module) compiles the
  * emitted source against the real graphql-java {@code SelectedField} interface, and the execution
  * tier drives the merge/guard semantics through real connection queries; this pipeline-tier pin
- * covers the public-API contract the generated {@code <Type>.$project} loop leans on: the
- * occurrence-merge static and the two consistency guards, with stable names and signatures.
+ * covers the public-API contract the generated {@code <Type>.$project} loop and its launchers
+ * lean on: the three grouping adapters, the two type restrictions and the two consistency guards,
+ * with stable names and signatures.
  */
 @PipelineTier
 class SelectionOccurrencesClassEmitTest {
@@ -39,8 +40,8 @@ class SelectionOccurrencesClassEmitTest {
         TypeSpec spec = specs.get(0);
         assertThat(spec.name()).isEqualTo("SelectionOccurrences");
         assertThat(spec.modifiers())
-            .as("emitted as public final to mirror the PolymorphicSelectionSet / ConnectionHelper "
-                + "shape and to keep external code from sub-classing the scaffold")
+            .as("emitted as public final to mirror the ConnectionHelper shape and to keep "
+                + "external code from sub-classing the scaffold")
             .contains(Modifier.PUBLIC, Modifier.FINAL);
     }
 
@@ -49,12 +50,37 @@ class SelectionOccurrencesClassEmitTest {
         MethodSpec m = method("mergeByResultKey");
         assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(m.returnType().toString())
-            .as("returns the same grouped-map shape getFieldsGroupedByResultKey() produces, so the "
-                + "merged map drops into the $project switch loop unchanged")
+            .as("returns the grouped-map shape every $project takes")
             .isEqualTo(GROUPED_MAP);
         assertThat(m.parameters()).hasSize(1);
         assertThat(m.parameters().get(0).type().toString()).isEqualTo(SELECTED_FIELD_LIST);
         assertThat(m.parameters().get(0).name()).isEqualTo("occurrences");
+    }
+
+    @Test
+    void carriesTheTwoSelectionAdaptersWithExpectedSignatures() {
+        for (String name : List.of("ownFields", "connectionNodes")) {
+            MethodSpec m = method(name);
+            assertThat(m.modifiers()).as(name).contains(Modifier.PUBLIC, Modifier.STATIC);
+            assertThat(m.returnType().toString()).as(name).isEqualTo(GROUPED_MAP);
+            assertThat(m.parameters()).extracting(p -> p.type().toString())
+                .as(name).containsExactly("graphql.schema.DataFetchingFieldSelectionSet");
+        }
+    }
+
+    @Test
+    void carriesBothTypeRestrictionsWithExpectedSignatures() {
+        var restrictTo = SelectionOccurrencesClassGenerator.generate(DEFAULT_OUTPUT_PACKAGE).get(0)
+            .methodSpecs().stream().filter(m -> m.name().equals("restrictTo")).toList();
+        assertThat(restrictTo)
+            .extracting(m -> m.parameters().stream().map(p -> p.type().toString()).toList())
+            .containsExactlyInAnyOrder(
+                List.of(GROUPED_MAP, "java.lang.String"),
+                List.of(GROUPED_MAP, "java.lang.String", "java.util.Set<java.lang.String>"));
+        assertThat(restrictTo).allSatisfy(m -> {
+            assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+            assertThat(m.returnType().toString()).isEqualTo(GROUPED_MAP);
+        });
     }
 
     @Test

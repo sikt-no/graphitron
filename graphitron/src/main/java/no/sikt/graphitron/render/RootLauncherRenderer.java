@@ -145,16 +145,16 @@ public final class RootLauncherRenderer {
                     case TenantStrategy.Single ignored -> {
                         switch (row.result()) {
                             case ResultShape.SingleRecord ignored2 -> builder.addCode(
-                                directReturn(selectChain(anchor, tableLocal, false, false)));
+                                directReturn(selectChain(anchor, row, tableLocal, false, false)));
                             case ResultShape.RecordList list -> {
                                 boolean ordered = list.ordering() != null;
                                 if (ordered) {
                                     builder.addCode(orderByStatement(list.ordering(), tableLocal));
                                 }
-                                builder.addCode(directReturn(selectChain(anchor, tableLocal, true, ordered)));
+                                builder.addCode(directReturn(selectChain(anchor, row, tableLocal, true, ordered)));
                             }
                             case ResultShape.Connection connection -> builder.addCode(
-                                connectionBody(anchor.projection(), connection, tableLocal,
+                                connectionBody(anchor.projection(), row, connection, tableLocal,
                                     tableLocal, carrierDsl));
                             case ResultShape.LoaderDelegated ignored2 -> throw new IllegalStateException(
                                 "the LoaderDelegated result belongs to the service arms; the"
@@ -202,12 +202,12 @@ public final class RootLauncherRenderer {
                     // shape-forked here, over the same fetch tail the anchor arm chains.
                     case ResultShape.SingleRecord ignored -> {
                         builder.addCode(DiscriminatedTableFragments.assembly(disc,
-                            java.util.List.of(), tableLocal));
+                            java.util.List.of(), tableLocal, ProjectionCall.SelectionScope.of(row.result())));
                         builder.addCode(directReturn(stepChain(false, false)));
                     }
                     case ResultShape.RecordList list -> {
                         builder.addCode(DiscriminatedTableFragments.assembly(disc,
-                            java.util.List.of(), tableLocal));
+                            java.util.List.of(), tableLocal, ProjectionCall.SelectionScope.of(row.result())));
                         boolean ordered = list.ordering() != null;
                         if (ordered) {
                             builder.addCode(orderByStatement(list.ordering(), tableLocal));
@@ -310,9 +310,9 @@ public final class RootLauncherRenderer {
         return tail.build();
     }
 
-    private static CodeBlock selectChain(LaunchSource.AnchorTable anchor, String tableLocal,
-            boolean isList, boolean ordered) {
-        return selectChain(ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal),
+    private static CodeBlock selectChain(LaunchSource.AnchorTable anchor, LauncherCommand row,
+            String tableLocal, boolean isList, boolean ordered) {
+        return selectChain(ProjectionCall.fromLauncher(className(anchor.projection()), tableLocal, row),
             tableLocal, isList, ordered);
     }
 
@@ -338,7 +338,7 @@ public final class RootLauncherRenderer {
             ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
                 no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
         code.addStatement("$T selectFields = $L", listOfField,
-            ProjectionCall.fromEnvSelection(className(anchor.projection()), tableLocal));
+            ProjectionCall.fromLauncher(className(anchor.projection()), tableLocal, row));
         code.add("return $T.fanOutRows(env, dsl -> $L$L);\n", className(fanned.carrier()),
             selectChain(CodeBlock.of("selectFields"), tableLocal, true, ordered), fanOutNarrowing);
         return code.build();
@@ -362,7 +362,7 @@ public final class RootLauncherRenderer {
      * its terminus alias.
      */
     private static CodeBlock connectionBody(no.sikt.graphitron.command.UnitRef projection,
-            ResultShape.Connection connection, String fromLocal, String aliasLocal,
+            LauncherCommand row, ResultShape.Connection connection, String fromLocal, String aliasLocal,
             CarrierDsl carrierDsl) {
         var code = CodeBlock.builder();
         code.add(OrderingBlock.declareBothViews(connection.ordering(), aliasLocal));
@@ -374,7 +374,7 @@ public final class RootLauncherRenderer {
         code.addStatement(
             "$T page = $T.pageRequest(first, last, after, before, $L, orderBy, extraFields, $L)",
             helperClass.nestedClass("PageRequest"), helperClass, connection.defaultPageSize(),
-            ProjectionCall.fromEnvSelection(className(projection), aliasLocal));
+            ProjectionCall.fromLauncher(className(projection), aliasLocal, row));
         code.add("$T result = dsl\n", RESULT_OF_RECORD)
             .indent()
             .add(".select(page.selectFields())\n")
@@ -415,7 +415,8 @@ public final class RootLauncherRenderer {
     private static CodeBlock discriminatedConnectionBody(LaunchSource.DiscriminatedTable disc,
             ResultShape.Connection connection, String tableLocal, CarrierDsl carrierDsl) {
         var code = CodeBlock.builder();
-        code.add(DiscriminatedTableFragments.projection(disc, java.util.List.of(), tableLocal));
+        code.add(DiscriminatedTableFragments.projection(disc, java.util.List.of(), tableLocal,
+            ProjectionCall.SelectionScope.of(connection)));
         code.add(OrderingBlock.declareBothViews(connection.ordering(), tableLocal));
         code.addStatement("Integer first = env.getArgument($S)", "first");
         code.addStatement("Integer last = env.getArgument($S)", "last");
@@ -565,7 +566,7 @@ public final class RootLauncherRenderer {
         code.addStatement("$T input = $T.values(rows).as($L)",
             LookupRows.inputTableType(mapping, fieldName), DSL,
             LookupRows.aliasArgs(mapping, alias, fieldName));
-        var projection = ProjectionCall.fromEnvSelection(className(lookup.projection()), tableLocal);
+        var projection = ProjectionCall.fromLauncher(className(lookup.projection()), tableLocal, row);
         if (isList) {
             code.addStatement("$T<$T<?>> selectFields = new $T<>($L)", LIST, FIELD, ARRAY_LIST, projection);
             // Through ReservedAliases, not a literal: this is the writer half of the
@@ -637,7 +638,7 @@ public final class RootLauncherRenderer {
         }
         code.add(conditionStatement(row, terminal, hopFilters));
 
-        var projection = ProjectionCall.fromEnvSelection(className(chain.projection()), terminal);
+        var projection = ProjectionCall.fromLauncher(className(chain.projection()), terminal, row);
         switch (row.result()) {
             case ResultShape.SingleRecord ignored ->
                 code.add(directReturn(selectChain(projection, fromLocal, false, false)));
@@ -649,7 +650,7 @@ public final class RootLauncherRenderer {
                 code.add(directReturn(selectChain(projection, fromLocal, true, ordered)));
             }
             case ResultShape.Connection connection -> code.add(
-                connectionBody(chain.projection(), connection, fromLocal, terminal, carrierDsl));
+                connectionBody(chain.projection(), row, connection, fromLocal, terminal, carrierDsl));
             case ResultShape.LoaderDelegated ignored -> throw new IllegalStateException(
                 "the LoaderDelegated result belongs to the service arms; the"
                 + " command constructor rejects the pair before rendering");

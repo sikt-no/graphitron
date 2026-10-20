@@ -25,7 +25,6 @@ public enum GlobalUnitKind {
     CONNECTION_HELPER,
     /** Present exactly when the schema is federated and uses {@code @oneOf}. */
     ONE_OF_DIRECTIVE_SDL,
-    POLYMORPHIC_SELECTION_SET,
     SELECTION_OCCURRENCES,
     ORDER_BY_RESULT,
     GRAPHITRON_CONTEXT,

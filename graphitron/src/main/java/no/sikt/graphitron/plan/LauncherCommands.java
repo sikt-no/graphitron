@@ -350,7 +350,8 @@ public final class LauncherCommands {
             new TenantStrategy.Single(),
             returnType.wrapper().isList()
                 ? new ResultShape.RecordList(null)
-                : new ResultShape.SingleRecord());
+                : new ResultShape.SingleRecord(),
+            units.selectionOccurrences());
     }
 
     /**
@@ -438,7 +439,8 @@ public final class LauncherCommands {
             null,
             new Invocation.ReturningKeyed(),
             new TenantStrategy.Single(),
-            result);
+            result,
+            units.selectionOccurrences());
     }
 
     /**
@@ -616,7 +618,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            new ResultShape.RecordList(null));
+            new ResultShape.RecordList(null),
+            units.selectionOccurrences());
     }
 
     private static LauncherCommand row(QueryField.QueryTableField qtf, GlueCall where, GeneratedUnits units,
@@ -629,7 +632,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             tenancy,
-            resultShapeOf(qtf, units, facets));
+            resultShapeOf(qtf, units, facets),
+            units.selectionOccurrences());
     }
 
     /**
@@ -661,7 +665,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            resultShapeOf(qtf, units, facets));
+            resultShapeOf(qtf, units, facets),
+            units.selectionOccurrences());
     }
 
     /**
@@ -693,7 +698,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            interfaceResultOf(qtif, ordering, units));
+            interfaceResultOf(qtif, ordering, units),
+            units.selectionOccurrences());
     }
 
     /** The discriminated root's payload shape, forked on the coordinate's wrapper. */
@@ -708,19 +714,19 @@ public final class LauncherCommands {
     }
 
     /**
-     * The fold's selection restriction, as a projection over the participants' stamped
-     * {@link no.sikt.graphitron.rewrite.model.AliasOwner} facts: the field names whose alias the
-     * declaring participant type qualifies, which are exactly the names whose occurrences must be
-     * scoped per participant for the alias to stay honest (see
-     * {@link LaunchSource.DiscriminatedTable.SelectionRestriction}). Read off the stamped verdict
-     * rather than re-derived from the interface declarations, so the restriction's granularity and
-     * the alias's granularity cannot drift apart; a second derivation would agree today and
-     * silently diverge the day a new alias-minting family missed one of them.
+     * The fold's selection restriction (see
+     * {@link LaunchSource.DiscriminatedTable.SelectionRestriction}): the field names whose term
+     * lands under an alias no participant qualifies, so their occurrences must stay shared across
+     * the participants' arms. Two families: a result-key-aliased field whose stamped
+     * {@link no.sikt.graphitron.rewrite.model.AliasOwner} is not the declaring participant's own
+     * type, and every nesting field, whose spliced leaves alias without a participant qualifier.
+     * Read off the stamped verdict rather than re-derived from the interface declarations, so the
+     * restriction's granularity and the alias's granularity cannot drift apart.
      *
      * <p>{@code fieldsOfType} is how the caller reaches a participant's classified fields: the
      * schema's own field view where a schema exists, and the assembly's own field list where it
-     * does not. A lookup answering nothing yields no names, so the fold restricts nothing, which
-     * is the pre-existing behaviour rather than a guess.
+     * does not. A lookup answering nothing yields no names, so every occurrence is scoped to its
+     * participant.
      *
      * <p>Sorted and deduplicated: the set is emitted as a literal, so its order is part of the
      * generated source and has to be a function of the schema alone.
@@ -729,30 +735,25 @@ public final class LauncherCommands {
             List<no.sikt.graphitron.rewrite.model.ParticipantRef> participants,
             java.util.function.Function<String, List<? extends GraphitronField>> fieldsOfType,
             GeneratedUnits units) {
-        var perType = new java.util.TreeSet<String>();
+        var shared = new java.util.TreeSet<String>();
         for (var participant : participants) {
             if (!(participant instanceof no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound tb)) {
                 continue;
             }
             for (var field : fieldsOfType.apply(tb.typeName())) {
-                if (field instanceof no.sikt.graphitron.rewrite.model.ResultKeyAliasedField rk
-                        && rk.aliasOwner() instanceof no.sikt.graphitron.rewrite.model.AliasOwner.QualifiedBy q
-                        && q.owner().equals(tb.typeName())) {
-                    perType.add(field.name());
+                boolean participantQualified = field instanceof no.sikt.graphitron.rewrite.model.ResultKeyAliasedField rk
+                    && rk.aliasOwner() instanceof no.sikt.graphitron.rewrite.model.AliasOwner.QualifiedBy q
+                    && q.owner().equals(tb.typeName());
+                if (field instanceof no.sikt.graphitron.rewrite.model.ChildField.NestingField
+                        || field instanceof no.sikt.graphitron.rewrite.model.ResultKeyAliasedField
+                            && !participantQualified) {
+                    shared.add(field.name());
                 }
             }
         }
         return new LaunchSource.DiscriminatedTable.SelectionRestriction(
-            units.singleton(GeneratedUnits.SUB_UTIL, POLYMORPHIC_SELECTION_SET_CLASS),
-            List.copyOf(perType));
+            units.selectionOccurrences(), List.copyOf(shared));
     }
-
-    /**
-     * The generated per-participant selection view's class name. Spelled here rather than read off
-     * {@code PolymorphicSelectionSetClassGenerator}: the plan tier does not depend on the
-     * generators tier, and {@code EmitPlan} spells the same name for the same reason.
-     */
-    private static final String POLYMORPHIC_SELECTION_SET_CLASS = "PolymorphicSelectionSet";
 
     /**
      * The per-participant branch assembly, shared with the legacy interface-reprojection call
@@ -863,7 +864,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
             tenancy,
-            batchedResultOf(btf, units));
+            batchedResultOf(btf, units),
+            units.selectionOccurrences());
     }
 
     /**
@@ -900,7 +902,8 @@ public final class LauncherCommands {
             where,
             new Invocation.Batched(btif.sourceKey(), btif.loaderRegistration()),
             new TenantStrategy.Single(),
-            interfaceChildResultOf(btif, units));
+            interfaceChildResultOf(btif, units),
+            units.selectionOccurrences());
     }
 
     /**
@@ -962,7 +965,8 @@ public final class LauncherCommands {
             new Invocation.Batched(blf.sourceKey(), blf.loaderRegistration()),
             tenancy,
             new ResultShape.RecordList(
-                orderingOf(blf.orderBy(), blf.parentTypeName(), blf.name(), units)));
+                orderingOf(blf.orderBy(), blf.parentTypeName(), blf.name(), units)),
+            units.selectionOccurrences());
     }
 
     /**
@@ -996,7 +1000,8 @@ public final class LauncherCommands {
             null,
             new Invocation.Batched(bpf.sourceKey(), bpf.loaderRegistration()),
             new TenantStrategy.Single(),
-            new ResultShape.SingleRecord());
+            new ResultShape.SingleRecord(),
+            units.selectionOccurrences());
     }
 
     /**
@@ -1019,7 +1024,8 @@ public final class LauncherCommands {
             null,
             new Invocation.Batched(stf.sourceKey(), stf.loaderRegistration()),
             new TenantStrategy.Single(),
-            new ResultShape.LoaderDelegated());
+            new ResultShape.LoaderDelegated(),
+            units.selectionOccurrences());
     }
 
     /**
@@ -1053,7 +1059,8 @@ public final class LauncherCommands {
             null,
             new Invocation.Batched(srf.sourceKey(), srf.loaderRegistration()),
             new TenantStrategy.Single(),
-            new ResultShape.LoaderDelegated());
+            new ResultShape.LoaderDelegated(),
+            units.selectionOccurrences());
     }
 
     /**

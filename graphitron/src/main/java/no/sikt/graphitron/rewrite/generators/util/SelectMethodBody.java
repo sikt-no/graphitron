@@ -118,11 +118,20 @@ final class SelectMethodBody {
         b.addStatement("$T<?> input = $T.values(rows).as($L)",
             TABLE, DSL, ValuesJoinRowBuilder.aliasArgs(columns, column, inputAlias));
 
-        // Field projection
+        // Field projection. The env is the dispatching field's (_entities, Query.node or
+        // Query.nodes), whose immediate fields carry every concrete type's fragment fields, so the
+        // selection is restricted to this type: a key another type's fragment reuses for a
+        // different field is not this type's.
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         var arrayListOfField = ParameterizedTypeName.get(ARRAY_LIST, fieldWildcard);
+        var occurrences = ProjectionCall.selectionOccurrencesClass(outputPackage);
         b.addStatement("$T fields = new $T($L)",
-            arrayListOfField, arrayListOfField, ProjectionCall.fromEnvSelection(typeClass, tableLocal));
+            arrayListOfField, arrayListOfField,
+            ProjectionCall.fromGrouped(typeClass,
+                CodeBlock.of("$T.restrictTo($L, $S)", occurrences,
+                    ProjectionCall.envSelection(occurrences, ProjectionCall.SelectionScope.OWN_FIELDS),
+                    entity.typeName()),
+                CodeBlock.of("$L", tableLocal)));
         b.addStatement("fields.add($T.inline($S).as($S))",
             DSL, entity.typeName(), EntityFetcherDispatchClassGenerator.TYPENAME_COLUMN);
 

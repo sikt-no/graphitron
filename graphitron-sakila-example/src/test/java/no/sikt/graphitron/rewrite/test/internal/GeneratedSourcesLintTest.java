@@ -73,6 +73,47 @@ class GeneratedSourcesLintTest {
             .isEmpty();
     }
 
+    /**
+     * The two depth-unbounded selection reads: {@code getFieldsGroupedByResultKey()} groups every
+     * field of the subtree, and a {@code "**&#47;"} glob matches a name at any depth. A GraphQL
+     * response key names a field only within its own selection set, so an emitted projection reads
+     * its selection through the {@code SelectionOccurrences} adapters, which group immediate
+     * children only.
+     */
+    private static final List<String> DEPTH_UNBOUNDED_SELECTION_READS =
+        List.of("getFieldsGroupedByResultKey(", "\"**/");
+
+    @Test
+    void emittedSourcesReadNoSelectionAtUnboundedDepth() throws IOException {
+        assertThat(GENERATED_REWRITE_ROOT).exists();
+        var offenders = new ArrayList<String>();
+        try (Stream<Path> paths = Files.walk(GENERATED_REWRITE_ROOT)) {
+            paths.filter(p -> p.toString().endsWith(".java")).forEach(p -> {
+                try {
+                    List<String> lines = Files.readAllLines(p);
+                    for (int i = 0; i < lines.size(); i++) {
+                        String line = lines.get(i);
+                        if (isCommentLine(line)) continue;
+                        String codeOnly = stripInlineComment(line);
+                        for (String read : DEPTH_UNBOUNDED_SELECTION_READS) {
+                            if (codeOnly.contains(read)) {
+                                offenders.add(p.getFileName() + ":" + (i + 1) + "  " + line.trim());
+                            }
+                        }
+                    }
+                } catch (IOException e) {
+                    throw new RuntimeException(e);
+                }
+            });
+        }
+        assertThat(offenders)
+            .as("Generated sources must not read a selection at unbounded depth"
+                + " (getFieldsGroupedByResultKey() or a \"**/\" glob): a key selected below a field"
+                + " would read as selected on the field itself. Group through the generated"
+                + " SelectionOccurrences adapters (ownFields, connectionNodes, mergeByResultKey).")
+            .isEmpty();
+    }
+
     @Test
     void conditionsClassesImportNoGraphqlJavaBeyondTheEnvAppendingParameter() throws IOException {
         Path conditionsRoot = GENERATED_REWRITE_ROOT.resolve("conditions");

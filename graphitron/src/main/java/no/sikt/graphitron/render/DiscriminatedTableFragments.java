@@ -102,12 +102,17 @@ public final class DiscriminatedTableFragments {
     private static final String CROSS_TABLE_LOCAL_PREFIX = "ct_";
 
     /**
-     * The local holding the fold's per-type field names, declared once by {@link #fieldsList} and
-     * read by every single-table branch's {@code restrictTo} call. Only declared when the
-     * restriction is non-empty, so a schema with no participant-local result-key-aliased field
-     * emits the same body it always has.
+     * The local holding the fold's shared-alias field names, declared once by {@link #fieldsList}
+     * and read by every single-table branch's {@code restrictTo} call.
      */
-    private static final String PER_TYPE_FIELDS_LOCAL = "perTypeFields";
+    private static final String SHARED_ALIAS_FIELDS_LOCAL = "sharedAliasFields";
+
+    /**
+     * The local holding the fold's scoped selection, the fetched field's own fields or the node
+     * level of its connection, computed once by {@link #fieldsList} and read by every gate and
+     * every branch, so no read in the fold reaches below the level its participants sit at.
+     */
+    private static final String SELECTION_LOCAL = "foldSelection";
 
     /**
      * The whole assembly, ending with {@code step} joined and ready for the caller's terminal:
@@ -116,9 +121,9 @@ public final class DiscriminatedTableFragments {
      * halves itself.
      */
     public static CodeBlock assembly(LaunchSource.DiscriminatedTable source,
-            List<ColumnRef> alwaysProject, String tableLocal) {
+            List<ColumnRef> alwaysProject, String tableLocal, ProjectionCall.SelectionScope scope) {
         return CodeBlock.builder()
-            .add(projection(source, alwaysProject, tableLocal))
+            .add(projection(source, alwaysProject, tableLocal, scope))
             .add(joinedStep(source, tableLocal,
                 CodeBlock.of("new $T<>($L)", ArrayList.class, FIELDS_LOCAL)))
             .build();
@@ -131,12 +136,16 @@ public final class DiscriminatedTableFragments {
      * {@code $project} calls, the base slice, the caller's {@code alwaysProject} columns, and the
      * gated cross-table subselects). Emits no statement, so a caller may read the populated
      * field list before deciding the statement's shape.
+     *
+     * <p>{@code scope} says where the participants' fields sit relative to the fetched field:
+     * its own children, or the node level of a connection. Every selection read in the fold
+     * reads that one scoped map.
      */
     public static CodeBlock projection(LaunchSource.DiscriminatedTable source,
-            List<ColumnRef> alwaysProject, String tableLocal) {
+            List<ColumnRef> alwaysProject, String tableLocal, ProjectionCall.SelectionScope scope) {
         var b = CodeBlock.builder();
         b.add(discriminatorFilter(source, tableLocal));
-        b.add(fieldsList(source, tableLocal));
+        b.add(fieldsList(source, tableLocal, scope));
         // Extra always-projected base columns (deduped by the LinkedHashSet declared above).
         // Used by the service path to guarantee the shared table's PK reaches the fetched
         // Record for the by-PK re-map; empty for the read paths.
@@ -243,7 +252,8 @@ public final class DiscriminatedTableFragments {
      * aliased {@code Field} objects are fresh instances the set would not dedupe, so the slice
      * arrives pre-deduplicated by output alias).
      */
-    private static CodeBlock fieldsList(LaunchSource.DiscriminatedTable source, String tableLocal) {
+    private static CodeBlock fieldsList(LaunchSource.DiscriminatedTable source, String tableLocal,
+            ProjectionCall.SelectionScope scope) {
         var b = CodeBlock.builder();
         var fieldType = ParameterizedTypeName.get(
             ClassName.get("org.jooq", "Field"),
@@ -256,26 +266,24 @@ public final class DiscriminatedTableFragments {
         b.addStatement("fields.add($L.as($S))",
             discriminatorRef(tableLocal, source.discriminatorColumn()), ReservedAliases.DISCRIMINATOR);
         var restriction = source.selectionRestriction();
-        if (!restriction.isEmpty()) {
-            // One list per fold, not one per arm: the names are the interface's fact, so hoisting
-            // the literal out of the branch loop drops a per-request allocation per participant.
-            // Explicit type, never `var`: emitted sources are lint-gated against it.
-            b.addStatement("$T<$T> $L = $T.of($L)", SET, ClassName.get(String.class),
-                PER_TYPE_FIELDS_LOCAL, SET,
-                restriction.perTypeFieldNames().stream()
-                    .map(name -> CodeBlock.of("$S", name))
-                    .collect(CodeBlock.joining(", ")));
-        }
+        var occurrences = className(restriction.helper());
+        // Explicit types, never `var`: emitted sources are lint-gated against it.
+        b.addStatement("$T $L = $L", groupedType(), SELECTION_LOCAL,
+            ProjectionCall.envSelection(occurrences, scope));
+        // One set per fold, not one per arm: the names are the interface's fact, so hoisting the
+        // literal out of the branch loop drops a per-request allocation per participant.
+        b.addStatement("$T<$T> $L = $T.of($L)", SET, ClassName.get(String.class),
+            SHARED_ALIAS_FIELDS_LOCAL, SET,
+            restriction.sharedAliasFieldNames().stream()
+                .map(name -> CodeBlock.of("$S", name))
+                .collect(CodeBlock.joining(", ")));
         for (var branch : source.branches()) {
             if (branch instanceof LaunchSource.DiscriminatedTable.Branch.SingleTable single) {
                 b.addStatement("fields.addAll($L)",
-                    restriction.isEmpty()
-                        ? ProjectionCall.fromEnvSelection(className(single.projection()), tableLocal)
-                        : ProjectionCall.fromSelectionSet(className(single.projection()),
-                            CodeBlock.of("$T.restrictTo(env.getSelectionSet(), $S, $L)",
-                                className(restriction.helper()), single.participant().typeName(),
-                                PER_TYPE_FIELDS_LOCAL),
-                            CodeBlock.of("$L", tableLocal)));
+                    ProjectionCall.fromGrouped(className(single.projection()),
+                        CodeBlock.of("$T.restrictTo($L, $S, $L)", occurrences, SELECTION_LOCAL,
+                            single.participant().typeName(), SHARED_ALIAS_FIELDS_LOCAL),
+                        CodeBlock.of("$L", tableLocal)));
             }
         }
         for (var term : source.baseSlice()) {
@@ -285,6 +293,8 @@ public final class DiscriminatedTableFragments {
                 // the base so NULL-through rows (base present, detail absent) still resolve it,
                 // under the same reserved alias the standalone correlated-subquery projection
                 // mints, so the one registered fetcher reads both queries' rows identically.
+                // The bucket test reads every occurrence, not the first: a bucket may carry
+                // another participant's field first, and the base term must not be dropped.
                 // Explicit entry type: emitted sources may not use `var`
                 // (GeneratedSourcesLintTest).
                 case LaunchSource.DiscriminatedTable.BaseSliceTerm.InheritedRef inherited -> {
@@ -292,14 +302,12 @@ public final class DiscriminatedTableFragments {
                         ClassName.get("java.util", "Map", "Entry"),
                         ClassName.get(String.class),
                         ParameterizedTypeName.get(LIST, SELECTED_FIELD));
-                    b.beginControlFlow(
-                        "for ($T rkEntry : env.getSelectionSet().getFieldsGroupedByResultKey().entrySet())",
-                        rkEntryType);
-                    b.beginControlFlow(
-                        "if (!rkEntry.getValue().isEmpty() && rkEntry.getValue().get(0).getName().equals($S))",
+                    b.beginControlFlow("for ($T rkEntry : $L.entrySet())", rkEntryType, SELECTION_LOCAL);
+                    b.beginControlFlow("if (rkEntry.getValue().stream().anyMatch(sf -> sf.getName().equals($S)))",
                         inherited.fieldName());
                     b.addStatement("fields.add($L.$L.as($S + rkEntry.getKey()))",
-                        tableLocal, inherited.baseColumn().javaName(), ReservedAliases.RESULT_KEY_PREFIX);
+                        tableLocal, inherited.baseColumn().javaName(),
+                        ReservedAliases.resultKeyPrefix(no.sikt.graphitron.rewrite.model.AliasOwner.shared()));
                     b.endControlFlow();
                     b.endControlFlow();
                 }
@@ -320,9 +328,7 @@ public final class DiscriminatedTableFragments {
      * all to a query whose selection never asked for the field, and nothing to the statement's
      * row count when it did.
      *
-     * <p>The selection-set pattern is {@code <Type>.<field>} (dot, not slash): graphql-java
-     * flattens type-conditioned fields under inline fragments as {@code "<Type>.<fieldName>"};
-     * the slash is reserved for parent/child path nesting.
+     * <p>The gate reads the fold's scoped selection ({@link #typeConditionedGate}).
      */
     private static CodeBlock crossTableProjections(LaunchSource.DiscriminatedTable source, String tableLocal) {
         var b = CodeBlock.builder();
@@ -419,17 +425,21 @@ public final class DiscriminatedTableFragments {
     }
 
     /**
-     * The runtime gate for a type-conditioned participant field: {@code <Type>.<field>} (dot, not
-     * slash) is how graphql-java flattens a field under an inline fragment, and the slash is
-     * reserved for parent/child path nesting. Both patterns are offered, because the same
-     * assembly serves coordinates at different depths: the field sits at the top of the selection
-     * for a plain fetch, and two segments down ({@code edges/node/<Type>.<field>}) under a
-     * connection, where a glob without the {@code **} prefix would silently match nothing and
-     * drop the column from the page.
+     * The runtime gate for a type-conditioned participant field: a membership test on the fold's
+     * scoped selection, true when some occurrence selects {@code fieldName} for
+     * {@code typeName}. Reading the scoped map rather than the whole subtree is what keeps a
+     * same-named field selected deeper (under a child of the participant) from opening the gate;
+     * the scope itself already puts a connection's node level at the top.
      */
     private static CodeBlock typeConditionedGate(String typeName, String fieldName) {
-        String pattern = typeName + "." + fieldName;
-        return CodeBlock.of("env.getSelectionSet().containsAnyOf($S, $S)", pattern, "**/" + pattern);
+        return CodeBlock.of("$L.values().stream().anyMatch(occurrences -> occurrences.stream()"
+                + ".anyMatch(sf -> sf.getName().equals($S) && sf.getObjectTypeNames().contains($S)))",
+            SELECTION_LOCAL, fieldName, typeName);
+    }
+
+    private static ParameterizedTypeName groupedType() {
+        return ParameterizedTypeName.get(ClassName.get("java.util", "Map"), ClassName.get(String.class),
+            ParameterizedTypeName.get(LIST, SELECTED_FIELD));
     }
 
     private static ClassName className(no.sikt.graphitron.command.UnitRef unit) {

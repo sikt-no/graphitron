@@ -22,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>The {@code AddressOccupant} union resolves to {@code Customer | Staff}; both participant
  * tables expose {@code first_name} behind {@code firstName}. Each Stage-2 per-typename SELECT
  * sees the selection set restricted to its own participant through
- * {@code PolymorphicSelectionSet.restrictTo}.
+ * {@code SelectionOccurrences.restrictTo}.
  *
  * <p>Fixture: active customers Mary (address 1), Patricia (address 2) and Linda (address 3).
  * Address 1 also houses inactive customer Barbara; address 2 houses inactive Elizabeth and

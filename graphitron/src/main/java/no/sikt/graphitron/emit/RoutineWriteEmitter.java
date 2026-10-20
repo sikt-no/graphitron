@@ -110,6 +110,8 @@ public final class RoutineWriteEmitter {
      *
      * @param methodName        the entry point's generated name
      * @param returnTypeClass   the return type's projection unit; read on the chain seat only
+     * @param selectionOccurrences the generated selection scaffold the chain seat's re-read
+     *                          groups the fetched field's own fields through
      * @param graphitronContext the host class's {@code graphitronContext(env)} call; calling it
      *                          records that the host needs the helper, so it is called only where
      *                          the call is emitted
@@ -118,7 +120,7 @@ public final class RoutineWriteEmitter {
      *                          key column
      */
     public static MethodSpec render(Row row, String methodName, ClassName returnTypeClass,
-            Errors errors, Tenancy tenancy, Supplier<CodeBlock> graphitronContext,
+            ClassName selectionOccurrences, Errors errors, Tenancy tenancy, Supplier<CodeBlock> graphitronContext,
             ArgPathHelperRegistry argHelpers, ProjectedKeyReads keys) {
         var dsl = switch (tenancy) {
             case Tenancy.Unrouted ignored -> CodeBlock.builder()
@@ -130,12 +132,13 @@ public final class RoutineWriteEmitter {
         };
         var call = routineCall(row, argHelpers, keys);
         return switch (row.seat()) {
-            case CHAIN -> chainReread(row, methodName, returnTypeClass, errors, dsl, call, keys);
+            case CHAIN -> chainReread(row, methodName, returnTypeClass, selectionOccurrences, errors, dsl, call, keys);
             case CARRIER -> carrierKeys(row, methodName, errors, dsl, call, keys);
         };
     }
 
     private static MethodSpec chainReread(Row row, String methodName, ClassName returnTypeClass,
+            ClassName selectionOccurrences,
             Errors errors, CodeBlock dsl, CodeBlock call, ProjectedKeyReads keys) {
         boolean isList = row.listReturn();
         TypeName valueType = isList ? ParameterizedTypeName.get(RESULT, RECORD) : RECORD;
@@ -168,7 +171,8 @@ public final class RoutineWriteEmitter {
         var sel = CodeBlock.builder()
             .add("$T payload = dsl\n", valueType)
             .indent()
-            .add(".select($L)\n", ProjectionCall.fromEnvSelection(returnTypeClass, terminalAlias))
+            .add(".select($L)\n", ProjectionCall.fromEnvSelection(returnTypeClass, terminalAlias,
+                selectionOccurrences, ProjectionCall.SelectionScope.OWN_FIELDS))
             .add(".from($L)\n", anchorAlias);
         var filters = new ArrayList<CodeBlock>();
         String prev = anchorAlias;

@@ -291,6 +291,14 @@ public final class GeneratedUnits {
         return unit(SUB_SCHEMA, typeName + SCHEMA_SHAPE_SUFFIX);
     }
 
+    /**
+     * {@code <pkg>.util.SelectionOccurrences}: the generated scaffold that groups a selection into
+     * the result-key map every {@code $project} takes.
+     */
+    public UnitRef selectionOccurrences() {
+        return unit(SUB_UTIL, "SelectionOccurrences");
+    }
+
     /** {@code <pkg>.util.ConnectionHelper} — the generated pagination runtime. */
     public UnitRef connectionHelper() {
         return unit(SUB_UTIL, "ConnectionHelper");

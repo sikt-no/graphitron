@@ -93,7 +93,6 @@ public final class PlanCompileGraph {
         GlobalUnitKind.COLUMN_VALUES,
         GlobalUnitKind.CONNECTION_RESULT,
         GlobalUnitKind.CONNECTION_HELPER,
-        GlobalUnitKind.POLYMORPHIC_SELECTION_SET,
         GlobalUnitKind.SELECTION_OCCURRENCES,
         GlobalUnitKind.ORDER_BY_RESULT,
         GlobalUnitKind.OUTCOME,
@@ -234,6 +233,7 @@ public final class PlanCompileGraph {
                         // Only a federation @key alternative coerces through the column trip
                         // directly; a node-id-only dispatch reaches it through the encoder.
                         declared(dispatch.unit(), require(GlobalUnitKind.COLUMN_VALUES));
+                        precise(dispatch.unit(), require(GlobalUnitKind.SELECTION_OCCURRENCES));
                     }
                     case GlobalCommand.Fixed fixed -> addFixedKindEdges(fixed);
                 }
@@ -253,7 +253,7 @@ public final class PlanCompileGraph {
         private void addFixedKindEdges(GlobalCommand.Fixed fixed) {
             switch (fixed.kind()) {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
-                     CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL, POLYMORPHIC_SELECTION_SET,
+                     CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, ORDER_BY_RESULT, GRAPHITRON_CONTEXT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }

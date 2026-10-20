@@ -98,9 +98,9 @@ public final class ReentryRowsFragments {
         var table = source.table();
         String tableLocal = TableLocal.name(table);
         var correlation = source.correlation();
-        var select = ProjectionCall.fromEnvSelection(
+        var select = ProjectionCall.fromLauncher(
             ClassName.get(source.projection().packageName(), source.projection().simpleName()),
-            tableLocal);
+            tableLocal, row);
         var b = CodeBlock.builder()
             .add(dslDeclaration)
             .add(TableLocal.declare(table));
@@ -141,14 +141,16 @@ public final class ReentryRowsFragments {
         if (row.result() instanceof ResultShape.RecordList) {
             b.add(valuesJoinDecls(correlation))
                 .addStatement("$T condition = $T.noCondition()", CONDITION, DSL)
-                .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal))
+                .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal,
+                    ProjectionCall.SelectionScope.of(row.result())))
                 .addStatement("return step.join($L).on($L).where(condition).orderBy($L).fetch()",
                     KEYS_INPUT, ValuesJoinRowBuilder.onCondition(
                         correlation.columns(), c -> c, ownerExpr(correlation), KEYS_INPUT),
                     idxField());
         } else {
             b.addStatement("$T condition = $L", CONDITION, keyEquality(correlation))
-                .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal))
+                .add(DiscriminatedTableFragments.assembly(disc, List.of(), tableLocal,
+                    ProjectionCall.SelectionScope.of(row.result())))
                 .addStatement("return step.where(condition).fetchOne()");
         }
         return b.build();

@@ -331,8 +331,8 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         // Asymmetric-fragment fixture: union participants Inventory and Content both expose a
         // `filmId` field, backed by `film_id` columns on different tables. The generator emits
         // Stage-2 per-typename helpers (selectInventoryForReferrers, selectContentForReferrers)
-        // that each thread env.getSelectionSet() through PolymorphicSelectionSet.restrictTo with
-        // their own typename.
+        // that each restrict the fetched field's own fields through SelectionOccurrences.restrictTo
+        // with their own typename.
         String asymmetricParticipants = """
             type Inventory @table(name: "inventory") {
               inventoryId: Int! @field(name: "inventory_id")
@@ -357,7 +357,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
         assertThat(field.participantJoinPaths().keySet())
             .containsExactlyInAnyOrder("Inventory", "Content");
 
-        // The PolymorphicSelectionSet wrap itself is asserted at the source-emitter level by
+        // The SelectionOccurrences.restrictTo wrap itself is asserted at the source-emitter level by
         // PolymorphicProjectionFilterPinTest; here we pin that the full classify → generate
         // pipeline yields both helpers so the wrap reaches both branches.
         var filmFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()

@@ -1546,9 +1546,10 @@ class TypeFetcherGeneratorTest {
 
     @Test
     void queryInterfaceField_perTypenameHelpersExist_andCallParticipantFields() {
-        // Stage 2 invokes <Type>.$project(PolymorphicSelectionSet.restrictTo(env.getSelectionSet(),
-        // "<Type>").getFieldsGroupedByResultKey(), t, env); PolymorphicSelectionSet.restrictTo wraps the
-        // parent selection set so each per-typename SELECT projects only columns actually selected for that variant.
+        // Stage 2 invokes <Type>.$project(SelectionOccurrences.restrictTo(SelectionOccurrences
+        // .ownFields(env.getSelectionSet()), "<Type>"), t, env); the restriction scopes the
+        // fetched field's own fields to the variant, so each per-typename SELECT projects only
+        // columns actually selected for that variant.
         // Selection-set narrowing works at full strength only with $project, not asterisk().
         var field = queryInterfaceField("search", true, filmAndActorParticipants());
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null, List.of(field),
@@ -1557,10 +1558,12 @@ class TypeFetcherGeneratorTest {
         var actor = method(spec, "selectActorForSearch");
         assertThat(film.code().toString())
             .contains(".Film.$project(")
-            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Film\").getFieldsGroupedByResultKey(), t, env)");
+            .contains(".SelectionOccurrences.restrictTo(" + DEFAULT_OUTPUT_PACKAGE
+                + ".util.SelectionOccurrences.ownFields(env.getSelectionSet()), \"Film\"), t, env)");
         assertThat(actor.code().toString())
             .contains(".Actor.$project(")
-            .contains(".PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), \"Actor\").getFieldsGroupedByResultKey(), t, env)");
+            .contains(".SelectionOccurrences.restrictTo(" + DEFAULT_OUTPUT_PACKAGE
+                + ".util.SelectionOccurrences.ownFields(env.getSelectionSet()), \"Actor\"), t, env)");
     }
 
     @Test

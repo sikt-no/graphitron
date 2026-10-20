@@ -96,7 +96,7 @@ public final class BatchedRowsFragments {
         TypeName listOfField = ParameterizedTypeName.get(LIST_CN, wildField);
         body.addStatement("$T selectFields = new $T<>($L)",
             listOfField, ARRAY_LIST,
-            ProjectionCall.fromEnvSelection(className(chain.projection()), prelude.terminalAlias()));
+            ProjectionCall.fromLauncher(className(chain.projection()), prelude.terminalAlias(), row));
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
@@ -210,7 +210,7 @@ public final class BatchedRowsFragments {
         TypeName listOfField = ParameterizedTypeName.get(LIST_CN, wildField);
         body.addStatement("$T selectFields = new $T<>($L)",
             listOfField, ARRAY_LIST,
-            ProjectionCall.fromEnvSelection(className(pivot.projection()), pivotAlias));
+            ProjectionCall.fromLauncher(className(pivot.projection()), pivotAlias, row));
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
 
@@ -281,7 +281,7 @@ public final class BatchedRowsFragments {
         body.addStatement("$T condition = $L", ClassName.get("org.jooq", "Condition"),
             whereCondition(row, chain, prelude));
         body.add(DiscriminatedTableFragments.projection(
-            chain.discriminated(), List.of(), baseLocal));
+            chain.discriminated(), List.of(), baseLocal, ProjectionCall.SelectionScope.of(row.result())));
 
         if (row.result() instanceof no.sikt.graphitron.command.ResultShape.Connection conn) {
             discriminatedConnectionTail(body, chain, prelude, conn, carrierDsl);
@@ -397,7 +397,7 @@ public final class BatchedRowsFragments {
             no.sikt.graphitron.command.ResultShape.Connection conn,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
         pageRequestLocals(body, conn, prelude.terminalAlias(),
-            ProjectionCall.fromEnvSelection(className(chain.projection()), prelude.terminalAlias()));
+            ProjectionCall.fromLauncher(className(chain.projection()), prelude.terminalAlias(), row));
 
         body.addStatement("$T where = $L", ClassName.get("org.jooq", "Condition"),
             whereCondition(row, chain, prelude));

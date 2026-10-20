@@ -23,7 +23,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * needed at depth; the restriction is per-call, not per-depth.
  *
  * <p>This pipeline-tier pin emits a Stage-2 helper for a polymorphic fixture and asserts that
- * the emitted method body references {@code PolymorphicSelectionSet} exactly once. A regression
+ * the emitted method body calls {@code SelectionOccurrences.restrictTo} exactly once. A regression
  * that introduces a per-depth wrap (or a missing wrap at the outer level) trips the count.
  * The execution-tier {@code PolymorphicProjectionQueryTest} provides the SQL-shape proof; this
  * test is the cheap pipeline-layer signal.
@@ -39,9 +39,9 @@ class PolymorphicNestingFilterTest {
     void stage2HelperWrapsSelectionSetExactlyOncePerCall() {
         // Fixture: union of two table-bound participants. Each participant resolves through
         // the Stage-2 buildPerTypenameSelect path; the emitted method body should contain
-        // exactly one PolymorphicSelectionSet.restrictTo reference (the outer wrap). The
-        // recursion inside the emitted <Type>.$project walks sf.getSelectionSet() at depth>0,
-        // which is independent of the wrapper and adds no second restrictTo to the body.
+        // exactly one SelectionOccurrences.restrictTo call (the outer wrap). The recursion inside
+        // the emitted <Type>.$project merges each bucket's immediate children at depth>0, which
+        // is independent of the restriction and adds no second restrictTo to the body.
         var schema = TestSchemaHelper.buildSchema("""
             type Inventory @table(name: "inventory") {
               inventoryId: Int! @field(name: "inventory_id")
@@ -72,21 +72,21 @@ class PolymorphicNestingFilterTest {
             .findFirst().orElseThrow();
 
         assertThat(wrapCount(inventoryHelper))
-            .as("selectInventoryForReferrers wraps env.getSelectionSet() through "
-                + "PolymorphicSelectionSet.restrictTo exactly once; a depth>0 wrap would land "
+            .as("selectInventoryForReferrers restricts the scoped selection through "
+                + "SelectionOccurrences.restrictTo exactly once; a depth>0 wrap would land "
                 + "a second reference, and a missing outer wrap would land zero. The "
                 + "'no further filter at depth' design claim is the structural invariant this "
                 + "count encodes.")
             .isEqualTo(1);
         assertThat(wrapCount(contentHelper))
-            .as("selectContentForReferrers wraps env.getSelectionSet() through "
-                + "PolymorphicSelectionSet.restrictTo exactly once; same invariant as the "
+            .as("selectContentForReferrers restricts the scoped selection through "
+                + "SelectionOccurrences.restrictTo exactly once; same invariant as the "
                 + "sibling participant.")
             .isEqualTo(1);
     }
 
     private static long wrapCount(MethodSpec m) {
-        return Pattern.compile("PolymorphicSelectionSet\\b")
+        return Pattern.compile("SelectionOccurrences\\.restrictTo\\(")
             .matcher(m.toString()).results().count();
     }
 }

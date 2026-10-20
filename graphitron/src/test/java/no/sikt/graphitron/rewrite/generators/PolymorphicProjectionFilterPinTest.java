@@ -13,9 +13,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Guarantee marker: the Stage-2 per-typename SELECT in
  * {@code MultiTablePolymorphicEmitter.buildPerTypenameSelect} threads
- * {@code PolymorphicSelectionSet.restrictTo(env.getSelectionSet(), "<Type>")}
- * into the emitted {@code <Type>.$project(...)} call. Passing the unfiltered parent
- * selection set instead re-introduces the over-selection the wrapper closes.
+ * {@code SelectionOccurrences.restrictTo(<scoped selection>, "<Type>")}
+ * into the emitted {@code <Type>.$project(...)} call. Passing the unrestricted selection
+ * instead re-introduces the over-selection the restriction closes.
  *
  * <p>The classifier does not reject this shape (no classifier guarantee applies),
  * and the rewrite bans code-string assertions on <em>emitted</em> method bodies,
@@ -33,11 +33,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * this scan's folder.) A folder-wide count would couple the pin to those unrelated
  * correct sites; a single-file scope pins exactly the Stage-2 invariant.
  *
- * <p>The Stage-2 SELECT is no longer {@code restrictTo}'s only consumer: the single-table
- * discriminated fold in {@code DiscriminatedTableFragments} calls it too, at the selective arity
- * that restricts only the field names whose alias the participant type qualifies. That emit site
- * is in {@code render}, outside this non-recursive scan, so this pin's count still speaks only for
- * the generators package, which is the scope its assertion message states.
+ * <p>The Stage-2 SELECT is not {@code restrictTo}'s only consumer: the single-table
+ * discriminated fold in {@code DiscriminatedTableFragments} calls it at the selective arity, and
+ * the entity dispatch's {@code SelectMethodBody} calls it for its concrete type. Those emit sites
+ * are in {@code render} and {@code generators/util}, outside this non-recursive scan, so this
+ * pin's count speaks only for the generators package, which is the scope its assertion message
+ * states.
  */
 @UnitTier
 class PolymorphicProjectionFilterPinTest {
@@ -50,16 +51,15 @@ class PolymorphicProjectionFilterPinTest {
 
     @Test
     void restrictToCalledAtExactlyOneEmitSite() throws IOException {
-        // Matches the JavaPoet emit-site shape `$T.restrictTo(env.getSelectionSet(`. The $T
-        // placeholder is the ClassName slot for the helper, present only in addStatement /
-        // addCode strings — prose mentions of `PolymorphicSelectionSet.restrictTo` in javadoc
-        // use the qualified-class form, so they don't contribute. Files.list is non-recursive,
-        // so generators/util/ (which contains the helper-class generator) is naturally outside
-        // the scan.
+        // Matches the JavaPoet emit-site shape `$T.restrictTo($L, $S)`. The $T placeholder is
+        // the ClassName slot for the helper, present only in addStatement / addCode strings;
+        // prose mentions of `SelectionOccurrences.restrictTo` in javadoc use the class name, so
+        // they don't contribute. Files.list is non-recursive, so generators/util/ (which
+        // contains the helper-class generator) is naturally outside the scan.
         long restrictToCalls = countAcrossGenerators(
-            Pattern.compile("\\$T\\.restrictTo\\(env\\.getSelectionSet\\(\\)"));
+            Pattern.compile("\\$T\\.restrictTo\\(\\$L, \\$S\\)"));
         assertThat(restrictToCalls)
-            .as("Every PolymorphicSelectionSet.restrictTo emit site in the generators package "
+            .as("Every SelectionOccurrences.restrictTo emit site in the generators package "
                 + "(the discriminated fold's own site is in render/, outside this scan) "
                 + "is the one Stage-2 site in MultiTablePolymorphicEmitter.buildPerTypenameSelect. "
                 + "A handcrafted regression that reverts that site to the unfiltered shape removes "
@@ -73,14 +73,14 @@ class PolymorphicProjectionFilterPinTest {
     void stage2EmitterPassesNoUnfilteredSelectionSetToFields() throws IOException {
         // The unfiltered projection call is composed through the shared call emitter
         // (ProjectionCall.fromEnvSelection); expected count 0 in the Stage-2 emitter: every
-        // Stage-2 SELECT threads the selection set through PolymorphicSelectionSet.restrictTo.
+        // Stage-2 SELECT threads the selection through SelectionOccurrences.restrictTo.
         String content = Files.readString(STAGE_2_EMITTER);
         long directArgs = Pattern.compile("ProjectionCall\\.fromEnvSelection\\(")
             .matcher(content).results().count();
         assertThat(directArgs)
             .as("No emit-site in MultiTablePolymorphicEmitter.java composes the unfiltered "
                 + "projection call — every Stage-2 SELECT must thread the selection set "
-                + "through PolymorphicSelectionSet.restrictTo so the per-typename projection sees "
+                + "through SelectionOccurrences.restrictTo so the per-typename projection sees "
                 + "only SelectedFields matching that participant. A regression that reverts the "
                 + "Stage-2 site to the unfiltered shape re-introduces a match.")
             .isZero();

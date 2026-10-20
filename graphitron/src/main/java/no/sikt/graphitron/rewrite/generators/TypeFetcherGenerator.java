@@ -1368,8 +1368,11 @@ public class TypeFetcherGenerator {
                 participants,
                 schema == null ? typeName -> java.util.List.of() : schema::fieldsOf,
                 units));
+        // Neither caller paginates: the child fetcher and the service fetcher return a list or a
+        // single record, so the participants' fields are the fetched field's own.
         return no.sikt.graphitron.render.DiscriminatedTableFragments.assembly(
-            source, alwaysProject, tableLocal);
+            source, alwaysProject, tableLocal,
+            no.sikt.graphitron.render.ProjectionCall.SelectionScope.OWN_FIELDS);
     }
 
     /**
@@ -1438,6 +1441,7 @@ public class TypeFetcherGenerator {
         return no.sikt.graphitron.emit.RoutineWriteEmitter.render(row,
             units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
             className(units.typeClass(row.returnTypeName())),
+            className(units.selectionOccurrences()),
             routineWriteErrors(field, units), routineWriteTenancy(ctx, coordinate, units),
             () -> ctx.requestContextRead().call(), ctx.argPathHelpers(),
             ctx.projectedKeyHost().at(coordinate));

@@ -2063,14 +2063,13 @@ type StoreManager implements StoreRef @table(name: "staff") {
 #   type requires: reflected once per anchor, it must accept both host tables. Value must agree with
 #   `address { addressId }` under both parents.
 #
-# Both names are deliberately distinct from every field name reachable under `address`. The
-# generated $project selection gate switches on the result-key map graphql-java builds from
-# getFieldsGroupedByResultKey(), which is recursive over the whole sub-selection, so a leaf sharing
-# a name with anything selected below it is projected unselected. That is a defect in the gate, not
-# in this fixture, and it is filed on its own; naming around it keeps the shape this type
-# demonstrates readable.
+# `district` is the same column over the same path as `occupantDistrict`, under the name that is
+# also reachable as `address { district }`. A projection sees only the fields selected on its own
+# type at its own level, so `location { address { district } }` must not project this leaf, and
+# `location { district address { district } }` must resolve each from its own selection.
 type OccupantLocation {
     address: Address
+    district: String @field(name: "DISTRICT") @reference(path: [{table: "address"}])
     occupantDistrict: String @field(name: "DISTRICT") @reference(path: [{table: "address"}])
     occupantAddressId: Int @externalField(reference: {
         className: "no.sikt.graphitron.rewrite.test.extensions.OccupantExtensions",
@@ -4079,6 +4078,10 @@ type FilmContent implements Content @table(name: "content") @discriminator(value
     title:     String!    @field(name: "TITLE")
     length:    Int        @field(name: "LENGTH")
     rating:    MpaaRating @reference(path: [{key: "content_film_id_fkey"}]) @field(name: "RATING")
+    # The title column again under a nullable String type, the shape of ShortContent.description:
+    # GraphQL field merging lets one response key name both only when their types agree, and the
+    # execution tier reuses a key across the two participants' fragments for these two columns.
+    heading:   String     @field(name: "TITLE")
 }
 
 # Implements Content; discriminator value 'SHORT'. The description column lives on the content

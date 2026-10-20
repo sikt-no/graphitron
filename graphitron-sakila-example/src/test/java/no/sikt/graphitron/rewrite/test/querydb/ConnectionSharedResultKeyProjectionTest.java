@@ -20,8 +20,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Execution-tier proof that a Relay connection projects the <em>union</em> of sub-selections when
  * the same result key is selected under both {@code edges { node { ... } }} and {@code nodes}.
  *
- * <p>graphql-java's {@code getFieldsGroupedByResultKey()} flattens the whole subtree, so the two
- * paths collapse into one bucket per result key. The generated {@code <Node>.$project} loop used to
+ * <p>A connection's projection reads its node level through the generated
+ * {@code SelectionOccurrences.connectionNodes}, which merges the {@code edges.node} and
+ * {@code nodes} paths into one bucket per result key: both are served from one SQL row by one node
+ * reader, so the two must project as one. The generated {@code <Node>.$project} loop used to
  * descend into only the first occurrence's sub-selection; any reference sub-field requested under
  * only the other path was missing from the SELECT, and its reader failed per row with a jOOQ
  * "Field ... is not contained in row type" error (surfacing as field errors + silent {@code null}

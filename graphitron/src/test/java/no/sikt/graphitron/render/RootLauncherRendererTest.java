@@ -39,12 +39,11 @@ class RootLauncherRendererTest {
     private static final GeneratedUnits UNITS = new GeneratedUnits(DEFAULT_OUTPUT_PACKAGE);
 
     /**
-     * The unrestricted fold: no participant-local result-key-aliased field, so every branch reads
-     * the whole selection, which is what every schema without such a field emits.
+     * The fold with no shared-alias field: every branch reads only its own participant's
+     * occurrences.
      */
-    private static final LaunchSource.DiscriminatedTable.SelectionRestriction NO_RESTRICTION =
-        new LaunchSource.DiscriminatedTable.SelectionRestriction(
-            UNITS.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet"), List.of());
+    private static final LaunchSource.DiscriminatedTable.SelectionRestriction NO_SHARED_ALIASES =
+        new LaunchSource.DiscriminatedTable.SelectionRestriction(UNITS.selectionOccurrences(), List.of());
 
     private static LauncherCommand filmsRow(GlueCall where, ResultShape result) {
         return filmsRow(where, new TenantStrategy.Single(), result);
@@ -57,7 +56,7 @@ class RootLauncherRendererTest {
             new LaunchSource.AnchorTable(
                 filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
                 UNITS.typeClass("Film")),
-            where, new Invocation.Direct(), tenancy, result);
+            where, new Invocation.Direct(), tenancy, result, UNITS.selectionOccurrences());
     }
 
     private static ResultShape.RecordList list(Ordering ordering) {
@@ -86,7 +85,8 @@ class RootLauncherRendererTest {
     void recordListShape_fetchesUnderTheProjectionUnitsSelectList() {
         var body = body(filmsRow(null, list(null)));
         assertThat(body).contains(
-            ".$project(env.getSelectionSet().getFieldsGroupedByResultKey(), filmTable, env)");
+            ".$project(" + DEFAULT_OUTPUT_PACKAGE
+                + ".util.SelectionOccurrences.ownFields(env.getSelectionSet()), filmTable, env)");
         assertThat(body).contains(".fetch();");
     }
 
@@ -156,6 +156,18 @@ class RootLauncherRendererTest {
     }
 
     @Test
+    void connectionShape_projectsTheNodeLevelOfTheSelection() {
+        // The one body assertion on the connection arm: the scope is entailed by the result
+        // shape, and a connection reading its own immediate fields (edges/nodes/pageInfo) would
+        // match no arm and project only the row-present sentinel.
+        var body = body(filmsRow(null, new ResultShape.Connection(
+            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult(), null)));
+        assertThat(body)
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.SelectionOccurrences.connectionNodes(env.getSelectionSet())")
+            .doesNotContain("ownFields");
+    }
+
+    @Test
     void fannedInvocation_envOnlySignatureHoistsAndScattersThroughTheCarrierRef() {
         var row = filmsRow(null,
             new TenantStrategy.Fanned(UNITS.tenantConnections(), List.of()), list(pkDesc()));
@@ -183,8 +195,8 @@ class RootLauncherRendererTest {
             new LaunchSource.DiscriminatedTable(
                 filmTable(List.of(col("film_id", "FILM_ID", "java.lang.Integer"))),
                 discriminatorCol("film_type"), List.of("FILM", "SHORT"), baseSlice, branches,
-                NO_RESTRICTION),
-            where, new Invocation.Direct(), new TenantStrategy.Single(), result);
+                NO_SHARED_ALIASES),
+            where, new Invocation.Direct(), new TenantStrategy.Single(), result, UNITS.selectionOccurrences());
     }
 
     private static LaunchSource.DiscriminatedTable.Branch.SingleTable filmContentBranch() {
@@ -200,11 +212,11 @@ class RootLauncherRendererTest {
     }
 
     /**
-     * A two-branch discriminated row with a non-empty selection restriction: the shape the fold's
-     * silent first-wins drop needs, which no other case here builds (every other discriminated
-     * fixture has exactly one branch, which is why the drop was never pinned at this tier).
+     * A two-branch discriminated row: the shape the fold's per-participant scoping needs, which
+     * no other case here builds (every other discriminated fixture has exactly one branch).
      */
-    private static LauncherCommand restrictedTwoBranchRow(List<String> perTypeFieldNames) {
+    private static LauncherCommand restrictedTwoBranchRow(List<String> sharedAliasFieldNames,
+            ResultShape result) {
         return new LauncherCommand(
             UNITS.launcherMethod("Query", "allContent"),
             FieldCoordinates.coordinates("Query", "allContent"),
@@ -214,40 +226,44 @@ class RootLauncherRendererTest {
                 List.of(singleTableBranch("FilmContent", "FILM"),
                     singleTableBranch("ShortContent", "SHORT")),
                 new LaunchSource.DiscriminatedTable.SelectionRestriction(
-                    UNITS.singleton(GeneratedUnits.SUB_UTIL, "PolymorphicSelectionSet"),
-                    perTypeFieldNames)),
-            null, new Invocation.Direct(), new TenantStrategy.Single(), list(null));
+                    UNITS.selectionOccurrences(), sharedAliasFieldNames)),
+            null, new Invocation.Direct(), new TenantStrategy.Single(), result,
+            UNITS.selectionOccurrences());
     }
 
     @Test
-    void discriminatedSource_restrictedFold_scopesEachBranchToItsOwnParticipant() {
-        var body = body(restrictedTwoBranchRow(List.of("target")));
+    void discriminatedSource_foldScopesEachBranchToItsOwnParticipant() {
+        var body = body(restrictedTwoBranchRow(List.of("details"), list(null)));
         assertThat(body)
-            .as("the per-type field names are hoisted once per fold, not once per branch: they "
+            .as("the fold reads the fetched field's own fields once, into one scoped local every "
+                + "branch and gate reads")
+            .containsOnlyOnce("foldSelection = " + DEFAULT_OUTPUT_PACKAGE
+                + ".util.SelectionOccurrences.ownFields(env.getSelectionSet())");
+        assertThat(body)
+            .as("the shared-alias field names are hoisted once per fold, not once per branch: they "
                 + "are the interface's fact, and the hoist drops a per-request allocation per arm")
-            .containsOnlyOnce("java.util.Set<java.lang.String> perTypeFields = "
-                + "java.util.Set.of(\"target\")");
+            .containsOnlyOnce("java.util.Set<java.lang.String> sharedAliasFields = "
+                + "java.util.Set.of(\"details\")");
         assertThat(body)
-            .as("each branch's $project receives the selection restricted to its own participant, "
-                + "through the same generated view the multi-table stage-2 SELECT feeds")
-            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.PolymorphicSelectionSet.restrictTo("
-                + "env.getSelectionSet(), \"FilmContent\", perTypeFields)")
-            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.PolymorphicSelectionSet.restrictTo("
-                + "env.getSelectionSet(), \"ShortContent\", perTypeFields)");
+            .as("each branch's $project receives the scoped selection restricted to its own "
+                + "participant, through the same scaffold the multi-table stage-2 SELECT calls")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.SelectionOccurrences.restrictTo("
+                + "foldSelection, \"FilmContent\", sharedAliasFields)")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.SelectionOccurrences.restrictTo("
+                + "foldSelection, \"ShortContent\", sharedAliasFields)");
+        assertThat(body).doesNotContain("getFieldsGroupedByResultKey");
     }
 
     @Test
-    void discriminatedSource_emptyRestriction_foldStaysUnrestricted() {
-        // Every schema with no participant-local result-key-aliased field lands here, so the
-        // no-op case has to emit the body it always did rather than a degenerate restriction.
-        var body = body(restrictedTwoBranchRow(List.of()));
-        assertThat(body).doesNotContain("PolymorphicSelectionSet");
-        assertThat(body).doesNotContain("perTypeFields");
+    void discriminatedSource_noSharedAliases_stillScopesEachBranch() {
+        // A key two participants' fragments reuse for different plain columns must reach each arm
+        // as that participant's own field, so the restriction runs whether or not the shared set
+        // is empty.
+        var body = body(restrictedTwoBranchRow(List.of(), list(null)));
         assertThat(body)
-            .contains(DEFAULT_OUTPUT_PACKAGE + ".types.FilmContent.$project("
-                + "env.getSelectionSet().getFieldsGroupedByResultKey()")
-            .contains(DEFAULT_OUTPUT_PACKAGE + ".types.ShortContent.$project("
-                + "env.getSelectionSet().getFieldsGroupedByResultKey()");
+            .contains("java.util.Set<java.lang.String> sharedAliasFields = java.util.Set.of()")
+            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.SelectionOccurrences.restrictTo("
+                + "foldSelection, \"FilmContent\", sharedAliasFields)");
     }
 
     @Test
@@ -359,7 +375,9 @@ class RootLauncherRendererTest {
             .contains("fields.add(filmTable.PARTY_ID.as(\"party_id\"))");
         assertThat(body)
             .as("an inherited reference projects per selected result-key bucket under the reserved prefix")
-            .contains("rkEntry.getValue().get(0).getName().equals(\"displayName\")")
+            .contains("for (java.util.Map.Entry<java.lang.String, java.util.List<graphql.schema.SelectedField>> rkEntry : foldSelection.entrySet())")
+            .as("the bucket test reads every occurrence, so another participant's field first in the bucket cannot drop the base term")
+            .contains("rkEntry.getValue().stream().anyMatch(sf -> sf.getName().equals(\"displayName\"))")
             .contains("fields.add(filmTable.DISPLAY_NAME.as(\"__rk_\" + rkEntry.getKey()))");
     }
 
@@ -371,8 +389,8 @@ class RootLauncherRendererTest {
                     FieldCoordinates.coordinates("Query", "allContent"),
                     new LaunchSource.DiscriminatedTable(
                         filmTable(List.of()), discriminatorCol("film_type"), List.of(), List.of(), List.of(),
-                        NO_RESTRICTION),
-                    null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections(), List.of()), list(null)))
+                        NO_SHARED_ALIASES),
+                    null, new Invocation.Direct(), new TenantStrategy.Fanned(UNITS.tenantConnections(), List.of()), list(null), UNITS.selectionOccurrences()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("runs single-tenant");
     }
@@ -405,7 +423,7 @@ class RootLauncherRendererTest {
             new LaunchSource.KeyedLookup(filmTable(List.of(filmIdCol)),
                 UNITS.typeClass("Film"), mapping,
                 UNITS.inputRowsMethod(UNITS.fetchers("Query"), "filmById")),
-            where, new Invocation.Direct(), new TenantStrategy.Single(), list(null));
+            where, new Invocation.Direct(), new TenantStrategy.Single(), list(null), UNITS.selectionOccurrences());
     }
 
     @Test
@@ -445,7 +463,7 @@ class RootLauncherRendererTest {
                     lookupRow(null).source(),
                     null, new Invocation.Direct(), new TenantStrategy.Single(),
                     new ResultShape.Connection(pkDesc(), 100,
-                        UNITS.connectionHelper(), UNITS.connectionResult(), null)))
+                        UNITS.connectionHelper(), UNITS.connectionResult(), null), UNITS.selectionOccurrences()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("never paginates");
     }

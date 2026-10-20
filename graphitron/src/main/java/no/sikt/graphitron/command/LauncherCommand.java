@@ -33,6 +33,12 @@ import java.util.Objects;
  * payload is a derived view over {@code (invocation, tenancy, result)}, not a slot of its own,
  * since the fanned strategy's marker-bearing transport ({@code List<Object>} between the
  * scatter and its collapse) is entailed by the strategy and has no business as a command fact.
+ *
+ * <p>{@link #selectionOccurrences} is the generated runtime scaffold every launcher reads the
+ * fetched field's selection through before handing it to {@code $project}; which of its
+ * adapters applies is entailed by {@link #result} (a connection's unit fields sit at its node
+ * level), so the command carries only the unit, copied off the naming vocabulary like the
+ * connection runtime's.
  */
 public record LauncherCommand(
     UnitMethodRef unit,
@@ -41,7 +47,8 @@ public record LauncherCommand(
     GlueCall where,
     Invocation invocation,
     TenantStrategy tenancy,
-    ResultShape result
+    ResultShape result,
+    UnitRef selectionOccurrences
 ) {
 
     public LauncherCommand {
@@ -51,6 +58,7 @@ public record LauncherCommand(
         Objects.requireNonNull(invocation, "invocation");
         Objects.requireNonNull(tenancy, "tenancy");
         Objects.requireNonNull(result, "result");
+        Objects.requireNonNull(selectionOccurrences, "selectionOccurrences");
         // Cross-axis backstops, not the enforcers; each mirrors a parse-boundary rejection and
         // keeps the pair unrepresentable if that check is ever relaxed without an audit here.
         // Each backstop is stated per axis pair (source-by-tenancy, source-by-result), never
