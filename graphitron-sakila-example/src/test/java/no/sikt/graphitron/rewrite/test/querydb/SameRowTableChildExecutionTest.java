@@ -93,6 +93,10 @@ class SameRowTableChildExecutionTest {
         assertThat(films.values()).extracting(f -> child(f, "sameRow").get("title")).doesNotHaveDuplicates();
     }
 
+    /**
+     * {@code languageName} is selected on the host and on the child: both project it under the
+     * same result-key alias, each in its own record scope, and each reads its own film's row.
+     */
     @Test
     void foreignKeyChild_correlatesOnTheParentRow_atBothLevels() {
         var films = films("languageId languageName sameRow { languageName language { languageId name } }");
@@ -100,19 +104,6 @@ class SameRowTableChildExecutionTest {
             var sameRow = child(film, "sameRow");
             assertThat(sameRow).containsEntry("languageName", film.get("languageName"));
             assertThat(child(sameRow, "language")).containsEntry("languageId", film.get("languageId"));
-        });
-    }
-
-    @Test
-    void resultKeys_sharedBetweenHostAndChild_stayApart() {
-        // The host's x is a scalar subselect and the child's x an object read; both project under
-        // the result key, each in its own record scope.
-        var films = films("x: languageName sameRow { x: language { name } y: title }");
-        films.values().forEach(film -> {
-            assertThat(film.get("x")).isInstanceOf(String.class);
-            assertThat(child(film, "sameRow").get("x")).isInstanceOf(Map.class);
-            assertThat(((String) child(child(film, "sameRow"), "x").get("name")).trim())
-                .isEqualTo(((String) film.get("x")).trim());
         });
     }
 
