@@ -1,5 +1,5 @@
 # An ordering declared on a field read once per participant is not applied: the branches are
-# combined on a synthetic key and rows arrive in participant primary-key order. Each declaring
+# combined on their primary keys and rows arrive in participant primary-key order. Each declaring
 # directive is its own defect. A list-shaped query root that reaches the multitable read lowers the
 # declaration onto every branch, and is excluded.
 

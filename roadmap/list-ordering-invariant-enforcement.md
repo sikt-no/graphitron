@@ -360,7 +360,7 @@ absence is not the complement's claim (see the section of that name above):
   unmasked against each other: `DEFAULT_ORDER` where the coordinate carries `graphitron_default_order_entry`,
   `ORDER_BY_ARGUMENT` where an argument carries `graphitron_order_by_entry`, `PRIMARY_KEY_FALLBACK` where the
   read's target table has a `sql_primary_key`, `PARTICIPANT_KEY` where the read fans out per
-  participant and the synthetic key orders it, `INPUT_SCATTER` where the visible order is the input
+  participant and its participants' key columns order it, `INPUT_SCATTER` where the visible order is the input
   order (the keyed shapes phase 2 exempts, stated here as a positive rule rather than an absence).
   `INPUT_SCATTER` carries the qualification `requiresReFetch()` lacks and that
   `roadmap/routine-write-key-capture-unordered.md` records against it: the rule holds only where the

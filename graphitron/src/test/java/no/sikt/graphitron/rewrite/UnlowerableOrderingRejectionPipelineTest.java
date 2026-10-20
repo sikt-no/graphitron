@@ -132,8 +132,8 @@ class UnlowerableOrderingRejectionPipelineTest {
 
     /**
      * The same paginated multitable root with no ordering declared builds clean, as it always has:
-     * the emitter orders the combined result on a synthetic key built from each participant's
-     * primary key, so what is available there is what is delivered.
+     * the emitter orders the combined result on each participant's primary-key columns, so what is
+     * available there is what is delivered.
      */
     @Test
     void theSameShapeWithNoDeclarationBuildsClean(@TempDir Path tmp) {

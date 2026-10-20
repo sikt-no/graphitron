@@ -38,8 +38,8 @@ class UnlowerableOrderingsTest {
 
     /**
      * The three-implementation multitable interface the report arrived on: each participant binds a
-     * table of its own, the interface binds none, so the read is three statements combined on a
-     * synthetic key.
+     * table of its own, the interface binds none, so the read is three statements combined on their
+     * primary keys.
      */
     private static final String DOCUMENTS = """
         interface Document { rowId: Int }
@@ -73,7 +73,7 @@ class UnlowerableOrderingsTest {
         assertThat(messages(violations)).containsExactly(
             "Field 'Store.documents': @defaultOrder declares an ordering this field cannot honour."
             + " A field returning the multitable interface 'Document' is read as one statement per"
-            + " participant (Actor, Film, Language) and the results are combined on a synthetic key,"
+            + " participant (Actor, Film, Language) and the results are combined on their primary keys,"
             + " so the declared columns are not applied and rows arrive in participant primary-key"
             + " order. Remove the declaration, or return a single @table type.");
         assertThat(violations).singleElement()
@@ -121,7 +121,7 @@ class UnlowerableOrderingsTest {
             "Field 'Store.documents': argument 'order' carries @orderBy, which asks for an ordering"
             + " this field cannot honour. A field returning the multitable interface 'Document' is"
             + " read as one statement per participant (Actor, Film, Language) and the results are"
-            + " combined on a synthetic key, so a client-supplied order is not applied and rows"
+            + " combined on their primary keys, so a client-supplied order is not applied and rows"
             + " arrive in participant primary-key order. Remove the argument's @orderBy, or return a"
             + " single @table type.");
     }

@@ -9727,7 +9727,7 @@ SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source
                            OR c.jooq_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))))
 UNION ALL
 -- A declared ordering on a field read once per participant, at the directive that declared it. The
--- branches are combined on a synthetic key and nothing carries the declaration down onto one, so
+-- branches are combined on their primary keys and nothing carries the declaration down onto one, so
 -- the rows arrive in participant primary-key order whatever was declared. Graphitron does not
 -- lower it yet, which is why this rests on UNSUPPORTED. One case is lowered, and it is excluded
 -- by transcribing the classifier's precedence: a field on the query root, list-shaped (a list, or
@@ -14763,7 +14763,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('COLUMN_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_AMBIGUOUS',
    'A field reads a column by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
-   'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on a synthetic key, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
+   'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.'),
   ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',

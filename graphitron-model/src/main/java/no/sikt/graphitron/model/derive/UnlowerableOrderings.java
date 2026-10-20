@@ -211,7 +211,7 @@ public final class UnlowerableOrderings {
         String read = "A field returning the multitable " + kindWord + " " + container
             + " is read as one statement per participant ("
             + String.join(", ", row.participants())
-            + ") and the results are combined on a synthetic key, so ";
+            + ") and the results are combined on their primary keys, so ";
         return switch (row.availableVia()) {
             case DEFAULT_ORDER -> "@defaultOrder declares an ordering this field cannot honour. "
                 + read + "the declared columns are not applied and rows arrive in participant"
