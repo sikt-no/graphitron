@@ -46,9 +46,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
-| `R1073` | A null element in a node-id list filter matches nothing instead of failing the field | Ready | 2026-10-19 | [plan](null-element-in-node-id-list-filter-matches-nothing.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
+| `R1073` | A null element in a node-id list filter matches nothing instead of failing the field | In Progress | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](null-element-in-node-id-list-filter-matches-nothing.md) |
 | `R1065` | An interface's own implements clause is dropped from the runtime schema | In Review | 2026-10-19 | [plan](interface-implements-interface-dropped-from-runtime-schema.md) |
 | `R1066` | Directives applied to a custom scalar are dropped from the runtime schema | In Review | 2026-10-19 | [plan](scalar-applied-directives-dropped-from-runtime-schema.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
@@ -520,7 +520,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1033` [**The @nodeId decode census covers a @table-only target with catalog node metadata**](nodeid-census-of-table-only-targets.md) — Backlog, architecture
 - `R1044` [**Two-writer column agreement compares converter-backed values by their database value**](column-agreement-follows-the-database-value.md) — Backlog, bug
 - `R1072` [**A node id over a DATE key column with a time part decodes to a different row**](node-id-over-timestamped-date-key-does-not-round-trip.md) — Spec, bug, blocked by [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)
-- `R1073` [**A null element in a node-id list filter matches nothing instead of failing the field**](null-element-in-node-id-list-filter-matches-nothing.md) — Ready, bug
+- `R1073` [**A null element in a node-id list filter matches nothing instead of failing the field**](null-element-in-node-id-list-filter-matches-nothing.md) — In Progress, bug
 - `R273` [**Land or retire R265's deferred compile-tier guard**](bare-scalar-id-arm-modernisation.md) — Backlog, architecture
 - `R24` [**Rooted-at-parent NodeId reference JOIN-projection emitter (ColumnBackedReferenceField, both arities)**](nodeidreferencefield-join-projection-form.md) — Backlog, cleanup
 - `R419` [**Reject list-valued @nodeId+@reference carriers on INSERT inputs at build time**](list-nodeid-reference-insert-rejection.md) — Backlog, validation
