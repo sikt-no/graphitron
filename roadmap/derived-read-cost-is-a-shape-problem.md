@@ -1343,6 +1343,12 @@ and the emitters read, and it goes when nothing reads what it builds.
         path, `graphitron_field_column_scope`'s terminal table. A type backed by a table's record
         now gets its `@field` name, a gap `InferredFieldHintsTest` had pinned. `LabelHintsTest`
         pins the labels.
+      * **An inlay request walks only its window** `open`. The hints' SQL is fast on sis (6.7 ms
+        median, 64 ms worst per 60-line window), but `InlayHints` walks the whole document on every
+        request, `DeclarationKind.walkAll` and `Directives.findAll` over the root, and filters to the
+        visible range afterwards: a window in sis's 6,000-line `schema_exp.graphql` takes 190 ms at
+        the median and up to 2.7 s, and a whole document up to 4 s. The walk visits only the
+        declarations the range overlaps.
       * **An omitted `@reference` path is filled in from the stored path** `blocked`, on the path
         discovery implies being a row of `graphitron_field_path`. The hint read
         `intent_field_reference_discovery` and is dropped until then;
