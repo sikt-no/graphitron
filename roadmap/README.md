@@ -35,7 +35,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1067` | A node id or tenant value that does not fit its column is not caught at decode | In Progress | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](undecodable-key-value-reaches-the-database.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1063` | An empty after cursor reads as the first page, as v9 read it | In Review | 2026-10-19 | [plan](empty-after-cursor-means-first-page.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -658,7 +657,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
 - `R1068` [**A database value outside an enum's mapping reads as null instead of a per-row serialization error**](unmapped-enum-value-from-database-reads-as-null.md) — Backlog, bug
 - `R1074` [**A multi-table child connection pages and dispatches on the first column of a composite participant key**](multi-table-child-connection-truncates-composite-key.md) — Backlog, bug
-- `R1063` [**An empty after cursor reads as the first page, as v9 read it**](empty-after-cursor-means-first-page.md) — In Review, bug
 - `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Spec, validation
 - `R935` [**Lower a client-supplied ordering onto an inline child list, or refuse the shape**](inline-child-list-orderby-argument-not-lowered.md) — Backlog, architecture
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
