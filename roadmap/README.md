@@ -15,7 +15,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-15 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R1045` | An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row | In Review | 2026-10-20 <sub>created 2026-10-15</sub> | [plan](inline-same-table-child-reads-an-arbitrary-row.md) |
 | `R708` | The $project selection gate fires on names selected at any depth below its unit | In Review | 2026-10-20 <sub>created 2026-08-18</sub> | [plan](projection-selection-gate-depth-leak.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
@@ -412,7 +411,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### classification-model
 
-- `R1045` [**An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row**](inline-same-table-child-reads-an-arbitrary-row.md) — In Review, bug
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
 - `R846` [**A field returning an author-declared connection type has no scope table**](authored-connection-type-scope-silence.md) — Backlog, bug
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
