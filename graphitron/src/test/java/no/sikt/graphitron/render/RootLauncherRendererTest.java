@@ -377,7 +377,7 @@ class RootLauncherRendererTest {
             .as("an inherited reference projects per selected result-key bucket under the reserved prefix")
             .contains("for (java.util.Map.Entry<java.lang.String, java.util.List<graphql.schema.SelectedField>> rkEntry : foldSelection.entrySet())")
             .as("the bucket test reads every occurrence, so another participant's field first in the bucket cannot drop the base term")
-            .contains("rkEntry.getValue().stream().anyMatch(sf -> sf.getName().equals(\"displayName\"))")
+            .contains("rkEntry.getValue().stream().anyMatch(foldField -> foldField.getName().equals(\"displayName\"))")
             .contains("fields.add(filmTable.DISPLAY_NAME.as(\"__rk_\" + rkEntry.getKey()))");
     }
 

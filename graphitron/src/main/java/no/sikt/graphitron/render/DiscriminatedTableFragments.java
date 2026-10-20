@@ -303,7 +303,7 @@ public final class DiscriminatedTableFragments {
                         ClassName.get(String.class),
                         ParameterizedTypeName.get(LIST, SELECTED_FIELD));
                     b.beginControlFlow("for ($T rkEntry : $L.entrySet())", rkEntryType, SELECTION_LOCAL);
-                    b.beginControlFlow("if (rkEntry.getValue().stream().anyMatch(sf -> sf.getName().equals($S)))",
+                    b.beginControlFlow("if (rkEntry.getValue().stream().anyMatch(foldField -> foldField.getName().equals($S)))",
                         inherited.fieldName());
                     b.addStatement("fields.add($L.$L.as($S + rkEntry.getKey()))",
                         tableLocal, inherited.baseColumn().javaName(),
@@ -432,8 +432,10 @@ public final class DiscriminatedTableFragments {
      * the scope itself already puts a connection's node level at the top.
      */
     private static CodeBlock typeConditionedGate(String typeName, String fieldName) {
-        return CodeBlock.of("$L.values().stream().anyMatch(occurrences -> occurrences.stream()"
-                + ".anyMatch(sf -> sf.getName().equals($S) && sf.getObjectTypeNames().contains($S)))",
+        // Lambda parameters may not shadow a host local, so they carry the fold's own prefix.
+        return CodeBlock.of("$L.values().stream().anyMatch(foldBucket -> foldBucket.stream()"
+                + ".anyMatch(foldField -> foldField.getName().equals($S)"
+                + " && foldField.getObjectTypeNames().contains($S)))",
             SELECTION_LOCAL, fieldName, typeName);
     }
 
