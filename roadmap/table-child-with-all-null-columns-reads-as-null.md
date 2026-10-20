@@ -72,6 +72,10 @@ Absence is judged by value, by default, for every nullable single-row object. Th
 - **The schema already has the declaration.** A non-null field (`postadresse: Postadresse!`) always
   resolves to an object; a nullable one may resolve to `null`. An author who wants "the row exists"
   to mean "an object" declares the field non-null. No new directive is needed, and none is added.
+  What nullability cannot say is "null when no row exists, an object when a row of nulls exists":
+  a non-null `@table` child with no matching row is an error, as today. No observed consumer shape
+  wants that third reading, since every one wants Graphitron 9's answer; a consumer that does is a
+  fresh Backlog item for a directive, which this rule leaves room for.
 - **It conflates "no row" with "a row with no values", and that is the point.** To a client both
   are "nothing to show". A nested object without a table has no row of its own to be present,
   which is why R1026 already chose the value reading there; extending the same reading to a child with a
@@ -123,6 +127,21 @@ What changes against today's rule (`ChildField.NestingField.SubtreePresence.over
 `@pivot` children keep their opposite convention (a record of null slots, never a null record,
 pinned by `BatchedChildExecutionTest.pivotChild_eachParentGetsItsOwnRecord_rowLessParentGetsNullSlots`).
 A non-null field keeps `AlwaysObject`.
+
+A same-table child (a field returning a `@table` type bound to its parent's own table, which reads
+the parent's own row) blocks the collapse when it sits *inside* an object, as today, because
+following it would re-enter the same row and recurse. When the same-table child *is* the nullable
+field, it is a single object like any other: its type's leaves, under this rule, decide it, read
+from the parent's row. That is the sis `Karakter.navnAlleSprak` shape, which returns
+`{nb: null, en: null}` for a grade with no name where Graphitron 9 returned `null`. Graphitron 9
+counted every field of the type, so every field was `null` there, and today's rule
+(`GraphitronSchema.sameRowNullContract`) only keeps an all-null type as an object when one of its
+fields blocks: a reference, a list or a `@splitQuery` field, which this rule turns into probes, or
+one of the blockers it keeps. The implementer pins the shape first, with `navnAlleSprak`'s return
+type taken from sis as a fixture, and reports which field blocks. When it is a probe kind, this plan
+fixes it. When it is a kept blocker, the item names that divergence in the migration guide. When no
+field blocks, the fault is in how the same-row presence check is generated, and it is fixed here,
+since the same check then serves the `@table` child.
 
 A type with a `@nodeId` field, or any column that is never `null` on an existing row such as its
 primary key mapped to a field, never collapses while its row exists. That matches Graphitron 9,
@@ -270,7 +289,9 @@ measures it as a problem, deduplicating a probe against a selected leaf is a fol
     to `null` (the `studiesemesterPeriode` shape);
   - a nested object holding an argument-free list resolves to `null` when its columns are `null` and
     the list is empty, and to an object when the list is not empty (the `phd` shape);
-  - the `@splitQuery` collapse adds no statement (counted, as existing batching tests count them).
+  - the `@splitQuery` collapse adds no statement (counted, as existing batching tests count them);
+  - a nullable same-table child shaped like `Karakter.navnAlleSprak`, over a row whose columns it
+    reads are all `null`, resolves to `null` (beside `SameRowTableChildExecutionTest`).
 - The existing `NestingNullContractExecutionTest`, `SameTableInlineChildPipelineTest` and
   `GraphQLQueryTest.splitTableField_singleCardinality_*` cases stay green unchanged; the R1026
   divergence assertions that a list or `@splitQuery` field keeps the object are rewritten to the new
@@ -312,3 +333,7 @@ same-table child that R1045 now reads from the parent's row, returns `{nb: null,
 grade with no name where Graphitron 9 returns `null`. The plan's table lists a same-table child as
 blocking the collapse when it sits *inside* an object; it should also say what happens when the
 same-table child *is* the nullable object, which is this shape.
+
+The plan answers this input in place: the non-null declaration and its one gap under "The decision",
+the `phd` list under "The presence rule", and `navnAlleSprak` in the paragraph on same-table
+children there.
