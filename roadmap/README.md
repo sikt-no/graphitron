@@ -49,7 +49,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R1066` | Directives applied to a custom scalar are dropped from the runtime schema | In Progress | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](scalar-applied-directives-dropped-from-runtime-schema.md) |
 | `R1073` | A null element in a node-id list filter matches nothing instead of failing the field | In Review | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](null-element-in-node-id-list-filter-matches-nothing.md) |
-| `R1065` | An interface's own implements clause is dropped from the runtime schema | In Review | 2026-10-19 | [plan](interface-implements-interface-dropped-from-runtime-schema.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -667,7 +666,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1065` [**An interface's own implements clause is dropped from the runtime schema**](interface-implements-interface-dropped-from-runtime-schema.md) — In Review, bug
 - `R1066` [**Directives applied to a custom scalar are dropped from the runtime schema**](scalar-applied-directives-dropped-from-runtime-schema.md) — In Progress, bug
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
