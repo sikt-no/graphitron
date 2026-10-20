@@ -114,7 +114,7 @@ public final class FetcherRegistrationsEmitter {
                         + " nesting-reach fold has no wiring for it; the producer's flag rule and"
                         + " the reach fold disagree");
                 }
-                body = nestedBody(new NestedTypeWiring(name, wiring.nestedFields(),
+                body = nestedBody(schema, new NestedTypeWiring(name, wiring.nestedFields(),
                         wiring.returnType().table()), units, outputPackage)
                     .orElseThrow(() -> new IllegalStateException(
                         "schema-shape row for '" + name + "' is flagged registersFetchers but its"
@@ -144,7 +144,7 @@ public final class FetcherRegistrationsEmitter {
             outputPackage, dualWiring));
     }
 
-    private static Optional<CodeBlock> nestedBody(NestedTypeWiring ntw,
+    private static Optional<CodeBlock> nestedBody(GraphitronSchema schema, NestedTypeWiring ntw,
             no.sikt.graphitron.plan.GeneratedUnits units, String outputPackage) {
         // Every nested object type that owns a fetcher gets its own <Type>Fetchers class, and
         // each field's read (reified or method-backed) references into it. The gate is shared with
@@ -162,8 +162,9 @@ public final class FetcherRegistrationsEmitter {
         for (var field : ntw.fields()) {
             // A nested-only (pure NestingType) coordinate is never dual-shape (a mixed-source type is a
             // ResultType, emitted via typeBody), so resultType and dualWiring are null and the dispatch
-            // path in registrationEntry short-circuits before reading the schema.
-            body.add(registrationEntry(null, ntw.nestedTypeName(), field,
+            // path in registrationEntry short-circuits. The schema still reaches FetcherEmitter.bind,
+            // which reads a same-row child's null contract off it.
+            body.add(registrationEntry(schema, ntw.nestedTypeName(), field,
                 nestedFetchersClass, ntw.representativeParentTable(), null, outputPackage, parentSource, null));
         }
         body.add(";\n").unindent();

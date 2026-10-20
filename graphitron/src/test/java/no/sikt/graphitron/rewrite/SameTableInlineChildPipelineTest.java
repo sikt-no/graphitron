@@ -70,6 +70,25 @@ class SameTableInlineChildPipelineTest {
         }
 
         @Test
+        void underANestedObject_classifiesAsSameRow_andValidates() {
+            var schema = TestSchemaHelper.buildSchema(SAME_ROW + """
+                type FilmNest { row: FilmSameRow }
+                type Film @table(name: "film") {
+                    title: String
+                    nest: FilmNest
+                }
+                type Query { films: [Film!]! }
+                """);
+
+            assertThat(schema.field("Film", "nest"))
+                .isInstanceOfSatisfying(ChildField.NestingField.class, nf ->
+                    assertThat(nf.nestedFields()).singleElement()
+                        .isInstanceOfSatisfying(ChildField.SameRowTableField.class, f ->
+                            assertThat(f.returnType().returnTypeName()).isEqualTo("FilmSameRow")));
+            assertThat(new GraphitronSchemaValidator().validate(schema)).isEmpty();
+        }
+
+        @Test
         void underKeyEntityParent_classifiesAsSameRow() {
             var schema = TestSchemaHelper.buildSchema(KEY_DIRECTIVE + SAME_ROW + """
                 type Film @table(name: "film") @key(fields: "title") {

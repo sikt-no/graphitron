@@ -64,6 +64,23 @@ class FetcherRegistrationsEmitterTest {
         assertNoEmptyValues(bodiesFor(sdl));
     }
 
+    /**
+     * A same-row table child inside a nested object: its fetcher reads the child's null contract
+     * off the schema, so the nested registration path must carry the schema to it.
+     */
+    @Test
+    void nestedSameRowChild_registersUnderTheNestedType() {
+        var sdl = """
+            type Query { films: [Film!]! }
+            type FilmSameRow @table(name: "film") { title: String }
+            type FilmNest { row: FilmSameRow }
+            type Film @table(name: "film") { title: String  nest: FilmNest }
+            """;
+        var bodies = bodiesFor(sdl);
+        assertNoEmptyValues(bodies);
+        assertThat(bodies).containsKey("FilmNest");
+    }
+
     private static Map<String, CodeBlock> bodiesFor(String sdl) {
         GraphitronSchema schema = TestSchemaHelper.buildSchema(sdl);
         return SchemaShapeRenderTestSupport.fetcherRegistrations(schema, DEFAULT_OUTPUT_PACKAGE);

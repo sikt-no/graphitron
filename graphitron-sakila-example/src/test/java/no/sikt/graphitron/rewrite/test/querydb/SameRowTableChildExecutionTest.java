@@ -21,6 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code @reference}, against a real PostgreSQL database: it reads the parent's own row, so every
  * parent gets its own values. Fixtures: {@code Film.sameRow: FilmSameRow} (both on {@code film}),
  * whose type holds a foreign-key child and a cycle back to {@code Film};
+ * {@code Film.sameRowNested: FilmSameRowNest}, a plain nested object holding the same child;
  * {@code PivotNestingHost.labelsRow: HostLabelsRow} (both on {@code pivot_nesting_host}) for the
  * null rule, where host 1 carries {@code nn} and {@code nb}, host 2 neither and host 3 only
  * {@code nb}; and {@code Film.sameTableById}, the narrowed form, a read of {@code film} by its own
@@ -104,6 +105,18 @@ class SameRowTableChildExecutionTest {
             var sameRow = child(film, "sameRow");
             assertThat(sameRow).containsEntry("languageName", film.get("languageName"));
             assertThat(child(sameRow, "language")).containsEntry("languageId", film.get("languageId"));
+        });
+    }
+
+    /** Inside a plain nested object the child still correlates on the film the object nests on. */
+    @Test
+    void underANestedObject_everyFilm_getsItsOwnRow() {
+        var films = films("title languageId sameRowNested { row { filmId title language { languageId } } }");
+        assertThat(films).hasSizeGreaterThan(1);
+        films.forEach((id, film) -> {
+            var row = child(child(film, "sameRowNested"), "row");
+            assertThat(row).containsEntry("filmId", id).containsEntry("title", film.get("title"));
+            assertThat(child(row, "language")).containsEntry("languageId", film.get("languageId"));
         });
     }
 

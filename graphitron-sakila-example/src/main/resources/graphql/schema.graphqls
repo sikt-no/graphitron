@@ -2538,6 +2538,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # @reference, so it reads this film's own row. sameTableById is the narrowed form of the same
     # shape: a read of film narrowed by its own argument, the same rows under every film.
     sameRow: FilmSameRow
+    sameRowNested: FilmSameRowNest
     sameTableById(filmId: Int @field(name: "FILM_ID")): [FilmSameRow!]!
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
     # film_price attribute tables. titleTranslations / taglineTranslations reuse one projection
@@ -3292,6 +3293,13 @@ type FilmSameRow @table(name: "film") {
     language: Language @reference(path: [{key: "film_language_id_fkey"}])
     languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
     film: Film
+}
+
+# A plain nested object over Film's row holding a same-row table child: the child reads the
+# film's own row at nested depth, as it does directly under Film.
+type FilmSameRowNest {
+    rating: String @field(name: "RATING")
+    row: FilmSameRow
 }
 
 type StockFilm @table(name: "film") {
