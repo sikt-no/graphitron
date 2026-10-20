@@ -26,13 +26,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1070` | A nested connection totalCount runs one count per parent, each over every parent's rows | Ready | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](nested-connection-total-count-is-quadratic.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1064` | A service payload list with a null element throws while extracting keys | In Review | 2026-10-19 | [plan](service-payload-list-null-element.md) |
-| `R1067` | A node id or tenant value that does not fit its column is not caught at decode | Spec | 2026-10-19 | [plan](undecodable-key-value-reaches-the-database.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1067` | A node id or tenant value that does not fit its column is not caught at decode | Ready | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](undecodable-key-value-reaches-the-database.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R1063` | An empty after cursor reads as the first page, as v9 read it | In Review | 2026-10-19 | [plan](empty-after-cursor-means-first-page.md) |
@@ -514,7 +514,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R615` [**init.sql documents the live idreffixture DDL as serving deleted shim tests**](idreffixture-purpose-comment-stale.md) — Backlog, tech-debt
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
-- `R1067` [**A node id or tenant value that does not fit its column is not caught at decode**](undecodable-key-value-reaches-the-database.md) — Spec, bug
+- `R1067` [**A node id or tenant value that does not fit its column is not caught at decode**](undecodable-key-value-reaches-the-database.md) — Ready, bug
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt

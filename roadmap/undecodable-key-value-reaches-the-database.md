@@ -1,13 +1,13 @@
 ---
 id: R1067
 title: "A node id or tenant value that does not fit its column is not caught at decode"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-19
+last-updated: 2026-10-20
 ---
 
 # A node id or tenant value that does not fit its column is not caught at decode
@@ -506,3 +506,21 @@ without a plain writer, gives the rail's decode failure and nothing is written.
 > says its question is unchanged. `NodeIdValueAgreementExecutionTest` gains two `agreeStorageBin`
 > cases that fail on today's tree: a wrapping `StorageBin` id alone, and the same id beside
 > `binIdText: "1"`.
+
+### Round 3 (Spec → Ready): sign off, session_01MrgQ7xqp1TGSjwbLJ7op9G, 2026-10-20
+
+Round 2's finding is resolved: the generator emits `decodeValues` in exactly the eight places the
+Implementation section lists, and the `emitPrepare` bullet holds against the code
+(`requireColumnAgreement` takes `Object`, so `Object[]` keys need no edit to `emitAgreement`). Both
+questions are answered, and the spec is Ready.
+
+Non-blocking, for the implementer:
+
+- `schema.graphqls` has no UPDATE keyed by a `Film` id (`FilmUpdateInput` keys on `filmId: Int`).
+  The "never written" DML case can use a `Film` reference on a SET (`UpdateBookmarkOverlapInput.filmRef`)
+  or the non-tenant `deleteFilmActorByNodeId`; the spec's "or wherever" already allows either.
+- "`"1.5"` is accepted at `1.5` on a `NUMERIC`" holds only where the scale admits a fractional
+  digit; on `NUMERIC(4)` the precision clause refuses it, which is what the direct `ColumnValues`
+  test over that type should pin.
+- `TenantConnections` is emitted in the `schema` sub-package and `ColumnValues` in `util`, so
+  `ColumnValues` and its two methods are public.
