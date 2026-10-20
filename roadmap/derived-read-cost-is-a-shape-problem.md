@@ -443,6 +443,19 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     author wrote it is whether the element has a `graphitron_path_element_key` row. A match by name
     has no key. The routine path has the same children.
 
+    A row is a step the walk took, ruled with Alf 2026-10-21: an element the walk cannot step
+    through has no row, a row with nothing past its `from_table` saying nothing the row before it
+    did not. So a broken path is the first written element with no row, read from the entries, and
+    the elements after it have none either. Where nothing is written the discovered step is a row.
+    A field that wrote a path with nowhere to start, a root not led by `@routine` or an object
+    parent no consumed key starts from, has no walk at all. The walk reads the written order from
+    the entries, so `GraphitronAnchor`'s `graphitron_field_path`, the chain as written keyed by the
+    field before anything resolves, goes and the walk takes its name. Its readers split: those
+    asking of the field, whether it wrote a path (`graphitron_field_target_column_match`) and how
+    many elements (`FieldInformation`), read the entries; those asking of a path, where it broke and
+    whether a written path has a walk (`graphitron_entry_defect_rule`), read the walk beside the
+    entries.
+
     The walk exists in part today:
     `FieldReferenceStepTargets` walks forward over `ReferenceStepWalk` from the parent type's own
     table only, so on sakila it misses 38 fields with a path, read 2026-10-16: the 21 led by
@@ -456,7 +469,8 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     measured first".
   * **A broken path is a defect at the position the walk stopped** `open`, after the walk. The
     resolved path toward a target type is the walk where it reaches that type's table; a path that
-    stops short is a defect naming the position it stopped at, and one that completes at another
+    stops short is a defect naming the position it stopped at, the first written element with no
+    row, and one that completes at another
     table is a defect naming that table. A field with a written path and no source is a defect of
     its own, nothing stating where it reads from, and that one covers a root field's path not led by
     `@routine`, a root having no source to join from. These are what `CHAIN_WITHOUT_TARGET` and the chain-break codes
