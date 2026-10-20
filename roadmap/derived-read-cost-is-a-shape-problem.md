@@ -81,8 +81,10 @@ is that subtract's prerequisite, and a node that adds says which line it retires
 * Entry twins: 15 `graphitron_ast_*_entry` beside the coordinate copies, both written every capture,
   the twins read by nobody. Ends at "The twinned ones flip and subtract".
 * Two resolutions of an authored element: `graphitron_field_reference_step_hop` and
-  `graphitron_field_path_reading`, both every capture; the forward walk retires both. Ends at "One
-  resolution of an authored element stands, not two" and "The backward walk leaves nothing behind".
+  `graphitron_field_path_reading`, both every capture, and beside them since 2026-10-20 what
+  replaces them, `graphitron_path_element_key`, `_table` and `_method`, so three run until the
+  forward walk reads the new ones and retires the two. Ends at "One resolution of an authored
+  element stands, not two" and "The backward walk leaves nothing behind".
 * Read-time path views: `intent_field_path_start`, `_node` and `_terminus`, evaluated by every
   reader. Ends at "The read-time path relations are gone".
 * The classified model beside the store: `generate` builds `GraphitronSchema`. Ends at "Each
