@@ -99,7 +99,13 @@ public static <T> T knownOrNull(T value, String coordinate) {
 ```
 
 `RUNTIME_VALUES` is filled from the same `et.values()` loop that writes the `enumValueDef_*`
-factories, so the set and the value definitions cannot drift apart. The method is generic, so a
+factories, so the set and the value definitions cannot drift apart. The generator collects the
+runtime values into a `LinkedHashSet` before it writes `Set.of(...)`, so each value is emitted
+once. Two enum values may map to the same database string (`A @field(name: "X")` beside
+`B @field(name: "X")`, or a deprecated alias of a current value). Nothing in the classifier
+rejects that, and graphql-java accepts such an enum, serializing the first match. `Set.of`
+throws on a duplicate element, which would fail the class at initialization, and with it the
+whole schema, for an enum no field even reads from a column. The method is generic, so a
 wrapped read keeps the static type it has today. As a result the carriers' `domainReturnType()`
 overrides need no new branch. `UNMAPPED_LOG` is one fixed logger category shared by every enum
 class, for example `<outputPackage>.schema.UnmappedEnumValue`, so an operator enables DEBUG once,
@@ -161,34 +167,77 @@ The host class comes from `GeneratedUnits.schemaShape(enumName)`. `EnumTypeGener
 class name through the same call, replacing today's `et.name() + "Type"`, so the classifier and the
 generator cannot disagree on the name.
 
-**Emission, and the hazard it closes.** The read sites decide today whether to wrap with a nullable
-`NodeIdEncodeKeys` binding: `var encode = … instanceof NodeIdEncodeKeys e ? e : null` in
-`FetcherEmitter.recordReadBinding` and `inlineSuccessReturn`, plus the same shape in `bindRaw` and
-`dualShapeRecordArmRead`. A new arm that one of those sites misses would keep today's behaviour with
-no error. So the plan replaces the pattern rather than extending it:
+**Emission, and the hazard it closes.** Each read site decides today whether to encode with a
+test that has no arm for anything else:
 
-* **One exhaustive wrapper.** `encodedReadReturn`'s nullable `encode` parameter becomes a `switch`
-  over `CallSiteCompaction` with no `default` (`Direct` returns the read, `NodeIdEncodeKeys` encodes
-  it, `EnumKnownOrNull` wraps it in `<Name>Type.knownOrNull(<read>, "<Type>.<field>")`). Every read
-  site that handles a compaction calls it: `bindRaw`'s `ColumnBackedField` arm,
-  `dualShapeRecordArmRead`, `columnByAlias` for `ColumnBackedReferenceField`, `recordReadBinding`
-  and `inlineSuccessReturn`. After that, adding an arm is a compile error at the one place that has
-  to handle it.
+* `var encode = … instanceof NodeIdEncodeKeys e ? e : null` in `FetcherEmitter.recordReadBinding`
+  and `inlineSuccessReturn`;
+* `if (… instanceof NodeIdEncodeKeys enc)` in `bindRaw`'s `ColumnBackedField` arm and in
+  `dualShapeRecordArmRead`;
+* `instanceof CallSiteCompaction.Direct` on `bindRaw`'s `ColumnBackedReferenceField` arm.
+
+A new arm that one of those sites misses would keep today's behaviour with no error. The sites
+do not share one emission shape, though. The record reads bind one value to a local of the key
+column's type and null-guard it (`encodedReadReturn`). The column reads encode N key columns
+positionally with no guard. The dual-shape read is an expression its caller returns.
+`columnByAlias` is shared with `TableField` and `ComputedField`. So the plan does not funnel the
+sites through one wrapper. It makes each site's decision an exhaustive switch and shares only
+the new arm's expression:
+
 * **A capability for "plain value".** `sealed interface PlainValue extends CallSiteCompaction
-  permits Direct, EnumKnownOrNull`. The projection is unchanged under the new arm: the SELECT term is
-  still the plain column. So the sites that use `instanceof Direct` to mean "a plain single-column
-  value, not node-id encoded" test `PlainValue` instead, and no bare `instanceof
+  permits Direct, EnumKnownOrNull`. These are the arms whose projection is the plain column and
+  whose read yields one value. `CallSiteCompaction` then permits `PlainValue` and
+  `NodeIdEncodeKeys`.
+* **One expression for the plain arms.** `FetcherEmitter.plainValueRead(CodeBlock read,
+  PlainValue value, GraphitronField field)` switches over `PlainValue` with no `default`.
+  `Direct` returns `read`. `EnumKnownOrNull` returns
+  `<Name>Type.knownOrNull(<read>, "<Type>.<field>")`, with the coordinate from
+  `field.qualifiedName()`. It is an expression, so the statement-shaped and the expression-shaped
+  sites both use it.
+* **An exhaustive switch at each site,** with `case NodeIdEncodeKeys`, `case PlainValue` and no
+  `default`:
+  * `bindRaw`'s `ColumnBackedField` arm and `dualShapeRecordArmRead`. `NodeIdEncodeKeys` keeps
+    its N-column emission unchanged. `PlainValue` passes the single typed-column read through
+    `plainValueRead`.
+  * `encodedReadReturn`, called by `recordReadBinding` and `inlineSuccessReturn`. It takes the
+    `CallSiteCompaction` instead of a nullable `NodeIdEncodeKeys`. `NodeIdEncodeKeys` keeps its
+    typed-local, null-guarded form unchanged. `PlainValue` returns `plainValueRead(read, …)`.
+    Two more decisions in those callers become the same two-case switch: the `ByName` read
+    shape (typed `get` for an encode, untyped otherwise) and `recordReadBinding`'s `DefaultRead`
+    arm.
+  * `bindRaw`'s `ColumnBackedReferenceField` arm. `PlainValue` reads through `columnByAlias`,
+    which gains a `PlainValue` parameter that it applies through `plainValueRead`; `TableField`
+    and `ComputedField` pass `Direct`. `NodeIdEncodeKeys` falls to the `ResultKeyAliasedField`
+    guard and throws, as it does today.
+
+  After that, an arm added beside `NodeIdEncodeKeys` is a compile error at each of these sites,
+  and an arm added under `PlainValue` is a compile error in `plainValueRead`. Node-id output is
+  byte-for-byte unchanged on every site: its code moves under a `case` without being rewritten.
+  The existing tests that cover node-id reads are the evidence, and no test changes for it.
+* **Two carrier invariants,** so that combinations the classifier never produces cannot reach
+  emission:
+  * `RecordReadField`'s canonical constructor rejects `EnumKnownOrNull` unless the locator is
+    `TypedColumn` or `ByName`, beside its existing arity check. `recordReadBinding`'s
+    `DefaultRead` arm therefore throws `IllegalStateException` on `EnumKnownOrNull` as
+    unreachable, the way that file already marks unreachable arms, instead of building a read
+    for it.
+  * `ErrorFieldRead.SourceAccessor`'s canonical constructor rejects `EnumKnownOrNull` as its
+    `wire`. That keeps the `instanceof NodeIdEncodeKeys` tests in
+    `GraphitronSchemaClassGenerator` and `ErrorTypeFetcherClassGenerator` sound without touching
+    them.
+* **The `PlainValue` sites.** The sites that use `instanceof Direct` to mean "a plain
+  single-column value, not node-id encoded" test `PlainValue` instead, and no bare `instanceof
   CallSiteCompaction.Direct` remains in `graphitron/src/main`. Known sites at the time of writing:
   * `JoinedTableReprojection`, the `ColumnBackedField` and `ColumnBackedReferenceField` deferral
     checks. If one is missed, the participant is silently deferred.
-  * `FetcherEmitter`, the `ColumnBackedReferenceField` arm. If it is missed, the read falls to the
-    `ResultKeyAliasedField` guard, which throws.
+  * `FetcherEmitter`, the `ColumnBackedReferenceField` arm, which the switch above already
+    covers.
 
-  The `instanceof NodeIdEncodeKeys` sites keep their meaning and need no change:
+  The remaining `instanceof NodeIdEncodeKeys` sites keep their meaning and need no change:
   `PlanCompileGraph`, `EntityResolutionBuilder`, `ProjectionCommands`, `GraphitronSchemaValidator`,
   the arity invariants in `ChildField`'s carrier constructors, `domainReturnType()`,
   `GraphitronSchemaClassGenerator` and `ErrorTypeFetcherClassGenerator`. The implementer still
-  greps `CallSiteCompaction` across `graphitron/src/main`, to confirm the list is complete.
+  greps `CallSiteCompaction` across `graphitron/src/main` to confirm the list is complete.
 
 The projection itself is unchanged, so `ProjectionCommands` and the alias machinery need no new
 branch.
@@ -215,13 +264,17 @@ branch.
 
 * `graphitron/.../rewrite/model/CallSiteCompaction.java`: the `EnumKnownOrNull` arm with its
   reference record, the `PlainValue` sub-interface, and the restated first line.
+* `graphitron/.../rewrite/model/ChildField.java` (`RecordReadField`) and `ErrorFieldRead.java`
+  (`SourceAccessor`): the two constructor invariants.
 * `graphitron/.../rewrite/FieldBuilder.java`: the predicate, called from the three sites above.
   It switches on `EnumMappingResolver.validateEnumFilter`.
-* `graphitron/.../rewrite/generators/schema/EnumTypeGenerator.java`: `RUNTIME_VALUES`, the shared
-  `UNMAPPED_LOG` category and `knownOrNull` on every `<Name>Type` class. The class name comes from
-  `GeneratedUnits.schemaShape`.
-* `graphitron/.../rewrite/generators/FetcherEmitter.java`: the exhaustive compaction wrapper, called
-  from the read sites above.
+* `graphitron/.../rewrite/generators/schema/EnumTypeGenerator.java`: `RUNTIME_VALUES` (deduplicated
+  at generation), the shared `UNMAPPED_LOG` category and `knownOrNull` on every `<Name>Type`
+  class. The class name comes from `GeneratedUnits.schemaShape`, which returns a `UnitRef`; the
+  classifier builds a `GeneratedUnits` from the output package, as the planners do.
+* `graphitron/.../rewrite/generators/FetcherEmitter.java`: `plainValueRead`, the compaction-typed
+  `encodedReadReturn`, `columnByAlias`'s `PlainValue` parameter, and the exhaustive switch at each
+  read site above.
 * The `PlainValue` sites above (`JoinedTableReprojection`, `FetcherEmitter`).
 * `docs/manual/how-to/map-types-to-tables.adoc`, section "Enum values: text-column and jOOQ-enum".
   Rewrite the text-column paragraph:
@@ -233,7 +286,9 @@ branch.
   * The section's jOOQ-enum paragraphs are R1078's.
 * `graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`: retype `Film.textRating`
   from `String` to `TextRating`. The manual already presents it as the text-column enum form, and no
-  output test reads it today.
+  output test reads it today. Add to `TextRating` a deprecated alias that maps to a value another
+  constant already maps to, `NC17 @field(name: "NC-17") @deprecated(reason: "Use NC_17.")`, after
+  `NC_17`. That is the duplicate-mapping case in the shape a consumer would write it.
 * `graphitron-sakila-db/src/main/resources/init.sql`: give one seeded `film` row a `text_rating`
   outside `TextRating`, for example `'UNRATED'` (the column is `varchar(10)`). Pick a row that
   `films(textRating:)`'s two filter tests (`G`, `NC_17`) do not count. Before choosing, grep the
@@ -256,6 +311,8 @@ branch.
   * `Direct` for a list-valued enum field;
   * `Direct` for each excluded read: a `JavaAccessor` and a `DefaultRead` locator on a class-backed
     parent, and an `@error`-type field.
+* **Unit tier, the invariants.** `RecordReadField` rejects `EnumKnownOrNull` with a
+  `JavaAccessor` and with a `DefaultRead` locator, and `SourceAccessor` rejects it as its `wire`.
 * **Pipeline tier, the audit.** A table-interface participant carrying an `EnumKnownOrNull`
   `ColumnBackedField` is not deferred by `JoinedTableReprojection`. This is the silent arm of the
   hazard.
@@ -263,7 +320,12 @@ branch.
   * `films { title textRating }` answers `null` for the seeded unmapped row, with
     `result.getErrors()` empty. This test is the acceptance evidence for the goal.
   * `NC_17` for the `'NC-17'` row and `PG` for a `'PG'` row: a mapped value and a self-named value
-    are unchanged.
+    are unchanged. With the `NC17` alias in place, the `NC_17` assertion also pins that a
+    duplicate mapping serializes to its first constant, as graphql-java does today.
+  * The duplicate mapping itself needs no assertion of its own. Every execution test builds the
+    sakila schema, which loads `TextRatingType`, so a `RUNTIME_VALUES` that throws on the
+    duplicate fails the whole suite. Only the execution tier loads the generated class, which is
+    why the case lives there and not at the pipeline tier.
   * The same field through a `@reference` path, if the sakila schema has or gains an enum-typed
     scalar `@reference` over a text column.
 
@@ -309,6 +371,16 @@ findings are narrow, but each one changes what the implementer builds.
    with no `default` at each site, dropping the "one place" claim. Either way, the spec says
    which, and states that NodeId output on every site is byte-for-byte unchanged.
 
+   *Response:* Emission no longer funnels every site through one wrapper. Each site makes an
+   exhaustive `NodeIdEncodeKeys` / `PlainValue` switch with no `default`. Only the new arm's
+   expression is shared, as `plainValueRead`, an expression helper exhaustive over `PlainValue`.
+   Node-id emission moves under its `case` without being rewritten, and the spec now says its
+   output is byte-for-byte unchanged. `encodedReadReturn` takes the compaction, and
+   `columnByAlias` takes a `PlainValue`. Two constructor invariants keep the classifier's
+   exclusions out of emission: `RecordReadField` admits the arm only with `TypedColumn` or
+   `ByName`, and `SourceAccessor` never carries it. The plan says so under Design, Emission;
+   the Implementation list and a unit-tier test bullet are updated to match.
+
 2. **Question one: `Set.of` in `RUNTIME_VALUES` turns a duplicate mapping into a class-init
    crash.** `TypeBuilder` builds each `EnumValueSpec` from `@field(name:)`, else the SDL name.
    Nothing rejects two values with the same runtime value (`A @field(name: "X")` beside
@@ -323,6 +395,13 @@ findings are narrow, but each one changes what the implementer builds.
    repeats) and adds a pipeline- or compilation-tier case with a duplicate mapping. The other
    option is to reject duplicate mappings at classification, but that is a new rejection with
    its own consumer impact, and the spec would have to argue it.
+
+   *Response:* The generator deduplicates the runtime values (`LinkedHashSet`) before it writes
+   `Set.of(...)`. The Design section's helper paragraph states why. The sakila `TextRating` gains
+   a deprecated alias, `NC17 @field(name: "NC-17")`, so the execution suite fails as a whole if
+   the set ever throws on a duplicate. The existing `NC_17` assertion also pins first-match
+   serialization. The alternative of rejecting duplicates at classification is not taken: it
+   would be a new build failure for schemas that work today.
 
 Corrected in passing: the four `FieldBuilder` line hints (`:9752`, `:9704`, `:8588`, `:5014`) had
 drifted by one to five lines. They now read `:9753`, `:9705`, `:8590` and `:5019`.
