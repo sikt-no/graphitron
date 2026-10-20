@@ -127,14 +127,14 @@ directive is added.
 **Where the arm is chosen.** At classification, in `FieldBuilder`. The arm is for database reads
 only, so it is admitted on three of the carriers' construction sites:
 
-* the `ColumnBackedField` site at the end of the plain-column arm (`FieldBuilder.java:9752` at the
+* the `ColumnBackedField` site at the end of the plain-column arm (`FieldBuilder.java:9753` at the
   time of writing);
-* the `ColumnBackedReferenceField` site in the `@reference` arm (`:9704`);
-* the `RecordReadField` site on record parents (`:8588`), only for the `ValueLocator.TypedColumn`
+* the `ColumnBackedReferenceField` site in the `@reference` arm (`:9705`);
+* the `RecordReadField` site on record parents (`:8590`), only for the `ValueLocator.TypedColumn`
   and `ValueLocator.ByName` locators on a jOOQ-record parent.
 
 `JavaAccessor` and `DefaultRead` reads on class-backed parents, and the `@error`-type
-`RecordReadField` site (`:5014`), keep `Direct`. Their values come from developer code, not a
+`RecordReadField` site (`:5019`), keep `Direct`. Their values come from developer code, not a
 column, which is the same reason `ComputedField` is out of scope. The `@error` reads also go through
 `ErrorFieldRead.SourceAccessor`, which reifies a method only for `NodeIdEncodeKeys`.
 
@@ -276,3 +276,53 @@ branch.
   sakila field is `String` because its SDL says so. The retyped `Film.textRating` above settles it.
   At Done, if the execution test sees the enum on the wire, R231 is `Discarded` as stale in the same
   commit.
+
+## Reviewer findings
+
+### Round 1 (2026-10-20, Spec -> Ready, reviewer session 01J1ffEvZ1P5aKUV6yTkxuoA)
+
+Verdict: request revisions. One finding on question two and one on question one. The goal reads
+cleanly on its own: a consumer whose text column holds values outside the enum gets `null` for
+those rows instead of an `errors` entry that leaks the raw database value, and every mapped value
+reads as before. The diagnosis checks out against graphql-java, and putting the fix at the read is
+the right call. Nearly every symbol and site the spec names exists as named. The plan extends an
+axis already in the tree (`CallSiteCompaction`) rather than standing up a parallel one. Both
+findings are narrow, but each one changes what the implementer builds.
+
+1. **Question two: the "one exhaustive wrapper" does not fit the sites the spec routes through
+   it.** The Emission section turns `encodedReadReturn`'s nullable parameter into a switch and
+   says every read site that handles a compaction calls it, naming `bindRaw`'s
+   `ColumnBackedField` arm, `dualShapeRecordArmRead`, `columnByAlias`, `recordReadBinding` and
+   `inlineSuccessReturn`. Today only the last two call it, because its shape is single-key.
+   `encodedReadReturn` returns a *statement*. It binds one read to a local typed by
+   `encodeKeyType` (`paramSignature().get(0)`) and null-guards it:
+   `return key == null ? null : encode(key);`. `bindRaw`'s `ColumnBackedField` arm and
+   `dualShapeRecordArmRead` encode N columns positionally with no null guard. The dual-shape
+   site also needs an *expression*, because its caller writes `return $L;`. `columnByAlias` is
+   shared with `TableField` and `ComputedField` and takes no compaction. Routing the first two
+   sites through the wrapper as written means either changing NodeId emission on the
+   multi-column path (adding a null guard and a typed local), which is outside this item and
+   would churn its code-string pins, or inventing a wrapper shape the spec does not name. To
+   satisfy this finding, the spec names the mechanism that closes the hazard. One option is an
+   expression-level wrapper for the single-value arms, with the N-column `NodeIdEncodeKeys`
+   emission kept at its site under an exhaustive `switch`. Another is an exhaustive `switch`
+   with no `default` at each site, dropping the "one place" claim. Either way, the spec says
+   which, and states that NodeId output on every site is byte-for-byte unchanged.
+
+2. **Question one: `Set.of` in `RUNTIME_VALUES` turns a duplicate mapping into a class-init
+   crash.** `TypeBuilder` builds each `EnumValueSpec` from `@field(name:)`, else the SDL name.
+   Nothing rejects two values with the same runtime value (`A @field(name: "X")` beside
+   `B @field(name: "X")`, or `A` beside `B @field(name: "A")`), and graphql-java accepts such an
+   enum: serialize returns the first match. `Set.of` throws `IllegalArgumentException` on a
+   duplicate element. The spec emits `RUNTIME_VALUES` on *every* `<Name>Type` class,
+   unconditionally, and fills it from the `et.values()` loop. So a schema that builds today
+   would fail with `ExceptionInInitializerError` the first time `type()` loads that class,
+   whether or not any field reads the enum from a column. That contradicts "a value that the
+   enum does name reads exactly as it does today". To satisfy this finding, the spec makes the
+   emitted set duplicate-safe (dedupe at generation time, or build it in a form that tolerates
+   repeats) and adds a pipeline- or compilation-tier case with a duplicate mapping. The other
+   option is to reject duplicate mappings at classification, but that is a new rejection with
+   its own consumer impact, and the spec would have to argue it.
+
+Corrected in passing: the four `FieldBuilder` line hints (`:9752`, `:9704`, `:8588`, `:5014`) had
+drifted by one to five lines. They now read `:9753`, `:9705`, `:8590` and `:5019`.
