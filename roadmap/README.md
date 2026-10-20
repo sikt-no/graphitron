@@ -47,8 +47,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1072` | A node id over a DATE key column with a time part decodes to a different row <sub>blocked by: [undecodable-key-value-reaches-the-database](undecodable-key-value-reaches-the-database.md)</sub> | Ready | 2026-10-20 <sub>created 2026-10-19</sub> | [plan](node-id-over-timestamped-date-key-does-not-round-trip.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R959` | An execution case reads a film another case inserted, so its two queries disagree | Spec | 2026-10-20 <sub>created 2026-09-18</sub> | [plan](optional-node-id-projection-execution-test-reads-another-cases-film.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
+| `R959` | An execution case reads a film another case inserted, so its two queries disagree | Ready | 2026-10-20 <sub>created 2026-09-18</sub> | [plan](optional-node-id-projection-execution-test-reads-another-cases-film.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -818,7 +818,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R737` [**roadmap-tool stands a fact store up outside the harness, in a module the guard does not walk**](roadmap-tool-store-site-and-guard-scope.md) — Backlog, cleanup
 - `R1028` [**An execution test sees another test's transient film rows under parallel test order**](execution-tests-see-a-concurrent-tests-film-rows.md) — Backlog, bug
 - `R843` [**Execution-tier test classes mutate shared Sakila rows other classes assert on**](parallel-execution-tier-shares-sakila-rows.md) — Backlog, cleanup
-- `R959` [**An execution case reads a film another case inserted, so its two queries disagree**](optional-node-id-projection-execution-test-reads-another-cases-film.md) — Spec, cleanup
+- `R959` [**An execution case reads a film another case inserted, so its two queries disagree**](optional-node-id-projection-execution-test-reads-another-cases-film.md) — Ready, cleanup
 - `R560` [**Un-skip graphitron-javapoet test suite**](unskip-javapoet-tests.md) — Backlog, cleanup
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
