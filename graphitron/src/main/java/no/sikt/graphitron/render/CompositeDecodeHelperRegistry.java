@@ -35,7 +35,11 @@ import java.util.Map;
  * cannot decode, and its list form returns {@code null} for an absent <em>or empty</em> wire list,
  * so a non-null empty return says "every element mismatched" and the pruning call site
  * ({@link no.sikt.graphitron.rewrite.model.CallSiteExtraction.PruneOnMismatch}) can tell that from
- * an absent filter without re-reading the wire. The throw arm raises the
+ * an absent filter without re-reading the wire. The throw arm's list form never drops an element:
+ * a {@code null} element is a key of nulls (a {@code null} at arity 1, a row of nulls typed at the
+ * key columns at arity N), which {@code IN} compares as SQL {@code NULL} and so matches no row.
+ * Dropping it would turn {@code [null]} into an empty list, which the glue's presence guard reads
+ * as no filter. Otherwise the throw arm raises the
  * generated {@code GraphitronClientException} on a {@code null} decode rather than filtering it
  * out, carrying a two-branch message that distinguishes structurally-malformed input from a
  * well-formed wrong-type id (it peeks the wire prefix via {@code NodeIdEncoder.peekTypeId}).
@@ -45,6 +49,9 @@ import java.util.Map;
 public final class CompositeDecodeHelperRegistry {
 
     public enum Mode { SKIP, THROW }
+
+    private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
 
     /**
      * What the helper projects off the decoded key record. {@link WholeKey} is the predicate
@@ -231,19 +238,35 @@ public final class CompositeDecodeHelperRegistry {
                 builder.addStatement("if (nodeIds.isEmpty()) return null");
             }
             if (mode == Mode.THROW) {
-                // Decode and the null-check share one statement lambda so the offending wire value
-                // (`nodeId`) is in scope at the throw; the bad element names itself in the message.
+                // A null element takes the key of a blank record over the node table's key fields,
+                // so it projects through the same value1()/valuesRow() a decoded key does and binds
+                // as SQL NULL; dropping it would let [null] reach the glue as an empty list, which
+                // filters nothing. A present element that does not decode names itself in the throw.
+                ClassName arrayList = ClassName.get(java.util.ArrayList.class);
+                ClassName tables = CatalogRefs.constantsClass(decode.table());
+                CodeBlock.Builder keyFields = CodeBlock.builder();
+                for (int i = 0; i < arity; i++) {
+                    if (i > 0) keyFields.add(", ");
+                    keyFields.add("$T.$L.$L", tables, decode.table().javaFieldName(),
+                        decode.outputColumnShape().get(i).javaName());
+                }
+                String projection = arity == 1 ? "key.value1()" : "key.valuesRow()";
                 CodeBlock.Builder b = CodeBlock.builder()
-                    .add("return nodeIds.stream().map(nodeId -> {\n").indent()
-                    .addStatement("$T key = $T.$L((String) nodeId)", recordType, encoder, decodeMethod)
+                    .addStatement("$T keys = new $T<>(nodeIds.size())", returnType, arrayList)
+                    .beginControlFlow("for ($T nodeId : nodeIds)", Object.class)
+                    .addStatement("$T key", recordType)
+                    .beginControlFlow("if (nodeId == null)")
+                    .addStatement("key = $T.using($T.DEFAULT).newRecord($L)", DSL, SQL_DIALECT,
+                        keyFields.build())
+                    .nextControlFlow("else")
+                    .addStatement("key = $T.$L((String) nodeId)", encoder, decodeMethod)
                     .beginControlFlow("if (key == null)")
                     .add(decodeFailureThrow(decode, "(String) nodeId", "nodeId"))
                     .endControlFlow()
-                    .addStatement("return key")
-                    .unindent()
-                    .add("})\n")
-                    .add(arity == 1 ? ".map($T::value1)\n" : ".map($T::valuesRow)\n", recordN)
-                    .addStatement(".collect($T.toList())", collectors);
+                    .endControlFlow()
+                    .addStatement("keys.add($L)", projection)
+                    .endControlFlow()
+                    .addStatement("return keys");
                 builder.addCode(b.build());
             } else {
                 CodeBlock.Builder chain = CodeBlock.builder()

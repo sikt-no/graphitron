@@ -87,7 +87,7 @@ type Query {
 }
 ----
 
-Three consequences follow from its being a filter, and all three differ from a lookup. Result order is whatever the query yields, not input order. An empty list narrows by nothing and returns the unfiltered table rather than `[]`. And a malformed or wrong-type id fails the whole field with a client error rather than occupying a position: one bad element in `filmsByNodeIdArg(ids: [<film_2>, "garbage"])` nulls the field and names the offending id, with no partial result. Element non-nullability is therefore fine here, which is why the example above keeps `[Film!]!`.
+Three consequences follow from its being a filter, and all three differ from a lookup. Result order is whatever the query yields, not input order. An empty list narrows by nothing and returns the unfiltered table rather than `[]`. And a malformed or wrong-type id fails the whole field with a client error rather than occupying a position: one bad element in `filmsByNodeIdArg(ids: [<film_2>, "garbage"])` nulls the field and names the offending id, with no partial result. Element non-nullability is therefore fine here, which is why the example above keeps `[Film!]!`. A `null` element in an `[ID]` list is not a bad id: it matches nothing, so `[null]` returns `[]` and `[<film_2>, null]` returns film 2, the same reading a `null` element gets in a xref:../reference/directives/field.adoc#list-of-input-filter[list-of-input filter].
 
 *Same-table `@nodeId` arg path, with `@lookupKey`.* Adding `@lookupKey` beside the `@nodeId` is the deliberate opt-in that turns the filter back into a lookup, with the `VALUES` join, the positional contract and the nullable-element requirement that implies:
 

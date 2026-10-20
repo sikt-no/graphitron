@@ -411,6 +411,53 @@ class MultiTableFilterExecutionTest {
     }
 
     @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_nullableElementList_nullElementMatchesNothing() {
+        // `[ID] @nodeId`: a null element is no id, so the matches-none guard skips it and each
+        // branch's prune drops it. Alone it prunes both branches; beside a customer id it leaves the
+        // customer branch matching that id.
+        Map<String, Object> onlyNull = execute("""
+            { occupantsByNullableIds(ids: [null]) { __typename } }
+            """);
+        assertThat((List<Map<String, Object>>) onlyNull.get("occupantsByNullableIds")).isEmpty();
+
+        Map<String, Object> withCustomer = execute("""
+            { occupantsByNullableIds(ids: ["%s", null]) {
+                __typename
+                ... on Customer { firstName }
+            } }
+            """.formatted(customerId(1)));
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) withCustomer.get("occupantsByNullableIds");
+        assertThat(rows).extracting(r -> (String) r.get("firstName")).containsExactly("Mary");
+        assertThat(rows).extracting(r -> (String) r.get("__typename")).containsOnly("Customer");
+    }
+
+    @Test
+    void dispatch_nullableElementList_malformedBesideNull_failsNamingTheMalformedId() {
+        var errors = errorsOf("""
+            { occupantsByNullableIds(ids: ["garbage", null]) { __typename } }
+            """);
+        assertThat(errors).isNotEmpty();
+        assertThat(errors.get(0).getMessage())
+            .contains("garbage")
+            .contains("not a valid id")
+            .contains("Customer")
+            .contains("Staff");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void dispatch_nullableElementList_emptyList_leavesBothBranchesUnfiltered() {
+        Map<String, Object> data = execute("""
+            { occupantsByNullableIds(ids: []) { __typename } }
+            """);
+        List<Map<String, Object>> rows = (List<Map<String, Object>>) data.get("occupantsByNullableIds");
+        assertThat(rows)
+            .as("five customers and two staff, unfiltered")
+            .hasSize(7);
+    }
+
+    @Test
     void dispatch_connectionForm_idOfNoParticipant_errorsRatherThanPagingEmpty() {
         // The second root fetcher. @asConnection over a same-table @nodeId is admitted with a lint
         // advisory, its branches inherit the prune through the shared extraction, and without the

@@ -612,6 +612,14 @@ type Query {
     # own table → primary-key IN predicate via NodeIdInFilterField. Each opaque ID decodes
     # once at the carrier and feeds a (film_id) IN (...) jOOQ predicate.
     filmsBySameTableNodeId(filter: FilmSameTableNodeIdInput): [Film!]!
+    # Nullable-element node-id list filters, siblings of the [ID!] fixtures that keep pinning the
+    # non-null-element shape. A null element is a key of nulls, which IN compares as SQL NULL and so
+    # matches no row, the rule a nullable-element scalar list and a list-of-input filter already
+    # follow; a present id that does not decode still fails the field. One per decoded-key shape:
+    # arity 1 on the own table, arity 2 (the typed-null row), and arity 1 on an FK target.
+    filmsByNullableNodeIds(filter: FilmNullableNodeIdFilter): [Film!]!
+    filmActorsByNullableNodeIds(filter: FilmActorNullableNodeIdFilter): [FilmActor!]!
+    customersByNullableAddressIds(filter: CustomerNullableAddressIdFilter): [Customer!]!
     # R106: argument-level same-table @nodeId — encoded ids supplied as a top-level GraphQL
     # arg lift to a `WHERE film_id IN (...)` filter on QueryTableField. Each opaque ID
     # decodes once via ThrowOnMismatch (a malformed id fails the field) and feeds the
@@ -1034,6 +1042,9 @@ type Query {
     # The list form: mixed Customer and Staff ids must return exactly the named rows of both types,
     # which the single-cardinality form can mask as an order-dependent __typename.
     occupantsByIds(ids: [ID!] @nodeId): [AddressOccupant!]!
+    # Its nullable-element twin: a null element is no id, so the matches-none guard skips it and
+    # each branch's prune drops it. [null] matches nothing rather than failing the field.
+    occupantsByNullableIds(ids: [ID] @nodeId): [AddressOccupant!]!
 
     # The nullable-scalar cell: absent leaves the field unfiltered, a present id of one branch
     # prunes the other. Nullability is why this cell guards on wire presence rather than on the
@@ -3832,6 +3843,19 @@ input FilmIdGroup {
 # directly (`(film_id) IN (...)`), not a FK join.
 input FilmSameTableNodeIdInput {
     filmIds: [ID!] @nodeId(typeName: "Film")
+}
+
+input FilmNullableNodeIdFilter {
+    filmIds: [ID] @nodeId(typeName: "Film")
+}
+
+input FilmActorNullableNodeIdFilter {
+    ids: [ID] @nodeId(typeName: "FilmActor")
+}
+
+# Address ids compared against customer.address_id, the foreign key's own column.
+input CustomerNullableAddressIdFilter {
+    addressIds: [ID] @nodeId(typeName: "Address")
 }
 
 # implicit-input-conditions plan: filter input with two un-annotated fields. Both emit

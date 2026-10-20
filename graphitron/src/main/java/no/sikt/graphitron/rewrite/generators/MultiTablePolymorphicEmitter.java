@@ -751,7 +751,10 @@ public final class MultiTablePolymorphicEmitter {
                 String elementLocal = dispatch.argName() + "NodeId";
                 b.beginControlFlow("if ($L instanceof $T<?> $L)", wireLocal, LIST, listLocal);
                 b.beginControlFlow("for ($T $L : $L)", Object.class, elementLocal, listLocal);
-                b.beginControlFlow("if ($L)", noBranchDecodes(dispatch, registry, elementLocal));
+                // A null element is no id at all, so no branch owes it a decode: each branch's
+                // prune-mode helper drops it, and [null] matches nothing rather than failing.
+                b.beginControlFlow("if ($L != null && $L)",
+                    elementLocal, noBranchDecodes(dispatch, registry, elementLocal));
                 b.add(dispatchFailureThrow(dispatch, outputPackage, elementLocal));
                 b.endControlFlow();
                 b.endControlFlow();

@@ -97,7 +97,7 @@ class CompositeDecodeHelperRegistryTest {
             .contains("NodeIdEncoder.peekTypeId")
             .contains("not a valid FilmActor id")
             .contains("decodes to type")
-            .contains("Record2::valuesRow")
+            .contains("key.valuesRow()")
             .doesNotContain("Objects::nonNull")
             .doesNotContain("GraphqlErrorException");
     }
@@ -168,7 +168,7 @@ class CompositeDecodeHelperRegistryTest {
             .contains("no.sikt.example.schema.GraphitronClientException")
             .contains("NodeIdEncoder.peekTypeId")
             .contains("not a valid Film id")
-            .contains("Record1::value1")
+            .contains("key.value1()")
             .doesNotContain("Objects::nonNull")
             .doesNotContain("GraphqlErrorException");
     }

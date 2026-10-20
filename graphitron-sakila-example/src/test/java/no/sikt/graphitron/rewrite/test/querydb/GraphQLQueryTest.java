@@ -1265,6 +1265,111 @@ class GraphQLQueryTest {
         assertFieldNullified(result, "filmsBySameTableNodeId");
     }
 
+    // ===== Nullable-element @nodeId list filters: a null element matches nothing =====
+    //
+    // `[ID] @nodeId` admits a null element, which the decode helper turns into a key of nulls
+    // rather than a malformed id or a dropped element: IN compares it as SQL NULL, so it matches no
+    // row, and the list stays non-empty, so the empty-list "no filter" reading does not apply.
+    // The shape follows a nullable-element scalar list and a list-of-input filter; one fixture per
+    // decoded-key shape.
+
+    /** Runs {@code query}, asserts no error, and returns the rows of {@code field}. */
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> rowsWithoutError(String field, String query) {
+        graphql.ExecutionResult result = executeRaw(query);
+        assertThat(result.getErrors()).as("errors for %s", query).isEmpty();
+        return (List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get(field);
+    }
+
+    /** Asserts {@code query} fails {@code field} with the client error naming {@code badId}. */
+    private void assertClientErrorNaming(String field, String query, String badId, String typeName) {
+        graphql.ExecutionResult result = executeRaw(query);
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains(badId)
+            .contains("not a valid " + typeName + " id")
+            .doesNotContain("\"null\"")
+            .doesNotContain("An error occurred. Reference:");
+        assertFieldNullified(result, field);
+    }
+
+    @Test
+    void filmsByNullableNodeIds_nullElement_matchesNothing() {
+        String film2 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 2);
+        assertThat(rowsWithoutError("filmsByNullableNodeIds",
+            "{ filmsByNullableNodeIds(filter: {filmIds: [null]}) { filmId } }")).isEmpty();
+        assertThat(rowsWithoutError("filmsByNullableNodeIds",
+            "{ filmsByNullableNodeIds(filter: {filmIds: [\"" + film2 + "\", null]}) { filmId } }"))
+            .extracting(f -> f.get("filmId")).containsExactly(2);
+    }
+
+    @Test
+    void filmsByNullableNodeIds_malformedBesideNull_failsNamingTheMalformedId() {
+        assertClientErrorNaming("filmsByNullableNodeIds",
+            "{ filmsByNullableNodeIds(filter: {filmIds: [\"garbage\", null]}) { filmId } }",
+            "garbage", "Film");
+    }
+
+    @Test
+    void filmsByNullableNodeIds_emptyList_appliesNoFilter() {
+        assertThat(rowsWithoutError("filmsByNullableNodeIds",
+            "{ filmsByNullableNodeIds(filter: {filmIds: []}) { filmId } }"))
+            .extracting(f -> f.get("filmId")).containsAll(SEEDED_FILM_IDS);
+    }
+
+    @Test
+    void filmActorsByNullableNodeIds_nullElement_bindsATypedNullRowThatMatchesNothing() {
+        // Composite key: the null element reaches `(actor_id, film_id) IN (...)` as a row of nulls
+        // typed at the key columns, which PostgreSQL binds and compares as matching nothing.
+        String pair = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("FilmActor", 3, 2);
+        assertThat(rowsWithoutError("filmActorsByNullableNodeIds",
+            "{ filmActorsByNullableNodeIds(filter: {ids: [null]}) { actorId filmId } }")).isEmpty();
+        assertThat(rowsWithoutError("filmActorsByNullableNodeIds",
+            "{ filmActorsByNullableNodeIds(filter: {ids: [\"" + pair + "\", null]}) { actorId filmId } }"))
+            .extracting(r -> r.get("actorId") + ":" + r.get("filmId"))
+            .containsExactly("3:2");
+    }
+
+    @Test
+    void filmActorsByNullableNodeIds_malformedBesideNull_failsNamingTheMalformedId() {
+        assertClientErrorNaming("filmActorsByNullableNodeIds",
+            "{ filmActorsByNullableNodeIds(filter: {ids: [\"garbage\", null]}) { actorId } }",
+            "garbage", "FilmActor");
+    }
+
+    @Test
+    void filmActorsByNullableNodeIds_emptyList_appliesNoFilter() {
+        assertThat(rowsWithoutError("filmActorsByNullableNodeIds",
+            "{ filmActorsByNullableNodeIds(filter: {ids: []}) { actorId filmId } }"))
+            .extracting(r -> r.get("actorId") + ":" + r.get("filmId"))
+            .contains("1:1", "2:1", "1:2", "3:2", "1:3", "2:4", "3:5");
+    }
+
+    @Test
+    void customersByNullableAddressIds_nullElement_matchesNothing() {
+        // The FK-target shape: the decoded Address key is compared against customer.address_id.
+        String address1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Address", 1);
+        assertThat(rowsWithoutError("customersByNullableAddressIds",
+            "{ customersByNullableAddressIds(filter: {addressIds: [null]}) { firstName } }")).isEmpty();
+        assertThat(rowsWithoutError("customersByNullableAddressIds",
+            "{ customersByNullableAddressIds(filter: {addressIds: [\"" + address1 + "\", null]})"
+            + " { firstName } }"))
+            .extracting(r -> r.get("firstName")).containsExactlyInAnyOrder("Mary", "Barbara");
+    }
+
+    @Test
+    void customersByNullableAddressIds_malformedBesideNull_failsNamingTheMalformedId() {
+        assertClientErrorNaming("customersByNullableAddressIds",
+            "{ customersByNullableAddressIds(filter: {addressIds: [\"garbage\", null]}) { firstName } }",
+            "garbage", "Address");
+    }
+
+    @Test
+    void customersByNullableAddressIds_emptyList_appliesNoFilter() {
+        assertThat(names("customersByNullableAddressIds", "(filter: {addressIds: []})", "firstName"))
+            .isEqualTo(ALL_CUSTOMERS);
+    }
+
     // ===== Optional same-table @nodeId on @asConnection: composes =====
 
     @Test
