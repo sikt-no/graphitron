@@ -1,7 +1,7 @@
 ---
 id: R708
 title: "The $project selection gate fires on names selected at any depth below its unit"
-status: Ready
+status: In Progress
 bucket: correctness
 priority: 1
 theme: codegen-correctness
