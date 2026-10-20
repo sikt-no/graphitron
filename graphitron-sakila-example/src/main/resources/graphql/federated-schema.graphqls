@@ -31,6 +31,7 @@ scalar LocalDate @scalarType(scalar: "graphql.scalars.ExtendedScalars.Date")
 type Query {
     customers: [Customer!]!
     films: [Film!]!
+    filmSameRows: [FilmSameRow!]!
     # R283 fixture: a @oneOf input on a federated schema. graphitron emits the @oneOf
     # *application* into the runtime _Service.sdl but ServiceSDLPrinter.generateServiceSDLV2
     # strips the spec-built-in *definition*; the runtime OneOfDirectiveSdl helper must
@@ -88,6 +89,15 @@ type Film implements Node @table(name: "film") @node
         className: "no.sikt.graphitron.rewrite.test.services.FilmService",
         method: "titleTitlecase"
     })
+    # Same-row table child under an entity: each representation's sameRow is that film's own
+    # row, never one row shared by every entity in the batch.
+    sameRow: FilmSameRow
+}
+
+# The return type of Film.sameRow, a table type over film returned on its own by
+# Query.filmSameRows.
+type FilmSameRow @table(name: "film") {
+    title: String! @field(name: "TITLE")
 }
 
 # R425 fixture: an entity whose ONLY force-projecting child is a @service field. A

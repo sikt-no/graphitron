@@ -470,6 +470,24 @@ public record GraphitronSchema(
     }
 
     /**
+     * The null contract of a same-row table child: the {@link no.sikt.graphitron.rewrite.model.ChildField.NestingField} rule
+     * ({@link no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract#of}) over every field of the child's return
+     * type, whatever the query selects. A pure per-type fold over this schema's own components
+     * (the {@link #nestingReach} precedent), read by both the projection producer, which projects
+     * the presence columns, and the fetcher emitter, which checks them, so the two cannot
+     * disagree. A same-row child met among the return type's fields blocks the collapse, which
+     * terminates a same-table cycle.
+     */
+    public no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract sameRowNullContract(
+            no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField field) {
+        var returnFields = fieldsOf(field.returnType().returnTypeName()).stream()
+            .filter(no.sikt.graphitron.rewrite.model.ChildField.class::isInstance)
+            .map(no.sikt.graphitron.rewrite.model.ChildField.class::cast)
+            .toList();
+        return no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract.of(field.returnType().wrapper(), returnFields);
+    }
+
+    /**
      * The nesting/pivot reach fold ({@link NestingReach}): every type reached as a nesting or
      * pivot projection from a table-backed root, with its one representative wiring. A pure
      * whole-schema fold over this schema's own components (no stored index, the

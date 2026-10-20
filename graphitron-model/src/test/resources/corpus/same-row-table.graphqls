@@ -1,0 +1,33 @@
+type CitySummary @table(name: "city") @classifiedType(as: TableType) {
+  name: String @field(name: "city") @classified(source: Child, operations: [Select], target: Single, targetShape: Column)
+}
+
+type City @table(name: "city") @classifiedType(as: TableType) {
+  "Bound to the parent's own table with no @reference: the parent's own row, read as a table type."
+  summary: CitySummary @classified(source: OnlyChild, operations: [Select], target: Single, targetShape: Table)
+}
+
+extend type Query {
+  city: City @classified(source: Query, operations: [Select], target: Single, targetShape: Table)
+  citySummaries: [CitySummary!]! @classified(source: Query, operations: [OrderBy, Select], target: List, targetShape: Table)
+}
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", rows: """
+  type_name,    field_name, classifier,   tier
+  CitySummary,  name,       TABLE_COLUMN, INFERRED
+  CorpusAnchor, name,       TABLE_COLUMN, INFERRED
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name,    table_name
+  City,         city
+  CitySummary,  city
+  CorpusAnchor, category
+  """)
+
+extend schema @expectEquals(relation: "plan_launcher_command", rows: """
+  type_name, field_name,    source,      result
+  Query,     city,          AnchorTable, SingleRecord
+  Query,     citySummaries, AnchorTable, RecordList
+  Query,     corpusAnchor,  AnchorTable, SingleRecord
+  """)

@@ -85,6 +85,7 @@ public final class ProjectionCommands {
         ChildField.ColumnBackedReferenceField.class,
         ChildField.TableField.class,
         ChildField.NestingField.class,
+        ChildField.SameRowTableField.class,
         ChildField.ComputedField.class,
         ChildField.PivotField.class,
         ChildField.BatchedPivotField.class,
@@ -195,6 +196,13 @@ public final class ProjectionCommands {
                 yield Optional.of(new Contribution.Call(nf.name(), nested2,
                     new CallWrap.Splice(nf.parentRowColumns()), aliasOwnerOf(nf)));
             }
+            // The parent's own row through the return type's anchor unit, in a record scope of its
+            // own; the presence columns are the null contract's, read off the same schema fold the
+            // fetcher emitter consumes.
+            case ChildField.SameRowTableField srf -> Optional.of(new Contribution.Call(srf.name(),
+                units.typeClass(srf.returnType().returnTypeName()),
+                new CallWrap.SameRow(schema.sameRowNullContract(srf).presenceColumns()),
+                aliasOwnerOf(srf)));
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp)));
             case ChildField.PivotField pf -> {
@@ -713,6 +721,7 @@ public final class ProjectionCommands {
             case ChildField.ComputedField cmp -> java.util.Arrays.asList(
                 cmp.returnType(), cmp.joinPath(), cmp.method());
             case ChildField.PivotField pf -> java.util.Arrays.asList(pf.pivot(), pf.spec());
+            case ChildField.SameRowTableField srf -> java.util.Arrays.asList(srf.returnType());
             default -> throw new IllegalStateException(
                 "ResultKeyAliasedField '" + field.qualifiedName() + "' ("
                 + field.getClass().getSimpleName() + ") has no projection identity; declare what "

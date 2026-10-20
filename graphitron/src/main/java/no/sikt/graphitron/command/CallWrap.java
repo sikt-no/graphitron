@@ -15,7 +15,9 @@ import java.util.Objects;
  * How a {@link Contribution.Call}'s callee fields arrive in this unit's projection. The axis is
  * row identity, not provenance: {@link Splice} when the callee projects the <em>same row</em>
  * (its terms merge into this list), a multiset arm when the callee projects <em>other rows</em>
- * (its terms sit inside one correlated subselect field, aliased by result key).
+ * (its terms sit inside one correlated subselect field, aliased by result key). {@link SameRow}
+ * is the one same-row arm with a record scope of its own: the callee is a table type's anchor
+ * unit, whose result-key aliases must not meet this unit's.
  *
  * <p>The three multiset arms differ by SQL shape, per the term-arm rule: {@link Multiset} is the
  * {@code @reference}-path correlated subquery, {@link LookupMultiset} additionally narrows by a
@@ -44,6 +46,24 @@ public sealed interface CallWrap {
     record Splice(List<ColumnRef> callerDemand) implements CallWrap {
         public Splice {
             callerDemand = List.copyOf(callerDemand);
+        }
+    }
+
+    /**
+     * Same row, own record scope: the callee is the anchor unit of a table type bound to this
+     * unit's table, read over this unit's own alias in a single-row multiset with no {@code FROM}
+     * ({@code DSL.multiset(DSL.select(<presence>, <Callee>.$project(merged, table, env)))}),
+     * aliased by result key. The multiset keeps the callee's result-key aliases out of this
+     * unit's namespace, which a {@link Splice} would merge them into; with a same-table cycle the
+     * client's choice of result keys would otherwise make two different terms meet under one
+     * alias.
+     *
+     * @param presence columns of this unit's row the calling field's fetcher checks for its null
+     *                 contract, projected inside the multiset ahead of the callee's fields
+     */
+    record SameRow(List<ColumnRef> presence) implements CallWrap {
+        public SameRow {
+            presence = List.copyOf(presence);
         }
     }
 

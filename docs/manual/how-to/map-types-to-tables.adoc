@@ -177,6 +177,26 @@ A field of the nested type that follows a reference to a single row of another t
 
 A nested type that also holds a list, an xref:../reference/directives/externalField.adoc[`@externalField`], a xref:../reference/directives/splitQuery.adoc[`@splitQuery`] field, or a xref:../reference/directives/reference.adoc[`@reference`] joined by a `condition:` predicate rather than a key always resolves to an object.
 
+[#parents-own-row-as-table-type]
+== Returning the parent's own row as a table type
+
+A field whose return type is bound to the same table as its parent, with no xref:../reference/directives/reference.adoc[`@reference`], reads the parent's own row. Use it when the return type must stay `@table` because other fields return it on their own:
+
+[source,graphql]
+----
+type Film @table {
+    summary: FilmSummary
+}
+type FilmSummary @table(name: "film") {
+    title: String @field(name: "TITLE")
+    length: Int @field(name: "LENGTH")
+}
+----
+
+`film { summary { title } }` returns each film's own title, in the same statement as the film. The field must be single-valued and take no arguments. The null rule is the nested-object one above: a nullable field resolves to `null` when every field of `FilmSummary` would be null.
+
+With arguments, a xref:../reference/directives/condition.adoc[`@condition`] or a xref:../reference/directives/lookupKey.adoc[`@lookupKey`], the same field means something else: a read of the whole table narrowed by them, the same for every parent. `related(filter: FilmFilter): [Film!]` on `Film` returns the films matching the filter, whichever film it is selected under. A same-table field that is neither, a list or a single field with arguments that filter nothing, would read every row of the table under every parent and is rejected at build time. To reach other rows of the table related to the parent, state the self-referencing key with `@reference(path: [{key: ...}])`.
+
 == Constraints and pitfalls
 
 * `@field(name:)` is required (graphql-java rejects no-arg `@field` at parse time).

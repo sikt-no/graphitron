@@ -11,6 +11,7 @@ import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -159,6 +160,8 @@ public final class FetcherEmitter {
     /**
      * Builds the {@code DataFetcher} value expression for {@code field}.
      *
+     * @param schema        the classified schema, for the facts a leaf's read needs beyond its own
+     *                      components (a same-row child's null contract over its return type)
      * @param field         the classified field
      * @param fetchersClass the {@code <TypeName>Fetchers} class that owns the method reference
      *                      for unclassified / catch-all fields; may be {@code null} for nested
@@ -178,7 +181,7 @@ public final class FetcherEmitter {
      *                      directly via its {@code WrapperArm} transport).
      */
     public static FetcherBinding bind(
-            GraphitronField field, ClassName fetchersClass,
+            GraphitronSchema schema, GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage, ParentSourceBinding parentSource) {
         // Immediate children of a flipped Outcome payload: inline-resolved data fields arm-switch
@@ -190,7 +193,7 @@ public final class FetcherEmitter {
                 && isInlineArmSwitchedDataField(field)) {
             return armSwitchedInlineDataFetcher(field, fetchersClass, resultType, outputPackage, parentSource);
         }
-        return bindRaw(field, fetchersClass, parentTable, resultType, outputPackage);
+        return bindRaw(schema, field, fetchersClass, parentTable, resultType, outputPackage);
     }
 
     /**
@@ -443,12 +446,42 @@ public final class FetcherEmitter {
     private static CodeBlock nestingBody(ChildField.NestingField nf) {
         return switch (nf.nullContract()) {
             case NullContract.AlwaysObject ignored -> CodeBlock.of("return source;\n");
-            case NullContract.CollapsesWhenAbsent c -> presenceCheck(nf.returnType().table(), c.leaves());
+            case NullContract.CollapsesWhenAbsent c -> CodeBlock.builder()
+                .add("$T row = ($T) source;\n", RECORD, RECORD)
+                .add(presenceCheck(nf.returnType().table(), c.leaves(), "source"))
+                .build();
         };
     }
 
-    private static CodeBlock presenceCheck(TableRef table, List<ChildField.NestingField.PresenceLeaf> leaves) {
-        var body = CodeBlock.builder().add("$T row = ($T) source;\n", RECORD, RECORD);
+    /**
+     * The same-row child's fetcher body: unwrap the single-row multiset aliased
+     * {@code __rk_<resultKey>} (the projection's same-row arm), then apply the null contract over
+     * the presence columns projected inside it. The row handed on holds exactly the return type's
+     * projection, as a root or multiset read of that type does, so the return type's own fetchers
+     * read it unchanged.
+     */
+    private static CodeBlock sameRowBody(ChildField.SameRowTableField srf, NullContract contract) {
+        var resultClass = ClassName.get("org.jooq", "Result");
+        var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
+        var body = CodeBlock.builder()
+            .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
+                RECORD, GeneratorUtils.resultKeyPrefix(srf.aliasOwner()), resultClass)
+            .add("if (!(raw instanceof $T r) || r.isEmpty()) return null;\n", resultWildcard)
+            .add("$T row = r.get(0);\n", RECORD);
+        return switch (contract) {
+            case NullContract.AlwaysObject ignored -> body.add("return row;\n").build();
+            case NullContract.CollapsesWhenAbsent c ->
+                body.add(presenceCheck(srf.returnType().table(), c.leaves(), "row")).build();
+        };
+    }
+
+    /**
+     * The per-leaf presence check over a {@code row} local: each leaf is present when all its
+     * columns are non-null, and the wrapper, {@code present}, when any leaf is.
+     */
+    private static CodeBlock presenceCheck(TableRef table, List<ChildField.NestingField.PresenceLeaf> leaves,
+            String present) {
+        var body = CodeBlock.builder();
         for (var leaf : leaves) {
             body.add("if (");
             for (int i = 0; i < leaf.columns().size(); i++) {
@@ -456,17 +489,20 @@ public final class FetcherEmitter {
                 body.add("row.get($T.$L.$L) != null", CatalogRefs.constantsClass(table),
                     table.javaFieldName(), leaf.columns().get(i).javaName());
             }
-            body.add(") return source;\n");
+            body.add(") return $L;\n", present);
         }
         return body.add("return null;\n").build();
     }
 
     private static FetcherBinding bindRaw(
-            GraphitronField field, ClassName fetchersClass,
+            GraphitronSchema schema, GraphitronField field, ClassName fetchersClass,
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
         if (field instanceof ChildField.NestingField nf) {
             return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(nf));
+        }
+        if (field instanceof ChildField.SameRowTableField srf) {
+            return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.sameRowNullContract(srf)));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
             // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and

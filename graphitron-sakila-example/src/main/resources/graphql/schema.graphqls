@@ -258,6 +258,8 @@ type Query {
     # the class-backed PivotTexts @service result. One registered fetcher per slot coordinate
     # serves all three sources.
     pivotHosts: [PivotNestingHost!]!
+    hostLabelRows: [HostLabelsRow!]!
+    filmSameRows: [FilmSameRow!]!
     pivotServiceTexts: TranslatedTexts @service(service: {
         className: "no.sikt.graphitron.rewrite.test.services.PivotTextsService",
         method: "translatedTexts"
@@ -2532,6 +2534,14 @@ type Film implements Node & Searchable @table(name: "film") @node {
     ])
     # R503 mixed-source nested type fixture (nesting edge): FilmBlurb projected off the film row.
     blurb: FilmBlurb
+    # Same-row table child: FilmSameRow is bound to film like this type and the field has no
+    # @reference, so it reads this film's own row. sameTableById is the narrowed form of the same
+    # shape: a read of film narrowed by its own @condition argument, the same rows under every film.
+    sameRow: FilmSameRow
+    sameTableById(filmId: Int @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "filmIdKeyEquals"
+    })): [FilmSameRow!]!
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
     # film_price attribute tables. titleTranslations / taglineTranslations reuse one projection
     # type with different value columns through the PivotLang vocabulary enum; prices uses the
@@ -3273,6 +3283,18 @@ type LanguageNode implements Node @table(name: "language") @node {
 type LanguageAlias implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
     id:   ID!     @nodeId
     name: String @field(name: "NAME")
+}
+
+# The return type of Film.sameRow: a table type over film, returned on its own by
+# Query.filmSameRows, so it stays @table. language and languageName correlate on the parent film's
+# row, languageName under the same result-key alias as Film.languageName; film closes a same-table
+# cycle back to Film.
+type FilmSameRow @table(name: "film") {
+    filmId: Int!    @field(name: "FILM_ID")
+    title:  String! @field(name: "TITLE")
+    language: Language @reference(path: [{key: "film_language_id_fkey"}])
+    languageName: String @field(name: "NAME") @reference(path: [{key: "film_language_id_fkey"}])
+    film: Film
 }
 
 type StockFilm @table(name: "film") {
@@ -5563,6 +5585,15 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
     labels: HostLabels
     labelsRequired: HostLabels!
     origin: HostOrigin
+    labelsRow: HostLabelsRow
+}
+
+# The table-type twin of HostLabels, returned on its own by Query.hostLabelRows: reached from
+# PivotNestingHost.labelsRow it reads the host's own row, and resolves to null when nn and nb both
+# are, by the same rule as the nesting type.
+type HostLabelsRow @table(name: "pivot_nesting_host") {
+    nn: String
+    nb: String
 }
 
 # A plain nesting type over two of pivot_nesting_host's nullable columns, reached once nullable and

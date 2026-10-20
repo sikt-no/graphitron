@@ -98,6 +98,7 @@ public sealed interface DeliveryFact {
                  ChildField.ParticipantColumnReferenceField _, ChildField.TableField _,
                  ChildField.TableInterfaceField _,
                  ChildField.InterfaceField _, ChildField.UnionField _, ChildField.NestingField _,
+                 ChildField.SameRowTableField _,
                  ChildField.PivotField _, ChildField.PivotSlotField _,
                  ChildField.ServiceTableField _, ChildField.ServiceRecordField _,
                  ChildField.RecordReadField _, ChildField.RecordCompositeField _,

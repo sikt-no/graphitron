@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * anchor keys on each parent's correlation to the child has nothing to key on. Classification
  * rejects it as an author error naming the field, the applied delivery marker, both types, the
  * table and the remedies, rather than letting it reach the emitter with a null correlation. The
- * remedies classify, and the inline twin (no {@code @splitQuery}) keeps its standalone shape.
+ * remedies classify, and the inline twin (no {@code @splitQuery}) reads the parent's own row.
  */
 @PipelineTier
 class SplitQuerySameTableRejectionPipelineTest {
@@ -38,8 +38,10 @@ class SplitQuerySameTableRejectionPipelineTest {
                     .startsWith(marker + " fetches the child in a batch")
                     .contains("'FilmDetails' is bound to the same table as 'Film' ('film')")
                     .contains("has no @reference")
-                    .contains("@reference(path: [{condition: ...}])")
-                    .contains("drop @table from 'FilmDetails' and " + marker + " from this field")
+                    .contains("drop " + marker + " from a single-cardinality field with no arguments,"
+                        + " which reads the parent's own row in the same statement")
+                    .contains("for a field that must stay split, state the correlation with"
+                        + " @reference(path: [{condition: ...}])")
                     .endsWith("drop " + marker + ".");
             });
     }
@@ -166,7 +168,7 @@ class SplitQuerySameTableRejectionPipelineTest {
     }
 
     @Test
-    void inlineTwin_keepsStandaloneShape() {
+    void inlineTwin_readsTheParentsOwnRow() {
         var schema = TestSchemaHelper.buildSchema(DETAILS + """
             type Film @table(name: "film") {
                 title: String
@@ -176,9 +178,7 @@ class SplitQuerySameTableRejectionPipelineTest {
             """);
 
         assertThat(schema.field("Film", "details"))
-            .isInstanceOfSatisfying(ChildField.TableField.class, f -> {
-                assertThat(f.joinPath()).isEmpty();
-                assertThat(f.parentCorrelation()).isNull();
-            });
+            .isInstanceOfSatisfying(ChildField.SameRowTableField.class, f ->
+                assertThat(f.returnType().table().tableName()).isEqualTo("film"));
     }
 }

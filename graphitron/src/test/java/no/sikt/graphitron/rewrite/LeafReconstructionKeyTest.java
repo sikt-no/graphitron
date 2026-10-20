@@ -112,6 +112,8 @@ class LeafReconstructionKeyTest {
             triple("participant tables", "batched", "union")),
         Map.entry(ChildField.NestingField.class,
             triple("parent record, handed through", "inline", "nesting fragment of the parent projection")),
+        Map.entry(ChildField.SameRowTableField.class,
+            triple("parent table row, read as the return table type", "inline", "table")),
         Map.entry(ChildField.PivotField.class,
             triple("attribute table (single FK hop)", "inline", "pivot projection (context-free nesting type)")),
         Map.entry(ChildField.BatchedPivotField.class,

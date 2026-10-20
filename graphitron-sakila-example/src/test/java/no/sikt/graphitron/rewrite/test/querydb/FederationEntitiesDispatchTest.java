@@ -227,6 +227,28 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * A same-row table child under an entity: three representations for three films each get
+     * their own film's title under {@code sameRow}, never one row shared by the batch.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_sameRowChild_readsEachEntitysOwnRow() {
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " ... on Film { filmId title sameRow { title } } } }",
+            Map.of("reps", List.of(
+                Map.of("__typename", "Film", "filmId", 1),
+                Map.of("__typename", "Film", "filmId", 2),
+                Map.of("__typename", "Film", "filmId", 3))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).extracting(e -> e.get("filmId")).containsExactly(1, 2, 3);
+        assertThat(entities).allSatisfy(e ->
+            assertThat((Map<String, Object>) e.get("sameRow")).containsEntry("title", e.get("title")));
+        assertThat(entities).extracting(e -> ((Map<String, Object>) e.get("sameRow")).get("title"))
+            .doesNotHaveDuplicates();
+    }
+
+    /**
      * Type-scoped selection set: a single _entities call with two __typenames and inline
      * fragments resolves each entity with its own fragment's fields. graphql-java's
      * {@code DataFetchingFieldSelectionSet} is type-scoped at the {@code _entities} DFE

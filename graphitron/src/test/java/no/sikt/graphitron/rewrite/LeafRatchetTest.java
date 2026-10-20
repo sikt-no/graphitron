@@ -67,8 +67,12 @@ class LeafRatchetTest {
      * (TableField / BatchedTableField, PivotField / BatchedPivotField, and the polymorphic
      * pair), leaving the discriminated child no longer the one family member that never
      * batched.
+     * 23 to 24 (2026-10-20): SameRowTableField, a source-grain addition: the parent's own row
+     * read as a table type, which neither the join-path table read nor the nesting hand-through
+     * names. It restores Graphitron 9's reading of a same-table child with no {@code @reference}
+     * as a bug fix, with no operation term (its one member is the plain select).
      */
-    private static final int CHILD_FIELD_LEAVES = 23;
+    private static final int CHILD_FIELD_LEAVES = 24;
 
     /**
      * Installed at 4 (census 2026-08-02, unchanged from the 2026-08-01 baseline).

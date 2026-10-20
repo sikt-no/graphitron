@@ -246,7 +246,7 @@ public final class FetcherRegistrationsEmitter {
         var registrationValue = dispatchRegistrationValue(schema, typeName, field, fetchersClass,
             resultType, outputPackage, dualWiring);
         if (registrationValue == null) {
-            registrationValue = FetcherEmitter.bind(field, fetchersClass, parentTable, resultType,
+            registrationValue = FetcherEmitter.bind(schema, field, fetchersClass, parentTable, resultType,
                 outputPackage, parentSource).registrationValue();
         }
         return CodeBlock.builder()

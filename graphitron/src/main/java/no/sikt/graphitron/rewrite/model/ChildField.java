@@ -20,6 +20,7 @@ public sealed interface ChildField extends OutputField
             ChildField.InterfaceField, ChildField.UnionField,
             ChildField.BatchedInterfaceField, ChildField.BatchedUnionField,
             ChildField.NestingField,
+            ChildField.SameRowTableField,
             ChildField.PivotSpecField, ChildField.PivotSlotField,
             ChildField.ServiceRecordField,
             ChildField.RecordReadField,
@@ -72,6 +73,7 @@ public sealed interface ChildField extends OutputField
             case ServiceRecordField f -> f.keySource().sourceShape();
             case ComputedField ignored -> SourceShape.Table;
             case NestingField ignored -> SourceShape.Table;
+            case SameRowTableField ignored -> SourceShape.Table;
             case InterfaceField ignored -> SourceShape.Table;
             case UnionField ignored -> SourceShape.Table;
             case BatchedInterfaceField ignored -> SourceShape.Table;
@@ -110,6 +112,7 @@ public sealed interface ChildField extends OutputField
             case BatchedTableInterfaceField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case ServiceTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             case NestingField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
+            case SameRowTableField f -> OutputField.wrap(f.returnType().wrapper(), new TargetShape.Table());
             // Java-side shapes: listOrSingle (never Connection, mapping stays flat Record / Field).
             case ServiceRecordField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Record());
             case RecordReadField f -> OutputField.listOrSingle(f.returnType().wrapper(), new TargetShape.Field());
@@ -986,53 +989,9 @@ public sealed interface ChildField extends OutputField
             return new DomainReturnType.Plain(ClassName.get("org.jooq", "Record"));
         }
 
-        /**
-         * The subtree's presence leaves, or the child that blocks the collapse. Ignores this
-         * field's own nullability: a non-null inner nesting field still contributes its leaves
-         * to an enclosing nullable wrapper, and a blocked inner one blocks every enclosing one.
-         *
-         * <p>A column child is a leaf over its own columns. A single-valued reference child is a
-         * leaf over its join columns, the parent-row columns its first hop pairs on: when any is
-         * null the join matches no row, so the reference is null whatever the rest of its path.
-         * The converse does not hold, since a filter, an unenforced foreign key or a hop entering
-         * from the far end of a key can still leave the reference null; the wrapper then stays an
-         * object, which errs toward keeping a value, never toward dropping one. A reference whose
-         * first hop joins on an authored predicate or laterally to a routine has no such columns
-         * and blocks the collapse.
-         */
+        /** The subtree's presence leaves, or the child that blocks the collapse ({@link SubtreePresence#over}). */
         public SubtreePresence subtreePresence() {
-            var leaves = new java.util.ArrayList<PresenceLeaf>();
-            for (var child : nestedFields) {
-                switch (child) {
-                    case ColumnBackedField cbf -> leaves.add(new PresenceLeaf(cbf.columns()));
-                    case TableField tf when tf.returnType().wrapper() instanceof FieldWrapper.Single -> {
-                        var leaf = referenceLeaf(tf.joinPath());
-                        if (leaf.isEmpty()) {
-                            return new SubtreePresence.Blocked(child);
-                        }
-                        leaves.add(leaf.get());
-                    }
-                    case ColumnBackedReferenceField crf -> {
-                        var leaf = referenceLeaf(crf.joinPath());
-                        if (leaf.isEmpty()) {
-                            return new SubtreePresence.Blocked(child);
-                        }
-                        leaves.add(leaf.get());
-                    }
-                    case NestingField inner -> {
-                        switch (inner.subtreePresence()) {
-                            case SubtreePresence.Leaves l -> leaves.addAll(l.leaves());
-                            case SubtreePresence.Blocked b -> {
-                                return b;
-                            }
-                        }
-                    }
-                    default -> {
-                        return new SubtreePresence.Blocked(child);
-                    }
-                }
-            }
-            return new SubtreePresence.Leaves(leaves);
+            return SubtreePresence.over(nestedFields);
         }
 
         /**
@@ -1041,7 +1000,7 @@ public sealed interface ChildField extends OutputField
          * synthesis so the source side is on the hop's origin, which for hop 0 is the parent
          * table, whichever end of the key the parent holds.
          */
-        private static java.util.Optional<PresenceLeaf> referenceLeaf(List<JoinStep> joinPath) {
+        static java.util.Optional<PresenceLeaf> referenceLeaf(List<JoinStep> joinPath) {
             if (!joinPath.isEmpty()
                     && joinPath.getFirst() instanceof JoinStep.Hop hop
                     && hop.on() instanceof On.ColumnPairs cp) {
@@ -1052,20 +1011,7 @@ public sealed interface ChildField extends OutputField
 
         /** The null contract of this field: whether an absent wrapper resolves to {@code null}. */
         public NullContract nullContract() {
-            return switch (returnType.wrapper()) {
-                case FieldWrapper.Single s when !s.nullable() ->
-                    new NullContract.AlwaysObject(new NullContract.Reason.NonNull());
-                case FieldWrapper.Single ignored -> switch (subtreePresence()) {
-                    case SubtreePresence.Leaves l -> new NullContract.CollapsesWhenAbsent(l.leaves());
-                    case SubtreePresence.Blocked b ->
-                        new NullContract.AlwaysObject(new NullContract.Reason.BlockedBy(b.blocker()));
-                };
-                // A list-wrapped nesting field reaches the model and is rejected by the validator.
-                case FieldWrapper.List ignored ->
-                    new NullContract.AlwaysObject(new NullContract.Reason.NotSingle());
-                case FieldWrapper.Connection ignored ->
-                    new NullContract.AlwaysObject(new NullContract.Reason.NotSingle());
-            };
+            return NullContract.of(returnType.wrapper(), nestedFields);
         }
 
         /**
@@ -1073,10 +1019,7 @@ public sealed interface ChildField extends OutputField
          * {@link NullContract.CollapsesWhenAbsent} contract, empty otherwise.
          */
         @Override public List<ColumnRef> parentRowColumns() {
-            if (!(nullContract() instanceof NullContract.CollapsesWhenAbsent c)) {
-                return List.of();
-            }
-            return c.leaves().stream().flatMap(l -> l.columns().stream()).distinct().toList();
+            return nullContract().presenceColumns();
         }
 
         /**
@@ -1098,6 +1041,58 @@ public sealed interface ChildField extends OutputField
 
         /** The outcome of {@link #subtreePresence()}. */
         public sealed interface SubtreePresence {
+            /**
+             * The presence leaves of {@code fields}, or the child that blocks the collapse: the one
+             * rule both a nesting field's subtree and a {@link SameRowTableField}'s return type
+             * are decided by. Ignores the enclosing field's own nullability: a non-null inner
+             * nesting field still contributes its leaves to an enclosing nullable wrapper, and a
+             * blocked inner one blocks every enclosing one.
+             *
+             * <p>A column child is a leaf over its own columns. A single-valued reference child is
+             * a leaf over its join columns, the parent-row columns its first hop pairs on: when any
+             * is null the join matches no row, so the reference is null whatever the rest of its
+             * path. The converse does not hold, since a filter, an unenforced foreign key or a hop
+             * entering from the far end of a key can still leave the reference null; the wrapper
+             * then stays an object, which errs toward keeping a value, never toward dropping one.
+             * A reference whose first hop joins on an authored predicate or laterally to a routine
+             * has no such columns and blocks the collapse, as does every other child, a
+             * {@link SameRowTableField} among them, which is what terminates a same-table cycle.
+             */
+            static SubtreePresence over(List<? extends ChildField> fields) {
+                var leaves = new java.util.ArrayList<PresenceLeaf>();
+                for (var child : fields) {
+                    switch (child) {
+                        case ColumnBackedField cbf -> leaves.add(new PresenceLeaf(cbf.columns()));
+                        case TableField tf when tf.returnType().wrapper() instanceof FieldWrapper.Single -> {
+                            var leaf = referenceLeaf(tf.joinPath());
+                            if (leaf.isEmpty()) {
+                                return new Blocked(child);
+                            }
+                            leaves.add(leaf.get());
+                        }
+                        case ColumnBackedReferenceField crf -> {
+                            var leaf = referenceLeaf(crf.joinPath());
+                            if (leaf.isEmpty()) {
+                                return new Blocked(child);
+                            }
+                            leaves.add(leaf.get());
+                        }
+                        case NestingField inner -> {
+                            switch (inner.subtreePresence()) {
+                                case Leaves l -> leaves.addAll(l.leaves());
+                                case Blocked b -> {
+                                    return b;
+                                }
+                            }
+                        }
+                        default -> {
+                            return new Blocked(child);
+                        }
+                    }
+                }
+                return new Leaves(leaves);
+            }
+
             /** Every value in the subtree is a presence leaf; the subtree is absent when all are. */
             record Leaves(List<PresenceLeaf> leaves) implements SubtreePresence {
                 public Leaves {
@@ -1114,6 +1109,38 @@ public sealed interface ChildField extends OutputField
 
         /** The outcome of {@link #nullContract()}. */
         public sealed interface NullContract {
+            /**
+             * The null contract of a field wrapped {@code wrapper} whose value is an object over
+             * {@code fields}: a non-null single field always resolves to an object, a nullable one
+             * collapses when every presence leaf of {@link SubtreePresence#over} is absent, and a
+             * list-wrapped one never collapses.
+             */
+            static NullContract of(FieldWrapper wrapper, List<? extends ChildField> fields) {
+                return switch (wrapper) {
+                    case FieldWrapper.Single s when !s.nullable() ->
+                        new AlwaysObject(new Reason.NonNull());
+                    case FieldWrapper.Single ignored -> switch (SubtreePresence.over(fields)) {
+                        case SubtreePresence.Leaves l -> new CollapsesWhenAbsent(l.leaves());
+                        case SubtreePresence.Blocked b ->
+                            new AlwaysObject(new Reason.BlockedBy(b.blocker()));
+                    };
+                    // A list-wrapped nesting field reaches the model and is rejected by the validator.
+                    case FieldWrapper.List ignored -> new AlwaysObject(new Reason.NotSingle());
+                    case FieldWrapper.Connection ignored -> new AlwaysObject(new Reason.NotSingle());
+                };
+            }
+
+            /**
+             * The columns the presence check reads: the distinct columns of a
+             * {@link CollapsesWhenAbsent} contract, empty otherwise.
+             */
+            default List<ColumnRef> presenceColumns() {
+                if (!(this instanceof CollapsesWhenAbsent c)) {
+                    return List.of();
+                }
+                return c.leaves().stream().flatMap(l -> l.columns().stream()).distinct().toList();
+            }
+
             /** A nullable wrapper over presence leaves only: {@code null} when every leaf is absent. */
             record CollapsesWhenAbsent(List<PresenceLeaf> leaves) implements NullContract {
                 public CollapsesWhenAbsent {
@@ -1145,6 +1172,42 @@ public sealed interface ChildField extends OutputField
                 /** The field is list-wrapped, a shape the validator rejects. */
                 record NotSingle() implements Reason {}
             }
+        }
+    }
+
+    /**
+     * A child field whose return type is a {@code @table} type bound to the parent's own table,
+     * reached with no {@code @reference}: its value is the parent's own row, read through the
+     * return type's own classification. Unlike {@link NestingField}, which carries a per-edge
+     * classification of its nested fields against the host's table, this leaf holds no copy of
+     * the return type's fields; the type is a table type, classified once, and the leaf points
+     * at it.
+     *
+     * <p>Single cardinality only: the classifier mints it for an argument-free, unnarrowed
+     * same-table field and rejects the list shape, which would read every row of the table under
+     * every parent. The projection is a single-row multiset with no {@code FROM} of its own over
+     * the host's alias, aliased by result key, so the child's result-key namespace stays inside
+     * it. A nullable field resolves to {@code null} by the {@link NestingField} rule, decided over
+     * every field of the return type ({@link no.sikt.graphitron.rewrite.GraphitronSchema#sameRowNullContract}).
+     */
+    record SameRowTableField(
+        String parentTypeName,
+        String name,
+        SourceLocation location,
+        ReturnTypeRef.TableBoundReturnType returnType,
+        AliasOwner aliasOwner
+    ) implements ChildField, ResultKeyAliasedField {
+        public SameRowTableField {
+            java.util.Objects.requireNonNull(returnType, "returnType");
+            java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
+            if (!(returnType.wrapper() instanceof FieldWrapper.Single)) {
+                throw new IllegalArgumentException(
+                    "SameRowTableField reads the parent's own row and is single-valued; got "
+                    + returnType.wrapper().getClass().getSimpleName());
+            }
+        }
+        @Override public DomainReturnType domainReturnType() {
+            return new DomainReturnType.Record(returnType.table());
         }
     }
 

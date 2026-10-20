@@ -484,6 +484,7 @@ public class GraphitronSchemaValidator {
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedInterfaceField f   -> validateBatchedInterfaceField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.BatchedUnionField f       -> validateBatchedUnionField(f, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.NestingField f            -> validateNestingField(f, schema, types, errors);
+            case no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField f       -> {} // single cardinality pinned by the leaf's compact constructor; the same-table predicate and its rejections live in the classifier, surfaced via validateUnclassifiedField
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField f          -> validatePivotSpec(f, schema, types, errors);
             case no.sikt.graphitron.rewrite.model.ChildField.PivotSlotField f          -> {} // readName-only leaf; every pivot admission check fires at classify time (PivotError via UnclassifiedField), and the consuming leaf's validatePivotSpec walks the slots
             case no.sikt.graphitron.rewrite.model.ChildField.ServiceTableField f       -> validateServiceTableField(f, types, errors);
@@ -1424,6 +1425,7 @@ public class GraphitronSchemaValidator {
             case ChildField.ComputedField ignored -> true;
             case ChildField.TableField ignored -> true;
             case ChildField.NestingField ignored -> true;
+            case ChildField.SameRowTableField ignored -> true;
             case ChildField.BatchedTableField f -> f.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Table;
             default -> false;
         };

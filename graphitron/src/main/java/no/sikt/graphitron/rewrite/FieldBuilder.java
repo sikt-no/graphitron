@@ -1713,6 +1713,27 @@ class FieldBuilder {
                     List.of("asConnection"),
                     "@asConnection on inline (non-@splitQuery) TableField is not supported; add @splitQuery for batched connection semantics"));
             }
+            // A same-table field with no @reference: the path is empty (parsePath infers a key
+            // only between two different tables), so the inline read has no correlation to the
+            // parent. Narrowed by its own filters or lookup, it reads the table independent of
+            // the parent, the same rows under every parent; single-valued and argument-free, it
+            // reads the parent's own row; anything else would read every row under every parent.
+            if (referencePath.elements().isEmpty() && tbtParentCorrelation == null) {
+                boolean narrowed = !tfc.filters().isEmpty()
+                    || !(tfc.lookup() instanceof LookupResolution.None);
+                if (!narrowed) {
+                    boolean argumentFree = fieldDef.getArguments().isEmpty()
+                        && tfc.orderBy() instanceof OrderBySpec.None
+                        && tfc.pagination() == null;
+                    if (returnType.wrapper() instanceof FieldWrapper.Single && argumentFree) {
+                        return new no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField(
+                            parentTypeName, name, location, returnType, aliasOwnerOf(parentTypeName, name));
+                    }
+                    return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
+                        unnarrowedSameTableMessage(parentTypeName, elementTypeName,
+                            returnType.table().tableName(), isList)));
+                }
+            }
             return new TableField(parentTypeName, name, location,
                 returnType, referencePath.elements(), tfc.filters(), tfc.orderBy(), tfc.pagination(),
                 tfc.lookup(),
@@ -7582,12 +7603,35 @@ class FieldBuilder {
             + " the child in a batch keyed on each parent's correlation to it, but '"
             + returnTypeName + "' is bound to the same table as '" + parentTypeName + "' ('"
             + tableName + "') and the field has no @reference, so there is no parent key to"
-            + " batch on. To return the parent's own row, state the correlation with"
-            + " @reference(path: [{condition: ...}]); or, if no other field needs '"
-            + returnTypeName + "' as a table type, drop @table from '" + returnTypeName
-            + "' and " + applied + " from this field so the type nests on the parent row. To"
-            + " read rows of '" + tableName + "' independent of the parent, narrowed by this"
-            + " field's @condition or @lookupKey arguments, drop " + applied + ".";
+            + " batch on. To return the parent's own row, drop " + applied + " from a"
+            + " single-cardinality field with no arguments, which reads the parent's own row in"
+            + " the same statement; for a field that must stay split, state the correlation with"
+            + " @reference(path: [{condition: ...}]). To read rows of '" + tableName
+            + "' independent of the parent, narrowed by this field's @condition or @lookupKey"
+            + " arguments, drop " + applied + ".";
+    }
+
+    /**
+     * The author error for an inline field whose return type is bound to its parent's table,
+     * with no {@code @reference} and nothing narrowing the read, that cannot read the parent's
+     * own row: a list, or a single field carrying arguments that filter nothing. Its read would
+     * be every row of the table under every parent. The sibling of
+     * {@link #uncorrelatedSameTableSplitMessage}; names both types, the table and the remedies,
+     * and the validator prefixes the field coordinate.
+     */
+    private static String unnarrowedSameTableMessage(String parentTypeName, String returnTypeName,
+            String tableName, boolean isList) {
+        String shape = isList
+            ? "the field is a list"
+            : "the field takes arguments that filter nothing";
+        return "'" + returnTypeName + "' is bound to the same table as '" + parentTypeName + "' ('"
+            + tableName + "') and the field has no @reference, so it is not correlated to the"
+            + " parent; nothing narrows it and " + shape + ", so it would read every row of '"
+            + tableName + "' under every parent. To read the parent's own row, make the field"
+            + " single-valued with no arguments; to read rows of '" + tableName + "' related to the"
+            + " parent, state the self-referencing key with @reference(path: [{key: ...}]); to"
+            + " read rows of '" + tableName + "' independent of the parent, narrow the field with"
+            + " an argument, @condition or @lookupKey.";
     }
 
     /**

@@ -103,8 +103,11 @@ class CommandSeamRatchetTest {
      * lookup that serves nested coordinates too. Lowered 68 to 66 when the INSERT emitters folded
      * onto one paired column/cell walk over the INSERT column plan: the bulk lambda-shape probe that
      * tested each leaf for a NodeId carrier retired with the stream lambda it chose between.
+     * Raised 66 to 67 when the same-row table child landed: its fetcher read in
+     * {@code FetcherEmitter.bindRaw}, a new leaf's one read site rather than new dispatch on an
+     * existing leaf.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 66;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 67;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -142,8 +145,10 @@ class CommandSeamRatchetTest {
      * Lowered 61 to 57 when the INSERT emitters folded onto one paired column/cell walk over the
      * INSERT column plan: the column-list and cell-list switches over the two column carriers
      * retired, the plan already naming each column and whether its writer decodes.
+     * Raised 57 to 58 when the same-row table child landed: its no-method arm in the fetcher
+     * dispatch, a new leaf's one dispatch site.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 57;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 58;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
@@ -272,8 +277,12 @@ class CommandSeamRatchetTest {
      * companion row: the launch family's payload dispatch reads the two service-table leaves
      * (two arms in the schema walk, two in the schema-free one), the same sanctioned payload-half
      * reads every other family's dispatch holds.
+     *
+     * <p>Raised 140 to 143 when the same-row table child landed: its contribution arm and its
+     * projection-identity arm in the projection producer, and its no-row arm in the fetcher-edge
+     * membership switch, each a new leaf's own exhaustive-switch site.
      */
-    private static final int PLAN_LEAF_REFERENCES = 140;
+    private static final int PLAN_LEAF_REFERENCES = 143;
 
     /**
      * The seven sealed hierarchies whose leaf names count as emit dispatch. This is the wide

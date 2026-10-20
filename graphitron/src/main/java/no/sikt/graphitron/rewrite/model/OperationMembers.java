@@ -196,6 +196,8 @@ public final class OperationMembers {
             shape(Set.of(Kind.SELECT), Set.of())),
         Map.entry(ChildField.NestingField.class,
             shape(Set.of(), Set.of())),
+        Map.entry(ChildField.SameRowTableField.class,
+            shape(Set.of(Kind.SELECT), Set.of())),
         Map.entry(ChildField.PivotField.class,
             shape(Set.of(Kind.PIVOT, Kind.JOIN), Set.of())),
         Map.entry(ChildField.BatchedPivotField.class,
@@ -280,6 +282,8 @@ public final class OperationMembers {
                 tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
             case ChildField.BatchedTableInterfaceField f ->
                 tableRead(f.returnType().table(), f.joinPath(), f.filters(), f.orderBy(), f.pagination());
+            // The parent's own row: a select over the host's alias, no join and no filter surface.
+            case ChildField.SameRowTableField _ -> List.of(new Select());
 
             // --- Child fields: polymorphic reads (no field-level filter surface on these leaves) ---
             case ChildField.InterfaceField _ -> List.of(new Select());
