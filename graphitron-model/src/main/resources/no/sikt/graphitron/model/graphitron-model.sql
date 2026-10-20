@@ -11548,15 +11548,18 @@ SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema,
 UNION ALL
 -- A field carrying @sourceRow departs from the table declaring its path's first key: the lifter
 -- returns that key's source-side columns, which is the generator's contract for it.
-SELECT DISTINCT r.graph_name, r.type_name, r.field_name,
-       r.constraint_source_name, r.constraint_schema, r.constraint_table, 'SOURCE_ROW'
-  FROM graphitron_field_path_reading r
- WHERE r.position = 0 AND r.via = 'KEY'
+SELECT p.graph_name, p.type_name, p.field_name,
+       k.constraint_source_name, k.constraint_schema, k.constraint_table, 'SOURCE_ROW'
+  FROM graphitron_field_path p
+  JOIN graphitron_path_element_key k
+    ON k.graph_name = p.graph_name AND k.source_name = p.source_name
+   AND k.source_line = p.source_line AND k.source_column = p.source_column
+ WHERE p.position = 0
    AND EXISTS (SELECT 1 FROM graphql_directive_application da
                  JOIN graphql_element_field ef
                    ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
-                WHERE ef.graph_name = r.graph_name AND ef.type_name = r.type_name
-                  AND ef.field_name = r.field_name AND da.directive_name = 'sourceRow');
+                WHERE ef.graph_name = p.graph_name AND ef.type_name = p.type_name
+                  AND ef.field_name = p.field_name AND da.directive_name = 'sourceRow');
 COMMENT ON VIEW graphitron_field_source_table_rule IS 'One row the field source-table rule computes, in the shape graphitron_field_source_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_source_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 COMMENT ON COLUMN graphitron_field_source_table_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
 COMMENT ON COLUMN graphitron_field_source_table_rule.type_name IS 'the type owning the field';

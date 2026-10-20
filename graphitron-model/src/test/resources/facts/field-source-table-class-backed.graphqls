@@ -21,6 +21,19 @@ type CustomerAddressSummary {
       method: "addressIdOf"
     )
     @reference(path: [{key: "customer_address_id_fkey"}])
+  # The key in its schema, and by its generated constant.
+  qualifiedAddress: [Address!]!
+    @sourceRow(
+      className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+      method: "addressIdOf"
+    )
+    @reference(path: [{key: "public.customer_address_id_fkey"}])
+  constantAddress: [Address!]!
+    @sourceRow(
+      className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+      method: "addressIdOf"
+    )
+    @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
 }
 
 extend type Query {
@@ -35,10 +48,14 @@ extend schema @assertContains(relation: "graphitron_field_source_table", rows: "
   FilmDetailsCarrier,     filmId,     film,       RECORD_CLASS
   FilmDetailsCarrier,     language,   film,       RECORD_CLASS
   CustomerAddressSummary, address,    customer,   SOURCE_ROW
+  CustomerAddressSummary, qualifiedAddress, customer, SOURCE_ROW
+  CustomerAddressSummary, constantAddress,  customer, SOURCE_ROW
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,                    coordinate
   NO_ROUTE_FROM_DEPARTURE, FilmDetailsCarrier.language
   NO_ROUTE_FROM_DEPARTURE, CustomerAddressSummary.address
+  NO_ROUTE_FROM_DEPARTURE, CustomerAddressSummary.qualifiedAddress
+  NO_ROUTE_FROM_DEPARTURE, CustomerAddressSummary.constantAddress
   """)
