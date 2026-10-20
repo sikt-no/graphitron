@@ -107,7 +107,7 @@ class InputOccurrenceShadowTest {
             type Film @table(name: "film") { filmId: Int! @field(name: "film_id") }
             type Query {
               films(filter: PlainFilter
-                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"}, override: true)
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "wholeFilter"}, override: true)
               ): [Film!]!
             }
             """;

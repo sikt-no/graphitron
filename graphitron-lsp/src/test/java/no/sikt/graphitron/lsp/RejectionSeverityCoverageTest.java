@@ -268,6 +268,15 @@ class RejectionSeverityCoverageTest {
             return new Rejection.AuthorError.UnroutedServiceCall(
                 "Mutation.godkjenn", "eier_organisasjon", List.of(), List.of());
         }
+        if (permit == Rejection.AuthorError.OverrideSlotUnread.class) {
+            // Override reader check: a slot an enclosing @condition(override: true) suppresses that
+            // no condition parameter reads. Diagnostics.compute's switch on Rejection.AuthorError
+            // catches it uniformly (Error severity).
+            return new Rejection.AuthorError.OverrideSlotUnread(
+                "input field 'privatEpost'", "Query.studenter(filter)/privatEpost",
+                java.util.Optional.of(new Rejection.AuthorError.OverrideSlotUnread.BeanMiss(
+                    "com.example.StudentFilter", "privatEpost")));
+        }
         if (permit == Rejection.InvalidSchema.Structural.class) {
             return new Rejection.InvalidSchema.Structural("reason");
         }

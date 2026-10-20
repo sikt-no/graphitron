@@ -261,6 +261,48 @@ same change loud through `bindRecord`'s bijection, so only setter beans need the
   fails today with every row returned, so it is the acceptance evidence for the first half of the
   goal; the reader-check pipeline cases are the evidence for the second.
 
+## Implementation notes
+
+Both changes landed together. The binding axis is `InputBeanResolver.BindingAxis` (`SERVICE`,
+`CONDITION`); the jOOQ-record path keeps reading `@field(name:)` as a column through
+`fieldNameOrDirective`, which is the column axis and not a bean binding. The typed rejection is
+`Rejection.AuthorError.OverrideSlotUnread` (summary, occurrence path, optional `BeanMiss`). The
+absolute read path is `ParamSource.Arg.absoluteReadPath()`, with `readLeaf()` beside it;
+`conditionReadThroughList` reads through it.
+
+**Binding survey (`override: false` and otherwise).** The bean build at every condition site was
+instrumented to build on both axes and log any difference, then run over the graphitron test tiers
+and the sakila example's generate. No existing condition-site bean changed its binding set. The
+only differences were this item's own new fixtures and one record direction-A message, whose
+remedy now says to rename the component rather than to add `@field(name:)`.
+
+**Newly rejected shapes, and two arms the rule grew.** Decided one by one:
+
+- Real silent drops, fixed in the fixture: every case whose `override: true` method was
+  `TestConditionStub.lifterFieldCondition(Table)` over a filter it never read
+  (`GraphitronSchemaBuilderTest` r215 cases and `CASCADE_ADMITTED_BARE_FIELD`,
+  `InputOccurrenceShadowTest.admittedCascadeSilencesTheWalk`, the two
+  `ListOfInputFilterPipelineTest.enclosingOverride_*` cases,
+  `LauncherCommandsPipelineTest.facetPlan_directFacetUnderFieldOverride_*`). They now bind the
+  whole `filter` through the new `TestConditionStub.wholeFilter`. The two dotted-path cases in
+  `ConditionParameterCarrierPipelineTest` read `outer.inner` and left `outer.title` and
+  `outer.inners` unread; they now use an input holding only `inner`.
+- Reader arm, tenant routing: in a `<tenantColumn>` build, a suppressed slot whose column binding
+  names the tenant column routes the statement on its value, so it is read
+  (`FieldBuilder.readByTenantRouting`, through the new `TenantScopes.isTenantColumn` that
+  `TenantBindingIndex` now also matches with). The three `TenantBindingClassificationTest` cases
+  under a field-level override build unchanged because of it.
+- Reader arm, reads below a slot: a dotted `argMapping` past a `@nodeId` leaf into a key column
+  (`pick.languageRef.language_id`, the projection rail) reads the slot. Found by the sakila
+  example's `Query.filmsByOptionalLanguage`, which builds unchanged.
+- Shape now refused, test rewritten:
+  `TenantBindingClassificationTest.multiTablePolymorphicNodeIdUnderFieldLevelOverride*`. Under a
+  field-level override whose method binds nothing, the union's dispatched id is unread on the
+  `Inventory` branch (no parameter can bind a dispatched id whole, and its key does not embed the
+  tenant column), so the reader check now refuses the field before the tenant fold declines it.
+  The test now asserts the `OverrideSlotUnread` at `Query.occ(id)` and keeps its assertion that no
+  mint-side tenant clause fires.
+
 ## Other solutions we've considered
 
 - **Fall back to the GraphQL name when the `@field` value names no member.** Smallest diff, and sis

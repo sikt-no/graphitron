@@ -82,7 +82,7 @@ type Mutation {
 }
 ----
 
-xref:../reference/directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the path form. What stays outside `@service`'s surface is renaming the *fields* of the input type as seen by its backing class; that is the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields).
+xref:../reference/directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the path form. What stays outside `@service`'s surface is renaming the *fields* of the input type as seen by its backing class; that is the input type's own concern (see xref:../reference/directives/field.adoc[`@field`] on input fields). The rename applies to a `@service` input; on an input a `@condition` reads, `@field(name:)` names a column and the bean's members match by GraphQL name.
 
 Note the axis `argMapping:` works on: it rebinds *method parameters*, scattering one input's fields across several of them. Grouping input fields under a nested type, below, works on the input's *members* instead: one bean parameter, whose fields are reached through the nesting. The two do not overlap.
 

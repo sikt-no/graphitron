@@ -2,6 +2,8 @@ package no.sikt.graphitron.model.diagnostics;
 
 import java.util.Comparator;
 import java.util.List;
+import java.util.Objects;
+import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
@@ -34,7 +36,7 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
      * carry typed structural data (a name-lookup attempt with candidates, conflict
      * sites, ...) so downstream tooling reads it off the arm.
      */
-    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, AuthorError.UnroutedServiceCall, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError, JooqRecordInputError {
+    sealed interface AuthorError extends Rejection permits AuthorError.UnknownName, AuthorError.Structural, AuthorError.AccessorMismatch, AuthorError.RecordBindingMultiProducer, AuthorError.TypeConflict, AuthorError.MultiProducerDomainTypeDisagreement, AuthorError.SortEnumMissingOrder, AuthorError.TenantColumnTypeDisagreement, AuthorError.NoTenantBinding, AuthorError.UnroutedServiceCall, AuthorError.OverrideSlotUnread, ServiceMethodCallError, ReflectionError, UpdateRowsError, DeleteRowsError, MutationTableArgError, ErrorChannelWalkerError, WireCoercionError, ServiceCarrierShapeError, PivotError, JooqRecordInputError {
 
         /**
          * The classifier resolved a name (column, table, FK, service method,
@@ -407,6 +409,48 @@ public sealed interface Rejection permits Rejection.AuthorError, Rejection.Inval
 
             @Override public Rejection prefixedWith(String prefix) {
                 return new UnroutedServiceCall(prefix + coordinate, tenantColumn, declines, evidence);
+            }
+        }
+
+        /**
+         * A filter argument or input field whose implicit predicate an enclosing
+         * {@code @condition(override: true)} suppresses, and which no parameter of any condition on
+         * the consuming field reads. The override says the authored method stands in for the
+         * implicit predicate; when nothing reads the slot, the client's value is accepted and
+         * changes nothing.
+         *
+         * <p>{@code summary} names the slot in prose; {@code occurrencePath} is the slot's
+         * occurrence path in the {@code <Type>.<field>(<argument>)/<nested>/.../<leaf>}
+         * serialization the cascade verdict keys by (a bare {@code <Type>.<field>(<argument>)} for
+         * a top-level argument). {@code beanMiss} is present when a bean parameter reached the
+         * slot's container and has no member for it: the bean class and the member name it looked
+         * for.
+         */
+        record OverrideSlotUnread(String summary, String occurrencePath, Optional<BeanMiss> beanMiss)
+                implements AuthorError {
+
+            public OverrideSlotUnread {
+                Objects.requireNonNull(beanMiss, "beanMiss");
+            }
+
+            /** The bean that reached the slot's container, and the member it found missing. */
+            public record BeanMiss(String beanClass, String memberName) {}
+
+            @Override public String message() {
+                String miss = beanMiss
+                    .map(b -> "; bean class '" + b.beanClass() + "' reaches its container but has no"
+                        + " member '" + b.memberName() + "'")
+                    .orElse("");
+                return summary + " at occurrence '" + occurrencePath + "' has its implicit predicate"
+                    + " suppressed by an enclosing @condition(override: true), but no condition"
+                    + " parameter reads it" + miss + ", so a client's value for it would be accepted"
+                    + " and change nothing. Add the member, bind the slot another way (a parameter"
+                    + " that reads it, or a @condition of its own), or drop override: true so the"
+                    + " implicit predicate reads it.";
+            }
+
+            @Override public Rejection prefixedWith(String prefix) {
+                return new OverrideSlotUnread(prefix + summary, occurrencePath, beanMiss);
             }
         }
     }

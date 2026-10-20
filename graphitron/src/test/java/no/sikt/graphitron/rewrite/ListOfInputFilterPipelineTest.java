@@ -414,7 +414,7 @@ class ListOfInputFilterPipelineTest {
             input PairFilter { pairs: [PairInput] }
             """.formatted(ACTOR_KEY) + FILM_ACTOR + """
             type Query {
-                filmActors(filter: PairFilter @condition(condition: {className: "%s", method: "lifterFieldCondition"}, override: true)): [FilmActor!]!
+                filmActors(filter: PairFilter @condition(condition: {className: "%s", method: "wholeFilter"}, override: true)): [FilmActor!]!
             }
             """.formatted(STUB));
 
@@ -433,7 +433,7 @@ class ListOfInputFilterPipelineTest {
             input PairFilter { pairs: [PairInput] }
             """ + FILM_ACTOR + """
             type Query {
-                filmActors(filter: PairFilter @condition(condition: {className: "%s", method: "lifterFieldCondition"}, override: true)): [FilmActor!]!
+                filmActors(filter: PairFilter @condition(condition: {className: "%s", method: "wholeFilter"}, override: true)): [FilmActor!]!
             }
             """.formatted(STUB));
 

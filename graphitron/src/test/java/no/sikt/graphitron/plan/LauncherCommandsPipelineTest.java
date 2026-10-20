@@ -623,7 +623,7 @@ class LauncherCommandsPipelineTest {
             }
             type Query {
                 films(filter: FilmFilter): [Film!]! @asConnection @defaultOrder(primaryKey: true)
-                    @condition(condition: {className: "%s", method: "lifterFieldCondition"}, override: true)
+                    @condition(condition: {className: "%s", method: "wholeFilter"}, override: true)
             }
             """.formatted(STUB));
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);

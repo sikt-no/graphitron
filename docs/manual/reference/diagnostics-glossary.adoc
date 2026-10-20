@@ -179,6 +179,15 @@ database catalog rather than by reflection:
 
 *Next step.* Declare the field non-null, give every element field the same `@reference` path, or move the field out of the element type. To filter on a shape the row cannot express, put `@condition(override: true)` on the list field; the method receives the whole list and owns the predicate. xref:directives/field.adoc#list-of-input-filter[`@field` on a list-of-input filter] describes the semantics.
 
+[#override-slot-unread]
+=== A filter slot an override suppresses that no condition reads
+
+*Sample line.* `[author-error] plain input type 'StudentFilter': input field 'privatEpost' at occurrence 'Query.studenter(filter)/privatEpost' has its implicit predicate suppressed by an enclosing @condition(override: true), but no condition parameter reads it; bean class 'com.example.StudentFilterBean' reaches its container but has no member 'privatEpost', so a client's value for it would be accepted and change nothing. ...`
+
+*Cause.* `@condition(override: true)` suppresses the implicit `column = ?` predicate of every argument and input field beneath it, on the understanding that the method stands in for them. This error says one of them reaches no parameter of any condition on the consuming field: no parameter is bound to it or to anything enclosing it, and no bean bound above it has a member for it. A bean's members match the input's fields by their GraphQL names, so a member named after the column (`setEMAILADRESSE_PRIVAT` for `@field(name: "EMAILADRESSE_PRIVAT")`) does not read it. When a bean reached the field's container the message names the bean class and the member it looked for. The error is located at the field or argument and names the occurrence; the consuming field adds one line listing every unread occurrence. A field or argument carrying its own `@condition` is never reported, since that method owns it.
+
+*Next step.* Add the member to the bean, named after the GraphQL field; bind the slot another way (a parameter whose `argMapping` reaches it, or a `@condition` of its own); or drop `override: true` so the implicit predicate reads it. The xref:directives/condition.adoc#input-object-parameter[`@condition` reference] covers how beans are bound.
+
 [#shadowed-node-id]
 === A node's `id` field shadowing a column named `id`
 

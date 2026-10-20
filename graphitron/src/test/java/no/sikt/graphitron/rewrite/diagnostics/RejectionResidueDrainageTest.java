@@ -46,7 +46,7 @@ class RejectionResidueDrainageTest {
         "Rejection.AuthorError.MultiProducerDomainTypeDisagreement",
         "Rejection.AuthorError.SortEnumMissingOrder",
         "Rejection.AuthorError.TenantColumnTypeDisagreement", "Rejection.AuthorError.NoTenantBinding",
-        "Rejection.AuthorError.UnroutedServiceCall",
+        "Rejection.AuthorError.UnroutedServiceCall", "Rejection.AuthorError.OverrideSlotUnread",
         // the ten lspCode()-bearing sub-seals' leaves, by sub-seal:
         "ServiceMethodCallError.MultipleDslContextSlots", "ServiceMethodCallError.ParameterUnbindable",
         "ServiceMethodCallError.InstanceHolderUnconstructible",

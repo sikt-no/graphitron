@@ -2963,8 +2963,9 @@ class FieldBuilder {
                                                   GraphQLFieldDefinition fieldDef,
                                                   TableRef rt, String returnTypeName, List<Rejection> errors) {
         var columnSlots = new ArrayList<ColumnBindingLedger.ColumnBoundSlot>();
+        var suppressedSlots = new ArrayList<SuppressedSlot>();
         var filters = projectFilters(refs, parentTypeName, fieldDef, rt, returnTypeName, errors,
-            columnSlots);
+            columnSlots, suppressedSlots);
         if (filters == null) return new TableFieldComponents.Rejected(foldRejections(errors));
         ConditionFilter fieldCondition;
         switch (conditionResolver.resolveField(fieldDef, parentTypeName)) {
@@ -3017,6 +3018,12 @@ class FieldBuilder {
         var throughList = conditionReadThroughList(filters, fieldDef);
         if (throughList != null) {
             errors.add(throughList);
+            return new TableFieldComponents.Rejected(foldRejections(errors));
+        }
+        var unread = unreadSuppressedSlots(suppressedSlots, filters,
+            parentTypeName + "." + fieldDef.getName());
+        if (unread != null) {
+            errors.add(unread);
             return new TableFieldComponents.Rejected(foldRejections(errors));
         }
         var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt.tableName());
@@ -3098,28 +3105,196 @@ class FieldBuilder {
      */
     private static Rejection conditionReadThroughList(List<WhereFilter> filters, GraphQLFieldDefinition fieldDef) {
         for (var filter : filters) {
-            ConditionFilter condition = switch (filter) {
-                case ConditionFilter cf -> cf;
-                case FkTargetConditionFilter fk -> fk.delegate();
-                default -> null;
-            };
+            ConditionFilter condition = authoredCondition(filter);
             if (condition == null) continue;
             for (var param : condition.params()) {
-                if (!(param.source() instanceof ParamSource.Arg arg)
-                        || !(arg.callSiteExtraction() instanceof CallSiteExtraction.NestedInputField nif)) {
+                if (!(param.source() instanceof ParamSource.Arg arg)) {
                     continue;
                 }
-                String list = listLevelOnPath(fieldDef, nif.outerArgName(), nif.path());
+                var read = arg.absoluteReadPath();
+                String list = listLevelOnPath(fieldDef, read.get(0), read.subList(1, read.size()));
                 if (list != null) {
                     return Rejection.structural("field '" + fieldDef.getName() + "' @condition method '"
                         + condition.methodName() + "': parameter '" + param.name() + "' reads '"
-                        + nif.outerArgName() + "." + String.join(".", nif.path()) + "', which descends"
+                        + String.join(".", read) + "', which descends"
                         + " into '" + list + "', a list of input objects with no single value below it;"
                         + " bind the whole list instead");
                 }
             }
         }
         return null;
+    }
+
+    /**
+     * A filter slot whose implicit predicate an enclosing {@code @condition(override: true)}
+     * suppressed and which carries no {@code @condition} of its own. Suppressing it is a claim that
+     * some condition on the consuming field reads it, which {@link #unreadSuppressedSlots} checks.
+     * Recorded where the suppression is decided, beside the column slots, so no second walk
+     * recomputes which slots an override covers.
+     *
+     * <p>{@code summary} names the slot in prose, {@code path} is its position from the consuming
+     * field's arguments (the argument first), {@code columns} are the columns its column binding
+     * names (empty when it has none), and {@code coordinate} and {@code location} are where a
+     * rejection for it is minted.
+     */
+    private record SuppressedSlot(String summary, List<String> path, List<ColumnRef> columns,
+                                  String coordinate, SourceLocation location) {}
+
+    private static SuppressedSlot suppressedField(InputField f, String containerSummary,
+            String outerArgName, List<String> leafPath) {
+        var path = new ArrayList<String>(leafPath.size() + 1);
+        path.add(outerArgName);
+        path.addAll(leafPath);
+        return new SuppressedSlot(containerSummary + ": input field '" + f.name() + "'",
+            List.copyOf(path), boundColumns(columnBindingOf(f, outerArgName, leafPath)),
+            f.qualifiedName(), f.location());
+    }
+
+    private static SuppressedSlot suppressedArgument(ArgumentRef ref, GraphQLFieldDefinition fieldDef,
+            String useSiteCoordinate) {
+        var argDef = fieldDef.getArgument(ref.name());
+        return new SuppressedSlot("argument '" + ref.name() + "'", List.of(ref.name()),
+            boundColumns(columnBindingOf(ref)), useSiteCoordinate,
+            argDef != null ? locationOf(argDef) : locationOf(fieldDef));
+    }
+
+    private static List<ColumnRef> boundColumns(Optional<ColumnBindingLedger.ColumnBoundSlot> slot) {
+        return slot.map(ColumnBindingLedger.ColumnBoundSlot::columns).orElse(List.of());
+    }
+
+    /**
+     * What the conditions on one consuming field read, as paths from the field's arguments.
+     * {@code wholes} are read with everything below them; {@code reached} are positions a bean
+     * reaches without reading them whole (its own, and each nested bean's), which is how a bean
+     * reads a list of input objects through a list-shaped nested binding. Each reached position
+     * keeps its bean's class, for the message naming the member the bean lacks.
+     *
+     * <p>A slot is read by a whole read at or above it, and by any read at or below it: a dotted
+     * path continuing past a {@code @nodeId} leaf reads one of its decoded key columns (the
+     * projection rail), which is a reading of the slot's value, and a bean reaching a list of
+     * input objects reaches the list.
+     */
+    private record ReadSet(Set<List<String>> wholes, Map<List<String>, ClassName> reached) {
+        ReadSet() {
+            this(new java.util.HashSet<>(), new LinkedHashMap<>());
+        }
+
+        boolean reads(List<String> slot) {
+            for (int i = 1; i <= slot.size(); i++) {
+                if (wholes.contains(slot.subList(0, i))) return true;
+            }
+            return java.util.stream.Stream.concat(wholes.stream(), reached.keySet().stream())
+                .anyMatch(read -> read.size() >= slot.size()
+                    && read.subList(0, slot.size()).equals(slot));
+        }
+
+        /** The deepest bean whose position is strictly above {@code slot}, or empty. */
+        Optional<ClassName> beanAbove(List<String> slot) {
+            for (int i = slot.size() - 1; i >= 1; i--) {
+                var bean = reached.get(slot.subList(0, i));
+                if (bean != null) return Optional.of(bean);
+            }
+            return Optional.empty();
+        }
+    }
+
+    /**
+     * Adds what a parameter whose value at {@code path} is transformed by {@code leaf} reads. The
+     * switch is exhaustive so a new {@link CallSiteExtraction} arm fails to compile here until its
+     * read is decided: a bean reads exactly what its bindings read; every other arm is handed the
+     * value whole, and what the method does with it is opaque.
+     */
+    private static void addReads(CallSiteExtraction leaf, List<String> path, ReadSet reads) {
+        switch (leaf) {
+            case CallSiteExtraction.InputBean bean -> {
+                reads.reached().put(path, bean.beanClass());
+                for (var binding : bean.fields()) {
+                    var bound = new ArrayList<>(path);
+                    bound.addAll(binding.accessPath());
+                    addReads(binding.leaf(), List.copyOf(bound), reads);
+                }
+            }
+            case CallSiteExtraction.Direct ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.EnumValueOf ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.ContextArg ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.JooqConvert ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.NodeIdDecodeKeys ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.NodeIdDecodeRecord ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.NodeIdDecodePolymorphicRecord ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.ElementRows ignored -> reads.wholes().add(path);
+            case CallSiteExtraction.JooqRecord ignored -> throw new IllegalStateException(
+                "a jOOQ record carrier at a @condition parameter reading '" + String.join(".", path)
+                + "'; ServiceCatalog.conditionCarrier refuses it");
+            case CallSiteExtraction.NestedInputField ignored -> throw new IllegalStateException(
+                "a descent as the leaf of the read at '" + String.join(".", path)
+                + "'; ParamSource.Arg.readLeaf unwraps the only one a parameter carries");
+        }
+    }
+
+    /**
+     * Checks that every slot an override suppressed is read by some parameter of some condition in
+     * the consuming field's final filter list: the field-level condition, the argument-level ones
+     * and the rewrapped input-field ones alike. Each unread slot mints a located
+     * {@link Rejection.AuthorError.OverrideSlotUnread} at its own definition; the returned
+     * consequence rejection is the consuming field's, or null when every slot is read.
+     *
+     * <p>The check lives in the walk rather than the store because a bean's binding set comes from
+     * reflection, which the store holds no relation for; the occurrence path keys the fact so it can
+     * move there without changing what it says.
+     */
+    private Rejection unreadSuppressedSlots(List<SuppressedSlot> slots, List<WhereFilter> filters,
+            String useSiteCoordinate) {
+        if (slots.isEmpty()) return null;
+        var reads = new ReadSet();
+        for (var filter : filters) {
+            var condition = authoredCondition(filter);
+            if (condition == null) continue;
+            for (var param : condition.params()) {
+                if (param.source() instanceof ParamSource.Arg arg) {
+                    addReads(arg.readLeaf(), arg.absoluteReadPath(), reads);
+                }
+            }
+        }
+        var unread = new ArrayList<String>();
+        for (var slot : slots) {
+            if (reads.reads(slot.path()) || readByTenantRouting(slot)) continue;
+            String occurrence = slot.path().size() == 1
+                ? useSiteCoordinate + "(" + slot.path().get(0) + ")"
+                : occurrencePath(useSiteCoordinate, slot.path().get(0),
+                    slot.path().subList(1, slot.path().size()));
+            var miss = reads.beanAbove(slot.path()).map(bean ->
+                new Rejection.AuthorError.OverrideSlotUnread.BeanMiss(bean.reflectionName(),
+                    slot.path().getLast()));
+            ctx.addDiagnostic(new ValidationError(slot.coordinate(),
+                new Rejection.AuthorError.OverrideSlotUnread(slot.summary(), occurrence, miss),
+                slot.location()));
+            unread.add(occurrence);
+        }
+        if (unread.isEmpty()) return null;
+        return Rejection.structural(unread.size() + " filter slot" + (unread.size() == 1 ? "" : "s")
+            + " whose implicit predicate @condition(override: true) suppresses "
+            + (unread.size() == 1 ? "is" : "are") + " read by no condition parameter: "
+            + String.join(", ", unread));
+    }
+
+    /**
+     * Whether the per-field tenant binding reads the slot: in a {@code <tenantColumn>} build a slot
+     * whose column binding names the tenant column routes the statement to that tenant's database,
+     * which is a reading of its value whatever the predicate does. The binding reads the same
+     * column ledger the slot was recorded beside, so the two agree on which slots it covers; where
+     * the routing then declines a slot, the tenant fold fails the build itself.
+     */
+    private boolean readByTenantRouting(SuppressedSlot slot) {
+        return slot.columns().stream().anyMatch(ctx.tenantScopes::isTenantColumn);
+    }
+
+    /** The authored condition a filter calls, or null for the generated implicit-predicate filter. */
+    private static ConditionFilter authoredCondition(WhereFilter filter) {
+        return switch (filter) {
+            case ConditionFilter cf -> cf;
+            case FkTargetConditionFilter fk -> fk.delegate();
+            case GeneratedConditionFilter ignored -> null;
+        };
     }
 
     /**
@@ -3165,7 +3340,8 @@ class FieldBuilder {
     private List<WhereFilter> projectFilters(List<ArgumentRef> refs, String parentTypeName,
                                              GraphQLFieldDefinition fieldDef,
                                              TableRef rt, String returnTypeName, List<Rejection> errors,
-                                             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots) {
+                                             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
+                                             List<SuppressedSlot> suppressedSlots) {
         var bodyParams = new ArrayList<BodyParam>();
         var argConditions = new ArrayList<WhereFilter>();
         boolean hadError = false;
@@ -3201,8 +3377,8 @@ class FieldBuilder {
                     String tiaSummary = "plain input type '" + tia.typeName() + "'";
                     walkInputFieldConditions(tia.fields(), useSiteCoordinate, tia.name(), List.of(),
                         enclosingOverride, tia.nonNull(),
-                        lookupBoundNames, implicitParams, columnSlots, argConditions, errors,
-                        tia.inputTable(), tiaSummary);
+                        lookupBoundNames, implicitParams, columnSlots, suppressedSlots, argConditions,
+                        errors, tia.inputTable(), tiaSummary);
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3216,7 +3392,8 @@ class FieldBuilder {
                     int errorsBefore = errors.size();
                     walkListLevel(listLevel, pia.fields(), useSiteCoordinate, pia.name(), List.of(),
                         fieldOverride, pia.nonNull(), Set.of(), implicitParams, columnSlots,
-                        argConditions, errors, rt, "plain input type '" + pia.typeName() + "'");
+                        suppressedSlots, argConditions, errors, rt,
+                        "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3231,8 +3408,8 @@ class FieldBuilder {
                     int errorsBefore = errors.size();
                     walkInputFieldConditions(pia.fields(), useSiteCoordinate, pia.name(), List.of(),
                         enclosingOverride, pia.nonNull(),
-                        Set.of(), implicitParams, columnSlots, argConditions, errors, rt,
-                        "plain input type '" + pia.typeName() + "'");
+                        Set.of(), implicitParams, columnSlots, suppressedSlots, argConditions, errors,
+                        rt, "plain input type '" + pia.typeName() + "'");
                     if (errors.size() > errorsBefore) hadError = true;
                     bodyParams.addAll(implicitParams);
                 }
@@ -3252,6 +3429,9 @@ class FieldBuilder {
                 case ArgumentRef.ScalarArg.ColumnBackedArg ca -> {
                     boolean autoSuppressed = ca.suppressedByFieldOverride()
                         || (ca.argCondition().isPresent() && ca.argCondition().get().override());
+                    if (ca.suppressedByFieldOverride() && ca.argCondition().isEmpty() && !ca.isLookupKey()) {
+                        suppressedSlots.add(suppressedArgument(ca, fieldDef, useSiteCoordinate));
+                    }
                     // Lookup-key args are consumed by LookupMappingResolver → LookupMapping and
                     // emitted via the VALUES+JOIN input-rows helper. They must not appear
                     // as GeneratedConditionFilter bodyParams.
@@ -3292,6 +3472,9 @@ class FieldBuilder {
                     // table inside a correlated EXISTS.
                     boolean autoSuppressed = cra.suppressedByFieldOverride()
                         || (cra.argCondition().isPresent() && cra.argCondition().get().override());
+                    if (cra.suppressedByFieldOverride() && cra.argCondition().isEmpty()) {
+                        suppressedSlots.add(suppressedArgument(cra, fieldDef, useSiteCoordinate));
+                    }
                     if (!autoSuppressed) {
                         ColumnRef column = predicateColumns(cra.binding(), cra.columns()).get(0);
                         String javaType = javaTypeFor(cra.extraction(), column);
@@ -3309,6 +3492,9 @@ class FieldBuilder {
                     // EXISTS when it is Remote.
                     boolean autoSuppressed = ccra.suppressedByFieldOverride()
                         || (ccra.argCondition().isPresent() && ccra.argCondition().get().override());
+                    if (ccra.suppressedByFieldOverride() && ccra.argCondition().isEmpty()) {
+                        suppressedSlots.add(suppressedArgument(ccra, fieldDef, useSiteCoordinate));
+                    }
                     if (!autoSuppressed) {
                         List<ColumnRef> columns = predicateColumns(ccra.binding(), ccra.columns());
                         BodyParam.ColumnPredicate inner = ccra.list()
@@ -3366,6 +3552,10 @@ class FieldBuilder {
      * ({@link #columnBindingOf(InputField, String, List)}) whether or not its implicit predicate
      * is emitted.
      *
+     * <p>{@code suppressedSlots} collects every field whose implicit predicate the enclosing override
+     * suppresses and that has no {@code @condition} of its own, the slots the override claims a
+     * condition reads; {@link #unreadSuppressedSlots} checks the claim.
+     *
      * <p>{@code outerArgName} is the top-level field-argument name (e.g. {@code "filter"}).
      * {@code pathPrefix} is the list of Map keys from {@code outerArgName} down to the parent of
      * {@code fields}; empty at the top level.
@@ -3385,6 +3575,7 @@ class FieldBuilder {
             boolean enclosingOverride, boolean effectiveNonNull, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
+            List<SuppressedSlot> suppressedSlots,
             List<WhereFilter> out,
             List<Rejection> walkRejections,
             TableRef resolvingTable,
@@ -3403,6 +3594,9 @@ class FieldBuilder {
             switch (f) {
                 case InputField.ColumnBackedField cf -> {
                     cf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
+                    if (enclosingOverride && cf.condition().isEmpty() && !lookupBoundNames.contains(cf.name())) {
+                        suppressedSlots.add(suppressedField(cf, containerSummary, outerArgName, leafPath));
+                    }
                     if (!enclosingOverride
                             && cf.condition().isEmpty()
                             && !lookupBoundNames.contains(cf.name())) {
@@ -3449,6 +3643,9 @@ class FieldBuilder {
                                 rf.joinPath(), rf.binding(), rf.columns(),
                                 new WireAddress(outerArgName, leafPath, rf.list())));
                     });
+                    if (enclosingOverride && rf.condition().isEmpty() && !lookupBoundNames.contains(rf.name())) {
+                        suppressedSlots.add(suppressedField(rf, containerSummary, outerArgName, leafPath));
+                    }
                     if (!enclosingOverride
                             && rf.condition().isEmpty()
                             && !lookupBoundNames.contains(rf.name())) {
@@ -3478,8 +3675,8 @@ class FieldBuilder {
                         nf.location());
                     walkListLevel(listLevel, nf.fields(), useSiteCoordinate, outerArgName, pathPrefix,
                         enclosingOverride, effectiveNonNull && nf.nonNull(), lookupBoundNames,
-                        implicitBodyParams, columnSlots, out, walkRejections, resolvingTable,
-                        containerSummary);
+                        implicitBodyParams, columnSlots, suppressedSlots, out, walkRejections,
+                        resolvingTable, containerSummary);
                 }
                 case InputField.NestingField nf -> {
                     nf.condition().ifPresent(c -> out.add(conditionResolver.rewrapForNested(c.filter(), outerArgName, leafPath)));
@@ -3487,8 +3684,8 @@ class FieldBuilder {
                         || nf.condition().map(ArgConditionRef::override).orElse(false);
                     walkInputFieldConditions(nf.fields(), useSiteCoordinate, outerArgName, leafPath,
                         nestOverride, effectiveNonNull && nf.nonNull(),
-                        lookupBoundNames, implicitBodyParams, columnSlots, out, walkRejections,
-                        resolvingTable, containerSummary);
+                        lookupBoundNames, implicitBodyParams, columnSlots, suppressedSlots, out,
+                        walkRejections, resolvingTable, containerSummary);
                 }
                 case InputField.ConditionOwnedField cof ->
                     // The explicit @condition(override: true) method owns the WHERE predicate
@@ -3505,11 +3702,13 @@ class FieldBuilder {
                     // admitted when an enclosing @condition(override: true) resolves it, and
                     // otherwise the use-keyed cascade verdict mints into the build diagnostics
                     // at this use-site join, with the consuming field keeping one consequence
-                    // rejection.
+                    // rejection. Admitted is a claim, recorded for the reader check.
                     if (uf.condition().isPresent()) {
                         out.add(conditionResolver.rewrapForNested(
                             uf.condition().get().filter(), outerArgName, leafPath));
-                    } else if (!enclosingOverride) {
+                    } else if (enclosingOverride) {
+                        suppressedSlots.add(suppressedField(uf, containerSummary, outerArgName, leafPath));
+                    } else {
                         mintCascadeVerdict(uf, resolvingTable, containerSummary,
                             useSiteCoordinate, outerArgName, leafPath);
                         walkRejections.add(Rejection.structural(containerSummary
@@ -3558,12 +3757,25 @@ class FieldBuilder {
             boolean enclosingOverride, boolean listNonNull, Set<String> lookupBoundNames,
             List<BodyParam> implicitBodyParams,
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
+            List<SuppressedSlot> suppressedSlots,
             List<WhereFilter> out,
             List<Rejection> walkRejections,
             TableRef resolvingTable,
             String containerSummary) {
         boolean suppressed = enclosingOverride
             || level.condition().map(ArgConditionRef::override).orElse(false);
+        // The list is the unit a reader has to reach: its elements are compared as rows, so the
+        // level is recorded once rather than per element field.
+        if (enclosingOverride && level.condition().isEmpty()) {
+            var listPath = new ArrayList<String>(level.listPath().size() + 1);
+            listPath.add(outerArgName);
+            listPath.addAll(level.listPath());
+            suppressedSlots.add(new SuppressedSlot(
+                level.listPath().isEmpty()
+                    ? "argument '" + level.name() + "'"
+                    : containerSummary + ": list-of-input filter field '" + level.name() + "'",
+                List.copyOf(listPath), List.of(), level.coordinate(), level.location()));
+        }
         int offending = 0;
         if (level.condition().isPresent()) {
             var filter = level.condition().get().filter();

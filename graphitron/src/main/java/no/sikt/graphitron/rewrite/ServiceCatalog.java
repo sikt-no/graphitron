@@ -1485,7 +1485,8 @@ class ServiceCatalog {
                         new WireCoercionError.ConditionBeanAtInputField(inputField.inputTypeName(),
                             inputField.fieldName(), typeName, where));
                     case ConditionSite.Consuming consuming -> switch (beans.buildBean(bean, slot,
-                            pathUseSite(path, consuming, slotTypes))) {
+                            pathUseSite(path, consuming, slotTypes),
+                            InputBeanResolver.BindingAxis.CONDITION)) {
                         case InputBeanResolver.CarrierBuild.Ok ok -> new ArgExtraction.Resolved(ok.extraction());
                         case InputBeanResolver.CarrierBuild.Fail f -> new ArgExtraction.Rejected(f.rejection());
                     };

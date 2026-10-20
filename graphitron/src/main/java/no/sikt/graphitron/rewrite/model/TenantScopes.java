@@ -32,6 +32,12 @@ public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Con
     boolean tenantScoped(String qualifiedTableName);
 
     /**
+     * True when {@code column} is the configured tenant column, matched by name as the per-field
+     * tenant binding reads it; false for every column in a single-tenant build.
+     */
+    boolean isTenantColumn(ColumnRef column);
+
+    /**
      * Single-tenant: no {@code <tenantColumn>} element is configured, so no table carries a
      * tenant scope and no per-field tenant binding exists.
      */
@@ -39,6 +45,10 @@ public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Con
         public static final None INSTANCE = new None();
 
         @Override public boolean tenantScoped(String qualifiedTableName) {
+            return false;
+        }
+
+        @Override public boolean isTenantColumn(ColumnRef column) {
             return false;
         }
     }
@@ -86,6 +96,11 @@ public sealed interface TenantScopes permits TenantScopes.None, TenantScopes.Con
 
         @Override public boolean tenantScoped(String qualifiedTableName) {
             return tenantScopedTables.contains(qualifiedTableName);
+        }
+
+        @Override public boolean isTenantColumn(ColumnRef column) {
+            return columnName.equalsIgnoreCase(column.javaName())
+                || columnName.equalsIgnoreCase(column.sqlName());
         }
     }
 }

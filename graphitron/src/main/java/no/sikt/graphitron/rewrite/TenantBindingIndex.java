@@ -1613,8 +1613,7 @@ public record TenantBindingIndex(
         }
 
         private boolean matchesTenantColumn(ColumnRef column) {
-            return scopes.columnName().equalsIgnoreCase(column.javaName())
-                || scopes.columnName().equalsIgnoreCase(column.sqlName());
+            return scopes.isTenantColumn(column);
         }
 
         // ===== Direct bindings off the coordinate's operation member rows =====

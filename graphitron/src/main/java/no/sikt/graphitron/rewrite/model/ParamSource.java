@@ -88,6 +88,34 @@ public sealed interface ParamSource
                 segments.subList(1, segments.size()).stream().map(PathExpr.Segment::name).toList(),
                 extraction);
         }
+
+        /**
+         * Where the parameter reads from, as names from the consuming field's arguments down: the
+         * outer argument first, then each input field the read descends through. Not {@link #path}
+         * alone: after an input-field {@code @condition} is rewrapped, {@link #path} stays relative
+         * to that input field, and only the {@link CallSiteExtraction.NestedInputField} the rewrap
+         * installed carries the descent from the argument.
+         */
+        public List<String> absoluteReadPath() {
+            var call = callSiteExtraction();
+            if (call instanceof CallSiteExtraction.NestedInputField nested) {
+                var full = new java.util.ArrayList<String>(nested.path().size() + 1);
+                full.add(nested.outerArgName());
+                full.addAll(nested.path());
+                return List.copyOf(full);
+            }
+            return List.of(path.headName());
+        }
+
+        /**
+         * The transform applied to the value at {@link #absoluteReadPath}: {@link #extraction}, or
+         * the leaf of the descent a rewrap installed.
+         */
+        public CallSiteExtraction readLeaf() {
+            return extraction instanceof CallSiteExtraction.NestedInputField nested
+                ? nested.leaf()
+                : extraction;
+        }
     }
 
     /**

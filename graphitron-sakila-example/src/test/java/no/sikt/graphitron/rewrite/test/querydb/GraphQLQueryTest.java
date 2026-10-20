@@ -506,6 +506,24 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void customersByDistrictBean_fieldWithFieldNameAndReference_reachesTheBeanByItsGraphqlName() {
+        // The bean's member is named after the GraphQL field; @field(name:) names the column. When
+        // the member was looked up by the column name instead, the builder never set it, the method
+        // saw null, and the filter returned every customer.
+        Map<String, Object> data = execute(
+            "{ customersByDistrictBean(filter: {addressDistrict: \"Lazio\"}) { lastName } }");
+        assertThat(data).extractingByKey("customersByDistrictBean", as(list(Map.class)))
+            .extracting(c -> c.get("lastName")).containsExactly("Johnson", "Brown");
+    }
+
+    @Test
+    void customersByDistrictBean_valueThatMatchesNothing_returnsNoRows() {
+        Map<String, Object> data = execute(
+            "{ customersByDistrictBean(filter: {addressDistrict: \"Atlantis\"}) { lastName } }");
+        assertThat(data).extractingByKey("customersByDistrictBean", as(list(Map.class))).isEmpty();
+    }
+
+    @Test
     void filmsByTitleBeans_listOfRecordBeansAtAnArgumentCondition_filtersByEachMember() {
         Map<String, Object> data = execute(
             "{ filmsByTitleBeans(titles: [{title: \"ACE GOLDFINGER\"}, {title: \"AGENT TRUMAN\"}]) { filmId } }");

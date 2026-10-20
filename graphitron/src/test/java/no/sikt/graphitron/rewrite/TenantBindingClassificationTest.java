@@ -1681,12 +1681,16 @@ class TenantBindingClassificationTest {
     }
 
     @Test
-    void multiTablePolymorphicNodeIdUnderFieldLevelOverrideDeclinesWithItsOwnMessage() {
-        // The suppressed carrier still reaches the fold, and the decline channel, not a mint-side
-        // clause, keeps it from routing.
+    void multiTablePolymorphicNodeIdUnderFieldLevelOverrideIsReadByNothing() {
+        // The override suppresses the id's predicate and its method binds nothing; a dispatched id
+        // cannot be bound whole by a field-level condition, and the Inventory branch's key does not
+        // embed the tenant column, so neither a parameter nor the routing reads it there. The
+        // reader check refuses the field before the fold sees it, and no mint-side clause fires.
         for (String members : List.of("Inventory | FilmActor", "FilmActor | Inventory")) {
             var schema = build(occSchema(members, FIELD_OVERRIDE));
-            assertNoTenantBinding(schema, "occ", DECLINE);
+            assertThat(schema.diagnostics())
+                .anyMatch(e -> e.rejection() instanceof Rejection.AuthorError.OverrideSlotUnread u
+                    && u.occurrencePath().equals("Query.occ(id)"));
             assertThat(schema.tenantBindings().rejections())
                 .noneMatch(e -> e.rejection() instanceof Rejection.AuthorError.NoTenantBinding r
                     && r.coordinate().equals("Query.occ")

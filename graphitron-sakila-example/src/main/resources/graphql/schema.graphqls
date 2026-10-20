@@ -165,6 +165,12 @@ input FilmTitleInput { title: String }
 input FilmLengthRangeInput { min: Int max: Int }
 input FilmSearchInput { title: String length: FilmLengthRangeInput }
 input FilmSearchWrapInput { search: FilmSearchInput }
+# A filter field whose column is named with @field(name:) and reached through @reference: the
+# column axis reads the directive, and the bean a @condition(override: true) receives binds the
+# field by its GraphQL name (Query.customersByDistrictBean).
+input CustomerDistrictBeanInput {
+    addressDistrict: String @field(name: "district") @reference(path: [{key: "customer_address_id_fkey"}])
+}
 
 type Query {
     customers(active: Boolean @field(name: "ACTIVEBOOL")): [Customer!]! @auth(role: "admin")
@@ -211,6 +217,10 @@ type Query {
         @condition(condition: {
             className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
             method: "filmSearchBean", argMapping: "search: wrap.search"}, override: true)
+    customersByDistrictBean(filter: CustomerDistrictBeanInput): [Customer!]! @defaultOrder(primaryKey: true)
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.BeanConditionFixtures",
+            method: "customerDistrictBean"}, override: true)
     # The @service twin of filmsByTitleBean, taking the same bean class on the same parent: the
     # fetchers class and the conditions class each host their own builder for it.
     filmTitleEcho(by: FilmTitleInput): String @service(service: {

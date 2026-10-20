@@ -39,6 +39,7 @@ class ConditionParameterCarrierPipelineTest {
         input CarrierFilter { title: String }
         input CarrierOuter { title: String inner: CarrierFilter inners: [CarrierFilter!] }
         input CarrierNestedFilter { title: String inner: CarrierFilter }
+        input CarrierInnerOnly { inner: CarrierFilter }
         """;
 
     // ===== Map shapes pass through =====
@@ -72,7 +73,7 @@ class ConditionParameterCarrierPipelineTest {
 
     @Test
     void aDottedPathToAnInputObjectTakesAMap() {
-        var cf = fieldCondition(fieldLevel("outer: CarrierOuter", "carrierMap", "input: outer.inner"));
+        var cf = fieldCondition(fieldLevel("outer: CarrierInnerOnly", "carrierMap", "input: outer.inner"));
         var extraction = argExtraction(cf, "input");
         assertThat(extraction).isInstanceOf(CallSiteExtraction.NestedInputField.class);
         assertThat(((CallSiteExtraction.NestedInputField) extraction).leaf())
@@ -116,7 +117,7 @@ class ConditionParameterCarrierPipelineTest {
 
     @Test
     void aDottedPathToAnInputObjectBuildsABeanAtTheLeaf() {
-        var cf = fieldCondition(fieldLevel("outer: CarrierOuter", "carrierRecord", "input: outer.inner"));
+        var cf = fieldCondition(fieldLevel("outer: CarrierInnerOnly", "carrierRecord", "input: outer.inner"));
         var extraction = argExtraction(cf, "input");
         assertThat(extraction).isInstanceOf(CallSiteExtraction.NestedInputField.class);
         var nested = (CallSiteExtraction.NestedInputField) extraction;

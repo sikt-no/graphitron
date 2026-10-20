@@ -118,6 +118,14 @@ class TestConditionStub {
     }
 
     /**
+     * An {@code override: true} fixture that reads the whole {@code filter} argument as the delivered
+     * map, so every filter slot the override suppresses has a reader.
+     */
+    public static Condition wholeFilter(org.jooq.Table<?> table, java.util.Map<String, Object> filter) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
      * Fixture: arg-level / input-field {@code @condition} on a multitable
      * interface/union query field. The {@code Table<?>} first parameter serves every participant
      * branch (the emitter passes each branch's own {@code stage1_<Type>} alias); {@code firstName}

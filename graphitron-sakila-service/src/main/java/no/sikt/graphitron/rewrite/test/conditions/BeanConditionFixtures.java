@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.test.conditions;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Address;
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Customer;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import org.jooq.Condition;
 import org.jooq.Table;
@@ -31,6 +33,19 @@ public final class BeanConditionFixtures {
             return DSL.noCondition();
         }
         return table.field(Film.FILM.TITLE).in(titles.stream().map(FilmTitleFilter::title).toList());
+    }
+
+    /**
+     * A setter bean whose member is named after a filter field carrying {@code @field(name:)} and
+     * {@code @reference}: customers whose address is in the filter's district.
+     */
+    public static Condition customerDistrictBean(Table<?> table, CustomerDistrictFilter filter) {
+        if (filter == null || filter.getAddressDistrict() == null) {
+            return DSL.noCondition();
+        }
+        return table.field(Customer.CUSTOMER.ADDRESS_ID).in(
+            DSL.select(Address.ADDRESS.ADDRESS_ID).from(Address.ADDRESS)
+                .where(Address.ADDRESS.DISTRICT.eq(filter.getAddressDistrict())));
     }
 
     /**
