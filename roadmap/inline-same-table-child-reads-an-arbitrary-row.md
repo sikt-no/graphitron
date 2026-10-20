@@ -1,7 +1,7 @@
 ---
 id: R1045
 title: "An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row"
-status: In Review
+status: Ready
 bucket: bug
 priority: 1
 theme: classification-model
@@ -157,3 +157,29 @@ Landed in one commit on the plan above. Facts the Done reviewer needs that the p
 - *Synthesize a primary-key self-correlation so the existing multiset arm reads the parent's row.* Reuses the most, but a synthesized correlation is indistinguishable from an authored `@reference` or an inferred foreign key in `ParentCorrelation`, it fails on tables with no primary key, it scans the table by key once per parent row, and a nullable child never collapses to `null`, breaking Graphitron 9 parity.
 - *Reject every unnarrowed shape, permanently.* Rejected by the production evidence: four sis fields depend on the parent-row reading.
 - *Ship a build-time rejection of the single argument-free shape first, as an interim safety net (requested by the sis session).* Not chosen. It passes the same Spec → Ready gate as the fix, so it would land only marginally sooner; v10 is unreleased and no production `_entities(FeideBruker)` calls were seen, so the exposure stays latent in the meantime; and it would make sis rewrite four fields to clear a rejection that the fix then removes. The fix reuses the return type's anchor unit, the single-row multiset reader and the nesting null rule, and its one open question (the jOOQ spike) has a fallback, so it does not need a holding position. If implementation stalls, the interim rejection is cheap to add then.
+
+## Reviewer findings
+
+### In Review → Done, 2026-10-20: rework
+
+The top-level delivery matches the plan and its evidence holds. Classification, the leaf, the single-row multiset over the host alias, the shared null rule, the rejections, the diagnostics and the manual all read as approved, and the documented substitutions (fixtures, the dropped alias case that R708 owns, the presence columns riding in the child's row) are sound. The two-level same-table cycle test also exercises the result-key collision the plan chose the multiset to avoid. One addition fails both gate questions.
+
+**Question 1, correctness of added scope.** The implementation notes say the leaf is admitted at nested depth (`GraphitronSchemaValidator.isNestedWireableLeaf`). That admission was not in the plan, and the shape it admits crashes the generator. A same-row child inside a plain nested object reaches `FetcherRegistrationsEmitter.nestedBody`, which calls `registrationEntry(null, ...)`. The `null` is the schema, and `FetcherEmitter.bindRaw` dereferences it for `sameRowNullContract`. Reproduced on the sakila example by adding
+
+```graphql
+type FilmProbeNest { rating: String @field(name: "RATING")  row: FilmSameRow }
+# and on Film:  probeNest: FilmProbeNest
+```
+
+`generate` then fails with `Cannot invoke "GraphitronSchema.sameRowNullContract(...)" because "schema" is null`: a build crash, not a diagnostic. Before this item the same SDL classified as an inline `TableField` and built.
+
+**Question 2, evidence.** No test covers the leaf at nested depth, which is how the crash got through.
+
+**What satisfies it.** Either:
+
+- *Keep the admission.* Thread the schema through `nestedBody` into `registrationEntry`, and correct the comment above that call, which says the path never reads the schema. Then add an execution test that reads a same-row child under a nested object, each film getting its own row with a foreign-key child resolving. The reviewer checked this remedy with a scratch patch (three lines in `FetcherRegistrationsEmitter`) and the probe above: it generates, compiles, and returns each film's own `filmId`, `title` and `language`.
+- *Or withdraw it.* Drop the leaf from `isNestedWireableLeaf`, so the shape gets the nested-depth deferral diagnostic, and pin that with a pipeline test.
+
+Either way the spec body should name the nested-depth behaviour as shipped.
+
+**Build note, not this item's.** `mvn install -Plocal-db` is red in `graphitron-sakila-example` on `GraphQLQueryTest`'s whole-table film reads. In three runs it failed on `filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` and `inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds`, where rows written concurrently by `ServiceListGapExecutionTest` and the tenant tests show up. R863 already records exactly this. With class parallelism off (`-Djunit.jupiter.execution.parallel.enabled=false`) the module passes, 1152 tests and 0 failures, and every R1045 test passes in both modes.
