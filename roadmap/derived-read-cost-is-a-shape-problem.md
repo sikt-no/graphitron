@@ -374,17 +374,24 @@ running from the participant's table toward a `@nodeId` target in key hops alone
       generator does, and R1037 changes both, with the `@reference` reference page. Nothing in R876
       waits on it; `roadmap/audits/2026-10-14-reference-keys-in-consumer-schemas.md`.
   * **A path carries where each row comes from** `open`, after the step rules and "A field's source
-    is one relation with subtypes". Designed with Alf 2026-10-19. Two relations for an output field,
-    written by the walk rather than by `GraphitronAnchor`:
-    * `graphitron_field_path`, keyed by the field and the position, its field a reference into
-      `graphitron_field_source_table`: the path of a field whose rows come from one place, its
-      parent's table, a consumed key's table or a root's function.
-    * `graphitron_nested_field_path`, keyed by the field, the entering field and the position, the
-      entering field a reference into `graphitron_field_source_table`: the path of a field on a
-      table-less nested type, walked once per field the rows entered by, found by unwinding the
-      nesting until a field with a source. `OccupantLocation.occupantDistrict` is two walks, from
-      `customer` under `Customer.location` and from `store` under `Store.location`, which is the
-      per-owner projection the generator emits; two entering fields on one table are two walks.
+    is its parent's result". Designed with Alf 2026-10-19 and 2026-10-20. Two relations for an output
+    field, written by the walk rather than by `GraphitronAnchor`:
+    * `graphitron_field_path`, keyed by the field, the table it starts from and the position, the
+      start a reference into `graphitron_result_table` for the field's parent type, carrying that
+      relation's whole key, the type and the table's source, schema and name: a field is
+      walked once per table its parent's row is a row of. A parent bound to a table has one; a
+      nested type reached from several tables has one each, so `OccupantLocation.occupantDistrict`
+      is two walks, from `customer` and from `store`, the per-owner projection the generator emits,
+      and two fields nesting the type on one table share one walk. One relation and not two,
+      because a nested field and a bound one start from the same fact keyed the same way.
+    * `graphitron_routine_field_path`, keyed by the field and the position, the field a reference
+      into `graphitron_producer_routine`: the path of a root field led by `@routine`, whose query
+      starts on the routine's result. Position 0 is the routine, from nothing to its result table,
+      and every element after it walks on from there.
+
+    Both are written after `Fetchers`, which writes the results and the routine producers they
+    reference. The reference into the result holds across captures, a result being marked and swept
+    and keeping its key while a reading still reaches it.
 
     Each row adds `from_table`, `to_table` and how it joins. The walk exists in part today:
     `FieldReferenceStepTargets` walks forward over `ReferenceStepWalk` from the parent type's own
@@ -401,8 +408,8 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     resolved path toward a target type is the walk where it reaches that type's table; a path that
     stops short is a defect naming the position it stopped at, and one that completes at another
     table is a defect naming that table. A field with a written path and no source is a defect of
-    its own, nothing stating where it reads from, and that one covers a root field's path, a root
-    having no source to join from. These are what `CHAIN_WITHOUT_TARGET` and the chain-break codes
+    its own, nothing stating where it reads from, and that one covers a root field's path not led by
+    `@routine`, a root having no source to join from. These are what `CHAIN_WITHOUT_TARGET` and the chain-break codes
     narrow to, and the stored resolution's tail and head flags go.
   * **A root field's `@reference` without a leading `@routine` is rejected** `open`. A root has no
     source, so its query starts on its target and a path there has nothing to join. Today a root
@@ -455,12 +462,54 @@ running from the participant's table toward a `@nodeId` target in key hops alone
     into the named table from anywhere, which ignores the source.
 
 * **Every field has a path, the written one or the one discovery implies** `open`, after the
-  walks agree. A table-backed field's path is the `@routine` and `@reference` elements it
-  wrote, or where it wrote none the key discovery finds between its source and its target type's
-  table, or nothing at all for a leaf read on its source's own table. Stated as links like the
-  written ones, so the target table is always where a path ends and no reader falls back to
-  discovery for itself. The target type's binding is then the anchor discovery reads, and for a
-  written path a check: a written path ending anywhere else is a defect.
+  walks agree. Ruled with Alf 2026-10-20: moving from a source to a target is a join and the path is
+  how the join is done, so a field with a source table and a target table has path rows or it
+  cannot join. Its path is the `@routine` and `@reference` elements it wrote, or where it wrote
+  none the one key discovery finds between its source and its target type's table, stated as rows
+  like the written ones, so the target table is always where a path ends and no reader falls back
+  to discovery for itself. The target type's binding is then the anchor discovery reads, and for a
+  written path a check: a written path ending anywhere else is a defect. The target relations are
+  stated without the path, and the path is derived last. Where nothing is written:
+  * no key or several between two tables is a defect, as the generator refuses it today;
+  * the source's own table with nothing written is no join, discovery never joining a table to
+    itself. A single-valued field with no arguments reads its parent's own row, as R1045 reads it,
+    which needs no path any more than a nested field does; any other such field is a defect. A
+    self-reference is written, and is a self-join oriented as R1037 rules. On sakila the
+    one self-referencing key in use, `category_parent_category_id_fkey`, is written by all four
+    `Category` fields that ride it;
+  * a field of a union or interface type is discovered per member, into its participant path, as
+    `Address.occupants` reaches `customer` and `staff` by a key each.
+
+  Fields with no path at all, each for a reason of its own:
+  * a root field: it has no source and the query starts on its target. A root led by `@routine`
+    is the exception, its query starting on the routine's result and its path the routine
+    producer's own;
+  * a `@service` field: it reaches the service's result, and there is no path to a result;
+  * a field on a nesting type, which reads the row its entering field's statement stands on;
+  * a field returning the table whose record its parent holds: a `LOOKUP` producer that refetches
+    the row by its key, a `SELECT` from the keys as values joined to the table. Ruled with Alf
+    2026-10-20: moving back into the tablescape always refetches, and a record a service handed
+    back is never read as the row; it is an OBJECT, read through the Record API, which nothing
+    selected. `FilmServicePayload.film` is one, its payload holding the `FilmRecord` its service
+    returned; a `RecordN` or `RowN` matching the table's key and `@sourceRow` are the other two
+    ways a result leads back to a table. A field under such a parent reaching another table walks
+    its path from the record's table in that new statement, a start no `graphitron_result_table`
+    row states, the parent holding an object: it is the consume step's, under "A consumed key is a
+    source";
+  * a slot of a pivot type: it reads the aggregate its entering `@pivot` field's path reached,
+    and a `@reference` there is a defect. The `@pivot` field itself has a source and a
+    path, which ends at the attribute table it aggregates rather than at a table of its type.
+
+  * **Whether a same-table field narrowed by its arguments disregards its source** `open`, a
+    question. R1045 keeps such a field, a list or one with a `@condition` or `@lookupKey` and no
+    `@reference`, as a read of the whole table narrowed by its arguments, the same under every
+    parent. That is a field with a source whose query ignores it, which this node has no row
+    for: it is neither a join nor the parent's own row.
+
+  Counted on sakila 2026-10-20, the (field, target type) pairs with a source table, a target table
+  and nothing written: 27. Nineteen join by one key; six are record-class carriers on their own
+  table, `LOOKUP` producers that refetch by key; two are `@service` fields with two keys between
+  the tables, which have no path.
 * **The path is stated at the argument and input-field grains** `open`, after the two relations at
   the field grain. `@reference` and `@referenceFor` are written at three coordinates and only the
   field grain has a chain relation; both groupings are stated at the other two.
@@ -974,8 +1023,8 @@ and the emitters read, and it goes when nothing reads what it builds.
     states whole, and totality is what the defect model's gate checks.
     * **A field's source says how many objects arrive** `blocked`, on the fetcher, its reader.
       Dissolved with no reader; "Every field has one fetcher" says where it is resurrected from.
-      An arrival fact rather than the source: it returns under its own name, since
-      `graphitron_field_source` is the supertype below.
+      An arrival fact rather than the source: it returns under its own name, the source being
+      the parent's result below.
     * **The source object is stated by `graphitron_` relations** `open`. Whether a type is
       table-bound, a record, or a nesting type passing its parent's row through.
       * **A type's backing is anchored by the graphitron gatherer** `done`.
@@ -987,25 +1036,39 @@ and the emitters read, and it goes when nothing reads what it builds.
         grounding being a `PRODUCER` row; the seeded cases are fact documents.
       * **Two backings for one type is a defect** `open`. What `intent_type_backing_conflict`
         reports, as a code at the type's declaration.
-      * **A field's source is one relation with subtypes** `open`; the source object, the consume
-        step and the path wait on it. Designed with Alf 2026-10-19. `graphitron_field_source` is the
-        supertype, one row per output field, its kind saying what arrives at the field: `NONE` at a
-        root; `ROW` where a table's rows arrive, stated in `graphitron_field_source_table` with that
-        one table, a root `@routine`'s function among them; `OBJECT` where a Java object arrives,
-        stated in `graphitron_field_source_object`; and `NESTED` where the parent type binds
-        nothing and is nested in other fields, which has no subtype, its rows being another
-        field's. Each kind has one row per field, so `graphitron_field_source_table` stops being
-        one or several. A field reached under more than one kind is a defect for now. A gate holds
-        every field to its row or a defect. The `INHERITED` arm of today's source rule becomes the
-        `NESTED` kind, and the tables it collected per nested field go: a nested field's path keys
-        into the source of the field its rows entered by, under "A path carries where each row
-        comes from".
-      * **A field's source object is stated** `open`. `graphitron_field_source_object`, one row per
-        field whose parent arrives as a Java object rather than a row, keyed by the field with the
-        class a foreign key into the code family: the parent type's backing, passed down through
-        nesting types with neither a table nor a backing of their own. Only the class; its kind, its
-        members and whether it is a jOOQ record are joins. A row is
-        `graphitron_field_source_table`'s, so the source object says nothing about tables.
+      * **A field's source is its parent's result** `open`. Ruled with Alf 2026-10-20: what arrives
+        at a field is what its parent type holds, so a field's source is a join on
+        `graphitron_result` and no relation of its own; `graphitron_field_source`, designed
+        2026-10-19 as a supertype with a kind per field, would restate per field what the result
+        states per type, and is not built. The kinds are the joins: nothing at a root type, which
+        holds no result; a row or an object, the parent's shape, an object's class
+        `graphitron_result_class`'s; a slot one whose parent's row is
+        `graphitron_result_pivot`'s, asked first, since a type nested under a pivot type inherits
+        the pivot's origin and not a table; a nested field one whose parent holds a row with a
+        `graphitron_result_table` row and binds no table; a table's record a service hands back is
+        an OBJECT, so no row comes from a record class and none is nested. A type with two shapes is
+        none of these, as the reader rule skips it, and a type whose binding is ambiguous is bound,
+        not nested. A pivot is not nesting: a nested field reads the row its
+        entering field stands on, a slot the aggregate the `@pivot` field's path reached, so a
+        `@reference` on a slot is a defect. The target does not join this way: a field's target is
+        its field type, stated in `graphitron_field_target`, the result being what arrives and not
+        what a field reaches.
+
+        One shape per type is `RESULT_SHAPES_CONFLICT`, ruled with Alf 2026-10-20 over stating the
+        shape per entering field, which would make every rule and reader ask under which entering
+        field as well and buys nothing a consumer writes. Measured 2026-10-20 on captures of the four
+        Graphitron 10 subgraphs at fs-plattform `df42883314` (kompetanse, opptak,
+        utdanningsregisteret, tilgangsstyring), no type with no table is reached two ways. Sakila's
+        two fixtures that are split into a type per way, with their execution tests:
+        `TranslatedTexts`, reached by four `@pivot` fields, by `PivotNestingHost.texts` and by
+        `Query.pivotServiceTexts @service`, and `FilmBlurb`, nested by `Film.blurb` and read off
+        `FilmBlurbHolder.blurb`'s object. The classifier refuses the shape, the validator mirrors it
+        and the editor shows it.
+        * **`graphitron_field_source_table` dissolves into `graphitron_result_table`** `open`. Its
+          `SOURCE_TYPE`, `INHERITED` and `RECORD_CLASS` arms are the parent type's result table,
+          and its readers, the path's starts among them, read that; `SOURCE_ROW` waits for "A
+          consumed key is a source".
+        * **A slot writing `@reference` is a defect** `open`, a code at the slot.
     * **A field's target is its target type** `done`. `graphitron_field_target` holds one row per
       field: its target type unwrapped from list, non-null and connection wrapping, scalars
       included, with the connection beside it; kind, participants and table are joins on the target
@@ -1066,17 +1129,32 @@ and the emitters read, and it goes when nothing reads what it builds.
         parent binds a table, `INHERITED` through object types with no table of their own. The head
         walk seeds from it, so `graphitron_field_table.from_*` has no reader; the cases are
         `field-source-table`.
-      * **A root field led by `@routine` reads from the routine's result** `open`, after the
-        supertype. A root has no source, and a leading routine is where its query starts instead of
-        its target: a `ROW` source whose table is the routine's result, a `sql_table` row of type
-        `FUNCTION`, so the foreign key holds. A table-less type such a field returns is `NESTED`,
-        so tilgangsstyring's `Brukertilgang`, returned by `Query.mineTilganger @routine` with no
-        `@table` and carrying three `@reference` fields, has its fields' paths walked from the
-        function result, where today they have no start; read off the rule and the SDL, not a
-        capture. Sakila's `Tilgang` has no field with a path.
-      * **A producer's consume step is stated** `open`, after the source object.
+      * **A root field led by `@routine` starts on the routine's result** `open`. Ruled with Alf
+        2026-10-20: a root has no source, and a routine is a producer, `graphitron_producer_routine`
+        naming the routine it calls; the producer states where its query starts, the routine's
+        result table, and its path is `graphitron_routine_field_path`'s, under "A path carries where
+        each row comes from". Measured 2026-10-20: tilgangsstyring has eight root fields led by
+        `@routine`, seven of them with a `@reference` after it (`Query.mineSynligeOrganisasjoner`
+        rides a key from the result to `organisasjon`), and sakila 23, thirteen with elements after
+        it, writes among them (`Mutation.rentFilmCustomer` two keys on to `customer`); opptak,
+        utdanningsregisteret and kompetanse have none. Where nothing follows the routine the field's
+        type is bound to the result itself, as `Query.mineTilganger`'s `Brukertilgang` is to
+        `mine_tilganger`, and there is no join.
+        * **The sql family states a routine's result table** `done`, already. A table-valued
+          function is one database object read two ways, a `FUNCTION` row of `sql_table` and a
+          `sql_routine` row, the reading writing the routine from the table, so the two share their
+          key, and `sql_routine`'s declaration makes that join the statement on purpose: a routine
+          with no `RETURNS TABLE` form has no table, so table-valuedness is a join and not a
+          column, and no foreign key holds every routine to a table. On sakila and the fs-plattform
+          captures of 2026-10-20 every routine has its table and every `FUNCTION` table its
+          routine. A routine producer's result table is therefore the key
+          `graphitron_producer_routine` already holds, joined to `sql_table`; nothing is matched by
+          name. Read 2026-10-20: the gap this node named was the earlier `FUNCTION` source rule's
+          match on spelled names, not the catalog's.
+      * **A producer's consume step is stated** `open`, after the parent's result.
         `graphitron_field_source_key`, one row per field that takes keys from its source object,
-        keyed by the field with a foreign key into `graphitron_field_source_object`: how it takes
+        keyed by the field, its parent type's object a `graphitron_result_class` row, whose class
+        is `graphitron_type_backing`'s string with no reference into the code family: how it takes
         them and the table they match. `SOURCE_ROW`: `@sourceRow`'s method, called on the object,
         returns the source-side columns of the path's first key, the method a reference into the code
         family. `RECORD`: the object is the table's own record, its key read straight off it. Later a
