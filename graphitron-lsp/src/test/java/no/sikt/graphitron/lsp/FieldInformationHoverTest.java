@@ -31,6 +31,9 @@ class FieldInformationHoverTest {
             films: [Film]
             twins: [Twins]
             card: FilmCard @service(service: {className: "%s", method: "makeFilmRecord"})
+            hopped(actorId: Int!, minLength: Int!): [Film!]!
+                @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                @reference(path: [{table: "film"}])
         }
 
         type Film @table(name: "film") {
@@ -39,6 +42,11 @@ class FieldInformationHoverTest {
             titel: String
             language: Language @reference(path: [{key: "film_language_id_fkey"}])
             details: FilmDetails
+            actors: [Actor!]! @reference(path: [{key: "film_actor_actor_id_fkey"}])
+        }
+
+        type Actor @table(name: "actor") {
+            firstName: String @field(name: "first_name")
         }
 
         type FilmDetails {
@@ -128,6 +136,32 @@ class FieldInformationHoverTest {
             .contains("**Node** `Language` · id `Language` · keys `language_id`")
             .contains("**Path** 1 element")
             .doesNotContain("**Column**");
+    }
+
+    @Test
+    void aRoutineAndTheElementAfterItAreTwoElementsOfThePath() {
+        var file = file("""
+            extend type Query {
+                hopped(actorId: Int!, minLength: Int!): [Film!]!
+                    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+                    @reference(path: [{table: "film"}])
+            }
+            """);
+        assertThat(hoverAt(file, 1, "    hopp".length()))
+            .contains("**Path** 2 elements");
+    }
+
+    @Test
+    void aDefectAtAPathElementIsTheFields() {
+        var file = file("""
+            type Film @table(name: "film") {
+                actors: [Actor!]! @reference(path: [{key: "film_actor_actor_id_fkey"}])
+            }
+            """);
+        // Reported at the element, which departs film_actor rather than film.
+        assertThat(hoverAt(file, 1, "    acto".length()))
+            .contains("**Path** 1 element")
+            .contains("**Defects** `NO_ROUTE_FROM_DEPARTURE`");
     }
 
     @Test

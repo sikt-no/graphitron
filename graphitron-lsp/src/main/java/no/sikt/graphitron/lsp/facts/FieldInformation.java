@@ -1,6 +1,7 @@
 package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Record1;
@@ -12,8 +13,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
@@ -23,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
@@ -31,6 +35,7 @@ import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectCount;
 import static org.jooq.impl.DSL.selectDistinct;
+import static org.jooq.impl.DSL.selectOne;
 
 /**
  * What the store states about one output field, for the declaration hover: each line a lookup by
@@ -193,10 +198,37 @@ public final class FieldInformation {
             .convertFrom(rows -> rows.map(Records.mapping(Added::new)))
             .as("info_added");
 
-        var p = GRAPHITRON_FIELD_PATH;
-        pathElements = selectCount().from(p)
-            .where(p.GRAPH_NAME.eq(graph), p.TYPE_NAME.eq(typeName), p.FIELD_NAME.eq(fieldName))
-            .asField("info_path_elements");
+        // The path written at the field, read from the entries: each @routine application under its
+        // definition and each element of a @reference application there, a @referenceFor being a
+        // participant's path and not the field's. Each by where it was written, which is what the
+        // count counts and what a defect at one of them is keyed by.
+        var fe = GRAPHQL_AST_ELEMENT_ENTRY;
+        var fd = GRAPHQL_AST_ENTRY.as("fd");
+        var ap = GRAPHQL_AST_ENTRY.as("ap");
+        var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
+        var pe = GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
+        var pf = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
+        var applications = ap
+            .join(fe).on(fe.GRAPH_NAME.eq(ap.GRAPH_NAME), fe.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                fe.SOURCE_LINE.eq(ap.PARENT_LINE), fe.SOURCE_COLUMN.eq(ap.PARENT_COLUMN))
+            .join(fd).on(fd.GRAPH_NAME.eq(fe.GRAPH_NAME), fd.SOURCE_NAME.eq(fe.SOURCE_NAME),
+                fd.SOURCE_LINE.eq(fe.SOURCE_LINE), fd.SOURCE_COLUMN.eq(fe.SOURCE_COLUMN),
+                fd.ENTRY_KIND.eq(EntryKind.FIELD_DEFINITION));
+        var written = select(ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
+            .from(applications)
+            .join(ra).on(ra.GRAPH_NAME.eq(ap.GRAPH_NAME), ra.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                ra.SOURCE_LINE.eq(ap.SOURCE_LINE), ra.SOURCE_COLUMN.eq(ap.SOURCE_COLUMN))
+            .where(fe.GRAPH_NAME.eq(graph), fe.COORDINATE.eq(coordinate))
+            .unionAll(select(pe.SOURCE_NAME, pe.SOURCE_LINE, pe.SOURCE_COLUMN)
+                .from(applications)
+                .join(pe).on(pe.GRAPH_NAME.eq(ap.GRAPH_NAME), pe.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                    pe.APPLICATION_LINE.eq(ap.SOURCE_LINE),
+                    pe.APPLICATION_COLUMN.eq(ap.SOURCE_COLUMN))
+                .where(fe.GRAPH_NAME.eq(graph), fe.COORDINATE.eq(coordinate))
+                .andNotExists(selectOne().from(pf)
+                    .where(pf.GRAPH_NAME.eq(ap.GRAPH_NAME), pf.SOURCE_NAME.eq(ap.SOURCE_NAME),
+                        pf.SOURCE_LINE.eq(ap.SOURCE_LINE), pf.SOURCE_COLUMN.eq(ap.SOURCE_COLUMN))));
+        pathElements = selectCount().from(written.asTable("written")).asField("info_path_elements");
 
         // A defect at the field is reported at one of three kinds of position the author wrote
         // there: the field's own declaration, a directive applied to it, or an element of its path.
@@ -209,8 +241,7 @@ public final class FieldInformation {
                     .where(gf.GRAPH_NAME.eq(graph), gf.TYPE_NAME.eq(typeName), gf.FIELD_NAME.eq(fieldName)))
                 .or(position.in(select(d.SOURCE_NAME, d.SOURCE_LINE, d.SOURCE_COLUMN).from(d)
                     .where(d.GRAPH_NAME.eq(graph), d.COORDINATE.eq(coordinate), d.ORIGIN.eq("AUTHORED"))))
-                .or(position.in(select(p.SOURCE_NAME, p.SOURCE_LINE, p.SOURCE_COLUMN).from(p)
-                    .where(p.GRAPH_NAME.eq(graph), p.TYPE_NAME.eq(typeName), p.FIELD_NAME.eq(fieldName)))))
+                .or(position.in(written)))
             .orderBy(e.CODE))
             .convertFrom(rows -> rows.map(Record1::value1))
             .as("info_defects");

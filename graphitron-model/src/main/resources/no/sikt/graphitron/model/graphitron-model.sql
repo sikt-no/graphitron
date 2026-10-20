@@ -9605,9 +9605,30 @@ WITH site (graph_name, type_name, field_name, from_source_name, from_schema, fro
     LEFT JOIN graphitron_field_binding_entry fb
       ON fb.graph_name = st.graph_name AND fb.type_name = st.type_name AND fb.field_name = st.field_name
    WHERE st.basis IN ('SOURCE_TYPE', 'INHERITED', 'RECORD_CLASS')
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_path cl
-                      WHERE cl.graph_name = st.graph_name AND cl.type_name = st.type_name
-                        AND cl.field_name = st.field_name)
+     -- No path written at the field: no @routine application under its definition, and no element
+     -- of a @reference application there, a @referenceFor being a participant's and not the field's.
+     AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
+                      JOIN graphql_ast_entry fd
+                        ON fd.graph_name = fe.graph_name AND fd.source_name = fe.source_name
+                       AND fd.source_line = fe.source_line AND fd.source_column = fe.source_column
+                       AND fd.entry_kind = 'FIELD_DEFINITION'
+                      JOIN graphql_ast_entry ap
+                        ON ap.graph_name = fe.graph_name AND ap.source_name = fe.source_name
+                       AND ap.parent_line = fe.source_line AND ap.parent_column = fe.source_column
+                     WHERE fe.graph_name = st.graph_name
+                       AND fe.coordinate = st.type_name || '.' || st.field_name
+                       AND (EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
+                                     WHERE r.graph_name = ap.graph_name AND r.source_name = ap.source_name
+                                       AND r.source_line = ap.source_line AND r.source_column = ap.source_column)
+                            OR EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
+                                        WHERE e.graph_name = ap.graph_name AND e.source_name = ap.source_name
+                                          AND e.application_line = ap.source_line
+                                          AND e.application_column = ap.source_column
+                                          AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry f
+                                                           WHERE f.graph_name = e.graph_name
+                                                             AND f.source_name = e.source_name
+                                                             AND f.source_line = e.application_line
+                                                             AND f.source_column = e.application_column))))
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application a
                       WHERE a.graph_name = st.graph_name
                         AND a.coordinate = st.type_name || '.' || st.field_name
