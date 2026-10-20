@@ -1040,21 +1040,36 @@ and the emitters read, and it goes when nothing reads what it builds.
       carriers.
   * **The readers are stated** `done`, 2026-10-20, after the results. `graphitron_reader`, every
     field of a type holding one result that runs nothing: under a ROW a COLUMN, an EXPRESSION or a
-    NESTED row, under an OBJECT and for an errors channel an ACCESSOR. A node id's encoding and an
-    errors channel's outcome are facts of the field and of the producer, not ways of reading. A
+    NESTED row, under an OBJECT an ACCESSOR, an outcome's errors field among them. A node id's
+    encoding and an outcome are facts of the field and of the producer, not ways of reading. A
     query or mutation root field, or a field of a type holding a result, with no fetcher is
     `FIELD_WITHOUT_FETCHER`, none on sis. A connection's wrapper and edges produce only
     `totalCount` and the facets; `nodes` and `Edge.node` read the page, which the producer rule had
     made SELECTs on a polymorphic connection, 48 on sis. A table-bound child of a record-backed parent
     is a `LOOKUP`, the refetch by the keys the object carries, as a payload's is; the producer rule
     had called it a `SELECT`.
+  * **A root producer's outcome is stated** `done`, 2026-10-20, decided with Alf. Only a root
+    producer catches: a service, a write or a routine whose target has exactly one errors field
+    hands what it throws to that field, and below the root an errors field is read off the value like
+    any other. `graphitron_errors_field`, one row per field whose value is a list of errors, a
+    nullable list of a union or an interface whose every member is `@error`, the walk's shape and a
+    fact of the field whoever returns its type; a list of one `@error` object is none, which keeps
+    opptak's four `[IkkeAutorisertError!]` the value's own. `graphitron_producer_outcome`, a producer
+    subtype naming the outcome type and its errors field. The walk's refusals are defects where
+    written: `ERRORS_FIELD_MIXED_MEMBERS`, `ERRORS_FIELD_NOT_A_LIST`, `ERRORS_FIELD_NON_NULL`,
+    `MULTIPLE_ERRORS_FIELDS`, `OUTCOME_FIELD_NON_NULL`, and `ERRORS_IN_A_ROW`, errors in a row of a
+    statement, which the walk read through an accessor that cannot work. On sis 158 errors fields
+    and 159 outcomes, 15 ms, and no defect. `OutcomeAgreementTest` holds the outcomes to the walk's
+    `Mapped` channels and wrapper transports. Constructing a developer's payload class on failure,
+    `PayloadClass` under `RouterDispatched`, and the accessor transport `PayloadAccessor` serve only a
+    child `@service`, which nothing runs on sakila; they go with "The carrier's readers move".
   * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
     row per field of a type a producer returns, with its role, errors or data, and its element,
     table, record, id or other. Total over the fields, an element no rule recognises being a row of
     kind other and not an absence. The table test and the table a reader fetches read one binding,
     `graphitron_resolved_type_binding`, where today the rule tests `intent_bound_table` and every
-    reader fetches from the former. The errors side absorbs `intent_errors_field`'s field half; its
-    members stay an ordered child tied to `graphitron_ast_error_entry`.
+    reader fetches from the former. The errors side is `graphitron_errors_field`'s, stated with the
+    outcome; its members stay an ordered child tied to `graphitron_ast_error_entry`.
   * **A producer's carrier is its one data channel** `open`, after the payload's fields.
     `graphitron_carrier_data_channel`, keyed by the producer and naming the data field, one row per
     producer, so no reader re-derives the producer from a payload. What stops a payload being a

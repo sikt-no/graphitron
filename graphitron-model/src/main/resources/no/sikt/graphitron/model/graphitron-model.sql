@@ -9795,9 +9795,50 @@ COMMENT ON COLUMN graphitron_reader.graph_name IS 'the owning graph''s partition
 COMMENT ON COLUMN graphitron_reader.type_name IS 'the object type declaring the field';
 COMMENT ON COLUMN graphitron_reader.field_name IS 'the field; with the type, a graphitron_fetcher key';
 COMMENT ON COLUMN graphitron_reader.side IS 'always READER, carried so the foreign key into graphitron_fetcher holds the side as well as the field';
-COMMENT ON COLUMN graphitron_reader.reads IS 'under a ROW: COLUMN, a column of the row; EXPRESSION, an @externalField projected into its statement; NESTED, a row nested in it, for an object target. Under an OBJECT, and for an errors channel under either: ACCESSOR. A node id''s encoding and an errors channel''s outcome are facts of the field and of the producer, not ways of reading';
+COMMENT ON COLUMN graphitron_reader.reads IS 'under a ROW: COLUMN, a column of the row; EXPRESSION, an @externalField projected into its statement; NESTED, a row nested in it, for an object target. Under an OBJECT: ACCESSOR, an outcome''s errors field among them, its type being a value its producer hands back. A node id''s encoding and an outcome are facts of the field and of the producer, graphitron_producer_outcome, not ways of reading';
 COMMENT ON COLUMN graphitron_reader.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+
+CREATE TABLE graphitron_errors_field (
+  graph_name     VARCHAR   NOT NULL,
+  type_name      VARCHAR   NOT NULL,
+  field_name     VARCHAR   NOT NULL,
+  container_name VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_errors_field IS 'A field whose value is a list of errors: one row per nullable list of a union or an interface whose every member is @error. For example FilmLookupPayload.errors: [FilmLookupError], the union of FilmLookupNotFound, FilmLookupInvalid and FilmLookupClientFacing.';
+COMMENT ON COLUMN graphitron_errors_field.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_errors_field.type_name IS 'the object type declaring the field';
+COMMENT ON COLUMN graphitron_errors_field.field_name IS 'the field; with the type, a graphitron_field key';
+COMMENT ON COLUMN graphitron_errors_field.container_name IS 'the union or interface the list holds, whose members are the @error types an error is matched to';
+COMMENT ON COLUMN graphitron_errors_field.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
+
+CREATE TABLE graphitron_producer_outcome (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  outcome_type_name VARCHAR   NOT NULL,
+  errors_field_name VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, kind)
+    REFERENCES graphitron_producer (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, outcome_type_name, errors_field_name)
+    REFERENCES graphitron_errors_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE'))
+);
+COMMENT ON TABLE graphitron_producer_outcome IS 'A root producer whose result is an outcome, and the field its errors arrive at: one row per root service, write or routine whose target declares exactly one errors field. For example Query.filmLookup @service returning FilmLookupPayload, whose one errors field is errors: [FilmLookupError], catches what the service throws and hands it to errors.';
+COMMENT ON COLUMN graphitron_producer_outcome.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_outcome.type_name IS 'the root operation type declaring the field';
+COMMENT ON COLUMN graphitron_producer_outcome.field_name IS 'the field; with the type and the kind, a graphitron_producer key';
+COMMENT ON COLUMN graphitron_producer_outcome.kind IS 'the producer''s kind, carried so the foreign key holds the outcome to a producer that can hand one back';
+COMMENT ON COLUMN graphitron_producer_outcome.outcome_type_name IS 'the type the field returns, which holds the value on success and the errors on failure';
+COMMENT ON COLUMN graphitron_producer_outcome.errors_field_name IS 'the outcome type''s one errors field; with the outcome type, a graphitron_errors_field key';
+COMMENT ON COLUMN graphitron_producer_outcome.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
@@ -10353,6 +10394,76 @@ SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
          GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
   JOIN graphql_ast_type_declaration_entry d
     ON d.graph_name = r.graph_name AND d.name = r.type_name
+UNION ALL
+-- A field whose union or interface lists an @error type but which is no errors field, at its
+-- declaration, by the first rule it breaks: every member @error, a list, and a list that may be null.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN EXISTS (SELECT 1 FROM graphql_poly_member pm
+                          WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application de
+                                             WHERE de.graph_name = pm.graph_name
+                                               AND de.coordinate = pm.member_type_name
+                                               AND de.directive_name = 'error'))
+              THEN 'ERRORS_FIELD_MIXED_MEMBERS'
+            WHEN NOT f.is_list THEN 'ERRORS_FIELD_NOT_A_LIST'
+            ELSE 'ERRORS_FIELD_NON_NULL' END,
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_field f
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE EXISTS (SELECT 1 FROM graphql_poly_member pm
+                JOIN graphitron_directive_application de
+                  ON de.graph_name = pm.graph_name AND de.coordinate = pm.member_type_name
+                 AND de.directive_name = 'error'
+               WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                      AND e.field_name = f.field_name)
+UNION ALL
+-- A type with two errors fields, at the first: an outcome has one place for its errors.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR)
+  FROM graphitron_errors_field e
+  JOIN graphitron_field f
+    ON f.graph_name = e.graph_name AND f.type_name = e.type_name AND f.field_name = e.field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = e.graph_name AND d.type_name = e.type_name AND d.name = e.field_name
+ WHERE f.ordinal = (SELECT MIN(f2.ordinal)
+                      FROM graphitron_errors_field e2
+                      JOIN graphitron_field f2
+                        ON f2.graph_name = e2.graph_name AND f2.type_name = e2.type_name
+                       AND f2.field_name = e2.field_name
+                     WHERE e2.graph_name = e.graph_name AND e2.type_name = e.type_name
+                    HAVING COUNT(*) > 1)
+UNION ALL
+-- A field of an outcome other than its errors field that may not be null, at its declaration: on
+-- failure the value is absent, and graphql-java would drop the errors with it.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR)
+  FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
+          FROM graphitron_producer_outcome) o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.type_name = o.outcome_type_name
+   AND f.field_name <> o.errors_field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE f.non_null
+UNION ALL
+-- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
+-- is an exception a producer caught, and a row of a statement holds none.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_target ft
+  JOIN graphitron_result r
+    ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_errors_field e
+                WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
+                  AND e.field_name = ft.field_name)
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application de
+                WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
+                  AND de.directive_name = 'error')
 UNION ALL
 -- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
 -- holding one result, with neither a producer nor a reader. A field claiming two kinds, the fields of
@@ -11160,6 +11271,51 @@ COMMENT ON COLUMN graphitron_producer_service_rule.method_source_name IS 'the cl
 COMMENT ON COLUMN graphitron_producer_service_rule.method_class_name IS 'the class declaring the method';
 COMMENT ON COLUMN graphitron_producer_service_rule.method_name IS 'the method';
 COMMENT ON COLUMN graphitron_producer_service_rule.method_descriptor IS 'the method''s descriptor';
+
+-- A nullable list of a union or an interface with members, every one of them @error. A field whose
+-- union or interface lists an @error type and falls short of this is a defect where it was written.
+CREATE VIEW graphitron_errors_field_rule (graph_name, type_name, field_name, container_name) AS
+SELECT f.graph_name, f.type_name, f.field_name, f.named_type
+  FROM graphitron_field f
+ WHERE f.is_list AND NOT f.non_null
+   AND EXISTS (SELECT 1 FROM graphql_poly_member pm
+                WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
+   AND NOT EXISTS (SELECT 1 FROM graphql_poly_member pm
+                    WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application d
+                                       WHERE d.graph_name = pm.graph_name
+                                         AND d.coordinate = pm.member_type_name
+                                         AND d.directive_name = 'error'));
+COMMENT ON VIEW graphitron_errors_field_rule IS 'One row the errors field rule computes, in the shape graphitron_errors_field stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_errors_field, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_errors_field_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_errors_field_rule.type_name IS 'the object type declaring the field';
+COMMENT ON COLUMN graphitron_errors_field_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_errors_field_rule.container_name IS 'the union or interface the list holds';
+
+-- A root producer that can hand back a value, a service, a write or a routine, returning a type with
+-- exactly one errors field. A type with two is a defect, and one with none is a plain object. Below
+-- the root an errors field is read off the value like any other field: nothing there catches.
+CREATE VIEW graphitron_producer_outcome_rule
+  (graph_name, type_name, field_name, kind, outcome_type_name, errors_field_name) AS
+SELECT p.graph_name, p.type_name, p.field_name, p.kind, ft.target_type_name, ef.field_name
+  FROM graphitron_producer p
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+  JOIN graphitron_errors_field ef
+    ON ef.graph_name = ft.graph_name AND ef.type_name = ft.target_type_name
+ WHERE p.kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
+   AND EXISTS (SELECT 1 FROM graphql_root_operation ro
+                WHERE ro.graph_name = p.graph_name AND ro.type_name = p.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e2
+                    WHERE e2.graph_name = ef.graph_name AND e2.type_name = ef.type_name
+                      AND e2.field_name <> ef.field_name);
+COMMENT ON VIEW graphitron_producer_outcome_rule IS 'One row the outcome rule computes, in the shape graphitron_producer_outcome stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_outcome, which is the name every reader spells.';
+COMMENT ON COLUMN graphitron_producer_outcome_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_producer_outcome_rule.type_name IS 'the root operation type declaring the field';
+COMMENT ON COLUMN graphitron_producer_outcome_rule.field_name IS 'the field';
+COMMENT ON COLUMN graphitron_producer_outcome_rule.kind IS 'the producer''s kind';
+COMMENT ON COLUMN graphitron_producer_outcome_rule.outcome_type_name IS 'the type the field returns';
+COMMENT ON COLUMN graphitron_producer_outcome_rule.errors_field_name IS 'the outcome type''s one errors field';
 -- One round of the result rule: what the producers make, and one step from what this reading has
 -- already reached. The fill merges it until a round changes nothing, which a view cannot state and H2
 -- evaluates badly as a recursive view, re-running it per joined row and never deduplicating.
@@ -11296,16 +11452,6 @@ CREATE VIEW graphitron_reader_rule (graph_name, type_name, field_name, reads) AS
 SELECT f.graph_name, f.type_name, f.field_name,
        CASE
          WHEN r.shape = 'OBJECT' THEN 'ACCESSOR'
-         -- An errors channel reads the producer's outcome, whatever the success arm holds.
-         WHEN EXISTS (SELECT 1 FROM graphitron_directive_application d
-                       WHERE d.graph_name = f.graph_name AND d.coordinate = ft.target_type_name
-                         AND d.directive_name = 'error')
-           OR EXISTS (SELECT 1 FROM graphql_poly_member pm
-                       JOIN graphitron_directive_application d
-                         ON d.graph_name = pm.graph_name AND d.coordinate = pm.member_type_name
-                        AND d.directive_name = 'error'
-                      WHERE pm.graph_name = ft.graph_name AND pm.container_name = ft.target_type_name)
-           THEN 'ACCESSOR'
          WHEN EXISTS (SELECT 1 FROM graphitron_directive_application d
                        WHERE d.graph_name = f.graph_name AND d.coordinate = f.coordinate
                          AND d.directive_name = 'externalField') THEN 'EXPRESSION'
@@ -15554,7 +15700,19 @@ INSERT INTO graphitron_defect_type VALUES
   ('RESULT_SHAPES_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_RESULT_SHAPES_CONFLICT',
    'A type is reached both as a row of a statement and as an object in memory, so its fields would be fetched two ways; give each its own type.'),
   ('FIELD_WITHOUT_FETCHER', 'error', 'GRAPHITRON', 'GRAPHITRON_FIELD_WITHOUT_FETCHER',
-   'A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with.');
+   'A field neither runs anything nor reads from a result its parent holds, so graphitron has nothing to fetch it with.'),
+  ('ERRORS_FIELD_MIXED_MEMBERS', 'error', 'GRAPHITRON', 'graphitron.error-channel.mixed-members',
+   'A field lists a union or an interface with an @error member and a member that is no @error, so it is neither a list of errors nor a result: make every member @error, or none.'),
+  ('ERRORS_FIELD_NOT_A_LIST', 'error', 'GRAPHITRON', 'graphitron.error-channel.errors-field-not-a-list',
+   'A field returns a single value of a union or an interface of @error types, and errors arrive as a list: declare it as a list.'),
+  ('ERRORS_FIELD_NON_NULL', 'error', 'GRAPHITRON', 'graphitron.error-channel.non-nullable-errors-field',
+   'A list of errors may not be null, and on success there are no errors to hand it: make the list nullable.'),
+  ('MULTIPLE_ERRORS_FIELDS', 'error', 'GRAPHITRON', 'graphitron.error-channel.multiple-errors-fields',
+   'A type has more than one list of errors, and what a producer catches arrives at one: keep one.'),
+  ('OUTCOME_FIELD_NON_NULL', 'error', 'GRAPHITRON', 'graphitron.error-channel.non-nullable-success-field',
+   'A field of a type a root producer hands back may not be null, and when the producer fails there is no value to read it from, so graphql-java would drop the errors with it: make the field nullable.'),
+  ('ERRORS_IN_A_ROW', 'error', 'GRAPHITRON', 'GRAPHITRON_ERRORS_IN_A_ROW',
+   'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.');
 
 INSERT INTO meta_relation VALUES
   ('build_warning_stale_module_hint', 'stale-module-hint', 'derivation',
@@ -16360,6 +16518,14 @@ INSERT INTO meta_relation VALUES
    'What a service producer calls: the reference its @service wrote and the one method that resolves to; one row per service producer whose reference resolved.',
    'For example Query.uppercased @service(service: {className: "FilmService", method: "titleUppercase"}) calls FilmService.titleUppercase.',
    'The method a producer calls, keyed to the producer rather than to the reference, so a reader holding a field reaches the method in one join.'),
+  ('graphitron_errors_field', 'graph-field', 'graphitron',
+   'A field whose value is a list of errors: one row per nullable list of a union or an interface whose every member is @error.',
+   'For example FilmLookupPayload.errors: [FilmLookupError], the union of FilmLookupNotFound, FilmLookupInvalid and FilmLookupClientFacing.',
+   'A fact of the field, stated once whoever returns its type: the outcome a root producer catches into reads it, and so do the defects a misshapen one raises.'),
+  ('graphitron_producer_outcome', 'graph-field', 'graphitron',
+   'A root producer whose result is an outcome, and the field its errors arrive at: one row per root service, write or routine whose target declares exactly one errors field.',
+   'For example Query.filmLookup @service returning FilmLookupPayload, whose one errors field is errors: [FilmLookupError], catches what the service throws and hands it to errors.',
+   'Catching is the producer''s, and only a root producer catches: an errors field below the root is read off the value like any other. Stated once at the producer, where the payload, the carrier and the error channel each restated it from the type.'),
   ('graphitron_producer_write_rule', 'graph-field', 'graphitron',
    'One row the write rule computes, in the shape graphitron_producer_write stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_write, which is the name every reader spells.',
@@ -16371,6 +16537,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_producer_service_rule', 'graph-field', 'graphitron',
    'One row the service rule computes, in the shape graphitron_producer_service stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_service, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+  ('graphitron_errors_field_rule', 'graph-field', 'graphitron',
+   'One row the errors field rule computes, in the shape graphitron_errors_field stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_errors_field, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+  ('graphitron_producer_outcome_rule', 'graph-field', 'graphitron',
+   'One row the outcome rule computes, in the shape graphitron_producer_outcome stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_outcome, which is the name every reader spells.',
    'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_result', 'type-result', 'graphitron',
    'A type holds a result of this shape: one row per type and shape.',

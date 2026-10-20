@@ -12,8 +12,12 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ERRORS_FIELD_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FETCHER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_OUTCOME_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_ROUTINE_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_RULE;
@@ -28,8 +32,9 @@ import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes {@code graphitron_fetcher}: its producer side and what each kind of producer runs, the
- * results they make through {@link Results}, and the reader side that reads them, from the rule views
+ * Writes {@code graphitron_fetcher}: its producer side and what each kind of producer runs, with the
+ * errors fields a root producer's outcome catches into, the results they make through
+ * {@link Results}, and the reader side that reads them, from the rule views
  * beside each, marking what this reading states and sweeping what it no longer does.
  *
  * <p>The last of the graphitron anchor's stages: the rules read the field targets, the resolved
@@ -49,6 +54,10 @@ public final class Fetchers {
         var rule = GRAPHITRON_PRODUCER_RULE;
         var reader = GRAPHITRON_READER;
         var readerRule = GRAPHITRON_READER_RULE;
+
+        // The errors fields, a fact of the field whoever returns its type, ahead of the outcomes.
+        refresh(dsl, GRAPHITRON_ERRORS_FIELD, GRAPHITRON_ERRORS_FIELD_RULE,
+            GRAPHITRON_ERRORS_FIELD.GRAPH_NAME, GRAPHITRON_ERRORS_FIELD.TOUCHED_AT, graph, touchedAt);
 
         // A field that was a reader and is a producer now: its reader row names the side the
         // fetcher is about to leave, so it goes first.
@@ -76,7 +85,7 @@ public final class Fetchers {
         // A producer whose kind changes keeps its key, and the subtype row naming the old kind would
         // hold the update back; it is no longer true, so it goes before the producer is rewritten.
         for (var subtype : List.of(GRAPHITRON_PRODUCER_WRITE, GRAPHITRON_PRODUCER_ROUTINE,
-                GRAPHITRON_PRODUCER_SERVICE)) {
+                GRAPHITRON_PRODUCER_SERVICE, GRAPHITRON_PRODUCER_OUTCOME)) {
             dsl.deleteFrom(subtype)
                 .where(subtype.field("GRAPH_NAME", String.class).eq(graph))
                 .andNotExists(dsl.selectOne().from(rule)
@@ -108,6 +117,8 @@ public final class Fetchers {
             GRAPHITRON_PRODUCER_ROUTINE.GRAPH_NAME, GRAPHITRON_PRODUCER_ROUTINE.TOUCHED_AT, graph, touchedAt);
         refresh(dsl, GRAPHITRON_PRODUCER_SERVICE, GRAPHITRON_PRODUCER_SERVICE_RULE,
             GRAPHITRON_PRODUCER_SERVICE.GRAPH_NAME, GRAPHITRON_PRODUCER_SERVICE.TOUCHED_AT, graph, touchedAt);
+        refresh(dsl, GRAPHITRON_PRODUCER_OUTCOME, GRAPHITRON_PRODUCER_OUTCOME_RULE,
+            GRAPHITRON_PRODUCER_OUTCOME.GRAPH_NAME, GRAPHITRON_PRODUCER_OUTCOME.TOUCHED_AT, graph, touchedAt);
 
         // A field that stopped being a producer, before the readers are written, since it may be one.
         dsl.deleteFrom(producer)

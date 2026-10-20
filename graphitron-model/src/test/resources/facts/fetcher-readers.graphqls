@@ -34,7 +34,7 @@ type Translations { EN: String NO: String }
 "Backed by FilmRecord through the service that produces it: a value handed back, read through the Record API, not a row; nothing selected it."
 type FilmDetailsCarrier {
   filmId: Int @field(name: "film_id")
-  "The errors channel reads the outcome, under a row as under an object."
+  "An errors field under an object reads through an accessor."
   errors: [CarrierFailure]
 }
 

@@ -1,0 +1,114 @@
+"A root producer that hands back a value, a service, a write or a routine, catches what it throws when the type it returns has exactly one errors field: a nullable list of a union or an interface whose every member is @error. That type is an outcome; the errors arrive at that field and the value at the rest. Below the root nothing catches, and an errors field is read off the value like any other field. An errors field that falls short of its shape, a type with two, a field of an outcome that may not be null and errors in a row are each a defect where they were written."
+
+type Film @table(name: "film") {
+  title: String
+  "A child service: its payload's errors field is the value's own, read through an accessor."
+  review: ReviewPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  "Errors in a row of a statement, which holds no exception."
+  problems: [FilmFailure]
+}
+
+input FilmInput @table(name: "film") { title: String }
+
+type FilmInvalid @error(handlers: [{handler: DATABASE}]) { message: String }
+type FilmMissing @error(handlers: [{handler: GENERIC, className: "java.lang.IllegalStateException"}]) { message: String }
+union FilmFailure = FilmInvalid | FilmMissing
+union FilmOrError = FilmInvalid | Film
+
+"An outcome: one errors field, every member @error."
+type FilmOutcome { title: String, errors: [FilmFailure] }
+
+"An outcome of a write: the re-read beside the errors."
+type AddFilmOutcome { film: Film, errors: [FilmFailure] }
+
+"An outcome whose value field may not be null, which a failure cannot honour."
+type StrictValueOutcome { title: String!, errors: [FilmFailure] }
+
+type ReviewPayload { text: String, errors: [FilmFailure] }
+
+"A list of one @error object rather than of a union or an interface: the value's own field, as anywhere else."
+type DirectPayload { text: String, errors: [FilmInvalid] }
+
+"Two errors fields: which one the errors arrive at is not said."
+type TwicePayload { text: String, errors: [FilmFailure], problems: [FilmFailure] }
+
+"A list that may not be null, where on success the errors field resolves null."
+type StrictPayload { text: String, errors: [FilmFailure]! }
+
+"One error where errors arrive as a list."
+type SinglePayload { text: String, error: FilmFailure }
+
+"A member that is no @error makes the list a result, not errors."
+type MixedPayload { text: String, errors: [FilmOrError] }
+
+extend type Query {
+  filmOutcome: FilmOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  films: [Film!]!
+}
+
+type Mutation {
+  createFilm: FilmOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  addFilm(input: FilmInput): AddFilmOutcome @mutation(typeName: INSERT)
+  strictValue: StrictValueOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  direct: DirectPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  twice: TwicePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  strict: StrictPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  single: SinglePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  mixed: MixedPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+}
+
+# Every field whose value is a list of errors, whoever returns its type: the child service's and the
+# row's included, and both of the type with two. Not the list of one @error object, and none of the
+# three that fall short of the shape.
+extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
+  type_name,          field_name, container_name
+  Film,               problems,   FilmFailure
+  FilmOutcome,        errors,     FilmFailure
+  AddFilmOutcome,     errors,     FilmFailure
+  StrictValueOutcome, errors,     FilmFailure
+  ReviewPayload,      errors,     FilmFailure
+  TwicePayload,       errors,     FilmFailure
+  TwicePayload,       problems,   FilmFailure
+  """)
+
+# The root producers returning an outcome, and nothing else: not the child service, and not the type
+# with two errors fields.
+extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
+  type_name, field_name,  kind,    outcome_type_name,  errors_field_name
+  Query,     filmOutcome, SERVICE, FilmOutcome,        errors
+  Mutation,  createFilm,  SERVICE, FilmOutcome,        errors
+  Mutation,  addFilm,     INSERT,  AddFilmOutcome,     errors
+  Mutation,  strictValue, SERVICE, StrictValueOutcome, errors
+  """)
+
+# An errors field under an object reads through an accessor, an outcome's and the value's own alike.
+extend schema @assertContains(relation: "graphitron_reader", rows: """
+  type_name,      field_name, reads
+  FilmOutcome,    errors,     ACCESSOR
+  AddFilmOutcome, errors,     ACCESSOR
+  ReviewPayload,  errors,     ACCESSOR
+  DirectPayload,  errors,     ACCESSOR
+  """)
+
+# Each shape the walk refuses, where it was written, and nothing at the well-formed fields.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('ERRORS_FIELD_MIXED_MEMBERS', 'ERRORS_FIELD_NOT_A_LIST', 'ERRORS_FIELD_NON_NULL',
+           'MULTIPLE_ERRORS_FIELDS', 'OUTCOME_FIELD_NON_NULL', 'ERRORS_IN_A_ROW')
+  """, rows: """
+  coordinate,               code
+  MixedPayload.errors,      ERRORS_FIELD_MIXED_MEMBERS
+  SinglePayload.error,      ERRORS_FIELD_NOT_A_LIST
+  StrictPayload.errors,     ERRORS_FIELD_NON_NULL
+  TwicePayload.errors,      MULTIPLE_ERRORS_FIELDS
+  StrictValueOutcome.title, OUTCOME_FIELD_NON_NULL
+  Film.problems,            ERRORS_IN_A_ROW
+  """)
