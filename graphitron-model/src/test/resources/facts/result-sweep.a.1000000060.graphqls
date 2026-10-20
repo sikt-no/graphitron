@@ -1,0 +1,35 @@
+# The second reading drops the field that nested FilmDetails. Film's row is still reached and is
+# marked again under the new instant, the same row a reference into it holds across both readings;
+# FilmDetails is reached by nothing, and the sweep takes its result and the table it carried. So is
+# FilmMore beneath it: the previous reading's FilmDetails is no parent, so nothing hands FilmMore on.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type FilmDetails { summary: String, more: FilmMore }
+
+type FilmMore { note: String }
+
+extend type Query { films: [Film!]! }
+
+extend schema @assertContains(relation: "graphitron_result", rows: """
+  type_name, shape, touched_at
+  Film,      ROW,   1000000060
+  """)
+
+extend schema @assertContains(relation: "graphitron_result_table", rows: """
+  type_name, table_name, touched_at
+  Film,      film,       1000000060
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_result", rows: """
+  type_name
+  FilmDetails
+  FilmMore
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_result_table", rows: """
+  type_name
+  FilmDetails
+  """)

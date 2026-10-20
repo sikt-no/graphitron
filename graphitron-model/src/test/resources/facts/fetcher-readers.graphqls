@@ -31,7 +31,7 @@ union Media = Film | Actor
 enum PivotLang { EN NO }
 type Translations { EN: String NO: String }
 
-"Backed by FilmRecord through the service that produces it: a film row carried, not an object."
+"Backed by FilmRecord through the service that produces it: a value handed back, read through the Record API, not a row; nothing selected it."
 type FilmDetailsCarrier {
   filmId: Int @field(name: "film_id")
   "The errors channel reads the outcome, under a row as under an object."
@@ -83,7 +83,7 @@ extend schema @assertContains(relation: "graphitron_result", rows: """
   FilmDetails,                    ROW
   FilmInner,                      ROW
   Translations,                   ROW
-  FilmDetailsCarrier,             ROW
+  FilmDetailsCarrier,             OBJECT
   Actor,                          ROW
   Holder,                         OBJECT
   CarrierError,                   OBJECT
@@ -107,7 +107,6 @@ extend schema @assertContains(relation: "graphitron_result_table", rows: """
   Film,               public,       film
   FilmDetails,        public,       film
   FilmInner,          public,       film
-  FilmDetailsCarrier, public,       film
   """)
 
 extend schema @expectEquals(relation: "graphitron_result_pivot", rows: """
@@ -130,7 +129,7 @@ extend schema @assertContains(relation: "graphitron_reader", rows: """
   FilmDetails,                   inner,          NESTED
   FilmInner,                     note,           COLUMN
   Translations,                  EN,             COLUMN
-  FilmDetailsCarrier,            filmId,         COLUMN
+  FilmDetailsCarrier,            filmId,         ACCESSOR
   FilmDetailsCarrier,            errors,         ACCESSOR
   CarrierError,                  message,        ACCESSOR
   Holder,                        blurb,          ACCESSOR

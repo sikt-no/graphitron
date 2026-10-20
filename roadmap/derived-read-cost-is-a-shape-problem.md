@@ -895,29 +895,36 @@ and the emitters read, and it goes when nothing reads what it builds.
     it is not a column here; the carrier rule's `family` is this relation's kind. Every producer is
     in the population, not only the mutation-rooted ones: a query-rooted payload has the same shape.
   * **A result flows down from its producer** `done`, 2026-10-20, decided with Alf.
-    `graphitron_result`: one row per type a result reaches and its shape, ROW, a jOOQ Record, which a
-    field's read is projected into or reads through the Record API, or OBJECT, any other Java value,
-    read through an accessor. Payload, error and connection were weighed as shapes of their own and
-    fold into these two: who built a value is the producer's fact. Its origin is a subtype:
-    `graphitron_result_table`, the table whose row it is, `graphitron_result_pivot`, the pivot field
-    whose aggregate makes it, `graphitron_result_class`, an object's class. Seeds are each
+    `graphitron_result`: one row per type a result reaches and its shape, ROW, a row of a statement
+    graphitron runs, which a field's read is projected into, or OBJECT, a value handed over, read
+    through an accessor. Payload, error and connection were weighed as shapes of their own and fold
+    into these two: who built a value is the producer's fact. A table's own record a service hands
+    back is an OBJECT, read through the Record API: nothing selected it, and moving from it back into
+    the tables always refetches, by a TableRecord, a `RecordN` or `RowN` matching the key, or
+    `@sourceRow`; how an accessor reads a value is its class's, `graphitron_result_class`. Its origin
+    is a subtype: `graphitron_result_table`, the table whose row it is, `graphitron_result_pivot`, the
+    pivot field whose aggregate makes it, `graphitron_result_class`, an object's class. Seeds are each
     producer's result, `node`, `nodes` and `_entities` holding ROW, the latter seeded from the `@key`
     types until it is stated, a connection's wrapper as OBJECT; a reader hands its target its
-    parent's shape and origin, except that a table-bound type, or one backed by a table's own record
-    class, which the sql family owns, starts a row of its table, a pivot field's type the pivot's
-    row, and an `@error` type holds the exception as OBJECT. Filled by `Results` in the anchor,
-    merging `graphitron_result_rule` until a round adds nothing; on sis four rounds, 0.9 s, every
-    object type placed but one no field returns. One shape per type is the rule:
-    `RESULT_SHAPES_CONFLICT` at the type when broken, none on sis. It replaces the dissolved type
-    reach, which asked how many objects arrive and had no reader, and gives
-    `graphitron_field_source`'s kinds their origin, which waits on it.
-    * **An ad hoc jOOQ Record is a ROW** `open`. A class that is an `org.jooq.Record` but no table's,
-      a `RecordN` a service returns, holds a ROW with no table; today it comes out OBJECT, because the
-      code family keeps supertypes only for throwables and cannot say a class is a Record. The code
-      family captures that, and a type backed by such a class seeds ROW. None on sis.
+    parent's shape and origin, except that a table-bound type starts a row of its table, a pivot
+    field's type the pivot's row, and an `@error` type holds the exception as OBJECT. Filled by
+    `Results` in the anchor, merging `graphitron_result_rule` until a round changes nothing, and
+    marked and swept: the rule steps only from rows marked with the reading's own instant,
+    `store_graph.last_captured`, so a row a reading reaches again keeps its key and a reference into
+    it holds across captures. On sis four rounds, about 1 s, every object type placed but one no field
+    returns. One shape per type is the rule: `RESULT_SHAPES_CONFLICT` at the type when broken, none
+    on sis. It replaces the dissolved type reach, which asked how many objects arrive and had no
+    reader, and is what arrives at every field of the type, under "A field's source is its parent's
+    result".
     * **A table with no record class says so** `open`. `sql_table.record_class_fqn` holds
-      `org.jooq.Record` for a table jOOQ generated no record class for, so a type backed by a plain
-      Record would read as every such table's row. The sql family states the absence as NULL.
+      `org.jooq.Record` for a table jOOQ generated no record class for, so a reader asking which
+      table a record class belongs to would answer every such table. The sql family states the
+      absence as NULL.
+    * **A table child under a handed value deeper than its carrier refetches** `open`. The producer
+      rule makes a table-bound field a `LOOKUP` where its parent is a payload or record-backed; a type
+      nested beneath such a value with no backing of its own would read its table child as `NESTED`,
+      which has no statement to nest into. None on sis, where no type sits beneath the 76 record-backed
+      carriers.
   * **The readers are stated** `done`, 2026-10-20, after the results. `graphitron_reader`, every
     field of a type holding one result that runs nothing: under a ROW a COLUMN, an EXPRESSION or a
     NESTED row, under an OBJECT and for an errors channel an ACCESSOR. A node id's encoding and an
@@ -925,7 +932,9 @@ and the emitters read, and it goes when nothing reads what it builds.
     query or mutation root field, or a field of a type holding a result, with no fetcher is
     `FIELD_WITHOUT_FETCHER`, none on sis. A connection's wrapper and edges produce only
     `totalCount` and the facets; `nodes` and `Edge.node` read the page, which the producer rule had
-    made SELECTs on a polymorphic connection, 48 on sis.
+    made SELECTs on a polymorphic connection, 48 on sis. A table-bound child of a record-backed parent
+    is a `LOOKUP`, the refetch by the keys the object carries, as a payload's is; the producer rule
+    had called it a `SELECT`.
   * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
     row per field of a type a producer returns, with its role, errors or data, and its element,
     table, record, id or other. Total over the fields, an element no rule recognises being a row of

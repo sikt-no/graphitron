@@ -1,7 +1,7 @@
-# Which table a record class carries a row of is read from the catalogs this graph claims, never
-# from one another graph in the store read. This graph declares no catalog, so the service handing
-# back FilmRecord hands back an object: film is in the store, claimed by every other graph, and by
-# none of this one's.
+# A table's own record a service hands back is a value, not a row: nothing selected it, so it is an
+# OBJECT read through the Record API, and a field moving from it back into the tables refetches. The
+# same in a graph with no catalog at all, which is this one: the record's class is on the classpath
+# whatever the run declared, and the table it is the record of plays no part.
 
 extend schema @withConfiguration(jooqPackage: null)
 
@@ -13,7 +13,7 @@ extend type Query {
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
 }
 
-# The graph claims no catalog, which is what the claims below are about.
+# The graph claims no catalog.
 extend schema @assertEmpty(relation: "store_graph_source", where: "source_name LIKE 'no.sikt.graphitron.rewrite.test.jooq%'")
 
 # The class still backs the type: the classpath is read whatever the catalog.
@@ -28,3 +28,9 @@ extend schema @expectEquals(relation: "graphitron_result", where: "type_name = '
   """)
 
 extend schema @assertEmpty(relation: "graphitron_result_table")
+
+# How an accessor reads the value is its class's: a jOOQ record, read through the Record API.
+extend schema @expectEquals(relation: "graphitron_result_class", where: "type_name = 'FilmDetailsCarrier'", rows: """
+  type_name,          class_name
+  FilmDetailsCarrier, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  """)

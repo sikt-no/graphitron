@@ -1,0 +1,26 @@
+# The results read in steps, over one file. The first reading reaches film's row and the rows nested
+# two deep under it, and marks each with its own instant.
+
+type Film @table(name: "film") {
+  title: String
+  details: FilmDetails
+}
+
+type FilmDetails { summary: String, more: FilmMore }
+
+type FilmMore { note: String }
+
+extend type Query { films: [Film!]! }
+
+extend schema @assertContains(relation: "graphitron_result", rows: """
+  type_name,   shape, touched_at
+  Film,        ROW,   1000000000
+  FilmDetails, ROW,   1000000000
+  FilmMore,    ROW,   1000000000
+  """)
+
+extend schema @assertContains(relation: "graphitron_result_table", rows: """
+  type_name,   table_name, touched_at
+  Film,        film,       1000000000
+  FilmDetails, film,       1000000000
+  """)

@@ -5346,7 +5346,6 @@ COMMENT ON COLUMN sql_table.table_schema_upper IS 'the upper-cased form of the c
 COMMENT ON COLUMN sql_table.table_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against the name half of an authored table or routine reference, and against graphitron_table_entry.type_name_upper where the name argument was omitted. Generated, so nothing writes it and nothing can. Fold only where an authored spelling meets a catalog name. Two values of one family are compared exactly, and a comparison that does want a fold on both sides reaches this column by joining sql_table on its key rather than by having it forwarded through a derived view. intent_field_reference_discovery is the worked example of that second sentence: both of its table names are catalog values, so it joins this relation twice on its key to compare them here';
 COMMENT ON COLUMN sql_table.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 CREATE INDEX ix_sql_table_class_fqn ON sql_table (class_fqn);
-CREATE INDEX ix_sql_table_record_class_fqn ON sql_table (record_class_fqn);
 COMMENT ON INDEX ix_sql_table_class_fqn IS 'Serves the match of a method parameter''s erased class to the table it names, which graphitron_field_path_reading and graphitron_condition_method_route make inline, the second again inside its overload check. Measured on a sis capture: graphitron_condition_method_route at 6.7 s without it and 2.3 s with it, where the stored parameter-to-table relation it replaced read in 2.2 s.';
 
 CREATE TABLE sql_table_record_supertype (
@@ -9274,7 +9273,7 @@ CREATE TABLE graphitron_result (
 COMMENT ON TABLE graphitron_result IS 'A type holds a result of this shape: one row per type and shape. For example Film @table(name: "film") holds a ROW, a directiveless type nested under one of its fields holds a ROW of film too, and the connection a paginated field returns holds an OBJECT its edges, nodes and page info read.';
 COMMENT ON COLUMN graphitron_result.graph_name IS 'the owning graph''s partition';
 COMMENT ON COLUMN graphitron_result.type_name IS 'the object type holding the result';
-COMMENT ON COLUMN graphitron_result.shape IS 'ROW, a row of a statement graphitron runs, which a field''s read is projected into; or OBJECT, a value in memory, which a field reads through an accessor. Who built the value, the author''s class or graphitron''s carrier, is the producer''s fact and not the shape''s';
+COMMENT ON COLUMN graphitron_result.shape IS 'ROW, a row of a statement graphitron runs, which a field''s read is projected into; or OBJECT, a value handed over, which a field reads through an accessor. Who built the value, the author''s class or graphitron''s carrier, is the producer''s fact and not the shape''s, and how an accessor reads it, the Record API for a jOOQ record or a getter, is graphitron_result_class''s. A table''s own record a service hands back is an OBJECT: nothing selected it, and a field moving from it back into the tables refetches';
 COMMENT ON COLUMN graphitron_result.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_result_table (
@@ -9298,7 +9297,7 @@ COMMENT ON COLUMN graphitron_result_table.type_name IS 'the type holding the row
 COMMENT ON COLUMN graphitron_result_table.shape IS 'always ROW, pinned so the foreign key holds the type to a row result';
 COMMENT ON COLUMN graphitron_result_table.table_source_name IS 'the catalog the table is read from; with the schema and the name, an sql_table key';
 COMMENT ON COLUMN graphitron_result_table.table_schema IS 'the table''s schema';
-COMMENT ON COLUMN graphitron_result_table.table_name IS 'the table whose row it is: the type''s own binding, the table whose record class backs it, or, for a type with neither, the table of the row it is nested in';
+COMMENT ON COLUMN graphitron_result_table.table_name IS 'the table whose row it is: the type''s own binding, or, for a type with none, the table of the row it is nested in';
 COMMENT ON COLUMN graphitron_result_table.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
 CREATE TABLE graphitron_result_pivot (
@@ -10416,7 +10415,9 @@ SELECT graph_name, type_name, field_name, kind
                     SELECT 1 FROM landing l
                      WHERE l.graph_name = f.graph_name AND l.type_name = ft.target_type_name)
                THEN 'SELECT'
-             -- A table-bound child of a record-backed parent, which hands its keys over.
+             -- A table-bound child of a record-backed parent re-reads by the keys the object
+             -- carries, a table's record or a key-shaped one: moving from a result back into the
+             -- tables always refetches, never reading the handed record as the row.
              WHEN EXISTS (SELECT 1 FROM bound b
                            WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
               AND NOT EXISTS (SELECT 1 FROM bound b
@@ -10424,7 +10425,7 @@ SELECT graph_name, type_name, field_name, kind
               AND EXISTS (SELECT 1 FROM graphitron_type_backing tb
                            WHERE tb.graph_name = f.graph_name AND tb.type_name = f.type_name
                              AND tb.declared_via IN ('PRODUCER', 'ACCESSOR'))
-               THEN 'SELECT'
+               THEN 'LOOKUP'
            END AS kind
       FROM graphitron_field f
       JOIN graphitron_type pt
@@ -10723,27 +10724,34 @@ COMMENT ON COLUMN graphitron_producer_service_rule.method_source_name IS 'the cl
 COMMENT ON COLUMN graphitron_producer_service_rule.method_class_name IS 'the class declaring the method';
 COMMENT ON COLUMN graphitron_producer_service_rule.method_name IS 'the method';
 COMMENT ON COLUMN graphitron_producer_service_rule.method_descriptor IS 'the method''s descriptor';
--- One round of the result rule: the seeds, and one step from what the result relations already
--- hold. The fill merges it until a round adds nothing, which a view cannot state and H2 evaluates
--- badly as a recursive view, re-running it per joined row and never deduplicating.
+-- One round of the result rule: what the producers make, and one step from what this reading has
+-- already reached. The fill merges it until a round changes nothing, which a view cannot state and H2
+-- evaluates badly as a recursive view, re-running it per joined row and never deduplicating.
 CREATE VIEW graphitron_result_rule
   (graph_name, type_name, shape, table_source_name, table_schema, table_name,
    pivot_type_name, pivot_field_name) AS
 WITH
--- The results that already hold, as the parents a reader hands on from.
+-- The results this reading has reached so far, marked with the reading's own instant, as the parents
+-- a reader hands on from. A row only an earlier reading reached is no parent: the sweep removes it,
+-- and a step from it would keep alive what nothing still produces. In a reading's first round none
+-- carries the instant yet, so that round is the producers' alone.
 parent (graph_name, type_name, shape, table_source_name, table_schema, table_name,
         pivot_type_name, pivot_field_name) AS (
-  SELECT graph_name, type_name, shape, table_source_name, table_schema, table_name,
+  SELECT x.graph_name, x.type_name, x.shape, x.table_source_name, x.table_schema, x.table_name,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-    FROM graphitron_result_table
+    FROM graphitron_result_table x
+    JOIN store_graph g ON g.graph_name = x.graph_name AND g.last_captured = x.touched_at
   UNION ALL
-  SELECT graph_name, type_name, shape, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-         CAST(NULL AS VARCHAR), pivot_type_name, pivot_field_name
-    FROM graphitron_result_pivot
+  SELECT x.graph_name, x.type_name, x.shape, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS VARCHAR), x.pivot_type_name, x.pivot_field_name
+    FROM graphitron_result_pivot x
+    JOIN store_graph g ON g.graph_name = x.graph_name AND g.last_captured = x.touched_at
   UNION ALL
-  SELECT graph_name, type_name, shape, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+  SELECT x.graph_name, x.type_name, x.shape, CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
-    FROM graphitron_result WHERE shape = 'OBJECT'
+    FROM graphitron_result x
+    JOIN store_graph g ON g.graph_name = x.graph_name AND g.last_captured = x.touched_at
+   WHERE x.shape = 'OBJECT'
 ),
 -- What a field hands the type it returns: a producer its result, a reader what its parent holds.
 edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
@@ -10794,34 +10802,30 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
 )
 -- What each handed row becomes. A pivot field's type is the row its aggregate makes; a connection's
 -- wrapper holds the page as an object its fields read; an @error type holds the exception a producer
--- caught; a type that is a table's row, bound to it or backed by its record class, starts a row of
--- that table, whoever hands it; otherwise a reader hands on what its parent holds, and a producer
+-- caught; a table-bound type is a row of its table, whoever hands it, since moving from a result back
+-- into the tables always refetches; otherwise a reader hands on what its parent holds, and a producer
 -- that hands back a value holds an object: a service's, a write's or a routine's result, and a
--- connection's facets.
+-- connection's facets. A table's own record handed back is such a value, read through the Record API
+-- and never as a row: nothing selected it.
 SELECT h.graph_name, h.member,
        CASE WHEN dp.coordinate IS NOT NULL THEN 'ROW'
             WHEN h.wrapped OR de.coordinate IS NOT NULL THEN 'OBJECT'
-            WHEN b.type_name IS NOT NULL OR st.table_name IS NOT NULL THEN 'ROW'
+            WHEN b.type_name IS NOT NULL THEN 'ROW'
             ELSE COALESCE(h.shape, 'OBJECT') END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
             WHEN b.type_name IS NOT NULL THEN b.table_source_name
-            WHEN st.table_name IS NOT NULL THEN st.source_name
             ELSE h.table_source_name END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
             WHEN b.type_name IS NOT NULL THEN b.table_schema
-            WHEN st.table_name IS NOT NULL THEN st.table_schema
             ELSE h.table_schema END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
             WHEN b.type_name IS NOT NULL THEN b.table_name
-            WHEN st.table_name IS NOT NULL THEN st.table_name
             ELSE h.table_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_type
-            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL
-              OR st.table_name IS NOT NULL THEN NULL
+            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL THEN NULL
             ELSE h.pivot_type_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_name
-            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL
-              OR st.table_name IS NOT NULL THEN NULL
+            WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL THEN NULL
             ELSE h.pivot_field_name END
   FROM handed h
   LEFT JOIN graphitron_directive_application dp
@@ -10830,17 +10834,8 @@ SELECT h.graph_name, h.member,
     ON de.graph_name = h.graph_name AND de.coordinate = h.member AND de.directive_name = 'error'
   LEFT JOIN graphitron_resolved_type_binding b
     ON b.graph_name = h.graph_name AND b.type_name = h.member
-  LEFT JOIN graphitron_type_backing tb
-    ON tb.graph_name = h.graph_name AND tb.type_name = h.member
-   AND tb.declared_via IN ('PRODUCER', 'ACCESSOR')
-  -- Only in a catalog this graph claims: another graph in the store can generate a record class
-  -- under the same name.
-  LEFT JOIN sql_table st
-    ON st.record_class_fqn = tb.class_name
-   AND EXISTS (SELECT 1 FROM store_graph_source gs
-                WHERE gs.graph_name = h.graph_name AND gs.source_name = st.source_name)
  WHERE dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL
-    OR b.type_name IS NOT NULL OR st.table_name IS NOT NULL OR h.shape IS NOT NULL
+    OR b.type_name IS NOT NULL OR h.shape IS NOT NULL
     OR h.producer_kind IN ('SERVICE', 'INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'FACETS')
 UNION
 -- A federation entity holds its table's row, resolved through _entities; graphitron resolves only
