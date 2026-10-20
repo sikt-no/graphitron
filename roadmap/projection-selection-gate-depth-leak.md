@@ -1,7 +1,7 @@
 ---
 id: R708
 title: "The $project selection gate fires on names selected at any depth below its unit"
-status: In Progress
+status: In Review
 bucket: correctness
 priority: 1
 theme: codegen-correctness
@@ -464,9 +464,11 @@ discriminated fold rather than across nesting siblings.
 
 ## Implementation notes
 
-Landed in two commits, one per half, each with its execution tests green:
-`R708: scope every projection to its own level of the selection` and
-`R708: path-qualify the result-key aliases spliced into a shared row`.
+Landed in two commits, one per half, each with its execution tests green: `3f498d3` (scope every
+projection to its own level of the selection) and `c239d5f` (path-qualify the result-key aliases
+spliced into a shared row). Follow-ups: `2a6c588` (fold lambda parameters out of the host's local
+namespace), `45fc6af` (the same-row child's alias scope), `820a223` (the renamed per-typename key
+flag). Round 2's rework is the commit that moves this item back to In Review.
 
 Where the code departs from the plan, and why:
 
@@ -510,10 +512,13 @@ Where the code departs from the plan, and why:
 Tests: `ResultKeyScopeExecutionTest` (15 cases, every goal bullet plus both carve-outs' rejection
 and the shared-nesting-type agreement under `Customer` and `Store`);
 `ConnectionSharedResultKeyProjectionTest` unchanged and green; the new lint rule
-`GeneratedSourcesLintTest.emittedSourcesReadNoSelectionAtUnboundedDepth`; unit and pipeline pins
-in `RootLauncherRendererTest`, `ProjectionUnitRendererTest`, `SelectionOccurrencesClassEmitTest`,
-`NestingCoordinatesClassEmitTest` and `ParticipantAliasOwnerPipelineTest` (census both ways,
-both halves of the spliced alias).
+`GeneratedSourcesLintTest.emittedSourcesReadNoSelectionAtUnboundedDepth`; structural and data
+pins in `RootLauncherRendererTest` (the scope `ProjectionCall.SelectionScope.of` derives from the
+result shape), `ProjectionUnitRendererTest` (the nested unit's `rkPath` parameter, the unit-kind
+and alias-scope agreement), `SelectionOccurrencesClassEmitTest`, `NestingCoordinatesClassEmitTest`
+and `ParticipantAliasOwnerPipelineTest` (census both ways, the `AliasScope` stamp on the model).
+No test added by this item matches generated method-body text; existing body assertions were
+updated for the new names, as the plan allowed.
 
 Expected generated-name changes, not behaviour changes: every launcher now calls
 `SelectionOccurrences.ownFields` / `connectionNodes` where it called
@@ -599,6 +604,21 @@ fine too. The scope derivation can be asserted as data:
 model-stamp half of the `ParticipantAliasOwnerPipelineTest` case (`aliasScope()` on the leaf and
 on the row-owned fields) is data, so it stays. Updates to body assertions that existed before this
 item stay as the spec allowed.
+
+> **Response (rework, session_01Su4ZZxie8o3AYWe5DL6npX).** Done as asked. `ProjectionUnitRendererTest`:
+> the two parameter tests keep only the parameter list (now also the `rkPath` type), and
+> `splice_passesThePathFromTheRowsOwnerDownToThisOccurrence` is deleted, since it had no structural
+> half. `ParticipantAliasOwnerPipelineTest`: renamed
+> `aSplicedLeafIsStampedSpliced_andARowOwnersFieldsAreNot`, keeps the two model-stamp assertions,
+> and drops both body matches. `RootLauncherRendererTest`: the connection test becomes
+> `selectionScope_isEntailedByTheResultShape`, a data assertion on `ProjectionCall.SelectionScope.of`
+> for a connection and a list. The fold tests lose the added `foldSelection` lines and the
+> `getFieldsGroupedByResultKey` negative, which `GeneratedSourcesLintTest` already enforces. The
+> inherited-ref test keeps only its updated bucket-test line. Every behaviour removed from these
+> tests is pinned by `ResultKeyScopeExecutionTest` and `ConnectionSharedResultKeyProjectionTest`.
+> Non-blocking points: SHAs are now under Implementation notes, and `GeneratorUtils`'s javadoc no
+> longer says "flattened". This rework was done by the reviewer's own session at the user's
+> request, so the next In Review → Done reviewer must be a third session.
 
 Non-blocking:
 
