@@ -156,15 +156,14 @@ class RootLauncherRendererTest {
     }
 
     @Test
-    void connectionShape_projectsTheNodeLevelOfTheSelection() {
-        // The one body assertion on the connection arm: the scope is entailed by the result
-        // shape, and a connection reading its own immediate fields (edges/nodes/pageInfo) would
-        // match no arm and project only the row-present sentinel.
-        var body = body(filmsRow(null, new ResultShape.Connection(
-            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult(), null)));
-        assertThat(body)
-            .contains(DEFAULT_OUTPUT_PACKAGE + ".util.SelectionOccurrences.connectionNodes(env.getSelectionSet())")
-            .doesNotContain("ownFields");
+    void selectionScope_isEntailedByTheResultShape() {
+        // A connection's unit fields sit at its node level; reading its own immediate fields
+        // (edges/nodes/pageInfo) would match no arm and project only the row-present sentinel.
+        assertThat(ProjectionCall.SelectionScope.of(new ResultShape.Connection(
+            pkDesc(), 100, UNITS.connectionHelper(), UNITS.connectionResult(), null)))
+            .isEqualTo(ProjectionCall.SelectionScope.CONNECTION_NODES);
+        assertThat(ProjectionCall.SelectionScope.of(list(null)))
+            .isEqualTo(ProjectionCall.SelectionScope.OWN_FIELDS);
     }
 
     @Test
@@ -235,11 +234,6 @@ class RootLauncherRendererTest {
     void discriminatedSource_foldScopesEachBranchToItsOwnParticipant() {
         var body = body(restrictedTwoBranchRow(List.of("details"), list(null)));
         assertThat(body)
-            .as("the fold reads the fetched field's own fields once, into one scoped local every "
-                + "branch and gate reads")
-            .containsOnlyOnce("foldSelection = " + DEFAULT_OUTPUT_PACKAGE
-                + ".util.SelectionOccurrences.ownFields(env.getSelectionSet())");
-        assertThat(body)
             .as("the shared-alias field names are hoisted once per fold, not once per branch: they "
                 + "are the interface's fact, and the hoist drops a per-request allocation per arm")
             .containsOnlyOnce("java.util.Set<java.lang.String> sharedAliasFields = "
@@ -251,7 +245,6 @@ class RootLauncherRendererTest {
                 + "foldSelection, \"FilmContent\", sharedAliasFields)")
             .contains(DEFAULT_OUTPUT_PACKAGE + ".util.SelectionOccurrences.restrictTo("
                 + "foldSelection, \"ShortContent\", sharedAliasFields)");
-        assertThat(body).doesNotContain("getFieldsGroupedByResultKey");
     }
 
     @Test
@@ -374,9 +367,9 @@ class RootLauncherRendererTest {
             .as("a shared key projects once, statically aliased to the detail column's SQL name")
             .contains("fields.add(filmTable.PARTY_ID.as(\"party_id\"))");
         assertThat(body)
-            .as("an inherited reference projects per selected result-key bucket under the reserved prefix")
-            .contains("for (java.util.Map.Entry<java.lang.String, java.util.List<graphql.schema.SelectedField>> rkEntry : foldSelection.entrySet())")
-            .as("the bucket test reads every occurrence, so another participant's field first in the bucket cannot drop the base term")
+            .as("an inherited reference projects per selected result-key bucket under the reserved prefix;"
+                + " the bucket test reads every occurrence, so another participant's field first in the"
+                + " bucket cannot drop the base term")
             .contains("rkEntry.getValue().stream().anyMatch(foldField -> foldField.getName().equals(\"displayName\"))")
             .contains("fields.add(filmTable.DISPLAY_NAME.as(\"__rk_\" + rkEntry.getKey()))");
     }

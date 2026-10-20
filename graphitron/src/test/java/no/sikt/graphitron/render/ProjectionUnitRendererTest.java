@@ -173,35 +173,22 @@ class ProjectionUnitRendererTest {
     }
 
     @Test
-    void nestedUnit_takesThePathOfTheRowItWritesIntoAndQualifiesItsSplicedAliases() {
+    void nestedUnit_takesThePathOfTheRowItWritesInto() {
+        // A nested unit is spliced into its anchor's row, so it is handed the path of result keys
+        // from the row's owner down to its occurrence; what the path composes is pinned at the
+        // execution tier (ResultKeyScopeExecutionTest).
         var m = projectMethod(render(nestedRow(List.of(
             resultKeyColumn("heading", no.sikt.graphitron.rewrite.model.AliasScope.spliced())))));
         assertThat(m.parameters()).extracting(p -> p.name())
             .containsExactly("grouped", "table", "env", "rkPath");
-        assertThat(m.code().toString())
-            .as("a spliced term's alias is the prefix, the path to its row, then its own key")
-            .contains("table.TITLE.as(\"__rk_\" + rkPath + entry.getKey())");
+        assertThat(m.parameters().get(3).type().toString()).isEqualTo("java.lang.String");
     }
 
     @Test
-    void anchorUnit_takesNoPathAndKeepsTheUnqualifiedAlias() {
+    void anchorUnit_takesNoPath() {
         var m = projectMethod(render(filmRow(List.of(
             resultKeyColumn("heading", no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())))));
         assertThat(m.parameters()).extracting(p -> p.name()).containsExactly("grouped", "table", "env");
-        assertThat(m.code().toString()).contains("table.TITLE.as(\"__rk_\" + entry.getKey())");
-    }
-
-    @Test
-    void splice_passesThePathFromTheRowsOwnerDownToThisOccurrence() {
-        var splice = new Contribution.Call("details", UNITS.nestingUnit("Film", "FilmDetails"),
-            new CallWrap.Splice(List.of()), AliasOwner.shared(),
-            no.sikt.graphitron.rewrite.model.AliasScope.rowOwner());
-        assertThat(projectMethod(render(filmRow(List.of(splice)))).code().toString())
-            .as("an anchor starts the path at this occurrence's key")
-            .contains("entry.getValue()), table, env, entry.getKey() + \"/\")");
-        assertThat(projectMethod(render(nestedRow(List.of(splice)))).code().toString())
-            .as("a nested unit extends its own path")
-            .contains("entry.getValue()), table, env, rkPath + entry.getKey() + \"/\")");
     }
 
     @Test

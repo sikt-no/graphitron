@@ -412,10 +412,11 @@ class ParticipantAliasOwnerPipelineTest {
     }
 
     @Test
-    void aSplicedLeafIsStampedSplicedAndBothHalvesComposeItsPath() {
+    void aSplicedLeafIsStampedSpliced_andARowOwnersFieldsAreNot() {
         // The alias-scope stamp sits beside the owner stamp: a field declared on a nesting type is
-        // written into its anchor's row, so the nested unit writes it under the path it is handed
-        // and its fetcher composes the same path from the execution step chain.
+        // written into its anchor's row, so its alias is path-qualified; a field declared on the
+        // row's owner is not. Both emitted halves read the stamp, and their agreement is pinned at
+        // the execution tier (ResultKeyScopeExecutionTest).
         var schema = TestSchemaHelper.buildSchema(OWNER_SDL);
         var nesting = (no.sikt.graphitron.rewrite.model.ChildField.NestingField)
             schema.fieldsOf("Alpha").stream()
@@ -428,20 +429,6 @@ class ParticipantAliasOwnerPipelineTest {
         assertThat(schema.fieldsOf("Alpha")).filteredOn(f -> f instanceof ResultKeyAliasedField)
             .allSatisfy(f -> assertThat(((ResultKeyAliasedField) f).aliasScope())
                 .isEqualTo(new no.sikt.graphitron.rewrite.model.AliasScope.RowOwner()));
-
-        String nestedType = nesting.returnType().returnTypeName();
-        var projections = ProjectionRenderTestSupport.renderProjections(schema, DEFAULT_OUTPUT_PACKAGE);
-        assertThat(projections.stream().filter(t -> t.name().equals("Alpha" + nestedType))
-                .findFirst().orElseThrow().toString())
-            .contains("+ rkPath + entry.getKey()");
-        var read = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(t -> t.name().equals(nestedType + "Fetchers"))
-            .findFirst().orElseThrow()
-            .methodSpecs().stream()
-            .filter(m -> m.name().equals(((no.sikt.graphitron.rewrite.model.GraphitronField) leaf).name()))
-            .map(MethodSpec::toString)
-            .findFirst().orElseThrow();
-        assertThat(read).contains("NestingCoordinates.rkPath(env)");
     }
 
     /**

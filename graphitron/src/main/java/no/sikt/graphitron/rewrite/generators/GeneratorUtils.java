@@ -69,8 +69,8 @@ class GeneratorUtils {
      * document aliases are unrestricted, so a client could write {@code __actor_id__: ref}
      * or {@code __discriminator__: ref}. The prefix keeps a
      * client-chosen alias from ever colliding with a base-column projection, the polymorphic
-     * discriminator projection, or another result key (result keys are unique per flattened
-     * selection map by construction; an adversarial {@code __rk_foo} alias mints
+     * discriminator projection, or another result key (result keys are unique within one
+     * selection set by construction; an adversarial {@code __rk_foo} alias mints
      * {@code __rk___rk_foo}, still distinct). It is a string literal in generated output, never a
      * Java identifier, so the dunder-identifier lints do not see it.
      *
