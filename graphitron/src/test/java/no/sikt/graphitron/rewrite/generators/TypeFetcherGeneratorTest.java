@@ -2000,8 +2000,8 @@ class TypeFetcherGeneratorTest {
     //
     // DataLoader-batched: one polymorphic UNION ALL JOINed to a parentInput VALUES table, ranked
     // per parent with ROW_NUMBER() OVER (PARTITION BY __idx__), then scattered into per-parent
-    // buckets. Each bucket's ConnectionResult carries the shared pagesTable plus idxField.eq(i),
-    // so totalCount counts only that parent's occupants.
+    // buckets. Each bucket's ConnectionResult carries slot i of one BatchCounts over the shared
+    // pagesTable, so totalCount counts each parent's occupants with one grouped statement.
 
     private static ChildField.BatchedInterfaceField childInterfaceConnectionField(
             String parentType, String name, int defaultPageSize) {
@@ -2167,10 +2167,10 @@ class TypeFetcherGeneratorTest {
     }
 
     @Test
-    void childInterfaceField_connection_perParentConnectionResultsCarryIdxCondition() {
+    void childInterfaceField_connection_perParentConnectionResultsCarryBatchCountSlot() {
         // The scatter loop wraps each per-parent bucket in ConnectionResult(bucket, page,
-        // pagesTable, idxField.eq(i)). totalCount per parent runs SELECT count(*) FROM pages
-        // WHERE __idx__ = :i.
+        // counts.slot(i)) over one BatchCounts(pagesTable, idxField, keys.size()). totalCount runs
+        // SELECT __idx__, count(*) FROM pages GROUP BY __idx__ once for the batch.
         var field = childInterfaceConnectionField("FilmActor", "relatedConnection", 5);
         var spec = TypeFetcherGenerator.generateTypeSpec("FilmActor",
             filmActorParentTableForBatched(),
@@ -2184,8 +2184,12 @@ class TypeFetcherGeneratorTest {
             .as("scatter into per-parent buckets keyed by parentIdxByOuter")
             .contains("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
         assertThat(rows)
-            .as("per-parent ConnectionResult carries shared pagesTable + idxField.eq(i)")
-            .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");
+            .as("one BatchCounts over the shared pagesTable, grouped by idxField")
+            .contains(".util.ConnectionResult.BatchCounts counts = new " + DEFAULT_OUTPUT_PACKAGE
+                + ".util.ConnectionResult.BatchCounts(pagesTable, idxField, keys.size())");
+        assertThat(rows)
+            .as("per-parent ConnectionResult carries its BatchCounts slot")
+            .contains(".util.ConnectionResult(buckets.get(i), page, counts.slot(i))");
     }
 
     @Test
@@ -2206,8 +2210,8 @@ class TypeFetcherGeneratorTest {
             .contains(parentInputJoinOn("stage1_Film", "FILM_ID"))
             .contains(parentInputJoinOn("stage1_Actor", "ACTOR_ID"));
         assertThat(rows)
-            .as("union variant: same per-parent ConnectionResult with idxField.eq(i)")
-            .contains(".util.ConnectionResult(buckets.get(i), page, pagesTable, idxField.eq(i))");
+            .as("union variant: same per-parent ConnectionResult with its BatchCounts slot")
+            .contains(".util.ConnectionResult(buckets.get(i), page, counts.slot(i))");
     }
 
     // ===== Composite-PK parent (RowN widening) =====

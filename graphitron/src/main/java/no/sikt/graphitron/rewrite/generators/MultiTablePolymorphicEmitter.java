@@ -161,7 +161,7 @@ public final class MultiTablePolymorphicEmitter {
     private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
     /** Stage-1 derived-table alias used by the connection-mode UNION-ALL wrapper. */
     private static final String CONNECTION_PAGES_ALIAS = "pages";
-    /** Local variable name carrying the UNION-ALL derived table — referenced by both the page query and {@code ConnectionResult.table()} for {@code totalCount}. */
+    /** Local variable name carrying the UNION-ALL derived table — referenced by both the page query and the carrier's {@code totalCount} count source. */
     private static final String CONNECTION_PAGES_LOCAL = "pagesTable";
     /** Directive context surfaced in {@link ValuesJoinRowBuilder}'s arity-cap error messages. */
     private static final String DIRECTIVE_CONTEXT = "@interface participant PK";
@@ -1836,10 +1836,12 @@ public final class MultiTablePolymorphicEmitter {
      * <p>Stage-2 dispatch (per typename) writes typed Records to {@code result[outerIdx]}; a
      * parallel {@code int[] parentIdxByOuter} populated from each stage-1 row's {@code __idx__}
      * scatters the typed Records into per-parent {@code List<Record>} buckets. Each
-     * per-parent {@code ConnectionResult} re-uses the SAME {@code pagesTable} reference but
-     * applies a per-parent condition {@code __idx__.eq(i)} so {@code totalCount} resolves to
-     * that parent's count via {@code SELECT count(*) FROM pagesTable WHERE __idx__ = :i}: N
-     * count queries when totalCount is selected, while the page-rows query stays batched.
+     * per-parent {@code ConnectionResult} binds slot {@code i} of one
+     * {@code ConnectionResult.BatchCounts} over the SAME {@code pagesTable} reference, so the
+     * first {@code totalCount} to resolve runs
+     * {@code SELECT __idx__, count(*) FROM pagesTable GROUP BY __idx__} once for the batch and
+     * every parent reads its own count from it: one count query when totalCount is selected,
+     * however many parents the batch holds.
      *
      * <p>Cursor semantics: graphql-java resolves field arguments once per field selection
      * regardless of parent-fanout, so every key in the batch shares the same
@@ -1857,8 +1859,10 @@ public final class MultiTablePolymorphicEmitter {
             int defaultPageSize, SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
             String outputPackage) {
 
-        var connectionResultClass = ClassName.get(outputPackage + ".util",
-            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.CLASS_NAME);
+        var connectionResult = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionResult();
+        var connectionResultClass = ClassName.get(connectionResult.packageName(), connectionResult.simpleName());
+        var batchCountsClass = connectionResultClass.nestedClass(
+            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.BATCH_COUNTS_CLASS_NAME);
         var connectionHelperClass = ClassName.get(outputPackage + ".util",
             no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator.CLASS_NAME);
         var pageRequestClass = ClassName.get(outputPackage + ".util",
@@ -1914,8 +1918,8 @@ public final class MultiTablePolymorphicEmitter {
             pageRequestClass, connectionHelperClass, defaultPageSize, LIST);
 
         // Stage 1: per-branch UNION ALL projecting (typename, pk0, idx) plus JOIN parentInput.
-        // Wrap as derived table "pages". The same pagesTable reference is shared across every
-        // per-parent ConnectionResult; per-parent totalCount filters with __idx__.eq(i).
+        // Wrap as derived table "pages". The same pagesTable reference feeds the batch's one
+        // BatchCounts, whose grouped count serves every per-parent totalCount.
         TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
         b.add("$T $L =\n", tableWildcard, CONNECTION_PAGES_LOCAL);
         for (int p = 0; p < participants.size(); p++) {
@@ -1936,8 +1940,7 @@ public final class MultiTablePolymorphicEmitter {
         }
         b.add("    .asTable($S);\n", CONNECTION_PAGES_ALIAS);
 
-        // idxField: shared between the ranked CTE's PARTITION BY and per-parent ConnectionResult
-        // condition.
+        // idxField: shared between the ranked CTE's PARTITION BY and the BatchCounts GROUP BY.
         TypeName idxFieldType = ParameterizedTypeName.get(FIELD, integerClass);
         b.addStatement("$T idxField = $T.field($T.name($S), $T.class)",
             idxFieldType, DSL, DSL, IDX_COLUMN, integerClass);
@@ -2006,13 +2009,15 @@ public final class MultiTablePolymorphicEmitter {
         b.endControlFlow();
         b.endControlFlow();
 
-        // Build per-parent ConnectionResults — share pagesTable for totalCount, per-parent
-        // condition __idx__ = i so COUNT(*) restricts to that parent's slice of the union.
+        // Build per-parent ConnectionResults — one BatchCounts over pagesTable for the batch, slot i
+        // on parent i, so COUNT(*) GROUP BY __idx__ runs once however many parents select it.
+        b.addStatement("$T counts = new $T($L, idxField, keys.size())",
+            batchCountsClass, batchCountsClass, CONNECTION_PAGES_LOCAL);
         b.addStatement("$T out = new $T<>(keys.size())", listOfConnectionResult, ARRAY_LIST);
         b.beginControlFlow("for (int i = 0; i < keys.size(); i++)");
-        b.addStatement("out.add(new $T(buckets.get(i), page, $L, idxField.eq(i)"
+        b.addStatement("out.add(new $T(buckets.get(i), page, counts.slot(i)"
             + (TenantDslEmitter.isMultiTenant(ctx) ? ", dsl" : "") + "))",
-            connectionResultClass, CONNECTION_PAGES_LOCAL);
+            connectionResultClass);
         b.endControlFlow();
         b.addStatement("return out");
 

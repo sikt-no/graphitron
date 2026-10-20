@@ -9,7 +9,6 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
 
-import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.DSL;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.LIST;
 import static no.sikt.graphitron.rewrite.generators.GeneratorUtils.RECORD;
 
@@ -224,9 +223,11 @@ public final class SplitRowsMethodEmitter {
      * lives per-partition in the windowed CTE, so each parent's bucket is 0..(pageSize+1).
      *
      * <p>{@code countSource} is the shared cursor-independent count derived table emitted by
-     * the rows method; each per-parent carrier binds it with an {@code __idx__ = i} condition
-     * so the generated {@code ConnectionHelper.totalCount} can serve a per-parent count on
-     * selection (same shape as the polymorphic batched path's shared {@code pages} table).
+     * the rows method. The helper wraps it in one {@code ConnectionResult.BatchCounts} for the
+     * batch and binds slot {@code i} on parent {@code i}'s carrier, so the generated
+     * {@code ConnectionHelper.totalCount} runs one {@code count(*)} grouped by {@code __idx__}
+     * for the whole batch on first selection (same shape as the polymorphic batched path over
+     * its shared {@code pages} table).
      */
     public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage) {
         return buildScatterConnectionByIdxHelper(outputPackage, false);
@@ -239,8 +240,10 @@ public final class SplitRowsMethodEmitter {
      */
     public static MethodSpec buildScatterConnectionByIdxHelper(String outputPackage, boolean multiTenant) {
         TypeName resultRecord = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"), RECORD);
-        ClassName connectionResultClass = ClassName.get(
-            outputPackage + ".util", "ConnectionResult");
+        var connectionResult = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).connectionResult();
+        ClassName connectionResultClass = ClassName.get(connectionResult.packageName(), connectionResult.simpleName());
+        ClassName batchCountsClass = connectionResultClass.nestedClass(
+            no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator.BATCH_COUNTS_CLASS_NAME);
         ClassName pageRequestClass = ClassName.get(
             outputPackage + ".util", "ConnectionHelper", "PageRequest");
         TypeName tableWildcard = ParameterizedTypeName.get(TABLE, WildcardTypeName.subtypeOf(Object.class));
@@ -267,12 +270,13 @@ public final class SplitRowsMethodEmitter {
                 .addStatement("int idx = r.get($S, $T.class)", IDX_COLUMN, Integer.class)
                 .addStatement("buckets.get(idx).add(r)")
                 .endControlFlow()
+                .addStatement("$T counts = new $T(countSource, countSource.field($S, $T.class), keyCount)",
+                    batchCountsClass, batchCountsClass, IDX_COLUMN, Integer.class)
                 .addStatement("$T out = new $T<>(keyCount)", listOfConnectionResult, ARRAY_LIST)
                 .beginControlFlow("for (int i = 0; i < keyCount; i++)")
-                .addStatement("out.add(new $T(buckets.get(i), page, countSource,"
-                        + " countSource.field($S, $T.class).eq($T.inline(i))"
+                .addStatement("out.add(new $T(buckets.get(i), page, counts.slot(i)"
                         + (multiTenant ? ", dsl" : "") + "))",
-                    connectionResultClass, IDX_COLUMN, Integer.class, DSL)
+                    connectionResultClass)
                 .endControlFlow()
                 .addStatement("return out")
                 .build())

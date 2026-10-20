@@ -327,7 +327,7 @@ class BatchedTableFieldPipelineTest {
             .doesNotContain("scatterByIdx");
 
         // The scatter carries the shared count-source derived table so each per-parent
-        // ConnectionResult can bind (countSource, __idx__ = i) for a real totalCount.
+        // ConnectionResult can bind a slot of one BatchCounts grouped over it.
         var scatter = filmFetchers.methodSpecs().stream()
             .filter(m -> m.name().equals("scatterConnectionByIdx"))
             .findFirst().orElseThrow();

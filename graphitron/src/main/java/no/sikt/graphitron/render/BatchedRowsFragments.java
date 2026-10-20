@@ -455,7 +455,8 @@ public final class BatchedRowsFragments {
      * the idx scatter key over the page's effective ordering, the seek applied pre-rank on the
      * ranked inner table, the {@code asTable("ranked")} staging, the outer {@code __rn__ <=
      * limit} page filter, and the cursor-independent count source feeding
-     * {@code scatterConnectionByIdx}. The scatter call's trailing {@code dsl} rides the run's
+     * {@code scatterConnectionByIdx}, which groups it by idx once per batch for every
+     * parent's {@code totalCount}. The scatter call's trailing {@code dsl} rides the run's
      * carrier-routing fact.
      *
      * <p>Preconditions: {@link #pageRequestLocals} has run ({@code page} and {@code selectFields}

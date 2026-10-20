@@ -59,7 +59,7 @@ The combination "path-scoped, request-scoped" means inline-style mistakes (a per
 == Composition with other directives
 
 * *`@lookupKey`.* A `@splitQuery + @lookupKey` field narrows the per-parent batch to caller-provided keys: each parent gets the intersection of "rows that match this parent" AND "rows whose key matches the caller's list". Two `VALUES` tables join into one batched query. Without `@splitQuery`, the same `[T!]! @lookupKey` field paginates across all parents in one wide SELECT; rarely the right semantic at the child level. xref:batch-lookups.adoc[Batch lookups] covers this composition in detail.
-* *`@asConnection`.* `@splitQuery + @asConnection` produces a per-parent paginated child connection. The fetcher emits a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is its own slice; xref:connections.adoc[connections] covers cursor stability and the `totalCount` consequence (split-connection carriers return `null` for `totalCount` until per-parent count plumbing lands).
+* *`@asConnection`.* `@splitQuery + @asConnection` produces a per-parent paginated child connection. The fetcher emits a `ROW_NUMBER() OVER (PARTITION BY parentInput.idx ORDER BY ...)` envelope so each parent's connection page is its own slice; xref:connections.adoc[connections] covers cursor stability and the `totalCount` consequence (selecting `totalCount` adds one `count(*)` grouped by parent for the whole batch).
 * *`@orderBy`.* A `@splitQuery` fetcher accepts a runtime `@orderBy` argument and threads it into the per-parent batched query. The emitted helper takes the FK-chain terminal alias as a parameter so column refs resolve against the split query's aliased table instance rather than a hard-coded canonical alias. Inline correlated subqueries can also carry `@orderBy`, but the order applies *across* all parents' rows, not per-parent.
 * *`@reference`.* Both shapes need a path. The classifier reads the catalog FK metadata, falls back to the directive-stated `path: [...]`, and rejects ambiguous auto-discovery with a diagnostic. `@reference` is orthogonal to the inline/split decision; it supplies the join, the directive picks the emission shape.
 
@@ -80,7 +80,7 @@ The combination "path-scoped, request-scoped" means inline-style mistakes (a per
 * xref:../reference/directives/asConnection.adoc[`@asConnection`] composes with `@splitQuery` for per-parent paginated child connections.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`] composes with `@splitQuery` for per-parent narrowed child batches.
 * xref:batch-lookups.adoc[How-to: Batch lookups] covers the `@lookupKey` composition shapes in operational detail.
-* xref:connections.adoc[How-to: Cursor-paginated connections] covers the `@splitQuery + @asConnection` shape and the split-connection `totalCount: null` consequence.
+* xref:connections.adoc[How-to: Cursor-paginated connections] covers the `@splitQuery + @asConnection` shape and what `totalCount` costs on a split connection.
 * xref:sort-results.adoc[How-to: Sort results] covers the cursor-stability, tie-breaker, and `@orderBy` issues that affect both split and inline paginated children.
 
 xref:index.adoc[← How-to index]

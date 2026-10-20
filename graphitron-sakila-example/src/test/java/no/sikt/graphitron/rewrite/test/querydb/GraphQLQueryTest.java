@@ -4364,14 +4364,18 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     @Test
     void splitQueryConnection_totalCount_isParentScoped() {
-        // The rows method emits a shared cursor-independent countSource derived table;
-        // each per-parent ConnectionResult binds it with __idx__ = i, so totalCount counts the
-        // whole per-parent connection independent of the page size. Seed: film 1 -> {1, 2},
-        // film 2 -> {1, 3}, film 3 -> {1}, film 4 -> {2}, film 5 -> {3}. first: 1 distinguishes
-        // the connection count from the page size.
+        // The rows method emits a shared cursor-independent countSource derived table; the
+        // batch's one BatchCounts groups it by __idx__ and each per-parent ConnectionResult reads
+        // its own slot, so totalCount counts the whole per-parent connection independent of the
+        // page size. Seed: film 1 -> {1, 2}, film 2 -> {1, 3}, film 3 -> {1}, film 4 -> {2},
+        // film 5 -> {3}. first: 1 distinguishes the connection count from the page size.
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute(
             "{ filmById(film_id: [\"1\", \"2\", \"3\", \"4\", \"5\"]) { filmId "
                 + "actorsConnection(first: 1) { totalCount } } }");
+        assertThat(QUERY_COUNT.get())
+            .as("the root, one batched page statement and one grouped count, as for two films")
+            .isEqualTo(3);
         List<Map<String, Object>> films = (List<Map<String, Object>>) data.get("filmById");
         var byId = films.stream().collect(java.util.stream.Collectors.toMap(
             f -> (Integer) f.get("filmId"),
@@ -4408,7 +4412,7 @@ class GraphQLQueryTest {
     @Test
     void splitQueryConnection_totalCount_isLazyOnSelection() {
         // graphql-java only invokes the registered totalCount resolver on selection: nothing
-        // extra when the field is unselected, one count statement per parent when it is.
+        // extra when the field is unselected, one grouped count for the batch when it is.
         QUERY_COUNT.set(0);
         execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
             + "{ nodes { actorId } } } }");
@@ -4420,8 +4424,8 @@ class GraphQLQueryTest {
         execute("{ filmById(film_id: [\"1\", \"2\"]) { filmId actorsConnection(first: 1) "
             + "{ nodes { actorId } totalCount } } }");
         assertThat(QUERY_COUNT.get())
-            .as("the same two plus one count statement per parent")
-            .isEqualTo(4);
+            .as("the same two plus one grouped count statement for the batch")
+            .isEqualTo(3);
     }
 
     @Test
@@ -6125,7 +6129,7 @@ class GraphQLQueryTest {
     void fanOwners_fanItemsConnection_perParentPagesRideOneBatchStatement() {
         // fan_owner 1 holds fan items {1, 2, 3}, owner 2 holds {4}: a first: 2 page splits
         // owner 1's bucket and leaves owner 2's whole, and totalCount is per bucket, not the
-        // batch total (its per-parent count statements resolve lazily, so no round-trip pin
+        // batch total (the batch's one grouped count resolves lazily, so no round-trip pin
         // here; the sibling filmContentsConnection test pins the batch round-trip count).
         Map<String, Object> data = execute(
             "{ allFanOwners { ownerName fanItemsConnection(first: 2) "
@@ -6997,6 +7001,43 @@ class GraphQLQueryTest {
         assertThat(QUERY_COUNT.get())
             .as("two parents issue as many statements as three")
             .isEqualTo(threeParents);
+
+        // The same twin with totalCount: the batch's one grouped count is the only addition, so
+        // the totals still do not grow with the number of parents.
+        QUERY_COUNT.set(0);
+        execute("""
+            { customers(active: true) {
+                customerId
+                address {
+                    addressId
+                    occupantsConnection(first: 1) {
+                        edges { node { __typename } }
+                        totalCount
+                    }
+                }
+            } }
+            """);
+        int threeParentsCounted = QUERY_COUNT.get();
+        QUERY_COUNT.set(0);
+        execute("""
+            { customers(active: false) {
+                customerId
+                address {
+                    addressId
+                    occupantsConnection(first: 1) {
+                        edges { node { __typename } }
+                        totalCount
+                    }
+                }
+            } }
+            """);
+        int twoParentsCounted = QUERY_COUNT.get();
+        assertThat(threeParentsCounted)
+            .as("selecting totalCount adds one statement for three parents")
+            .isEqualTo(threeParents + 1);
+        assertThat(twoParentsCounted)
+            .as("and the same one statement for two")
+            .isEqualTo(threeParentsCounted);
     }
 
     // ===== Composite-PK parent for child interface @asConnection =====
@@ -7040,11 +7081,21 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void projectItemsConnection_totalCount_isParentScoped() {
-        // Per-parent ConnectionResult uses idxField.eq(i) so totalCount restricts to the carrier
-        // parent's slice of the union. Cipher should report exactly 2; Atlas exactly 4.
+        // Each per-parent ConnectionResult reads slot i of the batch's grouped count over the
+        // union, so totalCount restricts to the carrier parent's slice. Cipher should report
+        // exactly 2; Atlas exactly 4. The count costs one statement for the three projects.
+        QUERY_COUNT.set(0);
+        execute("""
+            { projects { name orgId projectId items { __typename } } }
+            """);
+        int uncounted = QUERY_COUNT.get();
+        QUERY_COUNT.set(0);
         Map<String, Object> data = execute("""
             { projects { name orgId projectId items { totalCount } } }
             """);
+        assertThat(QUERY_COUNT.get())
+            .as("one grouped count statement for the batch of three projects")
+            .isEqualTo(uncounted + 1);
         var projects = (List<Map<String, Object>>) data.get("projects");
         var byName = projects.stream()
             .collect(java.util.stream.Collectors.toMap(p -> (String) p.get("name"), java.util.function.Function.identity()));

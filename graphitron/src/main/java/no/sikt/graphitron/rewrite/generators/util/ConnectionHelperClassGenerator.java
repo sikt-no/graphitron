@@ -312,10 +312,10 @@ public class ConnectionHelperClassGenerator {
         // --- totalCount(DataFetchingEnvironment) → Integer ---
         // Lazy on selection: graphql-java only invokes the registered resolver when the client
         // selects totalCount, so the count SQL is skipped on every query that does not ask for
-        // it. Returns null when (table, condition) are absent; the only producer of such a
-        // carrier is the validator-unreachable empty-participants defensive path in
-        // MultiTablePolymorphicEmitter.buildRootConnectionFetcher. Every reachable path binds a
-        // real pair.
+        // it. The carrier's count slot decides the statement: Scoped on a root connection, one
+        // grouped count shared by the batch on a batched one. Returns null when the slot is
+        // absent; the only producer of such a carrier is the validator-unreachable
+        // empty-participants defensive path in MultiTablePolymorphicEmitter.buildRootConnectionFetcher.
         var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         var graphitronContextClass = ClassName.get(outputPackage + ".schema", "GraphitronContext");
         // Multi-tenant: read the DSLContext the owning fetcher bound on the carrier (see the
@@ -330,9 +330,9 @@ public class ConnectionHelperClassGenerator {
             .returns(Integer.class)
             .addParameter(ENV, "env")
             .addStatement("$T cr = env.getSource()", connectionResultClass)
-            .addCode("if (cr.table() == null || cr.condition() == null) return null;\n")
+            .addCode("if (cr.totalCount() == null) return null;\n")
             .addCode(lazyDslDeclaration)
-            .addStatement("return dsl.selectCount().from(cr.table()).where(cr.condition()).fetchOne(0, $T.class)", Integer.class)
+            .addStatement("return cr.totalCount().count(dsl)")
             .build();
 
         // --- facets(DataFetchingEnvironment) → Map<String, List<Map<String, Object>>> ---
