@@ -1,7 +1,7 @@
 ---
 id: R1067
 title: "A node id or tenant value that does not fit its column is not caught at decode"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: nodeid
@@ -415,6 +415,13 @@ Landed as specified, with these choices the spec left open:
   `ConstraintViolationsWireShapeTest`, since it needs no database. The "never written" UPDATE case
   is `NodeIdValueAgreementExecutionTest.mutationUpdate_setReferenceWhoseKeyWrapsItsColumn_writesNothing`,
   a wrapping `Film` reference on a SET.
+- `TenantRoutedFetcherPipelineTest` pins no part of the new decode or grouping text. The emitted
+  `handle<Type>` body changed, and the matches on it this item first rewrote were retired in the
+  Done round 4 rework. What they stood for is pinned at the execution tier, by
+  `TenantDivinedRoutingExecutionTest`'s tenant-slot cases and `FederationEntitiesDispatchTest`'s
+  `@key` cases. No execution fixture has a `@key` alternative over the tenant key column (every
+  tenant-routed `@key` entity in the sakila schemas reads `@defaultTenant`), so that arm's tenant
+  canonicalisation is pinned only through the node-id arm, which shares it.
 
 ## Retired vocabulary
 
@@ -603,3 +610,10 @@ check on the `TypeSpec` (method names and signatures). Do not pin the body again
 over a tenant-scoped key column is judged to need its own outcome pin once the text goes, add it at
 the execution tier. The spec does not demand that case, so it is the implementer's call. Nothing else
 in the delivery needs to change.
+
+> **Author (round 4):** Addressed in `TenantRoutedFetcherPipelineTest`. Every match the delivery
+> added or rewrote on the generated `handle<Type>` body is gone from both tests. The lines that
+> predate this item stay as they were. The comments now point at the execution cases that pin the
+> behaviour. No execution case was added for a `@key` alternative over the tenant key column. Such
+> a case needs a new multitenant fixture, and the spec does not ask for one; Implementation notes
+> records the gap.
