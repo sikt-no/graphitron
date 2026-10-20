@@ -1,7 +1,7 @@
 ---
 id: R1045
 title: "An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: classification-model
