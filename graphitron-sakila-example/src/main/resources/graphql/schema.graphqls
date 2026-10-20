@@ -2536,12 +2536,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
     blurb: FilmBlurb
     # Same-row table child: FilmSameRow is bound to film like this type and the field has no
     # @reference, so it reads this film's own row. sameTableById is the narrowed form of the same
-    # shape: a read of film narrowed by its own @condition argument, the same rows under every film.
+    # shape: a read of film narrowed by its own argument, the same rows under every film.
     sameRow: FilmSameRow
-    sameTableById(filmId: Int @condition(condition: {
-        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
-        method: "filmIdKeyEquals"
-    }, override: true)): [FilmSameRow!]!
+    sameTableById(filmId: Int @field(name: "FILM_ID")): [FilmSameRow!]!
     # @pivot fixtures: discriminator-keyed aggregate projections over the film_translation /
     # film_price attribute tables. titleTranslations / taglineTranslations reuse one projection
     # type with different value columns through the PivotLang vocabulary enum; prices uses the
