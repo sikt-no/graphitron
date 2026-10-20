@@ -1044,6 +1044,76 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(TENANT_2_OPENED.get()).as("the narrowing names tenant 1 only").isZero();
     }
 
+    @Test
+    void wireValue_aNumberThatWrapsTheColumn_isAClientErrorNotAnotherTenant() {
+        // 4294967297 is 2^32 + 1: film_id is an int4, so a lenient coercion would route to tenant 1.
+        var result = execute("{ filmsByWireId(filmId: \"4294967297\") { title } }");
+        assertThat(result.getErrors().toString())
+            .contains("Tenant value '4294967297' is not a value of the tenant column");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void wireValue_aPaddedNumber_keepsTheColumnsCoercion() {
+        // jOOQ trims before it parses, and an authored tenant value keeps that documented coercion.
+        assertThat(filmTitles(execute("{ filmsByWireId(filmId: \" 1\") { title } }"), "filmsByWireId"))
+            .containsExactly("Tenant One Film");
+        assertThat(TENANT_2_OPENED.get()).isZero();
+    }
+
+    // ===== A node id whose tenant slot does not decode is a malformed id =====
+
+    /** A FilmActor id (actor 10, tenant 1's row) whose tenant slot, film_id, is not a film id. */
+    private static final String TENANT_SLOT_ABC = NodeIdEncoder.encode("FilmActor", 10, "abc");
+
+    @Test
+    void node_tenantSlotThatDoesNotDecode_answersNull_withoutAConnection() {
+        var result = execute("{ node(id: \"" + TENANT_SLOT_ABC + "\") { id } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat(((Map<String, Object>) result.getData()).get("node")).isNull();
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get() + DEFAULT_OPENED.get()).isZero();
+    }
+
+    @Test
+    void nodes_tenantSlotThatDoesNotDecode_nullsThatSlot_andTheRestResolves() {
+        var result = execute("{ nodes(ids: [\"" + TENANT_SLOT_ABC + "\", \""
+            + NodeIdEncoder.encodeFilmActor(20, 2) + "\"]) { ... on FilmActor { actorId } } }");
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("nodes"))
+            .extracting(m -> m == null ? null : m.get("actorId"))
+            .containsExactly(null, 20);
+        assertThat(TENANT_1_OPENED.get()).as("the refused id names no tenant to open").isZero();
+    }
+
+    @Test
+    void entities_tenantSlotThatDoesNotDecode_nullsThatSlot_andTheRestResolves() {
+        var result = graphql.execute(Graphitron.newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"test-user\"}")
+            .query(INVENTORY_ENTITIES)
+            .variables(Map.of("reps", List.of(
+                Map.of("__typename", "FilmActor", "id", TENANT_SLOT_ABC),
+                Map.of("__typename", "FilmActor", "id", NodeIdEncoder.encodeFilmActor(20, 2)))))
+            .build());
+        var entities = (List<Map<String, Object>>) data(result, "_entities");
+        assertThat(entities)
+            .as("a decode failure no longer throws out of the dispatch, so data survives")
+            .extracting(m -> m == null ? null : m.get("actorId"))
+            .containsExactly(null, 20);
+        assertThat(TENANT_1_OPENED.get()).isZero();
+    }
+
+    @Test
+    void deleteByNodeId_aKeyThatWrapsOntoAnExistingRow_writesNothing() {
+        // 4294967306 is 2^32 + 10, which a lenient coercion wraps onto tenant 1's actor 10.
+        String wrapped = NodeIdEncoder.encode("FilmActor", "4294967306", 1);
+        var result = execute("mutation { deleteFilmActorByNodeId(in: { id: \"" + wrapped + "\" }) }");
+        assertThat(result.getErrors()).as("an id that does not decode is the malformed-id failure").isNotEmpty();
+        assertThat(result.getErrors().toString()).contains("not a valid FilmActor id");
+        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+            assertThat(t1.fetchCount(DSL.table("film_actor"), DSL.field("actor_id").eq(10)))
+                .as("the row the key wraps onto is untouched").isEqualTo(1);
+        }
+    }
+
     // ===== The request tenant set: routing only to tenants the request may touch =====
 
     @Test

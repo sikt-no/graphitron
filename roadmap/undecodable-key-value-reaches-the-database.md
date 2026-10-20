@@ -392,6 +392,37 @@ before the fix.
 - **Letting the database refuse it.** A wrap produces a valid value of the column, so the database
   never sees the overflow, and a read never refuses at all.
 
+## Implementation notes
+
+Landed as specified, with these choices the spec left open:
+
+- `ColumnValues` is a new global unit kind, `COLUMN_VALUES`, minted by `GeneratedUnits.columnValues()`
+  and emitted on every run. It is schema-independent, so it joins the frozen-scaffold kinds in
+  `PlanCompileGraph`. Its inbound edges are precise from `NodeIdEncoder`, and declared from
+  `TenantConnections` and `EntityFetcherDispatch`, since only a multi-tenant build or a `@key`
+  alternative references it there.
+- The precision clause also requires `DataType.isNumeric()`. A temporal type reports a precision
+  that counts fractional seconds, and a converter from such a column to a `Long` would otherwise be
+  read against it.
+- `decode<Type>` loads the canonical values with `rec.set(col, col.getType().cast(values[i]))`,
+  keeping the changed flags the old `rec.set` produced.
+- The jOOQ-record decode rails pass the record's *target* columns to `decodeColumns`, which are
+  the columns those rails write.
+- The argument rails were confirmed: every `decode<Type>` caller throws on `null` (or, on the
+  multitable pruning path, turns it into a false condition behind a guard that throws when no
+  branch decodes the id). None needed an edit.
+- The direct `ColumnValues` coverage is `ColumnValuesTest`, at the unit tier beside
+  `ConstraintViolationsWireShapeTest`, since it needs no database. The "never written" UPDATE case
+  is `NodeIdValueAgreementExecutionTest.mutationUpdate_setReferenceWhoseKeyWrapsItsColumn_writesNothing`,
+  a wrapping `Film` reference on a SET.
+
+## Retired vocabulary
+
+- `TenantConnections.roundTrip` and the `TENANT_COLUMN_CONVERTER` field: the converter round trip
+  now lives in `ColumnValues`, which reads the converter off `TENANT_COLUMN_TYPE`.
+- `HandleMethodBody`'s `divinedTenant(tenantEntry.getKey())` group-key call: the group key is the
+  canonical tenant from `tenantKeyOrNull`.
+
 ## Reviewer findings
 
 ### Round 1 (Spec → Ready): request revisions, session_01EUZJP9WzXawm9B85Tt8mq2, 2026-10-19

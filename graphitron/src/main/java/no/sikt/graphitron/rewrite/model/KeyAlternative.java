@@ -65,7 +65,7 @@ public sealed interface KeyAlternative permits KeyAlternative.Direct, KeyAlterna
      * synthesised for a {@code @node} type or carried by an explicit {@code @key(fields: "id")}
      * on one). {@code requiredFields()} is the constant {@code ["id"]}, a fact of the variant
      * rather than stored state that could disagree. {@code expectedTypeId} is the resolved wire
-     * prefix the dispatcher passes into {@code NodeIdEncoder.decodeValues} (the type's
+     * prefix the dispatcher passes into {@code NodeIdEncoder.decodeColumns} (the type's
      * {@code @node(typeId:)} value, defaulted to the type name at classify time); {@code columns}
      * is the decode arity.
      */

@@ -117,7 +117,7 @@ public final class RecordDecodeFragments {
      * polymorphic slot's per-candidate arm has to be able to tell "this id is not mine" from "this id
      * is broken", and the three forms above answer both with a throw, so a right-prefix-wrong-arity
      * id would surface one candidate's own mismatch error instead of the dispatch's message naming
-     * every candidate. {@code decodeValues} already returns {@code null} for a foreign prefix, so one
+     * every candidate. {@code decodeColumns} already returns {@code null} for a foreign prefix, so one
      * arm answers both misses.
      *
      * <p>Never emitted as a slot's own decode. Its caller is the container helper
@@ -247,26 +247,28 @@ public final class RecordDecodeFragments {
             java.util.List<no.sikt.graphitron.model.jooq.ColumnRef> keyColumns,
             TableRef nodeTable, CodeBlock mismatchThrow) {
         ClassName recordType = CatalogRefs.recordClass(nodeTable);
-        int arity = keyColumns.size();
-        var body = MethodSpec.methodBuilder(name)
+        var fields = CodeBlock.builder();
+        for (var column : keyColumns) {
+            fields.add(", $T.$L.$L", CatalogRefs.constantsClass(nodeTable), nodeTable.javaFieldName(),
+                column.javaName());
+        }
+        // decodeColumns refuses a malformed id, a wrong arity and a key value that is not a value
+        // of its column, so every value fromArray loads is the column's own, never null.
+        return MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(recordType)
             .addParameter(Object.class, "wire")
             .beginControlFlow("if (!(wire instanceof String nodeId))")
             .addStatement("return null")
             .endControlFlow()
-            .addStatement("$T values = $T.decodeValues($S, nodeId)",
-                String[].class, encoderClass, typeId)
-            .beginControlFlow("if (values == null || values.length != $L)", arity)
+            .addStatement("$T values = $T.decodeColumns($S, nodeId$L)",
+                Object[].class, encoderClass, typeId, fields.build())
+            .beginControlFlow("if (values == null)")
             .addCode(mismatchThrow)
             .endControlFlow()
-            .addStatement("$T decoded = new $T()", recordType, recordType);
-        var fields = CodeBlock.builder();
-        for (var column : keyColumns) {
-            fields.add(", $T.$L.$L", CatalogRefs.constantsClass(nodeTable), nodeTable.javaFieldName(),
-                column.javaName());
-        }
-        body.addStatement("decoded.fromArray(values$L)", fields.build());
-        return body.addStatement("return decoded").build();
+            .addStatement("$T decoded = new $T()", recordType, recordType)
+            .addStatement("decoded.fromArray(values$L)", fields.build())
+            .addStatement("return decoded")
+            .build();
     }
 }

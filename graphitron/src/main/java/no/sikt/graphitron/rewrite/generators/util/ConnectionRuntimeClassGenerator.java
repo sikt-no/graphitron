@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
@@ -8,7 +7,6 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.TypeVariableName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -168,8 +166,6 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName DATA_TYPE = ClassName.get("org.jooq", "DataType");
-    private static final ClassName CONVERTER = ClassName.get("org.jooq", "Converter");
-    private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
     private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
     private static final ClassName DATA_FETCHER_RESULT = ClassName.get("graphql.execution", "DataFetcherResult");
@@ -251,6 +247,7 @@ public final class ConnectionRuntimeClassGenerator {
         var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
+        var columnValues = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
 
         boolean multiTenant = tenantKeyType != null;
 
@@ -259,7 +256,7 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, sessionHooks, tenantKey,
             multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter));
+            multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter, columnValues));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
@@ -1137,7 +1134,7 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionHooks sessionHooks,
                                               ClassName requestTenants, CodeBlock tenantColumn,
-                                              ClassName errorRouter) {
+                                              ClassName errorRouter, ClassName columnValues) {
         var payload = payloadParams(sessionHooks);
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
         boolean handled = handleType != null;
@@ -1466,23 +1463,12 @@ public final class ConnectionRuntimeClassGenerator {
                     + "the one-key case of the unified per-key design. See\n"
                     + "{@code ConnectionRuntimeClassGenerator} for the full contract.\n");
         if (multiTenant) {
-            // DataType.convert(Object) is deprecated for removal in jOOQ 3.20 with no public
-            // Object-to-T successor; the same suppression NodeIdEncoder carries.
-            carrier.addAnnotation(AnnotationSpec.builder(SuppressWarnings.class)
-                    .addMember("value", "{$S, $S}", "deprecation", "removal")
-                    .build())
-                .addField(FieldSpec.builder(ParameterizedTypeName.get(DATA_TYPE, tenantKey), "TENANT_COLUMN_TYPE",
+            carrier.addField(FieldSpec.builder(ParameterizedTypeName.get(DATA_TYPE, tenantKey), "TENANT_COLUMN_TYPE",
                         Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
                     .initializer("$L.getDataType()", tenantColumn)
-                    .addJavadoc("The representative tenant column's data type: the coercion a client value takes\n"
-                        + "on its way to the column, the same one the generated SQL binds it with.\n")
-                    .build())
-                .addField(FieldSpec.builder(
-                        ParameterizedTypeName.get(CONVERTER, WildcardTypeName.subtypeOf(Object.class), tenantKey),
-                        "TENANT_COLUMN_CONVERTER", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-                    .initializer("$L.getConverter()", tenantColumn)
-                    .addJavadoc("The representative tenant column's converter between its database value and its\n"
-                        + "Java form; jOOQ's identity converter when the column has none.\n")
+                    .addJavadoc("The representative tenant column's data type, its converter included: the coercion\n"
+                        + "a client value takes on its way to the column, the same one the generated SQL binds it\n"
+                        + "with.\n")
                     .build())
                 .addField(scatterWorkerMarkerField);
         }
@@ -1544,8 +1530,8 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(staticDslGlobal(self))
                 .addMethod(namedTenant(tenantKey))
                 .addMethod(divinedTenant(tenantKey))
+                .addMethod(tenantKeyOrNull(tenantKey, columnValues))
                 .addMethod(canonicalTenantKey(tenantKey))
-                .addMethod(roundTrip(tenantKey))
                 .addMethod(tenantKeyOf(tenantKey, clientException))
                 .addMethod(divinedTenantAgree(tenantKey, clientException))
                 .addMethod(permits(self, tenantKey))
@@ -2690,66 +2676,61 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code public static K canonicalTenantKey(Object value)}: the one tenant key equality. The
-     * value is coerced through the representative tenant column's {@code DataType}, then put
-     * through the column's converter to its database value and back, so every spelling the
-     * column stores as one database value comes out as one key. For a column without a converter
-     * the round trip is jOOQ's identity converter, so there is one emitted shape. Public so a
-     * consumer can key its own tenant state by the same equality.
+     * {@code public static K tenantKeyOrNull(Object value)}: the tenant key a value names, or
+     * {@code null} when it names none. The value takes the column trip of the generated
+     * {@code ColumnValues.coerce} over the representative tenant column's {@code DataType}: coerced
+     * to the column's Java form, put through its converter to the database value and back, so
+     * every spelling the column stores as one database value comes out as one key, and a number
+     * that would wrap or exceed the column's precision names no tenant. The non-throwing half the
+     * lookups use, where an id whose tenant does not decode answers {@code null} like any
+     * malformed id.
+     */
+    private static MethodSpec tenantKeyOrNull(TypeName tenantKey, ClassName columnValues) {
+        return MethodSpec.methodBuilder("tenantKeyOrNull")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(tenantKey)
+            .addParameter(Object.class, "value")
+            .addStatement("return $T.coerce(TENANT_COLUMN_TYPE, value)", columnValues)
+            .addJavadoc("The tenant key a value names, or {@code null} when it names none: {@link #canonicalTenantKey}\n"
+                + "without the throw.\n"
+                + "@param value a tenant value in any form the column's data type coerces\n"
+                + "@return the key in the column's canonical Java form, or {@code null}\n")
+            .build();
+    }
+
+    /**
+     * {@code public static K canonicalTenantKey(Object value)}: the one tenant key equality, the
+     * throwing layer over {@code tenantKeyOrNull}. Public so a consumer can key its own tenant
+     * state by the same equality.
      *
-     * <p>{@code DataType.convert} is lenient: a value it cannot coerce yields {@code null} rather
-     * than throwing. A {@code null} from either step on a non-null input, an
-     * {@code IllegalArgumentException} or a {@code DataTypeException} from the coercion or the
-     * converter, and a {@code null} input all mean the column cannot store the value, and throw
+     * <p>A {@code null} input, and a value the column cannot store (the coercion or the converter
+     * gives {@code null} or throws {@code IllegalArgumentException} or {@code DataTypeException},
+     * or a number would wrap or exceed the column's precision), throw
      * {@code IllegalArgumentException} naming it. Any other converter exception propagates: it is
      * a fault in the consumer's converter, not a fact about the value. A value the column binds
      * by coercion ({@code "1.5"} on an integer column) names the tenant it coerces to, because
-     * the key follows the bind.
+     * the key follows the bind. Configured keys pass through here too, so a configured key that
+     * would wrap is refused when the configuration is built: it is a misconfiguration.
      */
     private static MethodSpec canonicalTenantKey(TypeName tenantKey) {
         return MethodSpec.methodBuilder("canonicalTenantKey")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(tenantKey)
             .addParameter(Object.class, "value")
-            .beginControlFlow("if (value != null)")
-            .beginControlFlow("try")
-            .addStatement("$T coerced = TENANT_COLUMN_TYPE.convert(value)", tenantKey)
-            .beginControlFlow("if (coerced != null)")
-            .addStatement("$T canonical = roundTrip(TENANT_COLUMN_CONVERTER, coerced)", tenantKey)
-            .beginControlFlow("if (canonical != null)")
-            .addStatement("return canonical")
-            .endControlFlow()
-            .endControlFlow()
-            .nextControlFlow("catch ($T | $T e)", IllegalArgumentException.class, DATA_TYPE_EXCEPTION)
-            .addComment("The column cannot store the value; reported below with every other such case.")
-            .endControlFlow()
-            .endControlFlow()
+            .addStatement("$T canonical = tenantKeyOrNull(value)", tenantKey)
+            .beginControlFlow("if (canonical == null)")
             .addStatement("throw new $T($S + value + $S)", IllegalArgumentException.class,
                 "Tenant value '", "' is not a value of the tenant column.")
+            .endControlFlow()
+            .addStatement("return canonical")
             .addJavadoc("The tenant key a value names: the value coerced through the tenant column's data\n"
                 + "type, then put through the column's converter to its database value and back. Two values\n"
                 + "the column stores as one database value give one key, so use this to key your own tenant\n"
-                + "state by the equality graphitron routes with.\n"
+                + "state by the equality graphitron routes with. A number the column would store as a\n"
+                + "different number (one that overflows the column's type or precision) names no tenant.\n"
                 + "@param value a tenant value in any form the column's data type coerces\n"
                 + "@return the key in the column's canonical Java form\n"
                 + "@throws IllegalArgumentException when the value is {@code null} or the column cannot store it\n")
-            .build();
-    }
-
-    /**
-     * The generic half of {@code canonicalTenantKey}: captures the converter's wildcard database
-     * type so the to-and-back round trip type-checks in Java 17.
-     */
-    private static MethodSpec roundTrip(TypeName tenantKey) {
-        var dbType = TypeVariableName.get("D");
-        return MethodSpec.methodBuilder("roundTrip")
-            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
-            .addTypeVariable(dbType)
-            .returns(tenantKey)
-            .addParameter(ParameterizedTypeName.get(CONVERTER, dbType, tenantKey), "converter")
-            .addParameter(tenantKey, "value")
-            .addStatement("$T databaseValue = converter.to(value)", dbType)
-            .addStatement("return databaseValue == null ? null : converter.from(databaseValue)")
             .build();
     }
 

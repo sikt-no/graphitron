@@ -121,6 +121,32 @@ class NodeIdValueAgreementExecutionTest {
             .isNull();
     }
 
+    /** A StorageBin id carrying 2^32 + 1, which a lenient coercion of the int4 bin_id wraps to bin 1. */
+    private static final String WRAPPED_BIN_1 = NodeIdEncoder.encode("StorageBin", "4294967297");
+
+    @Test
+    void serviceRecord_keyValueWrapsItsColumn_failsTheDecodeAndServiceNeverRuns() {
+        ExecutionResult result = executeRaw(
+            "mutation { agreeStorageBin(in: {binId: \"" + WRAPPED_BIN_1 + "\"}) }");
+        assertThat(result.getErrors())
+            .as("an id whose key is not a value of bin_id is the rail's decode failure")
+            .isNotEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("agreeStorageBin"))
+            .as("the service never runs on the wrapped key")
+            .isNull();
+    }
+
+    @Test
+    void serviceRecord_keyValueWrapsItsColumn_cannotAgreeWithAPlainWriterOfTheWrappedRow() {
+        // Leniently decoded, the wrapped key would be bin 1 and agree with the plain "1".
+        ExecutionResult result = executeRaw(
+            "mutation { agreeStorageBin(in: {binId: \"" + WRAPPED_BIN_1 + "\", binIdText: \"1\"}) }");
+        assertThat(result.getErrors()).isNotEmpty();
+        Map<String, Object> data = result.getData();
+        assertThat(data.get("agreeStorageBin")).isNull();
+    }
+
     @Test
     void serviceRecord_omittedNullableWriter_leavesLoneDecode_doesNotThrow() {
         // Only the decode is present (binIdText omitted). The presence guard means a single present writer
@@ -301,6 +327,30 @@ class NodeIdValueAgreementExecutionTest {
                 .where(DSL.field("endorsement_id", Integer.class).eq(id))
                 .fetchOne().value1();
             assertThat(persisted).as("the row is unchanged when the writers disagree").isEqualTo(1);
+        } finally {
+            dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
+        }
+    }
+
+    @Test
+    void mutationUpdate_setReferenceWhoseKeyWrapsItsColumn_writesNothing() {
+        // filmRef carries 2^32 + 2, which a lenient coercion of the int4 film_id wraps to film 2. The
+        // decode refuses it, so the SET never runs and the row keeps its seeded endorsed_film=1.
+        String note = "wrapped-ref-" + UUID.randomUUID();
+        int id = seedEndorsement(1, note);
+        String wrapped = NodeIdEncoder.encode("Film", "4294967298");
+        try {
+            ExecutionResult result = executeRaw(
+                "mutation { updateEndorsementOverlap(in: {endorsementId: " + id + ", filmRef: \"" + wrapped
+                + "\"}) { endorsedFilm } }");
+            assertThat(result.getErrors())
+                .as("an id whose key is not a value of film_id is the rail's decode failure")
+                .isNotEmpty();
+            Integer persisted = dsl.select(DSL.field("endorsed_film", Integer.class))
+                .from(DSL.table("film_endorsement"))
+                .where(DSL.field("endorsement_id", Integer.class).eq(id))
+                .fetchOne().value1();
+            assertThat(persisted).as("nothing is written for an id that does not decode").isEqualTo(1);
         } finally {
             dsl.deleteFrom(DSL.table("film_endorsement")).where(DSL.field("note").eq(note)).execute();
         }

@@ -3486,7 +3486,7 @@ class BuildContext {
      * Outcome of resolving the NodeId-decode materialization data for a jOOQ-record-typed
      * {@code @service} input-bean member field carrying {@code @nodeId(typeName:)}. {@link Resolved}
      * carries everything the {@code decode<TypeName>Record} helper materialises a {@link org.jooq.TableRecord}
-     * from: the generated {@code NodeIdEncoder} {@code encoderClass} (to call {@code decodeValues}),
+     * from: the generated {@code NodeIdEncoder} {@code encoderClass} (to call {@code decodeColumns}),
      * the wire-format {@code typeId} (its first argument), the target's key columns (the per-column
      * {@code set} loop), and the resolved {@link no.sikt.graphitron.model.jooq.TableRef} (the
      * record class, the {@code Tables} constants class, and the table field name needed to write
@@ -3494,7 +3494,7 @@ class BuildContext {
      * {@code Rejection}.
      *
      * <p>No {@code decode<TypeName>} method name is resolved here: the materialization calls
-     * {@code decodeValues(typeId, nodeId)}, never {@code decode<Type>}. What {@link Resolved} does
+     * {@code decodeColumns(typeId, nodeId, columns...)}, never {@code decode<Type>}. What {@link Resolved} does
      * carry beside the body's facts is the {@code typeName} of the {@code @nodeId(typeName:)}
      * target, a node type or a {@code @table} type over a table with catalog node metadata, which is
      * the decode's identity downstream, the emit side keying both its collection and its helper name

@@ -386,9 +386,13 @@ class TenantRoutedFetcherPipelineTest {
         var handle = renderHandle(multiTenant(FILM_ACTOR_NODE_SDL), "FilmActor");
         assertThat(handle)
             // Grouping widened to altIndex -> tenantKey -> bindings; the tenant reads at the
-            // classified decoded position (film_id is position 1 of the FilmActor key).
+            // classified decoded position (film_id is position 1 of the FilmActor key), reduced to
+            // the canonical tenant before grouping so a slot naming no tenant skips the rep.
             .contains("java.util.Map<java.lang.Integer, java.util.Map<java.lang.Object, java.util.List<java.lang.Object[]>>> groups")
-            .contains(".computeIfAbsent(cols[1], k -> new java.util.ArrayList<>())")
+            .contains("TenantConnections.tenantKeyOrNull(cols[1])")
+            .contains("if (tenantOfRep == null) continue;")
+            .contains(".computeIfAbsent(tenantOfRep, k -> new java.util.ArrayList<>())")
+            .doesNotContain("divinedTenant(")
             .doesNotContain("getDslContext(groupEnv)");
         // Each group acquires its own tenant, and a group outside the request tenant set is
         // skipped before acquisition so its positions stay null: pinned where it runs, in
@@ -411,8 +415,11 @@ class TenantRoutedFetcherPipelineTest {
 
         var handle = renderHandle(schema, "FilmActor");
         assertThat(handle)
-            .contains("cols[1] = rep.get(\"filmId\")")
-            .contains(".computeIfAbsent(cols[1], ")
+            .contains("ColumnValues.coerce(")
+            .contains("rep.get(\"filmId\"))")
+            .contains("if (cols[1] == null) continue;")
+            .contains("TenantConnections.tenantKeyOrNull(cols[1])")
+            .contains(".computeIfAbsent(tenantOfRep, ")
             .contains("dslFor(groupEnv, ")
             .doesNotContain("getDslContext(groupEnv)");
     }

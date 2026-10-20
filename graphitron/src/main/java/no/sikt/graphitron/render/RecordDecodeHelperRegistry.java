@@ -60,7 +60,7 @@ public final class RecordDecodeHelperRegistry {
      *
      * <p>Takes the decode's facts rather than a model reference: the encoder class the caller minted
      * from generator configuration, and the wire id and key list off the command row. Nothing about a
-     * per-type generated method name is involved, the body calling {@code decodeValues} with the type
+     * per-type generated method name is involved, the body calling {@code decodeColumns} with the type
      * id.
      */
     public String register(ClassName encoderClass, String typeId, String nodeTypeName,

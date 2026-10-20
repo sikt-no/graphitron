@@ -4943,6 +4943,60 @@ class GraphQLQueryTest {
         assertThat(data.get("node")).isNull();
     }
 
+    // ===== A key value that is not a value of its column =====
+    //
+    // customer_id and film_id are int4. 4294967297 is 2^32 + 1, which a lenient coercion wraps to 1,
+    // so an id carrying it would name one row and reach another. The decoder accepts exactly the
+    // encoder's image, so a wrapped, non-numeric or padded key value makes the id malformed.
+
+    private static final String WRAPS_TO_ONE = "4294967297";
+
+    @Test
+    void node_keyValueWrapsItsColumn_returnsNullNotTheWrappedRow() {
+        String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", WRAPS_TO_ONE);
+        assertThat(id).isEqualTo("Q3VzdG9tZXI6NDI5NDk2NzI5Nw");
+        Map<String, Object> data = execute(
+            "{ node(id: \"" + id + "\") { __typename ... on Customer { customerId } } }");
+        assertThat(data.get("node")).isNull();
+    }
+
+    @Test
+    void node_nonNumericOrPaddedKeyValue_returnsNull() {
+        for (String key : List.of("abc", " 1", "01", "1.0")) {
+            String id = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", key);
+            Map<String, Object> data = execute(
+                "{ node(id: \"" + id + "\") { __typename ... on Customer { customerId } } }");
+            assertThat(data.get("node")).as("key value '%s'", key).isNull();
+        }
+    }
+
+    @Test
+    void nodes_undecodableKeyValues_nullSlotsWhileTheRestResolve() {
+        String c1 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", 1);
+        String wrapped = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", WRAPS_TO_ONE);
+        String text = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Customer", "abc");
+        Map<String, Object> data = execute(
+            "{ nodes(ids: [\"" + c1 + "\", \"" + wrapped + "\", \"" + text + "\"]) {"
+            + " __typename ... on Customer { customerId } } }");
+        var nodes = assertThat(data).extractingByKey("nodes", as(LIST)).hasSize(3);
+        nodes.element(0, as(MAP)).containsEntry("customerId", 1);
+        nodes.element(1).isNull();
+        nodes.element(2).isNull();
+    }
+
+    @Test
+    void filmsByNodeIdArg_keyValueWrapsItsColumn_surfacesMalformedIdClientError() {
+        String wrapped = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", WRAPS_TO_ONE);
+        graphql.ExecutionResult result = executeRaw(
+            "{ filmsByNodeIdArg(ids: [\"" + wrapped + "\"]) { filmId } }");
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains(wrapped)
+            .contains("not a valid Film id")
+            .doesNotContain("An error occurred. Reference:");
+        assertFieldNullified(result, "filmsByNodeIdArg");
+    }
+
     // ===== nodeId durability / opacity invariants =====
     //
     // The wire format must stay frozen across releases: an ID issued by release N must still

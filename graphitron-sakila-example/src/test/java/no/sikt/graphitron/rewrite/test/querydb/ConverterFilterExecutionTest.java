@@ -128,6 +128,49 @@ class ConverterFilterExecutionTest {
             .containsExactlyInAnyOrder("Autumn UiT", "Autumn NTNU");
     }
 
+    // ===== An org_code slot that is not a value of the column =====
+    //
+    // These ids are minted here on purpose: each carries text the server never writes, which the
+    // decoder must refuse by following the slot through OrgCodeStringConverter to its database
+    // value. On a converter-backed column DataType.convert passes a String through untouched, so
+    // without that trip the converter's Long.valueOf would throw inside the statement.
+
+    private static String termId(String orgCodeSlot) {
+        return no.sikt.graphitron.generated.util.NodeIdEncoder.encode("ConverterCampusTerm", orgCodeSlot, 1);
+    }
+
+    @Test
+    void node_orgCodeSlotTheConverterCannotTake_answersNull() {
+        for (String slot : List.of("abc", "99999999999999999999")) {
+            var data = execute("{ node(id: \"" + termId(slot) + "\") { id } }");
+            assertThat(data.get("node")).as("org_code slot '%s'", slot).isNull();
+        }
+    }
+
+    @Test
+    void nodes_paddedOrgCodeSlot_isNotAnAliasOfTheRealId() {
+        // The encoder writes org_code 186 as "186", so "0186" names no row even though the converter
+        // would take it to the same database value.
+        String real = idOfTerm("Autumn UiT");
+        var nodes = rows("{ nodes(ids: [\"" + termId("0186") + "\", \"" + real + "\"])"
+            + " { ... on ConverterCampusTerm { termName } } }", "nodes");
+        assertThat(nodes).hasSize(2);
+        assertThat(nodes.get(0)).isNull();
+        assertThat(nodes.get(1)).containsEntry("termName", "Autumn UiT");
+    }
+
+    @Test
+    void nodeIdFilter_orgCodeSlotTheConverterCannotTake_isTheMalformedIdClientError() {
+        String bad = termId("abc");
+        var result = graphql.execute(Graphitron.newExecutionInput(dsl, "{}", "test-user")
+            .query("{ converterCampusTermByNodeId(filter: {id: \"" + bad + "\"}) { termName } }").build());
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(result.getErrors().get(0).getMessage())
+            .contains(bad)
+            .contains("not a valid ConverterCampusTerm id")
+            .doesNotContain("An error occurred. Reference:");
+    }
+
     /** The node id the server minted for the named term, read off the plain listing root. */
     private String idOfTerm(String termName) {
         var terms = rows("{ converterCampusTerms { id termName } }", "converterCampusTerms");

@@ -227,16 +227,15 @@ final class JooqRecordInstantiationEmitter {
      */
     private static void emitKeyDecode(MethodSpec.Builder b, CallSiteExtraction.RecordKeyDecode kd,
             ClassName tablesClass, String tableField) {
-        int arity = kd.targetColumns().size();
         CodeBlock cols = targetColumnsExpr(kd, tablesClass, tableField);
         String base = localBase(kd.path());
         String leaf = kd.leaf();
         String keyVar = base + "Keys";
         String parentMap = openDescent(b, kd.path());
         if (kd.nonNull()) {
-            b.addStatement("$T $L = $T.decodeValues($S, ($T) $L.get($S))",
-                String[].class, keyVar, kd.encoderClass(), kd.typeId(), String.class, parentMap, leaf);
-            b.beginControlFlow("if ($L == null || $L.length != $L)", keyVar, keyVar, arity)
+            b.addStatement("$T $L = $T.decodeColumns($S, ($T) $L.get($S), $L)",
+                Object[].class, keyVar, kd.encoderClass(), kd.typeId(), String.class, parentMap, leaf, cols);
+            b.beginControlFlow("if ($L == null)", keyVar)
                 .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
                 .endControlFlow();
             b.addStatement("rec.fromArray($L, $L)", keyVar, cols);
@@ -253,9 +252,9 @@ final class JooqRecordInstantiationEmitter {
             b.addStatement("rec.set($T.$L.$L, null)", tablesClass, tableField, col.javaName());
         }
         b.nextControlFlow("else");
-        b.addStatement("$T $L = $T.decodeValues($S, ($T) $L)",
-            String[].class, keyVar, kd.encoderClass(), kd.typeId(), String.class, rawVar);
-        b.beginControlFlow("if ($L == null || $L.length != $L)", keyVar, keyVar, arity)
+        b.addStatement("$T $L = $T.decodeColumns($S, ($T) $L, $L)",
+            Object[].class, keyVar, kd.encoderClass(), kd.typeId(), String.class, rawVar, cols);
+        b.beginControlFlow("if ($L == null)", keyVar)
             .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
             .endControlFlow();
         b.addStatement("rec.fromArray($L, $L)", keyVar, cols);
@@ -321,7 +320,7 @@ final class JooqRecordInstantiationEmitter {
      * writer's wire value(s) into named locals (prepare), checks the present writers on each overlapping
      * column agree (agreement), then loads every present writer onto the record (load). Because the loads
      * last-write-wins to the same value once agreement holds, load order is immaterial; building all
-     * writers' locals up front is what makes the plain-field value and the decode {@code String[]} slot
+     * writers' locals up front is what makes the plain-field value and the decode {@code Object[]} slot
      * co-available for the per-column check. The shared {@link ColumnOverlap} plan keeps every column
      * (size-one included); the agreement check fires only on the {@code shared()} ones.
      *
@@ -367,24 +366,24 @@ final class JooqRecordInstantiationEmitter {
             return;
         }
         var kd = w.decode();
-        int arity = kd.targetColumns().size();
+        CodeBlock cols = targetColumnsExpr(kd, tablesClass, tableField);
         if (kd.nonNull()) {
             if (path.size() == 1) {
                 // Top-level non-null id is always present (graphql-java enforces ID! at the boundary).
                 b.addStatement("boolean $LPresent = true", base);
-                b.addStatement("$T $LKeys = $T.decodeValues($S, ($T) raw.get($S))",
-                    String[].class, base, kd.encoderClass(), kd.typeId(), String.class, leaf);
-                emitArityThrow(b, base, arity);
+                b.addStatement("$T $LKeys = $T.decodeColumns($S, ($T) raw.get($S), $L)",
+                    Object[].class, base, kd.encoderClass(), kd.typeId(), String.class, leaf, cols);
+                emitDecodeThrow(b, base);
             } else {
                 // Nested non-null id: present iff the enclosing group is present (an absent group skips
                 // the decode and its throw, matching emitKeyDecode).
                 b.addStatement("boolean $LPresent = false", base);
-                b.addStatement("$T $LKeys = null", String[].class, base);
+                b.addStatement("$T $LKeys = null", Object[].class, base);
                 String parentMap = openDescent(b, path);
                 b.addStatement("$LPresent = true", base);
-                b.addStatement("$LKeys = $T.decodeValues($S, ($T) $L.get($S))",
-                    base, kd.encoderClass(), kd.typeId(), String.class, parentMap, leaf);
-                emitArityThrow(b, base, arity);
+                b.addStatement("$LKeys = $T.decodeColumns($S, ($T) $L.get($S), $L)",
+                    base, kd.encoderClass(), kd.typeId(), String.class, parentMap, leaf, cols);
+                emitDecodeThrow(b, base);
                 closeDescent(b, path);
             }
             return;
@@ -392,7 +391,7 @@ final class JooqRecordInstantiationEmitter {
         // Nullable id: omitted → absent; present-null → present with a null value; present-value → decoded.
         b.addStatement("boolean $LPresent = false", base);
         b.addStatement("boolean $LPresentNull = false", base);
-        b.addStatement("$T $LKeys = null", String[].class, base);
+        b.addStatement("$T $LKeys = null", Object[].class, base);
         String parentMap = openDescent(b, path);
         b.beginControlFlow("if ($L.containsKey($S))", parentMap, leaf);
         b.addStatement("$LPresent = true", base);
@@ -400,18 +399,20 @@ final class JooqRecordInstantiationEmitter {
         b.beginControlFlow("if ($LRaw == null)", base);
         b.addStatement("$LPresentNull = true", base);
         b.nextControlFlow("else");
-        b.addStatement("$LKeys = $T.decodeValues($S, ($T) $LRaw)",
-            base, kd.encoderClass(), kd.typeId(), String.class, base);
-        emitArityThrow(b, base, arity);
+        b.addStatement("$LKeys = $T.decodeColumns($S, ($T) $LRaw, $L)",
+            base, kd.encoderClass(), kd.typeId(), String.class, base, cols);
+        emitDecodeThrow(b, base);
         b.endControlFlow();
         b.endControlFlow();
         closeDescent(b, path);
     }
 
-    /** The {@code if (keys == null || keys.length != arity) throw …} arity guard shared by the decode
-     *  prepare arms, reading the {@code <base>Keys} local. */
-    private static void emitArityThrow(MethodSpec.Builder b, String base, int arity) {
-        b.beginControlFlow("if ($LKeys == null || $LKeys.length != $L)", base, base, arity)
+    /** The {@code if (keys == null) throw …} decode guard shared by the decode prepare arms, reading
+     *  the {@code <base>Keys} local: {@code decodeColumns} answers {@code null} for a malformed id, a
+     *  wrong arity and a key value that is not a value of its column alike, so an id that does not
+     *  decode fails here, before it can agree with another writer or be loaded. */
+    private static void emitDecodeThrow(MethodSpec.Builder b, String base) {
+        b.beginControlFlow("if ($LKeys == null)", base)
             .addStatement("throw $T.newErrorException().message($S).build()", GRAPHQL_ERROR, DECODE_MISMATCH_MSG)
             .endControlFlow();
     }

@@ -16,7 +16,7 @@ import no.sikt.graphitron.javapoet.ClassName;
  * {@code decode<TypeName>} helpers on that class are minted once during schema building and read
  * everywhere else, and consolidating those belongs to the emitter migration, where a command row's
  * output key is the natural home. What this class answers is only which class to qualify a
- * {@code decodeValues} call with, which is the one part a store-sourced caller cannot know.
+ * {@code decodeColumns} call with, which is the one part a store-sourced caller cannot know.
  */
 public final class NodeIdEncoderRef {
 

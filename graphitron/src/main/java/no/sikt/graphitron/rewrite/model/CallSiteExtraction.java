@@ -266,17 +266,18 @@ public sealed interface CallSiteExtraction
      * NodeId wire decode at the root, opposite downstream projection. Where {@link NodeIdDecodeKeys}
      * decomposes the decoded key tuple into scalar column values for a predicate / SET body, this
      * arm materialises a {@link org.jooq.TableRecord}: it calls
-     * {@code encoderClass.decodeValues(typeId, nodeId)} for the raw {@code String[]} and loads those
+     * {@code encoderClass.decodeColumns(typeId, nodeId, Tables.<T>.<col1>, ...)}, which answers
+     * each key value as a value of its column (or {@code null} when one is not), and loads those
      * values positionally onto the target record's key columns with a single
-     * {@code record.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...)} call.
-     * {@code fromArray} coerces each value through the column's {@code DataType} / registered
+     * {@code record.fromArray(values, Tables.<T>.<col1>, Tables.<T>.<col2>, ...)} call. The
+     * {@code fromArray} call reaches the columns' {@code DataType} / registered
      * {@code Converter}, and the {@code Tables.<T>.<col>} field references must exist on the record
      * (the {@code graphitron-sakila-example} compile tier verifies this).
      *
      * <p>The leaf carries no {@code decode<Type>} method name, only the node type {@code typeName}
-     * that name is minted from: {@code encoderClass} reaches {@code decodeValues}, {@code typeId} is
+     * that name is minted from: {@code encoderClass} reaches {@code decodeColumns}, {@code typeId} is
      * its first argument, {@code keyColumns} names the {@code Tables.<T>.<col>} fields passed to
-     * {@code fromArray}, and {@code table} supplies the record class ({@code new <T>Record()}) and
+     * it and to {@code fromArray}, and {@code table} supplies the record class ({@code new <T>Record()}) and
      * the {@code Tables} constants class. {@code keyColumns} is kept separate from
      * {@code table.primaryKeyColumns()} because an {@code @node(keyColumns:)} key may differ from
      * the PK.
@@ -700,7 +701,7 @@ public sealed interface CallSiteExtraction
 
     /**
      * One {@code @nodeId} decode of a {@link JooqRecord}: the wire NodeId is decoded
-     * ({@code encoderClass.decodeValues(typeId, nodeId)}) and the decoded values load into
+     * ({@code encoderClass.decodeColumns(typeId, nodeId, targetColumns...)}) and the decoded values load into
      * {@code targetColumns} on the enclosing {@link JooqRecord#table()}. Only the projection target
      * differs from {@link NodeIdDecodeRecord}, so this is a distinct carrier rather than a reuse.
      *

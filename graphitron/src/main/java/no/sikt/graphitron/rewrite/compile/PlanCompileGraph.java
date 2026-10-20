@@ -90,6 +90,7 @@ public final class PlanCompileGraph {
     public static final Set<GlobalUnitKind> FROZEN_SCAFFOLD_KINDS = Collections.unmodifiableSet(EnumSet.of(
         GlobalUnitKind.GRAPHITRON_VALUES,
         GlobalUnitKind.LIGHT_FETCHER,
+        GlobalUnitKind.COLUMN_VALUES,
         GlobalUnitKind.CONNECTION_RESULT,
         GlobalUnitKind.CONNECTION_HELPER,
         GlobalUnitKind.POLYMORPHIC_SELECTION_SET,
@@ -230,6 +231,9 @@ public final class PlanCompileGraph {
                         }
                         precise(dispatch.unit(), require(GlobalUnitKind.NODE_ID_ENCODER));
                         precise(dispatch.unit(), require(GlobalUnitKind.GRAPHITRON_CONTEXT));
+                        // Only a federation @key alternative coerces through the column trip
+                        // directly; a node-id-only dispatch reaches it through the encoder.
+                        declared(dispatch.unit(), require(GlobalUnitKind.COLUMN_VALUES));
                     }
                     case GlobalCommand.Fixed fixed -> addFixedKindEdges(fixed);
                 }
@@ -248,11 +252,13 @@ public final class PlanCompileGraph {
          */
         private void addFixedKindEdges(GlobalCommand.Fixed fixed) {
             switch (fixed.kind()) {
-                case GRAPHITRON_VALUES, LIGHT_FETCHER, NODE_ID_ENCODER, CONNECTION_RESULT,
+                case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
                      CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL, POLYMORPHIC_SELECTION_SET,
                      SELECTION_OCCURRENCES, ORDER_BY_RESULT, GRAPHITRON_CONTEXT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
+                // Every decode<Type> refuses a key value through the column trip.
+                case NODE_ID_ENCODER -> precise(fixed.units().get(0), require(GlobalUnitKind.COLUMN_VALUES));
                 case ENTITY_FETCHER_DISPATCH -> throw new IllegalStateException(
                     "the entity dispatch family is the sealed relation's data-carrying arm;"
                         + " a fixed row of this kind is unconstructible");
@@ -278,6 +284,8 @@ public final class PlanCompileGraph {
                         fetcherErrorLog.ifPresent(l -> declared(t, l));
                         refOf(GlobalUnitKind.ERROR_ROUTER).ifPresent(er -> declared(t, er));
                         refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(t, tp));
+                        // The tenant key's canonical form is the column trip's.
+                        refOf(GlobalUnitKind.COLUMN_VALUES).ifPresent(cv -> declared(t, cv));
                     });
                 }
                 case TRANSACTION_PROVIDER -> runtimeUnit("PinnedConnection")

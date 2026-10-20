@@ -18,6 +18,7 @@ public enum GlobalUnitKind {
     GRAPHITRON_VALUES,
     LIGHT_FETCHER,
     NODE_ID_ENCODER,
+    COLUMN_VALUES,
     /** Present exactly when the schema declares federation entities. */
     ENTITY_FETCHER_DISPATCH,
     CONNECTION_RESULT,

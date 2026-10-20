@@ -52,7 +52,7 @@ import no.sikt.graphitron.model.schema.federation.KeyNodeSynthesiser;
  * <ul>
  *   <li>{@code @key(fields: "id")} on a {@link NodeType} → {@link KeyAlternative.NodeId}, columns
  *       are the type's {@code nodeKeyColumns}; the rep's id is decoded by
- *       {@code NodeIdEncoder.decodeValues} at runtime.</li>
+ *       {@code NodeIdEncoder.decodeColumns} at runtime.</li>
  *   <li>Any other {@code @key} → {@link KeyAlternative.Direct}, columns resolved by walking the
  *       referenced fields and reading their {@link ColumnRef}.</li>
  * </ul>

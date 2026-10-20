@@ -209,6 +209,51 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * A node-id representation whose key value is not a value of its column, wrapped
+     * ({@code 4294967297} is 2^32 + 1, which a lenient coercion turns into customer 1) or
+     * non-numeric, beside a valid one: the undecodable rep's slot is null with no error, and the
+     * valid rep resolves. Nothing is bound into SQL for the refused rep.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_nodeIdKeyValueNotOfItsColumn_yieldsNullSlotBesideAValidRep() {
+        for (String key : List.of("4294967297", "abc")) {
+            String bad = NodeIdEncoder.encode("Customer", key);
+            String valid = NodeIdEncoder.encode("Customer", 2);
+            Map<String, Object> data = execute(
+                "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+                + " __typename ... on Customer { customerId } } }",
+                Map.of("reps", List.of(
+                    Map.of("__typename", "Customer", "id", bad),
+                    Map.of("__typename", "Customer", "id", valid))));
+            List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+            assertThat(entities).as("key value '%s'", key).hasSize(2);
+            assertThat(entities.get(0)).as("key value '%s'", key).isNull();
+            assertThat(entities.get(1)).containsEntry("customerId", 2);
+        }
+    }
+
+    /**
+     * A {@code @key} representation whose authored key value would wrap its {@code int4} column
+     * onto city 1: a null slot with no error, not city 1. The documented coercion stays for a
+     * value that does not wrap, which the valid sibling rep shows.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_directKeyValueWrapsItsColumn_yieldsNullSlotNotTheWrappedRow() {
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on City { cityId } } }",
+            Map.of("reps", List.of(
+                Map.of("__typename", "City", "cityId", 4294967297L),
+                Map.of("__typename", "City", "cityId", 2))));
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).hasSize(2);
+        assertThat(entities.get(0)).isNull();
+        assertThat(entities.get(1)).containsEntry("cityId", 2);
+    }
+
+    /**
      * DIRECT-shape alternative: Film carries {@code @key(fields: "filmId")} and a rep with
      * {@code filmId: 1} resolves through the column-value path (not NodeId decode). Same
      * SQL shape as the NODE_ID path; only the rep-to-column-values translation differs.

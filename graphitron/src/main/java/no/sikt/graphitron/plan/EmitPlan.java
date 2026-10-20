@@ -114,6 +114,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.GRAPHITRON_VALUES, units.singleton(GeneratedUnits.SUB_UTIL, "GraphitronValues")));
         globals.add(one(GlobalUnitKind.LIGHT_FETCHER, units.singleton(GeneratedUnits.SUB_UTIL, "LightFetcher")));
         globals.add(one(GlobalUnitKind.NODE_ID_ENCODER, units.singleton(GeneratedUnits.SUB_UTIL, "NodeIdEncoder")));
+        globals.add(one(GlobalUnitKind.COLUMN_VALUES, units.columnValues()));
         if (!schema.entitiesByType().isEmpty()) {
             // The dispatch row carries its schema-dependent outbound refs: one per-type
             // projection class per resolvable entity (node types included through the

@@ -4,6 +4,8 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.CatalogRefs;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
 import no.sikt.graphitron.rewrite.model.TenantBinding;
@@ -23,13 +25,17 @@ import java.util.List;
  *   <li>Build a per-rep DFE (rebinding {@code arguments} to the rep's contents) so any
  *       in-rep argument reads inside the dispatched alternative resolve against the
  *       individual rep.</li>
- *   <li>Decode the rep into a column-value row: DIRECT copies rep field values index-by-index;
- *       NODE_ID passes {@code rep.id} through {@code NodeIdEncoder.decodeValues}.</li>
+ *   <li>Decode the rep into a column-value row: DIRECT coerces each rep field value through
+ *       {@code ColumnValues.coerce}; NODE_ID passes {@code rep.id} through
+ *       {@code NodeIdEncoder.decodeColumns}. A value that is not a value of its column leaves the
+ *       rep ungrouped, so its slot stays {@code null} and nothing reaches SQL for it.</li>
  *   <li>Group bindings by alternative-index into a {@link java.util.LinkedHashMap}. In a
  *       multi-tenant build over a tenant-scoped entity ({@link TenantRouting#bound()}), the
  *       grouping widens to {@code Map<Integer, Map<Object, List<Object[]>>>}: each rep's
  *       tenant is read from its alternative's classified source, the decoded key at the tenant
- *       column's position or the request's entity default tenant, so one batch spanning tenants
+ *       column's position (canonicalised through {@code TenantConnections.tenantKeyOrNull}, a
+ *       value that names no tenant leaving the rep ungrouped) or the request's entity default
+ *       tenant, so one batch spanning tenants
  *       splits into tenant-homogeneous groups instead of erroring or leaking. A rep whose
  *       alternative reads the entity default tenant, in a request naming none, is not grouped:
  *       its slot stays {@code null}.</li>
@@ -165,16 +171,14 @@ final class HandleMethodBody {
                 // fail decode for typeId-overridden types.
                 b.addStatement("Object idObj = rep.get($S)", "id");
                 b.addStatement("if (!(idObj instanceof String idStr)) continue");
-                b.addStatement("String[] decoded = $T.decodeValues($S, idStr)",
-                    nodeIdEncoder, nodeId.expectedTypeId());
-                // Reject a well-formed id whose decoded key has the wrong arity, exactly as the
-                // single-record decode helpers (NodeIdEncoderClassGenerator) and
-                // InputBeanInstantiationEmitter do. Without the != N guard, an under-arity id trips
-                // AIOOBE inside select<Type>Alt<N> and an over-arity id silently resolves the wrong
-                // row; both become a skipped rep (null slot), matching the null-not-error contract.
-                b.addStatement("if (decoded == null || decoded.length != $L) continue", nodeId.columns().size());
-                b.addStatement("Object[] cols = new Object[$L]", nodeId.columns().size());
-                b.addStatement("for (int j = 0; j < decoded.length; j++) cols[j] = decoded[j]");
+                // decodeColumns refuses a malformed id, a wrong arity (an under-arity id would trip
+                // AIOOBE inside select<Type>Alt<N>, an over-arity one resolve the wrong row) and a
+                // key value that is not a value of its column (a wrapped number would resolve
+                // another row). Each becomes a skipped rep (null slot), matching the
+                // null-not-error contract.
+                b.addStatement("Object[] cols = $T.decodeColumns($S, idStr, $L)",
+                    nodeIdEncoder, nodeId.expectedTypeId(), columnRefs(entity, nodeId.columns()));
+                b.addStatement("if (cols == null) continue");
             }
             case KeyAlternative.Direct direct -> {
                 var bindings = direct.bindings();
@@ -188,8 +192,14 @@ final class HandleMethodBody {
                 // A rep routed by the request carries the entity default tenant as one more cell,
                 // which select<Type>Alt<N> joins against the tenant column like a key column.
                 b.addStatement("Object[] cols = new Object[$L]", bindings.size() + (requestEntityDefault ? 1 : 0));
+                // Each authored key value takes the column's documented coercion, minus a wrap: a
+                // value that binds as no value of its column skips the rep rather than reaching SQL.
+                // ColumnValues lives beside the encoder in the util package.
+                var columnValues = ClassName.get(nodeIdEncoder.packageName(), ColumnValuesClassGenerator.CLASS_NAME);
                 for (int i = 0; i < bindings.size(); i++) {
-                    b.addStatement("cols[$L] = rep.get($S)", i, bindings.get(i).repField());
+                    b.addStatement("cols[$L] = $T.coerce($L.getDataType(), rep.get($S))", i, columnValues,
+                        columnRef(entity, bindings.get(i).column()), bindings.get(i).repField());
+                    b.addStatement("if (cols[$L] == null) continue", i);
                 }
                 if (requestEntityDefault) {
                     b.addStatement("cols[$L] = entityDefaultTenant", bindings.size());
@@ -205,9 +215,17 @@ final class HandleMethodBody {
             // Each rep's tenant comes from the alternative's classified source: its own decoded
             // key, or the request's entity default tenant. Grouping per (alternative, tenant) keeps every
             // dispatched SELECT tenant-homogeneous.
+            // The group key is the canonical tenant, so the dispatch routes on it as it stands. A
+            // decoded tenant slot that names no tenant skips the rep: a null slot, exactly like any
+            // malformed id, rather than a throw that would fail the whole batch. The request's
+            // entity default tenant is canonical already.
             CodeBlock tenantOfRep = switch (source) {
-                case TenantBinding.EntityRepBound.TenantSource.KeyColumn key ->
-                    CodeBlock.of("cols[$L]", key.decodedPosition());
+                case TenantBinding.EntityRepBound.TenantSource.KeyColumn key -> {
+                    b.addStatement("$T tenantOfRep = $T.tenantKeyOrNull(cols[$L])",
+                        routing.tenantKey(), routing.tenantConnections(), key.decodedPosition());
+                    b.addStatement("if (tenantOfRep == null) continue");
+                    yield CodeBlock.of("tenantOfRep");
+                }
                 case TenantBinding.EntityRepBound.TenantSource.RequestEntityDefault ignored ->
                     CodeBlock.of("entityDefaultTenant");
             };
@@ -220,6 +238,17 @@ final class HandleMethodBody {
                 + ".add(new Object[]{idx, cols, repEnv})",
                 altIndex, ARRAY_LIST);
         }
+    }
+
+    /** {@code Tables.<TABLE>.<COLUMN>} for one of the entity table's columns. */
+    private static CodeBlock columnRef(EntityResolution entity, ColumnRef column) {
+        return CodeBlock.of("$T.$L.$L", CatalogRefs.constantsClass(entity.table()),
+            entity.table().javaFieldName(), column.javaName());
+    }
+
+    /** {@link #columnRef} for each column, comma-separated, in key order. */
+    private static CodeBlock columnRefs(EntityResolution entity, List<ColumnRef> columns) {
+        return columns.stream().map(c -> columnRef(entity, c)).collect(CodeBlock.joining(", "));
     }
 
     /** Where {@code altIndex}'s representations read their tenant. */
@@ -250,10 +279,9 @@ final class HandleMethodBody {
             b.addStatement("$T bindings = tenantEntry.getValue()", listOfBindings);
             b.addStatement("Object[] first = bindings.get(0)");
             b.addStatement("$T groupEnv = ($T) first[2]", ENV, ENV);
-            // One tenant-homogeneous SELECT per group: a null decoded tenant fails loudly in the
-            // divined-key guard rather than routing anywhere.
-            b.addStatement("$T tenantKey = $T.divinedTenant(tenantEntry.getKey())",
-                routing.tenantKey(), routing.tenantConnections());
+            // One tenant-homogeneous SELECT per group. The group key was canonicalised while
+            // grouping, so a rep naming no tenant never reached a group.
+            b.addStatement("$T tenantKey = ($T) tenantEntry.getKey()", routing.tenantKey(), routing.tenantKey());
             // A tenant outside the request tenant set: skip the group, so its positions stay null,
             // exactly how node/nodes/_entities answer an id that does not exist, and no connection
             // to that tenant is taken. The other groups resolve normally. entryFor remains the

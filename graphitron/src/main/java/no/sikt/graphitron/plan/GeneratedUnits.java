@@ -306,6 +306,14 @@ public final class GeneratedUnits {
         return unit(SUB_UTIL, "OrderByResult");
     }
 
+    /**
+     * {@code <pkg>.util.ColumnValues}: the decode-side column trip, which every node-id key slot,
+     * federation {@code @key} value and tenant value passes through before it can be bound.
+     */
+    public UnitRef columnValues() {
+        return unit(SUB_UTIL, "ColumnValues");
+    }
+
     /** {@code <pkg>.schema.TenantConnections} — the multi-tenant scatter/acquisition carrier. */
     public UnitRef tenantConnections() {
         return unit(SUB_SCHEMA, "TenantConnections");

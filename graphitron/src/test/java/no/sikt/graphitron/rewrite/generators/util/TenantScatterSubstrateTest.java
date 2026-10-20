@@ -83,6 +83,10 @@ class TenantScatterSubstrateTest {
         for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.generate(PACKAGE)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
+        // The tenant key's canonical form is the column trip, held by the util package's ColumnValues.
+        for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
+            units.put(PACKAGE + ".util." + spec.name(), spec);
+        }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");

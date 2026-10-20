@@ -29,7 +29,7 @@ import java.util.List;
  *       {@code CompletableFuture<List<Object>>} preserving exact rep order.</li>
  *   <li>{@code handle<TypeName>(reps, indices, env, result)}: for each rep, selects the
  *       most-specific resolvable {@link KeyAlternative}, decodes the rep into a column-value
- *       row (DIRECT: copy values; NODE_ID: {@code NodeIdEncoder.decodeValues}), and groups
+ *       row (DIRECT: {@code ColumnValues.coerce}; NODE_ID: {@code NodeIdEncoder.decodeColumns}), and groups
  *       by alternative-index for batching.</li>
  *   <li>{@code select<TypeName>Alt<N>(bindings, env, dsl, result)}: issues one SELECT per
  *       group via a {@code VALUES (idx, col1, col2, ...)} derived table joined to the type's

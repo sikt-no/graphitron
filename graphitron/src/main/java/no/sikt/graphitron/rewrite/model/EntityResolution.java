@@ -23,7 +23,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * <p>The resolved NodeId wire prefix (the {@code @node(typeId:)} value, defaulted to the type
  * name at classify time) is not held here: it lives on the type's {@link KeyAlternative.NodeId}
  * alternative as {@code expectedTypeId}, the single slot the dispatcher passes into
- * {@code NodeIdEncoder.decodeValues}. A {@code @node} type always has exactly one such
+ * {@code NodeIdEncoder.decodeColumns}. A {@code @node} type always has exactly one such
  * alternative; a {@code @key}-only type has none.
  */
 public record EntityResolution(

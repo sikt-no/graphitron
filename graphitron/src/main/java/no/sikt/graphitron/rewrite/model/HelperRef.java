@@ -75,7 +75,7 @@ public sealed interface HelperRef {
      * NOT the call-site Java parameter list.
      *
      * <p>{@code typeId} is the wire-format type prefix this decoder expects (the first argument
-     * {@code buildPerTypeDecode} bakes into its {@code decodeValues($S, ...)} call). It may differ
+     * {@code buildPerTypeDecode} bakes into its {@code decodeColumns($S, ...)} call). It may differ
      * from the GraphQL type name when {@code @node(typeId:)} customizes it, so the
      * {@code ThrowOnMismatch} message-builder compares it against {@code NodeIdEncoder.peekTypeId}
      * to fold the right-type-wrong-arity sub-case into the "malformed" branch rather than

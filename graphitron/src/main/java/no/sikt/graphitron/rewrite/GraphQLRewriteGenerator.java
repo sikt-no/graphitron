@@ -54,6 +54,7 @@ import no.sikt.graphitron.rewrite.generators.util.GraphitronTransactionProviderG
 import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
+import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator;
 import no.sikt.graphitron.rewrite.generators.util.QueryNodeFetcherClassGenerator;
@@ -600,7 +601,8 @@ public class GraphQLRewriteGenerator {
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
             case LIGHT_FETCHER -> LightFetcherClassGenerator.generate(outputPackage);
-            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(schema);
+            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(schema, outputPackage);
+            case COLUMN_VALUES -> ColumnValuesClassGenerator.generate();
             case ENTITY_FETCHER_DISPATCH -> EntityFetcherDispatchClassGenerator.generate(schema, outputPackage);
             case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);
             case CONNECTION_HELPER -> ConnectionHelperClassGenerator.generate(outputPackage, tenantKeyType != null);

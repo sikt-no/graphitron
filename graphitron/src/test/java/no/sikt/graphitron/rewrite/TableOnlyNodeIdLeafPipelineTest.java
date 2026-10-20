@@ -154,7 +154,7 @@ class TableOnlyNodeIdLeafPipelineTest {
     }
 
     private static java.util.List<String> encoderMethodNames(GraphitronSchema schema) {
-        TypeSpec encoder = NodeIdEncoderClassGenerator.generate(schema).getFirst();
+        TypeSpec encoder = NodeIdEncoderClassGenerator.generate(schema, "fake.code.generated").getFirst();
         return encoder.methodSpecs().stream().map(MethodSpec::name).toList();
     }
 }

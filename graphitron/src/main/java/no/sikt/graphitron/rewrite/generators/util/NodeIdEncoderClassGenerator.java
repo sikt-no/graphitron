@@ -38,7 +38,9 @@ import java.util.stream.Collectors;
  * ({@link GraphitronSchema#catalogNodeDecodes()}): nothing encodes such a type's id, because its
  * output side has no node id. The typeId is baked into the helper name, so call sites pass
  * typed key values, not the wire string. {@code decode<TypeName>} returns {@code null} uniformly
- * on malformed input or typeId mismatch; carrier consumers wrap that null through the
+ * on malformed input, typeId mismatch or a key value that is not exactly one the encoder writes
+ * for a value of its column (the {@code ColumnValues} exact rule, see
+ * {@link ColumnValuesClassGenerator}); carrier consumers wrap that null through the
  * {@code CallSiteExtraction.NodeIdDecodeKeys} arms. Call sites resolve the helpers through
  * {@link HelperRef} references pre-computed on {@link NodeType#encodeMethod()} /
  * {@link NodeType#decodeMethod()} or minted with the catalog decode, and each decode is emitted
@@ -58,31 +60,27 @@ public class NodeIdEncoderClassGenerator {
     private static final ClassName DSL         = ClassName.get("org.jooq.impl", "DSL");
     private static final ClassName SQL_DIALECT = ClassName.get("org.jooq", "SQLDialect");
     private static final ClassName DATA_TYPE   = ClassName.get("org.jooq", "DataType");
+    private static final ClassName FIELD       = ClassName.get("org.jooq", "Field");
     private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphqlErrorException");
     private static final ClassName OBJECTS     = ClassName.get("java.util", "Objects");
 
     /**
-     * No-arg variant: emits the encoder class with no per-Node helpers. Production generation
-     * goes through {@link #generate(GraphitronSchema)}.
-     */
-    public static List<TypeSpec> generate() {
-        return generate(List.of(), List.of());
-    }
-
-    /**
      * Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>}
-     * helpers, then a {@code decode<TypeName>} for each catalog decode.
+     * helpers, then a {@code decode<TypeName>} for each catalog decode. {@code outputPackage}
+     * locates the sibling {@code ColumnValues} every key slot is checked through.
      */
-    public static List<TypeSpec> generate(GraphitronSchema schema) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
         var nodeTypes = schema.types().values().stream()
             .filter(t -> t instanceof NodeType)
             .map(t -> (NodeType) t)
             .collect(Collectors.toUnmodifiableList());
-        return generate(nodeTypes, schema.catalogNodeDecodes());
+        var columnValues = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
+        return generate(nodeTypes, schema.catalogNodeDecodes(), columnValues);
     }
 
     private static List<TypeSpec> generate(List<NodeType> nodeTypes,
-                                           List<HelperRef.Decode> catalogNodeDecodes) {
+                                           List<HelperRef.Decode> catalogNodeDecodes,
+                                           ClassName columnValues) {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
@@ -119,9 +117,8 @@ public class NodeIdEncoderClassGenerator {
             .endControlFlow()
             .build();
 
-        // Public rather than package-private: the generated input-bean record-decode helpers land
-        // in the `…fetchers` package and call decodeValues directly, so the raw unpack must cross
-        // the package boundary.
+        // Public: documented runtime API returning the raw wire segments. Generated code reads ids
+        // through decodeColumns instead, which checks each segment against its column.
         var decodeValues = MethodSpec.methodBuilder("decodeValues")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(String[].class)
@@ -144,11 +141,32 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return parts")
             .build();
 
-        // The decode helpers coerce the wire-format String through DataType.convert(Object),
-        // which jOOQ deprecated for removal in 3.20.0. The recommended replacement
-        // (Field.getConverter().from) does not accept Object input, and the only public
-        // Object-to-T coercion path (org.jooq.tools.Convert) is also marked for removal, so
-        // suppress here to keep consumer builds clean until jOOQ ships a public successor.
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        var decodeColumns = MethodSpec.methodBuilder("decodeColumns")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(Object[].class)
+            .addParameter(String.class, "expectedTypeId")
+            .addParameter(String.class, "base64Id")
+            .addParameter(no.sikt.graphitron.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
+            .varargs(true)
+            .addJavadoc("The id's key values as values of {@code columns}, in key order, or {@code null} when\n"
+                + "the id is malformed, names another type, has the wrong arity, or carries a value that\n"
+                + "is not exactly what {@link #encode} writes for a value of its column.\n")
+            .addStatement("$T values = decodeValues(expectedTypeId, base64Id)", String[].class)
+            .addStatement("if (values == null || values.length != columns.length) return null")
+            .addStatement("Object[] decoded = new Object[values.length]")
+            .beginControlFlow("for (int i = 0; i < values.length; i++)")
+                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(), values[i])", columnValues)
+                .addStatement("if (decoded[i] == null) return null")
+            .endControlFlow()
+            .addStatement("return decoded")
+            .build();
+
+        // requireColumnAgreement coerces through DataType.convert(Object), which jOOQ deprecated
+        // for removal in 3.20.0. The recommended replacement (Field.getConverter().from) does not
+        // accept Object input, and the only public Object-to-T coercion path
+        // (org.jooq.tools.Convert) is also marked for removal, so suppress here to keep consumer
+        // builds clean until jOOQ ships a public successor.
         var suppressRemoval = AnnotationSpec.builder(SuppressWarnings.class)
             .addMember("value", "{$S, $S}", "deprecation", "removal")
             .build();
@@ -161,6 +179,7 @@ public class NodeIdEncoderClassGenerator {
             .addMethod(encode)
             .addMethod(peekTypeId)
             .addMethod(decodeValues)
+            .addMethod(decodeColumns)
             .addMethod(buildRequireColumnAgreement());
 
         for (NodeType nt : nodeTypes) {
@@ -222,7 +241,8 @@ public class NodeIdEncoderClassGenerator {
 
     /**
      * Emits {@code static RecordN<T1..TN> decode<TypeName>(String base64Id)}, returning
-     * {@code null} on malformed input or typeId mismatch and otherwise materialising a typed
+     * {@code null} on malformed input, typeId mismatch, wrong arity or a key value that is not a
+     * value of its column ({@code decodeColumns}), and otherwise materialising a typed
      * {@link org.jooq.Record} populated from the table's {@link org.jooq.Field} references. Every
      * fact the body needs is on the reference: the method name, the output shape, the wire type id
      * and the table.
@@ -238,9 +258,7 @@ public class NodeIdEncoderClassGenerator {
         var b = MethodSpec.methodBuilder(ref.methodName())
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(recordType)
-            .addParameter(String.class, "base64Id")
-            .addStatement("$T values = decodeValues($S, base64Id)", String[].class, ref.typeId())
-            .addStatement("if (values == null || values.length != $L) return null", n);
+            .addParameter(String.class, "base64Id");
 
         StringBuilder fieldsList = new StringBuilder();
         for (int i = 0; i < n; i++) {
@@ -251,14 +269,22 @@ public class NodeIdEncoderClassGenerator {
         Object[] tablesRefs = new Object[n];
         for (int i = 0; i < n; i++) tablesRefs[i] = tablesClass;
 
+        Object[] decodeArgs = new Object[n + 1];
+        decodeArgs[0] = ref.typeId();
+        System.arraycopy(tablesRefs, 0, decodeArgs, 1, n);
+        b.addStatement("Object[] values = decodeColumns($S, base64Id, " + fieldsList + ")", decodeArgs);
+        b.addStatement("if (values == null) return null");
+
         // Declared with the explicit record type rather than `var`; generated sources avoid `var`
         // (enforced by GeneratedSourcesLintTest in graphitron-sakila-example).
         b.addStatement("$T rec = $T.using($T.DEFAULT).newRecord(" + fieldsList + ")",
             prepend(tablesRefs, recordType, DSL, SQL_DIALECT));
 
+        // Each value is already the column's canonical value, so the cast through the column's
+        // own type is exact.
         for (int i = 0; i < n; i++) {
             ColumnRef col = ref.outputColumnShape().get(i);
-            b.addStatement("rec.set($T.$L.$L, $T.$L.$L.getDataType().convert(values[$L]))",
+            b.addStatement("rec.set($T.$L.$L, $T.$L.$L.getType().cast(values[$L]))",
                 tablesClass, tableField, col.javaName(),
                 tablesClass, tableField, col.javaName(),
                 i);

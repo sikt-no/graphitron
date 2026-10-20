@@ -190,6 +190,17 @@ class ConvertedTenantRoutingExecutionTest {
     }
 
     @Test
+    void aNumberOutsideTheColumnsRangeIsAClientErrorBeforeAnyConnection() {
+        // The converter's Long.valueOf refuses it on the way to the database value; the column trip
+        // reads that as "not a value of the column", whichever runtime class holds the trip.
+        var result = execute("{ sites(ownerOrg: \"99999999999999999999\") { siteName } }");
+
+        assertThat(result.getErrors().toString())
+            .contains("Tenant value '99999999999999999999' is not a value of the tenant column");
+        assertThat(openedAnywhere()).isZero();
+    }
+
+    @Test
     void aNarrowedFanOutOverAValueTheColumnCannotStoreIsTheSameClientError() {
         var result = execute("{ sitesNarrowable(ownerOrg: \"abc\") { siteName } }");
 
