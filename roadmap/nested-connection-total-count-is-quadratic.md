@@ -244,7 +244,7 @@ describes). This item rewrites those passages to the behaviour it ships.
 
 ## Implementation notes
 
-Landed at `df4b61c`. Where the code reads differently from the plan above:
+Landed at `df4b61c`, In Review at `16ded97`. Where the code reads differently from the plan above:
 
 * `ConnectionResult` gains a private storing constructor carrying the `TotalCount` slot; the public
   assigning constructor keeps its signature and derives `Scoped` from a non-null `(table, condition)`
@@ -254,8 +254,10 @@ Landed at `df4b61c`. Where the code reads differently from the plan above:
   run of the same query selecting `items { __typename }`, which still runs the rows method.
 * The new `BatchCountsExecutionTest` asserts the retained failure is the same exception instance on
   the second slot (`isSameAs`), and that the failing statement ran once.
-* Unit-tier string assertions in `TypeFetcherGeneratorTest` on the polymorphic rows body moved to the
-  `BatchCounts` / `counts.slot(i)` shape; `TenantDivinedRoutingExecutionTest` stayed green unchanged.
+* The two existing unit-tier string assertions in `TypeFetcherGeneratorTest` on the polymorphic rows
+  body were updated to the `counts.slot(i)` carrier construction. No new body assertion is added: the
+  `BatchCounts` construction is pinned at the execution tier only (round 1 rework).
+  `TenantDivinedRoutingExecutionTest` stayed green unchanged.
 
 Verification: full `mvn install -Plocal-db` green on the R1070 tree at four successive trunk bases
 while trunk moved under each run. Two runs failed only on shared-database races already filed
@@ -309,3 +311,9 @@ Non-blocking:
   them, and consider a Backlog item for counting 0 there.
 * Implementation notes say "Landed at `df4b61c`"; give the In Review commit (`16ded97`) too, so the
   changelog line at Done can cite both.
+
+Author response (round 1 rework): the added `BatchCounts counts = new ...` assertion is deleted. The
+two pre-existing `counts.slot(i)` matches stay as updates of assertions that existed before this
+item. The two non-blocking notes: the In Review SHA is now in Implementation notes. The three
+comments that call the empty-participants path the only slot-less producer are left as they are:
+rewording them belongs with the `emptyBatchedResult` gap, which predates this item.

@@ -2184,10 +2184,6 @@ class TypeFetcherGeneratorTest {
             .as("scatter into per-parent buckets keyed by parentIdxByOuter")
             .contains("buckets.get(parentIdxByOuter[outerIdx]).add(r)");
         assertThat(rows)
-            .as("one BatchCounts over the shared pagesTable, grouped by idxField")
-            .contains(".util.ConnectionResult.BatchCounts counts = new " + DEFAULT_OUTPUT_PACKAGE
-                + ".util.ConnectionResult.BatchCounts(pagesTable, idxField, keys.size())");
-        assertThat(rows)
             .as("per-parent ConnectionResult carries its BatchCounts slot")
             .contains(".util.ConnectionResult(buckets.get(i), page, counts.slot(i))");
     }
