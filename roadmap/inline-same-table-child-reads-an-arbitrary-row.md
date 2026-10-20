@@ -1,7 +1,7 @@
 ---
 id: R1045
 title: "An inline child bound to its parent's own table with no @reference reads the whole table, so a single-cardinality one returns an arbitrary row"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: classification-model
@@ -136,6 +136,18 @@ Execution tier (`graphitron-sakila-example`, `GraphQLQueryTest` and `FederationE
 - the narrowed form: a same-table list field with a `@condition` argument returns the filtered rows, identical under every parent, pinning the documented reading.
 
 No assertions on generated method bodies.
+
+## Implementation notes
+
+Landed in one commit on the plan above. Facts the Done reviewer needs that the plan does not state:
+
+- The jOOQ spike passed: jOOQ 3.20.11 renders a `FROM`-less select inside `multiset` on PostgreSQL as a correlated subquery over the outer alias (`(select coalesce(jsonb_agg(...)) from (select "film"."title" as "v0", ...) as t)`), and a nested multiset inside it resolves. The fallback was not needed.
+- The null contract is exposed as `GraphitronSchema.sameRowNullContract(SameRowTableField)`, a pure per-type fold beside `nestingReach`. The shared rule is `NestingField.SubtreePresence.over(List<? extends ChildField>)` and `NestingField.NullContract.of(FieldWrapper, List<? extends ChildField>)`; `NestingField.subtreePresence()` / `nullContract()` delegate to them, and `NullContract.presenceColumns()` is the one projection of the contract's columns, read by `NestingField.parentRowColumns()`, the projection producer and (through the contract) the fetcher.
+- `FetcherEmitter.bind` takes the schema as its first parameter, since the fetcher reads the contract from it.
+- The leaf is admitted at nested depth (`GraphitronSchemaValidator.isNestedWireableLeaf`), on the same reasoning as `TableField`: its projection takes the anchor's `table` local and its fetcher reads by result key.
+- Execution tests live in a new `SameRowTableChildExecutionTest` (beside `NestingNullContractExecutionTest`) rather than in `GraphQLQueryTest`, plus `FederationEntitiesDispatchTest.entities_sameRowChild_readsEachEntitysOwnRow`. Two fixture adjustments against the Tests section: the null-rule cases run on `PivotNestingHost.labelsRow: HostLabelsRow` (both on `pivot_nesting_host`), because no sakila film has `release_year` and `original_language_id` both null; host and child share a result key through `languageName`, declared on both `Film` and `FilmSameRow`, since the example's `Film` has no `language` field; and the narrowed form is `Film.sameTableById(filmId: Int @field(name: "FILM_ID"))`, a column-bound argument filter, because a scalar argument `@condition` still binds the argument to a column. An aliased case (`x: languageName sameRow { x: language { name } }`) is not testable today: the projection gate groups by result key over the whole sub-selection (`getFieldsGroupedByResultKey()` is recursive), so two different fields under one result key at different depths are refused by `SelectionOccurrences.canonical` before any SQL runs. That is the separately filed selection-gate defect the `OccupantLocation` fixture describes, not this item's.
+- Corpus: `same-row-table.graphqls` demonstrates the leaf for the coverage obligations (no projection, so no page fragment).
+- Pins moved with history lines: `LeafRatchetTest` child leaves 23 to 24 (a source-grain triple in `LeafReconstructionKeyTest`), `CommandSeamRatchetTest` generator instanceof 66 to 67, case 57 to 58, plan references 140 to 143.
 
 ## Other solutions we've considered
 
