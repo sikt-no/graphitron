@@ -1,13 +1,13 @@
 ---
 id: R1070
 title: "A nested connection totalCount runs one count per parent, each over every parent's rows"
-status: Spec
+status: Ready
 bucket: bug
 priority: 2
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-19
+last-updated: 2026-10-20
 ---
 
 # A nested connection totalCount runs one count per parent, each over every parent's rows
@@ -19,8 +19,8 @@ statement for the whole batch, as it did in Graphitron 9, instead of N statement
 rows of all N parents. A page of 400 parents with a nested `totalCount` returns in seconds rather
 than timing out.
 
-In the sakila example, the query below issues three statements today for two films (the root, the
-batched page, one count per film), and for five films it issues six. After this item it issues three
+In the sakila example, the query below issues four statements today for two films (the root, the
+batched page, one count per film), and for five films it issues seven. After this item it issues three
 for any number of films: the root, the batched page, and one grouped count. Each film still reports
 its own actor count, and a query that does not select `totalCount` issues no count at all.
 
