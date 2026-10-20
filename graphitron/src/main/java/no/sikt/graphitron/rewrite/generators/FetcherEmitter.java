@@ -460,12 +460,13 @@ public final class FetcherEmitter {
      * projection, as a root or multiset read of that type does, plus those presence columns, so
      * the return type's own fetchers read it unchanged.
      */
-    private static CodeBlock sameRowBody(ChildField.SameRowTableField srf, NullContract contract) {
+    private static CodeBlock sameRowBody(ChildField.SameRowTableField srf, NullContract contract,
+            String outputPackage) {
         var resultClass = ClassName.get("org.jooq", "Result");
         var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
         var body = CodeBlock.builder()
-            .add("Object raw = (($T) env.getSource()).get($S + env.getField().getResultKey(), $T.class);\n",
-                RECORD, GeneratorUtils.resultKeyPrefix(srf.aliasOwner()), resultClass)
+            .add("Object raw = (($T) env.getSource()).get($L, $T.class);\n",
+                RECORD, resultKeyAliasRead(srf, outputPackage), resultClass)
             .add("if (!(raw instanceof $T r) || r.isEmpty()) return null;\n", resultWildcard)
             .add("$T row = r.get(0);\n", RECORD);
         return switch (contract) {
@@ -502,7 +503,7 @@ public final class FetcherEmitter {
             return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(nf));
         }
         if (field instanceof ChildField.SameRowTableField srf) {
-            return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.sameRowNullContract(srf)));
+            return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.sameRowNullContract(srf), outputPackage));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
             // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and

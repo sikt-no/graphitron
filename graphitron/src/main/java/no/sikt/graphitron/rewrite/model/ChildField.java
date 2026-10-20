@@ -1199,11 +1199,13 @@ public sealed interface ChildField extends OutputField
         String name,
         SourceLocation location,
         ReturnTypeRef.TableBoundReturnType returnType,
-        AliasOwner aliasOwner
+        AliasOwner aliasOwner,
+        AliasScope aliasScope
     ) implements ChildField, ResultKeyAliasedField {
         public SameRowTableField {
             java.util.Objects.requireNonNull(returnType, "returnType");
             java.util.Objects.requireNonNull(aliasOwner, "aliasOwner");
+            java.util.Objects.requireNonNull(aliasScope, "aliasScope");
             if (!(returnType.wrapper() instanceof FieldWrapper.Single)) {
                 throw new IllegalArgumentException(
                     "SameRowTableField reads the parent's own row and is single-valued; got "

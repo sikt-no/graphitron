@@ -1809,7 +1809,8 @@ class FieldBuilder {
                         && tfc.pagination() == null;
                     if (returnType.wrapper() instanceof FieldWrapper.Single && argumentFree) {
                         return new no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField(
-                            parentTypeName, name, location, returnType, aliasOwnerOf(parentTypeName, name));
+                            parentTypeName, name, location, returnType, aliasOwnerOf(parentTypeName, name),
+                            aliasScopeOf(parentTypeName));
                     }
                     return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
                         unnarrowedSameTableMessage(parentTypeName, elementTypeName,

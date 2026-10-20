@@ -293,8 +293,8 @@ public final class ProjectionUnitRenderer {
         var callee = ProjectionCall.fromOccurrences(c.callee(),
             CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage);
         if (sr.presence().isEmpty()) {
-            code.addStatement("fields.add($T.multiset($T.select($L)).as($S + entry.getKey()))",
-                DSL, DSL, callee, rkPrefix(c));
+            code.addStatement("fields.add($T.multiset($T.select($L)).as($L))",
+                DSL, DSL, callee, rkAlias(c));
             return code.build();
         }
         code.addStatement("$T<$T> sameRow = new $T<>()", SET, fieldWildcard(), LINKED_HASH_SET);
@@ -302,8 +302,8 @@ public final class ProjectionUnitRenderer {
             code.addStatement("sameRow.add(table.$L)", column.javaName());
         }
         code.addStatement("sameRow.addAll($L)", callee);
-        code.addStatement("fields.add($T.multiset($T.select(sameRow)).as($S + entry.getKey()))",
-            DSL, DSL, rkPrefix(c));
+        code.addStatement("fields.add($T.multiset($T.select(sameRow)).as($L))",
+            DSL, DSL, rkAlias(c));
         return code.build();
     }
 

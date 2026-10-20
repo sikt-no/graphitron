@@ -204,7 +204,7 @@ public final class ProjectionCommands {
             case ChildField.SameRowTableField srf -> Optional.of(new Contribution.Call(srf.name(),
                 units.typeClass(srf.returnType().returnTypeName()),
                 new CallWrap.SameRow(schema.sameRowNullContract(srf).presenceColumns()),
-                aliasOwnerOf(srf)));
+                aliasOwnerOf(srf), aliasScopeOf(srf)));
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp), aliasScopeOf(cmp)));
             case ChildField.PivotField pf -> {

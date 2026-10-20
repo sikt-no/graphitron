@@ -121,6 +121,20 @@ class SameRowTableChildExecutionTest {
     }
 
     @Test
+    void resultKeys_sharedBetweenHostAndChild_stayApart() {
+        // The host's x is a scalar subselect and the child's x an object read; both project under
+        // the result key, each in its own record scope, and each projection sees only the fields
+        // selected at its own level.
+        var films = films("x: languageName sameRow { x: language { name } y: title }");
+        films.values().forEach(film -> {
+            assertThat(film.get("x")).isInstanceOf(String.class);
+            assertThat(child(film, "sameRow").get("x")).isInstanceOf(Map.class);
+            assertThat(((String) child(child(film, "sameRow"), "x").get("name")).trim())
+                .isEqualTo(((String) film.get("x")).trim());
+        });
+    }
+
+    @Test
     void sameTableCycle_twoLevelsDeep_returnsTheRightRows() {
         var films = films("sameRow { film { filmId sameRow { filmId title } } }");
         films.forEach((id, film) -> {

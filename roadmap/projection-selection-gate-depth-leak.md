@@ -500,6 +500,13 @@ Where the code departs from the plan, and why:
   two participants' nesting fields splicing the same leaf name over different FKs (the old census
   would have rejected this schema). The carve-out pin uses those two nesting fields under one key.
 
+* **A fifth alias-minting family.** R1045's `SameRowTableField` (a same-table child read off the
+  parent's own row, landed on trunk while this item was in progress) is a `ResultKeyAliasedField`
+  too; it carries the `AliasScope` stamp, and its same-row arm and fetcher compose the alias through
+  the same two points as the other four. The case R1045 dropped pending this item,
+  `SameRowTableChildExecutionTest.resultKeys_sharedBetweenHostAndChild_stayApart`, is restored and
+  green.
+
 Tests: `ResultKeyScopeExecutionTest` (15 cases, every goal bullet plus both carve-outs' rejection
 and the shared-nesting-type agreement under `Customer` and `Store`);
 `ConnectionSharedResultKeyProjectionTest` unchanged and green; the new lint rule
