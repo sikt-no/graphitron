@@ -1,7 +1,7 @@
 ---
 id: R1062
 title: "A multi-table interface or union connection pages and orders correctly only on PostgreSQL"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: codegen-correctness
