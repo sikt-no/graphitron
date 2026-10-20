@@ -1,13 +1,13 @@
 ---
 id: R1071
 title: "A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives"
-status: Spec
+status: Ready
 bucket: bug
 priority: 1
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-19
+last-updated: 2026-10-20
 ---
 
 # A filter input field with @field(name:) is dropped from the bean a whole-input @condition receives
@@ -188,7 +188,8 @@ the consuming field keeping one consequence rejection beside it. Make it a typed
 the slot's container and missed it, the bean class and the member name it looked for; the remedies
 in its message are add the member, bind the slot another way, or drop the override so the implicit
 predicate reads it. A typed arm puts the payload where the LSP and the glossary can read it, and
-`SealedHierarchyDocCoverageTest` then makes the glossary entry mandatory rather than optional.
+`SealedHierarchyDocCoverageTest` then makes its mention in
+`docs/architecture/explanation/typed-rejection.adoc` mandatory rather than optional.
 
 The check lives in the walk, not the store, for a stated reason: bean binding sets come from
 reflection and the store has no relation for them yet (`code_condition_method` holds membership
@@ -225,8 +226,9 @@ same change loud through `bindRecord`'s bijection, so only setter beans need the
   build naming it. A slot with its own `@condition` is that method's, and is not checked.
 - `how-to/handle-services.adoc`, the input-bean section's pointer to `@field` for renaming members:
   say the rename applies to a `@service` input.
-- `reference/diagnostics-glossary.adoc`: an entry for the new typed rejection, which
-  `SealedHierarchyDocCoverageTest` requires once the arm exists.
+- `reference/diagnostics-glossary.adoc`: an entry for the new typed rejection.
+  (`SealedHierarchyDocCoverageTest` checks `docs/architecture/explanation/typed-rejection.adoc`,
+  not this page, so the arm must also be named there.)
 
 ## Tests
 
