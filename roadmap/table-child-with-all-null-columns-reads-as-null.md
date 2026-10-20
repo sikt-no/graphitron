@@ -337,3 +337,51 @@ same-table child *is* the nullable object, which is this shape.
 The plan answers this input in place: the non-null declaration and its one gap under "The decision",
 the `phd` list under "The presence rule", and `navnAlleSprak` in the paragraph on same-table
 children there.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, request revisions (session_01Gj4VEXhM5741X9PgponE9e, 2026-10-20)
+
+The decision (absence by value, nullability as the declaration) is sound, the model extends the
+`NullContract` / `SubtreePresence` shape and the `sameRowNullContract` per-type fold already in the
+tree, and every symbol, test and manual section the plan names exists as named. Two findings hold it
+in Spec.
+
+1. **Question 1: the promise is wider than the plan, and the divergence list is incomplete.** The
+   Goal's first sentence, "The decision" (whose lead argument is that Graphitron 9 did it
+   *everywhere*) and the drafted manual text ("A nullable field that returns one object resolves to
+   `null` when ...") state the rule for every nullable single-object field. The plan reaches four
+   field kinds: `NestingField`, `SameRowTableField`, `TableField` and `BatchedTableField`. Graphitron
+   9's `FetchDBMethodGenerator.generateSelectRow` wraps the root object's row in the same
+   `nullOnAllNull`, so a nullable root `QueryField.QueryTableField` over a row of nulls is `null`
+   there and stays an object here; the single polymorphic children (`TableInterfaceField`,
+   `InterfaceField`, `UnionField`) and `ServiceTableField` are likewise outside the plan. Separately,
+   `generateSelectRow` puts the key row of every resolver field (`getKeySetForResolverFields`) into
+   the mapped elements, so in Graphitron 9 a type holding a `@splitQuery` field kept its object
+   whenever that key was set; the probe collapses it when the split list is empty or the split
+   reference finds no row. The "Other solutions" section knows this, but the migration guide's "Two
+   cases differ" does not list it, and it is a divergence toward `null`, the direction a client
+   notices. Satisfied when the Goal and both manual drafts state the field kinds the rule covers
+   (or the plan brings root single fields in), and the migration draft lists every reading that
+   differs from Graphitron 9, the `@splitQuery` key case among them.
+
+2. **Question 2: the plan does not say what carries a probe through the projection contract.** It
+   says the probe column is "added to the demand" through `ParentRowDemand` and
+   `CallWrap.Splice.callerDemand`, and that the new `CallWrap.Multiset` slot works "as
+   `CallWrap.SameRow` carries its presence columns". All three are `List<ColumnRef>`, and
+   `ParentRowDemand` is documented as columns read off the parent row *by base name*, a contract the
+   parent-projection walks enforce for every implementer (the polymorphic fields and
+   `TableInterfaceField` among them). A probe is a rendered expression with a derived alias, not a
+   column of the row, so this is the one structural change to the projection side and the
+   implementer would be designing it. Satisfied when the plan names the shape: for example one
+   presence-term type (column or probe) that `ParentRowDemand`, `Splice`, `SameRow` and the
+   `Multiset` slot all carry, or a probe demand kept beside the column demand, and says which walks
+   read it and where the probe's `EXISTS` is rendered (`ConditionGlueRenderer` already renders a
+   correlated `EXISTS` over a join path for the FK-target `@condition`, which may be the shape to
+   extend).
+
+Non-blocking: the presence table's last row lists the blockers but not the remaining child kinds
+(`ComputedField`, `RecordReadField`, `ServiceRecordField`, `PivotSlotField` and the like), which
+block today through the `default` arm; saying "every other field" there would make the table total.
+The `navnAlleSprak` step assumes the implementer can obtain sis's return type; if that has to be
+relayed, say so where the step is.
