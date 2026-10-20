@@ -868,6 +868,14 @@ and the emitters read, and it goes when nothing reads what it builds.
       field is a `_lookup` only where the payload has no table of its own, so a write returning its
       table is one row. Pinned by the `fetcher-producers` fact document, whose prelude root field now
       runs a routine.
+    * **A write's re-read runs after its commit, for every write shape** `open`, decided with Alf
+      2026-10-20. Whether the re-read is inside the write's own fetcher, as for a write returning
+      its table, or is the payload's data field, it reads what was committed and never the open
+      transaction. Emitted so today: the keys come out of `transactionResult` and the re-read
+      follows. Pinned for the routine carrier by `RoutineCarrierRlsExecutionTest` and for an insert
+      returning a table interface by `DmlTableInterfaceReturnExecutionTest`; an update, a delete and
+      a service re-reading have no pin. A deferred constraint trigger that rewrites the row at
+      commit is one test for all of them: the re-read sees the rewrite only after the commit.
     * **What each kind runs is stated, resolved** `open`. A subtype per kind: the write's mutated
       table and `matches`, the routine's first application and routine, the service's application
       and method. A row only where the reference resolved; where it did not, the code-reference and
