@@ -98,6 +98,14 @@ concurrent film test landing between those two reads breaks the comparison. This
 read-versus-read race over an unfiltered set, so no static row reproduces it; it is the reader half
 of the documented rule, asserting what the table holds while meaning what the test owns.
 
+**`GraphQLQueryTest`'s whole-table film reads** are the same reader shape, met twice on 2026-10-20
+during one Done-gate verification build on an unrelated tree, a different method each run:
+`filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` (`:505`, expected 5 films, got
+films 101 and 102 besides) and `inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds`
+(`:4495`, a `gap-B-<uuid>` title beside `ACE GOLDFINGER`, written by `ServiceListGapExecutionTest`).
+A third run of the same tree was green. Any `GraphQLQueryTest` assertion over an unfiltered `film`
+read belongs on this list.
+
 ## What lands
 
 Each of the three stops depending on rows it does not own.
