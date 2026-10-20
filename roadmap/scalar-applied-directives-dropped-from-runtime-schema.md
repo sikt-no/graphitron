@@ -1,13 +1,13 @@
 ---
 id: R1066
 title: "Directives applied to a custom scalar are dropped from the runtime schema"
-status: In Review
+status: Ready
 bucket: bug
 priority: 5
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-19
+last-updated: 2026-10-20
 ---
 
 # Directives applied to a custom scalar are dropped from the runtime schema
@@ -173,3 +173,49 @@ generated Java text.
 - **`Owner.FIELD.transform(b -> ...)` emitted inline at the registration site.** Equivalent at
   runtime, but puts a lambda with a per-application chain in the `build()` body, which the
   helper-method shape exists to keep at O(1) chain depth.
+
+## Reviewer findings
+
+### Round 1 (2026-10-20, In Review -> Ready, reviewer session 01Ui1ExtnS4VPGTrCSHfG2iJ)
+
+Verdict: rework, on question one. The runtime change is the one the spec approved and it works.
+The federated fixture's generated `scalar_BigDecimal()` copies the constant and carries the
+`@specifiedBy` URL and both survivor applications. The emitted `schema.graphqls` prints
+`scalar BigDecimal @specifiedBy(...) @tag(name : "stable")` and `scalar LocalDate @tag(name : "stable")`.
+`serviceSdlExposesScalarAppliedDirectives`, `builtInScalarsKeepIdentityAndCustomScalarsCarrySpecifiedBy`
+and `emittedSdlMatchesRuntimeSchema` all pass. That is the completeness evidence the spec named,
+and it demonstrates the goal. The description override was a substitution made during
+implementation; it is recorded in the plan body and in the user doc, so it is not a finding. The
+retirement sweep for `addSynthesisedScalar` is clean. Two things part company with the contract.
+
+**Finding 1 (question one: the delivery adds assertions on generated Java text).** The spec's Tests
+section promises "nothing asserts on generated Java text", and development-principles.adoc
+("Behaviour is pinned at the pipeline tier and above") bans it. The delivery rewrote
+`GraphitronSchemaClassGeneratorTest.scalarRegistration_directiveResolvesConsumerScalar_registersCopyOfConstant`
+by adding new text assertions instead of retiring the old one: `contains(".additionalType(scalar_Money())")`,
+`contains("GraphQLScalarType.newScalar(...ScalarConstants.MONEY)")` (this one reads the body of the
+generated factory) and `doesNotContain(".additionalType(...MONEY)")`. The behaviour these lines
+stand in for is already pinned at the execution tier by the two new `FederationBuildSmokeTest`
+cases, which cover both registration heads. To satisfy: remove the text assertions this delivery
+authored. Either delete the test, since the execution tier covers it, or recast it as a
+behavioural check, for example by building the schema the generated class returns and asserting
+that `Money` registers and is not the `MONEY` constant. Do not keep the test by rewording the
+strings. The pre-existing text assertions in the neighbouring tests are not this item's to
+clean up.
+
+**Finding 2 (question one: a user-facing reference page still states the old mechanism).**
+`docs/manual/reference/directives/scalarType.adoc` line 34 still says the generator "registers
+`ExtendedScalars.GraphQLBigDecimal` via `.additionalType(...)`". After this change the constant
+itself is no longer registered; a copy carrying the SDL declaration's description and directives
+is. The spec named `custom-scalars.adoc` as the place that says so, and the delivery updated it.
+This page paraphrases the mechanism the delivery replaced, which is what the Done gate's
+retirement-sweep skim is meant to catch. To satisfy: restate the sentence to match
+`custom-scalars.adoc` (registered automatically, as a copy carrying the SDL declaration's
+description and directives).
+
+Non-blocking: the verification build on trunk `31839d5` failed once, in
+`OptionalNodeIdProjectionExecutionTest.anOmittedNodeIdReachesAConditionMethodAsNull` (film 79
+missing from the unfiltered result). The test passes when rerun alone, alongside
+`FederationBuildSmokeTest`, and it touches nothing this item changed, so it reads as a shared-data
+or ordering interaction in the execution tier rather than this delivery's failure. It is worth
+watching on the next pass.
