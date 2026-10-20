@@ -108,7 +108,7 @@ class EntryDefectTest {
     @DisplayName("a connection return on a write is a defect, and it does not displace another")
     void aConnectionReturnOnAWriteIsItsOwnDefect(@TempDir Path tmp) {
         withCapturedStore(tmp, """
-            type Query { film: Film }
+            type Query { ping: String @routine(name: "first_fn") }
             type Film { id: ID }
             type Mutation {
               insertFilms: [Film] @asConnection @routine(name: "first_fn") @routine(name: "second_fn")
@@ -125,7 +125,7 @@ class EntryDefectTest {
     @DisplayName("a plain return and one routine draw neither defect")
     void aPlainSingleRoutineWriteDrawsNeither(@TempDir Path tmp) {
         withCapturedStore(tmp, """
-            type Query { film: Film }
+            type Query { ping: String @routine(name: "first_fn") }
             type Film { id: ID }
             type Mutation {
               insertFilms: [Film] @routine(name: "first_fn")

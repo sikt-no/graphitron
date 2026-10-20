@@ -16,7 +16,9 @@ extend type Query {
   ratingScalar: RATING
 }
 
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+# The collisions, all of them. The root fields only reach the types, and nothing fetches them, which
+# is a defect of its own.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code = 'TYPE_NAME_CASE_COLLISION'", rows: """
   code,                     type_name, field_name, detail
   TYPE_NAME_CASE_COLLISION, FILM,      ,           Film
   TYPE_NAME_CASE_COLLISION, Film,      ,           FILM

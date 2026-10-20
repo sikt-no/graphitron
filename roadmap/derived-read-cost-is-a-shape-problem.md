@@ -890,10 +890,38 @@ and the emitters read, and it goes when nothing reads what it builds.
     producer away. The payload a producer returns is its own field's return type, one join away, so
     it is not a column here; the carrier rule's `family` is this relation's kind. Every producer is
     in the population, not only the mutation-rooted ones: a query-rooted payload has the same shape.
-  * **The readers are stated** `open`, the fetcher's second subtype, after the producers.
-    `graphitron_reader`: which result a field reads and how, a column, an expression, a record
-    accessor, the whole result, an id encoding or the errors. It meets "A field's source has kinds",
-    which says where the result comes from.
+  * **A result flows down from its producer** `done`, 2026-10-20, decided with Alf.
+    `graphitron_result`: one row per type a result reaches and its shape, ROW, a jOOQ Record, which a
+    field's read is projected into or reads through the Record API, or OBJECT, any other Java value,
+    read through an accessor. Payload, error and connection were weighed as shapes of their own and
+    fold into these two: who built a value is the producer's fact. Its origin is a subtype:
+    `graphitron_result_table`, the table whose row it is, `graphitron_result_pivot`, the pivot field
+    whose aggregate makes it, `graphitron_result_class`, an object's class. Seeds are each
+    producer's result, `node`, `nodes` and `_entities` holding ROW, the latter seeded from the `@key`
+    types until it is stated, a connection's wrapper as OBJECT; a reader hands its target its
+    parent's shape and origin, except that a table-bound type, or one backed by a table's own record
+    class, which the sql family owns, starts a row of its table, a pivot field's type the pivot's
+    row, and an `@error` type holds the exception as OBJECT. Filled by `Results` in the anchor,
+    merging `graphitron_result_rule` until a round adds nothing; on sis four rounds, 0.9 s, every
+    object type placed but one no field returns. One shape per type is the rule:
+    `RESULT_SHAPES_CONFLICT` at the type when broken, none on sis. It replaces the dissolved type
+    reach, which asked how many objects arrive and had no reader, and gives
+    `graphitron_field_source`'s kinds their origin, which waits on it.
+    * **An ad hoc jOOQ Record is a ROW** `open`. A class that is an `org.jooq.Record` but no table's,
+      a `RecordN` a service returns, holds a ROW with no table; today it comes out OBJECT, because the
+      code family keeps supertypes only for throwables and cannot say a class is a Record. The code
+      family captures that, and a type backed by such a class seeds ROW. None on sis.
+    * **A table with no record class says so** `open`. `sql_table.record_class_fqn` holds
+      `org.jooq.Record` for a table jOOQ generated no record class for, so a type backed by a plain
+      Record would read as every such table's row. The sql family states the absence as NULL.
+  * **The readers are stated** `done`, 2026-10-20, after the results. `graphitron_reader`, every
+    field of a type holding one result that runs nothing: under a ROW a COLUMN, an EXPRESSION or a
+    NESTED row, under an OBJECT and for an errors channel an ACCESSOR. A node id's encoding and an
+    errors channel's outcome are facts of the field and of the producer, not ways of reading. A
+    query or mutation root field, or a field of a type holding a result, with no fetcher is
+    `FIELD_WITHOUT_FETCHER`, none on sis. A connection's wrapper and edges produce only
+    `totalCount` and the facets; `nodes` and `Edge.node` read the page, which the producer rule had
+    made SELECTs on a polymorphic connection, 48 on sis.
   * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
     row per field of a type a producer returns, with its role, errors or data, and its element,
     table, record, id or other. Total over the fields, an element no rule recognises being a row of

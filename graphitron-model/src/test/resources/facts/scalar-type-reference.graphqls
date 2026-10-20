@@ -22,7 +22,9 @@ extend type Query {
   bare: Bare
 }
 
-extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+# The scalar-type defects, all of them. The root fields only reach the scalars, and nothing fetches
+# a scalar field with nothing written on it, which is a defect of its own.
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "code LIKE 'SCALAR_TYPE%'", rows: """
   code,                            type_name, field_name, detail
   SCALAR_TYPE_CONSTANT_NOT_FOUND,  Misspelt,  ,           graphql.scalars.ExtendedScalars.GraphQLBigDecimel
   SCALAR_TYPE_CLASS_NOT_READ,      Unread,    ,           no.example.Absent

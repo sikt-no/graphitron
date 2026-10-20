@@ -415,7 +415,7 @@ class DiagnosticFactsTest {
     @DisplayName("the entry arm carries the defect type's severity, code and statement to the surface")
     void entryArmProjectsTheDefectType() throws IOException {
         Path sdl = write(tmp, """
-            type Query { film: Film }
+            type Query { ping: String @routine(name: "one") }
             type Film { id: ID }
             type Mutation {
               insertFilms: [Film] @asConnection @routine(name: "one") @routine(name: "two")
@@ -469,7 +469,7 @@ class DiagnosticFactsTest {
     @DisplayName("every entry defect reaches the surface, the vocabulary join dropping none")
     void theVocabularyJoinDropsNothing() throws IOException {
         Path sdl = write(tmp, """
-            type Query { film: Film }
+            type Query { ping: String @routine(name: "one") }
             type Film { id: ID }
             type Mutation {
               insertFilms: [Film] @asConnection @routine(name: "one") @routine(name: "two")

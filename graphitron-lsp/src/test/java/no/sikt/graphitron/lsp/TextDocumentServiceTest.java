@@ -185,8 +185,11 @@ class TextDocumentServiceTest {
 
             var diagnostics = clientStub.latestDiagnostics.get(uri);
             assertThat(diagnostics).isNotNull();
-            assertThat(diagnostics.getDiagnostics()).hasSize(1);
-            assertThat(diagnostics.getDiagnostics().get(0).getMessage()).contains("MISSING");
+            // The fixture's root field fetches nothing, which is a diagnostic of its own; this
+            // case is about the table.
+            assertThat(diagnostics.getDiagnostics())
+                .filteredOn(d -> d.getMessage().contains("MISSING"))
+                .hasSize(1);
         }
     }
 
