@@ -567,7 +567,7 @@ public class GraphQLRewriteGenerator {
                 })
                 .toList(),
             emittedThisRun);
-        emittedThisRun.add(SchemaSdlEmitter.emit(assembled, schema, federationLink, ctx.outputResourcesDirectory(), outputPackage));
+        emittedThisRun.add(SchemaSdlEmitter.emit(assembled, ctx.outputResourcesDirectory(), outputPackage));
         sweepOrphans(emittedThisRun.emitted);
         var result = new GenerationResult(
             Collections.unmodifiableSet(emittedThisRun.emitted),

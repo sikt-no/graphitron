@@ -11,9 +11,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * Classification-time retention of the support types declared in
  * {@code directives.graphqls}. The retention decision materialises as
- * {@link GraphitronSchema#types()} membership, the single decision both the runtime
- * registration ({@code GraphitronSchemaClassGenerator.planFor}) and the print seam
- * ({@code SchemaSdlEmitter}) consume.
+ * {@link GraphitronSchema#types()} membership, which the runtime registration
+ * ({@code GraphitronSchemaClassGenerator.planFor}) consumes; the published schema decides the same
+ * question structurally, in {@code EmittedRegistry}.
  */
 @PipelineTier
 class SupportTypeRetentionPipelineTest {

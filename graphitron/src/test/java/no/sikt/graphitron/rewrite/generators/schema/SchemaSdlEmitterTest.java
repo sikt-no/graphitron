@@ -2,16 +2,17 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import com.apollographql.federation.graphqljava.Federation;
 import com.apollographql.federation.graphqljava.printer.ServiceSDLPrinter;
-import graphql.language.EnumTypeDefinition;
+import graphql.language.AstPrinter;
+import graphql.language.InputObjectTypeDefinition;
 import graphql.language.ObjectTypeDefinition;
-import graphql.schema.GraphQLObjectType;
+import graphql.parser.Parser;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.SchemaPrinter;
 import graphql.schema.idl.TypeDefinitionRegistry;
-import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
-import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
+import graphql.schema.idl.UnExecutableSchemaGenerator;
+import no.sikt.graphitron.model.schema.federation.FederationSpec;
+import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -20,221 +21,165 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.util.Map;
+import java.util.List;
 
-import static graphql.Scalars.GraphQLString;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Direct dispatch coverage on tiny schemas. The federation arm mirrors the option shape of
- * {@link ServiceSDLPrinter#generateServiceSDLV2} plus the survivor/support-type filters,
- * so on a schema with no generator-only surface it must produce exactly what that printer
- * yields; the non-federation arm mirrors graphql-java's {@link SchemaPrinter} under the
- * documented include flags the same way. SDL assertions on the filtered surface re-parse the
- * printed text and assert on the resulting type/directive sets, never on substrings of the
- * printed string. The execution-tier coverage in {@code graphitron-sakila-example}
- * ({@code FederationBuildSmokeTest.emittedSdlMatchesRuntimeSchema}) pins file ↔ runtime parity
- * end-to-end.
+ * Direct dispatch coverage on tiny schemas. The printer takes the emitted schema and prints it,
+ * filtering nothing of its own; which form it prints follows the schema's own federation
+ * {@code @link}. The federation form mirrors the option shape of
+ * {@link ServiceSDLPrinter#generateServiceSDLV2}, so it must state what that printer states; the
+ * plain form mirrors graphql-java's {@link SchemaPrinter} the same way. Every assertion re-parses the
+ * printed text and asserts on the definitions it holds, never on the printed string: the file is
+ * what a consumer publishes, and its layout is the printer's. What is published is decided before
+ * this, in {@code EmittedRegistry}, and pinned there; the execution tier in
+ * {@code graphitron-sakila-example} ({@code FederationBuildSmokeTest.emittedSdlMatchesRuntimeSchema})
+ * pins file and runtime parity end to end.
  */
 @UnitTier
 class SchemaSdlEmitterTest {
 
-    /** Schema exercising the filtered surface: generator-only directives, a consumer
-     * survivor directive, and a retained published support type. */
-    private static final String FILTERED_SDL = """
-        directive @auth(roles: [String!]) on OBJECT | FIELD_DEFINITION
-        type Query {
-            films(order: [FilmOrderBy]): Film @auth(roles: ["admin"])
-        }
-        type Film @table(name: "film") {
-            id: ID!
-        }
-        input FilmOrderBy { direction: SortDirection }
-        """;
+    private static final String LINK = "extend schema @link(url: \"" + FederationSpec.URL
+        + "\", import: [\"@key\"])\n";
 
-    /** Same shape without the support-type reference: every support type drops. */
-    private static final String UNREFERENCED_SDL = """
+    private static final String FILM = """
+        directive @table(name: String) on OBJECT
         type Query { film: Film }
         type Film @table(name: "film") { id: ID! }
+        enum SortDirection { ASC DESC }
         """;
 
-    private static GraphQLSchema sampleSchema() {
-        return GraphQLSchema.newSchema()
-            .query(GraphQLObjectType.newObject()
-                .name("Query")
-                .field(f -> f.name("hello").type(GraphQLString)))
-            .build();
+    /** A schema built from {@code sdl}, its federation definitions injected where it links them. */
+    private static GraphQLSchema schema(String sdl) {
+        TypeDefinitionRegistry registry = new SchemaParser().parse(sdl);
+        FederationLinkApplier.apply(registry);
+        return UnExecutableSchemaGenerator.makeUnExecutableSchema(registry);
     }
 
-    /** Empty classified model: no support type is retained, nothing else is consulted. */
-    private static GraphitronSchema emptyModel() {
-        return new GraphitronSchema(Map.of(), Map.of());
-    }
+    private static final GraphQLSchema PLAIN = schema("type Query { hello: String }");
+    private static final GraphQLSchema FEDERATED = schema(LINK + "type Query { hello: String }");
 
     /**
-     * A schema whose {@code Filter} input applies the built-in {@code @oneOf} directive.
-     * Built through graphql-java's SchemaGenerator (as the real pipeline does) so the input
-     * object reports {@link graphql.schema.GraphQLInputObjectType#isOneOf()}.
+     * The definitions an SDL text holds, each printed compactly and sorted: two texts with the same
+     * definitions compare equal however they are laid out or ordered.
      */
-    private static GraphQLSchema oneOfSchema() {
-        String sdl = "type Query { search(filter: Filter): String }\n"
-            + "input Filter @oneOf { byId: ID byName: String }\n";
-        var registry = new graphql.schema.idl.SchemaParser().parse(sdl);
-        return graphql.schema.idl.UnExecutableSchemaGenerator.makeUnExecutableSchema(registry);
+    private static List<String> definitions(String sdl) {
+        return new Parser().parseDocument(sdl).getDefinitions().stream()
+            .map(AstPrinter::printAstCompact)
+            .sorted()
+            .toList();
     }
 
-    private static TypeDefinitionRegistry emitAndReparse(GraphitronSchemaBuilder.Bundle bundle,
-                                                         boolean federationLink, Path root) throws IOException {
-        Path target = SchemaSdlEmitter.emit(bundle.assembled(), bundle.model(), federationLink, root, "com.example.app");
-        return new graphql.schema.idl.SchemaParser().parse(Files.readString(target, StandardCharsets.UTF_8));
+    private static String printed(Path target) throws IOException {
+        return Files.readString(target, StandardCharsets.UTF_8);
     }
 
-    /**
-     * On a schema with no generator-only directives and no support types, the federation arm's
-     * printer must be byte-identical to {@link ServiceSDLPrinter#generateServiceSDLV2}: the
-     * filters are pure subtractions, and this pins the mirrored option shape.
-     */
     @Test
-    void federationArmMatchesServiceSdlPrinterOnUnfilteredSchema(@TempDir Path root) throws IOException {
-        GraphQLSchema schema = sampleSchema();
-        Path target = SchemaSdlEmitter.emit(schema, emptyModel(), true, root, "com.example.app");
+    void aSchemaLinkingFederationPrintsTheServiceSdl(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(FEDERATED, root, "com.example.app");
 
         var expected = ServiceSDLPrinter.generateServiceSDLV2(
-            Federation.transform(schema)
+            Federation.transform(FEDERATED)
                 .setFederation2(true)
                 .resolveEntityType(env -> null)
-                .fetchEntities(env -> java.util.List.of())
+                .fetchEntities(env -> List.of())
                 .build());
         assertThat(target).isEqualTo(root.resolve("com/example/app/schema.graphqls"));
-        assertThat(Files.readString(target, StandardCharsets.UTF_8)).isEqualTo(expected);
+        assertThat(definitions(printed(target))).isEqualTo(definitions(expected));
     }
 
     @Test
-    void nonFederationArmRoutesThroughSchemaPrinter(@TempDir Path root) throws IOException {
-        GraphQLSchema schema = sampleSchema();
-        Path target = SchemaSdlEmitter.emit(schema, emptyModel(), false, root, "com.example.app");
+    void aSchemaWithoutAFederationLinkPrintsPlain(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(PLAIN, root, "com.example.app");
 
         var expected = new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
             .includeDirectives(true)
             .includeScalarTypes(true)
             .includeIntrospectionTypes(false)
-            .includeSchemaDefinition(true)).print(schema);
-        assertThat(target).isEqualTo(root.resolve("com/example/app/schema.graphqls"));
-        assertThat(Files.readString(target, StandardCharsets.UTF_8)).isEqualTo(expected);
+            .includeSchemaDefinition(true)).print(PLAIN);
+        assertThat(definitions(printed(target))).isEqualTo(definitions(expected));
     }
 
     @Test
-    void emptyOutputPackageWritesAtResourcesRoot(@TempDir Path root) throws IOException {
-        Path target = SchemaSdlEmitter.emit(sampleSchema(), emptyModel(), false, root, "");
+    void onlyAFederationLinkSelectsTheServiceForm() {
+        assertThat(SchemaSdlEmitter.linksFederation(FEDERATED)).isTrue();
+        assertThat(SchemaSdlEmitter.linksFederation(PLAIN)).isFalse();
+    }
+
+    @Test
+    void emptyOutputPackageWritesAtResourcesRoot(@TempDir Path root) {
+        Path target = SchemaSdlEmitter.emit(PLAIN, root, "");
 
         assertThat(target).isEqualTo(root.resolve("schema.graphqls"));
         assertThat(target).exists();
     }
 
     /**
- * Generator-only directive definitions and applications never print; consumer-declared
-     * survivor directives keep printing with their applications. Asserted on both arms.
+     * What the emitted schema holds prints, a directive of any name and a type nothing references
+     * included: deciding what is published is {@code EmittedRegistry}'s, and a printer that also
+     * filtered would make it two decisions.
      */
     @Test
-    void bothArmsStripGeneratorOnlyDirectivesAndKeepSurvivors(@TempDir Path root) throws IOException {
-        var bundle = TestSchemaHelper.buildBundle(FILTERED_SDL);
-        for (boolean federationLink : new boolean[] {false, true}) {
-            var reparsed = emitAndReparse(bundle, federationLink, root.resolve(federationLink ? "fed" : "plain"));
+    void thePrinterFiltersNothing(@TempDir Path root) throws IOException {
+        for (boolean federated : new boolean[] {false, true}) {
+            var reparsed = new SchemaParser().parse(printed(SchemaSdlEmitter.emit(
+                schema(federated ? LINK + FILM : FILM),
+                root.resolve(federated ? "fed" : "plain"), "com.example.app")));
 
             assertThat(reparsed.getDirectiveDefinition("table"))
-                .as("generator-only directive definition must not print (federation=%s)", federationLink)
-                .isEmpty();
-            assertThat(reparsed.getDirectiveDefinition("auth"))
-                .as("consumer-declared survivor directive definition must print (federation=%s)", federationLink)
-                .isPresent();
-
-            var film = requireNonNull(reparsed.getTypeOrNull("Film", ObjectTypeDefinition.class));
-            assertThat(film.getDirectives("table"))
-                .as("generator-only directive application must not print (federation=%s)", federationLink)
-                .isEmpty();
-            var query = requireNonNull(reparsed.getTypeOrNull("Query", ObjectTypeDefinition.class));
-            var films = query.getFieldDefinitions().stream()
-                .filter(f -> f.getName().equals("films"))
-                .findFirst().orElseThrow();
-            assertThat(films.getDirectives("auth"))
-                .as("survivor directive application must print (federation=%s)", federationLink)
-                .hasSize(1);
+                .as("the directive definition prints (federation=%s)", federated).isPresent();
+            assertThat(requireNonNull(reparsed.getTypeOrNull("Film", ObjectTypeDefinition.class))
+                    .getDirectives("table"))
+                .as("its application prints (federation=%s)", federated).hasSize(1);
+            assertThat(reparsed.getTypeOrNull("SortDirection"))
+                .as("an unreferenced type prints (federation=%s)", federated).isNotNull();
         }
     }
 
     /**
- * Strictly internal support types never print; the published support type prints
-     * iff classification retained it, with its description. Asserted on both arms.
+     * {@code generateServiceSDLV2}'s spec-built-in filter (mirrored in the emitter's own printer)
+     * strips the {@code @oneOf} definition while keeping the application; the federation form
+     * reinstates the definition.
      */
     @Test
-    void bothArmsDropNonRetainedSupportTypesAndKeepRetainedOnes(@TempDir Path root) throws IOException {
-        var referenced = TestSchemaHelper.buildBundle(FILTERED_SDL);
-        var unreferenced = TestSchemaHelper.buildBundle(UNREFERENCED_SDL);
-        for (boolean federationLink : new boolean[] {false, true}) {
-            var withReference = emitAndReparse(referenced, federationLink, root.resolve("ref-" + federationLink));
-            var withoutReference = emitAndReparse(unreferenced, federationLink, root.resolve("unref-" + federationLink));
+    void theFederationFormReinstatesTheOneOfDefinition(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(schema(LINK
+            + "type Query { search(filter: Filter): String }\n"
+            + "input Filter @oneOf { byId: ID byName: String }\n"), root, "com.example.app");
+        var reparsed = new SchemaParser().parse(printed(target));
 
-            DirectiveSupportTypes.strictlyInternal().forEach(name ->
-                assertThat(withReference.getTypeOrNull(name))
-                    .as("strictly internal type %s must never print (federation=%s)", name, federationLink)
-                    .isNull());
-
-            var sortDirection = requireNonNull(withReference.getTypeOrNull("SortDirection", EnumTypeDefinition.class));
-            assertThat(sortDirection.getDescription())
-                .as("retained SortDirection carries its description (federation=%s)", federationLink)
-                .isNotNull();
-
-            DirectiveSupportTypes.all().forEach(name ->
-                assertThat(withoutReference.getTypeOrNull(name))
-                    .as("unreferenced support type %s must not print (federation=%s)", name, federationLink)
-                    .isNull());
-        }
-    }
-
-    /**
- * {@code generateServiceSDLV2}'s spec-built-in filter (now mirrored in the emitter's
-     * own printer) strips the {@code @oneOf} definition while keeping the application; the
-     * federation arm reinstates the definition.
-     */
-    @Test
-    void federationArmEmitsOneOfDefinitionWhenSchemaUsesOneOf(@TempDir Path root) throws IOException {
-        Path target = SchemaSdlEmitter.emit(oneOfSchema(), emptyModel(), true, root, "com.example.app");
-        String sdl = Files.readString(target, StandardCharsets.UTF_8);
-
-        assertThat(sdl)
-            .as("federation arm must reinstate the @oneOf directive definition")
-            .contains("directive @oneOf on INPUT_OBJECT")
+        assertThat(reparsed.getDirectiveDefinition("oneOf"))
+            .as("the federation form must reinstate the @oneOf directive definition")
+            .hasValueSatisfying(oneOf -> assertThat(oneOf.getDirectiveLocations())
+                .extracting(location -> location.getName()).containsExactly("INPUT_OBJECT"));
+        assertThat(requireNonNull(reparsed.getTypeOrNull("Filter", InputObjectTypeDefinition.class))
+                .getDirectives("oneOf"))
             .as("the @oneOf application must remain on the input type")
-            .containsPattern("input\\s+Filter\\b[^{]*@oneOf");
+            .hasSize(1);
+    }
+
+    /** A federated schema that never uses {@code @oneOf} gains no definition of it. */
+    @Test
+    void theFederationFormAddsNoOneOfUnused(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(FEDERATED, root, "com.example.app");
+
+        assertThat(new SchemaParser().parse(printed(target)).getDirectiveDefinition("oneOf"))
+            .isEmpty();
     }
 
     /**
-     * No-op / byte-stability guard: a schema that never uses {@code @oneOf} must not gain
-     * the definition. (The exact-equality assertion in
-     * {@link #federationArmMatchesServiceSdlPrinterOnUnfilteredSchema} pins byte-stability more
-     * strongly; this names the invariant explicitly.)
+     * Regression guard on graphql-java 25.0: the plain {@link SchemaPrinter} already prints
+     * spec-built-in directive definitions, so the plain form emits {@code @oneOf} without any
+     * graphitron augmentation.
      */
     @Test
-    void federationArmOmitsOneOfDefinitionWhenSchemaHasNoOneOf(@TempDir Path root) throws IOException {
-        Path target = SchemaSdlEmitter.emit(sampleSchema(), emptyModel(), true, root, "com.example.app");
+    void thePlainFormPrintsTheOneOfDefinitionUnchanged(@TempDir Path root) throws IOException {
+        Path target = SchemaSdlEmitter.emit(schema("type Query { search(filter: Filter): String }\n"
+            + "input Filter @oneOf { byId: ID byName: String }\n"), root, "com.example.app");
 
-        assertThat(Files.readString(target, StandardCharsets.UTF_8))
-            .as("schemas that never use @oneOf keep byte-identical federation output")
-            .doesNotContain("directive @oneOf");
-    }
-
-    /**
-     * Regression guard on existing graphql-java 25.0 behavior, NOT coverage of the @oneOf-definition fix:
-     * the non-federation {@link SchemaPrinter} already prints spec-built-in directive
-     * definitions, so the plain arm emits {@code @oneOf} without any graphitron augmentation.
-     */
-    @Test
-    void plainArmEmitsOneOfDefinitionUnchanged(@TempDir Path root) throws IOException {
-        Path target = SchemaSdlEmitter.emit(oneOfSchema(), emptyModel(), false, root, "com.example.app");
-
-        assertThat(Files.readString(target, StandardCharsets.UTF_8))
-            .as("graphql-java's SchemaPrinter already emits the @oneOf definition on the plain arm")
-            .contains("directive @oneOf on INPUT_OBJECT");
+        assertThat(new SchemaParser().parse(printed(target)).getDirectiveDefinition("oneOf"))
+            .isPresent();
     }
 }

@@ -2,15 +2,19 @@ package no.sikt.graphitron.rewrite.capture;
 
 import no.sikt.graphitron.model.test.CatalogInput;
 
+import graphql.schema.GraphQLNamedType;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaPrinter;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
+import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
@@ -34,7 +38,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * wrote and assembles that. Two producers of one population is the thing being removed, and this is
  * the gate that says what removing it would cost: it prints both through one {@link SchemaPrinter}
  * and compares the text, which is the artifact a consumer actually receives rather than a proxy for
- * it.
+ * it. The store-derived schema holds only what is published, so the incumbent is printed through
+ * the filters its own publishing applied.
  *
  * <p>Every document, both directions, no hand-picked list. A comparison scoped to what someone
  * expected to differ cannot see the case nobody thought of, and the whole point here is the case
@@ -136,12 +141,15 @@ class EmittedRegistryAgreementTest {
             String sdl = CorpusDocuments.prelude() + document.sdl();
 
             GraphQLSchema incumbent;
+            GraphitronSchema model;
             try {
                 // The walk's own synthesis, reached directly. TestSchemaHelper.buildBundle
                 // hands back the store-derived schema now, so going through it would
                 // compare the derivation with itself and agree vacuously.
-                incumbent = GraphitronSchemaBuilder.buildBundle(
-                    TestSchemaHelper.parseRegistryWithPrelude(sdl), ctx).assembled();
+                var bundle = GraphitronSchemaBuilder.buildBundle(
+                    TestSchemaHelper.parseRegistryWithPrelude(sdl), ctx);
+                incumbent = bundle.assembled();
+                model = bundle.model();
             } catch (RuntimeException e) {
                 unusable.add(document.id() + ": the incumbent refused the document: " + brief(e));
                 continue;
@@ -162,7 +170,7 @@ class EmittedRegistryAgreementTest {
                 derived = assembled.schema();
             }
 
-            String left = printer.print(incumbent);
+            String left = published(model).print(incumbent);
             String right = printer.print(derived);
             if (!left.equals(right)) {
                 differed.add(document.id());
@@ -183,6 +191,22 @@ class EmittedRegistryAgreementTest {
             .as("the two producers' printed schemas, over %d corpus documents. %s",
                 documents.size(), detail)
             .isEqualTo(KNOWN_DISAGREEMENTS);
+    }
+
+    /**
+     * The incumbent as it publishes: the store-derived schema holds only what is published, so the
+     * walk's schema is printed through the filters its publishing applied, graphitron's own
+     * directives left out and the support types its classification did not retain dropped. The
+     * comparison is then of the two populations a consumer would receive.
+     */
+    private static SchemaPrinter published(GraphitronSchema model) {
+        return new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
+            .includeSchemaDefinition(true)
+            .includeDirectiveDefinition(SchemaDirectiveRegistry::isSurvivor)
+            .includeDirectives(SchemaDirectiveRegistry::isSurvivor)
+            .includeSchemaElement(element -> !(element instanceof GraphQLNamedType named
+                && DirectiveSupportTypes.isSupportType(named.getName())
+                && !model.types().containsKey(named.getName()))));
     }
 
     /** The first line the two printed schemas differ at, with a little of each side. */

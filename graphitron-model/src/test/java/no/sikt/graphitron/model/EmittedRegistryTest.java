@@ -6,6 +6,7 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.model.test.CapturedStore;
@@ -303,14 +304,17 @@ class EmittedRegistryTest {
     }
 
     /**
-     * The control. With nothing to expand, the emitted registry is the transcribed one, and the
-     * check is on the whole type population rather than on the absence of a connection: a patch
-     * that invented a type here would be as wrong as one that failed to invent a connection above.
+     * The control. With nothing to expand, the emitted registry is the transcribed one less what is
+     * not published, the support types nothing references, and the check is on the whole type
+     * population rather than on the absence of a connection: a patch that invented a type here
+     * would be as wrong as one that failed to invent a connection above.
      */
     @Test
     @DisplayName("a schema with no macro emits the population it declared")
     void nothingIsInventedWithoutAMacro() {
-        assertThat(plainEmitted.types().keySet()).isEqualTo(plainTranscribed.types().keySet());
+        var declared = new java.util.HashSet<>(plainTranscribed.types().keySet());
+        declared.removeAll(DirectiveSupportTypes.all());
+        assertThat(plainEmitted.types().keySet()).isEqualTo(declared);
         assertThat(returnTypeOf(plainEmitted, "Query", "films")).isEqualTo("[Film!]");
     }
 
@@ -393,8 +397,8 @@ class EmittedRegistryTest {
                 new StoreHandle(dsl, CapturedStore.GRAPH));
 
             assertThat(typeDirectives(emitted, "Film"))
-                .containsExactly("@table(name: \"film\")", "@node",
-                    "@key(fields: \"id\", resolvable: true)");
+                .as("graphitron's own @table and @node are not published")
+                .containsExactly("@key(fields: \"id\", resolvable: true)");
         });
     }
 
@@ -406,7 +410,7 @@ class EmittedRegistryTest {
             var emitted = emitted((parse(UNLINKED_NODE_SCHEMA)),
                 new StoreHandle(dsl, CapturedStore.GRAPH));
 
-            assertThat(typeDirectives(emitted, "Film")).containsExactly("@table(name: \"film\")", "@node");
+            assertThat(typeDirectives(emitted, "Film")).isEmpty();
         });
     }
 
@@ -425,7 +429,7 @@ class EmittedRegistryTest {
 
                 assertThat(typeDirectives(emitted, "Film"))
                     .as("the author's own application, once")
-                    .containsExactly("@table(name: \"film\")", "@node", "@key(fields: \"id\")");
+                    .containsExactly("@key(fields: \"id\")");
             });
     }
 
@@ -443,6 +447,69 @@ class EmittedRegistryTest {
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("'Film'")
                 .hasMessageContaining("defect in graphitron"));
+    }
+
+    // ===== What is not published =====
+
+    private static final String UNPUBLISHED_SCHEMA = """
+        directive @auth(roles: [String!]) on OBJECT | FIELD_DEFINITION
+        type Query {
+          films(order: [FilmOrderBy]): Film @auth(roles: ["admin"])
+        }
+        type Film @table(name: "film") {
+          id: ID!
+        }
+        input FilmOrderBy { direction: SortDirection }
+        """;
+
+    /**
+     * Graphitron's own directives are read while generating and mean nothing to a consumer, so
+     * the emitted schema holds neither their definitions nor their applications, while a directive
+     * the author declared stays with every application of it.
+     */
+    @Test
+    @DisplayName("graphitron's own directives leave the emitted schema, an author's stay")
+    void graphitronsOwnDirectivesAreNotPublished() {
+        CapturedStore.withCapturedStore(tmp.resolve("own-directives"), UNPUBLISHED_SCHEMA, dsl -> {
+            var emitted = emitted(CapturedStore.registryOf(tmp.resolve("own-directives-in"),
+                UNPUBLISHED_SCHEMA), new StoreHandle(dsl, CapturedStore.GRAPH));
+
+            assertThat(emitted.getDirectiveDefinition("table")).as("graphitron's definition").isEmpty();
+            assertThat(typeDirectives(emitted, "Film")).as("graphitron's application").isEmpty();
+            assertThat(emitted.getDirectiveDefinition("auth")).as("the author's definition").isPresent();
+            assertThat(fieldOf(emitted, "Query", "films").getDirectives("auth"))
+                .as("the author's application").hasSize(1);
+        });
+    }
+
+    /**
+     * A support type is published where an author's type references it, and only then; a
+     * strictly internal one is referenced by graphitron's own directives alone, which have gone,
+     * so it never is.
+     */
+    @Test
+    @DisplayName("a support type is published where an author's type references it, and only then")
+    void aSupportTypeIsPublishedWhereReferenced() {
+        String unreferenced = """
+            type Query { film: Film }
+            type Film @table(name: "film") { id: ID! }
+            """;
+        CapturedStore.withCapturedStore(tmp.resolve("referenced"), UNPUBLISHED_SCHEMA, dsl -> {
+            var emitted = emitted(CapturedStore.registryOf(tmp.resolve("referenced-in"),
+                UNPUBLISHED_SCHEMA), new StoreHandle(dsl, CapturedStore.GRAPH));
+
+            assertThat(emitted.getTypeOrNull("SortDirection"))
+                .as("FilmOrderBy references SortDirection").isNotNull();
+            DirectiveSupportTypes.strictlyInternal().forEach(name ->
+                assertThat(emitted.getTypeOrNull(name)).as("strictly internal %s", name).isNull());
+        });
+        CapturedStore.withCapturedStore(tmp.resolve("unreferenced"), unreferenced, dsl -> {
+            var emitted = emitted(CapturedStore.registryOf(tmp.resolve("unreferenced-in"),
+                unreferenced), new StoreHandle(dsl, CapturedStore.GRAPH));
+
+            DirectiveSupportTypes.all().forEach(name ->
+                assertThat(emitted.getTypeOrNull(name)).as("unreferenced %s", name).isNull());
+        });
     }
 
     // ---------------------------------------------------------------------------------------

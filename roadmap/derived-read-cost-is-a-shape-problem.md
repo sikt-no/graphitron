@@ -1855,25 +1855,19 @@ the store" and "Command rows beside leaves" in the register, one emitter at a ti
   and `ObjectTypeGenerator` take their forms from the emitted schema, `CarriesObjectForm.formOf`
   reading it before a variant's own form, so the walk's own forms render nothing; the variants still
   carry them, and `ObjectTypeGenerator` still takes `GraphitronSchema`.
-* **`SchemaSdlEmitter` prints only the emitted schema** `open`. It reads the emitted schema and the
-  walk's types and `federationLink` beside it.
-  * **The emitted schema holds only what is published** `open`. `SchemaSdlEmitter` filters two
-    things out of it as it prints: the directive support types the walk did not keep, read off the
-    walk's types, and graphitron's own directives, by `SchemaDirectiveRegistry.isSurvivor`. Both are
-    decisions about what is published, so `EmittedRegistry` makes them and the printer filters
-    nothing. The support-type rule is structural and needs no classification: a support type is
-    published only in the published tier, `SortDirection` today, and only where an element of a
-    type outside the support set references it; a strictly internal one never is.
-    * **`CompletionData` dissolves** `done`. With it went `CatalogBuilder` and the generator's
-      classpath census (`ClasspathCensus`, `ClasspathScanner`), and R1008 dissolved; the editor
-      reads the store, and capture reads the classpath into the `code_` family.
+* **`SchemaSdlEmitter` prints only the emitted schema** `done`. It takes the emitted schema alone
+  and prints it whole, its form following the schema's own federation `@link`.
+  * **The emitted schema holds only what is published** `done`. `EmittedRegistry` takes out the
+    directives the bundled vocabulary defines, definitions and applications, and the support types
+    no type outside the support set references, so the printer filters nothing.
+    * **`CompletionData` dissolves** `done`. The editor reads the store, and capture reads the
+      classpath into the `code_` family.
       * **`TypeBackingShape` dissolves** `done`. The store states a type's backing in
-        `graphitron_type_backing`, pinned by `TypeBackingClassTest`, and the plugin's completion
-        pipeline asks the store which class backs a type.
-  * **The print form follows the schema's own link** `open`. `SchemaSdlEmitter` prints the
-    federation service form on the walk's `federationLink`; the emitted schema carries the
-    federation `@link` itself, the configured one included while the composition synthesises it,
-    so the form is read off the schema it prints.
+        `graphitron_type_backing`.
+  * **The print form follows the schema's own link** `done`. `SchemaSdlEmitter` prints the service
+    form where the schema applies the federation `@link`, authored or added for a configured tag.
+  * **The SDL emitter's tests read the printed schema, not its text** `done`. `SchemaSdlEmitterTest`
+    and `SchemaSdlEmissionTest` re-parse the file and assert on its definitions.
 * **`GraphitronSchemaClassGenerator`** `open`. Reads `GraphitronSchema`, the emitted schema and the
   schema-shape rows.
   * **The schema class registers what the emitted schema and the store state** `open`.

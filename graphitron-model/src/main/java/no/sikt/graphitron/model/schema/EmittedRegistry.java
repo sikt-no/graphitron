@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.schema;
 
 import graphql.language.AstPrinter;
+import graphql.language.AstTransformer;
 import graphql.language.AbstractDescribedNode;
 import graphql.language.Argument;
 import graphql.language.Description;
@@ -15,6 +16,10 @@ import graphql.language.InputObjectTypeDefinition;
 import graphql.language.InputObjectTypeExtensionDefinition;
 import graphql.language.InterfaceTypeDefinition;
 import graphql.language.InterfaceTypeExtensionDefinition;
+import graphql.language.NamedNode;
+import graphql.language.Node;
+import graphql.language.NodeTraverser;
+import graphql.language.NodeVisitorStub;
 import graphql.language.ScalarTypeDefinition;
 import graphql.language.UnionTypeDefinition;
 import graphql.language.InputValueDefinition;
@@ -25,8 +30,13 @@ import graphql.language.SourceLocation;
 import graphql.language.StringValue;
 import graphql.language.Type;
 import graphql.language.TypeDefinition;
+import graphql.language.TypeName;
 import graphql.parser.Parser;
+import graphql.schema.idl.ScalarInfo;
 import graphql.schema.idl.TypeDefinitionRegistry;
+import graphql.util.TraversalControl;
+import graphql.util.TraverserContext;
+import graphql.util.TreeTransformerUtil;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -35,6 +45,7 @@ import no.sikt.graphitron.model.lint.LintRule;
 import no.sikt.graphitron.model.read.StoreHandle;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -43,10 +54,12 @@ import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DIRECTIVE;
@@ -248,6 +261,7 @@ public final class EmittedRegistry {
         refuseAuthoredNodeType(patched, nodeTypes);
         applyUnwritten(patched, store);
         defineNodeType(patched, nodeTypes);
+        unpublish(patched, store);
         return new Emitted(patched, narrowings(store));
     }
 
@@ -482,6 +496,100 @@ public final class EmittedRegistry {
     }
 
     private record Replacement(SDLDefinition<?> old, SDLDefinition<?> replacement) {}
+
+    // ---------------------------------------------------------------------------------------
+    // What is not published
+    // ---------------------------------------------------------------------------------------
+
+    /**
+     * Takes out of the emitted schema what is not published, so a printer of it filters nothing.
+     *
+     * <p>Graphitron's own directives go, definitions and applications alike: they are read while
+     * generating and have no meaning in the schema a consumer serves. Which they are is a fact the
+     * store holds, the directives the bundled vocabulary defines.
+     *
+     * <p>Then the support types those directives take go, unless a type outside the support set
+     * references one, directly or through a support type it keeps. Only the published tier,
+     * {@link DirectiveSupportTypes#published()}, may be referenced that way; a reference to a
+     * strictly internal one is an author error the classifier reports, and the type is kept rather
+     * than dropped so the emitted schema still assembles while that error is said.
+     */
+    private static void unpublish(TypeDefinitionRegistry patched, StoreHandle store) {
+        var d = GRAPHQL_DIRECTIVE;
+        Set<String> own = Set.copyOf(store.dsl().select(d.DIRECTIVE_NAME).from(d)
+            .where(d.GRAPH_NAME.eq(store.graphName()))
+            .and(d.SOURCE_NAME.eq(SchemaLoader.DIRECTIVES_SOURCE_NAME))
+            .fetch(d.DIRECTIVE_NAME));
+        own.forEach(name -> patched.getDirectiveDefinition(name).ifPresent(patched::remove));
+        var replacements = new ArrayList<Replacement>();
+        for (var site : sites(patched)) {
+            var stripped = (SDLDefinition<?>) new AstTransformer().transform(site, new NodeVisitorStub() {
+                // graphql-java's visitor signature names the raw Node.
+                @SuppressWarnings("rawtypes")
+                @Override
+                public TraversalControl visitDirective(Directive node, TraverserContext<Node> context) {
+                    return own.contains(node.getName())
+                        ? TreeTransformerUtil.deleteNode(context) : TraversalControl.CONTINUE;
+                }
+            });
+            if (stripped != site) {
+                replacements.add(new Replacement(site, stripped));
+            }
+        }
+        apply(patched, replacements);
+
+        var referenced = new HashSet<String>();
+        sites(patched).stream()
+            .filter(site -> !DirectiveSupportTypes.isSupportType(((NamedNode<?>) site).getName()))
+            .forEach(site -> referenced.addAll(typeNames(site)));
+        for (boolean grew = true; grew; ) {
+            grew = false;
+            for (var site : sites(patched)) {
+                String name = ((NamedNode<?>) site).getName();
+                if (DirectiveSupportTypes.isSupportType(name) && referenced.contains(name)) {
+                    grew |= referenced.addAll(typeNames(site));
+                }
+            }
+        }
+        sites(patched).stream()
+            .filter(site -> {
+                String name = ((NamedNode<?>) site).getName();
+                return DirectiveSupportTypes.isSupportType(name) && !referenced.contains(name);
+            })
+            .toList()
+            .forEach(patched::remove);
+    }
+
+    /** Every type definition and type extension the registry holds. */
+    private static List<SDLDefinition<?>> sites(TypeDefinitionRegistry registry) {
+        var sites = new ArrayList<SDLDefinition<?>>();
+        registry.types().values().forEach(type -> sites.add((SDLDefinition<?>) type));
+        registry.scalars().values().stream()
+            .filter(scalar -> !ScalarInfo.isGraphqlSpecifiedScalar(scalar.getName()))
+            .forEach(sites::add);
+        Stream.<Map<String, ? extends List<? extends SDLDefinition<?>>>>of(
+                registry.objectTypeExtensions(), registry.interfaceTypeExtensions(),
+                registry.unionTypeExtensions(), registry.enumTypeExtensions(),
+                registry.scalarTypeExtensions(), registry.inputObjectTypeExtensions())
+            .flatMap(extensions -> extensions.values().stream())
+            .forEach(sites::addAll);
+        return sites;
+    }
+
+    /** The names of the types a definition refers to: its fields', arguments', members' and interfaces'. */
+    private static Set<String> typeNames(SDLDefinition<?> site) {
+        var names = new HashSet<String>();
+        new NodeTraverser().depthFirst(new NodeVisitorStub() {
+            // graphql-java's visitor signature names the raw Node.
+            @SuppressWarnings("rawtypes")
+            @Override
+            public TraversalControl visitTypeName(TypeName node, TraverserContext<Node> context) {
+                names.add(node.getName());
+                return TraversalControl.CONTINUE;
+            }
+        }, site);
+        return names;
+    }
 
     // ---------------------------------------------------------------------------------------
     // Federation tags and keys
