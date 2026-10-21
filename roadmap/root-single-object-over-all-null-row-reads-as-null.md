@@ -258,3 +258,50 @@ leaves include a never-null column is a follow-up for both items.
 - **Wrapping the root in a `Multiset` of one row**, so the child rendering applies unchanged. It
   adds a nesting level to every root single read to reuse a check that is a few lines in the
   launcher.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, request revisions (session_01FU47nA3ZZmzh8B2VwDdNqN, 2026-10-21)
+
+Question 1 passes. When this lands, a nullable `Query` field returning one `@table` object (plain,
+`@lookupKey` or `@routine`) gives `null` instead of an object of nulls when the row it found holds
+nothing under R1069's rule, which is what Graphitron 9 gave; a non-null field and a missing row
+behave as today. That is reachable: every symbol, test and branch the plan names exists as named
+(or is R1069's, which is Ready), `lookupRow` does mint `RecordList(null)` for every lookup while
+`validateRootLookup` admits a scalar key with a single return, and the Graphitron 9 citations hold
+on `graphitron-9-head`. Two findings under question 2 hold it in Spec; each is a claim about
+existing code that does not hold, and each leaves the implementer a design call.
+
+1. **The schema-free walk does not mint `None` for a type it was never handed; it mints a
+   collapse with no leaves.** The plan states the fold over `fieldsOfType` and says the walk's
+   `fieldsByParentType` "mints `None` only for a type whose fields the assembly never handed over".
+   That lookup answers `List.of()` for such a type, and `NullContract.of` over an empty field list
+   yields `CollapsesWhenAbsent` with no leaves (`SubtreePresence.over([])` is `Leaves([])`); R1069
+   keeps `NullContract.of`'s shape. `NullChecks.of` would then build a `NullCheck.Collapses` with
+   no leaves and no probe, which this plan's constructor refuses. A schema-free assembly hands over
+   only the generated type's own fields, so this is the common case, not an edge:
+   `TypeFetcherGeneratorTest.queryTableField_single_returnsRecord` generates `Query` with one
+   nullable single `Film` field and no `Film` fields, and would throw. Satisfied when the plan says
+   how the walk tells "type this assembly does not know" from "type with these fields" (for
+   example a lookup answering `Optional`, or `NullChecks.of` mapping a leafless contract to `None`
+   with the reason stated, which also decides what a leafless contract means on the schema path),
+   and the pipeline test for `produceWithoutSchema` covers the unhanded type.
+
+2. **The backstop list misses the arms that mint `SingleRecord` but would not render the check.**
+   The plan puts `NullCheck` on `ResultShape.SingleRecord` because a slot elsewhere "would make an
+   illegal pair representable", but `SingleRecord` is also minted for `Invocation.Batched` over the
+   `Correlated.Projected` sources (`batchedResultOf` when `emitsSingleRecordPerKey()`) and for
+   `Invocation.ReturningKeyed` over `ProjectedReentry` and `DiscriminatedReentry`.
+   `BatchedRowsFragments.body` and `ReentryRowsFragments` read the shape by `instanceof`, and the
+   plan changes neither, so a `Collapses` reaching them is dropped without a word. The batched
+   case is the one R1069 says must not check in the rows method (a rows method serving a `T` and a
+   `T!` site), and the plan backstops `PivotAggregate` and the discriminated arms but not it. The
+   `ProjectedReentry` paragraph says a check there "renders fine", but nothing in the plan renders
+   it in `ReentryRowsFragments.projectedBody`. Satisfied when the constructor admits `Collapses`
+   only where a renderer reads it (for example only with `Invocation.Direct`, or only on the three
+   in-scope sources) or the plan says why each remaining pair is safe, the `ProjectedReentry`
+   sentence matches, and the backstop tests name the sources added.
+
+Non-blocking: Graphitron 9's `createMappingFunction` lives in `FetchDBMethodGenerator`, beside
+`generateSelectRow`, and it dropped `nullOnAllNull` for a non-null field only when the type had a
+nullable field and no ID field; neither changes the plan.
