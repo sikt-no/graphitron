@@ -115,9 +115,9 @@ the command or on each source would make an illegal pair representable. `NullChe
 decision, not just the columns to project, which is what the launcher needs: it renders over the
 command with no schema in hand. The slot means "project these and return `null` when absent" and
 nothing else; R1069's batched single child, whose check runs in the field's continuation rather
-than in its rows method, keeps its projection-only slots on `LaunchSource.Correlated.Projected` and
-does not share this one (a review note for R1069: name those slots so they read as projection
-only).
+than in its rows method, keeps its projection-only slots on `LaunchSource.Correlated.Projected`;
+its `SingleRecord` carries `None`, and the backstop below refuses anything else there (a review
+note for R1069: name those slots so they read as projection only).
 
 **One mapping from the model's contract to the command.** A `plan/` function,
 `NullChecks.of(NullContract, ...)`, maps R1069's `NullContract` to `NullCheck`
@@ -127,24 +127,57 @@ call it, so a child and a root turn one decision into one command shape by one c
 `resultShapeOf` reads the contract as `NullContract.of(qtf.returnType().wrapper(), presence)`, where
 `presence` is R1069's per-type fold.
 
-**The schema-free walk computes the same check.** `LauncherCommands.produceWithoutSchema` reaches
-`row` and `routineRow`, and so `resultShapeOf`, with no `GraphitronSchema`; its javadoc promises it
-mirrors what `produce` would mint. R1069's fold is therefore stated over a `fieldsOfType` lookup, as
-`selectionRestriction(participants, fieldsOfType, units)` already is, with
-`GraphitronSchema.presenceOf(typeName)` a thin call over the schema's own fields. The schema-free walk
-passes its `fieldsByParentType` map, which mints `None` only for a type whose fields the assembly
-never handed over, the same pre-existing limit that map states for the selection restriction. If
-R1069 lands the fold schema-bound, this item restates it over the lookup.
+**The schema-free walk computes the same check where it knows the type.**
+`LauncherCommands.produceWithoutSchema` reaches `row`, `lookupRow` and `routineRow`, and so
+`resultShapeOf`, with no `GraphitronSchema`; its javadoc promises it mirrors what `produce` would
+mint "matching what a schema-free assembly can classify". A schema-free assembly hands over only the
+generated type's own fields, so for a root read it usually does not hold the return type's fields
+at all (`TypeFetcherGeneratorTest.queryTableField_single_returnsRecord` generates `Query` with one
+nullable `Film` field and no `Film` fields). An empty field list cannot stand for that: R1069's
+fold over no fields is a collapse with no leaves, not "unknown". So the producers take the
+presence as a lookup that can answer "not known here", a
+`Function<String, Optional<...>>` from type name to R1069's per-type presence:
 
-**Backstops where the pair is unrepresentable.** `LauncherCommand`'s constructor gains a
-source-by-result backstop for `Collapses` on `LaunchSource.DiscriminatedTable` and
-`LaunchSource.DiscriminatedReentry` (no single projection alias to read the leaves off) and on
-`LaunchSource.PivotAggregate` (the opposite convention: a record of null slots, never a null
-record). Each mirrors an owner: the discriminated arms' interface returns are R1069's exclusion, and
-the pivot convention is pinned by `BatchedChildExecutionTest.pivotChild_eachParentGetsItsOwnRecord_rowLessParentGetsNullSlots`.
-A mutation's `ProjectedReentry` read could carry a check and renders fine; it is out of scope by
-choice, so the producer simply leaves `None` there and a pipeline case asserts it, rather than the
-constructor refusing it.
+- The schema walk passes `typeName -> Optional.of(schema.presenceOf(typeName))`; every type is
+  known.
+- The schema-free walk passes `Optional.empty()` for a type absent from its `fieldsByParentType`
+  map (tested with `containsKey`, not `getOrDefault`) and R1069's fold over the map's fields
+  otherwise, which needs the fold stated over a field list, as `SubtreePresence.over` already is.
+  If R1069 lands the fold schema-bound, this item restates it over the list.
+- `resultShapeOf` mints `NullCheck.None` for an empty answer, and otherwise
+  `NullChecks.of(NullContract.of(wrapper, presence), ...)`.
+
+So the schema-free walk mints the schema walk's check for a type it was handed, and `None` for
+one it was not, the same pre-existing limit `fieldsByParentType` states for the selection
+restriction, now decided by membership rather than by an empty list. `NullChecks.of` never sees a
+leafless `CollapsesWhenAbsent` from a known type (a GraphQL object type has at least one field,
+and each field is a leaf or blocks), so it throws on one as a generator bug rather than mapping
+it, which keeps "never present" out of `NullCheck`.
+
+**A backstop: `Collapses` only where a renderer reads it.** `SingleRecord` is minted by more
+producers than the three in scope: `batchedResultOf` for a batched single child (the
+`Correlated.Projected` sources), `batchedPivotRow`
+(`PivotAggregate`), `dmlRowOf` (`ProjectedReentry`, `DiscriminatedReentry`) and `interfaceResultOf`
+(`DiscriminatedTable`). Their renderers (`BatchedRowsFragments`, `ReentryRowsFragments`,
+`RootLauncherRenderer`'s discriminated arm) read the shape by `instanceof` and this plan changes
+none of them, so a `Collapses` reaching one would be dropped without a word. `LauncherCommand`'s
+constructor therefore gains one source-by-result backstop, stated as an allow-list so a new source
+is refused until someone renders the check for it: a `SingleRecord` whose check is `Collapses`
+requires a `LaunchSource.AnchorTable`, `LaunchSource.KeyedLookup` or `LaunchSource.RoutineChain`
+source. Each refused family has an owner the refusal mirrors:
+
+- The batched single child: R1069 runs its check in the field's continuation, never in the rows
+  method, because one rows method can serve a `T` and a `T!` site.
+- `PivotAggregate`: the opposite convention, a record of null slots and never a null record, pinned
+  by `BatchedChildExecutionTest.pivotChild_eachParentGetsItsOwnRecord_rowLessParentGetsNullSlots`.
+- `DiscriminatedTable` and `DiscriminatedReentry`: interface returns, R1069's exclusion, with no
+  single projection alias to read leaves off. (`DiscriminatedCorrelatedChain` mints no
+  `SingleRecord` today; the allow-list refuses it too, should it start.)
+- `ProjectedReentry`: a mutation's payload read, out of scope by choice. Bringing it in is a
+  deliberate edit to the allow-list together with a rendering in `ReentryRowsFragments.projectedBody`.
+
+The three allowed sources are only ever minted with `Invocation.Direct`, so the allow-list needs no
+invocation half.
 
 **Projection.** In the three single arms of `RootLauncherRenderer` (the anchor arm's `selectChain`,
 `lookupBody`'s single branch, and the routine arm, which shares `selectChain`), a `Collapses` check
@@ -209,11 +242,14 @@ leaves include a never-null column is a follow-up for both items.
   `QueryTableField` gets over each source (anchor, `@lookupKey`, `@routine` chain) carries the
   type's leaves with their grouping (a composite `@nodeId` as one leaf) and, for a type holding a
   reference, a probe; a non-null field gets `None`, and a list and a connection have no
-  `SingleRecord`; a `QueryTableInterfaceField` and a DML payload read get `None`; the schema-free
-  walk (`produceWithoutSchema`) mints the same check as the schema walk for the same fields. The
-  `LauncherCommand` backstop rejects `Collapses` on a `DiscriminatedTable`, a `DiscriminatedReentry`
-  and a `PivotAggregate` source; `NullCheck.Collapses` refuses an empty check. Assertions are on
-  the commands, not on generated method bodies.
+  `SingleRecord`; a `QueryTableInterfaceField`, a DML payload read and a batched single child get
+  `None`. The schema-free walk (`produceWithoutSchema`): an assembly handing over `Query` and the
+  return type's fields mints the same check as the schema walk; one handing over `Query` alone
+  mints `None` (the `queryTableField_single_returnsRecord` shape, which stays green). The
+  `LauncherCommand` backstop rejects `Collapses` on a `CorrelatedChain`, a `PivotAggregate`, a
+  `ProjectedReentry`, a `DiscriminatedReentry` and a `DiscriminatedTable` source, and admits it on
+  the three in-scope sources; `NullCheck.Collapses` refuses an empty check, and `NullChecks.of`
+  throws on a leafless contract. Assertions are on the commands, not on generated method bodies.
 - **Compile graph** (`PlanCompileGraphTest`): a nullable single root over a type whose probe carries
   a condition gets a precise edge from the launcher owner to that condition's unit.
 - **Execution** (`graphitron-sakila-example`, over R1069's fixture table whose rows exist with every
@@ -258,6 +294,13 @@ leaves include a never-null column is a follow-up for both items.
 - **Wrapping the root in a `Multiset` of one row**, so the child rendering applies unchanged. It
   adds a nesting level to every root single read to reuse a check that is a few lines in the
   launcher.
+- **Mapping a leafless contract to `None` in `NullChecks.of`**, leaving the schema-free walk's
+  `getOrDefault(..., List.of())` as it is. Smaller, but it reads an empty field list as "unknown"
+  at the one site that cannot tell, and lets a real generator bug (a known type yielding no leaves)
+  pass as "always an object". Deciding by map membership states what the walk actually knows.
+- **Refusing `Collapses` per excluded source** rather than allowing it on three. A new source
+  minting `SingleRecord` would then admit a check its renderer drops; the allow-list refuses it
+  until someone renders the check there.
 
 ## Reviewer findings
 
@@ -287,6 +330,14 @@ existing code that does not hold, and each leaves the implementer a design call.
    with the reason stated, which also decides what a leafless contract means on the schema path),
    and the pipeline test for `produceWithoutSchema` covers the unhanded type.
 
+   *Author, round 1:* the producers now take presence as a lookup answering
+   `Optional`: the schema walk always answers, the schema-free walk answers only for a type in
+   its `fieldsByParentType` map (by `containsKey`), and `resultShapeOf` mints `None` for an
+   empty answer. `NullChecks.of` throws on a leafless contract as a generator bug, since a known
+   type cannot yield one. The tests cover both assemblies (with and without the return type's
+   fields), and `queryTableField_single_returnsRecord` stays green. "Other solutions" records why
+   the leafless-to-`None` mapping was not taken.
+
 2. **The backstop list misses the arms that mint `SingleRecord` but would not render the check.**
    The plan puts `NullCheck` on `ResultShape.SingleRecord` because a slot elsewhere "would make an
    illegal pair representable", but `SingleRecord` is also minted for `Invocation.Batched` over the
@@ -301,6 +352,15 @@ existing code that does not hold, and each leaves the implementer a design call.
    only where a renderer reads it (for example only with `Invocation.Direct`, or only on the three
    in-scope sources) or the plan says why each remaining pair is safe, the `ProjectedReentry`
    sentence matches, and the backstop tests name the sources added.
+
+   *Author, round 1:* the backstop is now an allow-list: a `SingleRecord` whose check is
+   `Collapses` requires `AnchorTable`, `KeyedLookup` or `RoutineChain`. The section names every
+   other producer of `SingleRecord` and the owner each refusal mirrors (R1069's continuation-side
+   check for the batched child, the pivot convention, the interface exclusion, and this item's
+   scope for `ProjectedReentry`). The "renders fine" sentence is gone: bringing mutation payloads in
+   is an allow-list edit plus a rendering in `ReentryRowsFragments.projectedBody`. The backstop
+   tests name `CorrelatedChain`, `PivotAggregate`, `ProjectedReentry`, `DiscriminatedReentry` and
+   `DiscriminatedTable`.
 
 Non-blocking: Graphitron 9's `createMappingFunction` lives in `FetchDBMethodGenerator`, beside
 `generateSelectRow`, and it dropped `nullOnAllNull` for a non-null field only when the type had a
