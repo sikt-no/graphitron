@@ -1,16 +1,5 @@
 package no.sikt.graphitron.model.test;
 
-import graphql.language.ArrayValue;
-import graphql.language.Directive;
-import graphql.language.NullValue;
-import graphql.language.SchemaDefinition;
-import graphql.language.StringValue;
-import graphql.language.Value;
-import graphql.parser.Parser;
-import no.sikt.graphitron.model.config.SessionStateConfig;
-import no.sikt.graphitron.model.lint.LintConfig;
-import no.sikt.graphitron.model.run.OutputCoordinates;
-import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.test.CorpusExpectations.Block;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.AfterAll;
@@ -26,9 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.TreeMap;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -37,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * The fact examples: what each document under {@code src/test/resources/facts} says the store holds
  * for it.
  *
- * <p>A document's folder is a claim about its graph, checked against the store ({@link Claim}).
+ * <p>A document's folder is a claim about its graph, checked against the store
+ * ({@link FactDocuments.Claim}).
  * {@code scenarios} generate, and the {@code graphitron} module generates each one at
  * {@code generate-test-sources} for the tests of generated code, so a scenario never holds a
  * defect; {@code defects} never generate and always store one; {@code incremental-captures} are
@@ -69,52 +57,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FactExpectationTest {
 
-    /** The fact folder, which holds the prelude and the four folders of documents. */
-    private static final CorpusDocuments.Folder FACTS = new CorpusDocuments.Folder("facts", 0);
-
-    /**
-     * What a folder of fact documents claims about each graph in it, each folder with the floor
-     * that stops one which has stopped resolving.
-     */
-    enum Claim {
-        /** The graph generates: the store records no defect and no schema problem for it. */
-        SCENARIO("facts/scenarios", 15),
-        /** The graph does not generate, and the store says why: at least one defect or problem. */
-        DEFECT("facts/defects", 24),
-        /** A graph read in steps, which no single schema stands for. */
-        INCREMENTAL_CAPTURE("facts/incremental-captures", 18),
-        /**
-         * No claim yet: a document the generator refuses with nothing stored, or one tripping over
-         * a defect it does not state. It only shrinks, each document leaving for a folder whose
-         * claim it meets, so {@link #UNDECIDED_CEILING} goes down with it.
-         */
-        UNDECIDED("facts/undecided", 0);
-
-        final CorpusDocuments.Folder folder;
-
-        Claim(String name, int minDocuments) {
-            this.folder = new CorpusDocuments.Folder(name, minDocuments);
-        }
-    }
-
     /** The undecided folder's size, lowered as documents leave it and never raised. */
     private static final int UNDECIDED_CEILING = 43;
 
     /** Each document's claim, by its id, which is also its graph's name or its stepped graph's. */
-    private static final Map<String, Claim> claims = new LinkedHashMap<>();
+    private static final Map<String, FactDocuments.Claim> claims = new LinkedHashMap<>();
 
     @TempDir
     static Path tmp;
-
-    /**
-     * A stepped document's file name, whole: the graph, the file within it, and the instant this
-     * version of the file is read at as ten-digit epoch seconds. Anchored on the extension and on
-     * a graph with no dot of its own, so a name either is a step or is not one; a plain document's
-     * name carries no dot, and a name with one that does not match is refused rather than read as
-     * whichever kind it happens to resemble.
-     */
-    private static final Pattern STEP =
-        Pattern.compile("([^.]+)\\.([a-z]+)\\.(\\d{10})" + Pattern.quote(CorpusDocuments.SUFFIX));
 
     /** The name a stepped graph's prelude is written under, which no file of the pattern can take. */
     private static final String PRELUDE_FILE = "_prelude";
@@ -135,7 +85,7 @@ class FactExpectationTest {
             var plain = new LinkedHashMap<String, CorpusDocuments.Document>();
             var stepped = new LinkedHashMap<String, Map<String, TreeMap<Long, CorpusDocuments.Document>>>();
             for (var document : documents) {
-                var step = STEP.matcher(document.id() + CorpusDocuments.SUFFIX);
+                var step = FactDocuments.STEP.matcher(document.id() + CorpusDocuments.SUFFIX);
                 if (step.matches()) {
                     stepped.computeIfAbsent(step.group(1), ignored -> new TreeMap<>())
                         .computeIfAbsent(step.group(2), ignored -> new TreeMap<>())
@@ -172,22 +122,9 @@ class FactExpectationTest {
     static void captureEveryDocument() {
         var ctx = TestRunContext.of();
         var jooq = CatalogInput.of(ctx);
-        var documents = new ArrayList<CorpusDocuments.Document>();
-        for (var claim : Claim.values()) {
-            for (var document : CorpusDocuments.documents(claim.folder)) {
-                var stepped = STEP.matcher(document.id() + CorpusDocuments.SUFFIX).matches();
-                if (stepped != (claim == Claim.INCREMENTAL_CAPTURE)) {
-                    throw new AssertionError(document.id() + CorpusDocuments.SUFFIX + " is in "
-                        + claim.folder.name() + ", which holds " + (stepped ? "no" : "only")
-                        + " graphs read in steps");
-                }
-                if (claims.put(document.id(), claim) != null) {
-                    throw new AssertionError(document.id() + " is in two fact folders");
-                }
-                documents.add(document);
-            }
-        }
-        var graphs = Graphs.of(documents);
+        var claimed = FactDocuments.claimed();
+        claimed.forEach((document, claim) -> claims.put(document.id(), claim));
+        var graphs = Graphs.of(List.copyOf(claimed.keySet()));
         // The classpath corpus beside the catalog, so a document can state what a reading finds in
         // Java as well as what it finds in SDL. The model and the capture are one subject: a
         // document asserting a derived relation without the facts under it tests half of what it
@@ -200,17 +137,8 @@ class FactExpectationTest {
         var allBlocks = new ArrayList<Block>();
         var allDivergences = new ArrayList<String>();
 
-        for (var document : graphs.plain().entrySet()) {
-            var texts = List.of(document.getValue().sdl());
-            var configuration = StatedConfiguration.of(texts);
-            var catalog = StatedConfiguration.catalog(texts, jooq);
-            if (captured == null) {
-                captured = CapturedStore.ofCatalogWith(tmp, document.getKey(),
-                    full(document.getValue()), catalog, corpus, configuration);
-            } else {
-                captured.andCatalogGraphWith(document.getKey(), full(document.getValue()), catalog,
-                    corpus, configuration);
-            }
+        for (var document : graphs.plain().values()) {
+            captured = FactDocuments.capture(captured, tmp, document, jooq, corpus);
         }
         var plainBlocks = CorpusExpectations.blocks(captured.dsl()).stream()
             .filter(block -> graphs.plain().containsKey(block.graph()))
@@ -231,7 +159,7 @@ class FactExpectationTest {
             for (long instant : Graphs.instants(graph.getValue())) {
                 var written = new LinkedHashMap<String, String>();
                 if (first) {
-                    written.put(PRELUDE_FILE, CorpusDocuments.prelude(FACTS));
+                    written.put(PRELUDE_FILE, FactDocuments.prelude());
                     first = false;
                 }
                 graph.getValue().forEach((file, versions) -> {
@@ -244,8 +172,9 @@ class FactExpectationTest {
                 });
                 var texts = List.copyOf(standing.values());
                 var sourceNames = captured.andCatalogGraphReadAt(graph.getKey(), written, files,
-                    Instant.ofEpochSecond(instant), StatedConfiguration.catalog(texts, jooq), corpus,
-                    StatedConfiguration.of(texts));
+                    Instant.ofEpochSecond(instant),
+                    FactDocuments.StatedConfiguration.catalog(texts, jooq), corpus,
+                    FactDocuments.StatedConfiguration.of(texts));
                 var writtenNow = written.keySet().stream()
                     .filter(file -> !PRELUDE_FILE.equals(file))
                     .map(sourceNames::get)
@@ -272,112 +201,6 @@ class FactExpectationTest {
         if (captured != null) {
             captured.close();
         }
-    }
-
-    /**
-     * The configuration a graph's documents state with {@code @withConfiguration}, as the run
-     * configuration a build would have handed the reading. At most one of the texts may carry it; none
-     * is a run that declared nothing. The recipe is the harness's own whatever this says.
-     */
-    static final class StatedConfiguration {
-
-        private static final String DIRECTIVE = "withConfiguration";
-
-        static SubjectConfig of(List<String> texts) {
-            return application(texts).map(StatedConfiguration::decode).orElse(SubjectConfig.none());
-        }
-
-        /**
-         * The catalog the graph is captured against. The harness's own where the configuration
-         * leaves {@code jooqPackage} out, which every document stating nothing about a catalog
-         * relies on; the package it names; or none where it writes {@code jooqPackage: null}, a run
-         * that declared no catalog. All documents share one store, so a graph with no catalog of
-         * its own still sits beside the rows the others' catalog wrote.
-         */
-        static CatalogInput catalog(List<String> texts, CatalogInput fixture) {
-            var argument = application(texts)
-                .map(directive -> directive.getArgument("jooqPackage"))
-                .orElse(null);
-            if (argument == null) {
-                return fixture;
-            }
-            if (argument.getValue() instanceof NullValue) {
-                return null;
-            }
-            return new CatalogInput(text(argument.getValue(), "jooqPackage"), fixture.loader());
-        }
-
-        private static Optional<Directive> application(List<String> texts) {
-            var applications = texts.stream()
-                .flatMap(text -> new Parser().parseDocument(text).getDefinitions().stream())
-                .flatMap(definition -> definition instanceof SchemaDefinition schema
-                    ? schema.getDirectives(DIRECTIVE).stream() : java.util.stream.Stream.empty())
-                .toList();
-            if (applications.size() > 1) {
-                throw new AssertionError("a graph states its configuration once; found "
-                    + applications.size() + " @" + DIRECTIVE + " applications");
-            }
-            return applications.stream().findFirst();
-        }
-
-        private static SubjectConfig decode(Directive directive) {
-            var outputPackage = string(directive, "outputPackage");
-            var outputJooqPackage = string(directive, "outputJooqPackage");
-            var outputDirectory = string(directive, "outputDirectory");
-            Optional<OutputCoordinates> output = Optional.empty();
-            if (outputPackage.isPresent() || outputJooqPackage.isPresent() || outputDirectory.isPresent()) {
-                if (outputPackage.isEmpty() || outputJooqPackage.isEmpty() || outputDirectory.isEmpty()) {
-                    throw new AssertionError("@" + DIRECTIVE + " states the output coordinates "
-                        + "together, outputPackage, outputJooqPackage and outputDirectory, or none");
-                }
-                output = Optional.of(new OutputCoordinates(outputPackage.get(),
-                    outputJooqPackage.get(), Path.of(outputDirectory.get())));
-            }
-            var disabled = strings(directive, "lintDisabledRules");
-            var excluded = strings(directive, "lintExcludedTypes");
-            var lint = disabled.isEmpty() && excluded.isEmpty()
-                ? LintConfig.empty()
-                : LintConfig.validated(new LinkedHashSet<>(disabled), excluded);
-            var mount = string(directive, "mount");
-            var unmount = string(directive, "unmount");
-            var session = mount.isEmpty() && unmount.isEmpty()
-                ? SessionStateConfig.none()
-                : SessionStateConfig.from(mount.orElse(null), unmount.orElse(null));
-            return new SubjectConfig(Optional.empty(), Optional.empty(),
-                string(directive, "supergraph"), output, string(directive, "tenantColumn"), lint,
-                session);
-        }
-
-        private static Optional<String> string(Directive directive, String name) {
-            var argument = directive.getArgument(name);
-            if (argument == null) {
-                return Optional.empty();
-            }
-            return Optional.of(text(argument.getValue(), name));
-        }
-
-        private static List<String> strings(Directive directive, String name) {
-            var argument = directive.getArgument(name);
-            if (argument == null) {
-                return List.of();
-            }
-            if (!(argument.getValue() instanceof ArrayValue list)) {
-                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) is a list of strings");
-            }
-            return list.getValues().stream().map(value -> text(value, name)).toList();
-        }
-
-        private static String text(Value<?> value, String name) {
-            if (!(value instanceof StringValue string)) {
-                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) takes strings");
-            }
-            return string.getValue();
-        }
-    }
-
-    /** The prelude and the document, which is what the loader captures as one graph. */
-    private static String full(CorpusDocuments.Document document) {
-        return CorpusDocuments.prelude(FACTS) + "\n" + document.sdl();
     }
 
     @Test
@@ -411,13 +234,13 @@ class FactExpectationTest {
         var dsl = captured.dsl();
         var misplaced = new ArrayList<String>();
         claims.forEach((graph, claim) -> {
-            if (claim != Claim.SCENARIO && claim != Claim.DEFECT) {
+            if (claim != FactDocuments.Claim.SCENARIO && claim != FactDocuments.Claim.DEFECT) {
                 return;
             }
             int held = dsl.fetchCount(defect, defect.GRAPH_NAME.eq(graph))
                 + dsl.fetchCount(problem, problem.GRAPH_NAME.eq(graph));
-            if ((claim == Claim.SCENARIO) != (held == 0)) {
-                misplaced.add(claim.folder.name() + "/" + graph + " stores " + held
+            if ((claim == FactDocuments.Claim.SCENARIO) != (held == 0)) {
+                misplaced.add(claim.folder().name() + "/" + graph + " stores " + held
                     + " defects and schema problems");
             }
         });
@@ -428,7 +251,7 @@ class FactExpectationTest {
     @Test
     @DisplayName("the undecided folder does not grow")
     void theUndecidedFolderDoesNotGrow() {
-        assertThat(claims.values().stream().filter(claim -> claim == Claim.UNDECIDED).count())
+        assertThat(claims.values().stream().filter(claim -> claim == FactDocuments.Claim.UNDECIDED).count())
             .as("undecided documents; lower UNDECIDED_CEILING when one leaves")
             .isEqualTo(UNDECIDED_CEILING);
     }

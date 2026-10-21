@@ -1858,7 +1858,9 @@ the store" and "Command rows beside leaves" in the register, one emitter at a ti
     server. Test code compiled ahead of the other test sources, since it opens a store, which the
     generator never does (`FactTierBoundaryTest`).
   * `graphitron`'s `generate-test-sources` runs it, forked on the test classpath, over each fact
-    scenario into its own package under `target/generated-test-sources/graphitron`.
+    scenario into its own package under `target/generated-test-sources/graphitron`, from a store
+    captured as `FactExpectationTest` captures it (`FactDocuments.capture`, the catalog and the
+    classpath corpus beside the prelude), so the code under test comes from the facts checked.
     The classes a schema names must be on that classpath before the tests compile, so its services
     live in `graphitron-sakila-service`.
   * The tests are plain JUnit calling the generated classes directly, typed and checked by the

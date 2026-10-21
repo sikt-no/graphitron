@@ -273,14 +273,13 @@
                         <goals><goal>exec</goal></goals>
                         <configuration>
                             <executable>${java.home}/bin/java</executable>
+                            <workingDirectory>${project.basedir}</workingDirectory>
                             <classpathScope>test</classpathScope>
                             <arguments>
                                 <argument>-classpath</argument>
                                 <classpath/>
                                 <argument>no.sikt.graphitron.rewrite.test.generate.GenerateTestSchemas</argument>
                                 <argument>${generated.test.schemas}</argument>
-                                <argument>no.sikt.graphitron.rewrite.test.jooq</argument>
-                                <argument>${project.basedir}/../graphitron-model/src/test/resources/facts</argument>
                                 <argument>no.sikt.graphitron.generated.facts</argument>
                             </arguments>
                         </configuration>
