@@ -1,0 +1,38 @@
+# A child @service catching into its outcome. Generated at generate-test-sources into
+# no.sikt.graphitron.generated.childoutcome and exercised by ChildOutcomeExecutionTest.
+
+"The films."
+type Query {
+  "Every film."
+  films: [Film!]!
+}
+
+"A film, read from the film table."
+type Film @table(name: "film") {
+  "The film's key."
+  id: Int! @field(name: "film_id")
+  "The film's title."
+  title: String
+  "Caught into its outcome: the verdict on success, the refusal when the service throws one."
+  verdict: FilmVerdictOutcome
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmVerdictService", method: "verdict"})
+}
+
+"A verdict on a film, or why there is none."
+type FilmVerdictOutcome {
+  "The verdict, when the service gave one."
+  verdict: String
+  "Why there is no verdict."
+  errors: [VerdictFailure]
+}
+
+"The service refused to give a verdict."
+type VerdictRefused @error(handlers: [{handler: GENERIC, className: "no.sikt.graphitron.rewrite.test.services.VerdictRefusedException"}]) {
+  "Where the refusal arose."
+  path: [String!]!
+  "Why it was refused."
+  message: String!
+}
+
+"What can stop a verdict."
+union VerdictFailure = VerdictRefused

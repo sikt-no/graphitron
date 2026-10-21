@@ -155,11 +155,16 @@ Two test classes layer structural checks on top:
 
 == Execution tier
 
-Full GraphQL request → SQL → row round-trip.
+Generated code run against a real PostgreSQL: one generated fetcher or rows method called directly, or a full GraphQL request through the generated facade.
 
-*Where:* `graphitron-sakila-example`, run with `mvn test -pl :graphitron-sakila-example -Plocal-db`.
+*Where:* two modules.
 
-Canonical classes: `GraphQLQueryTest` on the shared fixture; `FederationEntitiesDispatchTest` on the federated fixture.
+* `graphitron`, for the code a fixture schema generates, tested where it is generated. Each schema under `graphitron/src/test/schemas` is generated in `generate-test-sources`, by the `GenerateTestSchemas` launcher rather than the Maven plugin, into its own package under `target/generated-test-sources/graphitron`, and plain JUnit tests call the generated classes, typed and checked by the compiler against what was emitted. A schema is added by naming it, with its package, in the `generate-test-schemas` execution in `graphitron/pom.xml`. The classes it names must be on the test classpath before the test sources compile, so its services live in `graphitron-sakila-service`. A schema the generator rejects stops the module's test compilation, so a fixture holds only shapes the generator accepts; the deliberate defects in the model's fact documents keep those out. Canonical class: `ChildOutcomeExecutionTest`.
+* `graphitron-sakila-example`, for the plugin path, the Java 17 compile, the Quarkus and HTTP wiring and federation. Canonical classes: `GraphQLQueryTest` on the shared fixture; `FederationEntitiesDispatchTest` on the federated fixture.
+
+Run with `mvn test -pl <module> -Plocal-db` in the web sandbox, or without the profile where Docker runs Testcontainers.
+
+*The database:* one per test JVM, `TestDatabase` in `graphitron`: the database `-Dtest.db.url` names, as `-Plocal-db` sets it, else `postgres:18-alpine` in Testcontainers seeded from the sakila `init.sql`. Never mocked, and never reset between tests, so tests are resilient rather than isolated: a test reads the seeded catalog rows, which no test deletes, a test that writes reads back only rows under keys it chose, and nothing asserts on how many rows a table holds.
 
 Patterns:
 

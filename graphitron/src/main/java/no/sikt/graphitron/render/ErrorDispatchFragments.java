@@ -49,8 +49,18 @@ public final class ErrorDispatchFragments {
      */
     public static CodeBlock outcomeCatchArm(ClassName errorRouter, ClassName errorMappings,
             String mappingsConstantName, TypeName declaredType, ClassName outcome) {
+        return outcomeCatchArm(errorRouter, errorMappings, mappingsConstantName, declaredType, outcome, "e");
+    }
+
+    /**
+     * {@link #outcomeCatchArm} over the throwable local named {@code throwableVar}, for an arm that
+     * is not a {@code catch (Throwable e)} block's: an asynchronous {@code .exceptionally} lambda,
+     * whose parameter must not shadow a {@code catch} parameter it may be nested in.
+     */
+    public static CodeBlock outcomeCatchArm(ClassName errorRouter, ClassName errorMappings,
+            String mappingsConstantName, TypeName declaredType, ClassName outcome, String throwableVar) {
         return outcomeArm(errorMappings, mappingsConstantName, declaredType,
-            outcome.nestedClass(ERROR_LIST_CLASS), errorRouter);
+            outcome.nestedClass(ERROR_LIST_CLASS), errorRouter, throwableVar);
     }
 
     /**
@@ -64,16 +74,24 @@ public final class ErrorDispatchFragments {
     public static CodeBlock outcomeArm(ClassName errorMappingsClass,
             String mappingsConstantName, TypeName valueType, ClassName errorListClass,
             ClassName errorRouterClass) {
+        return outcomeArm(errorMappingsClass, mappingsConstantName, valueType, errorListClass,
+            errorRouterClass, "e");
+    }
+
+    /** {@link #outcomeArm} over the throwable local named {@code throwableVar}. */
+    public static CodeBlock outcomeArm(ClassName errorMappingsClass,
+            String mappingsConstantName, TypeName valueType, ClassName errorListClass,
+            ClassName errorRouterClass, String throwableVar) {
         return CodeBlock.builder()
-            .addStatement("$T claimed = $T.claim(e, $T.$L, env)",
-                THROWABLE, errorRouterClass, errorMappingsClass, mappingsConstantName)
+            .addStatement("$T claimed = $T.claim($L, $T.$L, env)",
+                THROWABLE, errorRouterClass, throwableVar, errorMappingsClass, mappingsConstantName)
             .add("if (claimed != null) {\n")
             .indent()
             .add("return $T.<$T>newResult().data(new $T<>($T.of(claimed))).build();\n",
                 DATA_FETCHER_RESULT, valueType, errorListClass, LIST)
             .unindent()
             .add("}\n")
-            .add(redactArm(errorRouterClass, "e"))
+            .add(redactArm(errorRouterClass, throwableVar))
             .build();
     }
 

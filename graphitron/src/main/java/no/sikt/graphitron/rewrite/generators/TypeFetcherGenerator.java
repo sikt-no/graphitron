@@ -6554,11 +6554,11 @@ public class TypeFetcherGenerator {
             .add(".thenApply(payload -> $T.<$T>newResult().data(new $T<>(payload)).build())\n",
                 DATA_FETCHER_RESULT, outcomeValueType,
                 outcome.nestedClass(no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator.SUCCESS_CLASS))
-            .add(".exceptionally(e -> {\n")
+            .add(".exceptionally(t -> {\n")
             .indent()
             .add(no.sikt.graphitron.render.ErrorDispatchFragments.outcomeCatchArm(
                 errorRouterClass(outputPackage), errorMappingsClass(outputPackage),
-                channel.mappingsConstantName(), outcomeValueType, outcome))
+                channel.mappingsConstantName(), outcomeValueType, outcome, "t"))
             .unindent()
             .add("})")
             .build();

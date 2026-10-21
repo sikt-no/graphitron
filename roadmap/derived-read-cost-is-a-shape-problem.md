@@ -1832,30 +1832,34 @@ node when it is taken up. A conversion waits on "No test reads generated SQL as 
 test reads generated Java as text" for the emitter it converts. Retires "The classified model beside
 the store" and "Command rows beside leaves" in the register, one emitter at a time.
 
-* **The generated code is tested where it is generated** `open`, decided with Alf 2026-10-21. Each
-  emitter's flip is held to behaviour, so the behaviour of what it emits must be cheap to pin and
-  quick to rerun from the generator module, against a real database. Today it is pinned in
-  `graphitron-sakila-example`, behind the Maven plugin and a full reactor hop, and the generator
-  module's own tests stop at the emitted source.
-  * A launcher in `graphitron` main captures a store and generates for one schema, the three calls
+* **The generated code is tested where it is generated** `done`, 2026-10-21, decided with Alf.
+  Each emitter's flip is held to behaviour, so the behaviour of what it emits is cheap to pin and
+  quick to rerun from the generator module, against a real database.
+  * `GenerateTestSchemas` captures a store in memory and generates for one schema, the three calls
     `CapturedGenerator` makes, without the plugin and so without the language server or the MCP
-    server.
-  * `graphitron`'s `generate-test-sources` runs it over the fixture schemas into
-    `target/generated-test-sources`, one output package each: the model's fact documents, read by
-    path, and any schema the module keeps for itself. Directives graphitron does not recognise pass
-    through, so a fact document's expectations need no handling.
-  * The tests are plain JUnit calling the generated fetchers and rows methods directly, typed, and
-    checked by the compiler against what was emitted, tagged `@ExecutionTier`.
-  * One PostgreSQL per test JVM: the one `test.db.url` names, else `postgres:18-alpine` in
-    Testcontainers seeded from the sakila `init.sql`. Never mocked. The tests are resilient rather
-    than isolated: no rollback, a test that writes reads back only rows under keys it chose, and
-    nothing asserts on a table's row count.
-  * First consumer: a child `@service` catching into its outcome, success, a mapped throw, an
-    unmapped throw and a throw during key extraction, over film rows from the database.
+    server. Test code compiled ahead of the other test sources, since it opens a store, which the
+    generator never does (`FactTierBoundaryTest`).
+  * `graphitron`'s `generate-test-sources` runs it, forked on the test classpath, over each schema
+    under `src/test/schemas` into its own package under `target/generated-test-sources/graphitron`.
+    The classes a schema names must be on that classpath before the tests compile, so its services
+    live in `graphitron-sakila-service`.
+  * The tests are plain JUnit calling the generated classes directly, typed and checked by the
+    compiler against what was emitted, tagged `@ExecutionTier`.
+  * `TestDatabase`: one PostgreSQL per test JVM, the one `-Dtest.db.url` names (`-Plocal-db`, now
+    on `graphitron` too), else `postgres:18-alpine` in Testcontainers seeded from the sakila
+    `init.sql`. Never mocked, never reset: a test reads the seeded rows, a test that writes reads
+    back only rows under keys it chose, and nothing asserts on a table's row count.
+  * First consumer, `ChildOutcomeExecutionTest` over `child-outcome.graphqls`: a child `@service`
+    catching into its outcome, success, a claimed throw, an unclaimed throw and a throw ahead of the
+    loader, through film rows and a service reading them back. On its first run it found the
+    synchronous catch's `.exceptionally(e -> …)` shadowing the `catch` parameter, so every child
+    outcome's fetcher failed to compile; the lambda now takes `t`.
+  * A fact document serves as a fixture only where the generator accepts it: most carry deliberate
+    defects, and a rejected schema stops the module's test compilation, so those stay with
+    `FactExpectationTest`.
 
-  Generating inside `graphitron` makes its test compilation all or nothing: an emission that does
-  not compile stops every test in the module. Accepted for the tighter loop; if it bites, the
-  generation moves to a lean sibling module that runs the same launcher.
+  Generating inside `graphitron` makes its test compilation all or nothing. Accepted for the tighter
+  loop; if it bites, the generation moves to a lean sibling module running the same launcher.
 * **The fixed runtime classes** `done`, by construction: they read nothing from the model.
   `GraphitronValues`, `LightFetcher`, `OneOfDirectiveSdl`, `PolymorphicSelectionSet`,
   `SelectionOccurrences`, `OrderByResult`, `GraphitronContextInterface`,

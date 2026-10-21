@@ -11,8 +11,13 @@
         <version>10-SNAPSHOT</version>
     </parent>
     <artifactId>graphitron</artifactId>
+
     <name>${project.groupId}:${project.artifactId}</name>
     <url>https://github.com/sikt-no/graphitron</url>
+
+    <properties>
+        <generated.test.schemas>${project.build.directory}/generated-test-sources/graphitron</generated.test.schemas>
+    </properties>
 
     <dependencies>
         <dependency>
@@ -127,6 +132,43 @@
             <version>4.0.2</version>
             <scope>test</scope>
         </dependency>
+        <!-- The tests of generated code run it against a real PostgreSQL: the database
+             -Dtest.db.url names, else one Testcontainers starts per test JVM, seeded from the
+             sakila init.sql graphitron-sakila-service brings in. -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-postgresql</artifactId>
+            <version>${version.testcontainers.postgresql}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers</artifactId>
+            <version>${version.testcontainers.postgresql}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${version.postgresql}</version>
+            <scope>test</scope>
+        </dependency>
+        <!-- Testcontainers' shaded Guava keeps the annotations' original names, so javac reading
+             its classes looks for com.google.common.annotations and error-prone's annotation types
+             and, finding neither, warns, which -Werror rejects. Guava brings both. Test scope only;
+             graphitron-sakila-example has them through Quarkus. -->
+        <dependency>
+            <groupId>com.google.guava</groupId>
+            <artifactId>guava</artifactId>
+            <version>33.5.0-jre</version>
+            <scope>test</scope>
+            <exclusions>
+                <exclusion>
+                    <groupId>com.google.j2objc</groupId>
+                    <artifactId>j2objc-annotations</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
     </dependencies>
 
     <build>
@@ -152,6 +194,21 @@
                             <testExcludes>
                                 <testExclude>no/sikt/graphitron/codereferences/noparams/**</testExclude>
                             </testExcludes>
+                        </configuration>
+                    </execution>
+                    <!-- The launcher that generates the test schemas, compiled ahead of the rest of
+                         the test sources: it runs in generate-test-sources, before they compile.
+                         Test code because it opens a store, which the generator never does. -->
+                    <execution>
+                        <id>test-compile-schema-launcher</id>
+                        <phase>generate-test-sources</phase>
+                        <goals>
+                            <goal>testCompile</goal>
+                        </goals>
+                        <configuration>
+                            <testIncludes>
+                                <testInclude>no/sikt/graphitron/rewrite/test/generate/**</testInclude>
+                            </testIncludes>
                         </configuration>
                     </execution>
                     <execution>
@@ -199,6 +256,83 @@
                     </execution>
                 </executions>
             </plugin>
+            <!-- The generated code under test: each schema under src/test/schemas generated into
+                 its own package before the test sources compile, by GenerateTestSchemas, compiled
+                 just above, without the Maven plugin and so without the language server or the MCP
+                 server. Forked on the test classpath, so the services and the jOOQ catalog the
+                 schemas name load as they do when the generated code compiles and runs. -->
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>generate-test-schemas</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <executable>${java.home}/bin/java</executable>
+                            <classpathScope>test</classpathScope>
+                            <arguments>
+                                <argument>-classpath</argument>
+                                <classpath/>
+                                <argument>no.sikt.graphitron.rewrite.test.generate.GenerateTestSchemas</argument>
+                                <argument>${generated.test.schemas}</argument>
+                                <argument>no.sikt.graphitron.rewrite.test.jooq</argument>
+                                <argument>${project.basedir}/src/test/schemas/child-outcome.graphqls</argument>
+                                <argument>no.sikt.graphitron.generated.childoutcome</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>build-helper-maven-plugin</artifactId>
+                <version>3.6.1</version>
+                <executions>
+                    <execution>
+                        <id>add-generated-test-schemas</id>
+                        <phase>generate-test-sources</phase>
+                        <goals><goal>add-test-source</goal></goals>
+                        <configuration>
+                            <sources>
+                                <source>${generated.test.schemas}</source>
+                            </sources>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
+
+    <profiles>
+        <!-- The tests of generated code connect to a pre-existing PostgreSQL instead of
+             Testcontainers, as graphitron-sakila-example's execution tests do under the same
+             profile. The caller runs the sakila init.sql against it beforehand; the tests never
+             reset it, so one kept between runs serves as well. -->
+        <profile>
+            <id>local-db</id>
+            <properties>
+                <test.db.url>jdbc:postgresql://localhost:5432/rewrite_test</test.db.url>
+                <test.db.username>postgres</test.db.username>
+                <test.db.password>postgres</test.db.password>
+            </properties>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-surefire-plugin</artifactId>
+                        <configuration>
+                            <systemPropertyVariables>
+                                <test.db.url>${test.db.url}</test.db.url>
+                                <test.db.username>${test.db.username}</test.db.username>
+                                <test.db.password>${test.db.password}</test.db.password>
+                            </systemPropertyVariables>
+                        </configuration>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
 </project>
