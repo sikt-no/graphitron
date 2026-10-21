@@ -1,13 +1,13 @@
 ---
 id: R1069
 title: "A single-row child whose projected values are all null resolves to null, as v9 resolved it"
-status: Spec
+status: Ready
 bucket: bug
 priority: 4
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-20
+last-updated: 2026-10-21
 ---
 
 # A single-row child whose projected values are all null resolves to null, as v9 resolved it
@@ -485,3 +485,34 @@ Non-blocking: the presence table's last row lists the blockers but not the remai
 block today through the `default` arm; saying "every other field" there would make the table total.
 The `navnAlleSprak` step assumes the implementer can obtain sis's return type; if that has to be
 relayed, say so where the step is.
+
+### Round 2: Spec → Ready, sign off (session_014VWWQLWNX6uzj3c5jyCgHq, 2026-10-21)
+
+Both round-1 findings are answered. The Goal now scopes the rule to the four child kinds, and the
+migration draft lists every reading that differs from Graphitron 9. "The probe as a command" gives
+the probe its own carrier beside the column demand and leaves `ParentRowDemand` alone. When this
+lands, a nullable single-object child of a table type that holds nothing resolves to `null` instead
+of an object of nulls, decided over the whole type. That is the same answer Graphitron 9 gave for
+every sis shape named. The plan extends the existing `NullContract` and `SubtreePresence` rule, the
+`sameRowNullContract` per-type fold and the condition rail's `ReachPath`/`reachExists`, and every
+symbol, test and manual section it names exists.
+
+Non-blocking, for the implementer:
+
+- A `BatchedTableField` with `SourceShape.Record` (the data field of a `@service` or DML payload)
+  uses the same rows method and fetcher builder as the `@splitQuery` arm. The Goal and the manual
+  draft scope the rule to fields of table types. Gate on `SourceShape.Table`, or say in the manual
+  that payload data fields collapse too.
+- A single `@lookupKey` child is rejected at classification
+  (`LookupKeyDirectiveResolver.resolveAtChild`). `CorrelatedLookupChain` therefore never carries a
+  single child, and its probe slots stay empty.
+- The table's "taking no arguments" is the operative test for a list probe. On its own,
+  `readsSelectedFieldArguments` would admit a `@lookupKey` list, whose narrowing is not in
+  `filters()`.
+- An inline `TableField` narrowed on its own table has an empty join path. If one sits inside an
+  object with a request-context-only filter, its `ReachPath` is empty, and `reachExists` reads hop 0.
+  Block it or render the uncorrelated `EXISTS`.
+- Where the probe's hop-alias locals are declared is left to the renderer. So is what "agree on
+  its probes" in `comparePresenceColumns` compares; that the probe is present at each site is what
+  the shared fetcher needs.
+- The manual section is titled "Returning the parent's own row as a table type".
