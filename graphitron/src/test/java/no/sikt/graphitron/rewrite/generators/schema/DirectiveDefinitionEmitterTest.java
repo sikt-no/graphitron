@@ -37,6 +37,15 @@ class DirectiveDefinitionEmitterTest {
     }
 
     @Test
+    void isSeededByGraphqlJava_holdsForIncludeAndSkipOnly() {
+        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
+        var seeded = DirectiveDefinitionEmitter.survivors(schema).stream()
+            .filter(DirectiveDefinitionEmitter::isSeededByGraphqlJava)
+            .map(GraphQLDirective::getName).toList();
+        assertThat(seeded).containsExactlyInAnyOrder("include", "skip");
+    }
+
+    @Test
     void survivors_sortedByName() {
         var schema = TestSchemaHelper.buildBundle("""
             directive @zebra on FIELD_DEFINITION

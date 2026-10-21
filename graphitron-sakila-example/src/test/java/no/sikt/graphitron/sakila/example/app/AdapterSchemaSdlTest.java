@@ -2,6 +2,7 @@ package no.sikt.graphitron.sakila.example.app;
 
 import graphql.ExecutionInput;
 import graphql.GraphQL;
+import graphql.schema.GraphQLDirective;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.diffing.EditOperation;
 import graphql.schema.diffing.SchemaDiffing;
@@ -97,6 +98,17 @@ class AdapterSchemaSdlTest {
 
         List<EditOperation> edits = new SchemaDiffing().diffGraphQLSchema(parse(emitted), parse(printed));
         assertThat(edits).isEmpty();
+    }
+
+    @Test
+    @DisplayName("Both generated schemas define each directive once.")
+    void generatedSchemasDefineEachDirectiveOnce() {
+        for (var schema : List.of(
+                no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {}),
+                no.sikt.graphitron.generated.federated.Graphitron.buildSchema(b -> {}))) {
+            var names = schema.getDirectives().stream().map(GraphQLDirective::getName).toList();
+            assertThat(names).doesNotHaveDuplicates();
+        }
     }
 
     @Test

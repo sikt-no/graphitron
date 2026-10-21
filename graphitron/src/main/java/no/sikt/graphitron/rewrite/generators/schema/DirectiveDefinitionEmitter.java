@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
+import graphql.Directives;
 import graphql.schema.GraphQLDirective;
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -44,6 +45,18 @@ public final class DirectiveDefinitionEmitter {
         }
         result.sort(Comparator.comparing(GraphQLDirective::getName));
         return result;
+    }
+
+    /**
+     * Whether graphql-java's {@code GraphQLSchema.Builder} already holds {@code dir}: the builder
+     * seeds {@code @include} and {@code @skip} into every schema and, unlike the other spec
+     * directives it supplies, does not drop them when a same-named definition is registered, so
+     * registering a survivor of either name defines it twice and the schema prints SDL a parser
+     * rejects.
+     */
+    public static boolean isSeededByGraphqlJava(GraphQLDirective dir) {
+        return dir.getName().equals(Directives.IncludeDirective.getName())
+            || dir.getName().equals(Directives.SkipDirective.getName());
     }
 
     /**
