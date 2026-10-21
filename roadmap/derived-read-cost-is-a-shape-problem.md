@@ -1907,14 +1907,16 @@ Profiled on sis in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-
 * **The federation link's added imports are driven from the version** `done`. The rule met every
   directive application against every claimed source before the version filtered them, minutes a
   round on sis; `FederationLinkTest` pins its answer.
-* **A rule's plan probes an index wherever it looks a row up** `open`, first of the three gates
-  below. Each capture-time regression so far was a read with no index under a join or a correlated
-  subquery: the federation imports' fan-out, `sql_constraint` scanned per path element, and
-  `graphql_ast_element_entry` looked up by coordinate (312 s on sis). A gate runs H2's `EXPLAIN` on
-  every rule view as its stage runs it, under the stage's graph filter, over a test store, and
-  fails where a table other than the driving one is read by `tableScan`. A small table may be
-  excepted by name, each exception a reviewed line. Deterministic and independent of schema size and
-  machine load, so it runs on sakila.
+* **A rule's plan probes an index wherever it looks a row up** `done`. `RulePlanGateTest` reads
+  every rule's plan as its stage reads it, over a scaled capture, and fails on a lookup reading a
+  whole partition per row: a table scanned in a join, or an index probed with only `graph_name` or
+  `source_name` bound. A missing index never shows as a scan, every table having one that leads with
+  its partition. Small tables are exempt by name; dropping either index that fixed the coordinate
+  and `sql_constraint` regressions fails it. The federation imports' join order does not show in a
+  plan and is the scaling gate's.
+  * **The partition reads known when the gate landed are indexed or exempted** `open`. Eleven, listed
+    in `RulePlanGateTest`, in the entry defects, the source and path tables, the carrier and coinage
+    directives, and the federation imports.
 * **A capture's time grows in proportion to its schema** `open`, after the plan gate. A grouped
   table rebuilt per row, the producer rule's 172 s, shows in no plan. A synthetic schema at two
   sizes, the same shapes at n and 4n fields, is captured and each stage timed; a stage whose time
