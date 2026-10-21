@@ -258,8 +258,7 @@ public final class InlayHints {
     /** Every declaration name in the visible region, types and their fields alike. */
     private static List<ClaimSite> collectSites(FileSnapshot file, Node root, Range visibleRange) {
         var sites = new ArrayList<ClaimSite>();
-        DeclarationKind.walkAll(root, typeDef -> {
-            if (!intersects(typeDef, visibleRange)) return;
+        DeclarationKind.walkAll(root, node -> intersects(node, visibleRange), typeDef -> {
             String typeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
             if (typeName == null) return;
             Node typeNameNode = Nodes.childOfKind(typeDef, NAME);
@@ -290,7 +289,9 @@ public final class InlayHints {
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
         boolean hasStore, Node root, Range visibleRange
     ) {
-        var directives = Directives.findAll(root);
+        var directives = visibleRange == null
+            ? Directives.findAll(root)
+            : Directives.findAll(root, visibleRange.getStart().getLine(), visibleRange.getEnd().getLine());
         for (var directive : directives) {
             if (!intersects(directive.outer(), visibleRange)) continue;
             String directiveName = Nodes.text(directive.nameNode(), file.source());
@@ -339,8 +340,7 @@ public final class InlayHints {
         List<Pending> out, InlayFacts.Questions questions, FileSnapshot file,
         Node root, Range visibleRange
     ) {
-        DeclarationKind.walkAll(root, typeDef -> {
-            if (!intersects(typeDef, visibleRange)) return;
+        DeclarationKind.walkAll(root, node -> intersects(node, visibleRange), typeDef -> {
             String typeName = TypeContext.declaredNameOf(typeDef, file.source()).orElse(null);
             if (typeName == null) return;
             if (typeCarriesDirective(typeDef, "table", file.source())) return;

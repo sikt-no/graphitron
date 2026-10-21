@@ -5,6 +5,7 @@ import io.github.treesitter.jtreesitter.Node;
 import java.util.Map;
 import java.util.Optional;
 import java.util.function.Consumer;
+import java.util.function.Predicate;
 
 import static no.sikt.graphitron.lsp.parsing.GraphqlNodeKind.NAME;
 
@@ -108,10 +109,20 @@ public enum DeclarationKind {
      * {@link DeclarationKind}.
      */
     public static void walkAll(Node root, Consumer<Node> sink) {
+        walkAll(root, node -> true, sink);
+    }
+
+    /**
+     * {@link #walkAll(Node, Consumer)} over only the subtrees {@code descend} keeps: a node it
+     * refuses is neither visited nor descended into. A caller asking about one region of a document
+     * passes the region's overlap test, so the walk costs the region rather than the document.
+     */
+    public static void walkAll(Node root, Predicate<Node> descend, Consumer<Node> sink) {
+        if (!descend.test(root)) return;
         if (of(root).isPresent()) sink.accept(root);
         for (int i = 0; i < root.getChildCount(); i++) {
             Node child = root.getChild(i).orElse(null);
-            if (child != null) walkAll(child, sink);
+            if (child != null) walkAll(child, descend, sink);
         }
     }
 

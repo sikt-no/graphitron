@@ -1343,12 +1343,15 @@ and the emitters read, and it goes when nothing reads what it builds.
         path, `graphitron_field_column_scope`'s terminal table. A type backed by a table's record
         now gets its `@field` name, a gap `InferredFieldHintsTest` had pinned. `LabelHintsTest`
         pins the labels.
-      * **An inlay request walks only its window** `open`. The hints' SQL is fast on sis (6.7 ms
-        median, 64 ms worst per 60-line window), but `InlayHints` walks the whole document on every
-        request, `DeclarationKind.walkAll` and `Directives.findAll` over the root, and filters to the
-        visible range afterwards: a window in sis's 6,000-line `schema_exp.graphql` takes 190 ms at
-        the median and up to 2.7 s, and a whole document up to 4 s. The walk visits only the
-        declarations the range overlaps.
+      * **An inlay request walks only its window** `done`. The hints' SQL is fast on sis (6.7 ms
+        median, 64 ms worst per 60-line window), but `InlayHints` walked the whole document on every
+        request, `DeclarationKind.walkAll` and `Directives.findAll` over the root, and filtered to the
+        visible range afterwards: a window in sis's 6,000-line `schema_exp.graphql` took 190 ms at
+        the median and up to 2.7 s. The declaration walk now descends only into subtrees the range
+        overlaps and the directive query is bounded to the range's rows, so on the same 2026-10-21
+        sis store a 60-line window takes 10 ms at the median, 20 ms at p95 and 63 ms at worst, over
+        489 windows. A request for a whole document still walks all of it. `RangedWalkTest` pins
+        that a walk over a region leaves the rest of the tree alone.
       * **An omitted `@reference` path is filled in from the stored path** `blocked`, on the path
         discovery implies being a row of `graphitron_field_path`. The hint read
         `intent_field_reference_discovery` and is dropped until then;

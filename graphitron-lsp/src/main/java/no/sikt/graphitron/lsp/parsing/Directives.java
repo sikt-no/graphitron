@@ -60,6 +60,16 @@ public final class Directives {
      * All directives reachable from {@code root}.
      */
     public static List<Directive> findAll(Node root) {
+        return findAll(root, null, null);
+    }
+
+    /**
+     * The directives reachable from {@code root} that overlap the rows {@code fromRow} through
+     * {@code toRow}, both inclusive, the query cursor itself skipping the rest of the tree; every
+     * directive where either bound is null. Whole rows, so a caller with a column-exact region
+     * filters what comes back, which is cheap once the walk is the region's.
+     */
+    public static List<Directive> findAll(Node root, Integer fromRow, Integer toRow) {
         // jtreesitter ties a match's captured Nodes to the SegmentAllocator passed
         // into findMatches. Closing the cursor frees its internal arena, so we
         // route captures into Arena.ofAuto() — backed by a Cleaner — which
@@ -67,6 +77,9 @@ public final class Directives {
         // Directive records do.
         Arena captureArena = Arena.ofAuto();
         try (var cursor = new QueryCursor(DIRECTIVES_QUERY)) {
+            if (fromRow != null && toRow != null) {
+                cursor.setPointRange(new Point(fromRow, 0), new Point(toRow + 1, 0));
+            }
             return cursor.findMatches(root, captureArena, null)
                 .map(Directives::collect)
                 .filter(Optional::isPresent)
