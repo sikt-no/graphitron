@@ -1,8 +1,7 @@
-# A child @service catching into its outcome. Generated at generate-test-sources into
-# no.sikt.graphitron.generated.childoutcome and exercised by ChildOutcomeExecutionTest.
+# A child @service catching into its outcome: the service's throw a handler claims is the outcome's
+# errors, and any other throw is redacted. Generated for graphitron's ChildOutcomeExecutionTest.
 
-"The films."
-type Query {
+extend type Query {
   "Every film."
   films: [Film!]!
 }
@@ -36,3 +35,15 @@ type VerdictRefused @error(handlers: [{handler: GENERIC, className: "no.sikt.gra
 
 "What can stop a verdict."
 union VerdictFailure = VerdictRefused
+
+# The outcome's errors field holds the union of @error types.
+extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
+  type_name,          field_name, container_name
+  FilmVerdictOutcome, errors,     VerdictFailure
+  """)
+
+# The child service is a producer handing back an outcome, as a root one would.
+extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
+  type_name, field_name, kind,    outcome_type_name,  errors_field_name
+  Film,      verdict,    SERVICE, FilmVerdictOutcome, errors
+  """)

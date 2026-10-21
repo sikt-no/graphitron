@@ -34,8 +34,15 @@ import java.util.stream.Collectors;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The fact examples: what each document in {@code src/test/resources/facts} says the store holds
+ * The fact examples: what each document under {@code src/test/resources/facts} says the store holds
  * for it.
+ *
+ * <p>A document's folder is a claim about its graph, checked against the store ({@link Claim}).
+ * {@code scenarios} generate, and the {@code graphitron} module generates each one at
+ * {@code generate-test-sources} for the tests of generated code, so a scenario never holds a
+ * defect; {@code defects} never generate and always store one; {@code incremental-captures} are
+ * graphs read in steps; {@code undecided} makes no claim and only shrinks. The prelude sits above
+ * all four.
  *
  * <p>A neighbour of {@link CorpusExpectationTest} sharing its whole mechanism, and separate from it
  * for what the two folders are about rather than for anything mechanical. A corpus document carries
@@ -62,8 +69,39 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 class FactExpectationTest {
 
-    /** The fact folder, with the floor that stops a folder which has stopped resolving. */
-    private static final CorpusDocuments.Folder FACTS = new CorpusDocuments.Folder("facts", 1);
+    /** The fact folder, which holds the prelude and the four folders of documents. */
+    private static final CorpusDocuments.Folder FACTS = new CorpusDocuments.Folder("facts", 0);
+
+    /**
+     * What a folder of fact documents claims about each graph in it, each folder with the floor
+     * that stops one which has stopped resolving.
+     */
+    enum Claim {
+        /** The graph generates: the store records no defect and no schema problem for it. */
+        SCENARIO("facts/scenarios", 15),
+        /** The graph does not generate, and the store says why: at least one defect or problem. */
+        DEFECT("facts/defects", 24),
+        /** A graph read in steps, which no single schema stands for. */
+        INCREMENTAL_CAPTURE("facts/incremental-captures", 18),
+        /**
+         * No claim yet: a document the generator refuses with nothing stored, or one tripping over
+         * a defect it does not state. It only shrinks, each document leaving for a folder whose
+         * claim it meets, so {@link #UNDECIDED_CEILING} goes down with it.
+         */
+        UNDECIDED("facts/undecided", 0);
+
+        final CorpusDocuments.Folder folder;
+
+        Claim(String name, int minDocuments) {
+            this.folder = new CorpusDocuments.Folder(name, minDocuments);
+        }
+    }
+
+    /** The undecided folder's size, lowered as documents leave it and never raised. */
+    private static final int UNDECIDED_CEILING = 43;
+
+    /** Each document's claim, by its id, which is also its graph's name or its stepped graph's. */
+    private static final Map<String, Claim> claims = new LinkedHashMap<>();
 
     @TempDir
     static Path tmp;
@@ -134,7 +172,22 @@ class FactExpectationTest {
     static void captureEveryDocument() {
         var ctx = TestRunContext.of();
         var jooq = CatalogInput.of(ctx);
-        var graphs = Graphs.of(CorpusDocuments.documents(FACTS));
+        var documents = new ArrayList<CorpusDocuments.Document>();
+        for (var claim : Claim.values()) {
+            for (var document : CorpusDocuments.documents(claim.folder)) {
+                var stepped = STEP.matcher(document.id() + CorpusDocuments.SUFFIX).matches();
+                if (stepped != (claim == Claim.INCREMENTAL_CAPTURE)) {
+                    throw new AssertionError(document.id() + CorpusDocuments.SUFFIX + " is in "
+                        + claim.folder.name() + ", which holds " + (stepped ? "no" : "only")
+                        + " graphs read in steps");
+                }
+                if (claims.put(document.id(), claim) != null) {
+                    throw new AssertionError(document.id() + " is in two fact folders");
+                }
+                documents.add(document);
+            }
+        }
+        var graphs = Graphs.of(documents);
         // The classpath corpus beside the catalog, so a document can state what a reading finds in
         // Java as well as what it finds in SDL. The model and the capture are one subject: a
         // document asserting a derived relation without the facts under it tests half of what it
@@ -343,6 +396,41 @@ class FactExpectationTest {
         assertThat(CorpusExpectations.unstatedProblems(captured.dsl(), blocks))
             .as("problems capture recorded in a document that does not state graphql_schema_problem")
             .isEmpty();
+    }
+
+    /**
+     * A scenario has no defect and a defect document has one, counted from what the store
+     * records for the graph rather than from what the document states, so a document cannot pass
+     * by forgetting to state what it holds.
+     */
+    @Test
+    @DisplayName("every scenario stores no defect, and every defect document stores one")
+    void everyFolderHoldsWhatItClaims() {
+        var defect = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+        var problem = no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
+        var dsl = captured.dsl();
+        var misplaced = new ArrayList<String>();
+        claims.forEach((graph, claim) -> {
+            if (claim != Claim.SCENARIO && claim != Claim.DEFECT) {
+                return;
+            }
+            int held = dsl.fetchCount(defect, defect.GRAPH_NAME.eq(graph))
+                + dsl.fetchCount(problem, problem.GRAPH_NAME.eq(graph));
+            if ((claim == Claim.SCENARIO) != (held == 0)) {
+                misplaced.add(claim.folder.name() + "/" + graph + " stores " + held
+                    + " defects and schema problems");
+            }
+        });
+        assertThat(misplaced).as("documents whose folder claims what the store does not hold").isEmpty();
+    }
+
+    /** The undecided folder only shrinks: a document arrives in the folder whose claim it meets. */
+    @Test
+    @DisplayName("the undecided folder does not grow")
+    void theUndecidedFolderDoesNotGrow() {
+        assertThat(claims.values().stream().filter(claim -> claim == Claim.UNDECIDED).count())
+            .as("undecided documents; lower UNDECIDED_CEILING when one leaves")
+            .isEqualTo(UNDECIDED_CEILING);
     }
 
     /**

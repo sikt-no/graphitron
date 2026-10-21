@@ -256,11 +256,12 @@
                     </execution>
                 </executions>
             </plugin>
-            <!-- The generated code under test: each schema under src/test/schemas generated into
-                 its own package before the test sources compile, by GenerateTestSchemas, compiled
-                 just above, without the Maven plugin and so without the language server or the MCP
-                 server. Forked on the test classpath, so the services and the jOOQ catalog the
-                 schemas name load as they do when the generated code compiles and runs. -->
+            <!-- The generated code under test: each fact scenario, graphitron-model's
+                 facts/scenarios, generated into its own package before the test sources compile, by
+                 GenerateTestSchemas, compiled just above, without the Maven plugin and so without the
+                 language server or the MCP server. Forked on the test classpath, so the services and
+                 the jOOQ catalog the scenarios name load as they do when the generated code compiles
+                 and runs. -->
             <plugin>
                 <groupId>org.codehaus.mojo</groupId>
                 <artifactId>exec-maven-plugin</artifactId>
@@ -279,8 +280,8 @@
                                 <argument>no.sikt.graphitron.rewrite.test.generate.GenerateTestSchemas</argument>
                                 <argument>${generated.test.schemas}</argument>
                                 <argument>no.sikt.graphitron.rewrite.test.jooq</argument>
-                                <argument>${project.basedir}/src/test/schemas/child-outcome.graphqls</argument>
-                                <argument>no.sikt.graphitron.generated.childoutcome</argument>
+                                <argument>${project.basedir}/../graphitron-model/src/test/resources/facts</argument>
+                                <argument>no.sikt.graphitron.generated.facts</argument>
                             </arguments>
                         </configuration>
                     </execution>

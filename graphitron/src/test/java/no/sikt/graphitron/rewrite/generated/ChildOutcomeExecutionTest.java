@@ -8,9 +8,9 @@ import graphql.execution.ResultPath;
 import graphql.language.Field;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
-import no.sikt.graphitron.generated.childoutcome.Graphitron;
-import no.sikt.graphitron.generated.childoutcome.fetchers.FilmFetchers;
-import no.sikt.graphitron.generated.childoutcome.schema.Outcome;
+import no.sikt.graphitron.generated.facts.child_outcome.Graphitron;
+import no.sikt.graphitron.generated.facts.child_outcome.fetchers.FilmFetchers;
+import no.sikt.graphitron.generated.facts.child_outcome.schema.Outcome;
 import no.sikt.graphitron.rewrite.test.db.TestDatabase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
 import no.sikt.graphitron.rewrite.test.services.FilmVerdict;
@@ -26,7 +26,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A child {@code @service} catching into its outcome, driven through the generated fetcher of
- * {@code src/test/schemas/child-outcome.graphqls} against the shared database: the parent is a film
+ * the fact scenario {@code child-outcome.graphqls} against the shared database: the parent is a film
  * row read from it, the fetcher batches through its DataLoader, and the service reads the film's
  * title back over the same database. The service picks its branch by film id
  * ({@link FilmVerdictService}).

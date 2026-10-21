@@ -1857,8 +1857,8 @@ the store" and "Command rows beside leaves" in the register, one emitter at a ti
     `CapturedGenerator` makes, without the plugin and so without the language server or the MCP
     server. Test code compiled ahead of the other test sources, since it opens a store, which the
     generator never does (`FactTierBoundaryTest`).
-  * `graphitron`'s `generate-test-sources` runs it, forked on the test classpath, over each schema
-    under `src/test/schemas` into its own package under `target/generated-test-sources/graphitron`.
+  * `graphitron`'s `generate-test-sources` runs it, forked on the test classpath, over each fact
+    scenario into its own package under `target/generated-test-sources/graphitron`.
     The classes a schema names must be on that classpath before the tests compile, so its services
     live in `graphitron-sakila-service`.
   * The tests are plain JUnit calling the generated classes directly, typed and checked by the
@@ -1872,9 +1872,13 @@ the store" and "Command rows beside leaves" in the register, one emitter at a ti
     loader, through film rows and a service reading them back. On its first run it found the
     synchronous catch's `.exceptionally(e -> …)` shadowing the `catch` parameter, so every child
     outcome's fetcher failed to compile; the lambda now takes `t`.
-  * A fact document serves as a fixture only where the generator accepts it: most carry deliberate
-    defects, and a rejected schema stops the module's test compilation, so those stay with
-    `FactExpectationTest`.
+  * **The fact documents are sorted by what they claim** `done`. `scenarios` generate and store no
+    defect, `defects` store one, `incremental-captures` are read in steps, and `undecided` makes no
+    claim and only shrinks, `FactExpectationTest` holding each folder to its claim. The scenarios
+    are the generated fixtures, `child-outcome` among them.
+    * **The undecided folder empties** `open`. 43 documents: eight the generator refuses with no
+      defect stored, each waiting on the rule that stores it, and the rest tripping over a defect
+      they do not state, each fixed into a scenario or stating its defect.
 
   Generating inside `graphitron` makes its test compilation all or nothing. Accepted for the tighter
   loop; if it bites, the generation moves to a lean sibling module running the same launcher.
