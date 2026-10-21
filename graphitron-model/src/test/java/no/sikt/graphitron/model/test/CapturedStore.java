@@ -27,7 +27,6 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.time.temporal.ChronoUnit;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.Map;
@@ -87,9 +86,6 @@ public final class CapturedStore implements AutoCloseable {
     /** The two schemas the capture built and handed back, as the mojo receives them. */
     private final CapturedSchema schemas;
 
-    /** The schemas of every graph this fixture captured, the first among them, by graph. */
-    private final Map<String, CapturedSchema> schemasByGraph = new LinkedHashMap<>();
-
     /**
      * Whether this fixture booted its own store or borrowed the thread's, which is all
      * {@link #close()} has to decide between. A case that rewrites the schema owns one; see
@@ -109,7 +105,6 @@ public final class CapturedStore implements AutoCloseable {
                           TypeDefinitionRegistry registry, CapturedSchema schemas, boolean owned) {
         this.owned = owned;
         this.schemas = schemas;
-        this.schemasByGraph.put(graphName, schemas);
         this.generation = owned ? -1 : ThreadConfinedStore.generation();
         this.store = store;
         this.graphName = graphName;
@@ -479,8 +474,8 @@ public final class CapturedStore implements AutoCloseable {
                                             List<ClasspathEntry> classpath,
                                             SubjectConfig configuration) {
         Path other = write(directory, otherGraph, sdl);
-        schemasByGraph.put(otherGraph, captureFiles(store.dsl(), List.of(other), directory,
-            otherGraph, jooq, false, classpath, LocalDateTime.now(), configuration));
+        captureFiles(store.dsl(), List.of(other), directory, otherGraph, jooq, false, classpath,
+            LocalDateTime.now(), configuration);
         return this;
     }
 
@@ -575,8 +570,7 @@ public final class CapturedStore implements AutoCloseable {
     private void captureAnother(String graph, String sdl, CatalogInput jooq, boolean warm,
                                 List<ClasspathEntry> classpath) {
         Path other = write(directory, graph, sdl);
-        schemasByGraph.put(graph,
-            captureFiles(store.dsl(), List.of(other), directory, graph, jooq, warm, classpath));
+        captureFiles(store.dsl(), List.of(other), directory, graph, jooq, warm, classpath);
     }
 
     /**
@@ -858,23 +852,6 @@ public final class CapturedStore implements AutoCloseable {
     /** The two schemas the capture built, which is what the generate mojo hands the generator. */
     public CapturedSchema schema() {
         return schemas;
-    }
-
-    /**
-     * The schemas one graph of this fixture's capture built, which is what a generator over that
-     * graph is handed beside a handle on this store.
-     */
-    public CapturedSchema schema(String graph) {
-        var schema = schemasByGraph.get(graph);
-        if (schema == null) {
-            throw new IllegalArgumentException("this fixture captured no graph " + graph);
-        }
-        return schema;
-    }
-
-    /** The directory this fixture writes its schema files in, each named for its graph. */
-    public Path directory() {
-        return directory;
     }
 
     public TypeDefinitionRegistry registry() {

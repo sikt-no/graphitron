@@ -24,9 +24,9 @@ import java.util.regex.Pattern;
 /**
  * The fact documents under {@code src/test/resources/facts}, and how a graph of one is captured:
  * the one reading of them, for {@code FactExpectationTest}, which checks what each says the store
- * holds, and for {@code graphitron}'s {@code GenerateTestSchemas}, which generates the scenarios
- * from a store captured the same way, so the code under test is generated from the facts the
- * documents check.
+ * holds, and for {@code graphitron}'s {@code GenerateTestSchemas}, which runs each scenario as a
+ * generating run over the same text and classpath, so the code under test is generated from the
+ * facts the documents check.
  *
  * <p>A document's folder is a claim about its graph ({@link Claim}). The prelude sits above all
  * four folders and is captured as part of every plain document.

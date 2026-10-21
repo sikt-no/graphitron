@@ -343,8 +343,8 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
 * **The generator reads its configuration from the store** `open`. Each setting it still takes off
   `RunContext` or `BuildContext` (the tenant column, the lint configuration, the session hooks, the
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
-  * **A generating harness captures the run's output coordinates** `open`. The scenario harness
-    records them through the path `ModelCapture` takes, not a hand-inserted row.
+  * **A generating harness captures the run's output coordinates** `done`. `GenerateTestSchemas`
+    runs each scenario as a generating run, a `RunContext` captured by `GraphitronStore.captured`.
   * **The tenant column and the session hook signature are captured** `open`. The column the
     configured tenant name resolves to, and which mount signatures get a hook class, are stored.
 * **`graphitron` does no orchestration** `open`. A harness in `graphitron`'s tests that captures and
@@ -392,7 +392,7 @@ The generator turns over one emitter at a time, each held to behaviour by tests 
 generated classes against PostgreSQL from the fact scenarios. The fixed runtime classes and the
 output package they are written to are settled once the held change for them lands.
 
-* **The schema package's fixed classes are written without a plan** `blocked`, on "A generating harness captures the run's output coordinates".
+* **The schema package's fixed classes are written without a plan** `open`.
 * **The `util` package's fixed classes are not planned** `open`. `GraphitronValues`, `LightFetcher`,
   `ColumnValues`, `SelectionOccurrences` and `OrderByResult` are written from the package alone;
   `ConnectionResult` and `ConnectionHelper` take the tenancy flag, `NestingCoordinates` the nesting

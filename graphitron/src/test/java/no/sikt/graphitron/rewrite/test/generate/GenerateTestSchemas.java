@@ -1,10 +1,12 @@
 package no.sikt.graphitron.rewrite.test.generate;
 
+import no.sikt.graphitron.model.config.DependencyVersions;
 import no.sikt.graphitron.model.config.RunContext;
-import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.lint.LintConfig;
+import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
-import no.sikt.graphitron.model.test.CapturedStore;
-import no.sikt.graphitron.model.test.CatalogInput;
+import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.FactDocuments;
 import no.sikt.graphitron.model.test.TestRunContext;
@@ -14,20 +16,25 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Comparator;
 import java.util.List;
 
 /**
  * Generates the module's test schemas, for the tests of generated code: every fact scenario, the
- * documents under {@code graphitron-model}'s {@code facts/scenarios}, captured into one store the
- * way {@code FactExpectationTest} captures them ({@link FactDocuments#capture}: the prelude with
- * each, the sakila catalog, the classpath corpus), and the generator run over each graph of it into
- * one output directory. So the code under test is generated from the facts the documents check, and
- * without the plugin, so without the language server or the MCP server it brings.
+ * documents under {@code graphitron-model}'s {@code facts/scenarios}, as a generating run would,
+ * without the plugin and so without the language server or the MCP server it brings.
+ *
+ * <p>A generating run, whole: each scenario is a {@link RunContext} declaring its output
+ * coordinates, captured by {@link GraphitronStore#captured(RunContext)} and generated from what that
+ * captured. So everything the run declares reaches the store the way it does in production, and an
+ * emitter reading the run's configuration from the store finds it there. What the scenario is captured
+ * over is what {@code FactExpectationTest} checks: the document as {@link FactDocuments#captured}
+ * spells it, the sakila catalog and the classpath corpus.
  *
  * <p>A scenario is a fact document the store records no defect for, which is the folder's claim and
  * {@code FactExpectationTest}'s to check; a scenario this refuses is a defect the store does not
  * record. A scenario stating the configuration its graph is captured under is about how the store
- * reads a configuration and is captured but not generated.
+ * reads a configuration, and is not generated.
  *
  * <p>Test code, because it opens the store: the generator is handed one and never decides which, a
  * mojo or a test does ({@code FactTierBoundaryTest}). {@code graphitron}'s {@code pom.xml} compiles
@@ -48,44 +55,56 @@ public final class GenerateTestSchemas {
         }
         var outputDirectory = Path.of(args[0]).toAbsolutePath();
         var packagePrefix = args[1];
-        var scenarios = FactDocuments.documents(FactDocuments.Claim.SCENARIO);
-        var jooq = CatalogInput.of(TestRunContext.of());
-        var corpus = ClasspathCorpus.entries();
-        var directory = Files.createTempDirectory("graphitron-test-schemas");
-        CapturedStore store = null;
-        for (var scenario : scenarios) {
-            store = FactDocuments.capture(store, directory, scenario, jooq, corpus);
+        // The directory is this launcher's alone, so it starts empty: a scenario that left the
+        // folder, or now states a configuration, would otherwise go on compiling from a past run.
+        if (Files.exists(outputDirectory)) {
+            delete(outputDirectory);
         }
-        try (var captured = store) {
-            for (var scenario : scenarios) {
-                if (!FactDocuments.statesConfiguration(scenario)) {
-                    generate(captured, scenario.id(),
-                        packagePrefix + "." + scenario.id().replace('-', '_'), outputDirectory,
-                        jooq.jooqPackage());
+        var directory = Files.createTempDirectory("graphitron-test-schemas");
+        try {
+            for (var scenario : FactDocuments.documents(FactDocuments.Claim.SCENARIO)) {
+                if (FactDocuments.statesConfiguration(scenario)) {
+                    continue;
                 }
+                var file = directory.resolve(scenario.id() + ".graphqls");
+                Files.writeString(file, FactDocuments.captured(scenario));
+                generate(file, scenario.id(), packagePrefix + "." + scenario.id().replace('-', '_'),
+                    outputDirectory);
             }
         } finally {
             delete(directory);
         }
     }
 
-    /** One graph of {@code store} into {@code outputDirectory}, under {@code outputPackage}. */
-    private static void generate(CapturedStore store, String graph, String outputPackage,
-                                 Path outputDirectory, String jooqPackage) {
+    /** One scenario's run: its context, its capture, and the generator over what it captured. */
+    private static void generate(Path file, String graph, String outputPackage, Path outputDirectory) {
+        var inputs = List.of(SchemaInput.file(file));
         var ctx = new RunContext(
-            List.of(SchemaInput.file(CapturedStore.fixtureFile(store.directory(), graph))),
-            store.directory(),
+            inputs,
+            file.getParent(),
             graph,
             outputDirectory,
+            outputDirectory.getParent().resolve("generated-resources-graphitron"),
             outputPackage,
-            jooqPackage);
-        new GraphQLRewriteGenerator(ctx, new StoreHandle(store.dsl(), graph), store.schema(graph))
-            .generate();
+            TestRunContext.JOOQ_PACKAGE,
+            ClasspathCorpus.entries(),
+            Thread.currentThread().getContextClassLoader(),
+            List.of(),
+            LintConfig.empty(),
+            SessionStateConfig.none(),
+            null,
+            DependencyVersions.empty(),
+            null,
+            SchemaRecipe.literalOver(inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
+            null);
+        try (var captured = GraphitronStore.captured(ctx)) {
+            new GraphQLRewriteGenerator(ctx, captured).generate();
+        }
     }
 
     private static void delete(Path directory) throws IOException {
         try (var paths = Files.walk(directory)) {
-            paths.sorted(java.util.Comparator.reverseOrder()).forEach(path -> {
+            paths.sorted(Comparator.reverseOrder()).forEach(path -> {
                 try {
                     Files.delete(path);
                 } catch (IOException e) {
