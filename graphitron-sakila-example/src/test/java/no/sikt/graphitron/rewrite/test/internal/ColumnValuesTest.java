@@ -27,7 +27,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * writes for a value of the column. Its parse class is the one the generator hands it for a slot
  * ({@code SlotParse}): {@code null} for a column with no converter or a converter to a class jOOQ
  * has no text form for, the converter's user type otherwise. {@code coerce} is the documented
- * coercion of an authored value, minus a wrap.
+ * coercion of an authored value, minus a wrap. {@code folded} names the value a converter gave back
+ * in place of the parsed one, which the node-id decode logs when it refuses such a slot.
  */
 @UnitTier
 class ColumnValuesTest {
@@ -165,6 +166,24 @@ class ColumnValuesTest {
         assertThat(ColumnValues.exact(WRAPPED_CODE, null, "186"))
             .as("WrappedCode[value=186] is not the slot text")
             .isNull();
+    }
+
+    // ===== folded: a converter that does not give the parsed value back =====
+
+    @Test
+    void folded_namesWhatALossyConverterGivesBack() {
+        assertThat(ColumnValues.folded(DATE_ONLY, LocalDateTime.class, SMALL_HOURS))
+            .as("the time part the database type cannot hold")
+            .isEqualTo(LocalDateTime.of(2007, 8, 22, 0, 0));
+    }
+
+    @Test
+    void folded_isNullWhereNoConverterLostAnything() {
+        assertThat(ColumnValues.folded(DATE_ONLY, LocalDateTime.class, "2007-08-22T00:00")).as("round-trips").isNull();
+        assertThat(ColumnValues.folded(DATE_WITH_TIME, LocalDateTime.class, SMALL_HOURS)).as("lossless").isNull();
+        assertThat(ColumnValues.folded(INTEGER, null, "01")).as("a padded number, no converter").isNull();
+        assertThat(ColumnValues.folded(WRAPPED_CODE, null, "186")).as("a database-type slot").isNull();
+        assertThat(ColumnValues.folded(ORG_CODE, String.class, "abc")).as("does not parse").isNull();
     }
 
     @Test

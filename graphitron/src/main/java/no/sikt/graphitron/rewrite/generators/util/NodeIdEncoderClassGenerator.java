@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
@@ -18,6 +19,8 @@ import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.List;
+import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
 
 /**
@@ -50,6 +53,14 @@ import java.util.stream.Collectors;
  * from the very reference its call sites hold, so the encoder generator and the call-site emitters
  * cannot drift on naming.
  *
+ * <p>Every decode surface reaches a key slot through {@code decodeColumns}, which is therefore where
+ * a refused slot over a converter's user type is told apart from a malformed one: when the column's
+ * converter does not give the parsed value back ({@code ColumnValues.folded}), it logs a warning
+ * naming the column, once per column at {@code WARN} and at {@code DEBUG} after that, so an id that
+ * resolves to {@code null} because the converter is narrower than the column is diagnosable. Both
+ * values in the message are client-supplied, so they are logged with control characters escaped and
+ * capped in length.
+ *
  * <p>The generated class is {@code final} with a private constructor and only static methods, so
  * consumers cannot override the encoding: a single canonical wire format across every generated
  * dispatcher is what keeps nodeIds durable across schema evolution.
@@ -66,6 +77,11 @@ public class NodeIdEncoderClassGenerator {
     private static final ClassName FIELD       = ClassName.get("org.jooq", "Field");
     private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphqlErrorException");
     private static final ClassName OBJECTS     = ClassName.get("java.util", "Objects");
+    private static final ClassName LOGGER      = ClassName.get("org.slf4j", "Logger");
+    private static final ClassName LOGGER_FACTORY = ClassName.get("org.slf4j", "LoggerFactory");
+
+    /** The longest rendering of a client-supplied value the fold warning logs. */
+    private static final int LOG_SAFE_LIMIT = 64;
 
     /**
      * Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>}
@@ -164,11 +180,66 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("if (values == null || values.length != columns.length) return null")
             .addStatement("Object[] decoded = new Object[values.length]")
             .beginControlFlow("for (int i = 0; i < values.length; i++)")
-                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(),\n"
-                    + "parseClasses == null ? null : parseClasses[i], values[i])", columnValues)
-                .addStatement("if (decoded[i] == null) return null")
+                .addStatement("$T parseClass = parseClasses == null ? null : parseClasses[i]", classWildcard)
+                .addStatement("decoded[i] = $T.exact(columns[i].getDataType(), parseClass, values[i])", columnValues)
+                .beginControlFlow("if (decoded[i] == null)")
+                    .addStatement("if (parseClass != null) reportFold(columns[i], parseClass, values[i])")
+                    .addStatement("return null")
+                .endControlFlow()
             .endControlFlow()
             .addStatement("return decoded")
+            .build();
+
+        var stringSet = ParameterizedTypeName.get(ClassName.get(Set.class), ClassName.get(String.class));
+        var loggerField = FieldSpec.builder(LOGGER, "LOGGER", Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.getLogger($L.class)", LOGGER_FACTORY, CLASS_NAME)
+            .build();
+        // Bounded by the key columns the generated code names: every decodeColumns caller passes
+        // generated table constants.
+        var foldedColumnsField = FieldSpec.builder(stringSet, "FOLDED_COLUMNS",
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.newKeySet()", ConcurrentHashMap.class)
+            .build();
+
+        var reportFold = MethodSpec.methodBuilder("reportFold")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(fieldWildcard, "column")
+            .addParameter(classWildcard, "parseClass")
+            .addParameter(String.class, "text")
+            .addStatement("Object folded = $T.folded(column.getDataType(), parseClass, text)", columnValues)
+            .addStatement("if (folded == null) return")
+            .addStatement("$T name = column.getQualifiedName().toString()", String.class)
+            .addStatement("$T message = $S\n+ $S\n+ $S", String.class,
+                "Node id key column {} has a converter that does not give back the value {} (it comes back as {}), ",
+                "so node ids carrying that value decode as malformed. A key column's converter must take every ",
+                "value the column holds to the database type and back unchanged.")
+            .beginControlFlow("if (FOLDED_COLUMNS.add(name))")
+                .addStatement("LOGGER.warn(message, name, logSafe(text), logSafe(folded))")
+            .nextControlFlow("else")
+                .addStatement("LOGGER.debug(message, name, logSafe(text), logSafe(folded))")
+            .endControlFlow()
+            .build();
+
+        var logSafe = MethodSpec.methodBuilder("logSafe")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(Object.class, "value")
+            .addJavadoc("A client-supplied value as one bounded log line: control characters escaped, at most\n"
+                + "$L characters.\n", LOG_SAFE_LIMIT)
+            .addStatement("$T text = $T.valueOf(value)", String.class, String.class)
+            .addStatement("$T out = new $T()", StringBuilder.class, StringBuilder.class)
+            .beginControlFlow("for (int i = 0; i < text.length() && out.length() < $L; i++)", LOG_SAFE_LIMIT)
+                .addStatement("char c = text.charAt(i)")
+                .addStatement("if (c == '\\\\') out.append($S)", "\\\\")
+                .addStatement("else if (c == '\\n') out.append($S)", "\\n")
+                .addStatement("else if (c == '\\r') out.append($S)", "\\r")
+                .addStatement("else if (c == '\\t') out.append($S)", "\\t")
+                .addStatement("else if ($T.isISOControl(c)) out.append($T.format($S, (int) c))",
+                    Character.class, String.class, "\\u%04x")
+                .addStatement("else out.append(c)")
+            .endControlFlow()
+            .addStatement("return out.length() > $L ? out.substring(0, $L) + $S : out.toString()",
+                LOG_SAFE_LIMIT, LOG_SAFE_LIMIT, "...")
             .build();
 
         // requireColumnAgreement coerces through DataType.convert(Object), which jOOQ deprecated
@@ -184,11 +255,15 @@ public class NodeIdEncoderClassGenerator {
             .addAnnotation(suppressRemoval)
             .addJavadoc("Relay nodeId encode/decode helpers. Static, non-extendable\n"
                 + "by design — see {@link NodeIdEncoderClassGenerator}.\n")
+            .addField(loggerField)
+            .addField(foldedColumnsField)
             .addMethod(privateCtor)
             .addMethod(encode)
             .addMethod(peekTypeId)
             .addMethod(decodeValues)
             .addMethod(decodeColumns)
+            .addMethod(reportFold)
+            .addMethod(logSafe)
             .addMethod(buildRequireColumnAgreement());
 
         for (NodeType nt : nodeTypes) {

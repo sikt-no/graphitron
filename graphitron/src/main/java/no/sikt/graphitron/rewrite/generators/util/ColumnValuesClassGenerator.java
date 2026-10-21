@@ -15,6 +15,7 @@ import java.math.BigDecimal;
 import java.math.BigInteger;
 import java.math.RoundingMode;
 import java.util.List;
+import java.util.Objects;
 
 /**
  * Generates the {@code ColumnValues} utility class, emitted once per code-generation run: the one
@@ -45,9 +46,16 @@ import java.util.List;
  *       number lands on that number or its integral part (so {@code "1.5"} binds as {@code 1} on an
  *       integer column but a number that wraps is refused), and the value fits the declared
  *       precision.</li>
+ *   <li>{@code folded(type, parseClass, text)} names what {@code exact} cannot: for a slot over a
+ *       converter's user type, the value the trip came back as when the converter did not give the
+ *       parsed value back ({@code from(to(parsed))} is not {@code parsed}), else {@code null}. It
+ *       compares values, not text, so a padded or reformatted number is no fold, and it answers
+ *       {@code null} without a parse class, since a consumer's own class need not have value
+ *       equality. The node-id decode asks it only after {@code exact} refused a slot, to tell an
+ *       operator that a key column's converter loses what the column holds.</li>
  * </ul>
  *
- * <p>Each returns the canonical value or {@code null}; neither throws for a value that is not a
+ * <p>Each returns the canonical value or {@code null}; none throws for a value that is not a
  * value of the column, so whether that is a skipped slot or a client error stays with the caller.
  */
 public class ColumnValuesClassGenerator {
@@ -112,6 +120,22 @@ public class ColumnValuesClassGenerator {
             .addStatement("return fitsPrecision(type, number) ? trip.canonical : null")
             .build();
 
+        var folded = MethodSpec.methodBuilder("folded")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(t)
+            .addParameter(dataTypeOfT, "type")
+            .addParameter(classWildcard, "parseClass")
+            .addParameter(String.class, "text")
+            .addJavadoc("What the column's converter gives back for {@code text} parsed as its user type\n"
+                + "{@code parseClass}, when that is not the parsed value; {@code null} when the converter gives\n"
+                + "the value back, the text does not parse, or there is no parse class.\n")
+            .addStatement("if (text == null || parseClass == null) return null")
+            .addStatement("$T trip = trip(type, parseClass, text)", tripOfT)
+            .addStatement("return trip == null || $T.deepEquals(trip.parsed, trip.canonical) ? null : trip.canonical",
+                Objects.class)
+            .build();
+
         var trip = MethodSpec.methodBuilder("trip")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addTypeVariable(t)
@@ -140,7 +164,7 @@ public class ColumnValuesClassGenerator {
             .addStatement("$T database = converter.to(user)", d)
             .addStatement("if (database == null) return null")
             .addStatement("$T canonical = converter.from(database)", t)
-            .addStatement("return canonical == null ? null : new $T<>(canonical, database)", TRIP)
+            .addStatement("return canonical == null ? null : new $T<>(user, canonical, database)", TRIP)
             .build();
 
         var numericValue = MethodSpec.methodBuilder("numericValue")
@@ -209,13 +233,17 @@ public class ColumnValuesClassGenerator {
         var tripClass = TypeSpec.classBuilder("Trip")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addTypeVariable(t)
-            .addJavadoc("One successful column trip: the canonical user value and the database value it came from.\n")
+            .addJavadoc("One successful column trip: the user value it started from, the database value that went\n"
+                + "to, and the canonical user value that came back.\n")
+            .addField(FieldSpec.builder(t, "parsed", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(t, "canonical", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(Object.class, "database", Modifier.PRIVATE, Modifier.FINAL).build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PRIVATE)
+                .addParameter(t, "parsed")
                 .addParameter(t, "canonical")
                 .addParameter(Object.class, "database")
+                .addStatement("this.parsed = parsed")
                 .addStatement("this.canonical = canonical")
                 .addStatement("this.database = database")
                 .build())
@@ -235,6 +263,7 @@ public class ColumnValuesClassGenerator {
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addMethod(exact)
             .addMethod(coerce)
+            .addMethod(folded)
             .addMethod(trip)
             .addMethod(roundTrip)
             .addMethod(numericValue)
