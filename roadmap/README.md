@@ -43,8 +43,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1080` | A nullable root field returning one object over a row of nulls resolves to null, as v9 resolved it <sub>blocked by: [table-child-with-all-null-columns-reads-as-null](table-child-with-all-null-columns-reads-as-null.md)</sub> | Spec | 2026-10-21 <sub>created 2026-10-20</sub> | [plan](root-single-object-over-all-null-row-reads-as-null.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
+| `R1080` | A nullable root field returning one object over a row of nulls resolves to null, as v9 resolved it <sub>blocked by: [table-child-with-all-null-columns-reads-as-null](table-child-with-all-null-columns-reads-as-null.md)</sub> | Ready | 2026-10-21 <sub>created 2026-10-20</sub> | [plan](root-single-object-over-all-null-row-reads-as-null.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
@@ -658,7 +658,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R231` [**Emit text-mapped-enum fields as the GraphQL enum type, not String**](emit-text-mapped-enum-fields-as-enum-type.md) — Backlog, architecture
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
-- `R1080` [**A nullable root field returning one object over a row of nulls resolves to null, as v9 resolved it**](root-single-object-over-all-null-row-reads-as-null.md) — Spec, bug, blocked by [table-child-with-all-null-columns-reads-as-null](table-child-with-all-null-columns-reads-as-null.md)
+- `R1080` [**A nullable root field returning one object over a row of nulls resolves to null, as v9 resolved it**](root-single-object-over-all-null-row-reads-as-null.md) — Ready, bug, blocked by [table-child-with-all-null-columns-reads-as-null](table-child-with-all-null-columns-reads-as-null.md)
 - `R752` [**JoinedTableReprojection dedupes same-named participant terms first-wins, silently dropping a divergent projection**](joined-table-reprojection-first-wins-drop.md) — Backlog, bug
 - `R1022` [**A bean-typed @condition parameter on an interface or union field is built, not refused**](multitable-condition-bean-parameter.md) — Backlog, feature
 - `R412` [**Nested backing class emits $-qualified names at the no-Class-in-hand emit sites (backingClassOf, recordColumnReadArgs, FetcherEmitter, ChildField)**](nested-backing-class-emitter-lift.md) — Backlog, bug
