@@ -98,13 +98,12 @@ through the same cardinality fork `resultShapeOf` uses, so one producer mints th
 all three sources. If the pinning shows the single lookup is broken outright rather than merely
 list-shaped, that fix lands here, since this item cannot reach the lookup source without it.
 
-*Landed, ahead of R1069:* the pinning showed the single lookup broken outright: the launcher handed
-a one-slot `List` to an object field, so every selected subfield failed its cast to `Record`, for
-a matched key and an unmatched one alike. `lookupRow` now mints its shape through
+*As landed:* the pinning showed the single lookup broken outright: the launcher handed a one-slot
+`List` to an object field, so every selected subfield failed its cast to `Record`, for a matched
+key and an unmatched one alike. `lookupRow` now mints its shape through
 `LauncherCommands.cardinalityShape`, the fork `resultShapeOf` also reads, so a single lookup gets
-`SingleRecord` and the launcher's existing `fetchOne()` branch. Pinned by
-`RootNullContractPipelineTest` (both walks) and the sakila `Query.languageBySingleKey` cases in
-`GraphQLQueryTest`. The rest of this plan reads R1069's model and rendering pieces and waits on it.
+`SingleRecord` and the launcher's `fetchOne()` branch. Pinned by the sakila
+`Query.languageBySingleKey` cases in `GraphQLQueryTest`, first as the failure, then as the fix.
 
 **The command: a sealed null check on the single result shape.** `ResultShape.SingleRecord` gains one
 component, `NullCheck check`, a new sealed command type in `no.sikt.graphitron.command`:
@@ -232,6 +231,38 @@ table object stays an object over a row of nulls, where Graphitron 9 returned `n
 `ResultShape`'s class javadoc ("one record or null") and `SingleRecord`'s say that `null` now also
 means "nothing to show", and name the check.
 
+## Implementation notes
+
+R1069 landed while this item was in progress, under names that differ in places from the ones
+this plan anticipated. The landing follows R1069's:
+
+- The per-type fold is `GraphitronSchema.presenceOf(typeName)`, answering a
+  `Presence.SubtreePresence`; the contract is `Presence.NullContract.of(wrapper, presence)`, and
+  the schema-free walk folds `Presence.SubtreePresence.over` over the fields it was handed.
+  `LauncherCommands.RootPresence` carries the type-to-presence lookup and the probe glue resolver
+  the three root producers share.
+- The probe column's alias is R1069's `ReservedAliases.presenceProbe(type, field)`, keyed on the
+  root coordinate, rather than a new `ReservedAliases.PRESENCE`; R1069's probe already folds the
+  column-leaf guard into its `CASE WHEN`, so the launcher projects it through
+  `PresenceProbeFragments.declare` unchanged. `PresenceProbes.of` now takes any
+  `GraphitronField`, since a root field is not a `ChildField`.
+- `render.PresenceFragments.check` takes command-level inputs (column leaves, an optional probe
+  alias, the expression the columns are read off), since `render` may not borrow the model's
+  `Presence`. The launcher reads the columns off its own table local or the routine chain's
+  terminus alias. `FetcherEmitter.presenceCheck` stays as the adapter from a child's model
+  contract to that renderer, so R1069's three fetcher sites keep calling it; it no longer renders
+  anything itself. Those sites do not go through `NullChecks.of`: they render from the contract
+  at fetcher emission, where no condition relation exists to mint probe glue, and only need the
+  probe's alias. The child and the root share the one renderer rather than the one conversion.
+- A probe hop's filter is a `JoinConditionRef` naming a consumer class, not a generated unit, so
+  the compile graph adds edges only for each term's condition glue call.
+- The presence lookup also answers "not known" for a type holding a field that did not classify
+  as a child: `presenceOf` folds child fields only, so for such a type it would decide over part
+  of it, and with no child fields at all it yields the leafless contract `NullChecks.of` refuses.
+  Only an invalid schema has one, and the validator rejects it, but the classified corpus and the
+  pipeline harnesses produce launchers before validating. `NullChecks.of` still throws on a
+  leafless contract from a type the fold could read.
+
 ## Cost
 
 A nullable single root read of a collapsing type projects its column leaves always, a few columns
@@ -282,7 +313,8 @@ leaves include a never-null column is a follow-up for both items.
 ## Retired vocabulary
 
 - `ResultShape.SingleRecord()`, the nullary form (the record gains its `NullCheck`; the name stays).
-- `FetcherEmitter.presenceCheck` (lifted to `PresenceFragments.check`).
+- `FetcherEmitter.presenceCheck`'s own rendering (moved to `PresenceFragments.check`; the method
+  stays as the adapter from a child's contract, see "Implementation notes").
 - In the manual: "A field of `Query` ... return what they fetch" for a `Query` field returning one
   table object.
 

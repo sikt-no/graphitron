@@ -512,31 +512,22 @@ public final class FetcherEmitter {
     }
 
     /**
-     * The presence check over a {@code row} local: each column leaf is present when all its
-     * columns are non-null, the probe when its column is non-null, and the object,
-     * {@code present}, when any of them is. The probe column is read by name
-     * ({@link no.sikt.graphitron.command.ReservedAliases#presenceProbe}), keyed on the field, so
-     * one fetcher reads it at every site. Plain {@code if} statements: generated code targets
-     * Java 17.
+     * A child's presence check over a {@code row} local, rendered by
+     * {@link no.sikt.graphitron.render.PresenceFragments#check}, the emitter the root table
+     * read's launcher shares: the contract's column leaves read off the table's catalog constant,
+     * and the probe column read by name ({@link no.sikt.graphitron.command.ReservedAliases#presenceProbe}),
+     * keyed on the field, so one fetcher reads it at every site.
      */
     static CodeBlock presenceCheck(TableRef table, NullContract.CollapsesWhenAbsent contract,
             ChildField field, String present) {
-        var body = CodeBlock.builder();
-        for (var leaf : contract.columnLeaves()) {
-            body.add("if (");
-            for (int i = 0; i < leaf.columns().size(); i++) {
-                if (i > 0) body.add(" && ");
-                body.add("row.get($T.$L.$L) != null", CatalogRefs.constantsClass(table),
-                    table.javaFieldName(), leaf.columns().get(i).javaName());
-            }
-            body.add(") return $L;\n", present);
-        }
-        if (!contract.probes().isEmpty()) {
-            body.add("if (row.get($S) != null) return $L;\n",
-                no.sikt.graphitron.command.ReservedAliases.presenceProbe(field.parentTypeName(), field.name()),
-                present);
-        }
-        return body.add("return null;\n").build();
+        return no.sikt.graphitron.render.PresenceFragments.check(
+            CodeBlock.of("$T.$L", CatalogRefs.constantsClass(table), table.javaFieldName()),
+            contract.columnLeaves().stream().map(Presence.PresenceLeaf.Columns::columns).toList(),
+            contract.probes().isEmpty()
+                ? java.util.Optional.empty()
+                : java.util.Optional.of(no.sikt.graphitron.command.ReservedAliases.presenceProbe(
+                    field.parentTypeName(), field.name())),
+            present);
     }
 
     private static FetcherBinding bindRaw(

@@ -21,8 +21,17 @@ import java.util.Objects;
  */
 public sealed interface ResultShape {
 
-    /** One record or null: the {@code fetchOne()} shape, unordered by construction. */
-    record SingleRecord() implements ResultShape {}
+    /**
+     * One record or null: the {@code fetchOne()} shape, unordered by construction. {@code null}
+     * means no row, or, under a {@link NullCheck.Collapses} {@link #check}, a row holding nothing
+     * to show. Only the root table read's launcher renders a collapsing check; the command
+     * constructor refuses it on every other source.
+     */
+    record SingleRecord(NullCheck check) implements ResultShape {
+        public SingleRecord {
+            Objects.requireNonNull(check, "check");
+        }
+    }
 
     /**
      * The service arms' typed vacuity: a {@code @service}-delegating launcher's payload derives

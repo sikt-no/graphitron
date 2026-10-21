@@ -72,6 +72,22 @@ public record LauncherCommand(
                 "a fanned launcher's composition is a record list by classification; got "
                 + result.getClass().getSimpleName());
         }
+        // A collapsing null check is rendered only by the root table read's single arms, so it is
+        // admitted on exactly their three sources, an allow-list so that a new source minting a
+        // SingleRecord is refused until someone renders the check for it. Each refusal mirrors an
+        // owner: the batched single child checks in its field's continuation (one rows method can
+        // serve a nullable and a non-null site), the pivot answers a record of null slots and
+        // never a null record, the discriminated arms return interfaces (outside the rule), and a
+        // mutation's payload read returns what it fetches by choice.
+        if (result instanceof ResultShape.SingleRecord single
+                && single.check() instanceof NullCheck.Collapses
+                && !(source instanceof LaunchSource.AnchorTable
+                    || source instanceof LaunchSource.KeyedLookup
+                    || source instanceof LaunchSource.RoutineChain)) {
+            throw new IllegalArgumentException(
+                "a collapsing null check is rendered only on a root table read; got "
+                + source.getClass().getSimpleName());
+        }
         // A routine chain runs single-tenant: no fanned routine emission exists (the legacy path
         // failed generation on the pair). There is no result-axis half, the same absence the
         // discriminated arm below states: the chain paginates like any other root read, and the

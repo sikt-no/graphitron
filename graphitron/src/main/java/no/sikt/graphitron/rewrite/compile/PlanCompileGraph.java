@@ -8,6 +8,7 @@ import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ProjectionCommand;
+import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.UnitRef;
@@ -418,7 +419,15 @@ public final class PlanCompileGraph {
                     precise(owner, fanned.carrier());
                 }
                 switch (row.result()) {
-                    case ResultShape.SingleRecord ignored -> { }
+                    // A collapsing check's probe calls each probed field's condition glue, a
+                    // generated unit, from the launcher; a hop filter names a consumer class.
+                    case ResultShape.SingleRecord single -> {
+                        if (single.check() instanceof NullCheck.Collapses collapses) {
+                            collapses.probe().ifPresent(probe -> probe.terms().stream()
+                                .filter(term -> term.filter() != null)
+                                .forEach(term -> precise(owner, term.filter().method().owner())));
+                        }
+                    }
                     case ResultShape.LoaderDelegated ignored -> { }
                     case ResultShape.RecordList list -> addOrderingEdges(owner, list.ordering());
                     case ResultShape.Connection connection -> {

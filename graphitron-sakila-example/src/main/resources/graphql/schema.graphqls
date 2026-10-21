@@ -269,6 +269,14 @@ type Query {
     # serves all three sources.
     pivotHosts: [PivotNestingHost!]!
     presenceHosts(hostIds: [Int!] @field(name: "host_id")): [PresenceHost!]!
+    # The null contract at the root, over the same fixture: a nullable single read of a type
+    # that can hold nothing resolves to null when its row does, anchored or @lookupKey; a
+    # non-null one and a @nodeId type stay objects.
+    presenceDetail(detailId: Int @field(name: "detail_id")): PresenceDetail
+    presenceDetailByKey(detailId: Int! @lookupKey @field(name: "detail_id")): PresenceDetail
+    presenceDetailRequired(detailId: Int @field(name: "detail_id")): PresenceDetail!
+    presenceDetailNode(detailId: Int @field(name: "detail_id")): PresenceDetailNode
+    presenceHostRefs(hostId: Int @field(name: "host_id")): PresenceHostRefs
     hostLabelRows: [HostLabelsRow!]!
     filmSameRows: [FilmSameRow!]!
     pivotServiceTexts: TranslatedTexts @service(service: {
@@ -5739,6 +5747,12 @@ type PresenceHoldingsSplit {
 
 type PresenceItem @table(name: "presence_item") {
     name: String
+}
+
+# A host read at the root for its reference alone: it resolves to null when no detail row with a
+# value matches, the probe correlated on the root's own table.
+type PresenceHostRefs @table(name: "presence_host") {
+    detail: PresenceDetail @reference(path: [{key: "presence_detail_host_id_fkey"}])
 }
 
 # A plain nesting type holding only references joined from pivot_nesting_host.language_id: an

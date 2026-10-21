@@ -238,12 +238,11 @@ The example schema's `filmsOuterOverrideFilterInput` and `filmsOuterOverridePlai
 
 == Behavior divergence: when a single object resolves to `null`
 
-A nullable field of a table type returning one object resolves to `null` when the object would hold nothing, as in Graphitron 9, for a nested object without `@table` and for a child with its own table alike; see xref:map-types-to-tables.adoc#single-object-null[How-to: Map types to tables] under "When a single object resolves to `null`". These cases differ from Graphitron 9:
+A nullable field returning one object resolves to `null` when the object would hold nothing, as in Graphitron 9, for a nested object without `@table`, for a child with its own table and for a field of `Query` returning a table type alike; see xref:map-types-to-tables.adoc#single-object-null[How-to: Map types to tables] under "When a single object resolves to `null`". These cases differ from Graphitron 9:
 
 * Graphitron 9 decided from the fields it fetched, so with `optionalSelect` an unselected list or reference counted as `null`, while a selected empty list kept the object. The rewrite decides over every field whatever the query selects, and counts an empty list as nothing.
 * Graphitron 9 counted a `@splitQuery` field by the key it batched on, so an object holding one stayed an object whenever that key was set. The rewrite counts it by its value, the same as its inline form: an empty split list or a split reference that finds no row counts as nothing.
 * A type holding a list that takes arguments, a connection, an interface or union, an `@externalField`, a `@service` field, a field reached through a database routine, or a `@splitQuery` field read from another tenant's or the global database always resolves to an object.
-* A field of `Query` returning one table object stays an object over a row of nulls, where Graphitron 9 returned `null`.
 
 A client that tested such a field for `null` should test the fields inside it instead.
 

@@ -277,6 +277,9 @@ class HierarchyKindRegistryTest {
         Map.entry(no.sikt.graphitron.command.SelectTerm.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.Ordering.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.ResultShape.class, HierarchyKind.COMMAND),
+        // Whether a single read collapses a record holding nothing: a decision the launcher
+        // producer takes from the type's presence, not a fact the schema states.
+        Map.entry(no.sikt.graphitron.command.NullCheck.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.Invocation.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.TenantStrategy.class, HierarchyKind.COMMAND),
         Map.entry(no.sikt.graphitron.command.LaunchSource.class, HierarchyKind.COMMAND),

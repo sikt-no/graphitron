@@ -8,6 +8,7 @@ import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
+import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.plan.GeneratedUnits;
@@ -92,7 +93,7 @@ class RootLauncherRendererTest {
 
     @Test
     void singleRecordShape_fetchOneAndNoOrderBy() {
-        var m = render(filmsRow(null, new ResultShape.SingleRecord()));
+        var m = render(filmsRow(null, new ResultShape.SingleRecord(new NullCheck.None())));
         assertThat(m.returnType().toString()).isEqualTo("org.jooq.Record");
         assertThat(m.code().toString()).contains(".fetchOne();");
         assertThat(m.code().toString()).doesNotContain(".orderBy(");

@@ -131,6 +131,25 @@ class PlanCompileGraphTest {
     }
 
     @Test
+    void rootSingleReadWhoseProbeCarriesAConditionGetsAnEdgeToTheConditionUnit() {
+        // Query.film collapses over a row of nulls; its probe of Film.language calls that
+        // field's condition glue from the launcher, so the launcher's class recompiles with it.
+        GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle("""
+            type Query { film(title: String @field(name: "title")): Film }
+            type Film @table(name: "film") {
+              title: String
+              language: Language @reference(path: [{key: "film_language_id_fkey"}])
+                @condition(condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "lifterFieldCondition"})
+            }
+            type Language @table(name: "language") { name: String }
+            """);
+        var probed = PlanCompileGraph.fromPlan(EmitPlan.produceWithoutStore(bundle.model(),
+            bundle.federationLink(), bundle.usesOneOf(), PKG), bundle.model());
+        assertThat(probed.directReferences(UNITS.fetchers("Query")).stream().map(UnitRef::fqcn))
+            .contains(PKG + ".conditions.FilmConditions");
+    }
+
+    @Test
     void nodeLookupDelegatesToTheNodeFetcherUnit() {
         // node(id:) delegates to the QueryNodeFetcher dispatch unit (the fetcher edge relation's
         // row); the entry itself does not touch the encoder, so no NodeIdEncoder edge rides it.
