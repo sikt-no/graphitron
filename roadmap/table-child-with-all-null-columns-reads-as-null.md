@@ -1,7 +1,7 @@
 ---
 id: R1069
 title: "A single-row child whose projected values are all null resolves to null, as v9 resolved it"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 4
 theme: codegen-correctness
