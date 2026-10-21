@@ -236,14 +236,14 @@ Schemas that relied on the legacy "outer owns everything" silently dropping inne
 
 The example schema's `filmsOuterOverrideFilterInput` and `filmsOuterOverridePlainInput` fixtures pin the rewrite's behavior as a regression-fence. The full mechanics live in xref:condition-cascade.adoc[How-to: Stacking and overriding conditions] under "Divergence from legacy semantics".
 
-== Behavior divergence: nested objects holding a fetched field
+== Behavior divergence: when a single object resolves to `null`
 
-A nullable field returning a nested object type (one without `@table`, whose fields read the parent's columns) resolves to `null` when every field of the nested type would be null, as in Graphitron 9; see xref:map-types-to-tables.adoc[How-to: Map types to tables] under "Grouping columns into a nested object".
+A nullable field of a table type returning one object resolves to `null` when the object would hold nothing, as in Graphitron 9, for a nested object without `@table` and for a child with its own table alike; see xref:map-types-to-tables.adoc#single-object-null[How-to: Map types to tables] under "When a single object resolves to `null`". These cases differ from Graphitron 9:
 
-The divergence is in what counts. Graphitron 9 counted every field by its actual value, including every single `@reference` object and every correlated subquery. The rewrite decides from the parent row alone. Columns of the parent row count (including `@nodeId` fields and further nested objects of the same kind), and so does a reference to a single row, through the parent columns it joins from. Two cases differ from Graphitron 9:
-
-* A nested type that holds a list, a `@splitQuery` field, an `@externalField`, or a `@reference` joined by a `condition:` predicate rather than a key always resolves to an object, because those values are either never null or cost a subquery the client did not select.
-* A reference with a `condition:`, or one that enters from the far end of a foreign key, counts as present whenever its join columns are set, even when it resolves to `null`. A nested object holding nothing else then stays an object where Graphitron 9 returned `null`.
+* Graphitron 9 decided from the fields it fetched, so with `optionalSelect` an unselected list or reference counted as `null`, while a selected empty list kept the object. The rewrite decides over every field whatever the query selects, and counts an empty list as nothing.
+* Graphitron 9 counted a `@splitQuery` field by the key it batched on, so an object holding one stayed an object whenever that key was set. The rewrite counts it by its value, the same as its inline form: an empty split list or a split reference that finds no row counts as nothing.
+* A type holding a list that takes arguments, a connection, an interface or union, an `@externalField`, a `@service` field or a field reached through a database routine always resolves to an object.
+* A field of `Query` returning one table object stays an object over a row of nulls, where Graphitron 9 returned `null`.
 
 A client that tested such a field for `null` should test the fields inside it instead.
 
@@ -259,7 +259,7 @@ Every other directive on the legacy surface reads under the rewrite the same way
 * xref:../reference/directives/node.adoc[`@node`], xref:../reference/directives/nodeId.adoc[`@nodeId`]: unchanged contract. The migration work is the `@field(name:)` inference removal above, plus the two shapes it lists. `keyColumns:` migration semantics carry over (cursor invalidation on key changes).
 * xref:../reference/directives/condition.adoc[`@condition`]: same surface; the cascade divergence (above) is the only behavior change.
 * xref:../reference/directives/error.adoc[`@error`]: same handler-tuple surface, and `description:` keeps its Graphitron 9 contract of replacing the exception's message on `message:`. Two classify-time rejections are new: duplicate handler tuples, and `description:` on a `{handler: VALIDATION}` entry (the validator emits one error per constraint violation, each with its own interpolated message, so put the client-facing string on the constraint annotation's `message` attribute). xref:error-channel.adoc[How-to: The errors channel] covers the dispatch loop and the resolution order for `message:`.
-* Nested object types without `@table`: a nullable field returning one whose fields are columns of the parent row, or single references joined from them, still resolves to `null` when they all are null, decided over every field of the type whatever the query selects; a non-null field still always resolves to an object. The divergences are above.
+* A nullable field returning one object, nested without `@table` or with a table of its own: it still resolves to `null` when the object would hold nothing, decided over every field of the type whatever the query selects; a non-null field still always resolves to an object. The divergences are above.
 * A field returning a `@table` type bound to the parent's own table, with no xref:../reference/directives/reference.adoc[`@reference`]: it still reads the parent's own row, with Graphitron 9's null rule, and needs no `@splitQuery`. xref:map-types-to-tables.adoc#parents-own-row-as-table-type[Map types to tables] covers the shape.
 * xref:../reference/directives/lookupKey.adoc[`@lookupKey`], xref:../reference/directives/splitQuery.adoc[`@splitQuery`]: unchanged. Mid-migration schemas that mixed `@splitQuery` with `@notGenerated` (the legacy custom-batch-fetcher pattern) need to migrate the body to `@service` (above).
 

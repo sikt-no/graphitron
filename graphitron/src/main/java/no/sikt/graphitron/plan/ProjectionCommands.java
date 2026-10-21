@@ -193,18 +193,25 @@ public final class ProjectionCommands {
                 tableTargetContribution(schema, ttf, owner, units, glueEnvByMethod, nested);
             // The splice carries the field's own parent-row demand (the columns its null-collapse
             // check reads), read off the same accessor the fetcher emitter consumes.
+            // The probe rides beside it, minted from the same contract the fetcher emitter reads.
             case ChildField.NestingField nf -> {
                 var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
                 yield Optional.of(new Contribution.Call(nf.name(), nested2,
-                    new CallWrap.Splice(nf.parentRowColumns()), aliasOwnerOf(nf), aliasScopeOf(nf)));
+                    new CallWrap.Splice(nf.parentRowColumns(),
+                        probeOf(nf, schema.nullContractOf(nf), units, glueEnvByMethod)),
+                    aliasOwnerOf(nf), aliasScopeOf(nf)));
             }
             // The parent's own row through the return type's anchor unit, in a record scope of its
-            // own; the presence columns are the null contract's, read off the same schema fold the
-            // fetcher emitter consumes.
-            case ChildField.SameRowTableField srf -> Optional.of(new Contribution.Call(srf.name(),
-                units.typeClass(srf.returnType().returnTypeName()),
-                new CallWrap.SameRow(schema.sameRowNullContract(srf).presenceColumns()),
-                aliasOwnerOf(srf), aliasScopeOf(srf)));
+            // own; the presence columns and probe are the null contract's, read off the same
+            // schema fold the fetcher emitter consumes.
+            case ChildField.SameRowTableField srf -> {
+                var contract = schema.nullContractOf(srf);
+                yield Optional.of(new Contribution.Call(srf.name(),
+                    units.typeClass(srf.returnType().returnTypeName()),
+                    new CallWrap.SameRow(contract.presenceColumns(),
+                        probeOf(srf, contract, units, glueEnvByMethod)),
+                    aliasOwnerOf(srf), aliasScopeOf(srf)));
+            }
             case ChildField.ComputedField cmp -> Optional.of(new Contribution.Project(cmp.name(),
                 List.of(new SelectTerm.HelperCall(cmp.method())), aliasOwnerOf(cmp), aliasScopeOf(cmp)));
             case ChildField.PivotField pf -> {
@@ -300,6 +307,11 @@ public final class ProjectionCommands {
                     glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod)),
                 aliasOwnerOf(ttf), aliasScopeOf(ttf)));
         }
+        // A single inline child carries its null contract inside the multiset; a list has none.
+        var contract = ttf.returnType().wrapper() instanceof FieldWrapper.Single
+            ? schema.nullContractOf(ttf)
+            : new no.sikt.graphitron.rewrite.model.Presence.NullContract.AlwaysObject(
+                new no.sikt.graphitron.rewrite.model.Presence.NullContract.Reason.NotSingle());
         return Optional.of(new Contribution.Call(ttf.name(),
             units.typeClass(ttf.returnType().returnTypeName()),
             new CallWrap.Multiset(
@@ -311,8 +323,21 @@ public final class ProjectionCommands {
                 !(ttf.returnType().wrapper() instanceof FieldWrapper.Single)
                     && ttf.pagination() != null && ttf.pagination().first() != null,
                 glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod),
-                readsSelectedFieldArguments(ttf)),
+                readsSelectedFieldArguments(ttf),
+                contract.presenceColumns(),
+                probeOf(ttf, contract, units, glueEnvByMethod)),
             aliasOwnerOf(ttf), aliasScopeOf(ttf)));
+    }
+
+    /**
+     * The field's presence probe under {@code contract}, its terms' filters resolved off the
+     * condition relation like every other glue call this producer copies.
+     */
+    private static Optional<no.sikt.graphitron.command.PresenceProbe> probeOf(ChildField field,
+            no.sikt.graphitron.rewrite.model.Presence.NullContract contract, GeneratedUnits units,
+            Map<UnitMethodRef, Boolean> glueEnvByMethod) {
+        return PresenceProbes.of(field, contract, probe -> glueFor(probe.field().parentTypeName(),
+            probe.field().name(), probe.filters(), units, glueEnvByMethod));
     }
 
     /**

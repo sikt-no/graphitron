@@ -420,6 +420,46 @@ The plan answers this input in place: the non-null declaration and its one gap u
 the `phd` list under "The presence rule", and `navnAlleSprak` in the paragraph on same-table
 children there.
 
+## Implementation notes
+
+Where the delivery departs from, or settles, what the plan left open:
+
+- **The model.** `Presence` is a holder class in `rewrite.model` with `PresenceLeaf` (sealed:
+  `Columns`, `Probe`), `SubtreePresence`, `NullContract` and a `TypeFields` lookup nested in it.
+  `SubtreePresence.over(fields, types)` takes the lookup because an object reference probe reads
+  its target type's column leaves; `NestingField.nullContract(types)` follows, and
+  `parentRowColumns()` passes `TypeFields.none()`, sound because neither the columns nor the
+  blocked-or-not verdict depend on a target type. The schema fold is `presenceOf(typeName)`, and
+  `nullContractOf(field)` gives the contract at a use site for the four child kinds (a
+  `SourceShape.Record` batched child answers `AlwaysObject(RecordSource)`, gating payload data
+  fields out as the round-2 note suggested).
+- **Blockers the table did not list by name.** An inline `TableField` with an empty join path (the
+  uncorrelated own-table read) blocks rather than rendering an uncorrelated `EXISTS`. A list probes
+  only when it has no pagination, no argument ordering and no `@lookupKey`, and every probe's
+  filters must bind request context only.
+- **The probe command.** `PresenceProbe(alias, columnLeaves, terms)` carries the object's column
+  leaves beside the terms, so the `CASE` guard can test each leaf's absence (any of its columns
+  null) rather than a flat conjunction that would drop a value for a multi-column leaf. `ProbeTerm`
+  is nested in it. The alias is `ReservedAliases.presenceProbe(type, field)`, `__p_<Type>$<field>`.
+  `plan/PresenceProbes` mints it for both producers. `PresenceProbeFragments` renders it, declaring
+  its hop aliases as `presence<term>_<hop>` locals.
+- **The schema-free launcher walk.** A nesting-reached type's class renders its launchers through
+  `LauncherCommands.produceWithoutSchema`, which now takes the run's schema for the one fact the
+  fields cannot give, a batched single child's contract; a truly schema-free assembly passes
+  `null`, and its fetcher, also schema-free, checks nothing either.
+- **The validator.** `comparePresenceColumns` compares each site's leaves by name: column names for
+  a column leaf, the probed field for a probe. Sites whose references join from differently named
+  columns now pass, because the join columns no longer reach the fetcher. A pair whose probes
+  differ also differs in leaf class, so the nested-shape check rejects it first; the presence
+  comparison backstops it.
+- **`navnAlleSprak`.** No sis checkout or session was reachable from the implementing session, so
+  the return type could not be relayed. The pin uses the representative shape instead: a
+  same-table child of columns and a list (`HostLabelsWithFilms`, executed in
+  `SameRowTableChildExecutionTest`), the probe kind the old rule blocked on, plus a pipeline pin of
+  columns and a reference (`SameTableInlineChildPipelineTest`), which now counts by value. If
+  sis's type holds a kept blocker instead, it belongs in the migration guide's list; the reviewer
+  or the sis session should confirm.
+
 ## Reviewer findings
 
 ### Round 1: Spec → Ready, request revisions (session_01Gj4VEXhM5741X9PgponE9e, 2026-10-20)

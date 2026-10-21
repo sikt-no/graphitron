@@ -167,7 +167,7 @@ public class TypeFetcherGenerator {
                 // type does; in a single-tenant build both read as the single-tenant form.
                 result.add(generateTypeSpec(row.typeName(), wiring.returnType().table(), null, nestedFields,
                     assembled, outputPackage, schema, null,
-                    nestingReachedLaunchers(nestedFields, outputPackage, launchers),
+                    nestingReachedLaunchers(nestedFields, outputPackage, launchers, schema),
                     // The run's own rows rather than one derived from these fields: a
                     // nesting-reached type's children are never mutation roots, so every lookup
                     // against it comes back empty, which is exactly the behaviour this arm wants.
@@ -201,9 +201,9 @@ public class TypeFetcherGenerator {
      */
     static no.sikt.graphitron.plan.LauncherRelation nestingReachedLaunchers(
             List<GraphitronField> nestedFields, String outputPackage,
-            no.sikt.graphitron.plan.LauncherRelation runLaunchers) {
+            no.sikt.graphitron.plan.LauncherRelation runLaunchers, GraphitronSchema schema) {
         return no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(nestedFields, outputPackage,
-            runLaunchers.carrierDsl());
+            runLaunchers.carrierDsl(), schema);
     }
 
     /**
@@ -669,7 +669,8 @@ public class TypeFetcherGenerator {
                             "Graphitron generator bug (batched child dispatch): coordinate '"
                             + btf.qualifiedName() + "' has no launcher row;"
                             + " the producer's membership and this dispatch have drifted"));
-                    builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, parentSource, outputPackage, batchedRow));
+                    builder.addMethod(buildBatchedDataFetcher(ctx, btf, btf.returnType(), btf.sourceKey(), btf.lift(), parentTable, resultType, parentSource, outputPackage, batchedRow,
+                        presenceCollapse(ctx, btf)));
                     var dslDeclaration = batchedRow.tenancy()
                             instanceof no.sikt.graphitron.command.TenantStrategy.Single
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
@@ -803,7 +804,7 @@ public class TypeFetcherGenerator {
                             + " the producer's membership and this dispatch have drifted"));
                     builder.addMethod(buildBatchedDataFetcher(ctx, f, f.returnType(), f.sourceKey(),
                         f.lift(), parentTable, resultType, parentSource, outputPackage,
-                        interfaceBatchedRow));
+                        interfaceBatchedRow, CodeBlock.of("")));
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer.render(
                         interfaceBatchedRow, launchers.carrierDsl(),
                         TenantDslEmitter.resolve(ctx, f, outputPackage).declaration(),
@@ -6210,7 +6211,8 @@ public class TypeFetcherGenerator {
                     SourceKey sourceKey, KeyLift lift,
                     TableRef parentTable,
                     GraphitronType.ResultType resultType, ParentSourceBinding parentSource,
-                    String outputPackage, no.sikt.graphitron.command.LauncherCommand row) {
+                    String outputPackage, no.sikt.graphitron.command.LauncherCommand row,
+                    CodeBlock collapse) {
 
         boolean isList = returnType.wrapper().isList();
         // A fanned batched field's loader values are the merged marker-bearing element lists the
@@ -6259,7 +6261,9 @@ public class TypeFetcherGenerator {
                 RowsMethodCall.batchLoaderLambda(rowsMethodName, keyType, registration),
                 CodeBlock.of(""),
                 keyExtraction,
-                asyncWrapTail(resultValueType, outputPackage, Optional.empty(), handDown.handDown()),
+                CodeBlock.builder().add(collapse)
+                    .add(asyncWrapTail(resultValueType, outputPackage, Optional.empty(), handDown.handDown()))
+                    .build(),
                 dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
                 TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
         }
@@ -6288,9 +6292,39 @@ public class TypeFetcherGenerator {
             keyExtraction,
             fanned
                 ? fannedAsyncWrapTail(outputPackage)
-                : asyncWrapTail(resultValueType, outputPackage, Optional.empty()),
+                : CodeBlock.builder().add(collapse)
+                    .add(asyncWrapTail(resultValueType, outputPackage, Optional.empty()))
+                    .build(),
             dataLoaderSyncCatchBody(resultValueType, outputPackage, Optional.empty()),
             TenantDslEmitter.loaderNameDeclaration(ctx, field.name(), "name", outputPackage));
+    }
+
+    /**
+     * The null-contract step of a nullable single {@code @splitQuery} child, a
+     * {@code .thenApply(row -> ...)} ahead of the async wrap tail that collapses an absent object
+     * to {@code null} over the presence columns and probe its rows method selected beside the
+     * projection ({@link no.sikt.graphitron.command.LaunchSource.Correlated.Projected#presence()}).
+     * It runs in this field's own continuation, not in the rows method or the shared scatter, so
+     * a loader serving both a nullable and a non-null site never collapses the non-null one.
+     * Empty for a list, a record-sourced field, a contract that never collapses, and a
+     * schema-free assembly, whose rows method carries no presence columns either. Fan-out never
+     * meets it: {@code @tenantFanOut} rejects non-list fields.
+     */
+    private static CodeBlock presenceCollapse(TypeFetcherEmissionContext ctx, ChildField.BatchedTableField btf) {
+        if (btf.returnType().wrapper().isList()
+                || ctx.graphitronSchema() == null
+                || !(ctx.graphitronSchema().nullContractOf(btf)
+                    instanceof no.sikt.graphitron.rewrite.model.Presence.NullContract.CollapsesWhenAbsent c)) {
+            return CodeBlock.of("");
+        }
+        return CodeBlock.builder()
+            .add(".thenApply(row -> {\n")
+            .indent()
+            .add("if (row == null) return null;\n")
+            .add(FetcherEmitter.presenceCheck(btf.returnType().table(), c, btf, "row"))
+            .unindent()
+            .add("})\n")
+            .build();
     }
 
     /**

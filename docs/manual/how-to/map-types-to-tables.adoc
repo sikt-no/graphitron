@@ -171,11 +171,7 @@ type FilmRelease {
 }
 ----
 
-When the field is nullable and every field of the nested type would be null, the field resolves to `null` rather than to an object of nulls. This is decided over all the nested type's fields, whatever the query selects, so `release { year }` and `release { minutes }` agree on whether `release` is null. Declare the field non-null (`release: FilmRelease!`) to always get an object.
-
-A field of the nested type that follows a reference to a single row of another table also counts, through the parent's columns it joins from: when any of those columns is null the reference is null too. A reference with a `condition:`, or one that enters from the far end of a foreign key, can still be null when those columns are not, and then the nested object stays an object.
-
-A nested type that also holds a list, an xref:../reference/directives/externalField.adoc[`@externalField`], a xref:../reference/directives/splitQuery.adoc[`@splitQuery`] field, or a xref:../reference/directives/reference.adoc[`@reference`] joined by a `condition:` predicate rather than a key always resolves to an object.
+A nullable field returning the nested type resolves to `null` when the object would hold nothing; see <<single-object-null,When a single object resolves to `null`>>. Declare the field non-null (`release: FilmRelease!`) to always get an object.
 
 [#parents-own-row-as-table-type]
 == Returning the parent's own row as a table type
@@ -193,9 +189,26 @@ type FilmSummary @table(name: "film") {
 }
 ----
 
-`film { summary { title } }` returns each film's own title, in the same statement as the film. The field must be single-valued and take no arguments. The null rule is the nested-object one above: a nullable field resolves to `null` when every field of `FilmSummary` would be null.
+`film { summary { title } }` returns each film's own title, in the same statement as the film. The field must be single-valued and take no arguments. A nullable one resolves to `null` when the object would hold nothing; see <<single-object-null,When a single object resolves to `null`>>.
 
 With arguments, a xref:../reference/directives/condition.adoc[`@condition`] or a xref:../reference/directives/lookupKey.adoc[`@lookupKey`], the same field means something else: a read of the whole table narrowed by them, the same for every parent. `related(filter: FilmFilter): [Film!]` on `Film` returns the films matching the filter, whichever film it is selected under. A same-table field that is neither, a list or a single field with arguments that filter nothing, would read every row of the table under every parent and is rejected at build time. To reach other rows of the table related to the parent, state the self-referencing key with `@reference(path: [{key: ...}])`.
+
+[#single-object-null]
+== When a single object resolves to `null`
+
+A nullable field of a `@table` type, or of an object nested in one, that returns one object resolves to `null` when the object would hold nothing: every column it reads is `null`, every single xref:../reference/directives/reference.adoc[`@reference`] in it finds no value, and every list in it is empty. A child with its own `@table` also resolves to `null` when no row matches. This is decided over all of the type's fields, whatever the query selects, so `address { __typename }` and `address { street }` agree on whether `address` is `null`. xref:../reference/directives/splitQuery.adoc[`@splitQuery`] does not change the answer.
+
+[source,graphql]
+----
+type Customer @table {
+    address: Address @splitQuery   # null when the row is missing or every column of it is null
+    billing: Address!              # always an object; an error if no row matches
+}
+----
+
+Declare the field non-null to always get an object. A type holding a list that takes arguments, a connection, an interface or union, an xref:../reference/directives/externalField.adoc[`@externalField`], a xref:../reference/directives/service.adoc[`@service`] field, or a field reached through a database routine always resolves to an object, because whether it holds anything depends on the query or on code outside the table's rows. A type with a xref:../reference/directives/nodeId.adoc[`@nodeId`] field, or a field reading a column that is never `null`, never resolves to `null` while its row exists.
+
+The rule is for fields of table types. A field of `Query`, a field returning an interface or union, and a `@service` field return what they fetch, so a row of nulls there is an object.
 
 == Constraints and pitfalls
 

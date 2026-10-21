@@ -7,6 +7,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.OutputField;
+import no.sikt.graphitron.rewrite.model.Presence;
 import no.sikt.graphitron.rewrite.model.ReachableSourceShape;
 import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
@@ -470,21 +471,46 @@ public record GraphitronSchema(
     }
 
     /**
-     * The null contract of a same-row table child: the {@link no.sikt.graphitron.rewrite.model.ChildField.NestingField} rule
-     * ({@link no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract#of}) over every field of the child's return
-     * type, whatever the query selects. A pure per-type fold over this schema's own components
-     * (the {@link #nestingReach} precedent), read by both the projection producer, which projects
-     * the presence columns, and the fetcher emitter, which checks them, so the two cannot
-     * disagree. A same-row child met among the return type's fields blocks the collapse, which
-     * terminates a same-table cycle.
+     * The presence of an object of type {@code typeName}: the {@link Presence} rule's leaves over
+     * every field of the type, whatever the query selects, or the field that blocks the collapse.
+     * A pure per-type fold over this schema's own components (the {@link #nestingReach}
+     * precedent), read by both the projection producer, which projects the presence columns and
+     * the probe, and the fetcher emitter, which checks them, so the two cannot disagree. A
+     * same-row child met among the type's fields blocks the collapse, which terminates a
+     * same-table cycle.
      */
-    public no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract sameRowNullContract(
-            no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField field) {
-        var returnFields = fieldsOf(field.returnType().returnTypeName()).stream()
+    public Presence.SubtreePresence presenceOf(String typeName) {
+        var fields = fieldsOf(typeName).stream()
             .filter(no.sikt.graphitron.rewrite.model.ChildField.class::isInstance)
             .map(no.sikt.graphitron.rewrite.model.ChildField.class::cast)
             .toList();
-        return no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract.of(field.returnType().wrapper(), returnFields);
+        return Presence.SubtreePresence.over(fields, this::fieldsOf);
+    }
+
+    /**
+     * The null contract of a single-object child the {@link Presence} rule decides: a nesting
+     * field over its own per-edge fields, a child with a table of its own over its return type's
+     * {@link #presenceOf presence}. A batched child of a producer-handed record (a
+     * {@code @service} or DML payload's data field) is outside the rule and always an object.
+     *
+     * @throws IllegalArgumentException for a field kind the rule does not reach
+     */
+    public Presence.NullContract nullContractOf(no.sikt.graphitron.rewrite.model.ChildField field) {
+        return switch (field) {
+            case no.sikt.graphitron.rewrite.model.ChildField.NestingField nf -> nf.nullContract(this::fieldsOf);
+            case no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField srf ->
+                Presence.NullContract.of(srf.returnType().wrapper(), presenceOf(srf.returnType().returnTypeName()));
+            case no.sikt.graphitron.rewrite.model.ChildField.TableField tf ->
+                Presence.NullContract.of(tf.returnType().wrapper(), presenceOf(tf.returnType().returnTypeName()));
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf
+                    when btf.sourceShape() == no.sikt.graphitron.rewrite.model.SourceShape.Record ->
+                new Presence.NullContract.AlwaysObject(new Presence.NullContract.Reason.RecordSource());
+            case no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf ->
+                Presence.NullContract.of(btf.returnType().wrapper(), presenceOf(btf.returnType().returnTypeName()));
+            default -> throw new IllegalArgumentException(
+                "the presence rule does not reach '" + field.qualifiedName() + "' ("
+                + field.getClass().getSimpleName() + ")");
+        };
     }
 
     /**

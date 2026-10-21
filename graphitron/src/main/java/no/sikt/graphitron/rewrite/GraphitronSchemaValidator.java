@@ -5,7 +5,8 @@ import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract;
+import no.sikt.graphitron.rewrite.model.Presence;
+import no.sikt.graphitron.rewrite.model.Presence.NullContract;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.JoinStep;
@@ -1530,16 +1531,16 @@ public class GraphitronSchemaValidator {
 
     /**
      * An inner nesting field's fetcher is emitted once, on the shared nested type's fetchers class,
-     * from the representative site's {@link ChildField.NestingField#nullContract() null contract}.
-     * Column leaves already agree by name across sites; a reference leaf's join columns do not,
-     * because a reference's join path is per anchor. So when either site collapses an absent
-     * wrapper, both must, over the same column names per leaf.
+     * from the representative site's {@link ChildField.NestingField#nullContract null contract}: it
+     * reads the column leaves by name and the probe column by the field's alias. So when either
+     * site collapses an absent wrapper, both must, over the same column names per leaf and the
+     * same probed fields, since one fetcher reads one probe alias at every site.
      */
     private void comparePresenceColumns(ChildField.NestingField rep, ChildField.NestingField other,
                                         String nestedTypeName, String repParent, String otherParent,
                                         String coord, List<ValidationError> errors) {
-        var repLeaves = presenceColumnNames(rep.nullContract());
-        var otherLeaves = presenceColumnNames(other.nullContract());
+        var repLeaves = presenceLeafNames(rep.nullContract(Presence.TypeFields.none()));
+        var otherLeaves = presenceLeafNames(other.nullContract(Presence.TypeFields.none()));
         if (repLeaves.equals(otherLeaves)) {
             return;
         }
@@ -1547,18 +1548,25 @@ public class GraphitronSchemaValidator {
             coord,
             Rejection.structural("Nested type '" + nestedTypeName + "' shared across '" + repParent
                 + "' and '" + otherParent + "': field '" + rep.name() + "' decides whether it is null "
-                + "from columns " + describePresence(repLeaves) + " on the first but "
+                + "from " + describePresence(repLeaves) + " on the first but "
                 + describePresence(otherLeaves) + " on the second, and one generated fetcher serves "
-                + "every site. Split the nested type into one per parent, or make its references "
-                + "join from same-named columns"),
+                + "every site. Split the nested type into one per parent, or make both sites hold "
+                + "the same columns and references"),
             other.location()));
     }
 
-    /** Per-leaf column names of a collapsing contract; empty for a wrapper that never collapses. */
-    private static List<List<String>> presenceColumnNames(NullContract contract) {
+    /**
+     * Per-leaf names of a collapsing contract: a column leaf's column names, a probe's probed
+     * field; empty for a wrapper that never collapses.
+     */
+    private static List<List<String>> presenceLeafNames(NullContract contract) {
         return switch (contract) {
             case NullContract.CollapsesWhenAbsent c -> c.leaves().stream()
-                .map(l -> l.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName).toList())
+                .map(l -> switch (l) {
+                    case Presence.PresenceLeaf.Columns cols ->
+                        cols.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName).toList();
+                    case Presence.PresenceLeaf.Probe probe -> List.of("probe of " + probe.field().name());
+                })
                 .toList();
             case NullContract.AlwaysObject ignored -> List.of();
         };

@@ -99,6 +99,18 @@ public final class BatchedRowsFragments {
             ProjectionCall.fromLauncher(className(chain.projection()), prelude.terminalAlias(), row));
         body.addStatement("selectFields.add(parentInput.field(0, $T.class).as($S))",
             Integer.class, IDX_COLUMN);
+        // A single child's null contract: the presence columns its fetcher checks (skipped when
+        // the projection already selects one) and its probe, both over the terminal row, so the
+        // field's own continuation can collapse an absent object without another statement.
+        for (var column : chain.presence()) {
+            body.beginControlFlow("if (!selectFields.contains($L.$L))", prelude.terminalAlias(), column.javaName());
+            body.addStatement("selectFields.add($L.$L)", prelude.terminalAlias(), column.javaName());
+            body.endControlFlow();
+        }
+        if (chain.probe().isPresent()) {
+            body.addStatement("selectFields.add($L)",
+                PresenceProbeFragments.declare(body, chain.probe().get(), prelude.terminalAlias(), ""));
+        }
 
         // The lookup sibling's key-set narrowing: the emitted input-rows helper's typed
         // Row<M+1>[] (idx + one cell per @lookupKey slot), the arm-entailed empty-input

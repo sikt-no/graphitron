@@ -7,6 +7,9 @@ import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
+import no.sikt.graphitron.rewrite.model.Presence.NullContract;
+import no.sikt.graphitron.command.CallWrap;
+import no.sikt.graphitron.command.Contribution;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -167,17 +170,17 @@ class NestingFieldPipelineTest {
     @Test
     void nullableWrapper_collapsesOverOneLeafPerColumn() {
         var nf = (NestingField) TestSchemaHelper.buildSchema(RELEASE_SDL).field("Film", "release");
-        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.CollapsesWhenAbsent.class,
-            c -> assertThat(c.leaves())
+        assertThat(contractOf(RELEASE_SDL, "Film", "release")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
+            c -> assertThat(c.columnLeaves())
                 .extracting(l -> l.columns().stream().map(col -> col.sqlName()).toList())
                 .containsExactly(List.of("release_year"), List.of("length")));
+        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("release_year", "length");
     }
 
     @Test
     void nonNullWrapper_isAlwaysAnObject() {
-        var nf = (NestingField) TestSchemaHelper.buildSchema(RELEASE_SDL).field("Film", "releaseRequired");
-        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
-            c -> assertThat(c.reason()).isInstanceOf(NestingField.NullContract.Reason.NonNull.class));
+        assertThat(contractOf(RELEASE_SDL, "Film", "releaseRequired")).isInstanceOfSatisfying(NullContract.AlwaysObject.class,
+            c -> assertThat(c.reason()).isInstanceOf(NullContract.Reason.NonNull.class));
     }
 
     @Test
@@ -188,38 +191,73 @@ class NestingFieldPipelineTest {
         assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "release", "RELEASE_YEAR")).isTrue();
         assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "release", "LENGTH")).isTrue();
         assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "releaseRequired", "RELEASE_YEAR")).isFalse();
+        assertThat(splice(RELEASE_SDL, "Film", "release").probe()).isEmpty();
+    }
+
+    private static final String LIST_NESTING_SDL = """
+        type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
+        type FilmInfo {
+            year: Int @field(name: "RELEASE_YEAR")
+            cast: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+        }
+        type Film @table(name: "film") { info: FilmInfo }
+        type Query { film: Film }
+        """;
+
+    @Test
+    void argumentFreeListChild_probesForAnyRow() {
+        // The phd shape: an object of columns and a list resolves to null when the columns are
+        // null and the list is empty, so the list is a probe over its own two-hop path.
+        assertThat(contractOf(LIST_NESTING_SDL, "Film", "info")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
+            c -> assertThat(c.probes()).singleElement().satisfies(p -> {
+                assertThat(p.field()).isInstanceOf(ChildField.TableField.class);
+                assertThat(p.joinPath()).hasSize(2);
+                assertThat(p.targetColumns()).isEmpty();
+            }));
+        var probe = splice(LIST_NESTING_SDL, "Film", "info").probe().orElseThrow();
+        assertThat(probe.alias()).isEqualTo("__p_Film$info");
+        assertThat(probe.columnLeaves()).extracting(l -> l.get(0).sqlName()).containsExactly("release_year");
+        assertThat(probe.terms()).singleElement().satisfies(t -> {
+            assertThat(t.reach().size()).isEqualTo(2);
+            assertThat(t.filter()).isNull();
+            assertThat(t.targetColumns()).isEmpty();
+        });
     }
 
     @Test
-    void listReferenceChild_blocksTheCollapse() {
-        var schema = TestSchemaHelper.buildSchema("""
+    void listChildTakingArguments_blocksTheCollapse() {
+        var sdl = """
             type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
             type FilmInfo {
                 year: Int @field(name: "RELEASE_YEAR")
-                cast: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+                cast(firstName: String @field(name: "FIRST_NAME")): [Actor!]!
+                    @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
             }
             type Film @table(name: "film") { info: FilmInfo }
             type Query { film: Film }
-            """);
-        var nf = (NestingField) schema.field("Film", "info");
-        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
-            c -> assertThat(c.reason()).isInstanceOfSatisfying(NestingField.NullContract.Reason.BlockedBy.class,
-                b -> assertThat(b.blocker()).isInstanceOf(ChildField.TableField.class)));
-        assertThat(nf.parentRowColumns()).isEmpty();
+            """;
+        assertThat(contractOf(sdl, "Film", "info")).isInstanceOfSatisfying(NullContract.AlwaysObject.class,
+            c -> assertThat(c.reason()).isInstanceOfSatisfying(NullContract.Reason.BlockedBy.class,
+                b -> assertThat(b.blocker().name()).isEqualTo("cast")));
+        var splice = splice(sdl, "Film", "info");
+        assertThat(splice.callerDemand()).isEmpty();
+        assertThat(splice.probe()).isEmpty();
     }
 
     @Test
-    void splitQueryChild_blocksTheCollapse() {
-        var nf = (NestingField) TestSchemaHelper.buildSchema(SPLIT_NESTING_SDL).field("Film", "info");
-        assertThat(nf.nullContract()).isInstanceOfSatisfying(NestingField.NullContract.AlwaysObject.class,
-            c -> assertThat(c.reason()).isInstanceOfSatisfying(NestingField.NullContract.Reason.BlockedBy.class,
-                b -> assertThat(b.blocker()).isInstanceOf(ChildField.BatchedTableField.class)));
+    void splitQueryChild_probesExactlyAsItsInlineForm() {
+        assertThat(contractOf(SPLIT_NESTING_SDL, "Film", "info")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
+            c -> assertThat(c.probes()).singleElement().satisfies(p -> {
+                assertThat(p.field()).isInstanceOf(ChildField.BatchedTableField.class);
+                assertThat(p.joinPath()).hasSize(2);
+            }));
+        assertThat(splice(SPLIT_NESTING_SDL, "Film", "info").probe()).isPresent();
     }
 
     // ===== Reference leaves =====
 
     @Test
-    void singleFkReference_countsThroughItsJoinColumnAndTheSpliceProjectsIt() {
+    void singleFkReference_probesItsTargetsColumnsAndTheSpliceCarriesTheProbe() {
         var sdl = """
             type Language @table(name: "language") { name: String }
             type FilmInfo {
@@ -230,15 +268,19 @@ class NestingFieldPipelineTest {
             type Query { film: Film }
             """;
         var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Film", "info");
-        assertThat(nf.nullContract()).isInstanceOf(NestingField.NullContract.CollapsesWhenAbsent.class);
-        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName())
-            .containsExactly("release_year", "original_language_id");
-        var filmType = findType("Film", sdl);
-        assertThat(TypeSpecAssertions.armProjectsColumn(filmType, "info", "ORIGINAL_LANGUAGE_ID")).isTrue();
+        // The join column no longer stands in for the reference: a set column whose target row is
+        // missing (the studiesemesterPeriode shape) must still collapse, so the probe asks for a
+        // referenced row holding a non-null column of Language.
+        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("release_year");
+        var probe = splice(sdl, "Film", "info").probe().orElseThrow();
+        assertThat(probe.terms()).singleElement().satisfies(t -> {
+            assertThat(t.reach().size()).isEqualTo(1);
+            assertThat(t.targetColumns()).extracting(c -> c.sqlName()).containsExactly("name");
+        });
     }
 
     @Test
-    void twoHopScalarReference_checksOnlyTheFirstHopsParentColumn() {
+    void twoHopScalarReference_probesItsColumnOverTheWholePath() {
         var sdl = """
             type AddressInfo {
                 country: String @field(name: "COUNTRY")
@@ -249,24 +291,28 @@ class NestingFieldPipelineTest {
             """;
         var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Address", "info");
         assertThat(nf.nestedFields()).singleElement().isInstanceOf(ChildField.ColumnBackedReferenceField.class);
-        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("city_id");
-        assertThat(TypeSpecAssertions.armProjectsColumn(findType("Address", sdl), "info", "CITY_ID")).isTrue();
+        assertThat(nf.parentRowColumns()).isEmpty();
+        var probe = splice(sdl, "Address", "info").probe().orElseThrow();
+        assertThat(probe.columnLeaves()).isEmpty();
+        assertThat(probe.terms()).singleElement().satisfies(t -> {
+            assertThat(t.reach().size()).isEqualTo(2);
+            assertThat(t.targetColumns()).extracting(c -> c.sqlName()).containsExactly("country");
+        });
     }
 
     @Test
-    void reverseFkReference_leafIsTheParentsOwnKey() {
-        // Entering from the far end of the key, the join columns are the parent's primary key,
-        // never null on a fetched row: the wrapper stays an object, as the contract allows.
+    void conditionJoinedReference_probes() {
         var sdl = """
-            type Film @table(name: "film") { title: String }
-            type LanguageInfo {
-                someFilm: Film @reference(path: [{key: "film_language_id_fkey"}])
+            type Language @table(name: "language") { name: String }
+            type FilmInfo {
+                spoken: Language @reference(path: [{condition: {className: "no.sikt.graphitron.rewrite.TestConditionStub", method: "join"}}])
             }
-            type Language @table(name: "language") { info: LanguageInfo }
-            type Query { language: Language }
+            type Film @table(name: "film") { info: FilmInfo }
+            type Query { film: Film }
             """;
-        var nf = (NestingField) TestSchemaHelper.buildSchema(sdl).field("Language", "info");
-        assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("language_id");
+        assertThat(contractOf(sdl, "Film", "info")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
+            c -> assertThat(c.probes()).singleElement()
+                .satisfies(p -> assertThat(p.field().name()).isEqualTo("spoken")));
     }
 
     private static final String SHARED_INNER_REFERENCE_SDL = """
@@ -287,15 +333,11 @@ class NestingFieldPipelineTest {
     }
 
     @Test
-    void sharedNestedType_innerReferenceJoinedFromDifferentlyNamedColumns_rejects() {
-        // One fetcher on the shared Wrap type serves Wrap.inner at both sites and reads the
-        // representative's join column, which the other site's row does not carry.
-        assertThat(sharedInnerReferenceErrors("Content", "content", "Endorsement", "film_endorsement"))
-            .singleElement().satisfies(m -> assertThat(m)
-                .contains("Nested type 'Wrap' shared across 'Content' and 'Endorsement'")
-                .contains("field 'inner'")
-                .contains("[[film_id]]", "[[endorsed_film]]")
-                .contains("Split the nested type"));
+    void sharedNestedType_innerReferenceJoinedFromDifferentlyNamedColumns_passes() {
+        // One fetcher on the shared Wrap type serves Wrap.inner at both sites and reads its probe
+        // alias, which each site's splice projects over that site's own join path; the join
+        // columns no longer reach the fetcher, so their names need not agree.
+        assertThat(sharedInnerReferenceErrors("Content", "content", "Endorsement", "film_endorsement")).isEmpty();
     }
 
     @Test
@@ -310,6 +352,17 @@ class NestingFieldPipelineTest {
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Type class not found: " + className));
+    }
+
+    private static NullContract contractOf(String sdl, String type, String field) {
+        var schema = TestSchemaHelper.buildSchema(sdl);
+        return schema.nullContractOf((ChildField) schema.field(type, field));
+    }
+
+    private static CallWrap.Splice splice(String sdl, String type, String field) {
+        var contribution = ProjectionRenderTestSupport.contribution(TestSchemaHelper.buildSchema(sdl),
+            DEFAULT_OUTPUT_PACKAGE, type, field);
+        return (CallWrap.Splice) ((Contribution.Call) contribution).wrap();
     }
 
     private static Map<String, CodeBlock> fetcherBodies(String sdl) {

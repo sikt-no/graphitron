@@ -180,12 +180,18 @@ public final class ProjectionUnitRenderer {
                             : CodeBlock.of("entry.getKey() + $S", ReservedAliases.RESULT_KEY_PATH_DELIMITER);
                         var callee = ProjectionCall.fromOccurrences(c.callee(),
                             CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), path, outputPackage);
-                        if (s.callerDemand().isEmpty()) {
+                        if (s.callerDemand().isEmpty() && s.probe().isEmpty()) {
                             builder.addCode("        case $S -> fields.addAll($L);\n", c.field(), callee);
                         } else {
                             builder.addCode("        case $S -> {\n", c.field());
                             for (var column : s.callerDemand()) {
                                 builder.addCode("            fields.add(table.$L);\n", column.javaName());
+                            }
+                            if (s.probe().isPresent()) {
+                                var probeCode = CodeBlock.builder();
+                                var probe = PresenceProbeFragments.declare(probeCode, s.probe().get(), "table", "            ");
+                                builder.addCode("$L", probeCode.build());
+                                builder.addCode("            fields.add($L);\n", probe);
                             }
                             builder.addCode("            fields.addAll($L);\n", callee);
                             builder.addCode("        }\n");
@@ -292,7 +298,7 @@ public final class ProjectionUnitRenderer {
         var code = CodeBlock.builder();
         var callee = ProjectionCall.fromOccurrences(c.callee(),
             CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage);
-        if (sr.presence().isEmpty()) {
+        if (sr.presence().isEmpty() && sr.probe().isEmpty()) {
             code.addStatement("fields.add($T.multiset($T.select($L)).as($L))",
                 DSL, DSL, callee, rkAlias(c));
             return code.build();
@@ -300,6 +306,9 @@ public final class ProjectionUnitRenderer {
         code.addStatement("$T<$T> sameRow = new $T<>()", SET, fieldWildcard(), LINKED_HASH_SET);
         for (var column : sr.presence()) {
             code.addStatement("sameRow.add(table.$L)", column.javaName());
+        }
+        if (sr.probe().isPresent()) {
+            code.addStatement("sameRow.add($L)", PresenceProbeFragments.declare(code, sr.probe().get(), "table", ""));
         }
         code.addStatement("sameRow.addAll($L)", callee);
         code.addStatement("fields.add($T.multiset($T.select(sameRow)).as($L))",
@@ -335,8 +344,26 @@ public final class ProjectionUnitRenderer {
             declareHopAliases(argHelpers, code, m.path(), aliases, "");
         }
 
+        var callee = ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
+            CodeBlock.of("$L", terminalAlias), outputPackage);
+        CodeBlock selectList = callee;
+        if (!m.presence().isEmpty() || m.probe().isPresent()) {
+            // A single child's null contract reads its presence columns and probe off the child's
+            // own row, so both land inside the multiset beside the callee's fields, the way the
+            // same-row arm lands them; one set, so a column both project lands once.
+            code.addStatement("$T<$T> single = new $T<>()", SET, fieldWildcard(), LINKED_HASH_SET);
+            for (var column : m.presence()) {
+                code.addStatement("single.add($L.$L)", terminalAlias, column.javaName());
+            }
+            if (m.probe().isPresent()) {
+                code.addStatement("single.add($L)",
+                    PresenceProbeFragments.declare(code, m.probe().get(), terminalAlias, ""));
+            }
+            code.addStatement("single.addAll($L)", callee);
+            selectList = CodeBlock.of("single");
+        }
         code.addStatement("fields.add($T.multiset($L).as($L))",
-            DSL, multisetInnerSelect(c, m, terminalAlias, outputPackage), rkAlias(c));
+            DSL, multisetInnerSelect(m, terminalAlias, selectList), rkAlias(c));
         return code.build();
     }
 
@@ -350,14 +377,12 @@ public final class ProjectionUnitRenderer {
      * reads legitimately see the ancestor environment, while the field's own runtime argument
      * reads route through the canonical {@code SelectedField} in this arm.
      */
-    private static CodeBlock multisetInnerSelect(Contribution.Call c, CallWrap.Multiset m,
-            String terminalAlias, String outputPackage) {
+    private static CodeBlock multisetInnerSelect(CallWrap.Multiset m, String terminalAlias,
+            CodeBlock selectList) {
         var path = m.path();
         var aliases = path.isEmpty() ? List.<String>of() : PathFragments.generateAliases(path);
         var sel = CodeBlock.builder();
-        sel.add("$T.select($L)", DSL,
-            ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
-                CodeBlock.of("$L", terminalAlias), outputPackage));
+        sel.add("$T.select($L)", DSL, selectList);
         sel.add("\n        .from($L)", path.isEmpty() ? terminalAlias : aliases.get(0));
         for (int i = 1; i < path.size(); i++) {
             switch (path.get(i)) {

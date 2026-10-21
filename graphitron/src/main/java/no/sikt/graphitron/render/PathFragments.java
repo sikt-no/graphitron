@@ -1,5 +1,6 @@
 package no.sikt.graphitron.render;
 
+import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
@@ -242,6 +243,38 @@ public final class PathFragments {
                 where.add(andFormat, emitTwoArgMethodCall(hop.filter(), srcAlias, aliases.get(i)));
             }
         }
+    }
+
+    /**
+     * The correlated {@code EXISTS} over a non-empty reach:
+     * {@code DSL.exists(DSL.selectOne().from(terminal)<walk-back joins>.where(<correlation>
+     * .and(<hop filters>).and(<inner>)))}, correlated on {@code correlatedAlias}. Two rails render
+     * it: the condition rail, for a filter reaching through an FK-target path (correlated on the
+     * condition method's {@code table}), and a presence probe (correlated on the row the probed
+     * object is read from). Only the inner expression differs between callers.
+     *
+     * <p>Every {@code On} arm is dispatched here, hop by hop: the walk-back joins through
+     * {@link #emitBackwardBridging} and the hop-0 correlation through {@link #hopZeroCorrelation}.
+     * A hop's own {@code filter()} predicate (the {@code {key:, condition:}} author form, which
+     * folds its condition onto the hop rather than becoming the hop's {@code ON}) rides the same
+     * {@link #appendHopFilters} call the projection rail's scalar subselect makes; omitting it
+     * would emit a filter wider than the schema declares.
+     */
+    public static CodeBlock reachExists(ReachPath reach, List<String> hopAliases, String correlatedAlias,
+            CodeBlock inner) {
+        var sel = CodeBlock.builder();
+        sel.add("$T.selectOne()", DSL);
+        sel.add("\n        .from($L)", hopAliases.get(hopAliases.size() - 1));
+        for (int i = reach.size() - 1; i >= 1; i--) {
+            sel.add("\n        $L", emitBackwardBridging(
+                reach.hop(i), hopAliases.get(i - 1), hopAliases.get(i), "condition-reach"));
+        }
+        var where = CodeBlock.builder();
+        where.add("$L", hopZeroCorrelation(reach.hop(0), hopAliases.get(0), correlatedAlias));
+        appendHopFilters(where, reach.hops(), hopAliases, correlatedAlias, ".and($L)");
+        where.add(".and($L)", inner);
+        sel.add("\n        .where($L)", where.build());
+        return CodeBlock.of("$T.exists($L)", DSL, sel.build());
     }
 
     /**

@@ -255,36 +255,6 @@ public final class ConditionGlueRenderer {
         return aliases;
     }
 
-    /**
-     * The correlated {@code EXISTS} every non-empty reach renders:
-     * {@code DSL.exists(DSL.selectOne().from(terminal)<walk-back joins>.where(<correlation>
-     * .and(<hop filters>).and(<inner>)))}. Shared by both arms; only the inner expression differs
-     * (a column term against the terminal alias, or the developer call receiving it).
-     *
-     * <p>Every {@code On} arm is dispatched by {@link PathFragments}, hop by hop: the walk-back
-     * joins through {@link PathFragments#emitBackwardBridging} and the hop-0 correlation through
-     * {@link PathFragments#hopZeroCorrelation}. A hop's own {@code filter()} predicate (the
-     * {@code {key:, condition:}} author form, which folds its condition onto the hop rather than
-     * becoming the hop's {@code ON}) rides the same {@link PathFragments#appendHopFilters} call
-     * the projection rail's scalar subselect makes; omitting it would emit a filter wider than the
-     * schema declares.
-     */
-    static CodeBlock reachExists(ReachPath reach, List<String> hopAliases, CodeBlock inner) {
-        var sel = CodeBlock.builder();
-        sel.add("$T.selectOne()", DSL);
-        sel.add("\n        .from($L)", hopAliases.get(hopAliases.size() - 1));
-        for (int i = reach.size() - 1; i >= 1; i--) {
-            sel.add("\n        $L", PathFragments.emitBackwardBridging(
-                reach.hop(i), hopAliases.get(i - 1), hopAliases.get(i), "condition-reach"));
-        }
-        var where = CodeBlock.builder();
-        where.add("$L", PathFragments.hopZeroCorrelation(reach.hop(0), hopAliases.get(0), "table"));
-        PathFragments.appendHopFilters(where, reach.hops(), hopAliases, "table", ".and($L)");
-        where.add(".and($L)", inner);
-        sel.add("\n        .where($L)", where.build());
-        return CodeBlock.of("$T.exists($L)", DSL, sel.build());
-    }
-
     // ------------------------------------------------------------------------------------------
     // Terms and authored calls
     // ------------------------------------------------------------------------------------------
@@ -294,7 +264,7 @@ public final class ConditionGlueRenderer {
             return columnCompare(term, "table");
         }
         var hopAliases = aliasesByReach.get(term.reach());
-        return reachExists(term.reach(), hopAliases,
+        return PathFragments.reachExists(term.reach(), hopAliases, "table",
             columnCompare(term, hopAliases.get(hopAliases.size() - 1)));
     }
 
@@ -463,7 +433,7 @@ public final class ConditionGlueRenderer {
             return authoredCall(authored.method(), "table", authored.bindings());
         }
         var hopAliases = aliasesByReach.get(authored.reach());
-        return reachExists(authored.reach(), hopAliases,
+        return PathFragments.reachExists(authored.reach(), hopAliases, "table",
             authoredCall(authored.method(), hopAliases.get(hopAliases.size() - 1), authored.bindings()));
     }
 

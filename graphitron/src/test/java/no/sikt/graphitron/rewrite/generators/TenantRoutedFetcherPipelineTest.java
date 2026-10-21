@@ -475,7 +475,7 @@ class TenantRoutedFetcherPipelineTest {
             DEFAULT_OUTPUT_PACKAGE);
         java.util.List<no.sikt.graphitron.rewrite.model.GraphitronField> nested =
             java.util.List.copyOf(schema.nestingReach().wiringFor(nestingType).nestedFields());
-        return TypeFetcherGenerator.nestingReachedLaunchers(nested, DEFAULT_OUTPUT_PACKAGE, run);
+        return TypeFetcherGenerator.nestingReachedLaunchers(nested, DEFAULT_OUTPUT_PACKAGE, run, null);
     }
 
     @Test

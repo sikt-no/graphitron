@@ -158,6 +158,19 @@ class SameRowTableChildExecutionTest {
         assertThat(hosts.get(2)).containsEntry("labelsRow", null);
     }
 
+    /**
+     * The sis {@code Karakter.navnAlleSprak} shape: a same-table child whose type holds a list
+     * besides its columns. Host 2's columns are null and its language is unset, so the list is
+     * empty and the child resolves to null, as Graphitron 9 resolved it; host 3 carries nb.
+     */
+    @Test
+    void sameTableChildHoldingAList_withColumnsNullAndTheListEmpty_resolvesToNull() {
+        var hosts = hosts("labelsWithFilms { nn nb languageFilms { title } }");
+        assertThat(hosts.get(2)).containsEntry("labelsWithFilms", null);
+        assertThat(child(hosts.get(3), "labelsWithFilms")).containsEntry("nb", "nb-only");
+        assertThat(hosts("labelsWithFilms { nn }").get(2)).containsEntry("labelsWithFilms", null);
+    }
+
     @Test
     void narrowedForm_readsTheFilteredRows_theSameUnderEveryParent() {
         var films = films("sameTableById(filmId: 2) { filmId title }");

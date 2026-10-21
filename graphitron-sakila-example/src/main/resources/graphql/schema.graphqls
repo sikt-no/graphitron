@@ -268,6 +268,7 @@ type Query {
     # the class-backed PivotTexts @service result. One registered fetcher per slot coordinate
     # serves all three sources.
     pivotHosts: [PivotNestingHost!]!
+    presenceHosts(hostIds: [Int!] @field(name: "host_id")): [PresenceHost!]!
     hostLabelRows: [HostLabelsRow!]!
     filmSameRows: [FilmSameRow!]!
     pivotServiceTexts: TranslatedTexts @service(service: {
@@ -5650,6 +5651,7 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
     labelsRequired: HostLabels!
     origin: HostOrigin
     labelsRow: HostLabelsRow
+    labelsWithFilms: HostLabelsWithFilms
 }
 
 # The table-type twin of HostLabels, returned on its own by Query.hostLabelRows: reached from
@@ -5660,6 +5662,16 @@ type HostLabelsRow @table(name: "pivot_nesting_host") {
     nb: String
 }
 
+# The shape of a same-table child holding more than columns (sis's Karakter.navnAlleSprak): reached
+# from PivotNestingHost.labelsWithFilms it reads the host's own row, two nullable columns and the
+# films in the host's language. It resolves to null when both columns are null and the list is
+# empty, where an object of nulls came back while a list blocked the collapse.
+type HostLabelsWithFilms @table(name: "pivot_nesting_host") {
+    nn: String
+    nb: String
+    languageFilms: [Film!]! @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}, {key: "film_language_id_fkey"}])
+}
+
 # A plain nesting type over two of pivot_nesting_host's nullable columns, reached once nullable and
 # once non-null: the nullable field resolves to null when both columns are, the non-null one to an
 # object of nulls.
@@ -5668,9 +5680,60 @@ type HostLabels {
     nb: String
 }
 
+# The null contract of a single-object child, over presence_host and its presence_detail and
+# presence_item children (see init.sql for the five hosts). Every reference here enters from the
+# child's end of its key, so it joins on the host's primary key, which is always set: whether the
+# object resolves to null turns on the referenced rows and their values alone.
+type PresenceHost @table(name: "presence_host") {
+    hostId: Int! @field(name: "host_id")
+    # A child with a table of its own, inline and @splitQuery: null when no row matches or every
+    # column of the row is null.
+    detail: PresenceDetail @reference(path: [{key: "presence_detail_host_id_fkey"}])
+    detailSplit: PresenceDetail @splitQuery @reference(path: [{key: "presence_detail_host_id_fkey"}])
+    # Non-null: always an object, even over a row of nulls.
+    detailRequired: PresenceDetail! @reference(path: [{key: "presence_detail_host_id_fkey"}])
+    # A type with a @nodeId field never collapses while its row exists.
+    detailNode: PresenceDetailNode @reference(path: [{key: "presence_detail_host_id_fkey"}])
+    # A nested object of references whose join column is set but whose target row may be missing.
+    detailRefs: PresenceDetailRefs
+    # Nested objects of a column and an argument-free list, inline and @splitQuery.
+    holdings: PresenceHoldings
+    holdingsSplit: PresenceHoldingsSplit
+}
+
+type PresenceDetail @table(name: "presence_detail") {
+    street: String
+    city: String
+}
+
+type PresenceDetailNode implements Node @table(name: "presence_detail") @node {
+    id: ID! @nodeId
+    street: String
+}
+
+type PresenceDetailRefs {
+    street: String @field(name: "STREET") @reference(path: [{key: "presence_detail_host_id_fkey"}])
+    city: String @field(name: "CITY") @reference(path: [{key: "presence_detail_host_id_fkey"}])
+}
+
+type PresenceHoldings {
+    label: String
+    items: [PresenceItem!]! @reference(path: [{key: "presence_item_host_id_fkey"}])
+}
+
+type PresenceHoldingsSplit {
+    label: String
+    items: [PresenceItem!]! @splitQuery @reference(path: [{key: "presence_item_host_id_fkey"}])
+}
+
+type PresenceItem @table(name: "presence_item") {
+    name: String
+}
+
 # A plain nesting type holding only references joined from pivot_nesting_host.language_id: an
 # object reference through the implicit foreign key and a scalar read through @reference. The
-# nullable field resolves to null when language_id is, whichever of the two the query selects.
+# nullable field resolves to null when no language row matches, whichever of the two the query
+# selects.
 type HostOrigin {
     language: Language
     languageName: String @field(name: "NAME")

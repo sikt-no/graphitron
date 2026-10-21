@@ -13,11 +13,12 @@ import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
+import no.sikt.graphitron.rewrite.model.Presence;
+import no.sikt.graphitron.rewrite.model.Presence.NullContract;
 import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.model.SourceEnvelope;
 import no.sikt.graphitron.rewrite.model.SourceKey;
@@ -432,11 +433,12 @@ public final class FetcherEmitter {
     }
 
     /**
-     * The nesting fetcher's body: a source passthrough, guarded by the per-leaf presence check
-     * when {@link ChildField.NestingField#nullContract()} collapses an absent wrapper. Each leaf
-     * is present when all its columns are non-null, and the wrapper when any leaf is. The
-     * columns are always on the row: the field's splice projects its
-     * {@link ChildField.NestingField#parentRowColumns() demand} whenever it is selected.
+     * The nesting fetcher's body: a source passthrough, guarded by the presence check when
+     * {@link ChildField.NestingField#nullContract} collapses an absent wrapper. The columns and
+     * the probe are always on the row: the field's splice projects its
+     * {@link ChildField.NestingField#parentRowColumns() demand} and its probe whenever it is
+     * selected. The contract is read without a type lookup: a probe's target columns shape only
+     * the SQL, while the fetcher reads the probe's alias alone.
      *
      * <p>An inner nesting field's fetcher lives on the shared nesting type's fetchers class and
      * reads the representative site's table constants; every reuse site agrees on leaf class and
@@ -444,11 +446,11 @@ public final class FetcherEmitter {
      * so the constants resolve by name on any site's record, as the column leaves' reads do.
      */
     private static CodeBlock nestingBody(ChildField.NestingField nf) {
-        return switch (nf.nullContract()) {
+        return switch (nf.nullContract(Presence.TypeFields.none())) {
             case NullContract.AlwaysObject ignored -> CodeBlock.of("return source;\n");
             case NullContract.CollapsesWhenAbsent c -> CodeBlock.builder()
                 .add("$T row = ($T) source;\n", RECORD, RECORD)
-                .add(presenceCheck(nf.returnType().table(), c.leaves(), "source"))
+                .add(presenceCheck(nf.returnType().table(), c, nf, "source"))
                 .build();
         };
     }
@@ -456,34 +458,47 @@ public final class FetcherEmitter {
     /**
      * The same-row child's fetcher body: unwrap the single-row multiset aliased
      * {@code __rk_<resultKey>} (the projection's same-row arm), then apply the null contract over
-     * the presence columns projected inside it. The row handed on holds the return type's
-     * projection, as a root or multiset read of that type does, plus those presence columns, so
-     * the return type's own fetchers read it unchanged.
+     * the presence columns and probe projected inside it. The row handed on holds the return
+     * type's projection, as a root or multiset read of that type does, plus those presence
+     * columns, so the return type's own fetchers read it unchanged.
      */
     private static CodeBlock sameRowBody(ChildField.SameRowTableField srf, NullContract contract,
+            String outputPackage) {
+        return singleRowBody(srf, srf.returnType().table(), contract, outputPackage);
+    }
+
+    /**
+     * The fetcher body of a child read as a single-row multiset aliased {@code __rk_<resultKey>}:
+     * unwrap the row, then apply {@code contract} over the presence columns and probe the
+     * projection placed inside the multiset beside the child's fields.
+     */
+    private static <F extends ChildField & ResultKeyAliasedField> CodeBlock singleRowBody(F field, TableRef table, NullContract contract,
             String outputPackage) {
         var resultClass = ClassName.get("org.jooq", "Result");
         var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
         var body = CodeBlock.builder()
             .add("Object raw = (($T) env.getSource()).get($L, $T.class);\n",
-                RECORD, resultKeyAliasRead(srf, outputPackage), resultClass)
+                RECORD, resultKeyAliasRead(field, outputPackage), resultClass)
             .add("if (!(raw instanceof $T r) || r.isEmpty()) return null;\n", resultWildcard)
             .add("$T row = r.get(0);\n", RECORD);
         return switch (contract) {
             case NullContract.AlwaysObject ignored -> body.add("return row;\n").build();
-            case NullContract.CollapsesWhenAbsent c ->
-                body.add(presenceCheck(srf.returnType().table(), c.leaves(), "row")).build();
+            case NullContract.CollapsesWhenAbsent c -> body.add(presenceCheck(table, c, field, "row")).build();
         };
     }
 
     /**
-     * The per-leaf presence check over a {@code row} local: each leaf is present when all its
-     * columns are non-null, and the wrapper, {@code present}, when any leaf is.
+     * The presence check over a {@code row} local: each column leaf is present when all its
+     * columns are non-null, the probe when its column is non-null, and the object,
+     * {@code present}, when any of them is. The probe column is read by name
+     * ({@link no.sikt.graphitron.command.ReservedAliases#presenceProbe}), keyed on the field, so
+     * one fetcher reads it at every site. Plain {@code if} statements: generated code targets
+     * Java 17.
      */
-    private static CodeBlock presenceCheck(TableRef table, List<ChildField.NestingField.PresenceLeaf> leaves,
-            String present) {
+    static CodeBlock presenceCheck(TableRef table, NullContract.CollapsesWhenAbsent contract,
+            ChildField field, String present) {
         var body = CodeBlock.builder();
-        for (var leaf : leaves) {
+        for (var leaf : contract.columnLeaves()) {
             body.add("if (");
             for (int i = 0; i < leaf.columns().size(); i++) {
                 if (i > 0) body.add(" && ");
@@ -491,6 +506,11 @@ public final class FetcherEmitter {
                     table.javaFieldName(), leaf.columns().get(i).javaName());
             }
             body.add(") return $L;\n", present);
+        }
+        if (!contract.probes().isEmpty()) {
+            body.add("if (row.get($S) != null) return $L;\n",
+                no.sikt.graphitron.command.ReservedAliases.presenceProbe(field.parentTypeName(), field.name()),
+                present);
         }
         return body.add("return null;\n").build();
     }
@@ -503,7 +523,7 @@ public final class FetcherEmitter {
             return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(nf));
         }
         if (field instanceof ChildField.SameRowTableField srf) {
-            return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.sameRowNullContract(srf), outputPackage));
+            return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.nullContractOf(srf), outputPackage));
         }
         if (field instanceof ChildField.SingleRecordIdFieldFromReturning idCarrier) {
             // Payload-returning DELETE carrier: read the PK column(s) off each RETURNING row and
@@ -572,16 +592,22 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.TableField tf) {
             boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
             if (single) {
-                var resultClass = ClassName.get("org.jooq", "Result");
-                var resultWildcard = ParameterizedTypeName.get(resultClass, WildcardTypeName.subtypeOf(Object.class));
                 // Env-dependent: the single-record multiset is aliased __rk_<resultKey>, so unwrap
-                // the Result read by the runtime result key (aliased duplicates each read their own).
-                CodeBlock body = CodeBlock.builder()
-                    .add("Object raw = (($T) env.getSource()).get($L, $T.class);\n",
-                        RECORD, resultKeyAliasRead(tf, outputPackage), resultClass)
-                    .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
-                    .build();
-                return envDependent(field.name(), fetchersClass, body);
+                // the Result read by the runtime result key (aliased duplicates each read their own),
+                // then collapse an absent object by the null contract the projection's multiset
+                // arm projected the presence columns and probe for. Without a schema (a model-only
+                // assembly) the projection carries neither, so the row is returned as it is.
+                if (schema == null) {
+                    var resultWildcard = ParameterizedTypeName.get(ClassName.get("org.jooq", "Result"),
+                        WildcardTypeName.subtypeOf(Object.class));
+                    return envDependent(field.name(), fetchersClass, CodeBlock.builder()
+                        .add("Object raw = (($T) env.getSource()).get($L, $T.class);\n",
+                            RECORD, resultKeyAliasRead(tf, outputPackage), ClassName.get("org.jooq", "Result"))
+                        .add("return raw instanceof $T r && !r.isEmpty() ? r.get(0) : null;\n", resultWildcard)
+                        .build());
+                }
+                return envDependent(field.name(), fetchersClass,
+                    singleRowBody(tf, tf.returnType().table(), schema.nullContractOf(tf), outputPackage));
             }
             return columnByAlias(field.name(), fetchersClass, tf, outputPackage);
         }

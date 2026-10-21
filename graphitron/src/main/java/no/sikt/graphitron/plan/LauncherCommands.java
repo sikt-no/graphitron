@@ -491,6 +491,19 @@ public final class LauncherCommands {
      */
     public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
             String outputPackage, CarrierDsl carrierDsl) {
+        return produceWithoutSchema(fields, outputPackage, carrierDsl, null);
+    }
+
+    /**
+     * {@link #produceWithoutSchema(List, String, CarrierDsl)} for a nesting-reached type's class,
+     * whose run does have a schema: {@code presenceSchema} answers a batched single child's null
+     * contract ({@link GraphitronSchema#nullContractOf}), the one fact the rows need that the
+     * fields alone cannot give, since it reads the child's return type. {@code null} for a
+     * schema-free assembly, whose batched children then carry no presence check, the same answer
+     * the fetcher emitter reaches without a schema.
+     */
+    public static LauncherRelation produceWithoutSchema(List<? extends GraphitronField> fields,
+            String outputPackage, CarrierDsl carrierDsl, GraphitronSchema presenceSchema) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         // The schema view's stand-in for the alias-owner projection: a schema-free assembly's own
@@ -534,7 +547,10 @@ public final class LauncherCommands {
                     var glue = glueFromFilters(btf.parentTypeName(), btf.name(), btf.filters(), units);
                     yield mapping != null
                         ? batchedLookupRow(btf, mapping, glue, new TenantStrategy.Single(), units)
-                        : batchedRow(btf, glue, new TenantStrategy.Single(), units);
+                        : batchedRow(btf, glue, new TenantStrategy.Single(), units,
+                            presenceSchema == null ? NO_PRESENCE : presenceOf(btf, presenceSchema,
+                                probe -> glueFromFilters(probe.field().parentTypeName(),
+                                    probe.field().name(), probe.filters(), units)));
                 }
                 case ChildField.BatchedPivotField bpf -> batchedPivotRow(bpf, units);
                 // The residence split is a classified-schema fact, the root interface arm's
@@ -849,18 +865,39 @@ public final class LauncherCommands {
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf,
             GraphitronSchema schema, ConditionRelation conditions, GeneratedUnits units) {
         return batchedRow(btf, whereOf(btf.parentTypeName(), btf.name(), conditions),
-            tenancyOf(schema, btf.parentTypeName(), btf.name(), units), units);
+            tenancyOf(schema, btf.parentTypeName(), btf.name(), units), units,
+            presenceOf(btf, schema, probe -> whereOf(probe.field().parentTypeName(), probe.field().name(), conditions)));
+    }
+
+    /** A batched child's presence slots: the columns its fetcher checks and its probe. */
+    private record ChainPresence(List<no.sikt.graphitron.model.jooq.ColumnRef> columns,
+            java.util.Optional<no.sikt.graphitron.command.PresenceProbe> probe) {}
+
+    private static final ChainPresence NO_PRESENCE = new ChainPresence(List.of(), java.util.Optional.empty());
+
+    /**
+     * The presence slots of a batched child: its null contract's columns and probe when the
+     * field is single, nothing for a list, whose rows method serves no null contract.
+     */
+    private static ChainPresence presenceOf(
+            no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf, GraphitronSchema schema,
+            java.util.function.Function<no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe, GlueCall> glueOf) {
+        if (!btf.emitsSingleRecordPerKey() || btf.returnType().wrapper().isList()) {
+            return NO_PRESENCE;
+        }
+        var contract = schema.nullContractOf(btf);
+        return new ChainPresence(contract.presenceColumns(), PresenceProbes.of(btf, contract, glueOf));
     }
 
     private static LauncherCommand batchedRow(
             no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField btf,
-            GlueCall where, TenantStrategy tenancy, GeneratedUnits units) {
+            GlueCall where, TenantStrategy tenancy, GeneratedUnits units, ChainPresence presence) {
         return new LauncherCommand(
             units.rowsMethod(btf.parentTypeName(), btf.name()),
             FieldCoordinates.coordinates(btf.parentTypeName(), btf.name()),
             new LaunchSource.CorrelatedChain(btf.returnType().table(),
                 units.typeClass(btf.returnType().returnTypeName()),
-                btf.joinPath(), btf.parentCorrelation()),
+                btf.joinPath(), btf.parentCorrelation(), presence.columns(), presence.probe()),
             where,
             new Invocation.Batched(btf.sourceKey(), btf.loaderRegistration()),
             tenancy,

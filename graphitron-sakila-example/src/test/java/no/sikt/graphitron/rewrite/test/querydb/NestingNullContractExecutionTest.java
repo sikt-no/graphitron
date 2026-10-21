@@ -23,9 +23,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * returning the same type always resolves to an object. Fixture: {@code PivotNestingHost.labels}
  * and {@code labelsRequired}, both {@code HostLabels} over {@code pivot_nesting_host.nn} and
  * {@code nb}; host 1 carries both columns, host 2 neither, host 3 only {@code nb}. A reference
- * counts through the parent column it joins from: {@code PivotNestingHost.origin} is a
- * {@code HostOrigin} holding only references from {@code pivot_nesting_host.language_id}, set on
- * host 1 and null on hosts 2 and 3.
+ * counts by the row it reaches: {@code PivotNestingHost.origin} is a {@code HostOrigin} holding
+ * only references from {@code pivot_nesting_host.language_id}, which reaches a language on host 1
+ * and nothing on hosts 2 and 3. The references-and-lists cases over a join column that is always
+ * set are {@code TableChildNullContractExecutionTest}'s.
  */
 @ExecutionTier
 @SuppressWarnings("unchecked")
@@ -96,12 +97,12 @@ class NestingNullContractExecutionTest {
     }
 
     @Test
-    void referenceOnlyWrapper_withItsJoinColumnNull_resolvesToNull() {
+    void referenceOnlyWrapper_reachingNoRow_resolvesToNull() {
         assertThat(hosts("origin { languageName language { name } }").get(2)).containsEntry("origin", null);
     }
 
     @Test
-    void referenceOnlyWrapper_withItsJoinColumnSet_resolvesToAnObject() {
+    void referenceOnlyWrapper_reachingARow_resolvesToAnObject() {
         var origin = (Map<String, Object>) hosts("origin { languageName language { name } }").get(1).get("origin");
         // language.name is char(20), so the value arrives space-padded.
         assertThat(((String) origin.get("languageName")).trim()).isEqualTo("Italian");
@@ -110,8 +111,8 @@ class NestingNullContractExecutionTest {
 
     @Test
     void referencePresence_isDecidedOverEveryField_notTheSelection() {
-        // The scalar and the object reference share one join column, so selecting either agrees
-        // on whether origin is null.
+        // The scalar and the object reference both count whatever the query selects, so selecting
+        // either agrees on whether origin is null.
         var byScalar = hosts("origin { languageName }");
         var byObject = hosts("origin { language { name } }");
         assertThat(byScalar.get(1).get("origin")).isNotNull();

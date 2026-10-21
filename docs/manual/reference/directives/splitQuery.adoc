@@ -105,6 +105,7 @@ type Film @table(name: "film") {
 * Composes with xref:lookupKey.adoc[`@lookupKey`]: the lookup key narrows the per-parent batch (each parent's child list filtered by the caller-provided keys).
 * On root (`Query`/`Mutation`) fields and on fields with arguments, `@splitQuery` is irrelevant; those always have explicit data fetchers. The directive is silently ignored there.
 * Nullable FKs on parent-holds-FK single-cardinality fields short-circuit to `null` *before* dispatching to the DataLoader (saves a round-trip when no parents have a non-null FK value).
+* Does not change whether a nullable single object resolves to `null`: a split field answers exactly as its inline form, within the same batched statement, and a split field inside an object counts toward that object by its value. See xref:../../how-to/map-types-to-tables.adoc#single-object-null[When a single object resolves to `null`].
 
 == See also
 

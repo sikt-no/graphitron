@@ -106,7 +106,7 @@ class ConditionGlueRendererTest {
     @Test
     void reachExists_predicateHopZero_wrapsTheDeveloperCallAsTheCorrelation() {
         var reach = new ReachPath(List.of(predicateHop()));
-        var code = ConditionGlueRenderer.reachExists(reach, List.of("table_fkt0_0"), INNER).toString();
+        var code = PathFragments.reachExists(reach, List.of("table_fkt0_0"), "table", INNER).toString();
         assertThat(code)
             .contains("org.jooq.impl.DSL.exists(")
             .contains(".from(table_fkt0_0)")
@@ -122,7 +122,7 @@ class ConditionGlueRendererTest {
         var terminal = actorFkHop();
         var reach = new ReachPath(List.of(predicateHop(), terminal));
         var aliases = List.of("table_fkt0_0", "table_fkt0_1");
-        var code = ConditionGlueRenderer.reachExists(reach, aliases, INNER).toString();
+        var code = PathFragments.reachExists(reach, aliases, "table", INNER).toString();
         assertThat(code)
             .contains(".from(table_fkt0_1)")
             .contains(PathFragments.emitBackwardBridging(
@@ -136,7 +136,7 @@ class ConditionGlueRendererTest {
         // hop's ON. Omitting it emits a filter wider than the schema declares: rows the author's
         // predicate excludes come back. Source is the parent local at hop 0.
         var reach = new ReachPath(List.of(fkHop(stubCondition("splitFilterParentIncluded"))));
-        var code = ConditionGlueRenderer.reachExists(reach, List.of("table_fkt0_0"), INNER).toString();
+        var code = PathFragments.reachExists(reach, List.of("table_fkt0_0"), "table", INNER).toString();
         assertThat(code).contains(
             ".where(table_fkt0_0.FILM_ID.eq(table.FILM_ID)"
             + ".and(no.sikt.graphitron.rewrite.TestConditionStub.splitFilterParentIncluded(table, table_fkt0_0))"
@@ -148,7 +148,7 @@ class ConditionGlueRendererTest {
         // The shape every shipped reach renders, pinned so the hop-filter conjunct above is
         // visibly conditional on a hop carrying one rather than always present.
         var reach = new ReachPath(List.of(fkHop(null)));
-        var code = ConditionGlueRenderer.reachExists(reach, List.of("table_fkt0_0"), INNER).toString();
+        var code = PathFragments.reachExists(reach, List.of("table_fkt0_0"), "table", INNER).toString();
         assertThat(code).contains(".where(table_fkt0_0.FILM_ID.eq(table.FILM_ID).and(inner()))");
     }
 

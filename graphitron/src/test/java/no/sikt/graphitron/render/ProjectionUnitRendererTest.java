@@ -134,7 +134,7 @@ class ProjectionUnitRendererTest {
         // these arms would have no single read to agree with, since one nesting type may sit under
         // several anchors and graphql-java registers one fetcher per coordinate.
         var row = filmRow(List.of(new Contribution.Call("details",
-            UNITS.nestingUnit("Film", "FilmDetails"), new CallWrap.Splice(List.of()),
+            UNITS.nestingUnit("Film", "FilmDetails"), new CallWrap.Splice(List.of(), java.util.Optional.empty()),
             AliasOwner.qualifiedBy("FanAlpha"), no.sikt.graphitron.rewrite.model.AliasScope.rowOwner())));
         var body = projectMethod(render(row)).code().toString();
         assertThat(body).contains("case \"details\" -> fields.addAll(");

@@ -81,6 +81,18 @@ public sealed interface LaunchSource {
         sealed interface Projected extends Correlated
                 permits CorrelatedChain, CorrelatedLookupChain {
             UnitRef projection();
+
+            /**
+             * Columns of the terminal row a single child's fetcher checks for its null contract,
+             * added to the rows method's select list beside the projection; empty for a list.
+             */
+            List<ColumnRef> presence();
+
+            /**
+             * A single child's presence probe, correlated on the terminal alias and added to the
+             * rows method's select list; empty for a list or a contract with no probe terms.
+             */
+            java.util.Optional<PresenceProbe> probe();
         }
     }
 
@@ -95,13 +107,16 @@ public sealed interface LaunchSource {
      * reads, one derivation per fact.
      */
     record CorrelatedChain(TableRef table, UnitRef projection, List<JoinStep> joinPath,
-            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation)
+            no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
+            List<ColumnRef> presence, java.util.Optional<PresenceProbe> probe)
             implements Correlated.Projected {
         public CorrelatedChain {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(projection, "projection");
             joinPath = List.copyOf(joinPath);
             Objects.requireNonNull(correlation, "correlation");
+            presence = List.copyOf(presence);
+            Objects.requireNonNull(probe, "probe");
         }
     }
 
@@ -120,6 +135,19 @@ public sealed interface LaunchSource {
             no.sikt.graphitron.rewrite.model.ParentCorrelation correlation,
             LookupMapping.ColumnMapping mapping, UnitMethodRef inputRows)
             implements Correlated.Projected {
+        /**
+         * Always empty: a single {@code @lookupKey} child is rejected at classification, so this
+         * arm only ever serves a list, which has no null contract.
+         */
+        @Override public List<ColumnRef> presence() {
+            return List.of();
+        }
+
+        /** Always empty, for the reason {@link #presence()} gives. */
+        @Override public java.util.Optional<PresenceProbe> probe() {
+            return java.util.Optional.empty();
+        }
+
         public CorrelatedLookupChain {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(projection, "projection");

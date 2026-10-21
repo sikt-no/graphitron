@@ -10,6 +10,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Optional;
 
 /**
  * How a {@link Contribution.Call}'s callee fields arrive in this unit's projection. The axis is
@@ -42,10 +43,13 @@ public sealed interface CallWrap {
      *                     the field is selected. The demand belongs to the calling field, not the
      *                     callee: one nesting unit serves every site of its type under an anchor,
      *                     and only some of them read columns the selection may leave out.
+     * @param probe        the calling field's presence probe, projected beside its demand over
+     *                     this unit's row, or empty when its null contract has no probe terms
      */
-    record Splice(List<ColumnRef> callerDemand) implements CallWrap {
+    record Splice(List<ColumnRef> callerDemand, Optional<PresenceProbe> probe) implements CallWrap {
         public Splice {
             callerDemand = List.copyOf(callerDemand);
+            Objects.requireNonNull(probe, "probe");
         }
     }
 
@@ -60,10 +64,13 @@ public sealed interface CallWrap {
      *
      * @param presence columns of this unit's row the calling field's fetcher checks for its null
      *                 contract, projected inside the multiset ahead of the callee's fields
+     * @param probe    the calling field's presence probe, projected inside the multiset and
+     *                 correlated on this unit's row, or empty when its contract has no probe terms
      */
-    record SameRow(List<ColumnRef> presence) implements CallWrap {
+    record SameRow(List<ColumnRef> presence, Optional<PresenceProbe> probe) implements CallWrap {
         public SameRow {
             presence = List.copyOf(presence);
+            Objects.requireNonNull(probe, "probe");
         }
     }
 
@@ -93,6 +100,12 @@ public sealed interface CallWrap {
      *                        serving the canonical occurrence's arguments (true exactly when the
      *                        emitted arm reads runtime state off the canonical
      *                        {@code SelectedField})
+     * @param presence        columns of the callee's row the calling field's fetcher checks for
+     *                        its null contract, projected inside the single-row multiset beside
+     *                        the callee's fields; empty on a {@link Arity#LIST} arity
+     * @param probe           the calling field's presence probe, projected inside the multiset
+     *                        and correlated on the callee's row; empty on a {@link Arity#LIST}
+     *                        arity
      */
     record Multiset(
         List<JoinStep> path,
@@ -102,10 +115,19 @@ public sealed interface CallWrap {
         OrderBySpec orderBy,
         boolean limitByFirstArgument,
         GlueCall filter,
-        boolean guardArguments
+        boolean guardArguments,
+        List<ColumnRef> presence,
+        Optional<PresenceProbe> probe
     ) implements CallWrap {
         public Multiset {
             path = List.copyOf(path);
+            presence = List.copyOf(presence);
+            Objects.requireNonNull(probe, "probe");
+            if (arity == Arity.LIST && (!presence.isEmpty() || probe.isPresent())) {
+                throw new IllegalArgumentException(
+                    "Multiset with a list arity has no null contract, so it carries no presence "
+                    + "columns or probe");
+            }
             Objects.requireNonNull(terminalTable, "terminalTable");
             Objects.requireNonNull(orderBy, "orderBy");
             Objects.requireNonNull(arity, "arity");

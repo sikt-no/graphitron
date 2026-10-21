@@ -2067,6 +2067,51 @@ CREATE TABLE recordless_note (
     body    varchar(100) NOT NULL
 );
 
+-- Execution-tier fixture for the null contract of a single-object child with its own table, and
+-- of nested objects holding references and lists. presence_detail holds at most one row per host
+-- (the UNIQUE host_id), every mapped column nullable, so a row can exist with nothing in it. The
+-- foreign keys run from the child to the host, so a reference from the host joins on the host's
+-- own primary key, which is always set: whether the referenced row exists is the only question.
+--   host 1: a detail row with both columns set, and one item
+--   host 2: a detail row whose columns are all null, and no items
+--   host 3: no detail row, and no items
+--   host 4: a detail row with city alone set, and no items
+--   host 5: a detail row whose columns are all null, and one item
+CREATE TABLE presence_host (
+    host_id integer     PRIMARY KEY,
+    label   varchar(50)
+);
+
+CREATE TABLE presence_detail (
+    detail_id integer     PRIMARY KEY,
+    host_id   integer     NOT NULL UNIQUE REFERENCES presence_host(host_id),
+    street    varchar(50),
+    city      varchar(50)
+);
+
+CREATE TABLE presence_item (
+    item_id integer     PRIMARY KEY,
+    host_id integer     NOT NULL REFERENCES presence_host(host_id),
+    name    varchar(50)
+);
+
+INSERT INTO presence_host (host_id, label) VALUES
+    (1, 'full'),
+    (2, NULL),
+    (3, NULL),
+    (4, NULL),
+    (5, NULL);
+
+INSERT INTO presence_detail (detail_id, host_id, street, city) VALUES
+    (11, 1, 'Main Street 1', 'Oslo'),
+    (12, 2, NULL, NULL),
+    (14, 4, NULL, 'Bergen'),
+    (15, 5, NULL, NULL);
+
+INSERT INTO presence_item (item_id, host_id, name) VALUES
+    (21, 1, 'first'),
+    (25, 5, 'fifth');
+
 -- ===========================
 -- single-schema fixture: one schema generated on its own, into the root package.
 -- ===========================

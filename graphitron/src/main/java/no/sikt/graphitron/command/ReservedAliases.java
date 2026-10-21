@@ -122,4 +122,16 @@ public final class ReservedAliases {
      * reserves the bare {@code __typename} introspection key this alias deliberately mirrors.
      */
     public static final String TYPENAME = "__typename";
+
+    /**
+     * The presence probe column of a nullable single-object field ({@link PresenceProbe}): written
+     * by the projection beside the field's object, read back by the field's fetcher. Keyed on
+     * the field's declaring type and name, both build-time SDL names, because one fetcher serves
+     * every site of the field, a shared nested type's among them, and must read one alias at all
+     * of them. The {@code $} delimiter is outside the GraphQL name grammar, so the composition is
+     * injective; the short prefix spends little of PostgreSQL's 63-byte identifier budget.
+     */
+    public static String presenceProbe(String typeName, String fieldName) {
+        return "__p_" + typeName + OWNER_DELIMITER + fieldName;
+    }
 }

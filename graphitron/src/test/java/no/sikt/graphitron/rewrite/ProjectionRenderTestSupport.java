@@ -25,6 +25,23 @@ public final class ProjectionRenderTestSupport {
         return ProjectionUnitRenderer.render(relation.rows(), outputPackage);
     }
 
+    /**
+     * The contribution {@code field} lands in the projection unit named {@code unitSimpleName}:
+     * the command the renderer interprets, for assertions on what a field projects rather than on
+     * the rendered body.
+     */
+    public static no.sikt.graphitron.command.Contribution contribution(GraphitronSchema schema,
+            String outputPackage, String unitSimpleName, String field) {
+        var conditions = ConditionCommands.produce(schema, outputPackage);
+        return ProjectionCommands.produce(schema, conditions, outputPackage).rows().stream()
+            .filter(r -> r.unit().simpleName().equals(unitSimpleName))
+            .flatMap(r -> r.contributions().stream())
+            .filter(c -> c.field().equals(field))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError(
+                "no contribution for '" + field + "' in projection unit '" + unitSimpleName + "'"));
+    }
+
     /** The single unit spec named {@code simpleName}, or a failed assertion if absent. */
     public static TypeSpec unit(GraphitronSchema schema, String outputPackage, String simpleName) {
         return renderProjections(schema, outputPackage).stream()

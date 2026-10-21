@@ -3,8 +3,10 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.rewrite.model.ChildField;
-import no.sikt.graphitron.rewrite.model.ChildField.NestingField.NullContract;
-import no.sikt.graphitron.rewrite.model.ChildField.NestingField.PresenceLeaf;
+import no.sikt.graphitron.command.CallWrap;
+import no.sikt.graphitron.command.Contribution;
+import no.sikt.graphitron.rewrite.model.Presence.NullContract;
+import no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.LookupResolution;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -13,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import java.util.List;
 
+import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -225,8 +228,7 @@ class SameTableInlineChildPipelineTest {
     class NullContractOverTheReturnType {
 
         private static NullContract contractOf(GraphitronSchema schema, String fieldName) {
-            return schema.sameRowNullContract(
-                (ChildField.SameRowTableField) schema.field("Film", fieldName));
+            return schema.nullContractOf((ChildField.SameRowTableField) schema.field("Film", fieldName));
         }
 
         @Test
@@ -245,7 +247,7 @@ class SameTableInlineChildPipelineTest {
 
             assertThat(contractOf(schema, "years"))
                 .isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c ->
-                    assertThat(c.leaves()).extracting(PresenceLeaf::columns)
+                    assertThat(c.columnLeaves()).extracting(PresenceLeaf.Columns::columns)
                         .extracting(cols -> cols.getFirst().sqlName())
                         .containsExactly("release_year", "original_language_id"));
         }
@@ -265,7 +267,7 @@ class SameTableInlineChildPipelineTest {
         }
 
         @Test
-        void listChild_alwaysObject() {
+        void listChild_probesAndTheSameRowArmCarriesTheProbe() {
             var schema = TestSchemaHelper.buildSchema("""
                 type Actor @table(name: "actor") { actorId: Int @field(name: "actor_id") }
                 type FilmCast @table(name: "film") {
@@ -283,9 +285,47 @@ class SameTableInlineChildPipelineTest {
                 """);
 
             assertThat(contractOf(schema, "cast"))
-                .isInstanceOfSatisfying(NullContract.AlwaysObject.class, c ->
-                    assertThat(c.reason()).isInstanceOfSatisfying(NullContract.Reason.BlockedBy.class,
-                        b -> assertThat(b.blocker().name()).isEqualTo("actors")));
+                .isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c ->
+                    assertThat(c.probes()).singleElement()
+                        .satisfies(p -> assertThat(p.field().name()).isEqualTo("actors")));
+            var wrap = (CallWrap.SameRow) ((Contribution.Call) ProjectionRenderTestSupport.contribution(
+                schema, DEFAULT_OUTPUT_PACKAGE, "Film", "cast")).wrap();
+            assertThat(wrap.presence()).extracting(c -> c.sqlName()).containsExactly("title");
+            assertThat(wrap.probe()).hasValueSatisfying(p -> {
+                assertThat(p.alias()).isEqualTo("__p_Film$cast");
+                assertThat(p.terms()).singleElement().satisfies(t -> assertThat(t.reach().size()).isEqualTo(2));
+            });
+        }
+
+        @Test
+        void namesInEveryLanguageShape_columnsAndAReference_collapsesThroughItsProbe() {
+            // The sis Karakter.navnAlleSprak shape, as far as it is known here: a nullable
+            // same-table child whose type reads columns of the parent row and also holds a
+            // reference. sis's own type could not be relayed; the list case, which the previous
+            // rule blocked on, is listChild_probesAndTheSameRowArmCarriesTheProbe. Here the
+            // reference counts by the row it reaches, not by its join column.
+            var schema = TestSchemaHelper.buildSchema("""
+                type Language @table(name: "language") { name: String }
+                type FilmNames @table(name: "film") {
+                    nb: String @field(name: "title")
+                    en: String @field(name: "description")
+                    language: Language @reference(path: [{key: "film_original_language_id_fkey"}])
+                }
+                type Film @table(name: "film") {
+                    title: String
+                    names: FilmNames
+                }
+                type Query { films: [Film!]! }
+                """);
+
+            assertThat(contractOf(schema, "names"))
+                .isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c -> {
+                    assertThat(c.presenceColumns()).extracting(col -> col.sqlName())
+                        .containsExactly("title", "description");
+                    assertThat(c.probes()).singleElement()
+                        .satisfies(p -> assertThat(p.targetColumns()).extracting(col -> col.sqlName())
+                            .containsExactly("name"));
+                });
         }
 
         @Test
@@ -324,8 +364,8 @@ class SameTableInlineChildPipelineTest {
             """);
 
         var nested = (ChildField.NestingField) schema.field("Film", "yearsNested");
-        var sameRow = schema.sameRowNullContract((ChildField.SameRowTableField) schema.field("Film", "years"));
-        assertThat(sameRow).isEqualTo(nested.nullContract());
+        var sameRow = schema.nullContractOf((ChildField.SameRowTableField) schema.field("Film", "years"));
+        assertThat(sameRow).isEqualTo(nested.nullContract(schema::fieldsOf));
         assertThat(sameRow.presenceColumns()).isEqualTo(nested.parentRowColumns());
         assertThat(sameRow.presenceColumns()).extracting(c -> c.sqlName()).isEqualTo(List.of("release_year"));
     }
