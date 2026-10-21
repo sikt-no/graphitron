@@ -720,6 +720,24 @@ a derivation over either corpus alone, and `graphitron_` already does this again
     * **The fact model stops citing it** `blocked`, on the node above. `fact-model.adoc`'s
       case-fold paragraph names it as a reader joining an owned fold; the anchored pairing takes its
       place there or the citation goes.
+* **A scalar routine is a path element that lands on a value** `open`. `@routine` resolves only
+  table-valued functions: `sql_routine` is filled from the table census, so a scalar function is not
+  in the store, and the walk defers one and refuses a table-valued function returned as a scalar
+  with no defect stored. Two shapes arrive, both ordinary: at a root, `SELECT f(args)` with no
+  `FROM`, a producer whose result is one value (`Query.databaseVersion`); on a source type,
+  `f(parent columns)` projected in the parent's statement, a value and not a producer, its
+  parameters bound to the parent's columns the way `columnMapping` binds a mid-chain routine. Taken
+  into the model now so a path's end and a producer's result leave room for a value beside a table.
+  * **The catalog captures every routine** `open`. `sql_routine` takes each routine jOOQ generates,
+    from the census or a `Routines` class, with its result kind (table, scalar or void) and a
+    scalar's return binding type. No reader yet: the two shapes below are its named readers.
+  * **A table-valued function returned as a scalar is a defect** `blocked`, on the capture. The
+    walk's refusal stored, naming a scalar function as the way to one value. The facts prelude's
+    `Query.ping: String` over `ms_ping` was one, refused by the generator in every fact document
+    and recorded by the store in none.
+  * **A scalar routine reads at a root** `blocked`, on the capture.
+  * **A scalar routine on a source type projects in its parent's statement** `blocked`, on the
+    capture and on a path's end admitting a value.
 * **The type questions follow it** `blocked`, on the producer resolution, because a `graphitron_`
   relation reading `intent_` is the same crossing pointed the other way.
 * **Entry defects fail validate** `blocked`, on the defects agreeing with the generator on a consumer
