@@ -29,7 +29,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1081` | graphitron-jakarta-rest /graphql/schema serves SDL federation composition rejects | In Review | 2026-10-21 | [plan](schema-endpoint-serves-generated-federation-sdl.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -817,7 +816,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R810` [**Transitional surfaces say so where a reader arrives, and say why**](transitional-surfaces-say-so.md)
 - `R1056` [**TypeFetcherGenerator threads an assembled schema that no emit step reads**](type-fetcher-generator-unread-assembled-parameter.md)
 - `R801` [**View-read census and closure of the declared family bridges**](view-read-census-and-bridge-closure.md)
-- `R1081` [**graphitron-jakarta-rest /graphql/schema serves SDL federation composition rejects**](schema-endpoint-serves-generated-federation-sdl.md)
 
 
 ---
