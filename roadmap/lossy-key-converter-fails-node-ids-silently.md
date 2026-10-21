@@ -1,7 +1,7 @@
 ---
 id: R1079
 title: "A node-key column whose converter does not round-trip makes its ids resolve to null with no diagnostic"
-status: In Progress
+status: In Review
 bucket: dx
 priority: 3
 theme: nodeid
@@ -132,6 +132,18 @@ Completeness rests on those two classes: every surface reaches the slot through 
 R1067's execution cases already pin that a refused slot answers `null` on the lookups and an error on
 an argument, which this item does not change. No execution fixture is added; a lossy key converter in
 the sakila schema would exist only to be wrong.
+
+## Implementation notes
+
+Shipped as planned, with one deviation in the test harness. `NodeIdFoldWarningTest`
+cannot use logback's `ListAppender`: `graphitron-sakila-example` has logback on its test classpath,
+but its slf4j binds to the JBoss LogManager that Quarkus brings, so `LoggerFactory.getLogger` hands
+back a JBoss logger. The test instead adds a `java.util.logging.Handler` to
+`org.jboss.logmanager.Logger.getLogger(NodeIdEncoder.class.getName())`, which receives the record
+with the slf4j message already formatted. Because test classes run concurrently and the logger is
+shared, each test reads back only the records naming its own column. The emitted `NodeIdEncoder` in
+`graphitron-sakila-example/target/generated-sources` shows the `decodeColumns` / `reportFold` /
+`logSafe` shape the plan describes.
 
 ## Other solutions we've considered
 
