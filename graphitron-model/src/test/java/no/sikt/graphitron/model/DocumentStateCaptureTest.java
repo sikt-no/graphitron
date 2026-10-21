@@ -6,6 +6,8 @@ import no.sikt.graphitron.model.capture.document.GraphitronAstCapture;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
 import org.jooq.DSLContext;
@@ -24,6 +26,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * What a reading does to the scope of each document it is accountable for.
@@ -44,6 +47,7 @@ class DocumentStateCaptureTest {
 
     private static final LocalDateTime FIRST = LocalDateTime.parse("2024-01-01T10:00:00");
     private static final LocalDateTime SECOND = LocalDateTime.parse("2024-01-02T10:00:00");
+    private static final LocalDateTime THIRD = LocalDateTime.parse("2024-01-03T10:00:00");
 
     private static final String WIDGET = "type Widget { id: ID! name: String }\n";
     private static final String QUERY = "type Query { widgets: [Widget!]! }\n";
@@ -103,32 +107,38 @@ class DocumentStateCaptureTest {
     }
 
     /**
-     * A file the author has just broken. Its rows are what the file used to say, and the file no
-     * longer says it, so they go.
-     *
-     * <p>The tempting implementation skips an unparsable document, having no registry to write
-     * from, and that skip is what leaves the rows standing. A document that states nothing states
-     * an empty registry, which is the same operation as any other reading rather than a second one.
+     * A file the author has just broken, saved together with an edit to the file beside it. The
+     * reading stops at the parse and the store keeps the last clean reading of both, so nothing the
+     * capture skipped is stamped as transcribed: once the break is fixed, the neighbour's edit is
+     * read rather than taken as already settled.
      */
     @Test
-    @DisplayName("a document that stopped parsing loses the rows of its last good reading")
-    void anUnparsableDocumentLosesItsRows() {
+    @DisplayName("a document that stopped parsing ends the reading, and its neighbour's edit is read once it parses")
+    void anUnparsableDocumentEndsTheReading() {
         ThreadConfinedStore.run(dsl -> {
             Path directory = temporaryDirectory();
             write(directory, "widget.graphqls", WIDGET);
             write(directory, "query.graphqls", QUERY);
             read(dsl, directory, FIRST);
-            assertThat(positions(dsl, directory, "widget.graphqls")).isPositive();
+            var widget = positions(dsl, directory, "widget.graphqls");
+            var query = positions(dsl, directory, "query.graphqls");
 
             write(directory, "widget.graphqls", "type Widget { ");
-            read(dsl, directory, SECOND);
-
+            write(directory, "query.graphqls", QUERY + "type Gadget { id: ID! }\n");
+            assertThatThrownBy(() -> read(dsl, directory, SECOND))
+                .isInstanceOf(SchemaParseException.class);
             assertThat(positions(dsl, directory, "widget.graphqls"))
-                .as("nothing of the broken file survives as though it were still true")
-                .isZero();
+                .as("the broken file keeps its last clean reading")
+                .isEqualTo(widget);
             assertThat(positions(dsl, directory, "query.graphqls"))
-                .as("and the file beside it is untouched by its neighbour's failure")
-                .isPositive();
+                .as("and so does the file edited beside it")
+                .isEqualTo(query);
+
+            write(directory, "widget.graphqls", WIDGET);
+            read(dsl, directory, THIRD);
+            assertThat(positions(dsl, directory, "query.graphqls"))
+                .as("the neighbour's edit, never stamped as transcribed, is read now")
+                .isGreaterThan(query);
         });
     }
 
@@ -209,6 +219,7 @@ class DocumentStateCaptureTest {
         var graph = new GraphIdentity(GRAPH, baseDir);
         ModelCapture.writeGraph(dsl, graph, readAt);
         var reading = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, pattern), readAt);
+        SchemaLoader.throwIfUnparsed(reading.failures());
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);

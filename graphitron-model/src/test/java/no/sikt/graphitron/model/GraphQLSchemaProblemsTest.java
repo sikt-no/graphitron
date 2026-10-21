@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model;
 
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
 import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
@@ -39,6 +40,7 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * What went wrong when the documents were read and made into a schema, recorded rather than
@@ -122,18 +124,18 @@ class GraphQLSchemaProblemsTest {
     }
 
     /**
-     * A file the parser rejected. It contributes no entries at all, so a reading that did not record
-     * the refusal would leave the file missing from the store rather than reported, and missing is
-     * what a file nobody configured looks like.
+     * A file the parser rejected. The reading ends at the parse, so the refusal is the one thing it
+     * records: neither file is registered or transcribed, the store keeping whatever its last clean
+     * reading held, which for a first reading is nothing.
      */
     @Test
-    @DisplayName("a file that will not parse is a problem naming it, and the file is still registered")
+    @DisplayName("a file that will not parse is a problem naming it, and nothing else is read")
     void aFileThatWillNotParseIsRecorded(@TempDir Path tmp) {
         write(tmp, "ok.graphqls", "type Query { a: String }\n");
         Path broken = write(tmp, "broken.graphqls", "type Film { title: \n");
 
         withSeededStore(GRAPH, dsl -> {
-            read(dsl, tmp);
+            assertThatThrownBy(() -> read(dsl, tmp)).isInstanceOf(SchemaParseException.class);
 
             assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME,
                     GRAPHQL_SCHEMA_PROBLEM.ERROR_CLASS).from(GRAPHQL_SCHEMA_PROBLEM).fetch())
@@ -149,13 +151,13 @@ class GraphQLSchemaProblemsTest {
 
             assertThat(dsl.fetchCount(STORE_SOURCE,
                     STORE_SOURCE.SOURCE_NAME.eq(broken.toString())))
-                .as("and the file is in the registry: read and unreadable, rather than absent")
-                .isEqualTo(1);
+                .as("the reading stopped before it registered anything")
+                .isZero();
 
             assertThat(dsl.fetchCount(GRAPHQL_AST_TYPE_DECLARATION_ENTRY,
                     GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("Query")))
-                .as("its sibling still landed, a refusal costing only the file that earned it")
-                .isEqualTo(1);
+                .as("nor did its sibling land: a capture that stops at the parse transcribes nothing")
+                .isZero();
         });
     }
 
@@ -578,6 +580,7 @@ class GraphQLSchemaProblemsTest {
         var config = SubjectConfig.of(new SchemaRecipe(baseDir.resolve("pom.xml"), bindings,
             List.of("graphqls")));
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        SchemaLoader.throwIfUnparsed(reading.failures());
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         FederationCapture.capture(dsl, graphName, readAt);

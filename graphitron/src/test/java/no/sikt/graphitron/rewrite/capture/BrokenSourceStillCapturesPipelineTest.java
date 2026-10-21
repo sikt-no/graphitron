@@ -18,8 +18,6 @@ import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -50,8 +48,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 class BrokenSourceStillCapturesPipelineTest {
 
     @Test
-    @DisplayName("a run refused by the parser still captures its surviving facts and its verdicts")
-    void aBrokenSourceDoesNotCostTheStoreItsOtherFacts(@TempDir Path tmp) throws IOException {
+    @DisplayName("a run refused by the parser keeps the last clean reading and records the verdict")
+    void aBrokenSourceKeepsTheLastCleanReading(@TempDir Path tmp) throws IOException {
         Path schemaDir = Files.createDirectories(tmp.resolve("schema"));
         Path good = schemaDir.resolve("good.graphqls");
         Files.writeString(good, """
@@ -59,20 +57,28 @@ class BrokenSourceStillCapturesPipelineTest {
             type Film { title: String }
             """);
         Path broken = schemaDir.resolve("broken.graphqls");
+        Files.writeString(broken, "type Actor { name: String }\n");
+
+        Path storeDir = Files.createDirectories(tmp.resolve("store"));
+        var ctx = context(tmp, storeDir, List.of(SchemaInput.file(good), SchemaInput.file(broken)));
+        try (var store = GraphitronStore.captured(ctx)) {
+            assertThat(store.store().dsl().fetchCount(GRAPHQL_TYPE, GRAPHQL_TYPE.TYPE_NAME.eq("Actor")))
+                .as("the clean reading the broken one meets")
+                .isOne();
+        }
+
         Files.writeString(broken, """
             type Actor { name: String }
             strayTokenHere
             """);
-
-        Path storeDir = Files.createDirectories(tmp.resolve("store"));
-        var ctx = context(tmp, storeDir, List.of(SchemaInput.file(good), SchemaInput.file(broken)));
-
-        try (var store = GraphitronStore.captured(ctx)) {
-            assertThatThrownBy(() -> new GraphQLRewriteGenerator(ctx, store).validate())
-            .as("the run still fails, and with the exception the mojo's catch arm already handles")
+        assertThatThrownBy(() -> {
+            try (var store = GraphitronStore.captured(ctx)) {
+                new GraphQLRewriteGenerator(ctx, store).validate();
+            }
+        })
+            .as("the run fails at the capture, with the exception the mojo's catch arm handles")
             .isInstanceOf(SchemaParseException.class)
             .hasMessageContaining(broken.toString());
-        }
 
         try (var store = GraphitronModelStore.openAt(storeDir)) {
             assertThat(store.location()).as("the fixture's store is the shared file, not a fallback")
@@ -80,31 +86,12 @@ class BrokenSourceStillCapturesPipelineTest {
 
             assertThat(store.dsl().select(GRAPHQL_TYPE.TYPE_NAME).from(GRAPHQL_TYPE)
                 .fetchSet(0, String.class))
-                .as("the surviving file's declarations, which the old loader-throw discarded")
-                .contains("Query", "Film")
-                .doesNotContain("Actor");
-
-            // The refused source is one this run read, so the store's own census owes it a row like
-            // any other input. The walk cannot find it, since it declared nothing, so without this
-            // the two families contradict each other: the verdict family recording that the read
-            // refused a source, the census recording that the graph has no such source. The stamp
-            // is what makes the currency check cover the file the author is most likely to edit
-            // next, which is the broken one.
-            var refusedSource = store.dsl().selectFrom(STORE_SOURCE)
-                .where(STORE_SOURCE.SOURCE_NAME.eq(broken.toString()))
-                .fetchOne();
-            assertThat(refusedSource)
-                .as("the refused source has a census row, not only a verdict row")
-                .isNotNull();
-            assertThat(refusedSource.getSourceKind()).isEqualTo("SCHEMA_FILE");
-            assertThat(refusedSource.getStamp())
-                .as("stamped like any other schema file the run read")
-                .isNotNull();
-            assertThat(store.dsl().select(STORE_GRAPH_SOURCE.SOURCE_NAME).from(STORE_GRAPH_SOURCE)
-                .where(STORE_GRAPH_SOURCE.GRAPH_NAME.eq("broken-source-fixture"))
-                .fetchSet(0, String.class))
-                .as("and it is this graph's source, so a per-graph join finds it")
-                .contains(broken.toString(), good.toString());
+                .as("the reading ended at the parse, so the store still states the clean one")
+                .contains("Query", "Film", "Actor");
+            assertThat(store.dsl().fetchCount(GRAPHQL_SCHEMA_PROBLEM,
+                    GRAPHQL_SCHEMA_PROBLEM.SOURCE_NAME.eq(broken.toString())))
+                .as("and the refusal is recorded, which is what makes the facts Previous")
+                .isPositive();
         }
     }
 

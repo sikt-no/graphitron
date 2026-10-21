@@ -23,8 +23,9 @@ import static org.jooq.impl.DSL.selectOne;
  * absence is nothing having captured it. Freshness is the emptiness of
  * {@code graphql_schema_problem} over the graph's partition: it is written on every pass, on either
  * outcome, so no rows means the document was read clean and rows mean the newest read refused
- * something while the transcription families still hold what the parseable sources yielded. That is
- * what {@code Previous} has always meant, and it is what the families do per source anyway.
+ * something while the transcription families hold the last facts transcribed: the parseable
+ * sources' where the registry refused the document, and the last clean reading's where a file would
+ * not parse, that reading ending at the parse. That is what {@code Previous} means.
  *
  * <p>One statement carrying two {@code EXISTS} predicates, one per axis. The freshness axis was an
  * or over two relations while the parser's refusals and the document-wide stages' were kept apart;
@@ -41,8 +42,8 @@ import static org.jooq.impl.DSL.selectOne;
  * the freshness axis speaks about the schema read rather than about every fact under the graph. And
  * a first pass that met a refusal reads as available with previous facts, where a reader off a
  * projection minted only on success reported nothing available at all. The store genuinely holds
- * every fact the parseable sources yielded, so answering as well as the facts allow and saying how
- * current they are beats declining to answer.
+ * the last facts it transcribed, so answering as well as the facts allow and saying how current
+ * they are beats declining to answer.
  *
  * <p>What is deliberately not an axis is whether a capture is running this instant. That is process
  * state with a crash-shaped failure mode, no tool's answer turns on it beyond "may refresh

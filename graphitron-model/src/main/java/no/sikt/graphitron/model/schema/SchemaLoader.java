@@ -393,6 +393,19 @@ public final class SchemaLoader {
     }
 
     /**
+     * Throws the first source's {@link SchemaParseException} where any source would not parse, or
+     * returns having thrown nothing: the parse half of {@link #throwIfRejected}, for a capture that
+     * stops at the parse.
+     */
+    public static void throwIfUnparsed(List<SyntaxFailure> failures) {
+        if (!failures.isEmpty()) {
+            SyntaxFailure first = failures.getFirst();
+            throw new SchemaParseException(
+                first.attributedMessage(), first.brief(), first.location(), first.cause());
+        }
+    }
+
+    /**
      * Throws whichever exception the stages' refusals earn, in stage order, or returns having
      * thrown nothing. Each stage keeps the exception it always threw, so a caller that reads the
      * failure surface (the mojo's two catch arms, the dev loop's one-line parse report) is
@@ -405,11 +418,7 @@ public final class SchemaLoader {
      * the syntax error first points at the edit that will fix both.
      */
     public static void throwIfRejected(PerSourceParse parse) {
-        if (!parse.failures().isEmpty()) {
-            SyntaxFailure first = parse.failures().getFirst();
-            throw new SchemaParseException(
-                first.attributedMessage(), first.brief(), first.location(), first.cause());
-        }
+        throwIfUnparsed(parse.failures());
         if (!parse.registryErrors().isEmpty()) {
             throw new SchemaProblem(parse.registryErrors().stream().map(SchemaError::cause).toList());
         }

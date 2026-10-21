@@ -1319,9 +1319,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
 
     /**
      * Opens the store, captures into it and closes it, and nothing else: the whole of what
-     * {@code graphitron:capture} does. No pass runs, so nothing here can refuse the author's
-     * document; what fails is only what stops a capture, a store that will not open or a corpus
-     * that cannot be read at all.
+     * {@code graphitron:capture} does. No pass runs, so nothing here judges the author's document;
+     * what fails is only what stops a capture: a store that will not open, a corpus that cannot be
+     * read at all, or a document that will not parse, which ends the capture at the parse.
      *
      * <p>Returns the context for the same reason {@link #runGenerator} does, its paths outliving
      * the loader the scope closes.
@@ -1346,7 +1346,9 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
      *
      * <p>Before the pass, which is the only place it says anything about a build the pass refuses.
      * These gatherers read the author's own inputs, so what they write is true whether or not a
-     * stage accepts the document, and a refusal is exactly when a reader wants to ask why. The pass
+     * stage accepts the document, and a refusal is exactly when a reader wants to ask why. A
+     * document that will not parse is the exception: the capture ends at the parse, recording the
+     * refusal and keeping the last clean reading. The pass
      * that follows leaves them alone: its clear disclaims the relations they declare themselves the
      * owner of.
      *

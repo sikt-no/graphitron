@@ -63,26 +63,19 @@ class GraphQLSourceCaptureTest {
     }
 
     /**
-     * A source that would not parse is a file with a modification time like any other, so it sits
-     * at its own place in the order rather than being appended after the ones that read.
+     * A source that would not parse ends the reading before anything is claimed: no document is
+     * handed on, so no gatherer below transcribes or sweeps, and the failure says which file.
      */
     @Test
-    @DisplayName("a source that would not parse holds its place in the order")
-    void anUnparsedSourceKeepsItsPlace() {
+    @DisplayName("a source that would not parse ends the reading with nothing claimed")
+    void anUnparsedSourceEndsTheReading() {
         ThreadConfinedStore.run(dsl -> {
             write("a-first.graphqls", "type First { a: String }", Instant.parse("2020-01-01T00:00:00Z"));
             write("b-broken.graphqls", "type Broken { ", Instant.parse("2020-02-01T00:00:00Z"));
-            write("c-last.graphqls", "type Last { a: String }", Instant.parse("2020-03-01T00:00:00Z"));
 
-            var documents = capture(dsl);
-            assertThat(authored(documents))
-                .containsExactly("a-first.graphqls", "b-broken.graphqls", "c-last.graphqls");
-            assertThat(documents.stream()
-                    .filter(GraphQLSourceCapture.SourceDocument.Unparsable.class::isInstance)
-                    .map(GraphQLSourceCapture.SourceDocument::sourceName)
-                    .map(GraphQLSourceCaptureTest::leaf).toList())
-                .as("it is in the list because a gatherer below sweeps by source, and it carries no"
-                    + " registry because there was none to carry")
+            var reading = read(dsl);
+            assertThat(reading.documents()).isEmpty();
+            assertThat(reading.failures()).extracting(failure -> leaf(failure.sourceName()))
                 .containsExactly("b-broken.graphqls");
         });
     }
@@ -168,13 +161,17 @@ class GraphQLSourceCaptureTest {
     }
 
     private List<GraphQLSourceCapture.SourceDocument> capture(DSLContext dsl) {
+        return read(dsl).documents();
+    }
+
+    private GraphQLSourceCapture.CorpusReading read(DSLContext dsl) {
         var graph = new GraphIdentity(GRAPH, tmp);
         var readAt = LocalDateTime.now();
         ModelCapture.writeGraph(dsl, graph, readAt);
         return GraphQLSourceCapture.capture(dsl, graph,
             SubjectConfig.of(new SchemaRecipe(tmp.resolve("pom.xml"),
                 List.of(SchemaRecipe.Binding.pattern("*.graphqls")), List.of("graphqls"))),
-            readAt).documents();
+            readAt);
     }
 
     /** The authored sources by file name, the bundled directive vocabulary being nobody's file. */

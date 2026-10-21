@@ -49,13 +49,16 @@ class SchemaParseExceptionPropagationTest {
             DEFAULT_OUTPUT_PACKAGE,
             DEFAULT_JOOQ_PACKAGE);
 
-        Throwable thrown;
-        try (var store = GraphitronStore.captured(ctx)) {
-            thrown = catchThrowable(() -> new GraphQLRewriteGenerator(ctx, store).generate());
-        }
+        // The capture ends at the parse and throws there, so the run fails before generate() is
+        // reached, with the exception the mojo's catch arm and the dev loop's parse report handle.
+        Throwable thrown = catchThrowable(() -> {
+            try (var store = GraphitronStore.captured(ctx)) {
+                new GraphQLRewriteGenerator(ctx, store).generate();
+            }
+        });
 
         assertThat(thrown)
-            .as("a parse failure propagates unchanged out of generate(), no translation to another type")
+            .as("a parse failure propagates unchanged out of the run, no translation to another type")
             .isInstanceOf(SchemaParseException.class);
         assertThat(thrown.getMessage())
             .contains(broken.toString())

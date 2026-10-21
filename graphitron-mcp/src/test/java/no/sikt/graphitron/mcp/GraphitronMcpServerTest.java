@@ -264,7 +264,7 @@ class GraphitronMcpServerTest {
     /**
      * The divergence this slice accepts rather than ports. A projection minted only on a successful
      * build had nothing to report on a first pass that met a refusal, so the incumbent answered
-     * {@code Unavailable}; the store holds every fact the parseable sources yielded, so the answer is
+     * {@code Unavailable}; the store holds the last clean reading's facts, so the answer is
      * {@code Built} with the facts marked {@code Previous}. Both halves are real here: the surviving
      * source's coordinates are in the store and the refused one left a verdict row.
      */

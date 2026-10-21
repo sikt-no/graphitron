@@ -43,9 +43,10 @@ final class SchemaView {
      * pre-capture state a consumer is genuinely in before their first build.
      *
      * <p>The {@link SchemaLifecycle} axes ride along rather than gating the answer, which is the
-     * diagnostics tools' arrangement as well. The store holds every fact the parseable sources yielded
-     * whatever the newest parse did, so answering as well as the facts allow and reporting how current
-     * they are is strictly better than declining to answer at all. They are read with the payload
+     * diagnostics tools' arrangement as well. The store holds the last facts it transcribed whatever
+     * the newest parse did, the last clean reading where a file would not parse, so answering as well
+     * as the facts allow and reporting how current they are is strictly better than declining to
+     * answer at all. They are read with the payload
      * rather than beside it; {@link SchemaQueries#read} says why.
      */
     static McpSchema.CallToolResult schemaResult(

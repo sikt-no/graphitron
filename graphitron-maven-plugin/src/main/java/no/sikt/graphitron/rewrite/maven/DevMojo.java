@@ -1349,7 +1349,8 @@ public class DevMojo extends AbstractRewriteMojo {
      * through this.
      *
      * <p>The capture comes first because the generator reads no document itself, and because a
-     * round the pass refuses still owes its facts, for the reason {@link #captureModel} carries.
+     * round the pass refuses still owes its facts, for the reason {@link #captureModel} carries; a
+     * document that will not parse ends the capture, and this, at the parse.
      */
     private GraphQLRewriteGenerator capturedGenerator(RunContext ctx) {
         var schema = captureModel(ctx, storeFor(ctx));

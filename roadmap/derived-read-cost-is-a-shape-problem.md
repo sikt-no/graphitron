@@ -460,8 +460,10 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   reruns the document gatherers it reaches and leaves the catalog and classpath gatherers alone.
 * **A classpath change reruns only the gatherers that read the classpath** `open`. A round that
   succeeds says which gatherers it ran and which it skipped.
-* **A document that does not parse ends the round at the parse** `open`. Anchoring and derivation
-  do not run on the rest of the schema after a parse failure.
+* **A document that does not parse ends the round at the parse** `done`. The source reading writes
+  the parse problems and claims nothing, and `ModelCapture` throws there, so the store keeps its
+  last clean reading whole and every changed file is read again once the document parses.
+  `DocumentStateCaptureTest` and `GraphQLSchemaProblemsTest` pin it.
 * **Every `code_` row hangs off a class** `open`. `code_throwable` and `code_throwable_supertype`
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`

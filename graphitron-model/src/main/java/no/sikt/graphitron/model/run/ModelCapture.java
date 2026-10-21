@@ -11,6 +11,7 @@ import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture.Assembly
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.LoadingRewrites;
 import no.sikt.graphitron.model.capture.document.GraphQLAstCapture;
 import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
@@ -74,6 +75,9 @@ public final class ModelCapture {
         CodeCapture.capture(dsl, classes, loader, readAt);
 
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
+        // A document that will not parse ends the capture here, the store keeping its last clean
+        // reading; the source reading has written the problems the throw reports.
+        SchemaLoader.throwIfUnparsed(reading.failures());
         var documents = reading.documents();
         GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         FederationCapture.capture(dsl, graph.name(), readAt);

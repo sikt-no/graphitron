@@ -1,6 +1,7 @@
 package no.sikt.graphitron.model.test;
 
 import graphql.schema.idl.TypeDefinitionRegistry;
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.boot.GraphitronModelStore;
 import no.sikt.graphitron.model.boot.ReadBudget;
 import no.sikt.graphitron.model.boot.StoreReader;
@@ -371,7 +372,8 @@ public final class CapturedStore implements AutoCloseable {
     /**
      * A graph whose newest read refused something: {@code sdl} parses and is transcribed, and
      * {@code refusedSdl} is spelled so a stage objects to it, whether the parser (a source it cannot
-     * read) or the registry (a declaration it will not admit beside the first one's).
+     * read, which ends that reading with {@code sdl}'s clean reading standing) or the registry (a
+     * declaration it will not admit beside the first one's).
      *
      * <p>The pair with a catalog beside it, where the one-argument arm above is the graph that lost
      * its only source. Both capture a verdict rather than a registry alone, which is what a case
@@ -398,6 +400,10 @@ public final class CapturedStore implements AutoCloseable {
      * <p>Nothing writes the verdict beside the pass any more. Both stages that can refuse record
      * their own rows: the reader writes what would not parse and the assembly writes what would not
      * compose, so the store a refusal leaves is the store a run leaves.
+     *
+     * <p>A source that will not parse ends a capture at the parse, the store keeping its last clean
+     * reading, so that arm is reached the way an author reaches it: a clean reading of the sources
+     * that parse, then the reading that meets the broken one.
      */
     private static CapturedStore captureRefused(Path directory, List<Path> files, CatalogInput jooq) {
         var parse = SchemaLoader.parsePerSource(files.stream().map(SchemaSource::file).toList());
@@ -406,8 +412,19 @@ public final class CapturedStore implements AutoCloseable {
                 + "; this arm's whole subject is a read that refused something");
         }
         var store = ThreadConfinedStore.borrow();
-        var schemas = captureFiles(store.dsl(), files, directory, GRAPH, jooq, false, List.of());
-        return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), schemas);
+        if (parse.failures().isEmpty()) {
+            var schemas = captureFiles(store.dsl(), files, directory, GRAPH, jooq, false, List.of());
+            return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), schemas);
+        }
+        var schemas = captureFiles(store.dsl(), files.subList(0, files.size() - 1), directory, GRAPH,
+            jooq, false, List.of());
+        try {
+            captureFiles(store.dsl(), files, directory, GRAPH, jooq, false, List.of());
+        } catch (SchemaParseException expected) {
+            return new CapturedStore(store, GRAPH, directory, files.getFirst(), parse.registry(), schemas);
+        }
+        throw new AssertionError("the reading of " + files.getLast().getFileName()
+            + " did not stop at the parse");
     }
 
     private static CapturedStore openAndCapture(Path directory, String graphName, String sdl,

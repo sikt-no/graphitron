@@ -428,8 +428,9 @@ public final class GraphitronMcpServer implements AutoCloseable {
         if (!lifecycle.captured()) {
             gloss = " (nothing has captured this graph yet).";
         } else if (lifecycle.refused()) {
-            gloss = " (the newest read of the schema refused a source or the document; the facts the "
-                + "parseable sources yielded are what the tools answer from).";
+            gloss = " (the newest read of the schema refused a source or the document; the tools "
+                + "answer from the facts the store last transcribed, the last clean reading where a "
+                + "file would not parse).";
         } else {
             gloss = ".";
         }

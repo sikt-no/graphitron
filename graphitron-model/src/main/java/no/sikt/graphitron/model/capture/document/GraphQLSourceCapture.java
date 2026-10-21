@@ -60,8 +60,9 @@ public final class GraphQLSourceCapture {
      *
      * <p>Exhaustive, so a case nobody thought about cannot be the silent one. The rule they serve:
      * a gatherer brings the {@code (graph, source)} scope into line with what the document states.
-     * {@link Changed} states a registry. {@link Unparsable} and {@link Dropped} state nothing, so
-     * the scope is emptied, which is the same write over an empty registry. {@link Unchanged}
+     * {@link Changed} states a registry. {@link Dropped} states nothing, so the scope is emptied,
+     * which is the same write over an empty registry. A source that will not parse is none of them:
+     * the reading stops before it claims anything. {@link Unchanged}
      * already states what the scope holds, and sweeping a scope this reading did not mark would
      * delete exactly the rows the skip meant to keep.
      *
@@ -104,15 +105,6 @@ public final class GraphQLSourceCapture {
         record Unchanged(String sourceName, TypeDefinitionRegistry registry) implements Stated {}
 
         /**
-         * A source the configuration names and the parser refused.
-         *
-         * <p>Its scope is emptied rather than left standing, the rows of the last good parse having
-         * stopped being what the file says. No stamp is recorded for it, so the next reading
-         * attempts it again instead of mistaking a still-broken file for a settled one.
-         */
-        record Unparsable(String sourceName) implements SourceDocument {}
-
-        /**
          * A source this graph read last time and does not read now: the file is gone, or the
          * configuration has stopped naming it.
          *
@@ -151,8 +143,8 @@ public final class GraphQLSourceCapture {
      * @param inputs    the recipe's matches in recipe order, the list a
      *                  {@link no.sikt.graphitron.model.config.RunContext} built from the same
      *                  recipe would hold
-     * @param failures  what the parser said about each {@link SourceDocument.Unparsable} source,
-     *                  which a run refusing the corpus throws with
+     * @param failures  what the parser said about each source that would not parse; a reading that
+     *                  met any stops there, holding no document, and the capture throws with them
      * @param refusals  what each source refused of itself, a document declaring one thing twice,
      *                  which its own registry has already dropped, so the merge of the documents
      *                  never meets it and only this list says it happened
@@ -178,6 +170,11 @@ public final class GraphQLSourceCapture {
      *
      * <p>The instant is the reading's: the rows this writes carry it and the sweeps tell readings
      * apart by it.
+     *
+     * <p>A source that will not parse ends the reading at the parse: its problems are written and
+     * nothing is claimed or stamped, so the store keeps the last clean reading whole and the next
+     * reading meets every changed file as changed. Claiming the files that did parse would stamp
+     * them transcribed ahead of a transcription the capture is about to skip.
      */
     public static CorpusReading capture(DSLContext dsl, GraphIdentity graph,
                                         SubjectConfig config, LocalDateTime readAt) {
@@ -201,12 +198,13 @@ public final class GraphQLSourceCapture {
             .filter(SchemaSource.File.class::isInstance)
             .map(SchemaSource.File.class::cast)
             .toList());
+        if (!parse.failures().isEmpty()) {
+            GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
+            return new CorpusReading(List.of(), inputs, parse.failures(), List.of());
+        }
         var documents = new ArrayList<SourceDocument>();
         for (var source : parse.perSource()) {
             documents.add(read(dsl, graph.name(), source.sourceName(), source.registry(), held, readAt));
-        }
-        for (var failure : parse.failures()) {
-            documents.add(read(dsl, graph.name(), failure.sourceName(), null, held, readAt));
         }
         var configured = new LinkedHashSet<String>();
         documents.forEach(document -> configured.add(document.sourceName()));
@@ -265,14 +263,6 @@ public final class GraphQLSourceCapture {
                                        Map<String, String> held, LocalDateTime readAt) {
         String stamp = SourceStamp.ofFile(Path.of(sourceName));
         recordSource(dsl, sourceName, stamp, readAt);
-        // A file that would not parse records no stamp, so the next reading meets it as changed
-        // and attempts it again rather than reading a still-broken file as a settled one. The
-        // claim is still made: this reading is about to empty the scope, which is a transcription
-        // of what the file now says.
-        if (registry == null) {
-            claimMembership(dsl, graph, sourceName, null, readAt);
-            return new SourceDocument.Unparsable(sourceName);
-        }
         // Unknown counts as changed: a source this graph has not transcribed, or one whose bytes
         // could not be hashed, is not one this reading may skip on the strength of a comparison.
         if (stamp != null && stamp.equals(held.get(sourceName))) {

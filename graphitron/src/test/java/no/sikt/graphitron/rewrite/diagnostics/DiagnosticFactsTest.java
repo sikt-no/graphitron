@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.diagnostics;
 
 import graphql.language.SourceLocation;
+import no.sikt.graphitron.model.diagnostics.SchemaParseException;
 import no.sikt.graphitron.model.test.FactStores;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -49,6 +50,7 @@ import static no.sikt.graphitron.model.Tables.LINT_FINDING_FIX_EDIT;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR;
 import static no.sikt.graphitron.model.Tables.REJECTION_VALIDATION_ERROR_DIRECTIVE;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * The diagnostics stratum's content anchors and derived-column pins, asserted where the DDL
@@ -339,9 +341,8 @@ class DiagnosticFactsTest {
     @Test
     @DisplayName("the SDL-toolchain arm projects every stage's verdict, and the parser stage's variant is a pinned spelling")
     void sdlToolchainArmProjectsItsVerdicts() throws java.io.IOException {
-        // One refusal per stage, and no cascade: the root operation stays in the file that parses,
-        // so assembly's only complaint is the dangling reference rather than a missing query root
-        // caused by the refused file.
+        // One refusal per stage, each from its own capture: a file that will not parse ends the
+        // reading at the parse, so assembly's refusal, the dangling reference, is read alone.
         Path broken = tmp.resolve("broken.graphqls");
         Files.writeString(broken, "type Extra { id: ID! }\nstrayTokenHere\n");
         Path dangling = tmp.resolve("dangling.graphqls");
@@ -355,14 +356,11 @@ class DiagnosticFactsTest {
         assertThat(assembly.errors()).isNotEmpty();
 
         withStore(dsl -> {
-            CapturedStore.capture(dsl, graph(),
-                CapturedStore.corpusOf(List.of(broken, dangling), tmp), null);
-
+            CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(dangling), tmp), null);
             var rows = dsl.selectFrom(DIAGNOSTIC)
                 .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))
-                .orderBy(DIAGNOSTIC.VARIANT)
                 .fetch();
-            assertThat(rows).hasSize(2);
+            assertThat(rows).hasSize(1);
 
             var assemblyRow = rows.stream()
                 .filter(row -> "MissingTypeError".equals(row.getVariant()))
@@ -373,6 +371,17 @@ class DiagnosticFactsTest {
             assertThat(assemblyRow.getActionable()).isTrue();
             assertThat(assemblyRow.getKind()).as("the Rejection three-way fork does not apply").isNull();
             assertThat(assemblyRow.getLintRule()).isNull();
+        });
+
+        withStore(dsl -> {
+            assertThatThrownBy(() -> CapturedStore.capture(dsl, graph(),
+                    CapturedStore.corpusOf(List.of(broken, dangling), tmp), null))
+                .isInstanceOf(SchemaParseException.class);
+            var rows = dsl.selectFrom(DIAGNOSTIC)
+                .where(DIAGNOSTIC.GRAPH_NAME.eq(GRAPH), DIAGNOSTIC.SOURCE.eq("schema"))
+                .fetch();
+            assertThat(rows).as("the reading ended at the parse, so the parser's is the one verdict")
+                .hasSize(1);
 
             // The view reads the parse stage's variant off the same error_class column as the
             // other two stages. It used to spell InvalidSyntaxException as a literal, on the claim
@@ -523,9 +532,14 @@ class DiagnosticFactsTest {
         var read = SchemaLoader.parsePerSource(sources);
         var assembly = SchemaAssembly.of(read.registry());
         withStore(dsl -> {
-            CapturedStore.capture(dsl, graph(),
-                CapturedStore.corpusOf(List.of(broken, dangling), tmp), null);
-            assertEveryFileIsAPath(dsl, 2);
+            CapturedStore.capture(dsl, graph(), CapturedStore.corpusOf(List.of(dangling), tmp), null);
+            assertEveryFileIsAPath(dsl, 1);
+        });
+        withStore(dsl -> {
+            assertThatThrownBy(() -> CapturedStore.capture(dsl, graph(),
+                    CapturedStore.corpusOf(List.of(broken, dangling), tmp), null))
+                .isInstanceOf(SchemaParseException.class);
+            assertEveryFileIsAPath(dsl, 1);
         });
     }
 
