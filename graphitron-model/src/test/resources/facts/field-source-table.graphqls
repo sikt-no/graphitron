@@ -6,7 +6,12 @@
 type Film @table(name: "film") {
   title: String
   details: FilmDetails
+  throughAPath: ReachedByAPath @reference(path: [{key: "film_language_id_fkey"}])
 }
+
+# Reached only through a field that wrote a path, which arrives somewhere else, so it inherits
+# nothing from film.
+type ReachedByAPath { name: String }
 
 type Customer @table(name: "customer") {
   details: FilmDetails
@@ -48,8 +53,9 @@ extend schema @assertContains(relation: "graphitron_field_source_table", rows: "
 
 # A root field departs from nothing.
 extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
-  type_name, field_name
-  Query,     film
+  type_name,      field_name
+  Query,          film
+  ReachedByAPath, name
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
