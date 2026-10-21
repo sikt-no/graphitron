@@ -1903,6 +1903,23 @@ Profiled on sis in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-
 * **The federation link's added imports are driven from the version** `done`. The rule met every
   directive application against every claimed source before the version filtered them, minutes a
   round on sis; `FederationLinkTest` pins its answer.
+* **A rule's plan probes an index wherever it looks a row up** `open`, first of the three gates
+  below. Each capture-time regression so far was a read with no index under a join or a correlated
+  subquery: the federation imports' fan-out, `sql_constraint` scanned per path element, and
+  `graphql_ast_element_entry` looked up by coordinate (312 s on sis). A gate runs H2's `EXPLAIN` on
+  every rule view as its stage runs it, under the stage's graph filter, over a test store, and
+  fails where a table other than the driving one is read by `tableScan`. A small table may be
+  excepted by name, each exception a reviewed line. Deterministic and independent of schema size and
+  machine load, so it runs on sakila.
+* **A capture's time grows in proportion to its schema** `open`, after the plan gate. A grouped
+  table rebuilt per row, the producer rule's 172 s, shows in no plan. A synthetic schema at two
+  sizes, the same shapes at n and 4n fields, is captured and each stage timed; a stage whose time
+  grows more than about six times fails as superlinear. A ratio rather than a budget, so machine
+  load does not move the verdict.
+* **Every stage's time is recorded in the store** `open`. `store_graph_progress` records each
+  gatherer; each stage's insert or merge is recorded beside it, so every capture and dev round
+  shows its slowest stages, and MCP status names them. Not a gate, but a regression is seen on the
+  next sis run instead of when someone profiles.
 * **A stage table's graph filter cannot spoil its rule's plan** `open`.
   `graphitron_field_source_table`'s `MERGE` filters its rule to the graph, and the pushed-down
   filter turns 0.7 s into 24.
