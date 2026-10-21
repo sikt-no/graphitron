@@ -7,7 +7,9 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.diffing.EditOperation;
 import graphql.schema.diffing.SchemaDiffing;
 import graphql.schema.idl.SchemaParser;
+import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.UnExecutableSchemaGenerator;
+import graphql.schema.usage.SchemaUsageSupport;
 import no.sikt.graphitron.jakarta.rest.AbstractGraphitronApplication;
 import no.sikt.graphitron.model.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -85,6 +87,12 @@ class AdapterSchemaSdlTest {
             .doesNotContain("directive @include");
     }
 
+    /**
+     * The plain arm prints with the runtime-meaningful options of the emitter's plain print. The
+     * emitted file is printed from the SDL-built schema, which keeps a type nothing references;
+     * the generated build registers only reachable types, so such a type is the one difference
+     * allowed, and the comparison drops it from the file after asserting it is unreferenced.
+     */
     @Test
     @DisplayName("The plain facade's schemaSdl describes the same schema as the emitted schema.graphqls.")
     void plainSchemaSdlMatchesTheEmittedFile() throws Exception {
@@ -93,10 +101,24 @@ class AdapterSchemaSdlTest {
             assertThat(in).as("emitted schema.graphqls on classpath").isNotNull();
             emitted = new String(in.readAllBytes(), StandardCharsets.UTF_8);
         }
-        String printed = no.sikt.graphitron.generated.Graphitron.schemaSdl(
-            no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {}));
+        GraphQLSchema runtime = no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {});
+        String printed = no.sikt.graphitron.generated.Graphitron.schemaSdl(runtime);
 
-        List<EditOperation> edits = new SchemaDiffing().diffGraphQLSchema(parse(emitted), parse(printed));
+        GraphQLSchema fromFile = parse(emitted);
+        var usage = SchemaUsageSupport.getSchemaUsage(fromFile);
+        TypeDefinitionRegistry registry = new SchemaParser().parse(emitted);
+        for (String name : List.copyOf(registry.types().keySet())) {
+            if (runtime.getType(name) == null) {
+                assertThat(usage.isStronglyReferenced(fromFile, name))
+                    .as("%s is in the emitted file but not the runtime schema, which only an "
+                        + "unreferenced type may be", name)
+                    .isFalse();
+                registry.remove(registry.types().get(name));
+            }
+        }
+
+        List<EditOperation> edits = new SchemaDiffing().diffGraphQLSchema(
+            UnExecutableSchemaGenerator.makeUnExecutableSchema(registry), parse(printed));
         assertThat(edits).isEmpty();
     }
 
