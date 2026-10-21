@@ -5,7 +5,7 @@ status: In Progress
 bucket: bug
 priority: 6
 theme: codegen-correctness
-depends-on: [table-child-with-all-null-columns-reads-as-null]
+depends-on: []
 created: 2026-10-20
 last-updated: 2026-10-21
 ---
