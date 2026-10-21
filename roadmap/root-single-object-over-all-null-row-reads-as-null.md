@@ -28,7 +28,7 @@ migration guide lists goes.
 
 ```graphql
 type Query {
-    kontaktinfo(personId: ID!): Kontaktinfo @lookupKey   # null over a row of nulls, as in v9
+    kontaktinfo(personId: ID! @lookupKey): Kontaktinfo   # null over a row of nulls, as in v9
     hovedkontakt: Kontaktinfo!                           # always an object, as today
 }
 type Kontaktinfo @table(name: "PERSON") {
@@ -39,10 +39,14 @@ type Kontaktinfo @table(name: "PERSON") {
 
 | Shape | Data | Graphitron 9 | Today | After |
 |---|---|---|---|---|
-| `kontaktinfo(personId: 7) { epost }` | the `PERSON` row exists, both columns `null` | `null` | `{epost: null}` | `null` |
-| `kontaktinfo(personId: 7) { __typename }` | as above | `null` (every field counted) | `{__typename: "Kontaktinfo"}` | `null` |
+| `kontaktinfo(personId: 7) { epost }` | the `PERSON` row exists, both columns `null` | `null` | `{epost: null}` (see below) | `null` |
+| `kontaktinfo(personId: 7) { __typename }` | as above | `null` (every field counted) | `{__typename: "Kontaktinfo"}` (see below) | `null` |
 | `kontaktinfo(personId: 8) { epost }` | no `PERSON` row 8 | `null` | `null` | `null` |
 | `hovedkontakt { epost }` | a row with both columns `null` | object | object | object |
+
+The "Today" column for the `@lookupKey` rows is the anchored read's behavior; the lookup's own is
+unverified, since no single root lookup is exercised anywhere today (see "The `@lookupKey` single
+shape" below).
 
 No consumer has reported the root shape; the item exists so the divergence has a home, and it is
 cheap once R1069's per-type fold exists. In practice it bites only types that map neither a
@@ -84,44 +88,98 @@ per-type fold `GraphitronSchema.presenceOf(typeName)`, `NullContract.of`, the `P
 command and its renderer in `PathFragments`. Where R1069 lands under different names, this plan
 follows them.
 
-**The command: presence rides the single result shape.** `ResultShape.SingleRecord` gains
-`List<ColumnRef> presence` and `Optional<PresenceProbe> probe`, both empty when the field always
-resolves to an object. The shape is the right carrier for the same reason `ResultShape` gives for
-carrying the ordering: the fact co-varies with cardinality (a list or a connection has no single
-object to collapse), so a slot on the command or on each source would make an illegal pair
-representable. The producer, `LauncherCommands.resultShapeOf`, fills it from
-`NullContract.of(qtf.returnType().wrapper(), schema.presenceOf(typeName))`: `AlwaysObject` (a
-non-null field, or a type whose leaves block) gives the empty slots, `CollapsesWhenAbsent` gives its
-column leaves and, when it has probes, one `PresenceProbe`. Every other producer of `SingleRecord`
-(the DML and pivot reads, the discriminated root, the batched single child) passes empty slots, and
-`LauncherCommand`'s constructor gains a source-by-result backstop beside the existing ones:
-non-empty presence only on the three sources in scope. If R1069's reviewer moves the batched single
-child's slots from `LaunchSource.Correlated.Projected` onto `SingleRecord`, the backstop admits that
-source too and the two items share one slot.
+**The `@lookupKey` single shape, pinned first.** `LauncherCommands.lookupRow` mints
+`ResultShape.RecordList(null)` for every lookup, though `GraphitronSchemaValidator.validateRootLookup`
+admits a single lookup (a scalar key and a single return), so `RootLauncherRenderer.lookupBody`'s
+single branch is unreachable from the producer and a single root lookup takes the list arm's
+scatter. The implementer first pins today's single-lookup behavior with a pipeline case and an
+execution case in the sakila example (no field there exercises it), then routes `lookupRow`'s result
+through the same cardinality fork `resultShapeOf` uses, so one producer mints the single shape for
+all three sources. If the pinning shows the single lookup is broken outright rather than merely
+list-shaped, that fix lands here, since this item cannot reach the lookup source without it.
+
+**The command: a sealed null check on the single result shape.** `ResultShape.SingleRecord` gains one
+component, `NullCheck check`, a new sealed command type in `no.sikt.graphitron.command`:
+
+- `NullCheck.None`: the record is returned as fetched.
+- `NullCheck.Collapses(List<List<ColumnRef>> leaves, Optional<PresenceProbe> probe)`: the record is
+  `null` unless some leaf has every column non-null or the probe column is set. The inner lists keep
+  R1069's `Columns` leaf grouping (a composite `@nodeId` is one leaf of several columns, absent when
+  any of them is `null`), which a flat column list would lose. The constructor refuses a check with
+  no leaves and no probe, so "never present" is not representable and `None` is the only
+  always-object form.
+
+The shape is the right carrier for the reason `ResultShape` gives for carrying the ordering: the fact
+co-varies with cardinality (a list or a connection has no single object to collapse), so a slot on
+the command or on each source would make an illegal pair representable. `NullCheck` holds the
+decision, not just the columns to project, which is what the launcher needs: it renders over the
+command with no schema in hand. The slot means "project these and return `null` when absent" and
+nothing else; R1069's batched single child, whose check runs in the field's continuation rather
+than in its rows method, keeps its projection-only slots on `LaunchSource.Correlated.Projected` and
+does not share this one (a review note for R1069: name those slots so they read as projection
+only).
+
+**One mapping from the model's contract to the command.** A `plan/` function,
+`NullChecks.of(NullContract, ...)`, maps R1069's `NullContract` to `NullCheck`
+(`AlwaysObject` to `None`, `CollapsesWhenAbsent` to `Collapses`, minting the `PresenceProbe` the way
+R1069's `ProjectionCommands` does). `LauncherCommands.resultShapeOf` and the R1069 fetcher path both
+call it, so a child and a root turn one decision into one command shape by one conversion.
+`resultShapeOf` reads the contract as `NullContract.of(qtf.returnType().wrapper(), presence)`, where
+`presence` is R1069's per-type fold.
+
+**The schema-free walk computes the same check.** `LauncherCommands.produceWithoutSchema` reaches
+`row` and `routineRow`, and so `resultShapeOf`, with no `GraphitronSchema`; its javadoc promises it
+mirrors what `produce` would mint. R1069's fold is therefore stated over a `fieldsOfType` lookup, as
+`selectionRestriction(participants, fieldsOfType, units)` already is, with
+`GraphitronSchema.presenceOf(typeName)` a thin call over the schema's own fields. The schema-free walk
+passes its `fieldsByParentType` map, which mints `None` only for a type whose fields the assembly
+never handed over, the same pre-existing limit that map states for the selection restriction. If
+R1069 lands the fold schema-bound, this item restates it over the lookup.
+
+**Backstops where the pair is unrepresentable.** `LauncherCommand`'s constructor gains a
+source-by-result backstop for `Collapses` on `LaunchSource.DiscriminatedTable` and
+`LaunchSource.DiscriminatedReentry` (no single projection alias to read the leaves off) and on
+`LaunchSource.PivotAggregate` (the opposite convention: a record of null slots, never a null
+record). Each mirrors an owner: the discriminated arms' interface returns are R1069's exclusion, and
+the pivot convention is pinned by `BatchedChildExecutionTest.pivotChild_eachParentGetsItsOwnRecord_rowLessParentGetsNullSlots`.
+A mutation's `ProjectedReentry` read could carry a check and renders fine; it is out of scope by
+choice, so the producer simply leaves `None` there and a pipeline case asserts it, rather than the
+constructor refusing it.
 
 **Projection.** In the three single arms of `RootLauncherRenderer` (the anchor arm's `selectChain`,
-`lookupBody`'s single branch, and the routine arm, which shares `selectChain`), a non-empty
-presence turns the inline `$project(...)` select into a `selectFields` local, the way
-`lookupBody`'s list arm already adds `__idx__`: the projection, then each presence column read off
-the projected node's alias, then the probe column, rendered by R1069's `PathFragments` probe
-renderer correlated on that same alias, under a new `ReservedAliases.PRESENCE` alias. The
-correlated alias is the table local for the anchor and lookup arms, and the chain's terminus alias
-(the connection arm's `aliasLocal`) for the routine arm. Columns are projected whatever the query
-selects, so the decision is selection-independent, as it is for children. A presence column the
-projection also selects is selected twice under one name, as `CallWrap.SameRow`'s presence columns
-already are beside the same-row child's `$project`.
+`lookupBody`'s single branch, and the routine arm, which shares `selectChain`), a `Collapses` check
+turns the inline `$project(...)` select into a `selectFields` local, the way `lookupBody`'s list
+arm already adds `__idx__`: the projection, then each leaf column read off the projected node's
+alias, then the probe column, rendered by R1069's `PathFragments` probe renderer correlated on that
+same alias, under a new `ReservedAliases.PRESENCE` alias. The correlated alias is the table local
+for the anchor and lookup arms, and the chain's terminus alias (the connection arm's `aliasLocal`)
+for the routine arm. Columns are projected whatever the query selects, so the decision is
+selection-independent, as it is for children. A leaf column the projection also selects is selected
+twice under one name, as `CallWrap.SameRow`'s presence columns already are beside the same-row
+child's `$project`.
+
+**Compile-graph edges.** A probe term carries a `GlueCall` filter (a condition unit, often on
+another type's conditions class), and its reach hops may carry filter units. `PlanCompileGraph.addLauncherEdges`'
+`case ResultShape.SingleRecord ignored -> { }` arm becomes a walk over the check's probe, adding a
+`precise(owner, ...)` edge to each unit it names, so an incremental compile recompiles the launcher
+when a probe's condition changes. The switch is already exhaustive, so nothing forces this edit;
+the plan names it so it is not missed. (R1069's `CallWrap` and `Correlated.Projected` slots have
+the same gap; flagged to its reviewer.)
 
 **The check lives in the launcher.** After `fetchOne()`, the arm binds the record, returns `null`
-when it is `null` (no row, as today), and otherwise runs the presence check: present when any column
-leaf is non-null or the probe column is set, else `null`. The check is R1069's
+when it is `null` (no row, as today), and otherwise renders the check: present when some leaf has
+every column non-null or the probe column is set, else `null`. The rendering is R1069's
 `FetcherEmitter.presenceCheck`, lifted into a `render` fragment (`PresenceFragments.check`) that
-both `FetcherEmitter` and `RootLauncherRenderer` call, so a child and a root read decide presence
-with one emitter. It renders plain `if` statements, since generated code targets Java 17. Placing
-it in the launcher rather than the entry point keeps `RootLauncherRenderer.valueTypeOf` and
-`TypeFetcherGenerator.buildQueryTableFetcher` unchanged: the launcher still returns a `Record` or
-`null`, now with `null` meaning "nothing to show" rather than only "no row". A launcher serves one
-coordinate, so unlike R1069's shared batched rows method there is no `T` and `T!` site to keep
-apart. The fanned tenancy needs nothing: `LauncherCommand` already restricts it to `RecordList`.
+takes a `NullCheck.Collapses`, which both `FetcherEmitter` and `RootLauncherRenderer` call, so a
+child and a root read decide presence with one emitter over one input. It renders plain `if`
+statements, since generated code targets Java 17. The launcher is the place because the entry point
+is thin by design: `LauncherCommand` leaves it nothing to say beyond acquiring a connection and
+wrapping the payload, and keeping the presence alias's writer and reader in one method keeps the
+pair local. `RootLauncherRenderer.valueTypeOf` and `TypeFetcherGenerator.buildQueryTableFetcher`
+stay unchanged: the launcher still returns a `Record` or `null`, now with `null` meaning "nothing to
+show" rather than only "no row". A launcher serves one coordinate, so unlike R1069's shared batched
+rows method there is no `T` and `T!` site to keep apart. The fanned tenancy needs nothing:
+`LauncherCommand` already restricts it to `RecordList`.
 
 **Docs.** R1069's manual section "When a single object resolves to `null`" in
 `docs/manual/how-to/map-types-to-tables.adoc` is reworded from "a nullable field of a `@table`
@@ -130,7 +188,8 @@ closing paragraph narrows to "A field returning an interface or union, a `@servi
 mutation's payload return what they fetch, so a row of nulls there is an object." In
 `docs/manual/how-to/migrating-from-legacy.adoc`, R1069's bullet "A field of `Query` returning one
 table object stays an object over a row of nulls, where Graphitron 9 returned `null`" is deleted.
-`ResultShape.SingleRecord`'s javadoc names the new slots.
+`ResultShape`'s class javadoc ("one record or null") and `SingleRecord`'s say that `null` now also
+means "nothing to show", and name the check.
 
 ## Cost
 
@@ -145,14 +204,21 @@ leaves include a never-null column is a follow-up for both items.
 ## Tests
 
 - **Pipeline** (a new `RootNullContractPipelineTest`, beside R1069's
-  `TableChildNullContractPipelineTest`): the `SingleRecord` a nullable `QueryTableField` gets over
-  each source (anchor, `@lookupKey`, `@routine` chain) carries the type's column leaves and, for a
-  type holding a reference, a probe; a non-null field, a list and a connection carry none; a
-  `QueryTableInterfaceField` and a DML payload read carry none. The `LauncherCommand` backstop
-  rejects presence on a `ProjectedReentry` source. Assertions are on the commands, not on generated
-  method bodies.
+  `TableChildNullContractPipelineTest`): today's single `@lookupKey` root shape, pinned before it
+  changes, then the `SingleRecord` it gets after; the `NullCheck.Collapses` a nullable
+  `QueryTableField` gets over each source (anchor, `@lookupKey`, `@routine` chain) carries the
+  type's leaves with their grouping (a composite `@nodeId` as one leaf) and, for a type holding a
+  reference, a probe; a non-null field gets `None`, and a list and a connection have no
+  `SingleRecord`; a `QueryTableInterfaceField` and a DML payload read get `None`; the schema-free
+  walk (`produceWithoutSchema`) mints the same check as the schema walk for the same fields. The
+  `LauncherCommand` backstop rejects `Collapses` on a `DiscriminatedTable`, a `DiscriminatedReentry`
+  and a `PivotAggregate` source; `NullCheck.Collapses` refuses an empty check. Assertions are on
+  the commands, not on generated method bodies.
+- **Compile graph** (`PlanCompileGraphTest`): a nullable single root over a type whose probe carries
+  a condition gets a precise edge from the launcher owner to that condition's unit.
 - **Execution** (`graphitron-sakila-example`, over R1069's fixture table whose rows exist with every
   mapped column `null`, through new `Query` fields):
+  - today's single `@lookupKey` root read, pinned first (no sakila field exercises it yet);
   - a nullable anchored single read and a nullable `@lookupKey` single read of an all-null row
     resolve to `null`; a row with one non-null column is an object; a missing row is `null` as
     today;
@@ -171,16 +237,21 @@ leaves include a never-null column is a follow-up for both items.
 
 ## Retired vocabulary
 
-- `ResultShape.SingleRecord()`, the nullary form (the record gains components; the name stays).
+- `ResultShape.SingleRecord()`, the nullary form (the record gains its `NullCheck`; the name stays).
+- `FetcherEmitter.presenceCheck` (lifted to `PresenceFragments.check`).
 - In the manual: "A field of `Query` ... return what they fetch" for a `Query` field returning one
   table object.
 
 ## Other solutions we've considered
 
 - **The check in the entry point** (`buildQueryTableFetcher`), on `payload`. It would leave the
-  launcher untouched, but the entry point would then need the presence columns' names, which only
-  the launcher's select list mints, and the fanned and single-tenant forks of the entry point would
-  each have to know whether a check applies. The launcher already owns the statement and its read.
+  launcher untouched, but the entry point is thin by design, owning connection acquisition and
+  nothing about the statement, and the presence alias's writer would sit in one method and its
+  reader in another.
+- **Two flat slots on `SingleRecord`** (`List<ColumnRef>` and `Optional<PresenceProbe>`, both empty
+  for "always an object"), shared with R1069's batched child. A flat list loses the leaf grouping a
+  composite `@nodeId` needs; "both empty" stands in for a decision rather than stating it; and the
+  shared slot would mean "check here" at the root and "only project" at a batched source.
 - **Slots on each in-scope `LaunchSource`** (`AnchorTable`, `KeyedLookup`, `RoutineChain`), as
   R1069 does for `Correlated.Projected`. Three records gain the same two components and each list
   arm must pass empty ones; the fact belongs to cardinality, not to where the rows come from.
