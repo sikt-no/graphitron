@@ -11589,19 +11589,52 @@ SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema,
                     WHERE nb.graph_name = f.graph_name AND nb.type_name = f.type_name)
 UNION ALL
 -- A field carrying @sourceRow departs from the table declaring its path's first key: the lifter
--- returns that key's source-side columns, which is the generator's contract for it.
-SELECT p.graph_name, p.type_name, p.field_name,
+-- returns that key's source-side columns, which is the generator's contract for it. The first
+-- element is read from the entries: element 0 of a @reference application under the field's
+-- definition, a @referenceFor being a participant's, with no @routine or @reference application
+-- written before it there.
+SELECT ef.graph_name, ef.type_name, ef.field_name,
        k.constraint_source_name, k.constraint_schema, k.constraint_table, 'SOURCE_ROW'
-  FROM graphitron_field_path p
+  FROM graphitron_ast_reference_element_entry e
   JOIN graphitron_path_element_key k
-    ON k.graph_name = p.graph_name AND k.source_name = p.source_name
-   AND k.source_line = p.source_line AND k.source_column = p.source_column
- WHERE p.position = 0
+    ON k.graph_name = e.graph_name AND k.source_name = e.source_name
+   AND k.source_line = e.source_line AND k.source_column = e.source_column
+  JOIN graphql_ast_entry ap
+    ON ap.graph_name = e.graph_name AND ap.source_name = e.source_name
+   AND ap.source_line = e.application_line AND ap.source_column = e.application_column
+  JOIN graphql_ast_entry fd
+    ON fd.graph_name = ap.graph_name AND fd.source_name = ap.source_name
+   AND fd.source_line = ap.parent_line AND fd.source_column = ap.parent_column
+   AND fd.entry_kind = 'FIELD_DEFINITION'
+  JOIN graphql_ast_element_entry fe
+    ON fe.graph_name = fd.graph_name AND fe.source_name = fd.source_name
+   AND fe.source_line = fd.source_line AND fe.source_column = fd.source_column
+  JOIN graphql_element_field ef
+    ON ef.graph_name = fe.graph_name AND ef.coordinate = fe.coordinate
+ WHERE e.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry rf
+                    WHERE rf.graph_name = e.graph_name AND rf.source_name = e.source_name
+                      AND rf.source_line = e.application_line AND rf.source_column = e.application_column)
+   AND NOT EXISTS (SELECT 1 FROM graphql_ast_entry before
+                    WHERE before.graph_name = fd.graph_name AND before.source_name = fd.source_name
+                      AND before.parent_line = fd.source_line AND before.parent_column = fd.source_column
+                      AND (before.source_line < ap.source_line
+                           OR (before.source_line = ap.source_line AND before.source_column < ap.source_column))
+                      AND (EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
+                                    WHERE r.graph_name = before.graph_name AND r.source_name = before.source_name
+                                      AND r.source_line = before.source_line AND r.source_column = before.source_column)
+                           OR EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry be
+                                       WHERE be.graph_name = before.graph_name AND be.source_name = before.source_name
+                                         AND be.application_line = before.source_line
+                                         AND be.application_column = before.source_column
+                                         AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry bf
+                                                          WHERE bf.graph_name = be.graph_name
+                                                            AND bf.source_name = be.source_name
+                                                            AND bf.source_line = be.application_line
+                                                            AND bf.source_column = be.application_column))))
    AND EXISTS (SELECT 1 FROM graphql_directive_application da
-                 JOIN graphql_element_field ef
-                   ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
-                WHERE ef.graph_name = p.graph_name AND ef.type_name = p.type_name
-                  AND ef.field_name = p.field_name AND da.directive_name = 'sourceRow');
+                WHERE da.graph_name = ef.graph_name AND da.coordinate = ef.coordinate
+                  AND da.directive_name = 'sourceRow');
 COMMENT ON VIEW graphitron_field_source_table_rule IS 'One row the field source-table rule computes, in the shape graphitron_field_source_table stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_source_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 COMMENT ON COLUMN graphitron_field_source_table_rule.graph_name IS 'the owning graph''s partition, carried from graphitron_field';
 COMMENT ON COLUMN graphitron_field_source_table_rule.type_name IS 'the type owning the field';

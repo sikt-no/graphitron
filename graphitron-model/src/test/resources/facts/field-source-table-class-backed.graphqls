@@ -34,6 +34,15 @@ type CustomerAddressSummary {
       method: "addressIdOf"
     )
     @reference(path: [{key: "CUSTOMER__CUSTOMER_ADDRESS_ID_FKEY"}])
+  # Two applications compose one path, and its first key is the first application's: element 0 of
+  # the second, a key held by address, is not where the field departs.
+  chainedAddress: [Address!]!
+    @sourceRow(
+      className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+      method: "addressIdOf"
+    )
+    @reference(path: [{key: "customer_address_id_fkey"}])
+    @reference(path: [{key: "address_city_id_fkey"}])
 }
 
 extend type Query {
@@ -50,6 +59,12 @@ extend schema @assertContains(relation: "graphitron_field_source_table", rows: "
   CustomerAddressSummary, address,    customer,   SOURCE_ROW
   CustomerAddressSummary, qualifiedAddress, customer, SOURCE_ROW
   CustomerAddressSummary, constantAddress,  customer, SOURCE_ROW
+  CustomerAddressSummary, chainedAddress,   customer, SOURCE_ROW
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_source_table", rows: """
+  type_name,              field_name,     from_table, basis
+  CustomerAddressSummary, chainedAddress, address,    SOURCE_ROW
   """)
 
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
