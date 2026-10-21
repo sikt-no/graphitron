@@ -10774,18 +10774,6 @@ landing (graph_name, type_name) AS (
     FROM graphql_poly_member pm
     JOIN bound b ON b.graph_name = pm.graph_name AND b.type_name = pm.member_type_name
 ),
--- The payloads a write, a routine or a service returns, types with no table of their own whose
--- table-bound fields re-read by the keys that producer handed back.
-payload (graph_name, type_name) AS (
-  SELECT DISTINCT c.graph_name, ft.target_type_name
-    FROM claim_count c
-    JOIN graphitron_field_target ft
-      ON ft.graph_name = c.graph_name AND ft.type_name = c.type_name
-     AND ft.field_name = c.field_name
-   WHERE c.claims = 1 AND c.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
-     AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
-                      WHERE b.graph_name = c.graph_name AND b.type_name = ft.target_type_name)
-),
 -- The operation a root type serves; a type serving two answers with one.
 root (graph_name, type_name, operation) AS (
   SELECT graph_name, type_name, MIN(operation)
@@ -10828,9 +10816,23 @@ SELECT graph_name, type_name, field_name, kind
                                                WHERE w.graph_name = e.graph_name
                                                  AND w.wrapper_type_name = e.type_name)))
                THEN NULL
-             -- The re-read on a payload's data field, over the keys its producer returned.
-             WHEN EXISTS (SELECT 1 FROM payload p
-                           WHERE p.graph_name = f.graph_name AND p.type_name = f.type_name)
+             -- The re-read on a payload's data field, over the keys its producer returned: a type
+             -- with no table of its own that a write, a routine or a service returns, that field
+             -- claiming nothing else. Probed per field rather than collected beside the claim
+             -- counts, which H2 would collect again for every field it asks about.
+             WHEN EXISTS (SELECT 1 FROM graphitron_field_target pf
+                           JOIN graphitron_producer_claim pc
+                             ON pc.graph_name = pf.graph_name AND pc.type_name = pf.type_name
+                            AND pc.field_name = pf.field_name
+                            AND pc.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE', 'SERVICE')
+                          WHERE pf.graph_name = f.graph_name AND pf.target_type_name = f.type_name
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_producer_claim pc2
+                                             WHERE pc2.graph_name = pc.graph_name
+                                               AND pc2.type_name = pc.type_name
+                                               AND pc2.field_name = pc.field_name
+                                               AND pc2.kind <> pc.kind))
+              AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding pb
+                               WHERE pb.graph_name = f.graph_name AND pb.type_name = f.type_name)
               AND EXISTS (SELECT 1 FROM bound b
                            WHERE b.graph_name = f.graph_name AND b.type_name = ft.target_type_name)
                THEN 'LOOKUP'
