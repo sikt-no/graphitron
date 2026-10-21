@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.command.GlobalCommand;
+import no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.JavaFile;
@@ -29,11 +30,8 @@ import no.sikt.graphitron.model.schema.input.FederationLinkApplier;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaInputAttribution;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
-import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
-import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
-import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronDevExecutorGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator;
@@ -41,7 +39,6 @@ import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerat
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ObjectTypeGenerator;
-import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.SchemaSdlEmitter;
 import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionFetcherClassGenerator;
@@ -50,9 +47,7 @@ import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator
 import no.sikt.graphitron.rewrite.generators.util.ConnectionResultClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator;
-import no.sikt.graphitron.rewrite.generators.util.GraphitronTransactionProviderGenerator;
 import no.sikt.graphitron.rewrite.generators.util.EntityFetcherDispatchClassGenerator;
-import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ColumnValuesClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
@@ -228,7 +223,7 @@ public class GraphQLRewriteGenerator {
      */
     public record GenerationResult(Set<Path> emitted, Set<Path> changed,
                                    Map<String, TypeSpec> emittedUnits, Set<String> changedUnits,
-                                   EmitPlan plan) {}
+                                   EmitPlan plan, List<FixedRuntimeEmitter.Unit> fixedRuntime) {}
 
     /**
      * Mutable per-run accumulator for the emitted set and the changed-file delta, tracked both by path
@@ -513,6 +508,10 @@ public class GraphQLRewriteGenerator {
                     federationLink),
                 emittedThisRun);
         }
+        var fixedRuntime = FixedRuntimeEmitter.render(store);
+        for (var unit : fixedRuntime) {
+            writeUnits("fixed runtime " + unit.kind(), List.of(unit.ref()), List.of(unit.spec()), emittedThisRun);
+        }
         // The condition command relation: every row renders glue at the address its ref commits,
         // and every WHERE consumer calls it (call-site convergence closed the render-side dial).
         writeUnits("condition glue",
@@ -574,14 +573,15 @@ public class GraphQLRewriteGenerator {
             Collections.unmodifiableSet(emittedThisRun.changed),
             Collections.unmodifiableMap(emittedThisRun.emittedUnits),
             Collections.unmodifiableSet(emittedThisRun.changedUnits),
-            plan
+            plan,
+            fixedRuntime
         );
         // Only the dev-loop incremental compiler needs the compile-dependency graph; production
         // generate() skips the build. See the sourcing seam in CompileDependencyGraph: the graph
-        // is projected from the same plan this run rendered from, so it is always consistent
-        // with the sources just written.
+        // is projected from the same plan this run rendered from and the fixed classes it wrote,
+        // so it is always consistent with the sources just written.
         CompileDependencyGraph graph = projection.compileGraph()
-            ? PlanCompileGraph.fromPlan(plan, schema)
+            ? PlanCompileGraph.fromPlan(plan, fixedRuntime, schema)
             : null;
         return new PassProducts(captured.walkErrors(), captured.errors(), warnings,
             new IncrementalGeneration(result, graph));
@@ -610,14 +610,11 @@ public class GraphQLRewriteGenerator {
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
             case NESTING_COORDINATES -> NestingCoordinatesClassGenerator.generate(schema.nestingReach());
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
-            case GRAPHITRON_CONTEXT -> GraphitronContextInterfaceGenerator.generate();
             case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType, tenantColumn);
-            case TRANSACTION_PROVIDER -> GraphitronTransactionProviderGenerator.generate(outputPackage);
             case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, schema.sessionHooks());
-            case CONSTRAINT_VIOLATIONS -> ConstraintViolationsClassGenerator.generate();
-            case CLIENT_EXCEPTION -> GraphitronClientExceptionClassGenerator.generate();
-            case ERROR_ROUTER -> ErrorRouterClassGenerator.generate(outputPackage);
-            case OUTCOME -> OutcomeClassGenerator.generate(outputPackage);
+            case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
+                 ERROR_ROUTER, OUTCOME -> throw new IllegalStateException(command.kind()
+                + " is written by FixedRuntimeEmitter and never planned");
             case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);

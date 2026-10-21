@@ -105,6 +105,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * The type generators rendering the emitted schema's forms while the variants carry their own. Ends
   at "The type and input generators read the emitted schema and the store".
 * The `util` package's fixed classes written through the plan. Ends at "The `util` package's fixed classes are not planned".
+* `FixedRuntimeEmitter` reading the store from `rewrite.generators.schema`, outside `emit`, beside the
+  renderers it calls. Ends at "The fixed classes' renderers move into `emit`".
 * The position columns and the `code_type` dictionary, both stating a signature's parse. Ends at
   "`code_type` and `code_type_element` are gone".
 * `CodeCapture` sweeping by instant beside the class-file sweep. Ends at "A single changed class re-reads only itself, swept at the class file".
@@ -345,6 +347,8 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
   * **A generating harness captures the run's output coordinates** `done`. `GenerateTestSchemas`
     runs each scenario as a generating run, a `RunContext` captured by `GraphitronStore.captured`.
+  * **The output package is read from the store** `done`, for the fixed runtime classes.
+    `FixedRuntimeEmitter` reads it off `store_graph_output`.
   * **The tenant column and the session hook signature are captured** `open`. The column the
     configured tenant name resolves to, and which mount signatures get a hook class, are stored.
 * **`graphitron` does no orchestration** `open`. A harness in `graphitron`'s tests that captures and
@@ -390,9 +394,18 @@ generated Java or SQL as text.
 
 The generator turns over one emitter at a time, each held to behaviour by tests that run the
 generated classes against PostgreSQL from the fact scenarios. The fixed runtime classes and the
-output package they are written to are settled once the held change for them lands.
+output package they are written to are settled.
 
-* **The schema package's fixed classes are written without a plan** `open`.
+* **The schema package's fixed classes are written without a plan** `done`. `FixedRuntimeEmitter`
+  writes `GraphitronContext`, `GraphitronTransactionProvider`, `ConstraintViolations`,
+  `GraphitronClientException`, `ErrorRouter` and `Outcome` from the package it reads off
+  `store_graph_output`, and the plan carries no entry for them. The incremental compile graph takes
+  them from what the emitter wrote, under the same wiring rules.
+* **The fixed classes' renderers move into `emit`** `open`. The six classes `FixedRuntimeEmitter`
+  renders are written by generators that name `GeneratedUnits`, `ErrorDispatchFragments` and the
+  model, so the emitter sits beside them in `rewrite.generators.schema` rather than in `emit`.
+  When they name only the store, javapoet and the package, they move into `emit` and the emitter
+  follows them, its record of what it wrote no longer spelled in the planner's `GlobalUnitKind`.
 * **The `util` package's fixed classes are not planned** `open`. `GraphitronValues`, `LightFetcher`,
   `ColumnValues`, `SelectionOccurrences` and `OrderByResult` are written from the package alone;
   `ConnectionResult` and `ConnectionHelper` take the tenancy flag, `NestingCoordinates` the nesting

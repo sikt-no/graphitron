@@ -12,6 +12,7 @@ import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter;
 import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -24,14 +25,15 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 
 /**
  * The plan-sourced arm of the sourcing seam: projects the {@link CompileDependencyGraph} off the
- * {@link EmitPlan}'s relations. Nodes are the union of every relation's committed
- * {@link UnitRef}s; edges are read off the rows that already carry them (a launcher row's source
+ * {@link EmitPlan}'s relations and the fixed runtime classes {@link FixedRuntimeEmitter} wrote.
+ * Nodes are the union of every relation's committed {@link UnitRef}s and those written classes; edges are read off the rows that already carry them (a launcher row's source
  * projection and WHERE glue, a projection row's callees and glue calls, a condition row's
  * decode/context facts, the fetcher edge relation's targets, the sealed
  * {@link GlobalCommand} arms' fixed-substrate wiring), never re-derived from the classified
@@ -117,22 +119,29 @@ public final class PlanCompileGraph {
      */
     public record Projection(CompileDependencyGraph graph, CompileDependencyGraph declaredSuperset) {}
 
-    /** The production entry point: the full graph for one run's plan. */
-    public static CompileDependencyGraph fromPlan(EmitPlan plan, GraphitronSchema schema) {
-        return project(plan, schema).graph();
+    /** The production entry point: the full graph for one run's plan and fixed classes. */
+    public static CompileDependencyGraph fromPlan(EmitPlan plan, List<FixedRuntimeEmitter.Unit> fixedRuntime,
+                                                  GraphitronSchema schema) {
+        return project(plan, fixedRuntime, schema).graph();
     }
 
     /** The graph plus its declared-superset view, for the oracle's bounded-gap leg. */
-    public static Projection project(EmitPlan plan, GraphitronSchema schema) {
-        return new Builder(plan, schema).build();
+    public static Projection project(EmitPlan plan, List<FixedRuntimeEmitter.Unit> fixedRuntime,
+                                     GraphitronSchema schema) {
+        return new Builder(plan, fixedRuntime, schema).build();
     }
 
-    /** The committed frozen-scaffold units of one plan, resolved by kind (never re-minted). */
-    public static Set<UnitRef> frozenScaffoldUnits(EmitPlan plan) {
+    /** The frozen-scaffold units of one run, resolved by kind (never re-minted). */
+    public static Set<UnitRef> frozenScaffoldUnits(EmitPlan plan, List<FixedRuntimeEmitter.Unit> fixedRuntime) {
         var frozen = new LinkedHashSet<UnitRef>();
         for (GlobalCommand command : plan.globals()) {
             if (FROZEN_SCAFFOLD_KINDS.contains(command.kind())) {
                 frozen.addAll(command.units());
+            }
+        }
+        for (var unit : fixedRuntime) {
+            if (FROZEN_SCAFFOLD_KINDS.contains(unit.kind())) {
+                frozen.add(unit.ref());
             }
         }
         return frozen;
@@ -141,19 +150,27 @@ public final class PlanCompileGraph {
     private static final class Builder {
 
         private final EmitPlan plan;
+        private final List<FixedRuntimeEmitter.Unit> fixedRuntime;
         private final GraphitronSchema schema;
         private final MapCompileDependencyGraph.Accumulator graph = new MapCompileDependencyGraph.Accumulator();
         private final MapCompileDependencyGraph.Accumulator superset = new MapCompileDependencyGraph.Accumulator();
-        private final Map<GlobalUnitKind, GlobalCommand> byKind = new LinkedHashMap<>();
+        private final Map<GlobalUnitKind, List<UnitRef>> byKind = new LinkedHashMap<>();
         private final Map<String, UnitRef> fetchersByTypeName = new LinkedHashMap<>();
         private final Map<String, UnitRef> fetchersBySimpleName = new LinkedHashMap<>();
         private final Map<String, UnitRef> schemaShapeBySimpleName = new LinkedHashMap<>();
 
-        private Builder(EmitPlan plan, GraphitronSchema schema) {
+        private Builder(EmitPlan plan, List<FixedRuntimeEmitter.Unit> fixedRuntime, GraphitronSchema schema) {
             this.plan = plan;
+            this.fixedRuntime = List.copyOf(fixedRuntime);
             this.schema = schema;
             for (GlobalCommand command : plan.globals()) {
-                byKind.put(command.kind(), command);
+                byKind.put(command.kind(), command.units());
+            }
+            for (var unit : this.fixedRuntime) {
+                if (byKind.putIfAbsent(unit.kind(), List.of(unit.ref())) != null) {
+                    throw new IllegalStateException(unit.kind() + " is both planned and written as a fixed"
+                        + " runtime class; one producer owns a class");
+                }
             }
             for (var row : plan.typeUnits().fetchers()) {
                 fetchersByTypeName.put(row.typeName(), row.unit());
@@ -198,8 +215,8 @@ public final class PlanCompileGraph {
 
         /** The single committed unit of a kind, when the plan carries the kind's row. */
         private Optional<UnitRef> refOf(GlobalUnitKind kind) {
-            var command = byKind.get(kind);
-            return command == null ? Optional.empty() : Optional.of(command.units().get(0));
+            var units = byKind.get(kind);
+            return units == null ? Optional.empty() : Optional.of(units.get(0));
         }
 
         private UnitRef require(GlobalUnitKind kind) {
@@ -209,11 +226,11 @@ public final class PlanCompileGraph {
 
         /** A connection-runtime substrate unit, addressed by simple name within the row's units. */
         private Optional<UnitRef> runtimeUnit(String simpleName) {
-            var command = byKind.get(GlobalUnitKind.CONNECTION_RUNTIME);
-            if (command == null) {
+            var units = byKind.get(GlobalUnitKind.CONNECTION_RUNTIME);
+            if (units == null) {
                 return Optional.empty();
             }
-            return command.units().stream().filter(u -> u.simpleName().equals(simpleName)).findFirst();
+            return units.stream().filter(u -> u.simpleName().equals(simpleName)).findFirst();
         }
 
         // --------------------------------------------------------------------------------------
@@ -224,6 +241,7 @@ public final class PlanCompileGraph {
             for (GlobalCommand command : plan.globals()) {
                 command.units().forEach(graph::addNode);
             }
+            fixedRuntime.forEach(unit -> graph.addNode(unit.ref()));
             plan.conditions().units().forEach(graph::addNode);
             plan.projections().units().forEach(graph::addNode);
             plan.typeUnits().inputRecordUnits().forEach(graph::addNode);
@@ -249,8 +267,11 @@ public final class PlanCompileGraph {
                         declared(dispatch.unit(), require(GlobalUnitKind.COLUMN_VALUES));
                         precise(dispatch.unit(), require(GlobalUnitKind.SELECTION_OCCURRENCES));
                     }
-                    case GlobalCommand.Fixed fixed -> addFixedKindEdges(fixed);
+                    case GlobalCommand.Fixed fixed -> addFixedKindEdges(fixed.kind(), fixed.units());
                 }
+            }
+            for (var unit : fixedRuntime) {
+                addFixedKindEdges(unit.kind(), List.of(unit.ref()));
             }
         }
 
@@ -264,15 +285,15 @@ public final class PlanCompileGraph {
          * session-hook bake, the tenant-typed provider reads) while every unit in it is
          * schema-invariant, so the over-approximation can never fire a recompile.
          */
-        private void addFixedKindEdges(GlobalCommand.Fixed fixed) {
-            switch (fixed.kind()) {
+        private void addFixedKindEdges(GlobalUnitKind kind, List<UnitRef> units) {
+            switch (kind) {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
                      CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT, GRAPHITRON_CONTEXT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
                 // Every decode<Type> refuses a key value through the column trip.
-                case NODE_ID_ENCODER -> precise(fixed.units().get(0), require(GlobalUnitKind.COLUMN_VALUES));
+                case NODE_ID_ENCODER -> precise(units.get(0), require(GlobalUnitKind.COLUMN_VALUES));
                 case ENTITY_FETCHER_DISPATCH -> throw new IllegalStateException(
                     "the entity dispatch family is the sealed relation's data-carrying arm;"
                         + " a fixed row of this kind is unconstructible");
@@ -303,9 +324,9 @@ public final class PlanCompileGraph {
                     });
                 }
                 case TRANSACTION_PROVIDER -> runtimeUnit("PinnedConnection")
-                    .ifPresent(p -> declared(fixed.units().get(0), p));
+                    .ifPresent(p -> declared(units.get(0), p));
                 case CONNECTION_INSTRUMENTATION -> {
-                    var instrumentation = fixed.units().get(0);
+                    var instrumentation = units.get(0);
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> declared(instrumentation, r));
                     runtimeUnit("PinnedConnection").ifPresent(p -> declared(instrumentation, p));
                     // Lazy acquisition on every path: the instrumentation publishes the
@@ -316,18 +337,18 @@ public final class PlanCompileGraph {
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
                 }
                 case SCHEMA_CLASS -> {
-                    var schemaClass = fixed.units().get(0);
+                    var schemaClass = units.get(0);
                     refOf(GlobalUnitKind.QUERY_NODE_FETCHER).ifPresent(n -> precise(schemaClass, n));
                     refOf(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL).ifPresent(o -> precise(schemaClass, o));
                 }
                 case QUERY_NODE_FETCHER -> {
-                    var nodeFetcher = fixed.units().get(0);
+                    var nodeFetcher = units.get(0);
                     precise(nodeFetcher, require(GlobalUnitKind.NODE_ID_ENCODER));
                     precise(nodeFetcher, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                     refOf(GlobalUnitKind.ENTITY_FETCHER_DISPATCH).ifPresent(d -> precise(nodeFetcher, d));
                 }
                 case FACADE -> {
-                    var facade = fixed.units().get(0);
+                    var facade = units.get(0);
                     precise(facade, require(GlobalUnitKind.SCHEMA_CLASS));
                     precise(facade, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                     // No instrumentation edge: the owned factory writes only name-keyed
@@ -340,7 +361,7 @@ public final class PlanCompileGraph {
                     refOf(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL).ifPresent(o -> precise(facade, o));
                 }
                 case DEV_EXECUTOR -> {
-                    var devExecutor = fixed.units().get(0);
+                    var devExecutor = units.get(0);
                     precise(devExecutor, require(GlobalUnitKind.FACADE));
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(devExecutor, r));
                     refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> precise(devExecutor, i));
@@ -617,7 +638,7 @@ public final class PlanCompileGraph {
             UnitRef schemaClass = require(GlobalUnitKind.SCHEMA_CLASS);
             UnitRef context = require(GlobalUnitKind.GRAPHITRON_CONTEXT);
             UnitRef lightFetcher = require(GlobalUnitKind.LIGHT_FETCHER);
-            Set<UnitRef> frozen = frozenScaffoldUnits(plan);
+            Set<UnitRef> frozen = frozenScaffoldUnits(plan, fixedRuntime);
             for (UnitRef fetchers : plan.typeUnits().fetchersUnits()) {
                 for (UnitRef scaffold : frozen) {
                     declared(fetchers, scaffold);

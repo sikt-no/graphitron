@@ -8,6 +8,11 @@ package no.sikt.graphitron.command;
  * ({@link #ONE_OF_DIRECTIVE_SDL}, {@link #ENTITY_FETCHER_DISPATCH}, {@link #QUERY_NODE_FETCHER})
  * are absent when their producer-side membership predicate excludes them.
  *
+ * <p>Six kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
+ * {@link #CONSTRAINT_VIOLATIONS}, {@link #CLIENT_EXCEPTION}, {@link #ERROR_ROUTER} and
+ * {@link #OUTCOME} are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
+ * what it wrote by these constants so the compile graph's wiring for them stays one switch.
+ *
  * <p>A pure key: where a unit of the kind lands is carried by the command's {@link UnitRef}s,
  * not here. The per-type-emitting families (types, conditions, fetchers, inputs, per-type schema
  * shapes) are a different relation, keyed {@code (typeName, unitKind)}, and deliberately not

@@ -198,6 +198,8 @@ class FetcherEdgeRelationTest {
     void everyTargetIsACommittedUnit() {
         var committed = new LinkedHashSet<UnitRef>();
         plan.globals().forEach(g -> committed.addAll(g.units()));
+        no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter.render(DEFAULT_OUTPUT_PACKAGE)
+            .forEach(unit -> committed.add(unit.ref()));
         committed.addAll(plan.conditions().units());
         committed.addAll(plan.projections().units());
         committed.addAll(plan.typeUnits().fetchersUnits());

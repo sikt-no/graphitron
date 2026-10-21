@@ -31,11 +31,20 @@ class EmitPlanTest {
 
     private static final String PLAIN_SDL = "type Query { x: String }";
 
-    /** The kinds present for every schema, regardless of shape or configuration. */
+    /**
+     * The kinds present for every schema, regardless of shape or configuration. The fixed runtime
+     * classes are not planned at all: {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter} writes them.
+     */
     private static final EnumSet<GlobalUnitKind> UNCONDITIONAL = EnumSet.complementOf(EnumSet.of(
         GlobalUnitKind.ONE_OF_DIRECTIVE_SDL,
         GlobalUnitKind.ENTITY_FETCHER_DISPATCH,
-        GlobalUnitKind.QUERY_NODE_FETCHER));
+        GlobalUnitKind.QUERY_NODE_FETCHER,
+        GlobalUnitKind.GRAPHITRON_CONTEXT,
+        GlobalUnitKind.TRANSACTION_PROVIDER,
+        GlobalUnitKind.CONSTRAINT_VIOLATIONS,
+        GlobalUnitKind.CLIENT_EXCEPTION,
+        GlobalUnitKind.ERROR_ROUTER,
+        GlobalUnitKind.OUTCOME));
 
     @Test
     void plainSchema_producesTheUnconditionalKinds() {

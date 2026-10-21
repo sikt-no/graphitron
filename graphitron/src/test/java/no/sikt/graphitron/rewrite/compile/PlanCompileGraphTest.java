@@ -1,6 +1,7 @@
 package no.sikt.graphitron.rewrite.compile;
 
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter;
 import no.sikt.graphitron.plan.EmitPlan;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
@@ -77,7 +78,7 @@ class PlanCompileGraphTest {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(SDL);
         EmitPlan plan = EmitPlan.produceWithoutStore(bundle.model(), bundle.federationLink(), bundle.usesOneOf(),
             PKG);
-        graph = PlanCompileGraph.fromPlan(plan, bundle.model());
+        graph = PlanCompileGraph.fromPlan(plan, FixedRuntimeEmitter.render(PKG), bundle.model());
     }
 
     private static Set<String> nodes() {
@@ -144,7 +145,7 @@ class PlanCompileGraphTest {
             type Language @table(name: "language") { name: String }
             """);
         var probed = PlanCompileGraph.fromPlan(EmitPlan.produceWithoutStore(bundle.model(),
-            bundle.federationLink(), bundle.usesOneOf(), PKG), bundle.model());
+            bundle.federationLink(), bundle.usesOneOf(), PKG), FixedRuntimeEmitter.render(PKG), bundle.model());
         assertThat(probed.directReferences(UNITS.fetchers("Query")).stream().map(UnitRef::fqcn))
             .contains(PKG + ".conditions.FilmConditions");
     }

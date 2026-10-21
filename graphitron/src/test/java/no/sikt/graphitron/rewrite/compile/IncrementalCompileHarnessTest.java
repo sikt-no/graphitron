@@ -168,10 +168,10 @@ class IncrementalCompileHarnessTest {
     @Test
     void threeLegOracle_projectedGraphMatchesTheEmitArtifact(@TempDir Path workDir) throws Exception {
         Generated generated = generate(workDir, SCHEMA);
-        var projection = PlanCompileGraph.project(generated.plan, generated.model);
+        var projection = PlanCompileGraph.project(generated.plan, generated.fixedRuntime, generated.model);
         var graph = projection.graph();
         Map<String, Set<String>> walk = TypeSpecReferenceWalk.edges(generated.emittedUnits);
-        Set<String> frozenSources = frozenScaffoldFqcns(generated.plan);
+        Set<String> frozenSources = frozenScaffoldFqcns(generated);
 
         // Leg 1, relation -> emit: the projected node set is exactly the emitted unit set (every
         // endpoint names an emitted unit, and every emitted unit is a node the recompile walk
@@ -245,7 +245,7 @@ class IncrementalCompileHarnessTest {
             // Edit S0 -> S1 in the same source dir: the writer reports the delta.
             Generated g1 = generate(incWork, SCHEMA_EDITED);
             Map<String, String> hashes1 = abiHashes(g1.emittedUnits);
-            var graph1 = PlanCompileGraph.fromPlan(g1.plan, g1.model);
+            var graph1 = PlanCompileGraph.fromPlan(g1.plan, g1.fixedRuntime, g1.model);
             Set<String> abiChanged = RecompileSet.abiChanged(g1.changedUnits, hashes0, hashes1);
             Set<String> recompile = RecompileSet.compute(graph1, g1.changedUnits, abiChanged);
 
@@ -283,7 +283,7 @@ class IncrementalCompileHarnessTest {
     @Test
     void clauseB_bodyEditPrunesButAbiEditPropagates(@TempDir Path workDir) throws Exception {
         Generated g = generate(workDir, SCHEMA);
-        var graph = PlanCompileGraph.fromPlan(g.plan, g.model);
+        var graph = PlanCompileGraph.fromPlan(g.plan, g.fixedRuntime, g.model);
         var units = new GeneratedUnits(OUTPUT_PACKAGE);
         String filmType = units.typeClass("Film").fqcn();            // referenced by the root + DML fetchers
         String queryFetchers = units.fetchers("Query").fqcn();
@@ -306,13 +306,14 @@ class IncrementalCompileHarnessTest {
     // ------------------------------------------------------------------------------------------------
 
     /** The fixed, schema-independent runtime scaffolds; exempt as oracle sources (see the oracle test). */
-    private static Set<String> frozenScaffoldFqcns(no.sikt.graphitron.plan.EmitPlan plan) {
+    private static Set<String> frozenScaffoldFqcns(Generated generated) {
         var frozen = new java.util.LinkedHashSet<String>();
-        PlanCompileGraph.frozenScaffoldUnits(plan).forEach(unit -> frozen.add(unit.fqcn()));
+        PlanCompileGraph.frozenScaffoldUnits(generated.plan, generated.fixedRuntime).forEach(unit -> frozen.add(unit.fqcn()));
         return frozen;
     }
 
     private record Generated(GraphitronSchema model, no.sikt.graphitron.plan.EmitPlan plan,
+                             List<no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter.Unit> fixedRuntime,
                              Map<String, TypeSpec> emittedUnits, Set<String> changedUnits) {}
 
     private static Generated generate(Path workDir, String schemaText) throws Exception {
@@ -338,7 +339,8 @@ class IncrementalCompileHarnessTest {
         // result: the projection reads what the run actually rendered from.
         TypeDefinitionRegistry registry = new SchemaParser().parse(directivesPrelude() + schemaText);
         var model = GraphitronSchemaBuilder.buildBundle(registry, ctx).model();
-        return new Generated(model, result.plan(), result.emittedUnits(), result.changedUnits());
+        return new Generated(model, result.plan(), result.fixedRuntime(), result.emittedUnits(),
+            result.changedUnits());
     }
 
     /** Renders the selected emitted units to in-memory source compilation units. */

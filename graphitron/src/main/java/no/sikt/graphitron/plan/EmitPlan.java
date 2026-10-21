@@ -139,17 +139,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES, units.selectionOccurrences()));
         globals.add(one(GlobalUnitKind.NESTING_COORDINATES, units.nestingCoordinates()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
-        globals.add(one(GlobalUnitKind.GRAPHITRON_CONTEXT, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext")));
         globals.add(connectionRuntime(units, schema.sessionHooks(), schema.requestTenantKeyType().isPresent()));
-        globals.add(one(GlobalUnitKind.TRANSACTION_PROVIDER,
-            units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronTransactionProvider")));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
-        globals.add(one(GlobalUnitKind.CONSTRAINT_VIOLATIONS,
-            units.singleton(GeneratedUnits.SUB_SCHEMA, "ConstraintViolations")));
-        globals.add(one(GlobalUnitKind.CLIENT_EXCEPTION, units.clientException()));
-        globals.add(one(GlobalUnitKind.ERROR_ROUTER, units.errorRouter()));
-        globals.add(one(GlobalUnitKind.OUTCOME, units.outcome()));
         globals.add(one(GlobalUnitKind.ERROR_MAPPINGS, units.errorMappings()));
         globals.add(one(GlobalUnitKind.SCHEMA_CLASS, units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSchema")));
         if (schema.types().values().stream().anyMatch(t -> t instanceof GraphitronType.NodeType)) {
