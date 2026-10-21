@@ -30,6 +30,12 @@ final class McpWire {
         return value instanceof String s && !s.isBlank() ? Optional.of(s) : Optional.empty();
     }
 
+    static boolean booleanArg(Map<String, Object> args, String name) {
+        if (args == null) return false;
+        Object value = args.get(name);
+        return value instanceof Boolean b ? b : value instanceof String s && Boolean.parseBoolean(s.trim());
+    }
+
     static int intArg(Map<String, Object> args, String name, int fallback) {
         if (args == null) return fallback;
         Object value = args.get(name);

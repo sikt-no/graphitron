@@ -350,6 +350,49 @@ class GraphitronMcpServerTest {
         }
     }
 
+    /** The tables a capture took longest to write are in the status, slowest first. */
+    @Test
+    void statusToolNamesTheSlowestWrites(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
+            var writes = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle()))
+                .get("slowestWrites");
+            assertThat(writes).isNotEmpty().hasSizeLessThanOrEqualTo(5);
+            var millis = writes.stream()
+                .map(w -> ((Number) ((Map<?, ?>) w).get("milliseconds")).longValue())
+                .toList();
+            assertThat(millis).isSortedAccordingTo(java.util.Comparator.reverseOrder());
+            assertThat(List.<Object>copyOf(((Map<?, ?>) writes.get(0)).keySet()))
+                .contains("graph", "table", "gatherer", "statements", "rows");
+        }
+    }
+
+    /** Asked across graphs, the status names every graph's slowest writes, each with its graph. */
+    @Test
+    void statusToolNamesTheSlowestWritesAcrossGraphs(@TempDir Path tmp) {
+        try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
+            var dsl = fixture.handle().dsl();
+            var at = java.time.LocalDateTime.of(2026, 10, 21, 12, 0);
+            var g = no.sikt.graphitron.model.Tables.STORE_GRAPH;
+            dsl.insertInto(g, g.GRAPH_NAME, g.BASE_DIR, g.LAST_CAPTURED).values("other", "/w/other", at)
+                .execute();
+            var w = no.sikt.graphitron.model.Tables.STORE_GRAPH_WRITE;
+            dsl.insertInto(w, w.GRAPH_NAME, w.CAPTURED_AT, w.GATHERER_NAME, w.TABLE_NAME, w.STATEMENTS,
+                    w.ROWS_WRITTEN, w.TIME_SPENT_MS)
+                .values("other", at, "graphitron", "GRAPHITRON_FIELD_SOURCE_TABLE", 1, 1L, 3_600_000L)
+                .execute();
+
+            var own = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle()))
+                .get("slowestWrites");
+            assertThat(own.stream().map(write -> (Object) ((Map<?, ?>) write).get("graph")).toList())
+                .as("the session's graph alone by default")
+                .containsOnly(fixture.handle().graphName());
+
+            var all = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle(), true))
+                .get("slowestWrites");
+            assertThat(((Map<?, ?>) all.get(0)).get("graph")).isEqualTo("other");
+        }
+    }
+
     /**
      * A round that failed before it could report leaves the report withheld, which the status says
      * so a developer reading no squiggles knows the schema is not clean, only unreported.

@@ -16,6 +16,8 @@ import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.model.capture.java.JavaSourceFacts;
 import no.sikt.graphitron.model.diagnostics.ReportFacts;
 import no.sikt.graphitron.model.diagnostics.StaleModules;
+import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.sink.WriteTimes;
 import no.sikt.graphitron.model.sources.Observation;
 import no.sikt.graphitron.model.sources.SourceWalker;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
@@ -58,14 +60,17 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.stream.Collectors;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
@@ -460,7 +465,9 @@ public class DevMojo extends AbstractRewriteMojo {
                     initialHolder.set(buildOutputQuietly(ctx));
                 } else {
                     getLog().info(banner("initial run"));
+                    var started = LocalDateTime.now();
                     initialHolder.set(InitialOutput.of(runGeneratorPass(ctx, "initial run")));
+                    reportSlowestWrites(ctx.graphName(), started);
                 }
             }));
         } catch (MojoExecutionException | RuntimeException e) {
@@ -954,6 +961,41 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
+     * Says which tables this round's capture took longest to write, a stage's rule being evaluated
+     * inside its write. Only where the capture finished since {@code roundStarted}: a round that
+     * skipped its capture would repeat the last one's times. Store trouble says nothing.
+     */
+    private void reportSlowestWrites(String graphName, LocalDateTime roundStarted) {
+        if (sessionStore == null) {
+            return;
+        }
+        try {
+            var dsl = sessionStore.dsl();
+            var p = no.sikt.graphitron.model.Tables.STORE_GRAPH_PROGRESS;
+            var finished = dsl.select(p.LAST_COMPLETED).from(p)
+                .where(p.GRAPH_NAME.eq(graphName))
+                .and(p.GATHERER_NAME.eq(Progress.CAPTURE))
+                .fetchOne(p.LAST_COMPLETED);
+            if (finished == null || finished.isBefore(roundStarted)) {
+                return;
+            }
+            var slowest = WriteTimes.slowest(dsl, graphName, SLOWEST_WRITES);
+            if (!slowest.isEmpty()) {
+                getLog().info("graphitron:dev: slowest writes: " + slowest.stream()
+                    .map(write -> write.table().toLowerCase(Locale.ROOT) + " "
+                        + String.format(Locale.ROOT, "%.1f s", write.millis() / 1000.0)
+                        + " (" + write.gatherer() + ")")
+                    .collect(Collectors.joining(", ")));
+            }
+        } catch (org.jooq.exception.DataAccessException e) {
+            getLog().debug("graphitron:dev: write times not read: " + e.getMessage());
+        }
+    }
+
+    /** How many of the slowest writes a round names. */
+    private static final int SLOWEST_WRITES = 3;
+
+    /**
      * Says the workspace modules this graph's run read stale, through {@link #staleModules}:
      * once when a module goes stale and once when it is compiled again. Store trouble says nothing.
      */
@@ -1032,8 +1074,10 @@ public class DevMojo extends AbstractRewriteMojo {
      */
     void regeneratePass(RunContext ctx, Workspace workspace) {
         getLog().info(banner("regenerate"));
+        var started = LocalDateTime.now();
         announce(SDL_CORPUS);
         var round = runGeneratorPass(ctx, "regenerate");
+        reportSlowestWrites(ctx.graphName(), started);
         // A clean regen produces the writer's delta + this schema's compile graph; recompile
         // just the affected sub-closure into the exclusive dir. A failed regen leaves the last
         // good .class in place (nothing to recompile from), matching the generate-only path.
@@ -1078,9 +1122,11 @@ public class DevMojo extends AbstractRewriteMojo {
         getLog().info("graphitron:dev: classpath change detected; re-running the round");
         announce(CLASSPATH_CORPUS);
         try {
+            var started = LocalDateTime.now();
             withCodegenScope(ctx -> {
                 try {
                     var output = capturedGenerator(ctx).buildOutput();
+                    reportSlowestWrites(ctx.graphName(), started);
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
                     reportStaleModules(ctx.graphName());

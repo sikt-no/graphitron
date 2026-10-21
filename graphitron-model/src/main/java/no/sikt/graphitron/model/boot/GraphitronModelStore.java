@@ -2,10 +2,13 @@ package no.sikt.graphitron.model.boot;
 
 import no.sikt.graphitron.model.boot.StoreReaper.Reaped;
 import no.sikt.graphitron.model.catalog.GraphPartition;
+import no.sikt.graphitron.model.sink.WriteTimes;
 import org.h2.jdbcx.JdbcDataSource;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
+import org.jooq.impl.DefaultConfiguration;
+import org.jooq.impl.DefaultExecuteListenerProvider;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -193,7 +196,9 @@ public final class GraphitronModelStore implements AutoCloseable {
     private GraphitronModelStore(Connection connection, Path location,
                                  boolean dropOnClose, String url, Reaped reaped) {
         this.connection = connection;
-        this.dsl = DSL.using(connection, SQLDialect.H2);
+        // The writer times its own writes; readers mint connections of their own and are not timed.
+        this.dsl = DSL.using(new DefaultConfiguration().set(connection).set(SQLDialect.H2)
+            .set(new DefaultExecuteListenerProvider(new WriteTimes())));
         this.location = location;
         this.dropOnClose = dropOnClose;
         this.url = url;

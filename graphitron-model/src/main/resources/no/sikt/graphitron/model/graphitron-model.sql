@@ -15059,6 +15059,30 @@ COMMENT ON COLUMN store_graph_progress.last_started IS 'when the gatherer last b
 COMMENT ON COLUMN store_graph_progress.last_completed IS 'when the gatherer last finished reading this graph, by the wall clock, written once its work was committed; NULL until it first has, and earlier than last_started while it runs or after it stopped partway';
 COMMENT ON COLUMN store_graph_progress.time_spent_ms IS 'how long the last reading took, in milliseconds, where it finished; NULL while the gatherer runs or after it stopped partway, the completion then belonging to an earlier reading';
 
+CREATE TABLE store_graph_write (
+  graph_name    VARCHAR   NOT NULL,
+  captured_at   TIMESTAMP NOT NULL,
+  gatherer_name VARCHAR   NOT NULL,
+  table_name    VARCHAR   NOT NULL,
+  statements    INT       NOT NULL,
+  rows_written  BIGINT    NOT NULL,
+  time_spent_ms BIGINT    NOT NULL,
+  PRIMARY KEY (graph_name, captured_at, gatherer_name, table_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name) ON DELETE CASCADE,
+  CHECK (statements > 0),
+  CHECK (rows_written >= 0),
+  CHECK (time_spent_ms >= 0)
+);
+COMMENT ON TABLE store_graph_write IS 'How long one finished capture of a graph spent writing one table: one row per table each gatherer wrote, every capture keeping its own. For example graphitron_field_source_table written by the graphitron gatherer in three statements, its rule evaluated inside the insert.';
+COMMENT ON COLUMN store_graph_write.graph_name IS 'the graph the capture read';
+COMMENT ON COLUMN store_graph_write.captured_at IS 'when the capture began, by the wall clock, as its row in store_graph_progress records it; with the graph, which capture this is';
+COMMENT ON COLUMN store_graph_write.gatherer_name IS 'the gatherer running when the table was written, or capture for writes outside any; keyed into meta_gatherer';
+COMMENT ON COLUMN store_graph_write.table_name IS 'the table written, as the statement names it, in upper case';
+COMMENT ON COLUMN store_graph_write.statements IS 'how many insert, merge, update and delete statements wrote it, a batch counting once';
+COMMENT ON COLUMN store_graph_write.rows_written IS 'the rows those statements reported changing';
+COMMENT ON COLUMN store_graph_write.time_spent_ms IS 'the milliseconds those statements took between them, a stage''s rule being evaluated inside its write';
+
 CREATE TABLE meta_gatherer_corpus (
   gatherer_name VARCHAR NOT NULL,
   corpus_name   VARCHAR NOT NULL,
@@ -15545,6 +15569,9 @@ INSERT INTO meta_grain VALUES
   ('gatherer-progress',
    'one gatherer''s last reading of one graph, or the whole capture''s',
    'graph_name, gatherer_name', 'configuration'),
+  ('gatherer-table-write',
+   'one table one gatherer wrote in one finished capture of a graph',
+   'graph_name, captured_at, gatherer_name, table_name', 'configuration'),
   ('inherited-directive',
    'one federation directive one minted type inherits from its carriers, in one graph',
    'graph_name, type_name, directive_name, ordinal', 'sdl'),
@@ -15760,6 +15787,10 @@ INSERT INTO meta_relation VALUES
    'How far a capture of one graph got: one row per gatherer that reads it, and one for the capture as a whole.',
    'For example a capture that hung in the graphitron gatherer leaves its row started after it last completed, every gatherer before it completed with this reading''s instants, and the capture row incomplete.',
    'A capture commits gatherer by gatherer, so the store says how far a reading got; this is where it says it, read by a person or a tool looking at a store rather than by the generator. Written by each gatherer around its own run, through the sink package''s Progress, and by ModelCapture for its own row. Reporting only, never a transaction boundary: the gatherer commits its work in whatever transactions suit it. The start is written before the gatherer touches anything, so one that never returns has already named itself, and the completion after the gatherer has returned, so a finished row means its work is committed; one that throws leaves its row unfinished. Wall-clock instants rather than the reading''s, which every gatherer shares; the reading''s instant stays on store_graph.last_captured and on every row it marks. No sweep: a row is the gatherer''s last reading and the next one overwrites it, and a graph or gatherer that goes takes its rows by cascade.'),
+  ('store_graph_write', 'gatherer-table-write', 'capture',
+   'How long one finished capture of a graph spent writing one table: one row per table each gatherer wrote, every capture keeping its own.',
+   'For example graphitron_field_source_table written by the graphitron gatherer in three statements, its rule evaluated inside the insert.',
+   'Every capture-time regression has been one stage''s write, its rule evaluated inside the insert, and the per-gatherer times in store_graph_progress say which gatherer but not which table. Timed by the sink package''s WriteTimes, a listener on the writing connection that adds each insert, merge, update and delete to the table it names and the gatherer Progress last started, so no stage times itself. Written when the capture finishes, so a capture that stops partway writes nothing, its row in store_graph_progress saying where. No sweep: each capture keeps its rows beside the ones before it, so a slow round is read against the rounds before it, and a graph that goes takes its rows by cascade. Read by MCP status and the dev loop, which name the latest capture''s slowest.'),
   ('store_graph_dependency', 'graph-dependency', 'store',
    'One entry of the compile classpath the build handed this graph''s run, with what the build resolved it as.',
    'For example the consumer''s own target/classes is a DIRECTORY of origin PROJECT, and jooq-3.20.11.jar a RELEASE the pom declares.',

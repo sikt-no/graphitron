@@ -38,8 +38,16 @@ public final class Progress {
         if (graphName == null) {
             return;
         }
-        var t = STORE_GRAPH_PROGRESS;
         var now = LocalDateTime.now();
+        var times = WriteTimes.of(dsl);
+        if (times != null) {
+            if (CAPTURE.equals(gatherer)) {
+                times.begin(graphName, now);
+            } else {
+                times.gatherer(gatherer);
+            }
+        }
+        var t = STORE_GRAPH_PROGRESS;
         dsl.insertInto(t, t.GRAPH_NAME, t.GATHERER_NAME, t.LAST_STARTED)
             .values(graphName, gatherer, now)
             .onDuplicateKeyUpdate()
@@ -58,5 +66,13 @@ public final class Progress {
             .where(t.GRAPH_NAME.eq(graphName))
             .and(t.GATHERER_NAME.eq(gatherer))
             .execute();
+        var times = WriteTimes.of(dsl);
+        if (times != null) {
+            if (CAPTURE.equals(gatherer)) {
+                times.finish(dsl);
+            } else {
+                times.gatherer(CAPTURE);
+            }
+        }
     }
 }

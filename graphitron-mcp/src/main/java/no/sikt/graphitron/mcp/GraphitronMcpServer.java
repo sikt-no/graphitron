@@ -16,6 +16,7 @@ import no.sikt.graphitron.model.boot.StoreAnswer;
 import no.sikt.graphitron.model.boot.StoreConsole;
 import no.sikt.graphitron.model.boot.StoreReader;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.sink.WriteTimes;
 import org.eclipse.jetty.ee10.servlet.ServletContextHandler;
 import org.eclipse.jetty.ee10.servlet.ServletHolder;
 import org.eclipse.jetty.server.Server;
@@ -352,8 +353,8 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The liveness {@code status} tool: takes no arguments and reads the session graph's lifecycle
-     * axes on every call, so the answer reflects the latest capture.
+     * The liveness {@code status} tool: takes only {@code allGraphs} and reads the session graph's
+     * lifecycle axes on every call, so the answer reflects the latest capture.
      *
      * <p>Reported on two orthogonal axes rather than a flattened tri-state:
      * {@code availability} ({@code Built} vs {@code Unavailable}) and {@code freshness}
@@ -366,7 +367,10 @@ public final class GraphitronMcpServer implements AutoCloseable {
     private static McpServerFeatures.SyncToolSpecification statusTool(StoreHandle storeHandle) {
         // The (name, inputSchema) builder overload is the non-deprecated entry point; the explicit
         // empty object schema is the no-argument input the MCP spec requires every tool to carry.
-        var tool = McpSchema.Tool.builder("status", Map.of("type", "object", "properties", Map.of()))
+        var tool = McpSchema.Tool.builder("status", Map.of("type", "object", "properties", Map.of(
+                "allGraphs", Map.of("type", "boolean",
+                    "description", "List slowestWrites across every graph the store holds rather "
+                        + "than this session's graph alone, each naming its graph."))))
             .title("Dev-loop status")
             .description("Reports graphitron:dev MCP server liveness plus the state of this graph's "
                 + "captured facts on two axes: availability (Built once anything has captured the "
@@ -377,11 +381,15 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "than shown on lines the edit moved. Also lists, as staleModules, the workspace "
                 + "modules the run read stale: a module whose sources changed since it compiled, or "
                 + "one read from its installed copy for want of output, whose names then read as not "
-                + "found. Takes no arguments.")
+                + "found. And, as slowestWrites, the tables the last finished capture took longest to "
+                + "write, each with the gatherer writing it, its statements, rows and milliseconds: a "
+                + "stage's rule is evaluated inside its write, so this is where a slow capture's time "
+                + "went; allGraphs lists them across every graph the store holds.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
-            .callHandler((exchange, request) -> statusResult(storeHandle))
+            .callHandler((exchange, request) -> statusResult(storeHandle,
+                McpWire.booleanArg(request.arguments(), "allGraphs")))
             .build();
     }
 
@@ -397,6 +405,11 @@ public final class GraphitronMcpServer implements AutoCloseable {
      * the store, that nothing has captured this graph, on the strength of having no store to ask.
      */
     static McpSchema.CallToolResult statusResult(StoreHandle storeHandle) {
+        return statusResult(storeHandle, false);
+    }
+
+    /** {@link #statusResult(StoreHandle)}, with the slowest writes across every graph where asked. */
+    static McpSchema.CallToolResult statusResult(StoreHandle storeHandle, boolean allGraphs) {
         var fields = new LinkedHashMap<String, Object>();
         fields.put("toolsReady", true);
         if (storeHandle == null) {
@@ -426,6 +439,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         }
         var stale = staleModules(storeHandle);
         fields.put("staleModules", stale);
+        fields.put("slowestWrites", slowestWrites(storeHandle, allGraphs));
         String summary = "graphitron:dev MCP server live; schema " + lifecycle.availability()
             + lifecycle.freshness().map(freshness -> "/" + freshness).orElse("") + gloss
             + (stale.isEmpty() ? "" : " " + stale.size() + " workspace module"
@@ -435,6 +449,22 @@ public final class GraphitronMcpServer implements AutoCloseable {
             .structuredContent(Map.copyOf(fields))
             .build();
     }
+
+    /**
+     * The tables the graph's last finished capture took longest to write, or across every graph's
+     * where {@code allGraphs}; see {@link WriteTimes}.
+     */
+    private static List<Map<String, Object>> slowestWrites(StoreHandle storeHandle, boolean allGraphs) {
+        return WriteTimes.slowest(storeHandle.dsl(), allGraphs ? null : storeHandle.graphName(),
+                SLOWEST_WRITES).stream()
+            .map(write -> Map.<String, Object>of("graph", write.graph(), "table", write.table(),
+                "gatherer", write.gatherer(), "statements", write.statements(), "rows", write.rows(),
+                "milliseconds", write.millis()))
+            .toList();
+    }
+
+    /** How many of the slowest writes {@code status} names. */
+    private static final int SLOWEST_WRITES = 5;
 
     /**
      * The workspace modules the graph's run read stale, each with its reason and the one sentence

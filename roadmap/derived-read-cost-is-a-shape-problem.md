@@ -1974,10 +1974,12 @@ Profiled on sis in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-
   sizes, the same shapes at n and 4n fields, is captured and each stage timed; a stage whose time
   grows more than about six times fails as superlinear. A ratio rather than a budget, so machine
   load does not move the verdict.
-* **Every stage's time is recorded in the store** `open`. `store_graph_progress` records each
-  gatherer; each stage's insert or merge is recorded beside it, so every capture and dev round
-  shows its slowest stages, and MCP status names them. Not a gate, but a regression is seen on the
-  next sis run instead of when someone profiles.
+* **Every stage's time is recorded in the store** `done`. `store_graph_write` holds, per table each
+  gatherer wrote, the statements, rows and milliseconds of every finished capture of a graph, keyed
+  by when it began, timed by `WriteTimes`, a listener on the writing connection, so no stage times
+  itself and a write outside any stage class is timed too. MCP `status` names the latest capture's
+  five slowest as `slowestWrites`, across every graph the store holds with `allGraphs`, and a dev
+  round that captured prints its three slowest. `WriteTimesTest` pins it.
 * **A stage table's graph filter cannot spoil its rule's plan** `open`.
   `graphitron_field_source_table`'s `MERGE` filters its rule to the graph, and the pushed-down
   filter turns 0.7 s into 24.

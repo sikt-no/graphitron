@@ -7,6 +7,8 @@ import no.sikt.graphitron.model.test.ClasspathCorpus;
 import no.sikt.graphitron.model.test.ScaledSchemaFixture;
 import no.sikt.graphitron.model.test.TestRunContext;
 import org.jooq.DSLContext;
+import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -40,6 +42,19 @@ class RulePlanGateTest {
     @TempDir
     Path tmp;
 
+    /** The capture the two read-only cases share; the case that drops indexes captures its own. */
+    private static CapturedStore shared;
+
+    @BeforeAll
+    static void capture(@TempDir Path directory) {
+        shared = scaled(directory);
+    }
+
+    @AfterAll
+    static void release() {
+        shared.close();
+    }
+
     /** Tables a partition read is free on, each with why. */
     private static final Map<String, String> SMALL = Map.of(
         "STORE_GRAPH_SOURCE", "one row per source a graph claims, tens on sis",
@@ -64,17 +79,17 @@ class RulePlanGateTest {
     @Test
     @DisplayName("no rule reads a partition per row outside the small tables and the known list")
     void everyRuleProbesAnIndexWhereItLooksARowUp() {
-        withScaledStore(dsl -> assertThat(unexplained(dsl))
+        assertThat(unexplained(shared.dsl()))
             .as("a lookup reading a whole partition per row: index the columns it looks up by")
-            .isEmpty());
+            .isEmpty();
     }
 
     @Test
     @DisplayName("every known read still reads a partition, so the list only shrinks")
     void theKnownListHoldsNothingFixed() {
-        withScaledStore(dsl -> assertThat(KNOWN)
+        assertThat(KNOWN)
             .as("a known read that no longer reads a partition: take it off the list")
-            .isSubsetOf(keys(reads(dsl))));
+            .isSubsetOf(keys(reads(shared.dsl())));
     }
 
     /**
@@ -131,10 +146,14 @@ class RulePlanGateTest {
     }
 
     private void withScaledStore(Consumer<DSLContext> body) {
-        try (var store = CapturedStore.ownStoreOfCatalogWith(tmp, CapturedStore.GRAPH,
-                ScaledSchemaFixture.scaledSdl(20), CatalogInput.of(TestRunContext.of()),
-                ClasspathCorpus.entries())) {
+        try (var store = scaled(tmp)) {
             body.accept(store.dsl());
         }
+    }
+
+    private static CapturedStore scaled(Path directory) {
+        return CapturedStore.ownStoreOfCatalogWith(directory, CapturedStore.GRAPH,
+            ScaledSchemaFixture.scaledSdl(20), CatalogInput.of(TestRunContext.of()),
+            ClasspathCorpus.entries());
     }
 }
