@@ -437,6 +437,16 @@ Where the delivery departs from, or settles, what the plan left open:
   uncorrelated own-table read) blocks rather than rendering an uncorrelated `EXISTS`. A list probes
   only when it has no pagination, no argument ordering and no `@lookupKey`, and every probe's
   filters must bind request context only.
+- **A `@splitQuery` probe under tenant routing.** The plan has a split field probe in the parent's
+  statement. In a multi-tenant build that statement may run in a different database from the one
+  the split field's own fetch is routed to: `TenantDivinedRoutingExecutionTest` caught a global
+  `film_endorsement` list under a tenant-scoped `Store` probing a table the tenant database does
+  not hold. So `TypeFields.sharesParentConnection` asks the schema's tenant binding, and a split
+  child probes only when it has none (single-tenant) or `Inherited`; any other arm blocks. An
+  inline child is unaffected, its own fetch already being in the parent's statement. The
+  projection's splice demand and the fetcher both read `GraphitronSchema.nullContractOf`, so the
+  schema-free `parentRowColumns()` can over-name columns in that case but never under-name them.
+  The manual's exception list names it.
 - **The probe command.** `PresenceProbe(alias, columnLeaves, terms)` carries the object's column
   leaves beside the terms, so the `CASE` guard can test each leaf's absence (any of its columns
   null) rather than a flat conjunction that would drop a value for a multi-column leaf. `ProbeTerm`

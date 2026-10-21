@@ -484,7 +484,30 @@ public record GraphitronSchema(
             .filter(no.sikt.graphitron.rewrite.model.ChildField.class::isInstance)
             .map(no.sikt.graphitron.rewrite.model.ChildField.class::cast)
             .toList();
-        return Presence.SubtreePresence.over(fields, this::fieldsOf);
+        return Presence.SubtreePresence.over(fields, presenceLookup());
+    }
+
+    /**
+     * The {@link Presence.TypeFields} lookup over this schema: its fields by type, and its tenant
+     * bindings for whether a {@code @splitQuery} child shares its parent's connection. One does
+     * when the build is single-tenant or the child {@linkplain
+     * no.sikt.graphitron.rewrite.model.TenantBinding.Inherited inherits} its parent's tenant; any
+     * other arm routes it to a connection whose database may not hold the parent's tables, so a
+     * probe of it cannot run in the parent's statement.
+     */
+    public Presence.TypeFields presenceLookup() {
+        return new Presence.TypeFields() {
+            @Override public List<? extends GraphitronField> of(String typeName) {
+                return fieldsOf(typeName);
+            }
+
+            @Override public boolean sharesParentConnection(
+                    no.sikt.graphitron.rewrite.model.ChildField.BatchedTableField field) {
+                var binding = tenantBindingOf(field.parentTypeName(), field.name());
+                return binding == null
+                    || binding instanceof no.sikt.graphitron.rewrite.model.TenantBinding.Inherited;
+            }
+        };
     }
 
     /**
@@ -497,7 +520,7 @@ public record GraphitronSchema(
      */
     public Presence.NullContract nullContractOf(no.sikt.graphitron.rewrite.model.ChildField field) {
         return switch (field) {
-            case no.sikt.graphitron.rewrite.model.ChildField.NestingField nf -> nf.nullContract(this::fieldsOf);
+            case no.sikt.graphitron.rewrite.model.ChildField.NestingField nf -> nf.nullContract(presenceLookup());
             case no.sikt.graphitron.rewrite.model.ChildField.SameRowTableField srf ->
                 Presence.NullContract.of(srf.returnType().wrapper(), presenceOf(srf.returnType().returnTypeName()));
             case no.sikt.graphitron.rewrite.model.ChildField.TableField tf ->

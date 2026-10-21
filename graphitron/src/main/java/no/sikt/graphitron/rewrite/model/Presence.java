@@ -22,18 +22,31 @@ public final class Presence {
     private Presence() {}
 
     /**
-     * The fields of a type by name: the one lookup a {@link PresenceLeaf.Probe} needs to read
-     * its target type's column leaves. {@code GraphitronSchema::fieldsOf} is the production
-     * lookup.
+     * What the rule needs from the schema beyond a field's own model: the fields of a type by
+     * name, which an object reference {@link PresenceLeaf.Probe} reads its target type's column
+     * leaves from, and whether a {@code @splitQuery} child shares its parent's connection, which
+     * a probe of it requires. {@link no.sikt.graphitron.rewrite.GraphitronSchema#presenceLookup}
+     * is the production lookup.
      */
     @FunctionalInterface
     public interface TypeFields {
         List<? extends GraphitronField> of(String typeName);
 
         /**
-         * A lookup that knows no type, so every object reference probe counts its row's existence
-         * alone. Sound wherever only the {@link PresenceLeaf.Columns} leaves or the
-         * blocked-or-not verdict are read, since neither depends on a target type.
+         * Whether {@code field}'s own fetch runs on its parent's connection, so a probe of it in
+         * the parent's statement reads the same database the field would. A field routed to
+         * another tenant, or to a global source, may read tables the parent's database does not
+         * hold; it blocks the collapse. True when the build is single-tenant.
+         */
+        default boolean sharesParentConnection(ChildField.BatchedTableField field) {
+            return true;
+        }
+
+        /**
+         * A lookup that knows no type and no tenant routing: every object reference probe counts
+         * its row's existence alone, and every {@code @splitQuery} child is taken to share its
+         * parent's connection. For a schema-free caller; its column leaves agree with the
+         * schema's whenever the schema's contract collapses at all.
          */
         static TypeFields none() {
             return typeName -> List.of();
@@ -115,11 +128,13 @@ public final class Presence {
          *       {@link PresenceLeaf.Columns} leaf.</li>
          *   <li>A single reference, scalar or object, keyed or {@code condition:}-joined, inline or
          *       {@code @splitQuery}, and a list of a table type taking no arguments, is a
-         *       {@link PresenceLeaf.Probe}.</li>
+         *       {@link PresenceLeaf.Probe}. A {@code @splitQuery} child probes only when it shares
+         *       its parent's connection ({@link TypeFields#sharesParentConnection}).</li>
          *   <li>A nesting child contributes its own leaves.</li>
          *   <li>Everything else blocks: a list taking arguments, a connection, a polymorphic or
          *       service child, an {@code @externalField}, a {@code @pivot} child, a field reached
-         *       through a routine, an uncorrelated read of the own table, and a
+         *       through a routine, an uncorrelated read of the own table, a {@code @splitQuery}
+         *       child fetched on another tenant's or a global connection, and a
          *       {@link ChildField.SameRowTableField}, which is what terminates a same-table
          *       cycle.</li>
          * </ul>
@@ -146,7 +161,7 @@ public final class Presence {
                         leaves.add(probe.get());
                     }
                     case ChildField.BatchedTableField btf when btf.sourceShape() == SourceShape.Table -> {
-                        var probe = tableProbe(btf, types);
+                        var probe = types.sharesParentConnection(btf) ? tableProbe(btf, types) : Optional.<PresenceLeaf>empty();
                         if (probe.isEmpty()) {
                             return new Blocked(child);
                         }

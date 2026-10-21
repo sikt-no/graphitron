@@ -1496,7 +1496,7 @@ public class GraphitronSchemaValidator {
             }
             var rep = group.get(0);
             for (int i = 1; i < group.size(); i++) {
-                compareNestedFieldsShape(rep, group.get(i), errors);
+                compareNestedFieldsShape(rep, group.get(i), schema.presenceLookup(), errors);
             }
         }
     }
@@ -1538,9 +1538,10 @@ public class GraphitronSchemaValidator {
      */
     private void comparePresenceColumns(ChildField.NestingField rep, ChildField.NestingField other,
                                         String nestedTypeName, String repParent, String otherParent,
-                                        String coord, List<ValidationError> errors) {
-        var repLeaves = presenceLeafNames(rep.nullContract(Presence.TypeFields.none()));
-        var otherLeaves = presenceLeafNames(other.nullContract(Presence.TypeFields.none()));
+                                        String coord, Presence.TypeFields presence,
+                                        List<ValidationError> errors) {
+        var repLeaves = presenceLeafNames(rep.nullContract(presence));
+        var otherLeaves = presenceLeafNames(other.nullContract(presence));
         if (repLeaves.equals(otherLeaves)) {
             return;
         }
@@ -1577,13 +1578,13 @@ public class GraphitronSchemaValidator {
     }
 
     private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
-                                          List<ValidationError> errors) {
-        compareNestedFieldsShape(rep, other, rep.parentTypeName(), other.parentTypeName(), errors);
+                                          Presence.TypeFields presence, List<ValidationError> errors) {
+        compareNestedFieldsShape(rep, other, rep.parentTypeName(), other.parentTypeName(), presence, errors);
     }
 
     private void compareNestedFieldsShape(ChildField.NestingField rep, ChildField.NestingField other,
                                           String repParent, String otherParent,
-                                          List<ValidationError> errors) {
+                                          Presence.TypeFields presence, List<ValidationError> errors) {
         var nestedTypeName = rep.returnType().returnTypeName();
         var repByName = new java.util.LinkedHashMap<String, ChildField>();
         rep.nestedFields().forEach(f -> repByName.put(f.name(), f));
@@ -1685,10 +1686,10 @@ public class GraphitronSchemaValidator {
                 // outer class-equality check. Thread the outer @table parent names so inner
                 // errors still name the original tables, not the intermediate nested type.
                 int before = errors.size();
-                compareNestedFieldsShape(rnf, onf, repParent, otherParent, errors);
+                compareNestedFieldsShape(rnf, onf, repParent, otherParent, presence, errors);
                 if (errors.size() == before) {
                     // A divergent inner column already names the cause; this would restate it.
-                    comparePresenceColumns(rnf, onf, nestedTypeName, repParent, otherParent, coord, errors);
+                    comparePresenceColumns(rnf, onf, nestedTypeName, repParent, otherParent, coord, presence, errors);
                 }
             } else if (rf instanceof ResultKeyAliasedField && !(rf instanceof ChildField.PivotField)) {
                 // MUST STAY BELOW THE TableField ARM. TableField is a ResultKeyAliasedField too, so

@@ -437,16 +437,18 @@ public final class FetcherEmitter {
      * {@link ChildField.NestingField#nullContract} collapses an absent wrapper. The columns and
      * the probe are always on the row: the field's splice projects its
      * {@link ChildField.NestingField#parentRowColumns() demand} and its probe whenever it is
-     * selected. The contract is read without a type lookup: a probe's target columns shape only
-     * the SQL, while the fetcher reads the probe's alias alone.
+     * selected. The contract is the schema's ({@link GraphitronSchema#nullContractOf}), the one
+     * the projection minted the splice from; without a schema (a model-only assembly) it is read
+     * with no lookup, which the schema-free projection would agree with.
      *
      * <p>An inner nesting field's fetcher lives on the shared nesting type's fetchers class and
      * reads the representative site's table constants; every reuse site agrees on leaf class and
      * column names ({@link no.sikt.graphitron.rewrite.GraphitronSchemaValidator#compareNestedFieldsShape}),
      * so the constants resolve by name on any site's record, as the column leaves' reads do.
      */
-    private static CodeBlock nestingBody(ChildField.NestingField nf) {
-        return switch (nf.nullContract(Presence.TypeFields.none())) {
+    private static CodeBlock nestingBody(GraphitronSchema schema, ChildField.NestingField nf) {
+        var contract = schema == null ? nf.nullContract(Presence.TypeFields.none()) : schema.nullContractOf(nf);
+        return switch (contract) {
             case NullContract.AlwaysObject ignored -> CodeBlock.of("return source;\n");
             case NullContract.CollapsesWhenAbsent c -> CodeBlock.builder()
                 .add("$T row = ($T) source;\n", RECORD, RECORD)
@@ -520,7 +522,7 @@ public final class FetcherEmitter {
             TableRef parentTable, GraphitronType.ResultType resultType,
             String outputPackage) {
         if (field instanceof ChildField.NestingField nf) {
-            return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(nf));
+            return sourceOnly(field.name(), fetchersClass, outputPackage, nestingBody(schema, nf));
         }
         if (field instanceof ChildField.SameRowTableField srf) {
             return envDependent(field.name(), fetchersClass, sameRowBody(srf, schema.nullContractOf(srf), outputPackage));

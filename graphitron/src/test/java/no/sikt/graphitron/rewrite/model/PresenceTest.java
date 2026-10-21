@@ -263,6 +263,27 @@ class PresenceTest {
     }
 
     @Test
+    void splitQueryChildOnAnotherConnection_blocks() {
+        // Routed to another tenant or a global source, the split field may read tables the
+        // parent's database does not hold, so no probe of it can run in the parent's statement.
+        var split = splitReference("originalLanguage", new FieldWrapper.Single(true));
+        var otherConnection = new TypeFields() {
+            @Override public List<? extends GraphitronField> of(String typeName) {
+                return TYPES.of(typeName);
+            }
+
+            @Override public boolean sharesParentConnection(ChildField.BatchedTableField field) {
+                return false;
+            }
+        };
+        var nf = nullable("release", column("year", YEAR), split);
+        assertThat(nf.nullContract(otherConnection)).isEqualTo(blockedBy(split));
+        // An inline reference needs no connection of its own and still probes.
+        var inline = nullable("release", singleReference("originalLanguage", languageHop()));
+        assertThat(inline.nullContract(otherConnection).probes()).hasSize(1);
+    }
+
+    @Test
     void argumentFreeList_probesForAnyRow() {
         var list = listReference("languages", languageHop());
         var splitList = splitReference("splitLanguages", new FieldWrapper.List(true, true));

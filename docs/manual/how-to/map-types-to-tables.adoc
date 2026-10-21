@@ -206,7 +206,7 @@ type Customer @table {
 }
 ----
 
-Declare the field non-null to always get an object. A type holding a list that takes arguments, a connection, an interface or union, an xref:../reference/directives/externalField.adoc[`@externalField`], a xref:../reference/directives/service.adoc[`@service`] field, or a field reached through a database routine always resolves to an object, because whether it holds anything depends on the query or on code outside the table's rows. A type with a xref:../reference/directives/nodeId.adoc[`@nodeId`] field, or a field reading a column that is never `null`, never resolves to `null` while its row exists.
+Declare the field non-null to always get an object. A type holding a list that takes arguments, a connection, an interface or union, an xref:../reference/directives/externalField.adoc[`@externalField`], a xref:../reference/directives/service.adoc[`@service`] field, a field reached through a database routine, or, in a multi-tenant build, a `@splitQuery` field read from another tenant's or the global database always resolves to an object, because whether it holds anything depends on the query, on code outside the table's rows, or on a database the parent's statement cannot reach. A type with a xref:../reference/directives/nodeId.adoc[`@nodeId`] field, or a field reading a column that is never `null`, never resolves to `null` while its row exists.
 
 The rule is for fields of table types. A field of `Query`, a field returning an interface or union, and a `@service` field return what they fetch, so a row of nulls there is an object.
 

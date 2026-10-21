@@ -1005,8 +1005,10 @@ public sealed interface ChildField extends OutputField
         /**
          * The columns the presence check reads off the parent row: the distinct columns of the
          * {@link Presence.PresenceLeaf.Columns} leaves of a collapsing contract, empty otherwise.
-         * Neither those columns nor whether the contract collapses depend on a probe's target
-         * type, so no type lookup is needed here.
+         * Read with no schema lookup, so it can name columns the schema's contract does not read
+         * (when a {@code @splitQuery} child on another tenant's connection blocks it), never
+         * fewer; the projection takes its demand from the schema's contract
+         * ({@link no.sikt.graphitron.rewrite.GraphitronSchema#nullContractOf}).
          */
         @Override public List<ColumnRef> parentRowColumns() {
             return nullContract(Presence.TypeFields.none()).presenceColumns();

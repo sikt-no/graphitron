@@ -365,7 +365,7 @@ class SameTableInlineChildPipelineTest {
 
         var nested = (ChildField.NestingField) schema.field("Film", "yearsNested");
         var sameRow = schema.nullContractOf((ChildField.SameRowTableField) schema.field("Film", "years"));
-        assertThat(sameRow).isEqualTo(nested.nullContract(schema::fieldsOf));
+        assertThat(sameRow).isEqualTo(nested.nullContract(schema.presenceLookup()));
         assertThat(sameRow.presenceColumns()).isEqualTo(nested.parentRowColumns());
         assertThat(sameRow.presenceColumns()).extracting(c -> c.sqlName()).isEqualTo(List.of("release_year"));
     }

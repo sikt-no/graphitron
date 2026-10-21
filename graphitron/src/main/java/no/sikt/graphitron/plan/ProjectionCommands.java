@@ -191,14 +191,15 @@ public final class ProjectionCommands {
             // identity; the payload extraction inside keeps the sanctioned leaf reads.
             case ChildField.TableTargetField ttf ->
                 tableTargetContribution(schema, ttf, owner, units, glueEnvByMethod, nested);
-            // The splice carries the field's own parent-row demand (the columns its null-collapse
-            // check reads), read off the same accessor the fetcher emitter consumes.
+            // The splice carries the columns the field's null-collapse check reads and its probe,
+            // both off the schema's contract, the one the fetcher emitter reads.
             // The probe rides beside it, minted from the same contract the fetcher emitter reads.
             case ChildField.NestingField nf -> {
                 var nested2 = mintNestedUnit(schema, nf, anchorTypeName, units, glueEnvByMethod, census);
+                var contract = schema.nullContractOf(nf);
                 yield Optional.of(new Contribution.Call(nf.name(), nested2,
-                    new CallWrap.Splice(nf.parentRowColumns(),
-                        probeOf(nf, schema.nullContractOf(nf), units, glueEnvByMethod)),
+                    new CallWrap.Splice(contract.presenceColumns(),
+                        probeOf(nf, contract, units, glueEnvByMethod)),
                     aliasOwnerOf(nf), aliasScopeOf(nf)));
             }
             // The parent's own row through the return type's anchor unit, in a record scope of its
