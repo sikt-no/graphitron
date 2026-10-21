@@ -405,3 +405,45 @@ findings are narrow, but each one changes what the implementer builds.
 
 Corrected in passing: the four `FieldBuilder` line hints (`:9752`, `:9704`, `:8588`, `:5014`) had
 drifted by one to five lines. They now read `:9753`, `:9705`, `:8590` and `:5019`.
+
+### Round 2 (2026-10-21, Spec -> Ready, reviewer session 019ovaQ5mAS9dU2e825nvaip)
+
+Verdict: request revisions, on question two. Question one passes: when this lands, a consumer
+whose text column holds a value the enum does not name gets `null` for that row (and a DEBUG log
+line) instead of an `errors` entry that leaks the database value, and every mapped value reads as
+before. Both round 1 responses hold up. The per-site exhaustive switches fit the sites as they
+are in the tree, and the `LinkedHashSet` dedup closes the `Set.of` crash. Every symbol, line hint
+and file the spec names exists as named. graphql-java 25's `GraphQLEnumType.getNameByValue`
+matches a `String` only by `equals` against the runtime value, so a `String` inside
+`RUNTIME_VALUES` is exactly what serializes today, as the spec says. One gap remains, in a
+component the spec explicitly sets aside.
+
+1. **Question two: the new arm adds a cross-unit reference that `PlanCompileGraph` does not
+   record, and the spec says that class needs no change.** Every site the arm reaches emits
+   `<Name>Type.knownOrNull(...)` inside a `<Parent>Fetchers` unit, which is a reference from a
+   fetchers unit to an enum's schema-shape unit. `PlanCompileGraph` is the dev loop's compile
+   dependency graph, and its contract is that precise edges "mirror references the emitted
+   source actually makes". `IncrementalCompileHarnessTest` leg 2 enforces that: the graph must
+   be a superset of what `TypeSpecReferenceWalk` finds in the emitted units. Nothing in the
+   graph today runs from a fetchers unit to a schema-shape unit. The blanket runs the other
+   way, schema shape to its own fetchers. The only leaf-derived edges are the `NodeIdEncoder`
+   ones in `addEncoderLeafEdges`, which test `NodeIdEncodeKeys` only. The spec lists
+   `PlanCompileGraph` among the `instanceof NodeIdEncodeKeys` sites that "keep their meaning and
+   need no change". The test there does keep its meaning, but the class owes a new edge. The
+   build will not catch the omission: the harness corpus has no enum-typed output over a text
+   column, so leg 2 never sees the reference, and the graph would silently fall out of step
+   with its own invariant.
+
+   To satisfy this finding, the spec names the edge and its class, adds `PlanCompileGraph` to
+   the Implementation list, and adds a test that exercises it. There are two shapes, and the
+   choice is the author's:
+   * A precise leaf edge from the carrier's fetchers unit to `GeneratedUnits.schemaShape(<enum>)`
+     for each `EnumKnownOrNull` leaf, beside `addEncoderLeafEdges`. This extends the class's one
+     documented exception to "never re-derived from the classified model".
+   * A declared-superset edge. This fits the class's stated policy, since `knownOrNull`'s
+     signature is the same on every enum class and cannot move on a schema edit. The spec would
+     have to say how wide the edge is, for example every fetchers unit to every enum schema shape.
+
+   Either way, the test is an `IncrementalCompileHarnessTest` corpus extension, or a
+   `PlanCompileGraphTest` case, with an enum-typed field over a text column, so that leg 2
+   covers the reference.
