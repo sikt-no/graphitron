@@ -1,7 +1,7 @@
 ---
 id: R1083
 title: "@order: sort by a column on a related table via path"
-status: Backlog
+status: Spec
 bucket: architecture
 priority: 5
 theme: codegen-correctness
@@ -29,28 +29,56 @@ enum QueryUtdanningsinstanserOrderByFieldInput {
     FRA_ARSTALL @order(fields: [{name: "ARSTALL_FRA"}])
     NAVN        @order(fields: [{
         name: "NAVN_SPESIFIKASJON",
-        path: [{key: "utdanningsinstansnavn_utdanningsinstans_fkey"}]
+        path: [{key: "utdanningsinstans_navn_utdanningsinstans_fkey"}]
     }])
 }
 ```
 
-`name` is resolved against the table the path lands on; with no `path:` nothing changes. The same argument belongs on `@defaultOrder` since both directives share `FieldSort`. Path inference follows `@reference`: when exactly one FK joins the two tables the path may be omitted from a hop-less form only if we decide to allow `path: []`; the first cut should require an explicit path so a column name never silently changes table.
+`name` is resolved against the table the path lands on; with no `path:` nothing changes. The same argument belongs on `@defaultOrder` since both directives share `FieldSort`. `index:` and `primaryKey:` are table-scoped and stay own-table only.
+
+The path is always written out: there is no inferred or empty form, so a column name never silently changes table.
+
+## The cardinality rule
+
+An ordering path must never change the cardinality of the row set it orders: every hop must be to-one, so each parent row yields exactly one sort key. This is `JoinStep`'s "no unintended row multiplication" invariant applied without its list-field escape hatch, because an ORDER BY has no meaningful fan-out: joining a to-many hop would duplicate parent rows in the page (and break `first`/`after` counts and cursors), and aggregating to pick a key would invent a semantics the author did not write.
+
+A hop is to-one when it traverses an FK from the table that holds the FK columns to the table they reference (child to parent), or when it traverses the FK the other way and the FK columns are covered by a unique constraint or the primary key on the holding table (a one-to-one extension table). Anything else is to-many and is rejected.
+
+Consequences, stated so the reviewer does not have to derive them:
+
+- A hop that carries only a `condition:` (an `On.Predicate` hop with no `key:`/`table:`) has no FK to prove uniqueness from, so it is rejected; the author must name a `key:`. A `condition:` accompanying a `key:` is a per-hop filter, does not change the key's cardinality, and is allowed.
+- The classification is catalog-derived at build time, not author-asserted; there is no opt-out argument.
+- A parent with no related row still appears: the join is a LEFT JOIN, so the sort key is `NULL`. Nulls placement follows the database default for the direction unless the spec pins it (see forks), and must be part of the cursor.
+
+The rejection names the field coordinate, the enum value, the offending hop, and the direction in which it fans out (for example "hop 1 `utdanningsinstans` to `utdanningsinstansnavn` via `<key>` is to-many: one parent has many `utdanningsinstansnavn` rows; an ordering path may only follow to-one hops"). If the reporter's real relation is to-many, this item does not serve their case without a later, separately designed way to select one row; that must be confirmed with them before Ready.
+
+## Tiebreaker rule
+
+The ordering is deterministic or it is not valid for keyset pagination, so the resolved order is completed with tiebreaker columns unless the configured columns already cover a key of the field's own table. The rule, as decided:
+
+- If the configured own-table columns (in any position) cover the primary key or a unique constraint of the field's table, add nothing.
+- Otherwise append the table's primary key columns after the configured entries, ascending.
+- Columns reached through a `path:` never count toward coverage: a to-one hop makes many parent rows share one related row, so a related-table column, even that table's primary key, cannot identify a parent row. An order made only of path columns therefore always gets the primary key appended.
+
+Plan step 4 checks what `OrderBySpec.Fixed` and `resolveDefaultOrderSpec` do today for own-table orders and extends that mechanism to the coverage test above rather than adding a second one; if today's behaviour already is "append the PK unless covered", the work is only teaching the coverage test to ignore path columns.
 
 ## Plan
 
-1. SDL and docs: add `path` to `FieldSort` in `directives.graphqls`; update `docs/manual/reference/directives/order.adoc` and `defaultOrder.adoc`, cross-linking `reference.adoc`.
-2. Resolution: in `OrderByResolver.resolveOrderEntries`, when `path` is present, resolve it through the shared `BuildContext.parsePath` (start = field's table, no fixed target, terminal table taken from the last hop), then look the column up on the terminal table. Reuse its error messages rather than a parallel parser.
-3. Model: widen `OrderBySpec.ColumnOrderEntry` with the resolved join steps (empty for own-table columns) so the emitter knows which table alias the column belongs to.
-4. Emission: join the path in the generated select and order by the aliased column, including the keyset-pagination cursor and the backward-flip, which today assume columns of the root table.
-5. Validation: reject at classification, with an author-facing message, anything that cannot give a deterministic order (see below).
+1. SDL and docs: add `path` to `FieldSort` in `directives.graphqls`; update `docs/manual/reference/directives/order.adoc` and `defaultOrder.adoc` (including the to-one rule and its rejection), cross-linking `reference.adoc`.
+2. Resolution: in `OrderByResolver.resolveOrderEntries`, when `path` is present, resolve it through the shared `BuildContext.parsePath` (start = the field's table, terminal table taken from the last hop; reuse its error messages rather than a parallel parser), then look the column up on the terminal table.
+3. Cardinality check: a catalog query answering "is this hop to-one from its origin table", derived from FK direction plus unique/PK coverage on the holding table. No hop-level cardinality fact exists in the tree today, so this is new; keep it a single function the rejection and any later consumer share, and apply the Adding-a-relation provenance rule if it ends up stored rather than computed (it should be computed from the jOOQ catalog).
+4. Tiebreaker: apply the Tiebreaker rule above, reusing the existing completion mechanism if there is one.
+5. Model: widen `OrderBySpec.ColumnOrderEntry` with the resolved join steps (empty for own-table columns) so the emitter knows which table alias the column belongs to.
+6. Emission: LEFT JOIN the path in the generated select and order by the aliased column, including the keyset-pagination cursor and the backward flip, which today assume columns of the root table.
+7. Validation: reject at classification, through the existing `OrderByResolver` rejection route, a non-to-one hop, a `condition:`-only hop, an unknown column on the landing table, and an unresolvable path.
 
-## Design forks to settle in Spec
+## Design forks to settle during Spec review
 
-- **Cardinality.** `Utdanningsinstans` to `Utdanningsinstansnavn` looks one-to-many; ordering by a to-many column duplicates parent rows or needs an aggregate. Recommendation: first cut accepts only paths whose every hop is to-one (FK on the source side, or a `condition:` the author vouches selects one row is out of scope), and rejects to-many with a message naming the hop. Whether the real consumer case is to-one (for example via a `condition:` on a name type) must be confirmed with the reporter before Ready.
-- **Join kind.** LEFT JOIN so parents without a related row stay in the result; nulls placement then needs a stated rule and must be part of the cursor.
-- **Tiebreaker.** The primary-key tiebreaker in `OrderBySpec.Fixed` must still apply so pagination stays stable.
-- **`index:` and `primaryKey:`** are table-scoped and stay own-table only.
+- **Nulls placement.** Related row absent means a `NULL` key. Recommendation: do not invent a rule; inherit the database default per direction, and make the cursor encode nullness so forward and backward pages agree. Confirm that the existing keyset emission can express this for own-table nullable columns today; if it cannot, that is a prerequisite this item must name.
+- **Multi-hop paths.** Allowed provided every hop is to-one. Confirm the alias scheme in `JoinStep.Hop` stays unique when the order join and a selected-field join traverse the same FK in one statement (reuse versus a second alias).
 
 ## Tests
 
-Pipeline-tier classification cases (accepted path, unknown column on landing table, to-many rejection) and an execution-tier connection test against the sakila fixtures ordering a connection by a column on a to-one related table, forward and backward pagination.
+- Pipeline-tier classification: accepted to-one path (child to parent), accepted one-to-one extension hop, rejected to-many hop (message names the hop and direction), rejected `condition:`-only hop, unknown column on the landing table, unresolvable `key:`.
+- Pipeline-tier tiebreaker: key already covered (no append), key not covered (PK appended), path-only order (PK appended even when the path column is the related table's PK).
+- Execution-tier: a connection ordered by a column on a to-one related table against the sakila fixtures, forward and backward pagination, a parent with no related row, and duplicate sort keys resolved by the appended primary key.
