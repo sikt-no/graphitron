@@ -7,7 +7,7 @@ priority: 3
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-19
-last-updated: 2026-10-20
+last-updated: 2026-10-21
 ---
 
 # A database value outside an enum's mapping reads as null instead of a per-row serialization error
@@ -234,13 +234,43 @@ the new arm's expression:
     covers.
 
   The remaining `instanceof NodeIdEncodeKeys` sites keep their meaning and need no change:
-  `PlanCompileGraph`, `EntityResolutionBuilder`, `ProjectionCommands`, `GraphitronSchemaValidator`,
-  the arity invariants in `ChildField`'s carrier constructors, `domainReturnType()`,
-  `GraphitronSchemaClassGenerator` and `ErrorTypeFetcherClassGenerator`. The implementer still
-  greps `CallSiteCompaction` across `graphitron/src/main` to confirm the list is complete.
+  `EntityResolutionBuilder`, `ProjectionCommands`, `GraphitronSchemaValidator`, the arity
+  invariants in `ChildField`'s carrier constructors, `domainReturnType()`,
+  `GraphitronSchemaClassGenerator` and `ErrorTypeFetcherClassGenerator`. `PlanCompileGraph`'s
+  test also keeps its meaning, but the class gains an edge; see the next paragraph. The
+  implementer still greps `CallSiteCompaction` across `graphitron/src/main` to confirm the list
+  is complete.
 
 The projection itself is unchanged, so `ProjectionCommands` and the alias machinery need no new
 branch.
+
+**The compile graph.** The arm adds a reference the generated code does not make today: every
+`<Parent>Fetchers` unit that hosts a wrapped read now names `<Name>Type`, the enum's schema-shape
+unit. `PlanCompileGraph` is the dev loop's compile-dependency graph, and its precise edges mirror
+the references the emitted source makes; `IncrementalCompileHarnessTest`'s leg 2 holds the graph
+to a superset of what `TypeSpecReferenceWalk` finds. No edge runs from a fetchers unit to a
+schema-shape unit today (the blanket runs the other way, schema shape to its own fetchers), so the
+class gains one, as a precise leaf-derived edge beside `addEncoderLeafEdges`:
+
+* For each `ColumnBackedField`, `ColumnBackedReferenceField` and `RecordReadField` whose compaction
+  is `EnumKnownOrNull`, recursing into `NestingField`s as the encoder walk does, add a precise
+  edge from `fetchersByTypeName.get(parentTypeName)` to the enum's schema-shape unit. The source
+  is the one `encoderEdge` uses. It is also right for the dual-shape read: a nested field's
+  `parentTypeName` is the nesting type, whose fetchers host `bindDualShape`'s body.
+* The target is looked up among the plan's committed schema-shape units by the arm's host class
+  name, the way `fetchersBySimpleName` looks up fetchers units, and never minted again. Every
+  classified `EnumType` gets a schema-shape row (`SchemaShapePlanner` maps it to `ENUM`), so a
+  miss is a bug and throws `IllegalStateException`.
+* The class javadoc's edge policy names the leaf-derived edges as the one exception to "never
+  re-derived from the classified model", and it names only `NodeIdEncoder`. It is restated to
+  name both, on the same grounds: wrapping a read is a fact about one call site, so the edge
+  stays with the field.
+
+The edge is precise rather than declared. A declared blanket from every fetchers unit to every
+enum schema shape would fit the declared-superset policy, since `knownOrNull` has the same
+signature on every enum class and cannot move on a schema edit. It would also add an edge per
+fetchers-and-enum pair that no emitted source makes. The precise edge is the exact reference,
+costs one `switch` arm per carrier, and keeps leg 3's bounded gap where it is.
 
 ## Out of scope
 
@@ -276,6 +306,8 @@ branch.
   `encodedReadReturn`, `columnByAlias`'s `PlainValue` parameter, and the exhaustive switch at each
   read site above.
 * The `PlainValue` sites above (`JoinedTableReprojection`, `FetcherEmitter`).
+* `graphitron/.../rewrite/compile/PlanCompileGraph.java`: the leaf-derived edge from a wrapping
+  fetchers unit to the enum's schema-shape unit, and the restated edge-policy javadoc.
 * `docs/manual/how-to/map-types-to-tables.adoc`, section "Enum values: text-column and jOOQ-enum".
   Rewrite the text-column paragraph:
   * It still says the generator "emits a static `*_MAP` lookup table". That retired with the move of
@@ -316,6 +348,15 @@ branch.
 * **Pipeline tier, the audit.** A table-interface participant carrying an `EnumKnownOrNull`
   `ColumnBackedField` is not deferred by `JoinedTableReprojection`. This is the silent arm of the
   hazard.
+* **Pipeline tier, the compile graph.**
+  * `PlanCompileGraphTest`, beside `encodeCarryingFetcherReachesNodeIdEncoderPrecisely`: the
+    fetchers unit of a type carrying an `EnumKnownOrNull` field reaches that enum's schema-shape
+    unit. A sibling type whose enum field is `Direct` (over a jOOQ-enum column) does not.
+  * `IncrementalCompileHarnessTest`: extend the corpus with an enum-typed field over a text
+    column, for example `Film.textRating: TextRating` with `NC_17 @field(name: "NC-17")`. This
+    puts the emitted reference under leg 2, so the graph is checked against the generated
+    source and not only against itself. It is the evidence that no wrapping site is missing an
+    edge.
 * **Execution tier, the goal** (`graphitron-sakila-example`, `GraphQLQueryTest`):
   * `films { title textRating }` answers `null` for the seeded unmapped row, with
     `result.getErrors()` empty. This test is the acceptance evidence for the goal.
@@ -447,3 +488,14 @@ component the spec explicitly sets aside.
    Either way, the test is an `IncrementalCompileHarnessTest` corpus extension, or a
    `PlanCompileGraphTest` case, with an enum-typed field over a text column, so that leg 2
    covers the reference.
+
+   *Response:* The new **The compile graph** paragraph under Design, Emission picks the precise
+   leaf-derived edge. For each `EnumKnownOrNull` carrier, the edge runs from
+   `fetchersByTypeName.get(parentTypeName)` (the source `encoderEdge` uses, which also hosts the
+   dual-shape read) to the enum's committed schema-shape unit, which is looked up and never minted
+   again. The class javadoc's edge policy is restated to name both leaf-derived families. The
+   paragraph says why the edge is precise and not declared. `PlanCompileGraph` comes off the
+   "no change" list and joins the Implementation list. The Tests section gains a
+   `PlanCompileGraphTest` case (positive and `Direct` negative) and an
+   `IncrementalCompileHarnessTest` corpus extension with an enum over a text column, so leg 2 checks
+   the edge against the generated source.
