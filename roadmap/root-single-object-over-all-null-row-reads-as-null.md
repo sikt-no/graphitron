@@ -44,9 +44,9 @@ type Kontaktinfo @table(name: "PERSON") {
 | `kontaktinfo(personId: 8) { epost }` | no `PERSON` row 8 | `null` | `null` | `null` |
 | `hovedkontakt { epost }` | a row with both columns `null` | object | object | object |
 
-The "Today" column for the `@lookupKey` rows is the anchored read's behavior; the lookup's own is
-unverified, since no single root lookup is exercised anywhere today (see "The `@lookupKey` single
-shape" below).
+The "Today" column for the `@lookupKey` rows is the anchored read's behavior. Before this item a
+single root lookup failed every selected subfield instead (see "The `@lookupKey` single shape"
+below); that fix has landed.
 
 No consumer has reported the root shape; the item exists so the divergence has a home, and it is
 cheap once R1069's per-type fold exists. In practice it bites only types that map neither a
@@ -97,6 +97,14 @@ execution case in the sakila example (no field there exercises it), then routes 
 through the same cardinality fork `resultShapeOf` uses, so one producer mints the single shape for
 all three sources. If the pinning shows the single lookup is broken outright rather than merely
 list-shaped, that fix lands here, since this item cannot reach the lookup source without it.
+
+*Landed, ahead of R1069:* the pinning showed the single lookup broken outright: the launcher handed
+a one-slot `List` to an object field, so every selected subfield failed its cast to `Record`, for
+a matched key and an unmatched one alike. `lookupRow` now mints its shape through
+`LauncherCommands.cardinalityShape`, the fork `resultShapeOf` also reads, so a single lookup gets
+`SingleRecord` and the launcher's existing `fetchOne()` branch. Pinned by
+`RootNullContractPipelineTest` (both walks) and the sakila `Query.languageBySingleKey` cases in
+`GraphQLQueryTest`. The rest of this plan reads R1069's model and rendering pieces and waits on it.
 
 **The command: a sealed null check on the single result shape.** `ResultShape.SingleRecord` gains one
 component, `NullCheck check`, a new sealed command type in `no.sikt.graphitron.command`:

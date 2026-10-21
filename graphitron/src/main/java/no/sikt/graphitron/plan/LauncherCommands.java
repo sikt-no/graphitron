@@ -616,7 +616,9 @@ public final class LauncherCommands {
      * A {@code @lookupKey} row: the source arm carries the anchor, the terminus projection, the
      * borrowed key mapping (whose VALUES rows the emitted input-rows helper builds; its ref is
      * minted here through the same formula the helper emission reads) and entails the input
-     * ordering, so the list shape's ordering slot is absent. The launcher unit keeps the
+     * ordering, so the list shape's ordering slot is absent. The cardinality is the
+     * coordinate's own, through {@link #cardinalityShape}: a scalar key with a single return
+     * answers one record or {@code null}, never a one-slot list. The launcher unit keeps the
      * pre-seam {@code lookup<Field>} name through its own minting scheme. Always direct; never
      * a connection (both classifier-rejected pairs, backstopped on the command).
      */
@@ -634,7 +636,7 @@ public final class LauncherCommands {
             where,
             new Invocation.Direct(),
             new TenantStrategy.Single(),
-            new ResultShape.RecordList(null),
+            cardinalityShape(qtf, () -> null),
             units.selectionOccurrences());
     }
 
@@ -1142,8 +1144,20 @@ public final class LauncherCommands {
                 "coordinate '" + qtf.qualifiedName() + "' carries facets but is not a connection;"
                 + " the classifier synthesises facet carriers only for @asConnection coordinates");
         }
+        return cardinalityShape(qtf, () -> orderingOf(qtf, units));
+    }
+
+    /**
+     * The root table read's one cardinality fork over a non-connection coordinate: a list
+     * wrapper fetches a record list under the source's ordering, anything else fetches one
+     * record. Every root table source reads its shape through here, so a single return cannot
+     * be handed a list shape by one source while another mints the single one. The ordering is
+     * supplied lazily, because only the list arm reads it.
+     */
+    private static ResultShape cardinalityShape(QueryField.QueryTableField qtf,
+            java.util.function.Supplier<Ordering> listOrdering) {
         return qtf.returnType().wrapper().isList()
-            ? new ResultShape.RecordList(orderingOf(qtf, units))
+            ? new ResultShape.RecordList(listOrdering.get())
             : new ResultShape.SingleRecord();
     }
 

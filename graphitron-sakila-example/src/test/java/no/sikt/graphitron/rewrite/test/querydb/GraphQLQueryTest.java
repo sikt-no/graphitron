@@ -1812,23 +1812,18 @@ class GraphQLQueryTest {
     // null. The pair is admitted by the root lookup validator, and no other field here reads it.
 
     @Test
-    void languageBySingleKey_matchedKey_failsReadingTheOneSlotListAsARecord() {
+    void languageBySingleKey_matchedKey_returnsTheRecord() {
         QUERY_COUNT.set(0);
-        var result = executeRaw("{ languageBySingleKey(language_id: 3) { languageId } }");
-        assertFieldNullified(result, "languageBySingleKey");
-        assertThat(result.getErrors())
-            .extracting(e -> e.getMessage())
-            .singleElement(as(STRING)).contains("cannot be cast to class org.jooq.Record");
+        Map<String, Object> data = execute("{ languageBySingleKey(language_id: 3) { languageId } }");
+        assertThat(data).extractingByKey("languageBySingleKey", as(MAP))
+            .containsEntry("languageId", 3);
         assertThat(QUERY_COUNT.get()).isEqualTo(1);
     }
 
     @Test
-    void languageBySingleKey_unmatchedKey_failsReadingTheOneSlotListAsARecord() {
-        var result = executeRaw("{ languageBySingleKey(language_id: 99) { languageId } }");
-        assertFieldNullified(result, "languageBySingleKey");
-        assertThat(result.getErrors())
-            .extracting(e -> e.getMessage())
-            .singleElement(as(STRING)).contains("cannot be cast to class org.jooq.Record");
+    void languageBySingleKey_unmatchedKey_returnsNull() {
+        Map<String, Object> data = execute("{ languageBySingleKey(language_id: 99) { languageId } }");
+        assertThat(data).containsEntry("languageBySingleKey", null);
     }
 
     // ===== customerById lookup query =====
