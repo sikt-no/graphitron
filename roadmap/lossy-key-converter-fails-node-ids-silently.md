@@ -1,13 +1,13 @@
 ---
 id: R1079
 title: "A node-key column whose converter does not round-trip makes its ids resolve to null with no diagnostic"
-status: Ready
+status: In Progress
 bucket: dx
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-10-20
-last-updated: 2026-10-20
+last-updated: 2026-10-21
 ---
 
 # A node-key column whose converter does not round-trip makes its ids resolve to null with no diagnostic
