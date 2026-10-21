@@ -108,6 +108,7 @@ extend type Query {
 
 extend schema @expectEquals(relation: "graphitron_field_target_column", rows: """
   type_name,          field_name, from_table, column_name, matched_by
+  FactAnchor,         paymentId,  payment,    payment_id,  SQL_NAME
   Details,            lastUpdate, film,       last_update, SQL_NAME
   Details,            lastUpdate, language,   last_update, SQL_NAME
   Details,            title,      film,       title,       SQL_NAME

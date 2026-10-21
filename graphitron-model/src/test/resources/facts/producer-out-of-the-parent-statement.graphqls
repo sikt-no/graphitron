@@ -58,7 +58,7 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphitron_producer", rows: """
   type_name, field_name, kind
-  Query,     ping,       ROUTINE
+  Query,     anchor,     SELECT
   Query,     films,      SELECT
   Query,     summaries,  SERVICE
   Query,     byIds,      SERVICE

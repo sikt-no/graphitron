@@ -42,6 +42,5 @@ extend schema @assertAbsent(relation: "graphitron_field_target_table", rows: """
   Query,     mixed,      Event
   Query,     credited,   Clip
   Query,     note,       Note
-  Query,     ping,       String
   Film,      title,      String
   """)

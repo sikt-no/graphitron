@@ -65,7 +65,7 @@ type AddFilmPayload {
 # Each producer is a fetcher on the producer side. The readers are the next relation's.
 extend schema @assertContains(relation: "graphitron_fetcher", rows: """
   type_name,                 field_name,    side
-  Query,                     ping,          PRODUCER
+  Query,                     anchor,        PRODUCER
   Query,                     films,         PRODUCER
   Mutation,                  addFilm,       PRODUCER
   Film,                      language,      PRODUCER
@@ -83,7 +83,7 @@ extend schema @expectEquals(relation: "graphitron_producer", where: """
   type_name IN ('Query', 'Mutation', 'Film', 'QueryPagedFilmsConnection', 'AddFilmPayload')
   """, rows: """
   type_name,                 field_name,         kind
-  Query,                     ping,               ROUTINE
+  Query,                     anchor,             SELECT
   Query,                     films,              SELECT
   Query,                     filmsById,          LOOKUP
   Query,                     pagedFilms,         SELECT
@@ -123,10 +123,9 @@ extend schema @expectEquals(relation: "graphitron_producer_write", where: """
   Mutation,  addFilmWithPayload, INSERT,        , public,       film
   """)
 
-# The first @routine is the producer's; the prelude's ping is one more routine producer.
+# The first @routine is the producer's.
 extend schema @expectEquals(relation: "graphitron_producer_routine", rows: """
   type_name, field_name,    table_schema,  routine_name
-  Query,     ping,          multischema_b, ms_ping
   Query,     filmsForActor, public,        films_for_actor
   """)
 

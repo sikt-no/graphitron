@@ -11,6 +11,7 @@ extend type Query {
 
 extend schema @expectEquals(relation: "graphitron_type_backing", rows: """
   type_name, class_name,                                                    declared_via
+  FactAnchor, no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.PaymentRecord, BOUND_TABLE
   Film,      no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, BOUND_TABLE
   Film,      no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder,                                            PRODUCER
   """)

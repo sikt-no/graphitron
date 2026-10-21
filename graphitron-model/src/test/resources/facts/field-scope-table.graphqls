@@ -44,6 +44,7 @@ type Mutation {
 
 extend schema @expectEquals(relation: "graphitron_field_scope_table", rows: """
   type_name,                 field_name,      basis,            table_name
+  Query,                     anchor,          NAMED_TYPE_TABLE, payment
   FilmActorPayload,          actor,           NAMED_TYPE_TABLE, actor
   FilmActorPayload,          film,            NAMED_TYPE_TABLE, film
   FilmPayload,               film,            NAMED_TYPE_TABLE, film

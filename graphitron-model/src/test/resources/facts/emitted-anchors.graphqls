@@ -29,7 +29,7 @@ extend schema @expectEquals(relation: "graphitron_field", where: """
   type_name IN ('Query', 'Film', 'FilmFilter', 'QueryFilmsConnection', 'QueryFilmsConnectionEdge', 'PageInfo')
   """, rows: """
   type_name,                field_name,      type_sdl
-  Query,                    ping,            String
+  Query,                    anchor,          FactAnchor
   Query,                    films,           QueryFilmsConnection!
   Query,                    rating,          Rating
   Film,                     id,              ID

@@ -28,7 +28,7 @@ extend schema @assertContains(relation: "graphitron_field_target", rows: """
   Query,          pages,      Film,             FilmPage
   Query,          firstFilm,  Film,
   Query,          media,      Media,
-  Query,          ping,       String,
+  Query,          anchor,     FactAnchor,
   Film,           title,      String,
   Mutation,       addFilm,    AddFilmPayload,
   AddFilmPayload, film,       Film,
