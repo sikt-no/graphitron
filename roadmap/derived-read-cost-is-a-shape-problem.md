@@ -2657,6 +2657,13 @@ real failure look like noise.
   near 19 showed clearing three refusals of five. What closes it is a compaction that cannot meet
   the race: H2's asserts off in the test JVM, which is how a build runs them, or an H2 that fixes
   it.
+* **A forked LSP test JVM does not crash** `open`. Seen once, 2026-10-21: a `graphitron-lsp`
+  module run lost its forked JVM to a SIGSEGV in G1's concurrent root-region scan, a collector
+  thread faulting on an address that is not one, while `NodeTypeCompletionsTest` ran; the rerun and
+  the full build were green. No Java frame is on the crashing stack. The LSP loads tree-sitter
+  natively, so native-memory corruption is the first suspect if it recurs. The report's header and
+  the crashing thread are in `roadmap/audits/2026-10-21-lsp-test-jvm-sigsegv-in-g1.md`, with what
+  to keep if it happens again.
 
 ## Tests
 
