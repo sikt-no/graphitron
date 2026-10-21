@@ -500,21 +500,31 @@ public final class EmittedRegistry {
         var minted = GRAPHITRON_TYPE_MINTED;
         var anchored = GRAPHITRON_FIELD;
         var field = GRAPHQL_FIELD;
-        // The carrier's own position, reached by name: the anchored field spells the coordinate's
-        // parts, and the transcription is keyed by them.
-        var carriers = store.dsl()
-            .select(coinage.TYPE_NAME, coinage.COORDINATE, field.SOURCE_NAME, field.SOURCE_LINE,
-                field.SOURCE_COLUMN)
+        // The minted carriers first, fenced by OFFSET 0: joined with the fields in one block, H2
+        // orders the four relations so that a few hundred rows take seconds on a large schema.
+        var carrier = store.dsl()
+            .select(coinage.GRAPH_NAME, coinage.TYPE_NAME, coinage.COORDINATE)
             .from(coinage)
             .join(minted).on(minted.GRAPH_NAME.eq(coinage.GRAPH_NAME)
                 .and(minted.TYPE_NAME.eq(coinage.TYPE_NAME)))
-            .leftJoin(anchored).on(anchored.GRAPH_NAME.eq(coinage.GRAPH_NAME)
-                .and(anchored.COORDINATE.eq(coinage.COORDINATE)))
+            .where(coinage.GRAPH_NAME.eq(store.graphName()))
+            .offset(inline(0))
+            .asTable("carrier");
+        var carrierGraph = carrier.field(coinage.GRAPH_NAME);
+        var carrierType = carrier.field(coinage.TYPE_NAME);
+        var carrierCoordinate = carrier.field(coinage.COORDINATE);
+        // The carrier's own position, reached by name: the anchored field spells the coordinate's
+        // parts, and the transcription is keyed by them.
+        var carriers = store.dsl()
+            .select(carrierType, carrierCoordinate, field.SOURCE_NAME, field.SOURCE_LINE,
+                field.SOURCE_COLUMN)
+            .from(carrier)
+            .leftJoin(anchored).on(anchored.GRAPH_NAME.eq(carrierGraph)
+                .and(anchored.COORDINATE.eq(carrierCoordinate)))
             .leftJoin(field).on(field.GRAPH_NAME.eq(anchored.GRAPH_NAME)
                 .and(field.TYPE_NAME.eq(anchored.TYPE_NAME))
                 .and(field.FIELD_NAME.eq(anchored.FIELD_NAME)))
-            .where(coinage.GRAPH_NAME.eq(store.graphName()))
-            .orderBy(coinage.TYPE_NAME, coinage.COORDINATE)
+            .orderBy(carrierType, carrierCoordinate)
             .fetch();
         var d = GRAPHITRON_CARRIER_DIRECTIVE;
         var carried = store.dsl()
@@ -551,12 +561,12 @@ public final class EmittedRegistry {
         }
         var carriersByType = new LinkedHashMap<String, List<Carrier>>();
         for (var row : carriers) {
-            var key = List.of(row.get(coinage.TYPE_NAME), row.get(coinage.COORDINATE));
+            var key = List.of(row.get(carrierType), row.get(carrierCoordinate));
             var location = row.get(field.SOURCE_LINE) == null ? null
                 : new SourceLocation(row.get(field.SOURCE_LINE), row.get(field.SOURCE_COLUMN),
                     row.get(field.SOURCE_NAME));
-            carriersByType.computeIfAbsent(row.get(coinage.TYPE_NAME), t -> new ArrayList<>())
-                .add(new Carrier(row.get(coinage.COORDINATE), tagsByCarrier.getOrDefault(key, List.of()),
+            carriersByType.computeIfAbsent(row.get(carrierType), t -> new ArrayList<>())
+                .add(new Carrier(row.get(carrierCoordinate), tagsByCarrier.getOrDefault(key, List.of()),
                     shareableCarriers.contains(key), location));
         }
         var narrowings = new ArrayList<TagNarrowing>();

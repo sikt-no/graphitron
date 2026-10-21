@@ -1906,8 +1906,9 @@ Profiled on sis in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-
 * **A stage table's graph filter cannot spoil its rule's plan** `open`.
   `graphitron_field_source_table`'s `MERGE` filters its rule to the graph, and the pushed-down
   filter turns 0.7 s into 24.
-* **The tag narrowing joins the coinage to its minted type before the fields** `open`. In any other
-  order the four-way read in `EmittedRegistry.narrowings` takes seconds for a few hundred rows.
+* **The tag narrowing joins the coinage to its minted type before the fields** `done`. In any other
+  order the four-way read in `EmittedRegistry.narrowings` takes seconds for a few hundred rows; the
+  pair is fenced by `OFFSET 0`, and `EmittedRegistryTest` pins its answer.
 * **The walk's catalog lookups are not paid every round** `blocked`, on "The classified model
   dissolves into the store". `JooqCatalog` scans every table by reflection per lookup, about 8 s a
   round on sis.
