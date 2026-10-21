@@ -1808,6 +1808,29 @@ class GraphQLQueryTest {
             .containsOnly("ACADEMY DINOSAUR");
     }
 
+    // A scalar key with a single return: one key, one answer, and a key matching no row answers
+    // null. The pair is admitted by the root lookup validator, and no other field here reads it.
+
+    @Test
+    void languageBySingleKey_matchedKey_failsReadingTheOneSlotListAsARecord() {
+        QUERY_COUNT.set(0);
+        var result = executeRaw("{ languageBySingleKey(language_id: 3) { languageId } }");
+        assertFieldNullified(result, "languageBySingleKey");
+        assertThat(result.getErrors())
+            .extracting(e -> e.getMessage())
+            .singleElement(as(STRING)).contains("cannot be cast to class org.jooq.Record");
+        assertThat(QUERY_COUNT.get()).isEqualTo(1);
+    }
+
+    @Test
+    void languageBySingleKey_unmatchedKey_failsReadingTheOneSlotListAsARecord() {
+        var result = executeRaw("{ languageBySingleKey(language_id: 99) { languageId } }");
+        assertFieldNullified(result, "languageBySingleKey");
+        assertThat(result.getErrors())
+            .extracting(e -> e.getMessage())
+            .singleElement(as(STRING)).contains("cannot be cast to class org.jooq.Record");
+    }
+
     // ===== customerById lookup query =====
 
     @Test

@@ -412,6 +412,9 @@ type Query {
     # request's original positions. See QueryNodeFetcherClassGenerator.
     nodes(ids: [ID!]!): [Node]
     languageByKey(language_id: [Int] @lookupKey @field(name: "language_id")): [Language]!
+    # The single-key shape of the same lookup: a scalar key and a single return, which the
+    # validator admits as one key answering one slot.
+    languageBySingleKey(language_id: Int! @lookupKey @field(name: "language_id")): Language
     # Condition-convergence fixture: an authored @condition on a lookup coordinate. The lookup
     # keys ride the VALUES join; the non-key authored filter is composed beside it (inline in
     # the lookup rows method before call-site convergence, one glue call after). override: true
