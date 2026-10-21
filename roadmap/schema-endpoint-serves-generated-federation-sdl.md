@@ -1,7 +1,7 @@
 ---
 id: R1081
 title: "graphitron-jakarta-rest /graphql/schema serves SDL federation composition rejects"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 depends-on: []

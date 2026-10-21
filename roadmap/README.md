@@ -26,9 +26,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R1081` | graphitron-jakarta-rest /graphql/schema serves SDL federation composition rejects | Spec | 2026-10-21 | [plan](schema-endpoint-serves-generated-federation-sdl.md) |
 | `R1068` | A database value outside an enum's mapping reads as null instead of a per-row serialization error | Ready | 2026-10-21 <sub>created 2026-10-19</sub> | [plan](unmapped-enum-value-from-database-reads-as-null.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
+| `R1081` | graphitron-jakarta-rest /graphql/schema serves SDL federation composition rejects | Ready | 2026-10-21 | [plan](schema-endpoint-serves-generated-federation-sdl.md) |
 | `R1079` | A node-key column whose converter does not round-trip makes its ids resolve to null with no diagnostic | In Progress | 2026-10-21 <sub>created 2026-10-20</sub> | [plan](lossy-key-converter-fails-node-ids-silently.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
