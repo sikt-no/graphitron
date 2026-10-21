@@ -1,145 +1,229 @@
 ---
 id: R863
 title: "Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 1
 theme: testing
 depends-on: []
 created: 2026-08-27
-last-updated: 2026-08-27
+last-updated: 2026-10-21
 ---
 
 # Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it
 
-Trunk CI fails most runs, and every failure sampled so far is one test class in
-`graphitron-sakila-example` reading rows another test class wrote. Of the 40 workflow runs on
-`claude/graphitron-rewrite` on 2026-08-27, 4 were green, 28 red and 8 still running. Every red one
-sampled failed in that module, on an execution-tier assertion, with no code in the commit that could
-plausibly cause it: several of the failing commits changed only roadmap metadata.
+## Goal
 
-This is a test-isolation bug, not a generator bug. The generated code is correct in every case below;
-the assertions are reading a database another test is mid-way through mutating.
+Every execution-tier test class in `graphitron-sakila-example` runs against a database no other
+class can see, on CI, in the web sandbox and on a laptop alike, so a red execution test means the
+generated code or the test is wrong and never that another class happened to commit a row at the
+same moment. Today the `local-db` profile (the Maven profile that points tests at one PostgreSQL
+server that is already running, instead of starting a container per class) puts all of them in
+one database, four classes at a time, and trunk CI fails about once a day on a test that is
+correct: on 2026-10-20 and 2026-10-21 alone, `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`
+counted a film another class had inserted, and `filmsConnection_emptyBeforeCursor_returnsLastPage`
+compared two reads of the table's tail across a sibling's insert and cleanup. When this lands, a
+test author writes `hasSize(5)` over the five seeded films and it means what it says, with no
+seeded-rows-only filter in front of it.
 
-## Why the shared database exists, and what it removes
+The execution tier is the tier that runs a real GraphQL request through generated code to
+PostgreSQL and asserts on the rows that come back (`docs/architecture/how-to/testing.adoc`,
+Execution tier).
 
-Each execution-tier class opens its own PostgreSQL container in `@BeforeAll` when no
-`test.db.url` is set. The `local-db` profile sets one, so every class instead shares a single
-instance. That profile is what CI uses, and what the web sandbox uses (no Docker there), so the
-per-class isolation the suite is written against is exactly what the profile removes.
+## What is true today
 
-Beside that, `graphitron-sakila-example/src/test/resources/junit-platform.properties` runs four test
-classes concurrently. So on CI, four classes at a time read and write one database.
+Measured against the tree at `387bdf7`.
 
-The properties file already states the rule that keeps this safe:
+* **Provisioning is copied, 67 times.** Each of 66 test classes carries the same `@BeforeAll`: if
+  `test.db.url` is set it connects there, otherwise it starts its own
+  `PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql")`, then builds a
+  `DriverManager`-backed `DSLContext` in autocommit. `SmokeTestPostgresResource` makes the same
+  choice for the five `@QuarkusTest` classes. There is no harness, so there is nothing to change in
+  one place.
+* **The two paths isolate differently.** Off `local-db` every class has a private server. On
+  `local-db` every class shares `rewrite_test`, which CI and the sandbox seed from
+  `graphitron-sakila-db`'s `init.sql` and which jOOQ code generation also reads. Class
+  parallelism is four (`junit-platform.properties`).
+* **27 classes write to that shared server.** Eleven commit `film` rows (marker titles, sequence
+  ids above 100, `language_id = 1`); `GraphQLQueryTest.updateFilmWithErrors_existingFilm_returnsTheUpdatedRow`
+  commits a new title on seeded film 1 and restores it in `finally`; `rental`, `content`, `email`,
+  `film_endorsement` and `film_bookmark` take committed rows; `TenantFanOutExecutionTest` holds
+  `language` 901 to 903 for its whole class lifetime. Two rows leak for good:
+  `upsertAddress_omittedSameTableIdentity_serviceInsertAssignsPk` leaves an `address` and
+  `endorseFilm_fkReferenceLandsOnRenamedChildColumn` leaves a `film_endorsement`, so a persistent
+  `rewrite_test` drifts from `init.sql` run by run.
+* **Cluster-scoped names are fixed.** The tenant classes create and drop `tenant_1`/`tenant_2`
+  (`TenantDivinedRoutingExecutionTest`), `fanout_t1`/`fanout_t2` (`TenantFanOutExecutionTest`),
+  `scatter_t1`/`scatter_t2` (`TenantScatterExecutionTest`) and two `org_tenant_*` databases
+  (`ConvertedTenantRoutingExecutionTest`), each deriving their URLs with its own private
+  `tenantUrl` rewrite of the JDBC URL.
+* **19 test methods break today when a sibling commits.** Four read an unfiltered or broadly
+  filtered set (`filmsByTitleBean_absentInput...`, three `ResultKeyScopeExecutionTest` cases over
+  films per language); five compare two reads taken at different instants
+  (`filmsConnection_emptyBeforeCursor...`, `RootFieldExecutionTest.interfaceRootConnection_totalCountAgreesWithTheUnpagedRoot`,
+  three in `ServicePolymorphicReturnExecutionTest`); ten read seeded film 1's title, which the
+  one seeded-row writer above changes (`FederationEntitiesDispatchTest`, `RootFieldExecutionTest`,
+  `ApprovalQueryExampleTest`, `RoutineFieldExecutionTest` and others).
+* **About 65 more are safe only by convention.** Roughly 51 exact-cast and absence assertions over
+  `film_actor` hold because `DmlBulkMutationsExecutionTest` seeds its pairs inside
+  `inRolledBackTransaction`; fourteen whole-table `rental` counts in `GraphQLQueryTest` hold
+  because no other class rents. The next writer that does either commits, and they fail.
+* **The response so far has been per-test.** 34 hand-written filters keep a read to the seeded
+  rows (`seededByTitle`, `SEEDED_FILM_IDS`, `LanguageWindow` and their siblings in
+  `GraphQLQueryTest`, `OptionalNodeIdProjectionExecutionTest` and
+  `MultiTableNodeIdRouteExecutionTest`), and six Backlog items each recorded one colliding pair.
+  The convention the properties file states ("writers scope their cleanup to rows they can name;
+  readers assert what their own query means") has no enforcer, and the count of exposed tests is
+  not going down.
 
-> Writers scope their cleanup to rows they can name (a UUID marker, a title, an id); readers assert
-> what their own query means rather than what a table holds.
+## Design
 
-Three tests break one half of that rule or the other. The rule is right; what is missing is anything
-that enforces it, and one table where following it is currently impossible.
+**One harness, one server per test JVM, one database per class.** A new JUnit extension,
+`SakilaDatabase`, owns every connection an execution test makes. It is the only code that reads
+`test.db.*`, constructs a `PostgreSQLContainer` or composes a JDBC URL.
 
-## The writer
+* **Server.** With `test.db.url` set, the server is the one it names. Without it, one container per
+  test JVM, started on first use, replacing today's container per class. This is the only branch
+  between the two paths; everything after it is the same code, so the two paths isolate
+  identically by construction rather than by agreement.
+* **Pristine template.** On first use in a JVM, under a JVM-wide lock, the harness creates a
+  database named for this run and applies `init.sql` from the classpath to it, the same script the
+  container path applies today. Nothing connects to it afterwards. Measured on PostgreSQL 16 in
+  the web sandbox: 0.4 s to apply.
+* **Per-class clone.** `beforeAll` runs `CREATE DATABASE <class database> TEMPLATE <pristine>` and
+  hands the class a `DSLContext` over it, plus the URL and credentials for tests that build their
+  own `DataSource` (the owned-path classes, where the generated runtime acquires its own
+  connections). `afterAll` drops it with `WITH (FORCE)`. Measured: 0.13 s for one clone and 0.56 s
+  for eight concurrent clones of one template, so the module's 66 classes cost a few seconds of
+  wall clock spread over four threads.
+* **Auxiliary databases.** `auxiliary(String suffix)` mints an empty database whose name carries
+  the class database's name, hands back its URL, and drops it with the class. The four tenant
+  classes take their tenant databases from it and lose their `tenantUrl` copies.
+* **Hygiene across runs.** Every database the harness creates carries one prefix and the run's
+  token. A run drops what it created; at start it also drops prefixed databases left by a run that
+  died, and never a live concurrent run's. The implementer picks the liveness test (a
+  session-level advisory lock keyed on the run token, held on the server's `postgres` database for
+  the JVM's lifetime, is the obvious one).
+* **Quarkus.** `SmokeTestPostgresResource` asks the harness for a database per resource start. The
+  five `@QuarkusTest` classes already run one at a time under `QuarkusTestLock.KEY`.
 
-`DmlBulkMutationsExecutionTest` seeds `film_actor` rows around its `@nodeId`-decode tests, and picks
-its pairs out of the seeded id space on purpose, each comment noting the pair is "not in the
-init.sql seed":
+`rewrite_test` goes back to being the code generator's input only. No test reads it, so a test
+run no longer depends on whether someone re-seeded it after `init.sql` moved, and nothing a test
+does can leak into it.
 
-| Test | Pair seeded |
-|---|---|
-| `deleteFilmActorByNodeId_singleRow_deletesByDecodedComposite` | (actor 1, film 4) |
-| `deleteFilmActorsByNodeId_bulkRows_deletesAllViaRowIn` | (2, 3) and (3, 4) |
-| `deleteFilmActorByNodeId_wrongTypeNodeId_surfacesError` | (3, 3) |
+**What this does not isolate.** Two roles are cluster-scoped and fixed-name:
+`carrier_rls_probe` (`RoutineCarrierRlsExecutionTest`) and `rls_probe_user`
+(`SessionHookExecutionTest`). Each belongs to one class, so no two classes in a run contend for
+one, and both classes already create and drop them. They stay as they are; minting role names
+would change what those RLS tests assert for no gain in isolation.
 
-Each row is committed, held for the duration of one GraphQL execution, and deleted in a `finally`.
-The cleanup is correct and the window is milliseconds wide. It is still long enough, because the
-readers below run continuously beside it.
+**The enforcer is structural.** Once every class owns its database there is no reader/writer
+distinction to declare and nothing to check at run time; the invariant is "every execution test
+gets its database from the harness". A guard in `graphitron-sakila-example`'s `test/internal`
+package, in the shape of `graphitron`'s `StoreFixtureGuardTest` (a scan of test sources with a closed list of
+sanctioned homes, a file-count floor and a staleness check on its own list), fails the build on
+`new PostgreSQLContainer`, a read of `test.db.url`/`test.db.username`/`test.db.password`,
+`DriverManager.getConnection`, or a `jdbc:postgresql:` literal anywhere in the module's test
+sources outside `SakilaDatabase`. That catches the copied `@BeforeAll` and the `tenantUrl`
+rewrites alike, which a guard on the system property alone would not.
 
-`film_actor` is the one table in the fixture where the documented writer rule cannot be followed as
-written. Its primary key is the pair `(actor_id, film_id)` and it has no marker column, so there is
-no such thing as a privately-named `film_actor` row over seeded actors and films. A writer that
-needs one has to bring its own actor and its own film.
+**The per-test filters go.** With no other class able to touch a class's database, the 34
+seeded-only filters guard nothing and would be copied by the next author as if they did. Each one
+that exists only because of another class's writes is removed in this item, and its assertion
+returns to the plain form (`hasSize(5)`, an exact list). A filter that guards against the class's
+own earlier writes stays, and says so in a comment; the two permanent leaks are fixed at their
+source instead (the leaking test deletes what it wrote), so that `seededDistricts` and its kin
+have nothing left to filter.
 
-## The readers, and what each one actually asserts
+## Implementation
 
-**`RoutineFieldExecutionTest`** reads the seeded cast through the `films_for_actor(p_actor_id,
-p_min_length)` routine. The seed casts ED (actor 3) in films 2 and 5; film 3 has length exactly 50,
-so at `minLength: 50` a `(3, 3)` row makes film 3 appear in ED's list.
+* `graphitron-sakila-example/src/test/java/.../test/SakilaDatabase.java` (new): the extension above.
+  `BeforeAllCallback`/`AfterAllCallback`; `dsl()`, `url()`, `user()`, `password()`,
+  `auxiliary(String)`. Registered as `@RegisterExtension static final SakilaDatabase db = ...` so
+  its `beforeAll` runs before the class's own `@BeforeAll`.
+* The 66 execution-tier classes: the copied `@BeforeAll` and `@AfterAll` blocks become the
+  extension field and a `db.dsl()` read. Mechanical; the class's own setup after the connection
+  (for example `TenantFanOutExecutionTest` seeding its tenant tables) stays in its own
+  `@BeforeAll`. `DmlBulkMutationsExecutionTest.seedFilmActor`'s second-connection check opens its
+  second connection through the harness.
+* The four tenant classes: tenant databases from `db.auxiliary(...)`; the `tenantUrl` helpers and
+  the `drop database if exists ... with (force)` / `create database` pairs go.
+* `SmokeTestPostgresResource`: takes its database from the harness.
+* `GraphQLQueryTest`: `upsertAddress_omittedSameTableIdentity_serviceInsertAssignsPk` and
+  `endorseFilm_fkReferenceLandsOnRenamedChildColumn` delete the rows they create.
+* The seeded-only filters in `GraphQLQueryTest`, `OptionalNodeIdProjectionExecutionTest` and
+  `MultiTableNodeIdRouteExecutionTest` (`seededByTitle`, `SEEDED_FILM_IDS`, `LanguageWindow`,
+  `seededDistricts` and siblings): removed where the guarded writer is another class, kept with a
+  comment where it is the class itself.
+* `graphitron-sakila-example/src/test/java/.../test/internal/SakilaDatabaseGuardTest.java` (new):
+  the guard above.
+* `junit-platform.properties`: the long comment shrinks to the concurrency settings and the Quarkus
+  lock, with a pointer to `testing.adoc` for where a test's database comes from. It also stops
+  saying "the four" `@QuarkusTest` classes; there are five.
+* CI workflows and `.claude/scripts/session-start-web-env.sh` keep seeding `rewrite_test`, which
+  code generation still reads. The `local-db` comment in `graphitron-sakila-example/pom.xml` stops
+  telling the caller to apply `init.sql` for the tests' sake.
 
-Reproduced deterministically. With `film_actor (3, 3)` present for the whole run, 7 of the class's 16
-tests fail, with the message CI shows, including both methods CI has reported so far
-(`correlatedChildRoutineBindsArgumentThroughDotPath:156` and
-`splitRoutineChildBatchesByBoundColumns:372`):
+## Tests
 
-```
-Expecting actual:
-  [3, 5]
-to contain exactly (and in same order):
-  [5]
-```
+* `SakilaDatabaseTest` (unit-tagged where it needs no server, execution-tagged where it does): two
+  classes' databases have different `current_database()` names; a row committed in one is absent in
+  the other; a class database holds exactly `init.sql`'s seed (the five films, the seven
+  `film_actor` pairs) whatever ran before it; `auxiliary` databases are dropped with the class; a
+  database carrying the prefix and a dead run's token is dropped at start, and one held by a live
+  run is not.
+* `SakilaDatabaseGuardTest` fails on a planted `new PostgreSQLContainer` and a planted
+  `System.getProperty("test.db.url")` outside the harness (its own negative case), and passes on
+  the migrated tree.
+* The 19 methods listed under "What is true today" pass with their filters removed. That they pass
+  is the demonstration the item is complete, since each failed on CI with a sibling's row in it.
+* Evidence at In Review: five consecutive full `mvn install -Plocal-db` runs green on one tree,
+  and the module's wall clock before and after, so a reviewer can see what one container per JVM
+  and 66 clones cost or save against 66 containers.
 
-On CI only one method fails per run, because the polluting row exists for one GraphQL execution
-rather than for the whole class. Which method fails is therefore a coin toss, which is why the
-failure looks like a different bug every run.
+## Documentation
 
-**`CompositeKeyLookupQueryTest.compositeKeyLookup_subset_returnsOnlyMatchingPair`** is built on the
-premise, stated in its own comment, that `(film 4, actor 1)` is not a real row: it asserts the
-unmatched composite key holds null in its slot. That is the exact pair
-`deleteFilmActorByNodeId_singleRow_deletesByDecodedComposite` seeds.
+`docs/architecture/how-to/testing.adoc` gains "Where an execution test gets its database" beside
+"Where a store-backed test gets its store": the harness, one database per class, auxiliary
+databases, and the guard. The Execution tier section's "on the shared fixture" wording becomes
+"on the Sakila fixture".
 
-Reproduced deterministically. With `film_actor (1, 4)` present, the test fails on "the unmatched
-composite keeps its slot", the CI failure at `:118`.
+## Roadmap entries
 
-**`MultiTableNodeIdRouteExecutionTest.adifferentLanguageSelectsADifferentSetOnBothBranches`** is the
-most frequent failure of the three and a different shape. It reads language 1's films through
-GraphQL at line 132, then compares that against a fresh SQL read of the same set at line 137. Every
-`insertFilm` helper in the module writes `language_id = 1` and deletes the row in a `finally`, so any
-concurrent film test landing between those two reads breaks the comparison. This is a
-read-versus-read race over an unfiltered set, so no static row reproduces it; it is the reader half
-of the documented rule, asserting what the table holds while meaning what the test owns.
+This item absorbs the Backlog items that each recorded one colliding pair; they are discarded in
+the commit that moves this item to Spec, with `Discarded:` entries in `changelog.md` naming R863:
 
-**`GraphQLQueryTest`'s whole-table film reads** are the same reader shape, met twice on 2026-10-20
-during one Done-gate verification build on an unrelated tree, a different method each run:
-`filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` (`:505`, expected 5 films, got
-films 101 and 102 besides) and `inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds`
-(`:4495`, a `gap-B-<uuid>` title beside `ACE GOLDFINGER`, written by `ServiceListGapExecutionTest`).
-A third run of the same tree was green. Any `GraphQLQueryTest` assertion over an unfiltered `film`
-read belongs on this list.
+* R823 (`dev-executor-fidelity-reads-a-mutating-table-twice`): `DevExecuteExecutionTest`'s fidelity
+  comparison over an unfiltered `films` read.
+* R825 (`film-actor-fixture-mutated-and-read-concurrently`): the `film_actor` and `film` writes in
+  `DmlBulkMutationsExecutionTest` against the per-film cast readers.
+* R843 (`parallel-execution-tier-shares-sakila-rows`): the same `film_actor` pair, with the three
+  candidate fixes this item chooses between.
+* R946 (`execution-tier-film-actor-isolation`): `splitTableField_conditionJoin_returnsActorsPerFilm`
+  against a `film_actor` writer.
+* R1028 (`execution-tests-see-a-concurrent-tests-film-rows`):
+  `inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds` against
+  `NestedInputDmlExecutionTest`'s renamed film.
 
-## What lands
+R959, the sixth, already shipped (`f7b051e`) as one of the filters this item removes.
 
-Each of the three stops depending on rows it does not own.
+## Other solutions we've considered
 
-* The `film_actor` writers bring their own actor and their own film, marker-named like every other
-  writer in the module, and cast those two. A composite-key `@nodeId` decode does not care which
-  pair it decodes, so the tests keep their meaning exactly and the collision disappears rather than
-  being narrowed.
-* `CompositeKeyLookupQueryTest` asserts the unmatched-slot contract over a pair it owns, instead of
-  over a pair it believes the seed does not contain. The current form is a claim about the whole
-  table and will rot again the next time anyone needs a spare `film_actor` row.
-* `MultiTableNodeIdRouteExecutionTest` takes both of its reads against one snapshot, or restricts
-  both sides to films it created. Comparing two reads taken at different instants against a
-  concurrently mutated table cannot be made reliable by narrowing who writes.
-
-The gate to argue at Spec is whether anything should enforce the properties file's rule rather than
-restating it. The module already has the precedent for the blunt version: every `@QuarkusTest` class
-carries `QuarkusTestLock.KEY` and `QuarkusTestLockEnforcementTest` fails the build when a new one
-arrives without it. A resource lock over the shared fixture tables is the equivalent, and it is the
-fallback if any of the three fixes above turns out to be impractical. It should not be the primary
-fix: it serialises broadly to paper over three specific tests, and it leaves the next reader free to
-make the same mistake.
-
-## Why this was not caught in the inner loop
-
-The documented inner-loop command excludes the execution group, so it never runs these classes. The
-full verification build does run them, with the same four-way class parallelism against the same
-shared database, so it is exposed to exactly the same race: a green local `mvn install -Plocal-db` is
-luck rather than coverage, at the 4-in-40 rate CI is currently measuring. That is the part worth
-fixing first, because it is what lets a red-trunk change look verified.
-
-## Related
-
-The other half of "our local build tells us something rosier than CI does" is a wall-clock question
-rather than a correctness one, and is filed separately if at all. The fact-store cache is not
-involved in this item: the execution tier reads PostgreSQL, and the two failing reads above have
-nothing to do with the fact store's warmth.
+* **Keep patching per test.** The status quo: 34 filters and six items so far, and 19 exposed
+  methods remain. Each patch protects one assertion from one writer, and the next writer or reader
+  starts the count again.
+* **A shared read-only database for readers, private databases for writers.** Cheaper by about 40
+  clones, and `default_transaction_read_only` would turn an undeclared write into a deterministic
+  failure. It fails correct tests: `session_connect`, which the plugin-level `<sessionState>` mount
+  calls on every owned-path acquisition, takes `nextval('session_handle_seq')`, and PostgreSQL
+  refuses `nextval()` in a read-only transaction (checked in the sandbox). A privilege-restricted
+  role instead would stop readers connecting as `postgres` and change what the RLS tests mean. And
+  the split needs every class to declare which it is, a marker nothing would bind.
+* **JUnit resource locks**, `READ` for readers and `READ_WRITE` for writers. Every class has to
+  declare one, a missing `READ` silently reintroduces the race, and `GraphQLQueryTest` is both, so
+  the module's largest class would serialise against everything.
+* **Every write inside a rolled-back transaction.** The owned-path classes commit through a
+  `DataSource` per field, and some tests assert that a row persisted, so neither can roll back.
+* **No class parallelism.** Removes the race at the cost of the parallelism the properties file
+  measured as worth three cores, in the reactor's terminal module, where every second is build wall
+  clock.
