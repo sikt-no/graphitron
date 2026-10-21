@@ -1,8 +1,8 @@
-"A root producer that hands back a value, a service, a write or a routine, catches what it throws when the type it returns has exactly one errors field: a nullable list of a union or an interface whose every member is @error. That type is an outcome; the errors arrive at that field and the value at the rest. Below the root nothing catches, and an errors field is read off the value like any other field. An errors field that falls short of its shape, a type with two, a field of an outcome that may not be null and errors in a row are each a defect where they were written."
+"A producer that hands back a value, a service, a write or a routine, at a root or below one, catches what it throws when the type it returns has exactly one errors field: a nullable list of a union or an interface whose every member is @error. That type is an outcome; the errors arrive at that field and the value at the rest. An errors field on a type no such producer returns is read off the value like any other field. An errors field that falls short of its shape, a type with two, a field of an outcome that may not be null and errors in a row are each a defect where they were written."
 
 type Film @table(name: "film") {
   title: String
-  "A child service: its payload's errors field is the value's own, read through an accessor."
+  "A child service catches into its outcome as a root one does."
   review: ReviewPayload
     @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
   "Errors in a row of a statement, which holds no exception."
@@ -17,7 +17,10 @@ union FilmFailure = FilmInvalid | FilmMissing
 union FilmOrError = FilmInvalid | Film
 
 "An outcome: one errors field, every member @error."
-type FilmOutcome { title: String, errors: [FilmFailure] }
+type FilmOutcome { title: String, nested: NestedPayload, errors: [FilmFailure] }
+
+"Returned by no producer, only nested in an outcome's value: its errors field is the value's own."
+type NestedPayload { note: String, errors: [FilmFailure] }
 
 "An outcome of a write: the re-read beside the errors."
 type AddFilmOutcome { film: Film, errors: [FilmFailure] }
@@ -73,6 +76,7 @@ extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   type_name,          field_name, container_name
   Film,               problems,   FilmFailure
   FilmOutcome,        errors,     FilmFailure
+  NestedPayload,      errors,     FilmFailure
   AddFilmOutcome,     errors,     FilmFailure
   StrictValueOutcome, errors,     FilmFailure
   ReviewPayload,      errors,     FilmFailure
@@ -80,23 +84,25 @@ extend schema @expectEquals(relation: "graphitron_errors_field", rows: """
   TwicePayload,       problems,   FilmFailure
   """)
 
-# The root producers returning an outcome, and nothing else: not the child service, and not the type
-# with two errors fields.
+# The producers returning an outcome, the child service among them, and nothing else: not the type
+# with two errors fields, and not the payload no producer returns.
 extend schema @expectEquals(relation: "graphitron_producer_outcome", rows: """
   type_name, field_name,  kind,    outcome_type_name,  errors_field_name
   Query,     filmOutcome, SERVICE, FilmOutcome,        errors
   Mutation,  createFilm,  SERVICE, FilmOutcome,        errors
   Mutation,  addFilm,     INSERT,  AddFilmOutcome,     errors
   Mutation,  strictValue, SERVICE, StrictValueOutcome, errors
+  Film,      review,      SERVICE, ReviewPayload,      errors
   """)
 
-# An errors field under an object reads through an accessor, an outcome's and the value's own alike.
+# An errors field under an object reads through an accessor, an outcome's and a nested value's alike.
 extend schema @assertContains(relation: "graphitron_reader", rows: """
   type_name,      field_name, reads
   FilmOutcome,    errors,     ACCESSOR
   AddFilmOutcome, errors,     ACCESSOR
   ReviewPayload,  errors,     ACCESSOR
   DirectPayload,  errors,     ACCESSOR
+  NestedPayload,  errors,     ACCESSOR
   """)
 
 # Each shape the walk refuses, where it was written, and nothing at the well-formed fields.

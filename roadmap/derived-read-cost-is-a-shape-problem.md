@@ -1048,21 +1048,29 @@ and the emitters read, and it goes when nothing reads what it builds.
     made SELECTs on a polymorphic connection, 48 on sis. A table-bound child of a record-backed parent
     is a `LOOKUP`, the refetch by the keys the object carries, as a payload's is; the producer rule
     had called it a `SELECT`.
-  * **A root producer's outcome is stated** `done`, 2026-10-20, decided with Alf. Only a root
-    producer catches: a service, a write or a routine whose target has exactly one errors field
-    hands what it throws to that field, and below the root an errors field is read off the value like
-    any other. `graphitron_errors_field`, one row per field whose value is a list of errors, a
-    nullable list of a union or an interface whose every member is `@error`, the walk's shape and a
-    fact of the field whoever returns its type; a list of one `@error` object is none, which keeps
-    opptak's four `[IkkeAutorisertError!]` the value's own. `graphitron_producer_outcome`, a producer
-    subtype naming the outcome type and its errors field. The walk's refusals are defects where
-    written: `ERRORS_FIELD_MIXED_MEMBERS`, `ERRORS_FIELD_NOT_A_LIST`, `ERRORS_FIELD_NON_NULL`,
+  * **A producer's outcome is stated** `done`, 2026-10-20, decided with Alf. A service, a write or
+    a routine whose target has exactly one errors field hands what it throws to that field, at a root
+    or below one; an errors field on a type no such producer returns is read off the value like any
+    other. `graphitron_errors_field`, one row per field whose value is a list of errors, a nullable
+    list of a union or an interface whose every member is `@error`, the walk's shape and a fact of the
+    field whoever returns its type; a list of one `@error` object is none, which keeps opptak's four
+    `[IkkeAutorisertError!]` the value's own. `graphitron_producer_outcome`, a producer subtype naming
+    the outcome type and its errors field. The walk's refusals are defects where written:
+    `ERRORS_FIELD_MIXED_MEMBERS`, `ERRORS_FIELD_NOT_A_LIST`, `ERRORS_FIELD_NON_NULL`,
     `MULTIPLE_ERRORS_FIELDS`, `OUTCOME_FIELD_NON_NULL`, and `ERRORS_IN_A_ROW`, errors in a row of a
-    statement, which the walk read through an accessor that cannot work. On sis 158 errors fields
-    and 159 outcomes, 15 ms, and no defect. `OutcomeAgreementTest` holds the outcomes to the walk's
-    `Mapped` channels and wrapper transports. Constructing a developer's payload class on failure,
-    `PayloadClass` under `RouterDispatched`, and the accessor transport `PayloadAccessor` serve only a
-    child `@service`, which nothing runs on sakila; they go with "The carrier's readers move".
+    statement, which the walk read through an accessor that cannot work. On sis 158 errors fields and
+    159 outcomes, under a second for the rules and the stage, and no defect; on sakila 23 and 30, and
+    no defect. `OutcomeAgreementTest` holds the outcomes to the walk's `Mapped` channels and wrapper
+    transports. First stated for root producers alone; widened 2026-10-21, decided with Alf, since the
+    generator already catches for a child `@service`, no child producer on sis, sakila or opptak
+    returning an errors field.
+    * **A child producer catches into its outcome** `open`. The walk still catches a child
+      `@service`'s throw by constructing the developer's payload class, `PayloadClass` under
+      `RouterDispatched`, and reads its errors field through `PayloadAccessor`. It moves to the
+      `Outcome` wrapper the root producers ride, `ErrorChannel.Mapped`, which needs the batched
+      fetcher's asynchronous catch to hand each key an error list; the payload-class construction,
+      `ErrorRouter.dispatch` and the always-empty channel slots on `DmlTableField` and
+      `MutationRoutineWriteField` go with it.
   * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
     row per field of a type a producer returns, with its role, errors or data, and its element,
     table, record, id or other. Total over the fields, an element no rule recognises being a row of
@@ -1779,17 +1787,17 @@ is "The generator builds no schema".
     `ProjectionCall`, are one-spelling helpers old and new emitters share. They move into `emit`, the
     old renderers import them from there, and the rule's exception list is empty, so `emit` stops
     depending on a package that is emptying.
-  * **The error-mapping constant is a store fact** `blocked`, on the channel below. `intent_field_error_channel` states
-    whether a field has a channel and its transport, not the constant's name: the name deduplicates
+  * **The error-mapping constant is a store fact** `open`, after the channel below. The store states
+    which producer catches and into which errors field, not the constant's name: the name deduplicates
     handler lists and the plain name goes to whichever channel was classified first, an order the
     store does not state. `ErrorMappingsClassGenerator` mints the same names, so both read one rule.
-    * **The channel is a producer's, and its types tie to their applications** `blocked`, on the
-      producers and the payload's fields. `graphitron_error_channel`, keyed by the producer, and
-      `graphitron_error_channel_type`, its `@error` types in order, each referencing its
-      `graphitron_ast_error_entry`. Tried first over `intent_field_error_channel`: its transport reads
-      the carrier, which the stratum writes after the anchor phase, so it waits on the facts instead.
-      A type with two `@error` applications, which assembly refuses but capture still sees, puts no
-      channel through that type.
+    * **The channel is a producer's, and its types tie to their applications** `done` for the
+      channel, 2026-10-21: `graphitron_producer_outcome`, keyed by the producer, naming its
+      `graphitron_errors_field`, whose container's members in order are the `@error` types, under
+      "A producer's outcome is stated"; `intent_field_error_channel` and `intent_errors_field_member`
+      went with it, and `intent_errors_field` with the carrier rule reading the errors field.
+      Tying each type to its `graphitron_ast_error_entry` is open: a type with two `@error`
+      applications, which assembly refuses but capture still sees, puts no channel through that type.
     * **The constant is named by its producer, and the dedup goes** `open`, after the channel. A
       channel's constant is `concat` over its types' `ByType` arrays, and the dedup exists only to
       share that between channels of one shape; naming by producer drops it, the hash and the
