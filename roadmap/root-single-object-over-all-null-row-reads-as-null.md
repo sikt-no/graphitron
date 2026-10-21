@@ -1,7 +1,7 @@
 ---
 id: R1080
 title: "A nullable root field returning one object over a row of nulls resolves to null, as v9 resolved it"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 6
 theme: codegen-correctness
