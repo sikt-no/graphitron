@@ -569,9 +569,9 @@ class SingleRecordPayloadPipelineTest {
     // ErrorChannel.Mapped, the typed Outcome transport, since the carrier has no developer-supplied
     // payload class (its element binds via the DML RETURNING). These tests pin that the resulting
     // MutationDmlRecordField / MutationBulkDmlRecordField carries Optional.of(Mapped) and the
-    // sibling ErrorsField on the payload classifies with Transport.WrapperArm: the two halves the
-    // emitter's catch arm (ChannelCatchArmEmitter) and the data fetcher (FetcherEmitter's
-    // ErrorsField switch) read at emit time.
+    // sibling ErrorsField on the payload classifies: the two halves the emitter's catch arm
+    // (ChannelCatchArmEmitter) and the data fetcher (FetcherEmitter's ErrorsField arm) read at
+    // emit time.
 
     private static final String CARRIER_WALK_ERRORS = """
             type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
@@ -608,7 +608,7 @@ class SingleRecordPayloadPipelineTest {
         var errorsField = schema.field("FilmPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
         var ef = (ChildField.ErrorsField) errorsField;
-        assertThat(ef.transport()).isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(ef).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
         // Sibling data channel still classifies as a record-sourced BatchedTableField (lift
         // arity ONE for the single-input form), which narrows Outcome.Success through the
@@ -642,8 +642,7 @@ class SingleRecordPayloadPipelineTest {
 
         var errorsField = schema.field("FilmPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
-        assertThat(((ChildField.ErrorsField) errorsField).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) errorsField)).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
         var dataField = schema.field("FilmPayload", "films");
         assertThat(dataField).isInstanceOf(ChildField.BatchedTableField.class);

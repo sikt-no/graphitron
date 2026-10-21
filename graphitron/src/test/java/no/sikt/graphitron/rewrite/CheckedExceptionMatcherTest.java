@@ -1,7 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
@@ -190,11 +188,6 @@ class CheckedExceptionMatcherTest {
 
     private static ErrorChannel channelWith(ErrorType.Handler handler) {
         var errorType = new ErrorType("Err", null, List.of(handler), List.of());
-        return new ErrorChannel.PayloadClass(
-            List.of(errorType),
-            ClassName.bestGuess("com.example.Payload"),
-            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
-            List.of(new DefaultedSlot(0, "data", ClassName.get("java.lang", "String"), "null")),
-            "PAYLOAD");
+        return new ErrorChannel.Mapped(List.of(errorType), "PAYLOAD");
     }
 }

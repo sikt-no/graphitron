@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * Pipeline test for {@link ErrorRouterClassGenerator}: SDL-independent emission of the runtime
- * {@code ErrorRouter} class. Asserts the dispatch arm and sealed-style {@code Mapping} taxonomy
+ * {@code ErrorRouter} class. Asserts the claim arm and sealed-style {@code Mapping} taxonomy
  * are present in the produced {@link TypeSpec}, that the catch-arm signature matches §3, and
  * that runtime invariants (no top-level handler, source-order first-match dispatch) are
  * reachable through the generated method shapes.
@@ -114,39 +114,6 @@ class ErrorRouterClassGeneratorTest {
             "Mapping",
             "java.lang.Throwable",
             "graphql.GraphQLContext");
-    }
-
-    @Test
-    void dispatch_signature_matchesSpec() {
-        var router = generate();
-        var dispatch = method(router, "dispatch");
-        assertThat(dispatch.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
-        assertThat(dispatch.parameters()).extracting(p -> p.name())
-            .containsExactly("thrown", "mappings", "env", "payloadFactory");
-        // Generic on P; both arms return DataFetcherResult<P>.
-        assertThat(dispatch.returnType().toString())
-            .isEqualTo("graphql.execution.DataFetcherResult<P>");
-    }
-
-    @Test
-    void dispatch_hasNoValidationArm() {
-        // §5 retire: validation runs as a wrapper pre-execution step, not in the dispatcher.
-        var router = generate();
-        var dispatch = method(router, "dispatch");
-        String body = dispatch.code().toString();
-        assertThat(body).doesNotContain("ValidationViolationGraphQLException");
-        assertThat(body).doesNotContain("validationCause");
-    }
-
-    @Test
-    void dispatch_unmatchedFallsThroughToSurfaceClientErrorOrRedact() {
-        var router = generate();
-        var dispatch = method(router, "dispatch");
-        // The unmatched tail is the no-channel disposition: an unclaimed client exception surfaces,
-        // anything else redacts. No rethrow path, and no direct redact that would swallow a client error.
-        assertThat(dispatch.code().toString())
-            .contains("return surfaceClientErrorOrRedact(thrown, env)")
-            .doesNotContain("return redact(thrown, env)");
     }
 
     @Test

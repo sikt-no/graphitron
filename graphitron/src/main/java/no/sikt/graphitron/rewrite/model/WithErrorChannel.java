@@ -16,12 +16,9 @@ import java.util.Optional;
  * Generators consume the field via {@code instanceof WithErrorChannel} when they need to know
  * whether to dispatch via the generated {@code ErrorRouter}.
  *
- * <p>The wildcard return lets each variant declare the narrowest channel partition its
- * construction path can mint ({@link ErrorChannel.Mapped} for the variants on the
- * {@code Outcome} transport: root {@code @service}, DML and {@code @routine} payload carriers;
- * {@link ErrorChannel.RouterDispatched} for everything else), so the emit seams take
- * the narrowed type and the compiler enforces the seam partition. Channel-agnostic readers
- * (dedup, mappings emission) consume this accessor; emit seams read the variant's own component.
+ * <p>Every channel is an {@link ErrorChannel.Mapped}, riding the {@code Outcome} wrapper;
+ * channel-agnostic readers (dedup, mappings emission) consume this accessor, and emit seams read
+ * the variant's own component.
  */
 public interface WithErrorChannel {
     /** The typed-error channel resolved for this fetcher, or empty when the payload has no {@code errors} field. */

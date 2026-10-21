@@ -24,9 +24,6 @@ public final class DummyService {
     public static TestRecordDto makeTestRecordDto() { return unused(); }
     public static PlainJooqRecord makePlainJooqRecord() { return unused(); }
     public static SakPayload makeSakPayload() { return unused(); }
-    public static BothShapesSakPayload makeBothShapesSakPayload() { return unused(); }
-    public static MultiCtorSakPayload makeMultiCtorSakPayload() { return unused(); }
-    public static SetterShapeSakPayload makeSetterShapeSakPayload() { return unused(); }
     public static SettKvotesporsmalShapePayload makeSettKvotesporsmalShapePayload() { return unused(); }
     public static DeleteFilmPayload makeDeleteFilmPayload() { return unused(); }
     public static DeleteFilmRowOnlyPayload makeDeleteFilmRowOnlyPayload() { return unused(); }

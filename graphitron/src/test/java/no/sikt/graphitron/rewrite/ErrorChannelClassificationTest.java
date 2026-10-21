@@ -1,6 +1,5 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -17,18 +16,10 @@ import static org.assertj.core.api.Assertions.tuple;
 /**
  * Carrier classifier: every fetcher-emitting field variant that implements
  * {@link WithErrorChannel} carries an {@link ErrorChannel} when the payload type's field set
- * declares an {@code errors}-shaped field and the developer-supplied payload class exposes a
- * canonical constructor with exactly one errors-slot parameter.
- *
- * <p>The fixtures use {@code SakPayload} (in {@code dummyreferences}) as the developer-supplied
- * payload class: a Java record with the all-fields constructor
- * {@code (String data, List<Object> errors)}. The carrier classifier matches the errors slot by
- * channel-typed structural match: the parameter is the unique parameterised
- * List/Iterable/Collection whose element-type upper bound is a supertype of every channel
- * {@code @error} class. The {@code Object} element bound matches the source-direct dispatch
- * contract: the per-fetcher catch arm and the wrapper's pre-execution Jakarta validation step
- * push raw {@code Throwable}s and {@code GraphQLError}s into the list at runtime, so the slot
- * must admit both unrelated bounds.
+ * declares an {@code errors}-shaped field: a nullable list of a union or an interface whose every
+ * member is {@code @error}. The channel rides the {@code Outcome} wrapper; no payload class is
+ * constructed. The fixtures use {@code SakPayload} (in {@code dummyreferences}) as the payload a
+ * service returns.
  */
 @UnitTier
 class ErrorChannelClassificationTest {
@@ -707,8 +698,8 @@ class ErrorChannelClassificationTest {
     void payloadErrorsField_classifiesAsErrorsFieldWithWrapperArmTransport() {
         // A plain SDL Object carrier (bound to a JooqTableRecordType after promotion) with an
         // errors-shaped field admits at the structural DML-payload scan. The errors field
-        // classifies as ChildField.ErrorsField carrying Transport.WrapperArm (the
-        // discriminator FetcherEmitter reads at emit time). The mutation classifies as
+        // classifies as ChildField.ErrorsField, which FetcherEmitter reads at emit time. The
+        // mutation classifies as
         // MutationBulkDmlRecordField and FieldBuilder.detectStructuralDmlErrorChannel wires
         // the channel onto its Optional<ErrorChannel> slot.
         var schema = TestSchemaHelper.buildSchema(CARRIER_WALK_ERROR_SDL + """
@@ -720,8 +711,7 @@ class ErrorChannelClassificationTest {
         var errorsField = schema.field("FilmPayload", "errors");
         assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         var ef = (no.sikt.graphitron.rewrite.model.ChildField.ErrorsField) errorsField;
-        assertThat(ef.transport())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+        assertThat(ef).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         assertThat(ef.errorTypes()).extracting(et -> et.name()).containsExactly("SimpleErr");
     }
 
@@ -746,17 +736,11 @@ class ErrorChannelClassificationTest {
         assertThat(reason).contains("errors-shaped carrier field 'errors'", "more than one", "VALIDATION");
     }
 
-    // resolveErrorChannel must resolve the payload class structurally (ClassName.get over the
-    // reflected class), never by bestGuess over the binary name. @service outcome fields classify
-    // to ErrorChannel.Mapped (no payload class is constructed), so the PayloadClass arm is reached
-    // by a *child* @service field. With a nested payload backing class the resolved
-    // PayloadClass.payloadClass() must be the JLS-legal Outer.Nested, not the $-qualified binary
-    // Outer$Nested a bestGuess would carry as a single simple name. Object-equality on the
-    // resolved TypeName (no code-string match, no database) guards against reintroduction; a
-    // nested-payload compilation fixture in graphitron-sakila-example pins the same fact
-    // end-to-end.
+    // A child @service field catches into its outcome as a root one does: its payload's errors
+    // field is an ErrorsField and the field carries an ErrorChannel.Mapped over the union's
+    // members, with a nested payload backing class as with any other.
     @Test
-    void childServiceRecordField_nestedPayloadBacking_payloadClassIsStructurallyResolved() {
+    void childServiceRecordField_payloadWithErrorsField_catchesIntoItsOutcome() {
         var schema = build("""
             type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
                 path: [String!]!
@@ -781,23 +765,17 @@ class ErrorChannelClassificationTest {
 
         var f = schema.field("Film", "sak");
         assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
-        var ch = (ErrorChannel.PayloadClass)
-            ((WithErrorChannel) f).errorChannel().orElseThrow();
-        // The payload's binary name is AccessorPayloads$NestedErrorsPayload; resolveErrorChannel must
-        // resolve the enclosing structure via ClassName.get(Class), matching the reflected class.
-        assertThat(ch.payloadClass())
-            .isEqualTo(ClassName.get(
-                no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload.class));
-        // Pin the exact defect: a bestGuess over the binary name would keep the whole
-        // "AccessorPayloads$NestedErrorsPayload" as one simple name (it never splits on '$').
-        assertThat(ch.payloadClass().simpleName()).isEqualTo("NestedErrorsPayload");
+        var ch = ((WithErrorChannel) f).errorChannel().orElseThrow();
+        assertThat(ch).isInstanceOf(ErrorChannel.Mapped.class);
+        assertThat(ch.mappedErrorTypes()).extracting(et -> et.name())
+            .containsExactly("ValidationErr", "DbErr");
+        assertThat(schema.field("NestedErrPayload", "errors"))
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
     }
 
     @Test
-    void extraField_legacyPayloadClassPath_fieldDirectiveRemapsAccessor() {
-        // The class-backed payload path runs FieldBuilder.checkErrorTypeSourceAccessors, a
-        // distinct check site from the @service HandlerAccessorCheck. A child @service field
-        // returning a nested backed payload reaches resolveErrorChannel's PayloadClass arm;
+    void extraField_childServicePayload_fieldDirectiveRemapsAccessor() {
+        // A child @service field's channel runs the same HandlerAccessorCheck a root one does;
         // @field(name: "localizedMessage") on an extra field remaps to Throwable.getLocalizedMessage()
         // so the accessor check passes and the classified ErrorType carries the override.
         var schema = build("""
@@ -821,195 +799,13 @@ class ErrorChannelClassificationTest {
 
         var f = schema.field("Film", "sak");
         assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
-        var ch = (ErrorChannel.PayloadClass) ((WithErrorChannel) f).errorChannel().orElseThrow();
+        var ch = ((WithErrorChannel) f).errorChannel().orElseThrow();
         var errorType = ch.mappedErrorTypes().stream()
             .filter(et -> et.name().equals("RemapErr")).findFirst().orElseThrow();
         assertThat(errorType.accessorBaseFor("detail")).isEqualTo("localizedMessage");
         assertThat(errorType.accessorOverrides())
             .extracting(o -> o.sdlFieldName(), o -> o.accessorBase())
             .containsExactly(tuple("detail", "localizedMessage"));
-    }
-
-    // ===== @field(name:) in @error payload construction shape resolution =====
-    //
-    // Each fixture backs a child @service field's payload with a dummy class from
-    // AccessorPayloads (bean / record) or a JDK type (name-less POJO), reaching
-    // FieldBuilder.resolveErrorChannel's PayloadClass arm. The construction-shape resolution
-    // (ctor vs. bean) must honor @field(name:), matching the read side.
-
-    private static final String R201_SIMPLE_ERR = """
-            type SimpleErr @error(handlers: [{handler: GENERIC, className: "java.lang.RuntimeException"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = SimpleErr
-            """;
-
-    /** A child @service Film field returning {@code payloadType}, produced by {@code stubMethod}. */
-    private static String r201Schema(String payloadTypeSdl, String stubMethod) {
-        return R201_SIMPLE_ERR + payloadTypeSdl + """
-            type Film @table(name: "film") {
-                title: String
-                sak: %s @service(service: {
-                    className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "%s"})
-            }
-            type Query { films: [Film!] }
-            """.formatted(payloadTypeName(payloadTypeSdl), stubMethod);
-    }
-
-    /** First SDL object type name in {@code payloadTypeSdl} (the payload type declaration). */
-    private static String payloadTypeName(String payloadTypeSdl) {
-        var m = java.util.regex.Pattern.compile("type\\s+(\\w+)").matcher(payloadTypeSdl);
-        if (!m.find()) throw new IllegalArgumentException("no payload type in: " + payloadTypeSdl);
-        return m.group(1);
-    }
-
-    @Test
-    void beanArm_remappedSetters_classifiesWithErrorsSetterBoundToRemappedName() {
-        // The payload class exposes setInfo / setFailures; @field(name:) on the SDL data/errors
-        // fields binds them. The errors-slot setter is the remapped setFailures.
-        var schema = build(r201Schema("""
-            type BeanRemapPayload {
-                data: String @field(name: "info")
-                errors: [SakError] @field(name: "failures")
-            }
-            """, "runDivergentBeanErrors"));
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
-        var ch = (ErrorChannel.PayloadClass) ((WithErrorChannel) f).errorChannel().orElseThrow();
-        assertThat(ch.errorsSlot())
-            .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod.class,
-                sm -> assertThat(sm.boundSetter().getName()).isEqualTo("setFailures"));
-    }
-
-    @Test
-    void beanArm_dataFieldDirectiveParticipatesInExistence_rejectsWhenSetterMissing() {
-        // The @field directive participates in setter existence: the payload has setData /
-        // setErrors, but @field(name: "info") on the data field remaps the lookup to setInfo,
-        // which does not exist. The reject names the SDL field, the directive value, and the
-        // parenthetical.
-        var schema = build(r201Schema("""
-            type BeanExistencePayload {
-                data: String @field(name: "info")
-                errors: [SakError]
-            }
-            """, "runSetterErrors"));
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) f).reason())
-            .contains("setInfo")
-            .contains("'data'")
-            .contains("(remapped to 'info' by @field)");
-    }
-
-    @Test
-    void ctorArm_reorderedRecordWithFieldOnErrors_classifiesAtNameResolvedIndex() {
-        // The record declares (problems, data); the SDL declares data then errors. @field(name:
-        // "problems") on the errors field name-matches ctor parameter 0, so the errors slot is
-        // index 0 (not the SDL index 1) and the defaulted data slot is computed against it.
-        var schema = build(r201Schema("""
-            type CtorRemapPayload {
-                data: String
-                errors: [SakError] @field(name: "problems")
-            }
-            """, "runReorderedErrors"));
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
-        var ch = (ErrorChannel.PayloadClass) ((WithErrorChannel) f).errorChannel().orElseThrow();
-        assertThat(ch.errorsSlot())
-            .isInstanceOfSatisfying(
-                no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex.class,
-                cpi -> assertThat(cpi.index()).isEqualTo(0));
-        // The single non-errors slot (data) is defaulted, and it is the SDL/ctor index 1, i.e.
-        // the resolved errors index (0) was excluded, not the stale SDL index.
-        assertThat(ch.defaultedSlots()).extracting(
-                no.sikt.graphitron.rewrite.model.DefaultedSlot::index)
-            .containsExactly(1);
-    }
-
-    @Test
-    void ctorArm_unresolvableFieldValue_rejectsNamingDirectiveValueAndCandidates() {
-        // NestedErrorsPayload(data, errors); @field(name: "nonexistent") on the errors field
-        // matches no ctor parameter. The reject names the directive value and the candidates.
-        var schema = build(r201Schema("""
-            type CtorUnresolvedPayload {
-                data: String
-                errors: [SakError] @field(name: "nonexistent")
-            }
-            """, "runNestedErrors"));
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) f).reason())
-            .contains("nonexistent")
-            .contains("data")
-            .contains("errors");
-    }
-
-    @Test
-    void ctorArm_directiveOnNameLessPojo_rejectsWithParametersGuidance() {
-        // NamelessErrorsPayload lives in the codereferences.noparams package, compiled without
-        // -parameters, so its ctor exposes no parameter names and it is not a record. The
-        // @field(name:) value here COINCIDES with the SDL field name ("errors"), so a
-        // presence-by-value-divergence shortcut would wrongly admit it via the positional path.
-        // Presence-tracking rejects it with the -parameters guidance. Its service stub also lives
-        // in that package, named here only by class-name string.
-        var schema = build(R201_SIMPLE_ERR + """
-            type NamelessPayload {
-                data: String
-                errors: [SakError] @field(name: "errors")
-            }
-            type Film @table(name: "film") {
-                title: String
-                sak: NamelessPayload @service(service: {
-                    className: "no.sikt.graphitron.codereferences.noparams.NoParamsServiceStub",
-                    method: "runNameless"})
-            }
-            type Query { films: [Film!] }
-            """);
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) f).reason())
-            .contains("-parameters")
-            .contains("errors");
-    }
-
-    @Test
-    void anyArm_blankFieldValue_rejectsChannel() {
-        // A present-but-blank @field(name: "") on any payload field rejects the channel,
-        // matching the input-bean and error-type extra-field precedent.
-        var schema = build(r201Schema("""
-            type BlankPayload {
-                data: String
-                errors: [SakError] @field(name: "")
-            }
-            """, "runNestedErrors"));
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) f).reason())
-            .contains("blank")
-            .contains("errors");
-    }
-
-    @Test
-    void regressionFloor_divergentNamesWithoutDirective_rejectsAsToday() {
-        // DivergentBeanErrorsPayload exposes setInfo / setFailures. Without a @field directive
-        // the bean arm looks up setData / setErrors and rejects.
-        var schema = build(r201Schema("""
-            type RegressionPayload {
-                data: String
-                errors: [SakError]
-            }
-            """, "runDivergentBeanErrors"));
-
-        var f = schema.field("Film", "sak");
-        assertThat(f).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) f).reason()).contains("setData");
     }
 
     private GraphitronSchema build(String schemaText) {

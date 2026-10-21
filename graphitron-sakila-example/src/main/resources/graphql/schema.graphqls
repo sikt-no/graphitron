@@ -1255,7 +1255,7 @@ type Query {
 
     # R12 fixture (error-handling-parity.md): query-side @error end-to-end. Drives the
     # GraphitronSchema.java emit path (per-@error path/message DataFetchers, source-class
-    # union TypeResolver, and ErrorRouter.dispatch via the per-fetcher catch arm) through
+    # union TypeResolver, and ErrorRouter.claim via the per-fetcher catch arm) through
     # both compile-spec (sakila-example mvn compile) and execute-spec (PostgreSQL round-trip
     # via GraphQLQueryTest). Closes the visibility gap that let an ambiguous-overload +
     # removed-DataFetchingEnvironment.getObject() bug ship to production.
@@ -1510,7 +1510,7 @@ type CustomerAddressSummary {
 # in a union so the TypeResolver's mapping walk and the per-@error path/
 # message DataFetcher emission both have multi-branch coverage; the carrier classifier
 # resolves an ErrorChannel against the canonical (String, List<Object>) constructor on
-# FilmLookupPayload, and the per-fetcher catch arm routes through ErrorRouter.dispatch.
+# FilmLookupPayload, and the per-fetcher catch arm routes through ErrorRouter.claim.
 # See Query.filmLookup and FilmLookupService.lookup; the execute-tier driver lives in
 # GraphQLQueryTest.
 type FilmLookupNotFound @error(handlers: [{
@@ -1623,7 +1623,7 @@ type FilmRefusedLookupPayload {
 # the MutationServiceRecordField emit path through compile-spec + execute-spec; mirrors the
 # production bug shape (a @service-backed mutation returning a @record payload with an errors
 # union slot, like BehandleSakPayload) so the same TypeResolver / per-@error path-message
-# DataFetcher / ErrorRouter.dispatch wiring is exercised end-to-end on the mutation pillar.
+# DataFetcher / ErrorRouter.claim wiring is exercised end-to-end on the mutation pillar.
 type FilmReviewBadRating @error(handlers: [{
         handler: GENERIC,
         className: "no.sikt.graphitron.rewrite.test.services.FilmReviewBadRatingException"
@@ -1652,10 +1652,9 @@ type FilmReviewPayload {
 # NESTED record), so this type binds as a class-backed ResultReturnType whose fqClassName carries a
 # $-qualified binary name. Reusing the FilmReviewError union gives it the same errors slot, so the
 # field classifies as a MutationServiceRecordField WITH an @error channel, the single shape that
-# reaches both remaining in-hand bestGuess sites this pass fixes: the fetcher return type
-# (computeMutationServiceRecordReturnType) and the Outcome payload ctor arm (resolveErrorChannel /
-# buildErrorChannelCtorArm). Before R370 both emitted NestedFilmReviewPayloadHolder$Payload and
-# failed javac; after, they spell NestedFilmReviewPayloadHolder.Payload and compile.
+# reaches the in-hand bestGuess site this pass fixed: the fetcher return type
+# (computeMutationServiceRecordReturnType). Before R370 it emitted NestedFilmReviewPayloadHolder$Payload
+# and failed javac; after, it spells NestedFilmReviewPayloadHolder.Payload and compiles.
 #
 # Errors-only on purpose: a scalar data field (e.g. a reviewId) would be read off the backing record
 # through FetcherEmitter.recordReadBinding / inlineSuccessRead, whose own bestGuess cast is the
@@ -5251,7 +5250,7 @@ type Mutation {
     # R12 fixture (error-handling-parity.md): mutation-side @error end-to-end. The
     # @service-backed mutation classifies as MutationServiceRecordField (same shape that
     # BehandleSakPayload took in production); the per-fetcher try/catch wrapper routes
-    # thrown exceptions through ErrorRouter.dispatch into the typed payload's errors slot.
+    # thrown exceptions through ErrorRouter.claim onto the Outcome's errors field.
     # See FilmReviewService.submit and the execute-tier driver in GraphQLQueryTest.
     submitFilmReview(filmId: Int!, rating: Int!): FilmReviewPayload
         @service(service: {
@@ -5262,9 +5261,8 @@ type Mutation {
     # R370 compilation-tier fixture: the nested-payload counterpart of submitFilmReview. The service
     # returns NestedFilmReviewPayloadHolder.Payload (a NESTED record) with a FilmReviewError errors
     # slot, so the field classifies as a MutationServiceRecordField carrying an @error channel. This
-    # is the only compiling witness for the two remaining in-hand nested-class emit sites this R370
-    # pass fixes: computeMutationServiceRecordReturnType (the fetcher return type) and
-    # resolveErrorChannel (the Outcome payload construction ctor arm). Both previously emitted the
+    # is the only compiling witness for the in-hand nested-class emit site this R370 pass fixed:
+    # computeMutationServiceRecordReturnType (the fetcher return type). It previously emitted the
     # $-qualified Outer$Nested and failed the sakila-example compile gate.
     submitNestedFilmReview(filmId: Int!, rating: Int!): NestedFilmReviewPayload
         @service(service: {

@@ -8867,7 +8867,7 @@ class GraphQLQueryTest {
     // TypeResolver) is invisible to compile-spec and execute-spec, which is what
     // let an ambiguous-overload + removed-DataFetchingEnvironment.getObject() bug ship to
     // production. The three tests below drive the full pipeline against the real graphql-java
-    // engine: the per-fetcher catch arm into ErrorRouter.dispatch, the union's TypeResolver
+    // engine: the per-fetcher catch arm into ErrorRouter.claim, the union's TypeResolver
     // re-running the members' dispatch mappings into the right @error type, and the synthesized path/message fetchers
     // populating the SDL's [String!]! / String! contract. The happy-path test pins the
     // payload-factory's defaulted slot ('title' = null only on the catch arm; populated on the
@@ -8882,7 +8882,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void filmLookup_invalidId_routesThroughInvalidIdErrorType() {
-        // id < 0 throws FilmLookupInvalidIdException; ErrorRouter.dispatch matches on the
+        // id < 0 throws FilmLookupInvalidIdException; ErrorRouter.claim matches on the
         // ErrorMappings.FILM_LOOKUP_PAYLOAD ExceptionMapping for that class, places the throwable
         // into the errors list, and constructs new FilmLookupPayload(null, errors). graphql-java
         // then walks the union via its TypeResolver and resolves to FilmLookupInvalid.
@@ -9148,7 +9148,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void submitFilmReview_invalidRating_routesThroughBadRatingErrorType() {
-        // rating outside [1,10] throws FilmReviewBadRatingException; ErrorRouter.dispatch
+        // rating outside [1,10] throws FilmReviewBadRatingException; ErrorRouter.claim
         // matches the ExceptionMapping for that class on ErrorMappings.FILM_REVIEW_PAYLOAD,
         // places the throwable into the errors list, and constructs new FilmReviewPayload(
         // null, errors). graphql-java walks the union via its TypeResolver and

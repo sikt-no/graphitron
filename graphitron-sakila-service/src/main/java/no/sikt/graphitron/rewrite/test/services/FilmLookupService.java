@@ -8,7 +8,7 @@ package no.sikt.graphitron.rewrite.test.services;
  * PostgreSQL round-trip via {@code GraphQLQueryTest}) to exercise the synthesized per-
  * {@code @error}-type {@code DataFetcher}s for {@code path} and {@code message}, the union's
  * mapping-table {@code TypeResolver}, and the per-fetcher try/catch route through
- * {@code ErrorRouter.dispatch}.
+ * {@code ErrorRouter.claim} onto the {@code Outcome}'s error arm.
  *
  * <p>Four branches by input id:
  * <ul>

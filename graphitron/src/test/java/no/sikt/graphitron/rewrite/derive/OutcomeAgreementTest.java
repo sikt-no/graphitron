@@ -19,14 +19,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * The root producers {@code graphitron_producer_outcome} says catch into an outcome, against the
- * walk's own account: a root field whose classified channel is {@link ErrorChannel.Mapped}, and an
- * errors field on the {@link ChildField.Transport.WrapperArm} transport, which reads what that field
- * caught.
+ * walk's own account: a field whose classified channel is {@link ErrorChannel.Mapped}, and an
+ * {@link ChildField.ErrorsField}, which reads what that field caught.
  *
  * <p>One schema is classified by the walk and captured into a store, so the two answers are about
  * the same written fields. It holds a root service under each root operation, a root write with a
- * payload, and a payload no root producer returns, whose errors field the walk reads off the value
- * and the store states no outcome for. What the outcome rule makes of each shape it refuses is the
+ * payload, a child service, and a payload no producer returns, whose errors field the walk reads
+ * off the value and the store states no outcome for. What the outcome rule makes of each shape it refuses is the
  * fact document {@code producer-outcome.graphqls}.
  */
 @PipelineTier
@@ -54,11 +53,17 @@ class OutcomeAgreementTest {
             message: String!
         }
         union CarrierError = SimpleErr
-        type Film @table(name: "film") { title: String }
+        type NestedErrPayload { data: String errors: [SakError] }
+        type Film @table(name: "film") {
+            title: String
+            sak: NestedErrPayload
+                @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runNestedErrors"})
+        }
         input FilmInput { title: String }
         type FilmPayload { films: [Film!] errors: [CarrierError!] }
         type Unreturned { note: String errors: [CarrierError] }
         type Query {
+            films: [Film!]
             sak: SakPayload
                 @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSak"})
         }
@@ -78,13 +83,12 @@ class OutcomeAgreementTest {
             .map(f -> f.qualifiedName())
             .toList();
         var walkOutcomes = schema.fields().values().stream()
-            .filter(f -> f instanceof ChildField.ErrorsField ef
-                && ef.transport() instanceof ChildField.Transport.WrapperArm)
+            .filter(f -> f instanceof ChildField.ErrorsField)
             .map(f -> f.qualifiedName())
             .toList();
         assertThat(walkProducers)
             .as("the fixture gives the walk an outcome at each root producer, so the comparison is not vacuous")
-            .containsExactlyInAnyOrder("Query.sak", "Mutation.behandleSak", "Mutation.createFilm");
+            .containsExactlyInAnyOrder("Query.sak", "Mutation.behandleSak", "Mutation.createFilm", "Film.sak");
 
         try (var store = CapturedStore.ofCatalogWith(tmp, CapturedStore.GRAPH, SDL, jooq(),
                 ClasspathCorpus.entries())) {

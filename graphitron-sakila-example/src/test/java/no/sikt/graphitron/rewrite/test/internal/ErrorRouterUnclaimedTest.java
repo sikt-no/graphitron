@@ -14,17 +14,14 @@ import no.sikt.graphitron.generated.schema.GraphitronClientException;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
-import java.util.List;
-import java.util.function.Function;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.fail;
 
 /**
- * Direct coverage for the unmatched tail of the generated {@link ErrorRouter#dispatch}, the
- * catch arm of every fetcher on the developer-payload-class error channel. No example-schema field
- * on that transport can be made to throw a {@link GraphitronClientException} from client input,
- * so the router is called here with hand-built throwables and mapping tables.
+ * Direct coverage for the unclaimed tail of an outcome's catch arm: {@link ErrorRouter#claim}
+ * answering no mapping, then {@link ErrorRouter#surfaceClientErrorOrRedact}. No example-schema
+ * field on that transport can be made to throw a {@link GraphitronClientException} from client
+ * input, so the router is called here with hand-built throwables and mapping tables.
  *
  * <p>The contract: authored mappings are tried first; when none claims the throw, a client
  * exception anywhere in the cause chain surfaces its message as the field's error, at the field's
@@ -32,7 +29,7 @@ import static org.assertj.core.api.Assertions.fail;
  * correlation id.
  */
 @UnitTier
-class ErrorRouterDispatchUnmatchedTest {
+class ErrorRouterUnclaimedTest {
 
     private static final ErrorRouter.Mapping[] UNRELATED_MAPPINGS = {
         new ErrorRouter.ExceptionMapping(UnsupportedOperationException.class, null, null)
@@ -40,15 +37,13 @@ class ErrorRouterDispatchUnmatchedTest {
 
     private static final SourceLocation FIELD_LOCATION = new SourceLocation(3, 5);
 
-    private static final Function<List<?>, Object> PAYLOAD_FACTORY_MUST_NOT_RUN =
-        errors -> fail("no mapping claims the throw, so no payload is built: " + errors);
-
     @Test
     void unclaimedClientException_inTheCauseChain_surfacesItsOwnMessage() {
         var clientError = new GraphitronClientException("Tenant '2' is not permitted for this request.");
 
-        var result = ErrorRouter.dispatch(new RuntimeException("wrapper", clientError),
-            UNRELATED_MAPPINGS, environment(), PAYLOAD_FACTORY_MUST_NOT_RUN);
+        var thrown = new RuntimeException("wrapper", clientError);
+        assertThat(ErrorRouter.claim(thrown, UNRELATED_MAPPINGS, environment())).isNull();
+        var result = ErrorRouter.surfaceClientErrorOrRedact(thrown, environment());
 
         assertThat(result.getData()).isNull();
         assertThat(result.getErrors())
@@ -63,8 +58,9 @@ class ErrorRouterDispatchUnmatchedTest {
 
     @Test
     void unclaimedInternalFault_redactsToACorrelationId() {
-        var result = ErrorRouter.dispatch(new IllegalStateException("internal detail"),
-            UNRELATED_MAPPINGS, environment(), PAYLOAD_FACTORY_MUST_NOT_RUN);
+        var thrown = new IllegalStateException("internal detail");
+        assertThat(ErrorRouter.claim(thrown, UNRELATED_MAPPINGS, environment())).isNull();
+        var result = ErrorRouter.surfaceClientErrorOrRedact(thrown, environment());
 
         assertThat(result.getData()).isNull();
         assertThat(result.getErrors())
@@ -75,17 +71,14 @@ class ErrorRouterDispatchUnmatchedTest {
     }
 
     @Test
-    void anAuthoredMappingThatMatchesTheClientException_stillPlacesItIntoThePayload() {
+    void anAuthoredMappingThatMatchesTheClientException_stillClaimsIt() {
         var clientError = new GraphitronClientException("Tenant '2' is not permitted for this request.");
         ErrorRouter.Mapping[] claiming = {
             new ErrorRouter.ExceptionMapping(graphql.GraphqlErrorException.class, null, null)
         };
 
-        var result = ErrorRouter.dispatch(new RuntimeException("wrapper", clientError),
-            claiming, environment(), errors -> errors);
-
-        assertThat(result.getErrors()).isEmpty();
-        assertThat(result.getData()).isEqualTo(List.of(clientError));
+        assertThat(ErrorRouter.claim(new RuntimeException("wrapper", clientError), claiming, environment()))
+            .isSameAs(clientError);
     }
 
     private static DataFetchingEnvironment environment() {

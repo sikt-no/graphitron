@@ -14,7 +14,6 @@ import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
-import no.sikt.graphitron.rewrite.model.ErrorsSlot;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -44,7 +43,6 @@ import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.ParentCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantCorrelation;
 import no.sikt.graphitron.rewrite.model.ParticipantRef;
-import no.sikt.graphitron.rewrite.model.PayloadConstructionShape;
 import no.sikt.graphitron.model.diagnostics.PivotError;
 import no.sikt.graphitron.rewrite.model.ProducerBinding;
 import no.sikt.graphitron.rewrite.model.QueryField;
@@ -227,7 +225,6 @@ class HierarchyKindRegistryTest {
         // classified leaves, with no walk of its own. Labelled by its provenance rather than by
         // the runtime registration that folds over it.
         Map.entry(no.sikt.graphitron.rewrite.model.ErrorFieldRead.class, HierarchyKind.RESOLVED_VIEW),
-        Map.entry(ErrorsSlot.class, HierarchyKind.RESOLVED_VIEW),
         Map.entry(DialectRequirement.class, HierarchyKind.RESOLVED_VIEW),
         // A written cell's length bound: a coalesce of the catalog's declared length, the cell's
         // extraction and its GraphQL type, decided where the input field resolves, with no walk of
@@ -297,7 +294,6 @@ class HierarchyKindRegistryTest {
         // takes the same kind; the coordinate question it answers is resolver-internal and does not
         // travel.
         Map.entry(no.sikt.graphitron.rewrite.model.ServiceKeySource.class, HierarchyKind.COMMAND),
-        Map.entry(PayloadConstructionShape.class, HierarchyKind.COMMAND),
         Map.entry(LookupMapping.class, HierarchyKind.COMMAND),
         Map.entry(ServiceMethodCall.class, HierarchyKind.COMMAND),
         Map.entry(MappingEntry.class, HierarchyKind.COMMAND),

@@ -506,10 +506,8 @@ class TestServiceStub {
 
     /**
      * Returns the dummy {@link no.sikt.graphitron.codereferences.dummyreferences.SakPayload}
-     * record, whose canonical constructor exposes one errors-slot parameter
-     * ({@code List<Object>}) and one defaulted slot. Used by tests that exercise the carrier
-     * classifier's {@code ErrorChannel} resolution on {@code MutationServiceRecordField} /
-     * {@code QueryServiceRecordField}.
+     * record. Used by tests that exercise the carrier classifier's {@code ErrorChannel}
+     * resolution on {@code MutationServiceRecordField} / {@code QueryServiceRecordField}.
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSak() {
         throw new UnsupportedOperationException();
@@ -519,9 +517,7 @@ class TestServiceStub {
      * Classification-tier witness: returns the <em>nested</em> dummy payload
      * {@link no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.NestedErrorsPayload}
      * (binary name {@code AccessorPayloads$NestedErrorsPayload}). A child {@code @service} field
-     * returning this payload resolves an {@code ErrorChannel.PayloadClass} whose {@code payloadClass()}
-     * must be the structural {@code AccessorPayloads.NestedErrorsPayload}, not the {@code $}-qualified
-     * binary name. Pins {@code FieldBuilder.resolveErrorChannel}'s {@code ClassName.get} boundary.
+     * returning this payload catches into its outcome, an {@code ErrorChannel.Mapped}.
      *
      * <p>Batch-shaped, like every child {@code @service} signature: the coordinate resolves through a
      * DataLoader, so it takes the parent keys and returns the payload keyed by them.
@@ -531,31 +527,11 @@ class TestServiceStub {
         throw new UnsupportedOperationException();
     }
 
-    // ===== @field(name:) in payload construction fixtures =====
-
-    /** Mutable-bean payload with divergently-named setters (info / failures), batch-shaped. */
-    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.DivergentBeanErrorsPayload> runDivergentBeanErrors(
-            java.util.Set<org.jooq.Row1<Integer>> keys) {
-        throw new UnsupportedOperationException();
-    }
-
-    /** Mutable-bean payload with SDL-name setters (setData / setErrors), batch-shaped. */
-    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.SetterErrorsPayload> runSetterErrors(
-            java.util.Set<org.jooq.Row1<Integer>> keys) {
-        throw new UnsupportedOperationException();
-    }
-
-    /** Record whose components are reordered relative to SDL declaration order, batch-shaped. */
-    public static java.util.Map<org.jooq.Row1<Integer>, no.sikt.graphitron.codereferences.dummyreferences.AccessorPayloads.ReorderedErrorsPayload> runReorderedErrors(
-            java.util.Set<org.jooq.Row1<Integer>> keys) {
-        throw new UnsupportedOperationException();
-    }
-
     /**
      * Returns the dummy {@code SakPayload} from a {@link TestInputBean} input. Used by the
      * validator-pre-step regression test that needs an Input-typed arg (for the fromMap
-     * materialisation path) plus a SakPayload return (so the surrounding ErrorChannel resolves
-     * as a PayloadClass that the validator pre-step can pre-populate with violations).
+     * materialisation path) plus a SakPayload return (so the surrounding ErrorChannel carries
+     * the validation handler the pre-step reads).
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithInputBean(TestInputBean input) {
         throw new UnsupportedOperationException();
@@ -568,34 +544,6 @@ class TestServiceStub {
      */
     public static no.sikt.graphitron.codereferences.dummyreferences.SakPayload runSakWithInputGrid(
             java.util.List<java.util.List<java.util.Map<String, Object>>> grid) {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Returns the multi-ctor variant of the dummy payload. Used by the test that exercises
-     * canonical-constructor selection on hand-rolled record-backed POJOs that declare extra
-     * constructors alongside the canonical (all-fields) one.
-     */
-    public static no.sikt.graphitron.codereferences.dummyreferences.MultiCtorSakPayload runMultiCtorSak() {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Returns the setter-shape sibling payload. Used by tests exercising the mutable-bean
-     * payload-construction shape: the service returns the SDL payload type directly (the
-     * universal-passthrough path); the carrier classifier resolves the ErrorChannel against the
-     * setter-shape payload class.
-     */
-    public static no.sikt.graphitron.codereferences.dummyreferences.SetterShapeSakPayload runSetterSak() {
-        throw new UnsupportedOperationException();
-    }
-
-    /**
-     * Returns the both-shapes sibling payload. Used by the canonical-over-bridge precedence
-     * test: a class that exposes both an all-fields ctor and a no-arg ctor + setters classifies
-     * as AllFieldsCtor (predicate 1 short-circuits).
-     */
-    public static no.sikt.graphitron.codereferences.dummyreferences.BothShapesSakPayload runBothShapesSak() {
         throw new UnsupportedOperationException();
     }
 

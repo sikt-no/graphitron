@@ -957,6 +957,19 @@ class BuildContext {
             || hasServiceFieldReturning(schema.getMutationType(), payloadTypeName);
     }
 
+    /**
+     * Whether any {@code @service} field returns {@code payloadTypeName}, on a root operation type
+     * or any other object type: a child {@code @service} catches into its outcome as a root one does.
+     */
+    public boolean isServiceProducedPayloadAnywhere(String payloadTypeName) {
+        for (var type : schema.getAllTypesAsList()) {
+            if (type instanceof GraphQLObjectType object && hasServiceFieldReturning(object, payloadTypeName)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private static boolean hasServiceFieldReturning(GraphQLObjectType root, String payloadTypeName) {
         if (root == null) return false;
         for (var f : root.getFieldDefinitions()) {
@@ -1128,7 +1141,7 @@ class BuildContext {
      *
      * <p>Mirrors the lift rules in {@code FieldBuilder.liftToErrorsField};
      * {@code FieldBuilder.detectStructuralDmlErrorChannel} and
-     * {@code FieldBuilder.resolveErrorChannel} consume it through the same port so the two
+     * {@code FieldBuilder.resolveServiceOutcomeChannel} consume it through the same port so the
      * classifier paths agree on what counts as an errors-shaped field.
      */
     List<GraphitronType.ErrorType> detectErrorsFieldShape(GraphQLFieldDefinition fieldDef) {

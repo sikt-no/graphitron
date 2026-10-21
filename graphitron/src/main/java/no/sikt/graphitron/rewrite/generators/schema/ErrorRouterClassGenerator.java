@@ -22,7 +22,7 @@ import java.util.function.Function;
  * Generates the {@code ErrorRouter} class emitted at
  * {@code <outputPackage>.schema.ErrorRouter}, once per code-generation run: the runtime
  * entry points the per-fetcher try/catch wrappers call ({@code redact},
- * {@code surfaceClientErrorOrRedact}, {@code dispatch}), the {@code toConfiguredLog} guard
+ * {@code surfaceClientErrorOrRedact}, {@code claim}), the {@code toConfiguredLog} guard
  * every unmatched-exception log site hands its throw through, plus the nested {@code Mapping}
  * taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
@@ -120,7 +120,6 @@ public final class ErrorRouterClassGenerator {
         var toConfiguredLog = buildToConfiguredLogMethod(fetcherErrorLogClass(outputPackage));
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
-        var dispatch = buildDispatchMethod(typeP, resultOfP);
         var claim = buildClaimMethod();
         var matchesSource = buildMatchesSourceMethod();
 
@@ -129,8 +128,8 @@ public final class ErrorRouterClassGenerator {
             .addJavadoc("Runtime entry points for the per-fetcher exception-handling wrappers emitted\n"
                 + "by Graphitron. Every emitted fetcher wraps its body in a try/catch (and an\n"
                 + "{@code .exceptionally} arm for async fetchers) that funnels thrown exceptions\n"
-                + "through this class: either to a channel-mapped typed payload\n"
-                + "({@code dispatch}, with a {@code Mapping[]} constant from {@code ErrorMappings})\n"
+                + "through this class: either onto the {@code Outcome} wrapper's error arm\n"
+                + "({@code claim}, with a {@code Mapping[]} constant from {@code ErrorMappings})\n"
                 + "or, when there is no channel or no mapping claims the throw, to\n"
                 + "{@code surfaceClientErrorOrRedact}: a client exception's message surfaces as a\n"
                 + "field error carrying the field's path and locations, anything else becomes a\n"
@@ -148,7 +147,6 @@ public final class ErrorRouterClassGenerator {
             .addMethod(redact)
             .addMethod(toConfiguredLog)
             .addMethod(surfaceClientErrorOrRedact)
-            .addMethod(dispatch)
             .addMethod(claim)
             .addMethod(matchesSource)
             .addMethod(buildMessageOnPathMethod())
@@ -503,54 +501,6 @@ public final class ErrorRouterClassGenerator {
                 .endControlFlow()
                 .addStatement("return redact(thrown, env)")
                 .build())
-            .build();
-    }
-
-    private static MethodSpec buildDispatchMethod(
-            TypeVariableName typeP,
-            ParameterizedTypeName resultOfP) {
-        var mapping = ClassName.get("", MAPPING_INTERFACE);
-        var mappingArray = ArrayTypeName.of(mapping);
-        var listOfWildcard = ParameterizedTypeName.get(LIST_CN, WildcardTypeName.subtypeOf(OBJECT_CN));
-        var payloadFactoryType = ParameterizedTypeName.get(ClassName.get(Function.class),
-            listOfWildcard, typeP);
-
-        return MethodSpec.methodBuilder("dispatch")
-            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .addTypeVariable(typeP)
-            .returns(resultOfP)
-            .addParameter(THROWABLE, "thrown")
-            .addParameter(mappingArray, "mappings")
-            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addParameter(payloadFactoryType, "payloadFactory")
-            .addJavadoc("Channel-mapped dispatch (source-direct contract). Asks {@link #claim} for the\n"
-                + "first (mapping, cause) pair that matches and places the claimed {@code Throwable}\n"
-                + "itself into the errors list, returning the populated payload. Falls through to {@link #surfaceClientErrorOrRedact}\n"
-                + "on no match, the disposition a fetcher without a channel gets.\n"
-                + "graphql-java's {@code PropertyDataFetcher} reads each declared {@code @error}\n"
-                + "field directly from whatever source object happens to be in the slot;\n"
-                + "per-channel {@code TypeResolver}s dispatch each source to its SDL\n"
-                + "{@code @error} type at serialisation time.\n"
-                + "\n"
-                + "<p>{@code ValidationHandler} entries produce no {@code Mapping} and never\n"
-                + "reach this method: the wrapper invokes {@code jakarta.validation.Validator}\n"
-                + "as a pre-execution step and routes the resulting\n"
-                + "{@code GraphQLError}s directly into the errors slot.\n"
-                + "\n"
-                + "<p>The {@code description} field on each {@link Mapping} is not consulted here.\n"
-                + "It is read on the fetch side, by the {@code message} method of the\n"
-                + "{@code <ErrorType>Fetchers} class for the type the {@code TypeResolver} selected,\n"
-                + "so an authored override cannot disagree with the {@code __typename} the client\n"
-                + "sees in the same selection set.\n")
-            // ----- Source-order match -----
-            .addStatement("$T claimed = claim(thrown, mappings, env)", THROWABLE)
-            .beginControlFlow("if (claimed != null)")
-            .addStatement("return $T.<P>newResult().data(payloadFactory.apply($T.of(claimed))).build()",
-                DATA_FETCHER_RESULT, LIST_CN)
-            .endControlFlow()
-            // ----- Unmatched: surface a client error, else redact -----
-            .addCode("\n// Unmatched: surface a client error, else log + redacted DataFetcherResult.\n")
-            .addStatement("return surfaceClientErrorOrRedact(thrown, env)")
             .build();
     }
 

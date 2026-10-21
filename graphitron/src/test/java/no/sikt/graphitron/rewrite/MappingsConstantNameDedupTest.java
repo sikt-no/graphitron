@@ -1,8 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
@@ -31,12 +29,12 @@ import static org.assertj.core.api.Assertions.assertThat;
  * class javadoc are tested directly rather than through the schema build's emitter pipeline:
  *
  * <ul>
- *   <li>Single channel for a payload class: the bare name passes through.</li>
+ *   <li>Single channel for a payload: the bare name passes through.</li>
  *   <li>Two channels with identical handler lists for the same payload: both keep the bare name
  *       (no suffix; the dedup recognises them as equivalent).</li>
  *   <li>Two channels with different handler lists for the same payload: the first-seen channel
  *       keeps the bare name; the second gets a deterministic 8-hex suffix.</li>
- *   <li>Two channels for different payload classes: each keeps its bare name (the dedup never
+ *   <li>Two channels for different payloads: each keeps its bare name (the dedup never
  *       collapses across payload boundaries).</li>
  * </ul>
  *
@@ -46,9 +44,6 @@ import static org.assertj.core.api.Assertions.assertThat;
  */
 @UnitTier
 class MappingsConstantNameDedupTest {
-
-    private static final String FILM_PAYLOAD_FQN = "com.example.FilmPayload";
-    private static final String CREATE_FILM_PAYLOAD_FQN = "com.example.CreateFilmPayload";
 
     @Test
     void singleChannel_keepsBareName() {
@@ -147,22 +142,17 @@ class MappingsConstantNameDedupTest {
 
     // ===== Helpers =====
 
-    private static ErrorChannel.PayloadClass filmPayloadChannel(ErrorType.Handler handler) {
-        return channel(FILM_PAYLOAD_FQN, "FILM_PAYLOAD", handler);
+    private static ErrorChannel.Mapped filmPayloadChannel(ErrorType.Handler handler) {
+        return channel("FILM_PAYLOAD", handler);
     }
 
-    private static ErrorChannel.PayloadClass createFilmPayloadChannel(ErrorType.Handler handler) {
-        return channel(CREATE_FILM_PAYLOAD_FQN, "CREATE_FILM_PAYLOAD", handler);
+    private static ErrorChannel.Mapped createFilmPayloadChannel(ErrorType.Handler handler) {
+        return channel("CREATE_FILM_PAYLOAD", handler);
     }
 
-    private static ErrorChannel.PayloadClass channel(String payloadFqn, String constantName, ErrorType.Handler handler) {
+    private static ErrorChannel.Mapped channel(String constantName, ErrorType.Handler handler) {
         var errorType = new ErrorType("FilmErr", null, List.of(handler), List.of());
-        return new ErrorChannel.PayloadClass(
-            List.of(errorType),
-            ClassName.bestGuess(payloadFqn),
-            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
-            List.of(new DefaultedSlot(0, "data", ClassName.get("java.lang", "String"), "null")),
-            constantName);
+        return new ErrorChannel.Mapped(List.of(errorType), constantName);
     }
 
     private static ExceptionHandler exceptionHandler(String className) {
@@ -173,14 +163,9 @@ class MappingsConstantNameDedupTest {
         return new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState(state), Optional.empty(), new ClientMessage.FromSource());
     }
 
-    /**
-     * A direct-return DML mutation field: the lightest {@link WithErrorChannel} variant whose
-     * channel slot carries the {@link ErrorChannel.RouterDispatched} partition the dedup's
-     * grouping rules cover (root {@code @service} and payload-carrier variants carry
-     * {@link ErrorChannel.Mapped}, which dedups by bare constant name only).
-     */
+    /** A direct-return DML mutation field: the lightest {@link WithErrorChannel} variant. */
     private static MutationField.DmlTableField routedField(
-            String fieldName, Optional<ErrorChannel.RouterDispatched> channel) {
+            String fieldName, Optional<ErrorChannel.Mapped> channel) {
         var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
             "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
             List.of(), List.of(), List.of());
@@ -197,15 +182,15 @@ class MappingsConstantNameDedupTest {
             channel);
     }
 
-    private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel.PayloadClass channel) {
+    private static Map<FieldCoordinates, GraphitronField> oneFetcher(String fieldName, ErrorChannel.Mapped channel) {
         var field = routedField(fieldName, Optional.of(channel));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();
         fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
         return fields;
     }
 
-    private static Map<FieldCoordinates, GraphitronField> twoFetchers(String n0, ErrorChannel.PayloadClass c0,
-                                                                      String n1, ErrorChannel.PayloadClass c1) {
+    private static Map<FieldCoordinates, GraphitronField> twoFetchers(String n0, ErrorChannel.Mapped c0,
+                                                                      String n1, ErrorChannel.Mapped c1) {
         var f0 = routedField(n0, Optional.of(c0));
         var f1 = routedField(n1, Optional.of(c1));
         var fields = new LinkedHashMap<FieldCoordinates, GraphitronField>();

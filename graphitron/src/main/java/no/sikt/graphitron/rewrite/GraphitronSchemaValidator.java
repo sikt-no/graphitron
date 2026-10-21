@@ -1008,9 +1008,9 @@ public class GraphitronSchemaValidator {
      *       keeps {@code ReentryRowsFragments}' claim true that the row builder's own throw is
      *       only a backstop for objects built outside the pipeline.</li>
      *   <li><b>No error channel.</b> Structurally empty today, and the guard exists to keep it
-     *       that way: {@code FieldBuilder.resolveErrorChannel} answers no-channel for anything
-     *       but a class-backed {@code ResultReturnType}, and a {@code @table}-bound return is not
-     *       one, so the lift emit carries no channel arms. The child arm's mirror in
+     *       that way: {@code FieldBuilder.resolveServiceOutcomeChannel} answers no-channel for
+     *       anything but a class-backed {@code ResultReturnType}, and a {@code @table}-bound
+     *       return is not one, so the lift emit carries no channel arms. The child arm's mirror in
      *       {@link #validateServiceTableField} pins the same premise at its coordinate; if
      *       channel resolution ever widens to table-bound payloads, the first schema exercising
      *       it fails here rather than inheriting an arm shape never designed for a channel.</li>
@@ -1821,7 +1821,7 @@ public class GraphitronSchemaValidator {
         // own channel transport and fetcher family): the service reentry fetcher inlines the
         // channel catch / early-return arms into the Fetcher with no independent seam, on the
         // premise that reentry @service fields are channel-less. The slot is provably empty
-        // today (resolveErrorChannel guards on ResultReturnType; this return is table-bound),
+        // today (resolveServiceOutcomeChannel guards on ResultReturnType; this return is table-bound),
         // so the inlined arm shape cannot vary within the family. If channel resolution ever
         // widens to table-bound payloads, the first schema exercising it fails here, at the
         // build boundary, instead of inheriting an inlined arm shape never designed for a
@@ -2083,7 +2083,7 @@ public class GraphitronSchemaValidator {
 
     /**
      * The sibling rule for errors fields on the {@code Outcome} wrapper transport.
-     * Under the wrapper transport ({@link ChildField.Transport.WrapperArm}), every immediate child
+     * Under the wrapper transport (a {@link ChildField.ErrorsField} on the type), every immediate child
      * of an in-scope outcome type receives a non-null {@code Outcome} as {@code env.getSource()}, so
      * each data-channel fetcher must unwrap {@code Success} before its existing read (returning null
      * on {@code ErrorList}). An un-switched child is a silent runtime hole: graphql-java's default
@@ -2102,8 +2102,8 @@ public class GraphitronSchemaValidator {
      * fetcher). A child resolves through {@code PropertyDataFetcher} in two ways, both rejected here:
      * it is an {@link GraphitronField.UnclassifiedField} (no registration, so graphql-java installs
      * its default), or its emitted value is {@code PropertyDataFetcher.fetching} per
-     * {@link FetcherEmitter#resolvesViaPropertyDataFetcher} (a {@code PayloadAccessor} errors field
-     * or a property/record read on a no-backing parent). {@code UnclassifiedField} is the only
+     * {@link FetcherEmitter#resolvesViaPropertyDataFetcher} (a property/record read on a
+     * no-backing parent). {@code UnclassifiedField} is the only
      * unregistered leaf that can sibling an errors field on an object type (the other
      * {@code NOT_DISPATCHED_LEAVES} are {@code InputField} leaves, which only attach to input
      * objects); stubbed variants are already rejected by {@link #validateVariantIsImplemented}.
@@ -2111,7 +2111,6 @@ public class GraphitronSchemaValidator {
     private void validateOutcomeChildArmSwitch(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField.ErrorsField ef)) continue;
-            if (!(ef.transport() instanceof ChildField.Transport.WrapperArm)) continue;
             var parentType = schema.type(ef.parentTypeName());
             GraphitronType.ResultType resultType =
                 parentType instanceof GraphitronType.ResultType rt ? rt : null;
@@ -2151,7 +2150,6 @@ public class GraphitronSchemaValidator {
     private void validateWrapperArmSiblingPosture(GraphitronSchema schema, List<ValidationError> errors) {
         for (var f : schema.fields().values()) {
             if (!(f instanceof ChildField.ErrorsField ef)) continue;
-            if (!(ef.transport() instanceof ChildField.Transport.WrapperArm)) continue;
             for (var sib : schema.fieldsOf(ef.parentTypeName())) {
                 if (sib == ef) continue;
                 if (sib instanceof GraphitronField.UnclassifiedField) continue;

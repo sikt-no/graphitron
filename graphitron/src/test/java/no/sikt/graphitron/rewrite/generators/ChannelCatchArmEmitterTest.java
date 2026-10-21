@@ -20,9 +20,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * the structural intent (the {@code Mapped} mapping-walk that returns an
  * {@code Outcome.ErrorList} and falls through to the no-channel disposition, and the validator-pre-step early
  * return) without pinning the full generated body. The emitter takes
- * {@link ErrorChannel.Mapped} directly; the {@link ErrorChannel.RouterDispatched} arms and the
- * no-channel disposition emit through {@code TypeFetcherGenerator}'s catch-arm seams, whose
- * output the pipeline tier pins.
+ * {@link ErrorChannel.Mapped} directly; the no-channel disposition emits through
+ * {@code TypeFetcherGenerator}'s catch-arm seams, whose output the pipeline tier pins.
  */
 @UnitTier
 class ChannelCatchArmEmitterTest {

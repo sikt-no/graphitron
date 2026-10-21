@@ -112,8 +112,7 @@ public final class FetcherEmitter {
      * {@code TypeFetcherGenerator}, cannot drift.
      */
     public static boolean hasWrapperArmErrors(List<? extends GraphitronField> fields) {
-        return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField ef
-            && ef.transport() instanceof ChildField.Transport.WrapperArm);
+        return fields.stream().anyMatch(f -> f instanceof ChildField.ErrorsField);
     }
 
     /**
@@ -132,11 +131,11 @@ public final class FetcherEmitter {
      * Whether {@code field} would resolve to graphql-java's {@code PropertyDataFetcher} (a property
      * read off the source object) rather than a graphitron-emitted fetcher. Under an
      * {@code Outcome} wrapper this is a silent runtime hole: the read would land on the
-     * {@code Outcome} object itself rather than arm-switching. The emit-time sources are
-     * an {@code ErrorsField} on the {@code PayloadAccessor} transport and a
+     * {@code Outcome} object itself rather than arm-switching. The emit-time source is a
      * {@code RecordReadField} whose {@link ValueLocator.DefaultRead} locator located nothing
-     * (a class-backed parent with no loadable backing), both of which emit
-     * {@code PropertyDataFetcher.fetching} in {@link #bindRaw}. The validator consults
+     * (a class-backed parent with no loadable backing, or an errors-shaped field on a type no
+     * producer catches into), which emits {@code PropertyDataFetcher.fetching} in
+     * {@link #bindRaw}. The validator consults
      * this predicate so it keys on the emitter's own dispositions rather than re-deriving them.
      * The live case is pinned by {@code FetcherPipelineTest} wiring assertions.
      *
@@ -152,10 +151,8 @@ public final class FetcherEmitter {
      */
     public static boolean resolvesViaPropertyDataFetcher(
             GraphitronField field, GraphitronType.ResultType resultType) {
-        return (field instanceof ChildField.ErrorsField ef
-                    && ef.transport() instanceof ChildField.Transport.PayloadAccessor)
-            || (field instanceof ChildField.RecordReadField rrf
-                    && rrf.locator() instanceof ValueLocator.DefaultRead);
+        return field instanceof ChildField.RecordReadField rrf
+            && rrf.locator() instanceof ValueLocator.DefaultRead;
     }
 
     /**
@@ -559,24 +556,13 @@ public final class FetcherEmitter {
             return envDependent(field.name(), fetchersClass,
                 buildRecordCompositeFetcherValue(composite, outputPackage));
         }
-        if (field instanceof ChildField.ErrorsField ef) {
-            // The Transport discriminator rides on the field-level model (resolved at classify
-            // time with the parent carrier's channel in scope), so this emission never re-walks
-            // the parent.
-            return switch (ef.transport()) {
-                case ChildField.Transport.PayloadAccessor ignored -> {
-                    var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-                    yield new FetcherBinding.Inline(
-                        CodeBlock.of("$T.fetching($S)", propertyDataFetcher, field.name()));
-                }
-                // On the Success arm resolve null (not List.of()) to honour the errors field's
-                // SDL nullability on the wire. The NonNullableErrorsField classify-time rule
-                // guarantees the field is nullable, so null is always a legal success-arm value.
-                case ChildField.Transport.WrapperArm ignored ->
-                    sourceOnly(field.name(), fetchersClass, outputPackage,
-                        CodeBlock.of("return source instanceof $T<?> errorList ? errorList.errors() : null;\n",
-                            errorListClass(outputPackage)));
-            };
+        if (field instanceof ChildField.ErrorsField) {
+            // An outcome's errors read its Outcome's error arm. On the Success arm resolve null
+            // (not List.of()) to honour the errors field's SDL nullability on the wire; the
+            // NonNullableErrorsField classify-time rule guarantees the field is nullable.
+            return sourceOnly(field.name(), fetchersClass, outputPackage,
+                CodeBlock.of("return source instanceof $T<?> errorList ? errorList.errors() : null;\n",
+                    errorListClass(outputPackage)));
         }
         if (field instanceof ChildField.RecordReadField rrf) {
             return recordReadBinding(rrf, resultType, fetchersClass, outputPackage);
@@ -943,7 +929,7 @@ public final class FetcherEmitter {
                     recordBackedAccessorRead(backingClass, ja.accessor(), CodeBlock.of("source")), compaction, field));
             }
             // Graphitron located nothing: register graphql-java's default property machinery
-            // explicitly, keyed on the located name (mirrors the ErrorsField PayloadAccessor arm).
+            // explicitly, keyed on the located name.
             case ValueLocator.DefaultRead dr -> {
                 var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
                 yield switch (compaction) {

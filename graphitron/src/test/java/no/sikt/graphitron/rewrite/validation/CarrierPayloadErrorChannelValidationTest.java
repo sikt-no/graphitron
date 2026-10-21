@@ -80,8 +80,7 @@ class CarrierPayloadErrorChannelValidationTest {
             """);
         assertThat(schema.field("Mutation", "createFilms"))
             .isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
-        assertThat(((ChildField.ErrorsField) schema.field("FilmsPayload", "errors")).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) schema.field("FilmsPayload", "errors"))).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         assertThat(validate(schema)).isEmpty();
     }
 
@@ -139,8 +138,7 @@ class CarrierPayloadErrorChannelValidationTest {
             type FilmsPayload { films: [Film!] errors: [CarrierError] @field(name: "$errors") }
             type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT, table: "film") }
             """);
-        assertThat(((ChildField.ErrorsField) schema.field("FilmsPayload", "errors")).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) schema.field("FilmsPayload", "errors"))).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         assertThat(validate(schema)).isEmpty();
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)

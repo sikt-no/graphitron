@@ -6,7 +6,7 @@ package no.sikt.graphitron.rewrite.test.services;
  * {@code @service}-backed mutation returning a {@code @record} payload with an {@code errors}
  * slot) through compile-spec and execute-spec, mirroring the query-side
  * {@link FilmLookupService} but on the mutation pillar so any future regression in
- * {@code MutationServiceRecordField}'s try/catch wrapper or {@code ErrorRouter.dispatch} arm
+ * {@code MutationServiceRecordField}'s try/catch wrapper or its {@code Outcome} error arm
  * lands as a build failure rather than a production schema break.
  *
  * <p>Three branches by input:

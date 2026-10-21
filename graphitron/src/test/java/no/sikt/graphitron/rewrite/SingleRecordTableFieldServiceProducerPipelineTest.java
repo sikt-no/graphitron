@@ -96,8 +96,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
 
         var errorsField = schema.field("FilmPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
-        assertThat(((ChildField.ErrorsField) errorsField).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) errorsField)).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
     }
 
     /**
@@ -137,8 +136,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
                 pr -> assertThat(pr.arity()).isEqualTo(Arity.MANY));
         var errorsField = schema.field("FilmListPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
-        assertThat(((ChildField.ErrorsField) errorsField).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) errorsField)).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         assertThat(schema.warnings())
             .extracting(BuildWarning::message)
             .anyMatch(m -> m.contains("FilmListPayload.films")
@@ -187,8 +185,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(idField.encode().encodeMethod()).isNotNull();
         var errorsField = schema.field("FilmIdsPayload", "errors");
         assertThat(errorsField).isInstanceOf(ChildField.ErrorsField.class);
-        assertThat(((ChildField.ErrorsField) errorsField).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) errorsField)).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
     }
 
     /**

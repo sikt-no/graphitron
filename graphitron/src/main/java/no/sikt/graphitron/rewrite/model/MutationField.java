@@ -17,8 +17,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
  *
  * <p>Every variant is fetcher-emitting and implements {@link WithErrorChannel}: a populated
  * channel makes the emitter wrap the fetcher body in a try/catch routing thrown exceptions
- * into the typed {@code errors} field. The channel is resolved by
- * {@code FieldBuilder.resolveErrorChannel}; an {@link Optional#empty()} channel means no
+ * into the typed {@code errors} field. An {@link Optional#empty()} channel means no
  * {@code errors} field on the payload, not an unclassified one.
  */
 public sealed interface MutationField extends RootField, WithErrorChannel
@@ -85,7 +84,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         DmlReturnExpression returnExpression,
         OperationMember.Write.Dml write,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, DmlWriteField {
 
         public DmlTableField {
@@ -218,7 +217,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             }
         }
 
-        @Override public Optional<ErrorChannel.RouterDispatched> errorChannel() {
+        @Override public Optional<ErrorChannel.Mapped> errorChannel() {
             return Optional.empty();
         }
 

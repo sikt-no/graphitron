@@ -29,20 +29,19 @@ import java.util.Map;
  * field, applying the §3 hash-suffix dedup rule:
  *
  * <ul>
- *   <li>Two fetchers returning the same payload class with identical channel declarations
- *       share one constant (no suffix; the bare {@code SCREAMING_SNAKE} payload-class name).</li>
- *   <li>Two fetchers returning the same payload class with different channel declarations get
+ *   <li>Two fetchers returning the same payload with identical channel declarations
+ *       share one constant (no suffix; the bare {@code SCREAMING_SNAKE} payload name).</li>
+ *   <li>Two fetchers returning the same payload with different channel declarations get
  *       distinct constants : the first-seen channel keeps the bare name; subsequent distinct
  *       shapes get a suffix derived from the canonicalised handler list
  *       ({@code FILM_PAYLOAD_A1B2C3D4}). The suffix is an 8-hex-char (32-bit) prefix of the
  *       SHA-256 of the canonicalised mapping list, uppercased.</li>
- *   <li>Different payload classes never share a constant even if their handler lists are
- *       byte-identical, since the per-fetcher payload-factory differs and a shared constant
- *       would be misleading.</li>
+ *   <li>Different payloads never share a constant even if their handler lists are
+ *       byte-identical, since a shared constant would be misleading.</li>
  * </ul>
  *
  * <p>Spec: {@code error-handling-parity.md} §3 ({@code ErrorMappings} subsection). The per-field
- * classifier runs first and stamps every {@link ErrorChannel} with the bare payload-class name;
+ * classifier runs first and stamps every {@link ErrorChannel} with the bare payload name;
  * this pass runs immediately after the per-field loop and before {@link GraphitronSchema}
  * construction, walking the classified fields to compute hashes, apply suffixes where needed,
  * and rewrite each {@link WithErrorChannel} carrier so the resolved name lands on
@@ -61,11 +60,8 @@ public final class MappingsConstantNameDedup {
      */
     public static Map<FieldCoordinates, GraphitronField> apply(
             Map<FieldCoordinates, GraphitronField> fields) {
-        // Group every classified channel under one key per payload-equivalent identity. The
-        // sealed split picks the grouping per arm so each consumer dedups within its own surface:
-        // PayloadClass arms collapse by payload-class binary name (developer-payload-equivalent);
-        // Mapped arms collapse by their bare mappingsConstantName because no payload class is
-        // consulted on that catch path. Classification order is preserved within each key.
+        // Group every classified channel under its bare mappingsConstantName, the payload's SDL
+        // name. Classification order is preserved within each key.
         Map<String, List<ErrorChannel>> byGroup = new LinkedHashMap<>();
         for (var entry : fields.entrySet()) {
             var ch = channelOf(entry.getValue());
@@ -124,43 +120,18 @@ public final class MappingsConstantNameDedup {
         return rewritten;
     }
 
-    /**
-     * Returns the dedup grouping key for a channel: payload-class binary name for
-     * {@link ErrorChannel.PayloadClass}, bare {@code mappingsConstantName} for
-     * {@link ErrorChannel.Mapped}. The two namespaces never collide at the dedup level:
-     * a {@code PayloadClass} group key contains dots ({@code com.example.FilmPayload}) while
-     * a {@code Mapped} group key is a SCREAMING_SNAKE identifier
-     * ({@code FILM_PAYLOAD}); even so, the sealed switch keeps the contract explicit rather
-     * than relying on the namespace separation.
-     */
+    /** The dedup grouping key for a channel: its bare {@code mappingsConstantName}. */
     private static String groupKey(ErrorChannel ch) {
-        return switch (ch) {
-            case ErrorChannel.Mapped m -> m.mappingsConstantName();
-            case ErrorChannel.PayloadClass p -> p.payloadClass().reflectionName();
-        };
+        return ch.mappingsConstantName();
     }
 
     /**
      * Re-constructs a {@link ErrorChannel.Mapped} channel with {@code newName} swapped onto its
-     * {@code mappingsConstantName} slot. Arm-typed (with {@link #renameRouted} as its
-     * {@link ErrorChannel.RouterDispatched} sibling) so {@link #withResolvedChannel} can rebuild
-     * each field variant with the narrowed channel component its record declares.
+     * {@code mappingsConstantName} slot, so {@link #withResolvedChannel} can rebuild each field
+     * variant with the channel component its record declares.
      */
     private static ErrorChannel.Mapped renameMapped(ErrorChannel.Mapped m, String newName) {
         return new ErrorChannel.Mapped(m.mappedErrorTypes(), newName);
-    }
-
-    /**
-     * Re-constructs a {@link ErrorChannel.RouterDispatched} channel with {@code newName} swapped
-     * onto its {@code mappingsConstantName} slot, preserving the sealed arm.
-     */
-    private static ErrorChannel.RouterDispatched renameRouted(
-            ErrorChannel.RouterDispatched ch, String newName) {
-        return switch (ch) {
-            case ErrorChannel.PayloadClass p -> new ErrorChannel.PayloadClass(
-                p.mappedErrorTypes(), p.payloadClass(), p.errorsSlot(),
-                p.defaultedSlots(), newName);
-        };
     }
 
     /**
@@ -185,7 +156,7 @@ public final class MappingsConstantNameDedup {
         return switch (field) {
             case MutationField.DmlTableField f -> new MutationField.DmlTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnExpression(),
-                f.write(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.write(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(
@@ -196,10 +167,10 @@ public final class MappingsConstantNameDedup {
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case ChildField.ServiceTableField f -> new ChildField.ServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.filters(),
-                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.orderBy(), f.pagination(), f.method(), f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case ChildField.ServiceRecordField f -> new ChildField.ServiceRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.joinPath(), f.method(),
-                f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameRouted(c, newName)));
+                f.sourceKey(), f.keySource(), f.loaderRegistration(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationDmlRecordField f -> new MutationField.MutationDmlRecordField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.write(),
                 f.errorChannel().map(c -> renameMapped(c, newName)));

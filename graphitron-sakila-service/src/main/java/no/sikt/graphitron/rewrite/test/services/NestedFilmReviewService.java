@@ -6,7 +6,7 @@ package no.sikt.graphitron.rewrite.test.services;
  * ({@link NestedFilmReviewPayloadHolder.Payload}) that also carries an {@code @error} channel, so a
  * single fixture reaches both remaining in-hand {@code bestGuess} sites this pass fixes:
  * {@code TypeFetcherGenerator.computeMutationServiceRecordReturnType} (the mutation-service-record
- * fetcher return type) and {@code FieldBuilder.resolveErrorChannel} (the Outcome payload ctor arm).
+ * fetcher return type) and the {@code @service} Outcome channel resolution.
  *
  * <p>Reuses {@link FilmReviewBadRatingException} / {@link FilmReviewMissingFilmException} so
  * the {@code errors} slot resolves against the existing {@code FilmReviewError} union without new
@@ -19,9 +19,7 @@ public final class NestedFilmReviewService {
 
     /**
      * Happy path returns an empty (errors-only) nested payload; an out-of-range rating or a
-     * {@code filmId == 999} throws so the Outcome error arm (which constructs
-     * {@code new NestedFilmReviewPayloadHolder.Payload(errors)} via the fixed
-     * {@code resolveErrorChannel} ctor arm) is exercised.
+     * {@code filmId == 999} throws so the Outcome error arm is exercised.
      */
     public static NestedFilmReviewPayloadHolder.Payload submit(Integer filmId, Integer rating) {
         if (filmId == null || rating == null) {

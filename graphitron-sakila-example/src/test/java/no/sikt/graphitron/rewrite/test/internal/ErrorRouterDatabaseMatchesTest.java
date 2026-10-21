@@ -14,7 +14,6 @@ import org.jooq.exception.DataException;
 import org.junit.jupiter.api.Test;
 
 import java.sql.SQLException;
-import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -40,16 +39,12 @@ class ErrorRouterDatabaseMatchesTest {
         new ErrorRouter.DatabaseMapping(null, "1438", "PROSENTTALL", "Prosenttall kan ikke overstige 100");
 
     @Test
-    void wrapperCarriesTheText_claimReturnsTheSqlException_andDispatchPlacesIt() {
+    void wrapperCarriesTheText_claimReturnsTheSqlException() {
         var sqlException = oracle(ORA_ENGLISH);
         var thrown = new DataException(SQL + ORA_ENGLISH, sqlException);
 
         assertThat(ErrorRouter.claim(thrown, new ErrorRouter.Mapping[] {BANKKONTONR}, environment()))
             .isSameAs(sqlException);
-        var result = ErrorRouter.dispatch(thrown, new ErrorRouter.Mapping[] {BANKKONTONR}, environment(),
-            errors -> errors);
-        assertThat(result.getErrors()).isEmpty();
-        assertThat(result.getData()).isEqualTo(List.of(sqlException));
     }
 
     @Test
@@ -79,13 +74,12 @@ class ErrorRouterDatabaseMatchesTest {
     }
 
     @Test
-    void neitherMessageCarriesTheText_claimReturnsNull_andDispatchRedacts() {
+    void neitherMessageCarriesTheText_claimReturnsNull_andTheUnclaimedThrowRedacts() {
         var thrown = new DataException("SQL [update \"PERSON\" set \"NAVN\" = ?]; " + ORA_ENGLISH,
             oracle(ORA_ENGLISH));
 
         assertThat(ErrorRouter.claim(thrown, new ErrorRouter.Mapping[] {BANKKONTONR}, environment())).isNull();
-        var result = ErrorRouter.dispatch(thrown, new ErrorRouter.Mapping[] {BANKKONTONR}, environment(),
-            errors -> errors);
+        var result = ErrorRouter.surfaceClientErrorOrRedact(thrown, environment());
         assertThat(result.getData()).isNull();
         assertThat(result.getErrors()).singleElement()
             .satisfies(error -> assertThat(error.getMessage()).startsWith("An error occurred. Reference: "));

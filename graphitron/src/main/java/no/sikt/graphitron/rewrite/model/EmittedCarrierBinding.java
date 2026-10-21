@@ -13,9 +13,8 @@ import no.sikt.graphitron.model.jooq.TableRef;
  * consumer-facing shape; this interface is that shape, so consumers that read "is an
  * emitted-carrier binding bound to this SDL type" or "which columns correlate the data field's
  * re-fetch" ask one question instead of maintaining a hand-written disjunction over the arms
- * (the {@code activeChannel} gate in {@code FieldBuilder.transportForParent} is the
- * load-bearing consumer: a missed arm there silently binds the carrier's {@code errors} field
- * to the one transport that cannot work).
+ * ({@code FieldBuilder.isOutcome} is the load-bearing consumer: a missed arm there silently
+ * reads the carrier's {@code errors} field off the {@code Outcome} as a plain property).
  */
 public sealed interface EmittedCarrierBinding
     permits ProducerBinding.DmlEmitted, ProducerBinding.ServiceEmitted,

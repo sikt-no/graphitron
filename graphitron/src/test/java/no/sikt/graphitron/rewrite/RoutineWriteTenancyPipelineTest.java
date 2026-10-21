@@ -45,7 +45,6 @@ class RoutineWriteTenancyPipelineTest {
                 schema.field("Mutation", "rentFilm")).errorChannel())
             .get().isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
         assertThat(((no.sikt.graphitron.rewrite.model.ChildField.ErrorsField)
-                schema.field("RentFilmPayload", "errors")).transport())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+                schema.field("RentFilmPayload", "errors"))).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
     }
 }

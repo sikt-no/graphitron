@@ -6,7 +6,6 @@ import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.DefaultedSlot;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -349,24 +348,16 @@ class ErrorMappingsClassGeneratorTest {
         return new ErrorType(name, null, handlers, List.of());
     }
 
-    private static ErrorChannel.PayloadClass channel(String payloadSimple, String payloadFqn, String constantName,
+    private static ErrorChannel.Mapped channel(String payloadSimple, String payloadFqn, String constantName,
                                         List<ErrorType> mappedErrorTypes) {
-        var stringType = (TypeName) ClassName.get(String.class);
-        var defaultedSlots = List.of(
-            new DefaultedSlot(0, "data", stringType, "null"));
-        return new ErrorChannel.PayloadClass(mappedErrorTypes, ClassName.bestGuess(payloadFqn),
-            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
-            defaultedSlots, constantName);
+        return new ErrorChannel.Mapped(mappedErrorTypes, constantName);
     }
 
     /**
      * Synthesises a minimal schema with one direct-return DML mutation field per channel
-     * supplied: the lightest field variant whose channel slot carries the
-     * {@link ErrorChannel.RouterDispatched} partition {@link ErrorChannel.PayloadClass}
-     * belongs to (root {@code @service} and payload-carrier variants carry
-     * {@link ErrorChannel.Mapped}).
+     * supplied: the lightest field variant with a channel slot.
      */
-    private static GraphitronSchema synthesizeSchema(List<ErrorChannel.PayloadClass> channels) {
+    private static GraphitronSchema synthesizeSchema(List<ErrorChannel.Mapped> channels) {
         Map<String, GraphitronType> types = new LinkedHashMap<>();
         types.put("Query", new GraphitronType.RootType("Query", null));
         Map<FieldCoordinates, GraphitronField> fields = new LinkedHashMap<>();
@@ -397,7 +388,7 @@ class ErrorMappingsClassGeneratorTest {
      * production schema-build flow where {@code MappingsConstantNameDedup} runs between
      * field classification and emitter invocation.
      */
-    private static GraphitronSchema synthesizeSchemaWithDedup(List<ErrorChannel.PayloadClass> channels) {
+    private static GraphitronSchema synthesizeSchemaWithDedup(List<ErrorChannel.Mapped> channels) {
         var raw = synthesizeSchema(channels);
         var deduped = no.sikt.graphitron.rewrite.MappingsConstantNameDedup.apply(raw.fields());
         return new GraphitronSchema(raw.types(), deduped);

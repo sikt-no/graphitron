@@ -20,9 +20,9 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * per-arm casts assume the parent shape without defensive guards.
  *
  * <p>The axis is deliberately partial against the full locator family:
- * {@link ChildField.NestingField}'s identity read (passthrough) and
- * {@link ChildField.Transport}'s arms are the same axis under other names and are expected to
- * converge onto it in a follow-up. Until then a component on the single
+ * {@link ChildField.NestingField}'s identity read (passthrough) is the same axis under another
+ * name and is expected to converge onto it in a follow-up; an errors-shaped field on a type no
+ * producer returns already has, a {@link DefaultRead}. Until then a component on the single
  * record-read leaf is the correct home; the read sites fork on locator identity, a sealed
  * switch, not a capability.
  */

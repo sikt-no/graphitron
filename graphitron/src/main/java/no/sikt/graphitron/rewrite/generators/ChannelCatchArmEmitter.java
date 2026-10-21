@@ -11,11 +11,9 @@ import no.sikt.graphitron.rewrite.model.ErrorChannel;
 /**
  * Emits the body of a synchronous fetcher's {@code catch (Throwable e)} arm for a field whose
  * channel is {@link ErrorChannel.Mapped}: the typed-{@code Outcome}-wrapper transport, shared by
- * root {@code @service} fields and the DML and {@code @routine} payload carriers. This is the
- * {@code Mapped} half of the channel-emit partition; the {@link ErrorChannel.RouterDispatched}
- * arm emits through the {@code catchArm} / {@code asyncRouterCall} seams in
- * {@link TypeFetcherGenerator}, and the parameter types on both sides keep the partition
- * compiler-checked. The arm's spelling is
+ * root {@code @service} fields and the DML and {@code @routine} payload carriers; a batched
+ * child {@code @service}'s asynchronous catch emits the same arm in
+ * {@link TypeFetcherGenerator}. The arm's spelling is
  * {@link no.sikt.graphitron.render.ErrorDispatchFragments#outcomeArm}, which the command-seam
  * renderers reach through their dispatch row; this host resolves the generated units off the
  * classifier's channel and delegates.

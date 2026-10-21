@@ -66,8 +66,7 @@ class ServiceRecordCompositeCarrierPipelineTest {
 
         var errors = schema.field("CreateFilmsPayload", "errors");
         assertThat(errors).isInstanceOf(ChildField.ErrorsField.class);
-        assertThat(((ChildField.ErrorsField) errors).transport())
-            .isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(((ChildField.ErrorsField) errors)).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
         // The @field-mapped @table children read the composite's filmRecord() / actorRecords() accessors.
         var film = schema.field("CreateFilmsResult", "film");

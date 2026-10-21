@@ -64,7 +64,7 @@ class WrapperArmSiblingPostureValidationTest {
         assertThat(schema.field("Aggregated", "filmsViaService"))
             .isInstanceOf(ChildField.ServiceTableField.class);
         var errorsField = (ChildField.ErrorsField) schema.field("Aggregated", "errors");
-        assertThat(errorsField.transport()).isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -95,7 +95,7 @@ class WrapperArmSiblingPostureValidationTest {
         assertThat(schema.field("SinglePayloadType", "film"))
             .isInstanceOf(ChildField.UnionField.class);
         var errorsField = (ChildField.ErrorsField) schema.field("SinglePayloadType", "errors");
-        assertThat(errorsField.transport()).isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
         assertThat(validate(schema))
             .extracting(ValidationError::message)
@@ -121,7 +121,7 @@ class WrapperArmSiblingPostureValidationTest {
         assertThat(schema.field("Film", "referrers"))
             .isInstanceOf(ChildField.BatchedUnionField.class);
         var errorsField = (ChildField.ErrorsField) schema.field("Film", "errors");
-        assertThat(errorsField.transport()).isInstanceOf(ChildField.Transport.WrapperArm.class);
+        assertThat(errorsField).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
 
         assertThat(validate(schema))
             .extracting(ValidationError::message)

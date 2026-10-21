@@ -39,7 +39,7 @@ import java.util.TreeMap;
  *   <li><b>Per fetcher channel</b>, as top-level constants keyed on
  *       {@link ErrorChannel#mappingsConstantName}: the ordered concatenation of the per-type
  *       arrays the channel maps. This is the use-keyed grain the per-fetcher try/catch wrapper
- *       passes to {@code ErrorRouter.dispatch}. Channels with identical declarations share one
+ *       passes to {@code ErrorRouter.claim}. Channels with identical declarations share one
  *       constant, so a schema with N fetchers mapping K {@code @error} types produces K mapping
  *       instances rather than K·N.</li>
  * </ul>
@@ -345,17 +345,9 @@ public final class ErrorMappingsClassGenerator {
         return value == null ? CodeBlock.of("null") : CodeBlock.of("$S", value);
     }
 
-    /**
-     * Human-readable label for the channel used in the per-constant Javadoc.
-     * {@link ErrorChannel.PayloadClass} carries a payload-class simple name; the
-     * {@link ErrorChannel.Mapped} arm has no payload class so we fall back to the
-     * constant name itself.
-     */
+    /** Human-readable label for the channel used in the per-constant Javadoc: its constant name. */
     private static String channelLabel(ErrorChannel channel) {
-        return switch (channel) {
-            case ErrorChannel.Mapped m -> m.mappingsConstantName();
-            case ErrorChannel.PayloadClass p -> p.payloadClass().simpleName();
-        };
+        return channel.mappingsConstantName();
     }
 
     /**

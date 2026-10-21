@@ -233,13 +233,8 @@ class ServiceFieldValidationTest {
             List.of(new GraphitronType.ErrorType.ExceptionHandler(
                 new GraphitronType.ErrorType.ExceptionClass.ClasspathClass("java.sql.SQLException"), Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource())),
             List.of());
-        var channel = new no.sikt.graphitron.rewrite.model.ErrorChannel.PayloadClass(
-            List.of(errorType),
-            ClassName.bestGuess("com.example.Payload"),
-            new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(1),
-            List.of(new no.sikt.graphitron.rewrite.model.DefaultedSlot(0, "data",
-                ClassName.get("java.lang", "String"), "null")),
-            "PAYLOAD");
+        var channel = new no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped(
+            List.of(errorType), "PAYLOAD");
         var field = new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
             TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,

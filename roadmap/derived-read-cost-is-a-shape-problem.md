@@ -1064,13 +1064,15 @@ and the emitters read, and it goes when nothing reads what it builds.
     transports. First stated for root producers alone; widened 2026-10-21, decided with Alf, since the
     generator already catches for a child `@service`, no child producer on sis, sakila or opptak
     returning an errors field.
-    * **A child producer catches into its outcome** `open`. The walk still catches a child
-      `@service`'s throw by constructing the developer's payload class, `PayloadClass` under
-      `RouterDispatched`, and reads its errors field through `PayloadAccessor`. It moves to the
-      `Outcome` wrapper the root producers ride, `ErrorChannel.Mapped`, which needs the batched
-      fetcher's asynchronous catch to hand each key an error list; the payload-class construction,
-      `ErrorRouter.dispatch` and the always-empty channel slots on `DmlTableField` and
-      `MutationRoutineWriteField` go with it.
+    * **A child producer catches into its outcome** `done`, 2026-10-21. A child `@service`
+      resolves its channel as a root one does, an `ErrorChannel.Mapped` on the `Outcome` wrapper,
+      and its batched fetcher wraps each loaded value in `Success` and claims a throw onto
+      `ErrorList` in both its asynchronous tail and the synchronous guard around key extraction.
+      A list of outcomes is refused, one per element having no carrier. An `ErrorsField` is an
+      outcome's alone, so its transport went, and an errors-shaped field on a type no producer
+      returns is a `RecordReadField` read off the value. Constructing the developer's payload
+      class, `PayloadClass` under `RouterDispatched` with its constructor and setter reflection,
+      `PayloadAccessor` and the generated `ErrorRouter.dispatch` went with it.
   * **A payload's fields are stated** `open`, after the producers. `graphitron_payload_channel`: one
     row per field of a type a producer returns, with its role, errors or data, and its element,
     table, record, id or other. Total over the fields, an element no rule recognises being a row of

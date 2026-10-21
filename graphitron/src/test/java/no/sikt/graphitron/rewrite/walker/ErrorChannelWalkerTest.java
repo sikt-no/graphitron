@@ -166,7 +166,7 @@ class ErrorChannelWalkerTest {
     private static OutcomeType outcome(String typeName, String errorsFieldName, ErrorType... errorTypes) {
         var loc = new SourceLocation(1, 1);
         var errorsField = new ChildField.ErrorsField(
-            typeName, errorsFieldName, loc, List.of(errorTypes), new ChildField.Transport.WrapperArm());
+            typeName, errorsFieldName, loc, List.of(errorTypes));
         var backing = new GraphitronType.PojoResultType.Backed(typeName, loc, "com.example." + typeName);
         return new OutcomeType(backing, errorsField, List.of());
     }

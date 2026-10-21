@@ -1228,7 +1228,7 @@ public sealed interface ChildField extends OutputField
         SourceKey sourceKey,
         ServiceKeySource keySource,
         LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements TableTargetField, MethodBackedField, BatchKeyField, WithErrorChannel {
         public ServiceTableField {
             java.util.Objects.requireNonNull(sourceKey, "sourceKey");
@@ -1280,7 +1280,7 @@ public sealed interface ChildField extends OutputField
         SourceKey sourceKey,
         ServiceKeySource keySource,
         LoaderRegistration loaderRegistration,
-        Optional<ErrorChannel.RouterDispatched> errorChannel
+        Optional<ErrorChannel.Mapped> errorChannel
     ) implements ChildField, MethodBackedField, BatchKeyField, WithErrorChannel {
         public ServiceRecordField {
             java.util.Objects.requireNonNull(sourceKey, "sourceKey");
@@ -1498,7 +1498,7 @@ public sealed interface ChildField extends OutputField
      * {@code OUTCOME_SUCCESS} for an errors-bearing carrier returning the typed {@code Outcome}
      * wrapper), carried on the leaf rather than recomputed at emit because the passthrough
      * fetcher and the {@code OutcomeChildArmSwitch} validator both read it. The sibling errors
-     * field rides {@link Transport.WrapperArm}.
+     * field is an {@link ErrorsField}.
      */
     record RecordCompositeField(
         String parentTypeName,
@@ -1574,31 +1574,22 @@ public sealed interface ChildField extends OutputField
      * not survive into the model; downstream the carrier-side
      * {@link ErrorChannel} consumes this list uniformly.
      *
-     * <p>{@code transport} discriminates at emit time between the two ways graphql-java can
-     * surface the errors list to the field's data fetcher: a property accessor off the
-     * parent payload (a developer payload class carries the list) or the {@code Outcome.ErrorList}
-     * arm of the {@code Outcome} the producing fetcher returned. The arm is selected by
-     * {@code FieldBuilder.liftToErrorsField} at classify time, then printed by
-     * {@code FetcherEmitter.dataFetcherValue} via an exhaustive switch on {@link Transport}. The
-     * {@link Transport.WrapperArm} arm fires when the parent payload has an active channel (a
-     * root {@code @service}-produced payload, or a payload bound to a DML, {@code @service} or
-     * {@code @routine} producer), routed through {@code FieldBuilder.transportForParent}; the
-     * {@link Transport.PayloadAccessor} arm fires for plain class-backed parents whose
-     * errors-shaped field is a developer-owned slot.
+     * <p>Only an outcome's errors field is one: a type a service, a write or a routine returns
+     * with exactly one errors field, at a root or below one. Its fetcher reads
+     * {@code ErrorList.errors} off the {@code Outcome} the producing fetcher returned, null on the
+     * success arm, and every sibling projects {@code Success.value} (pinned by
+     * {@code GraphitronSchemaValidator.validateOutcomeChildArmSwitch}). An errors-shaped field on
+     * a type no producer returns is a {@link RecordReadField}, read off the value like any other.
      */
     record ErrorsField(
         String parentTypeName,
         String name,
         SourceLocation location,
-        List<GraphitronType.ErrorType> errorTypes,
-        Transport transport
+        List<GraphitronType.ErrorType> errorTypes
     ) implements ChildField {
 
         public ErrorsField {
             errorTypes = List.copyOf(errorTypes);
-            if (transport == null) {
-                throw new IllegalArgumentException("ErrorsField: transport must be non-null");
-            }
         }
         /**
          * The list this field hands down is heterogeneous: one developer exception class per
@@ -1610,35 +1601,5 @@ public sealed interface ChildField extends OutputField
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.NoClaim();
         }
-    }
-
-    /**
-     * Where the errors-field data fetcher reads its value from at request time. Sealed so
-     * {@code FetcherEmitter.dataFetcherValue}'s {@code ErrorsField} arm dispatches with
-     * compiler-enforced exhaustiveness; an added arm forces every consumer site to
-     * acknowledge it.
-     *
-     * <ul>
-     *   <li>{@link PayloadAccessor} : the parent payload exposes the errors list as a
-     *       property reachable via graphql-java's default {@code PropertyDataFetcher}
-     *       (record accessor, JavaBean getter, or public field).</li>
-     *   <li>{@link WrapperArm} : the errors ride an {@code Outcome.ErrorList} arm on
-     *       {@code env.getSource()}, paired with an {@link ErrorChannel.Mapped} catch arm.</li>
-     * </ul>
-     */
-    sealed interface Transport {
-        /** The errors list rides on the parent payload's errors-named property. */
-        record PayloadAccessor() implements Transport {}
-
-        /**
-         * The errors list rides on an {@code Outcome.ErrorList} arm carried as the
-         * {@code env.getSource()} of an in-scope outcome type (a payload returned by a root
-         * {@code @service}, DML or {@code @routine} producer). The errors-field fetcher reads {@code ErrorList.errors} off the non-null
-         * {@code Outcome} source; sibling data fields project {@code Success.value} (rendering null
-         * on the error arm). Pairs with an {@link ErrorChannel.Mapped} catch arm. Every immediate
-         * child of such an outcome type must arm-switch (pinned by
-         * {@code GraphitronSchemaValidator.validateOutcomeChildArmSwitch}).
-         */
-        record WrapperArm() implements Transport {}
     }
 }

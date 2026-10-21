@@ -156,8 +156,7 @@ class TenantRoutedFetcherPipelineTest {
                 schema.field("Mutation", "retitleFilms")).errorChannel())
             .get().isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
         assertThat(((no.sikt.graphitron.rewrite.model.ChildField.ErrorsField)
-                schema.field("FilmsRetitledPayload", "errors")).transport())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+                schema.field("FilmsRetitledPayload", "errors"))).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         assertReturnsOutcome(method(schema, "MutationFetchers", "retitleFilms"));
     }
 

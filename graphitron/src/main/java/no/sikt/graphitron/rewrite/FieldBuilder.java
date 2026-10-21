@@ -270,9 +270,9 @@ class FieldBuilder {
 
     /**
      * The one-question presence probe over the emitted-carrier producer arms; see
-     * {@link TypeBuilder#emittedCarrierBinding}. The {@code activeChannel} gate in
-     * {@link #transportForParent} reads this instead of a per-arm disjunction, so a missed arm
-     * cannot silently bind the carrier's {@code errors} field to {@code PayloadAccessor}.
+     * {@link TypeBuilder#emittedCarrierBinding}. {@link #isOutcome} reads this instead of a
+     * per-arm disjunction, so a missed arm cannot silently read the carrier's {@code errors}
+     * field off the {@code Outcome} as a plain property.
      */
     java.util.Optional<no.sikt.graphitron.rewrite.model.EmittedCarrierBinding> emittedCarrierBinding(
             String sdlTypeName) {
@@ -536,222 +536,6 @@ class FieldBuilder {
         } finally {
             visited.remove(iot.getName());
         }
-    }
-
-    private static String formatCtorSignatures(java.lang.reflect.Constructor<?>[] ctors) {
-        return java.util.Arrays.stream(ctors)
-            .map(c -> c.getDeclaringClass().getSimpleName() + "("
-                + java.util.Arrays.stream(c.getParameterTypes())
-                    .map(Class::getSimpleName)
-                    .collect(Collectors.joining(", "))
-                + ")")
-            .collect(Collectors.joining("; "));
-    }
-
-    /**
-     * Outcome of {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape} resolution
-     * for a payload class. {@code Resolved} carries the resolved shape (an
-     * {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor} or
-     * {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean}). {@code
-     * Reject} carries a human-readable reason suitable for surfacing on an
-     * {@code UnclassifiedField}.
-     */
-    sealed interface PayloadConstructionShapeResult {
-        record Resolved(no.sikt.graphitron.rewrite.model.PayloadConstructionShape shape)
-            implements PayloadConstructionShapeResult {}
-        record Reject(String reason) implements PayloadConstructionShapeResult {}
-    }
-
-    /**
-     * One SDL payload field, gathered once by {@link #resolveErrorChannel} and threaded into the
-     * construction-shape resolution. Carries the field's own SDL name, the Java member base name
-     * it binds to ({@code @field(name:)} value when present, the SDL name otherwise, per the house
-     * idiom {@code argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName())}), and whether the
-     * {@code @field} directive is applied at all.
-     *
-     * <p>{@code fieldDirectivePresent} is load-bearing and cannot be reconstructed from the first
-     * two components: {@code javaBaseName.equals(sdlFieldName)} is ambiguous between "no directive"
-     * and "a directive whose value coincides with the SDL field name". The ctor-arm
-     * positional-vs-name-match fork (contract rule 2) and the diagnostics parenthetical (rule 4)
-     * both key on presence, not on whether the resolved base diverged, exactly as the read side
-     * does via {@code hasAppliedDirective} at the scalar/enum arm.
-     *
-     * <p>Deliberately FieldBuilder-internal (not an {@code ErrorChannel}-model type): the sole
-     * consumer is the one classify-time site here, and what lands on the model is the resolved
-     * artifact (the setter {@code Method} on {@code SetterBinding}, the int on
-     * {@code ErrorsSlot.CtorParameterIndex}), never the carrier itself.
-     */
-    record PayloadSdlField(String sdlFieldName, String javaBaseName, boolean fieldDirectivePresent) {}
-
-    /**
-     * Resolves the {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape} for a
-     * payload class. Predicates run in order:
-     *
-     * <ol>
-     *   <li><b>All-fields-ctor predicate</b>. Records always hit this. Hand-rolled POJOs hit it
-     *       when the canonical ctor is unambiguous: either the class declares exactly one
-     *       constructor, or the unique ctor whose parameter count matches the SDL field count
-     *       is the canonical one. Returns
-     *       {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor}.</li>
-     *   <li><b>Mutable-bean predicate</b>. The class declares a public no-arg constructor
-     *       <em>and</em> a Java-bean setter accepting one parameter for every SDL field. The
-     *       setter base is the {@code @field(name:)} value when present, the SDL field name
-     *       otherwise ({@code setX} for base {@code x}); because a setter must <em>exist</em> for
-     *       every SDL field, a data-field directive participates in the shape's existence check
-     *       (a payload whose setter matches the SDL name while the directive names something else
-     *       rejects, in parity with the read side). Returns
-     *       {@link no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean}.</li>
-     * </ol>
-     *
-     * <p>When predicate 1 matches it short-circuits and {@code AllFieldsCtor} wins: records
-     * always present the all-fields ctor; the setter shape exists as a bridge for
-     * {@code graphitron-codegen-parent}-style beans. Both shapes yield equivalent payload
-     * instances. Consumers who want the setter shape exclusively drop the all-fields ctor from
-     * their class. Neither predicate matching is the only rejection mode.
-     *
-     * <p>{@code sdlFields} carries the SDL payload's fields in declaration order (SDL name, the
-     * remapped Java base name from {@code @field(name:)}, and directive presence); when the
-     * payload's SDL type isn't an object (e.g. transient classifier callers without a fully
-     * resolved schema fragment), pass {@code null} to skip the setter predicate. Only the
-     * mutable-bean arm reads {@code javaBaseName} (the all-fields-ctor arm is arity-selected and
-     * name-independent; its directive handling happens downstream in
-     * {@link #buildErrorChannelCtorArm}).
-     */
-    static PayloadConstructionShapeResult resolvePayloadConstructionShape(
-            Class<?> payloadCls, java.util.List<PayloadSdlField> sdlFields) {
-        var ctors = payloadCls.getDeclaredConstructors();
-        if (ctors.length == 0) {
-            return new PayloadConstructionShapeResult.Reject(
-                "payload class '" + payloadCls.getName() + "' has no declared constructors");
-        }
-        int sdlFieldCount = sdlFields == null ? -1 : sdlFields.size();
-        // Predicate 1: all-fields ctor. A class with a single declared ctor takes the trivial
-        // path only when (a) the SDL field count is unknown (callers that pass null), or
-        // (b) the ctor's parameter count matches the SDL field count. The arity check keeps a
-        // class with only a public no-arg ctor a setter-shape candidate, not a degenerate
-        // "canonical" all-fields ctor.
-        java.lang.reflect.Constructor<?> allFieldsCtor = null;
-        if (ctors.length == 1) {
-            if (sdlFieldCount < 0 || ctors[0].getParameterCount() == sdlFieldCount) {
-                allFieldsCtor = ctors[0];
-            }
-        } else {
-            var matches = java.util.Arrays.stream(ctors)
-                .filter(c -> c.getParameterCount() == sdlFieldCount)
-                .toList();
-            if (matches.size() == 1) {
-                allFieldsCtor = matches.get(0);
-            }
-        }
-        if (allFieldsCtor != null) {
-            return new PayloadConstructionShapeResult.Resolved(
-                new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor(allFieldsCtor));
-        }
-        // Predicate 2: mutable-bean shape (no-arg ctor + per-SDL-field setters).
-        var beanResult = tryMutableBean(payloadCls, sdlFields, ctors);
-        if (beanResult != null) {
-            return beanResult;
-        }
-        // Neither shape matches.
-        String prefix = "payload class '" + payloadCls.getName() + "' has " + ctors.length
-            + " declared constructors";
-        String guidance = ". Convert the class to a Java record (which always declares one"
-            + " canonical constructor), remove the extra constructor(s) so only the all-fields"
-            + " constructor remains, or add a public no-arg constructor plus Java-bean setters"
-            + " for every SDL field";
-        var matches = java.util.Arrays.stream(ctors)
-            .filter(c -> c.getParameterCount() == sdlFieldCount)
-            .toList();
-        if (matches.isEmpty()) {
-            return new PayloadConstructionShapeResult.Reject(prefix
-                + " but none has parameter count " + sdlFieldCount
-                + " matching the SDL field count; the carrier requires a canonical (all-fields)"
-                + " constructor or a mutable-bean shape — found: " + formatCtorSignatures(ctors)
-                + guidance);
-        }
-        return new PayloadConstructionShapeResult.Reject(prefix
-            + " with parameter count " + sdlFieldCount + " matching the SDL field count;"
-            + " the canonical (all-fields) constructor is ambiguous — found: "
-            + formatCtorSignatures(ctors) + guidance);
-    }
-
-    /**
-     * Tries the mutable-bean predicate: a public no-arg constructor plus a Java-bean setter for
-     * every SDL field. The setter base is the field's {@code @field(name:)} value when present,
-     * the SDL field name otherwise, so a divergent Java member name binds when the directive names
-     * it and a directive naming a member the class does not expose rejects. Returns
-     * {@code Resolved(MutableBean)} on match, a structured {@code Reject} when a partial match is
-     * detected (no-arg ctor exists but one or more SDL-field setters are missing or mis-typed;
-     * the reject string carries the {@code (remapped to '<base>' by @field)} parenthetical when a
-     * remap was in play), or {@code null} when no no-arg ctor exists (so the caller can fall
-     * through to the "neither predicate" reject path).
-     */
-    private static PayloadConstructionShapeResult tryMutableBean(
-            Class<?> payloadCls,
-            java.util.List<PayloadSdlField> sdlFields,
-            java.lang.reflect.Constructor<?>[] ctors) {
-        if (sdlFields == null || sdlFields.isEmpty()) {
-            return null;
-        }
-        java.lang.reflect.Constructor<?> noArgCtor = java.util.Arrays.stream(ctors)
-            .filter(c -> c.getParameterCount() == 0
-                && java.lang.reflect.Modifier.isPublic(c.getModifiers()))
-            .findFirst()
-            .orElse(null);
-        if (noArgCtor == null) {
-            return null;
-        }
-        var bindings = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding>(
-            sdlFields.size());
-        for (PayloadSdlField field : sdlFields) {
-            String sdlFieldName = field.sdlFieldName();
-            // The setter base is the @field(name:) value when present, the SDL field name
-            // otherwise; a data-field directive thus participates in the shape's existence check.
-            String setterBase = field.javaBaseName();
-            String setterName = javaBeanSetterName(setterBase);
-            String remap = fieldRemapParenthetical(field);
-            var candidates = java.util.Arrays.stream(payloadCls.getMethods())
-                .filter(m -> m.getName().equals(setterName) && m.getParameterCount() == 1)
-                .toList();
-            if (candidates.isEmpty()) {
-                return new PayloadConstructionShapeResult.Reject(
-                    "payload class '" + payloadCls.getName()
-                        + "' has a public no-arg constructor but no setter '" + setterName
-                        + "(...)' for SDL field '" + sdlFieldName + "'" + remap + "; the mutable-bean"
-                        + " shape requires a Java-bean setter for every SDL field");
-            }
-            if (candidates.size() > 1) {
-                return new PayloadConstructionShapeResult.Reject(
-                    "payload class '" + payloadCls.getName()
-                        + "' has multiple overloads of '" + setterName + "(...)' for SDL field '"
-                        + sdlFieldName + "'" + remap + "; the mutable-bean shape requires a unique"
-                        + " single-arg setter");
-            }
-            var setter = candidates.get(0);
-            boolean acceptsOptional = setter.getParameterTypes()[0] == java.util.Optional.class;
-            bindings.add(new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding(
-                sdlFieldName, setter, acceptsOptional));
-        }
-        return new PayloadConstructionShapeResult.Resolved(
-            new no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean(
-                noArgCtor, bindings));
-    }
-
-    /** Java-bean setter name: base "rating" maps to "setRating" (first letter upper-cased). */
-    private static String javaBeanSetterName(String base) {
-        return "set" + Character.toUpperCase(base.charAt(0)) + base.substring(1);
-    }
-
-    /**
-     * The {@code (remapped to '<base>' by @field)} parenthetical for a reject string, or the empty
-     * string when no remap is in play. Shown only when the directive is present
-     * <em>and</em> the resolved base diverges from the SDL field name, so a failed override reads
-     * as an override rather than a plain missing member.
-     */
-    private static String fieldRemapParenthetical(PayloadSdlField field) {
-        return field.fieldDirectivePresent() && !field.javaBaseName().equals(field.sdlFieldName())
-            ? " (remapped to '" + field.javaBaseName() + "' by @field)"
-            : "";
     }
 
     private static String formatAsConnectionSameTableWarning(
@@ -5095,46 +4879,33 @@ class FieldBuilder {
                 new ErrorChannelWalkerError.NonNullableErrorsField(parentTypeName, name));
         }
 
-        var transport = transportForParent(fieldDef, parentTypeName);
-        return new ErrorsField(parentTypeName, name, location, errorTypes, transport);
-    }
-
-    /**
-     * Whether {@code payloadTypeName} is the (unwrapped) return type of a root {@code @service}
-     * field on Query or Mutation. Read directly off the assembled schema so it is independent of
-     * field-classification order; the payload-side {@code WrapperArm} transport and the producing
-     * field's {@link ErrorChannel.Mapped} channel agree because both derive from this same fact.
-     */
-    private boolean isRootServiceProducedPayload(String payloadTypeName) {
-        // Delegate to the single producer of this fact on BuildContext, shared with
-        // TypeBuilder.carrierBinding's composite-carrier gate, so the payload-side WrapperArm
-        // transport and the carrier recognition cannot drift.
-        return ctx.isServiceProducedPayload(payloadTypeName);
-    }
-
-    /**
-     * The errors field's transport. A parent with an active error channel rides the typed
-     * {@code Outcome} wrapper ({@link ChildField.Transport.WrapperArm}): a payload returned by a
-     * root {@code @service} field (read straight off the schema, order-independent; this covers
-     * the class-backed scalar payloads the producer bindings do not ground), or a payload bound to
-     * an emitted-carrier producer (an {@link no.sikt.graphitron.rewrite.model.EmittedCarrierBinding}
-     * arm: DML, {@code @service} or {@code @routine}). This is the payload-side counterpart of
-     * the producing field's {@link ErrorChannel.Mapped} channel; the two flip together. Every
-     * other parent (a plain class-backed type whose errors-shaped field is a developer-owned slot,
-     * or an orphan carrier-shaped type no producer reaches) reads a payload accessor.
-     */
-    private ChildField.Transport transportForParent(GraphQLFieldDefinition fieldDef, String parentTypeName) {
         warnIfErrorsSigil(fieldDef, parentTypeName);
-        if (isRootServiceProducedPayload(parentTypeName)
-                || emittedCarrierBinding(parentTypeName).isPresent()) {
-            return new ChildField.Transport.WrapperArm();
+        if (isOutcome(parentTypeName)) {
+            return new ErrorsField(parentTypeName, name, location, errorTypes);
         }
-        return new ChildField.Transport.PayloadAccessor();
+        // No producer catches into this type, so the list is the value's own, read like any other.
+        return new ChildField.RecordReadField(parentTypeName, name, location, returnType,
+            new no.sikt.graphitron.rewrite.model.ValueLocator.DefaultRead(name),
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
     }
 
     /**
-     * {@code @field(name: "$errors")} on an errors-shaped field once selected a transport; every
-     * errors field now derives its transport from its parent, so the sigil is inert. It still
+     * Whether {@code typeName} is an outcome: a type a producer catches into, which every field of
+     * it reads through the {@code Outcome} wrapper. A type an {@code @service} field returns, at a
+     * root or below one, read straight off the schema so it is independent of classification
+     * order; or a payload bound to an emitted-carrier producer (an
+     * {@link no.sikt.graphitron.rewrite.model.EmittedCarrierBinding} arm: DML, {@code @service} or
+     * {@code @routine}). The producing field's {@link ErrorChannel.Mapped} channel is the other
+     * half; the two flip together.
+     */
+    private boolean isOutcome(String typeName) {
+        return ctx.isServiceProducedPayloadAnywhere(typeName)
+            || emittedCarrierBinding(typeName).isPresent();
+    }
+
+    /**
+     * {@code @field(name: "$errors")} on an errors-shaped field once selected a transport; whether
+     * a field is an outcome's errors field now follows from its parent, so the sigil is inert. It still
      * parses, so a schema carrying it keeps building, and this warning says it can go.
      */
     private void warnIfErrorsSigil(GraphQLFieldDefinition fieldDef, String parentTypeName) {
@@ -5152,33 +4923,9 @@ class FieldBuilder {
     // ===== Carrier classifier: ErrorChannel resolution =====
 
     /**
-     * Outcome of the carrier-side {@code ErrorChannel} resolution. Three terminal states:
-     *
-     * <ul>
-     *   <li>{@link NoChannel} — the payload has no {@code errors}-shaped field; the carrier
-     *       proceeds with {@code Optional.empty()} and the emitter wraps the body in
-     *       {@code ErrorRouter.redact}.</li>
-     *   <li>{@link Channel} — the payload has an {@code errors}-shaped field and the
-     *       developer-supplied payload class's all-fields constructor matches the contract.</li>
-     *   <li>{@link Reject} — the payload has an {@code errors}-shaped field but the
-     *       constructor shape rejects (missing class, multiple matching constructors, no
-     *       errors slot, multiple errors slots). The caller turns this into an
-     *       {@code UnclassifiedField} with the carried reason.</li>
-     * </ul>
-     */
-    private sealed interface ErrorChannelResult {
-        record NoChannel() implements ErrorChannelResult {}
-        record Channel(ErrorChannel.RouterDispatched channel) implements ErrorChannelResult {}
-        record Reject(String reason) implements ErrorChannelResult {}
-    }
-
-    private static final ErrorChannelResult NO_CHANNEL = new ErrorChannelResult.NoChannel();
-
-    /**
      * Result of resolving an {@code @service} outcome field's channel onto the typed
-     * {@code Outcome} wrapper transport. Three terminal states mirroring {@link ErrorChannelResult},
-     * except the channel arm is the new {@link ErrorChannel.Mapped} and the reject arm carries the
-     * <em>typed</em> {@link ErrorChannelWalkerError} (preserved into {@code UnclassifiedField} so the
+     * {@code Outcome} wrapper transport: no errors field, a {@link ErrorChannel.Mapped} channel,
+     * or a rejection carrying the <em>typed</em> {@link ErrorChannelWalkerError} (preserved into {@code UnclassifiedField} so the
      * LSP projector keeps its wire {@code code}, the way {@code buildServiceField} already preserves
      * {@code ServiceMethodCallError}).
      */
@@ -5234,7 +4981,7 @@ class FieldBuilder {
         var errorsLocation = errorsFieldDef.getDefinition() != null
             ? errorsFieldDef.getDefinition().getSourceLocation() : null;
         var errorsField = new ChildField.ErrorsField(result.returnTypeName(), errorsFieldDef.getName(),
-            errorsLocation, mappedErrorTypes, new ChildField.Transport.WrapperArm());
+            errorsLocation, mappedErrorTypes);
         // successProjection is left empty here, not "no data fields": the walker reads only
         // errorsField off the OutcomeType, and the nullable-success-projection invariant is
         // already enforced inline above where SDL nullability is visible.
@@ -5269,296 +5016,6 @@ class FieldBuilder {
     }
 
     /**
-     * Resolves the carrier-side {@link ErrorChannel} for a fetcher-emitting field. Walks the
-     * payload type's GraphQL field defs to find an
-     * {@code errors}-shaped field (structural match by polymorphic-of-all-{@code @error} list
-     * shape), then reflects on the developer-supplied payload class to identify the
-     * canonical-constructor errors slot and capture each parameter's default literal.
-     *
-     * <p>Channel detection is structural (not name-based) and reuses the {@link #liftToErrorsField}
-     * predicate so the carrier classifier and the child classifier agree on what counts as an
-     * {@code ErrorsField}. The first matching field on the payload populates {@code mappedErrorTypes};
-     * a second matching field is rejected at child classification time, not here.
-     *
-     * <p>The errors slot is identified positionally: the SDL {@code ErrorsField}'s
-     * declaration index in the payload type maps directly to the canonical-constructor
-     * parameter at the same index. Records preserve declaration order; hand-rolled payload
-     * classes are expected to expose a canonical constructor matching SDL field order. The
-     * slot's element type is {@code Object} (sources mix matched throwables and
-     * {@code GraphQLError}s; the only universal supertype is {@code Object}); the only
-     * structural check on the parameter is that it is a List/Iterable so the catch arm's
-     * synthesized payload-factory lambda compiles.
-     */
-    private ErrorChannelResult resolveErrorChannel(ReturnTypeRef returnType) {
-        // Channel detection runs against class-backed payloads; @table payloads can in principle
-        // carry an errors field too, but synthesizing a payload-factory there requires shape
-        // machinery (jOOQ Record → application record) that does not exist. Surfaces as
-        // NoChannel; the redact arm is the fallback.
-        if (!(returnType instanceof ReturnTypeRef.ResultReturnType result)) {
-            return NO_CHANNEL;
-        }
-        if (result.fqClassName() == null) {
-            return NO_CHANNEL;
-        }
-
-        var payloadGqlType = ctx.schema.getType(result.returnTypeName());
-        if (!(payloadGqlType instanceof GraphQLObjectType payloadObj)) {
-            return NO_CHANNEL;
-        }
-
-        // Walk the payload's SDL fields in declaration order to find the errors-shaped field.
-        // The SDL declaration index of that field is the canonical-constructor's errors-slot
-        // index (records preserve declaration order; hand-rolled
-        // payload classes are expected to expose a canonical constructor matching SDL order).
-        List<ErrorType> mappedErrorTypes = null;
-        int errorsFieldIndex = -1;
-        var sdlFields = payloadObj.getFieldDefinitions();
-        for (int i = 0; i < sdlFields.size(); i++) {
-            var detected = ctx.detectErrorsFieldShape(sdlFields.get(i));
-            if (detected != null) {
-                mappedErrorTypes = detected;
-                errorsFieldIndex = i;
-                break;
-            }
-        }
-        if (mappedErrorTypes == null) {
-            return NO_CHANNEL;
-        }
-
-        // Channel-level reject rule 7 (handler cardinality). Run before payload-class reflection so
-        // a misconfigured channel is reported on its own terms rather than masked by a
-        // constructor-shape rejection downstream.
-        String channelReject = checkChannelLevelHandlerRules(mappedErrorTypes);
-        if (channelReject != null) {
-            return new ErrorChannelResult.Reject(channelReject);
-        }
-        // Rule 8: duplicate match-criteria across the flattened handler list.
-        String dupReject = checkDuplicateMatchCriteria(mappedErrorTypes);
-        if (dupReject != null) {
-            return new ErrorChannelResult.Reject(dupReject);
-        }
-        // Per-(channel, @error type, handler) source-class accessor reflection check.
-        // Walks each declared SDL field on each @error type and verifies the handler's source
-        // class exposes a PropertyDataFetcher-visible accessor. path and message are populated
-        // by per-@error-type synthesised DataFetchers and are exempt.
-        String accessorReject = checkErrorTypeSourceAccessors(mappedErrorTypes);
-        if (accessorReject != null) {
-            return new ErrorChannelResult.Reject(accessorReject);
-        }
-
-        Class<?> payloadCls;
-        try {
-            // nameability: exempt (payload class from a reflected service signature)
-            payloadCls = Class.forName(result.fqClassName(), false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return new ErrorChannelResult.Reject(
-                "payload class '" + result.fqClassName() + "' could not be loaded");
-        }
-
-        // Records always declare a single canonical constructor; hand-rolled class-backed POJOs may
-        // declare extras (e.g. a no-arg constructor alongside the all-fields one). The helper
-        // disambiguates by matching parameter count to the SDL field count, then falls back to
-        // the mutable-bean predicate (no-arg ctor + per-SDL-field setters). AllFieldsCtor wins
-        // when both shapes match (canonical-over-bridge precedence).
-        //
-        // Gathering stays builder-internal: each SDL field becomes a PayloadSdlField carrying its
-        // SDL name, the @field(name:)-remapped Java base name (house idiom
-        // argString(...).orElse(getName())), and directive presence. Only this one classify-time
-        // site reads the carrier; what lands on the model is the resolved artifact (setter Method /
-        // ctor index), never the carrier.
-        var sdlFieldCarriers = sdlFields.stream()
-            .map(f -> new PayloadSdlField(
-                f.getName(),
-                argString(f, DIR_FIELD, ARG_NAME).orElse(f.getName()),
-                f.hasAppliedDirective(DIR_FIELD)))
-            .toList();
-        // Contract rule 3: a present-but-blank @field(name: "") on any payload field rejects the
-        // channel. It can name no Java member, and silently falling back to
-        // the SDL name would ignore a directive the author explicitly wrote.
-        for (var carrier : sdlFieldCarriers) {
-            if (carrier.fieldDirectivePresent() && carrier.javaBaseName().isBlank()) {
-                return new ErrorChannelResult.Reject(
-                    "payload class '" + result.fqClassName() + "' SDL field '"
-                        + carrier.sdlFieldName() + "' carries @field(name:) with a blank value;"
-                        + " give it the Java member name to bind (constructor parameter / Java-bean"
-                        + " setter), or drop the directive to bind by the field's own name");
-            }
-        }
-        var shapeResult = resolvePayloadConstructionShape(payloadCls, sdlFieldCarriers);
-        if (shapeResult instanceof PayloadConstructionShapeResult.Reject r) {
-            return new ErrorChannelResult.Reject(r.reason());
-        }
-        var shape = ((PayloadConstructionShapeResult.Resolved) shapeResult).shape();
-
-        // ClassName.get walks getEnclosingClass(), so a nested payload resolves to Outer.Nested
-        // (JLS-legal) rather than the binary Outer$Nested that bestGuess would emit verbatim and
-        // that javac cannot resolve; payloadCls is already loaded above.
-        var payloadClassName = ClassName.get(payloadCls);
-        String mappingsConstantName =
-            no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(payloadCls.getSimpleName());
-
-        return switch (shape) {
-            case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc ->
-                buildErrorChannelCtorArm(result, afc, sdlFieldCarriers.get(errorsFieldIndex),
-                    errorsFieldIndex, mappedErrorTypes, payloadClassName, mappingsConstantName);
-            case no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb ->
-                buildErrorChannelBeanArm(result, mb, errorsFieldIndex, mappedErrorTypes,
-                    payloadClassName, mappingsConstantName);
-        };
-    }
-
-    private static ErrorChannelResult buildErrorChannelCtorArm(
-            ReturnTypeRef.ResultReturnType result,
-            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.AllFieldsCtor afc,
-            PayloadSdlField errorsSdlField,
-            int errorsFieldIndex,
-            List<ErrorType> mappedErrorTypes,
-            ClassName payloadClassName,
-            String mappingsConstantName) {
-        var ctor = afc.ctor();
-        var parameters = ctor.getParameters();
-        var genericParameterTypes = ctor.getGenericParameterTypes();
-        // Contract rule 2: ctor selection by arity is name-independent, so the errors slot's
-        // position is the only place the directive is load-bearing. Compute one resolved index
-        // and feed it to BOTH collectDefaultedSlots and ErrorsSlot.CtorParameterIndex — they
-        // agree only because the SDL index equals the ctor index by convention; if only the
-        // slot switched to the resolved index, the emitter would place errors at the resolved slot
-        // while defaultsByIndex default-fills it and leaves the SDL-index slot unfilled (a
-        // mis-constructed payload that still compiles).
-        //
-        // No directive: the SDL declaration index stands (status quo positional rule). Presence is
-        // by fieldDirectivePresent (not base-vs-SDL divergence), matching the read side: a
-        // @field(name:) whose value coincides with the SDL name still takes the present branch.
-        int resolvedErrorsCtorIndex;
-        if (errorsSdlField.fieldDirectivePresent()) {
-            String base = errorsSdlField.javaBaseName();
-            String[] paramNames = ctorParameterNames(ctor);
-            if (paramNames == null) {
-                // No name info (non-record POJO without -parameters). Falling back to position
-                // here would silently ignore a directive the author put on the very slot being
-                // resolved.
-                return new ErrorChannelResult.Reject(
-                    "payload class '" + result.fqClassName() + "' errors-shaped SDL field '"
-                        + errorsSdlField.sdlFieldName() + "' carries @field(name: '" + base
-                        + "') but the constructor exposes no parameter names (compiled without"
-                        + " -parameters and not a record), so the named errors slot cannot be"
-                        + " resolved. Compile the payload with -parameters, convert it to a record,"
-                        + " or use the mutable-bean (no-arg ctor + setters) shape");
-            }
-            int match = -1;
-            for (int i = 0; i < paramNames.length; i++) {
-                if (base.equals(paramNames[i])) { match = i; break; }
-            }
-            if (match < 0) {
-                return new ErrorChannelResult.Reject(
-                    "payload class '" + result.fqClassName() + "' errors-shaped SDL field '"
-                        + errorsSdlField.sdlFieldName() + "' (remapped to '" + base
-                        + "' by @field) matches no constructor parameter; candidate parameter"
-                        + " names: " + java.util.Arrays.toString(paramNames));
-            }
-            resolvedErrorsCtorIndex = match;
-        } else {
-            resolvedErrorsCtorIndex = errorsFieldIndex;
-        }
-        // The slot's element type is Object; the only structural check left is that the parameter
-        // is a List/Iterable so the catch arm's synthesized payload-factory lambda compiles. Both
-        // checks run against the resolved index.
-        if (resolvedErrorsCtorIndex >= parameters.length) {
-            return new ErrorChannelResult.Reject(
-                "payload class '" + result.fqClassName()
-                    + "' has fewer constructor parameters (" + parameters.length
-                    + ") than the SDL field declaration order requires; the errors-shaped SDL "
-                    + "field at index " + resolvedErrorsCtorIndex + " has no matching ctor parameter");
-        }
-        if (!Iterable.class.isAssignableFrom(parameters[resolvedErrorsCtorIndex].getType())) {
-            return new ErrorChannelResult.Reject(
-                "payload class '" + result.fqClassName()
-                    + "' parameter at index " + resolvedErrorsCtorIndex + " is "
-                    + parameters[resolvedErrorsCtorIndex].getType().getName()
-                    + "; the errors slot must be a List/Iterable so the catch arm's "
-                    + "synthesized payload-factory lambda compiles");
-        }
-        var defaultedSlots = collectDefaultedSlots(parameters, genericParameterTypes, resolvedErrorsCtorIndex);
-        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.CtorParameterIndex(resolvedErrorsCtorIndex);
-        return new ErrorChannelResult.Channel(new ErrorChannel.PayloadClass(
-            mappedErrorTypes, payloadClassName, errorsSlot, defaultedSlots, mappingsConstantName));
-    }
-
-    /**
-     * Constructor parameter names for {@link #buildErrorChannelCtorArm}'s name-match, or
-     * {@code null} when the names are not reliably available. Records always expose component
-     * names (via {@link Class#getRecordComponents()}) regardless of the {@code -parameters}
-     * compiler flag; the canonical constructor aligns positionally with the components. Non-record
-     * POJOs expose names only when compiled with {@code -parameters}
-     * ({@link java.lang.reflect.Parameter#isNamePresent()} true for every parameter).
-     */
-    private static String[] ctorParameterNames(java.lang.reflect.Constructor<?> ctor) {
-        var declaringClass = ctor.getDeclaringClass();
-        var parameters = ctor.getParameters();
-        if (declaringClass.isRecord()) {
-            var components = declaringClass.getRecordComponents();
-            if (components.length == parameters.length) {
-                String[] names = new String[components.length];
-                for (int i = 0; i < components.length; i++) {
-                    names[i] = components[i].getName();
-                }
-                return names;
-            }
-        }
-        if (parameters.length > 0
-                && java.util.Arrays.stream(parameters).allMatch(
-                    java.lang.reflect.Parameter::isNamePresent)) {
-            String[] names = new String[parameters.length];
-            for (int i = 0; i < parameters.length; i++) {
-                names[i] = parameters[i].getName();
-            }
-            return names;
-        }
-        return null;
-    }
-
-    private static ErrorChannelResult buildErrorChannelBeanArm(
-            ReturnTypeRef.ResultReturnType result,
-            no.sikt.graphitron.rewrite.model.PayloadConstructionShape.MutableBean mb,
-            int errorsFieldIndex,
-            List<ErrorType> mappedErrorTypes,
-            ClassName payloadClassName,
-            String mappingsConstantName) {
-        var bindings = mb.bindings();
-        var errorsBinding = bindings.get(errorsFieldIndex);
-        var errorsSetter = errorsBinding.setter();
-        if (!Iterable.class.isAssignableFrom(errorsSetter.getParameterTypes()[0])) {
-            return new ErrorChannelResult.Reject(
-                "payload class '" + result.fqClassName() + "' setter '" + errorsSetter.getName()
-                    + "' accepts " + errorsSetter.getParameterTypes()[0].getName()
-                    + "; the errors-slot setter must accept List/Iterable so the catch arm's "
-                    + "synthesized payload-factory compiles");
-        }
-        var nonBoundSetters = collectNonBoundSetters(bindings, errorsFieldIndex);
-        var errorsSlot = new no.sikt.graphitron.rewrite.model.ErrorsSlot.SetterMethod(
-            errorsSetter, nonBoundSetters);
-        // defaultedSlots is the ctor-arm carrier; under the setter shape the non-bound
-        // setters with their defaults travel on the slot variant, and the carrier list is empty.
-        return new ErrorChannelResult.Channel(new ErrorChannel.PayloadClass(
-            mappedErrorTypes, payloadClassName, errorsSlot, java.util.List.of(),
-            mappingsConstantName));
-    }
-
-    private static List<no.sikt.graphitron.rewrite.model.NonBoundSetter> collectNonBoundSetters(
-            List<no.sikt.graphitron.rewrite.model.PayloadConstructionShape.SetterBinding> bindings,
-            int boundIndex) {
-        var out = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.NonBoundSetter>(
-            bindings.size() - 1);
-        for (int i = 0; i < bindings.size(); i++) {
-            if (i == boundIndex) continue;
-            var b = bindings.get(i);
-            out.add(new no.sikt.graphitron.rewrite.model.NonBoundSetter(
-                b.setter(), defaultLiteralFor(b.setter().getParameterTypes()[0])));
-        }
-        return out;
-    }
-
-    /**
      * Channel-level reject rules that span multiple {@code @error} types in the same
      * channel (per-type shape rules are parse-time). Runs after the carrier classifier has resolved
      * {@code mappedErrorTypes}; returns a non-null reason string when a rule fires, or
@@ -5583,8 +5040,8 @@ class FieldBuilder {
      */
     static String checkChannelLevelHandlerRules(List<ErrorType> mappedErrorTypes) {
         // Rule 7 (multiple VALIDATION handlers). The single implementation lives in the walker's
-        // internal helper; this method delegates so the DML path and the PayloadClass path share
-        // one body with the ErrorChannelWalker.
+        // internal helper; this method delegates so the DML path shares one body with the
+        // ErrorChannelWalker.
         return no.sikt.graphitron.rewrite.walker.internal.ChannelRuleChecks
             .checkMultiValidation(mappedErrorTypes);
     }
@@ -5618,193 +5075,33 @@ class FieldBuilder {
     }
 
     /**
-     * Per-(channel, @error type, handler) source-class accessor reflection check.
+     * The channel of a child {@code @service} field, resolved onto the {@code Outcome} wrapper as a
+     * root one's is ({@link #resolveServiceOutcomeChannel}), then {@link #checkDeclaredCheckedExceptions}
+     * against it, then {@code builder} with the channel. A child producer whose return has an
+     * errors field catches into it.
      *
-     * <p>For each {@code (mappedErrorType, handler)} pair in the channel, looks up each
-     * declared SDL field on the {@code @error} type against the handler's source class via
-     * {@link ClassAccessorResolver}. The source class is the handler's
-     * {@link ErrorType.Handler#accessorSourceClassName()}:
-     *
-     * <ul>
-     *   <li>{@link ErrorType.ExceptionHandler}: the resolved Java class named by
-     *       {@code exceptionClassName}, or for the generated client exception its
-     *       {@linkplain ErrorType.ExceptionClass.GeneratedClientException#SUPERCLASS superclass},
-     *       since the generated class is not on the classpath before its first compile.</li>
-     *   <li>{@link ErrorType.DatabaseHandler}: {@code java.sql.SQLException} (the universal
-     *       supertype it matches in the cause chain).</li>
-     *   <li>{@link ErrorType.ValidationHandler}: {@code graphql.GraphQLError} (the wrapper's
-     *       pre-execution Jakarta validation step produces one per violation).</li>
-     * </ul>
-     *
-     * <p>{@code path} and {@code message} are exempt: the rewrite emits a synthesised
-     * per-{@code @error}-type {@code DataFetcher} for each, so they don't route through the
-     * source class's accessors. Every other declared field must resolve through
-     * {@code PropertyDataFetcher} convention on the source class; an unresolved field surfaces
-     * the carrier as {@code UnclassifiedField} naming the offending {@code @error} type,
-     * handler discriminator, field, and source class.
-     *
-     * <p>Returns the first reject reason encountered, or {@code null} when every field on
-     * every handler resolves cleanly. Each source class is loaded via {@code Class.forName} on
-     * {@code ctx.codegenLoader()}: a classpath {@code GENERIC} className was already resolved at
-     * parse time by {@code TypeBuilder.validateExceptionClass}, and every other name is a JDK or
-     * graphql-java class, so this check trusts those classes to load.
-     */
-    private String checkErrorTypeSourceAccessors(List<ErrorType> mappedErrorTypes) {
-        for (ErrorType errorType : mappedErrorTypes) {
-            var sdlType = ctx.schema.getType(errorType.name());
-            if (!(sdlType instanceof GraphQLObjectType errorObj)) {
-                continue;
-            }
-            var extraFields = errorObj.getFieldDefinitions().stream()
-                .filter(f -> !ErrorType.BUILT_IN_FIELD_NAMES.contains(f.getName()))
-                .toList();
-            if (extraFields.isEmpty()) {
-                continue;
-            }
-            for (var handler : errorType.handlers()) {
-                Class<?> sourceClass = resolveHandlerSourceClass(handler);
-                if (sourceClass == null) {
-                    continue;
-                }
-                for (var sdlField : extraFields) {
-                    var expectedReturn = errorFieldAccessorReturn(sdlField);
-                    String accessorBase = errorType.accessorBaseFor(sdlField.getName());
-                    var resolution = ClassAccessorResolver.resolve(
-                        sourceClass,
-                        accessorBase,
-                        expectedReturn,
-                        new ClassAccessorResolver.PerArgument(java.util.List.of()),
-                        ClassAccessorResolver.CandidateOrder.POJO_FIRST);
-                    if (resolution instanceof AccessorResolution.Rejected r) {
-                        String remap = accessorBase.equals(sdlField.getName()) ? ""
-                            : " (remapped to '" + accessorBase + "' by @field)";
-                        return "@error type '" + errorType.name() + "' field '"
-                            + sdlField.getName() + "'" + remap + " cannot be populated from handler "
-                            + describeHandler(handler) + " source class '"
-                            + sourceClass.getName() + "': " + r.reason();
-                    }
-                }
-            }
-        }
-        return null;
-    }
-
-    /**
-     * The handler's {@linkplain ErrorType.Handler#accessorSourceClassName() accessor source class}
-     * on the codegen classloader, or {@code null} when it cannot be loaded. Every name reaching
-     * here is one the classifier already resolved or one that is always present (a JDK class,
-     * a graphql-java supertype standing in for the generated client exception), so a miss means
-     * a broken classifier classpath rather than a state of {@code target/}.
-     */
-    private Class<?> resolveHandlerSourceClass(ErrorType.Handler handler) {
-        try {
-            // nameability: exempt (revalidates the @error className TypeBuilder.validateExceptionClass already gated, or a fixed JDK / graphql-java name)
-            return Class.forName(handler.accessorSourceClassName(), false, ctx.codegenLoader());
-        } catch (ClassNotFoundException e) {
-            return null;
-        }
-    }
-
-    /** Short fingerprint for a {@link ErrorType.Handler} used in reject reasons. */
-    private static String describeHandler(ErrorType.Handler handler) {
-        return switch (handler) {
-            case ErrorType.ExceptionHandler eh -> "{handler: GENERIC, className: \""
-                + eh.exceptionClassName() + "\"}";
-            case ErrorType.DatabaseHandler dh -> switch (dh.discriminator()) {
-                case ErrorType.DatabaseHandler.Discriminator.SqlState s ->
-                    "{handler: DATABASE, sqlState: \"" + s.sqlState() + "\"}";
-                case ErrorType.DatabaseHandler.Discriminator.VendorCode v ->
-                    "{handler: DATABASE, code: \"" + v.vendorCode() + "\"}";
-                case ErrorType.DatabaseHandler.Discriminator.Any ignored -> "{handler: DATABASE}";
-            };
-            case ErrorType.ValidationHandler ignored -> "{handler: VALIDATION}";
-        };
-    }
-
-    /**
-     * Builds the {@link no.sikt.graphitron.rewrite.model.DefaultedSlot} list for every
-     * constructor parameter except the bound slot at {@code boundSlotIndex}. Used by
-     * {@link #resolveErrorChannel} (errors slot) to capture per-non-bound-slot default
-     * literals from one reflection pass.
-     */
-    private static List<no.sikt.graphitron.rewrite.model.DefaultedSlot> collectDefaultedSlots(
-            java.lang.reflect.Parameter[] parameters,
-            java.lang.reflect.Type[] genericParameterTypes,
-            int boundSlotIndex) {
-        var slots = new java.util.ArrayList<no.sikt.graphitron.rewrite.model.DefaultedSlot>(
-            parameters.length - 1);
-        for (int i = 0; i < parameters.length; i++) {
-            if (i == boundSlotIndex) continue;
-            var p = parameters[i];
-            String paramName = p.isNamePresent() ? p.getName() : ("arg" + i);
-            no.sikt.graphitron.javapoet.TypeName paramTypeName =
-                no.sikt.graphitron.javapoet.TypeName.get(genericParameterTypes[i]);
-            slots.add(new no.sikt.graphitron.rewrite.model.DefaultedSlot(
-                i, paramName, paramTypeName, defaultLiteralFor(p.getType())));
-        }
-        return slots;
-    }
-
-    /** Language-default literal for a non-errors constructor parameter slot. */
-    private static String defaultLiteralFor(Class<?> rawType) {
-        if (!rawType.isPrimitive()) return "null";
-        if (rawType == boolean.class) return "false";
-        if (rawType == char.class) return "'\\0'";
-        if (rawType == long.class) return "0L";
-        if (rawType == float.class) return "0.0f";
-        if (rawType == double.class) return "0.0";
-        return "0";  // byte / short / int
-    }
-
-    /**
-     * Carrier-classifier helper: resolves the {@link ErrorChannel}
-     * for {@code returnType}, then dispatches to {@code builder} with the resolved channel
-     * (wrapped in {@link Optional}). When the resolution rejects, returns an
-     * {@link UnclassifiedField} with the carried reason; the caller never sees the rejection
-     * shape.
-     *
-     * <p>Used at the construction site of each {@code WithErrorChannel} variant to keep the
-     * channel-resolution logic out of the variant-specific arms.
-     */
-    private GraphitronField buildWithChannel(
-            ReturnTypeRef returnType, String parentTypeName, String fieldName,
-            SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.Function<Optional<ErrorChannel.RouterDispatched>, GraphitronField> builder) {
-        return switch (resolveErrorChannel(returnType)) {
-            case ErrorChannelResult.NoChannel ignored -> builder.apply(Optional.empty());
-            case ErrorChannelResult.Channel c -> builder.apply(Optional.of(c.channel()));
-            case ErrorChannelResult.Reject r -> new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(r.reason()));
-        };
-    }
-
-    /**
-     * Variant of {@link #buildWithChannel} for child {@code @service} variants: resolves the
-     * {@link ErrorChannel} against the field's return
-     * type, runs {@link #checkDeclaredCheckedExceptions} against the resolved channel, and
-     * forwards the channel to {@code builder}. The channel slot is wired uniformly so that
-     * check runs against a populated channel wherever the field's payload declares an
-     * {@code errors} field.
-     *
-     * <p>Sibling of {@link #buildServiceField}: that helper additionally runs the
-     * service-return strict-equality check against the SDL payload type, rejecting service
-     * methods whose return type does not match the field's declared payload. Child
-     * {@code @service} variants don't need that check (their return shapes are pinned by the
-     * catalog's strict-return guarantee), so this helper omits it.
-     *
-     * <p>Both helpers call into the same {@link #checkDeclaredCheckedExceptions} utility.
+     * <p>Sibling of {@link #buildServiceField}, which additionally holds the service's reflected
+     * return to the SDL payload type. A child {@code @service}'s return shape is pinned by the
+     * catalog's strict-return guarantee, so this helper omits that check.
      */
     private GraphitronField buildMethodBackedWithChannel(
             ReturnTypeRef returnType, no.sikt.graphitron.rewrite.model.MethodRef method,
             String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.Function<Optional<ErrorChannel.RouterDispatched>, GraphitronField> builder) {
-        Optional<ErrorChannel.RouterDispatched> channel;
-        switch (resolveErrorChannel(returnType)) {
-            case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
-            case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
-            case ErrorChannelResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(r.reason()));
+            java.util.function.Function<Optional<ErrorChannel.Mapped>, GraphitronField> builder) {
+        Optional<ErrorChannel.Mapped> channel;
+        switch (resolveServiceOutcomeChannel(returnType)) {
+            case ServiceOutcomeResult.NoChannel ignored -> channel = Optional.empty();
+            case ServiceOutcomeResult.Channel c -> channel = Optional.of(c.channel());
+            case ServiceOutcomeResult.Reject r -> {
+                return new UnclassifiedField(parentTypeName, fieldName, location, r.rejection());
             }
+        }
+        if (channel.isPresent() && returnType.wrapper().isList()) {
+            return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(
+                "@service field '" + fieldName + "' returns a list of '" + returnType.returnTypeName()
+                + "', which has an errors field: a child producer catches into one outcome, and a list"
+                + " would need one per element. Return a single payload"));
         }
         String reason = checkDeclaredCheckedExceptions(method, channel);
         if (reason != null) {
@@ -5814,7 +5111,7 @@ class FieldBuilder {
     }
 
     /**
-     * Variant of {@link #buildWithChannel} for service-backed root fields: resolves the
+     * The channel of a service-backed root field: resolves the
      * {@link ErrorChannel} (catch-arm dispatch recipe), runs the declared-checked-exception
      * match check against the resolved channel, and verifies the service method's reflected
      * return type matches the SDL payload type. Used by every root {@code @service} field
@@ -5833,8 +5130,7 @@ class FieldBuilder {
             SourceLocation location, GraphQLFieldDefinition fieldDef,
             java.util.function.BiFunction<Optional<ErrorChannel.Mapped>, no.sikt.graphitron.rewrite.model.ServiceMethodCall, GraphitronField> builder) {
         // @service outcome fields classify to ErrorChannel.Mapped via the ErrorChannelWalker
-        // (the Outcome wrapper transport) rather than PayloadClass construction. NoChannel when the
-        // payload carries no errors field.
+        // (the Outcome wrapper transport). NoChannel when the payload carries no errors field.
         Optional<ErrorChannel.Mapped> channel;
         switch (resolveServiceOutcomeChannel(returnType)) {
             case ServiceOutcomeResult.NoChannel ignored -> channel = Optional.empty();
@@ -6082,7 +5378,7 @@ class FieldBuilder {
      * checked exception is unmatched.
      */
     // Instance method (not static) so it can read `ctx.codegenLoader()`; the two callers
-    // `buildWithChannel` and `buildServiceField` are on the same class and already hold `ctx`.
+    // `buildMethodBackedWithChannel` and `buildServiceField` are on the same class and already hold `ctx`.
     // The explicit-parameter sibling lives at `CheckedExceptionMatcher.unmatched`, which
     // crosses a class boundary.
     private String checkDeclaredCheckedExceptions(
@@ -6098,31 +5394,17 @@ class FieldBuilder {
     }
 
     /**
-     * Variant of {@link #buildWithChannel} used by {@code DmlTableField} construction sites:
-     * resolves the {@link ErrorChannel} (catch-arm dispatch recipe), folds the pre-resolved
-     * {@link DmlReturnExpression} arm, and forwards both to {@code builder}. A rejection on the
-     * channel side surfaces as {@code UnclassifiedField}; {@code NoChannel} yields an empty
-     * channel.
-     *
-     * <p>The {@code DmlTableField} permits never carry a class-backed return — every
+     * The {@code DmlTableField} construction sites: folds the pre-resolved
+     * {@link DmlReturnExpression} arm and forwards it to {@code builder}. A table-bound return
+     * re-reads rows, which hold no errors, so these permits carry no channel; every
      * {@code ResultReturnType} routes through the {@code Mutation*DmlRecordField} permits, or
      * rejects at {@code MutationInputResolver.validateReturnType} before reaching this builder.
-     * {@code resolveErrorChannel} therefore returns {@code NoChannel} by construction here; the
-     * call is preserved so the model's slot stays uniformly wired.
      */
     private GraphitronField buildDmlField(
             ReturnTypeRef returnType, String parentTypeName, String fieldName,
             SourceLocation location, GraphQLFieldDefinition fieldDef,
-            java.util.function.BiFunction<DmlReturnExpression, Optional<ErrorChannel.RouterDispatched>, GraphitronField> builder,
+            java.util.function.Function<DmlReturnExpression, GraphitronField> builder,
             Optional<HelperRef.Encode> encodeReturn) {
-        Optional<ErrorChannel.RouterDispatched> channel;
-        switch (resolveErrorChannel(returnType)) {
-            case ErrorChannelResult.NoChannel ignored -> channel = Optional.empty();
-            case ErrorChannelResult.Channel c -> channel = Optional.of(c.channel());
-            case ErrorChannelResult.Reject r -> {
-                return new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(r.reason()));
-            }
-        }
         // A table-bound DML return re-fetches the written rows by primary key (the rows<Name>
         // reentry companion keys its follow-up SELECT on the RETURNING-captured PK), so a PK-less
         // table has no key to correlate on. Reject here, at the single DML chokepoint, so the
@@ -6146,7 +5428,7 @@ class FieldBuilder {
             interfaceVerdict = Optional.of(tit);
         }
         DmlReturnExpression returnExpression = buildDmlReturnExpression(returnType, encodeReturn, interfaceVerdict);
-        return builder.apply(returnExpression, channel);
+        return builder.apply(returnExpression);
     }
 
 
@@ -7071,9 +6353,9 @@ class FieldBuilder {
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok ->
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                    (rex, ch) -> new MutationField.DmlTableField(
+                    rex -> new MutationField.DmlTableField(
                         parentTypeName, name, location, rex,
-                        new OperationMember.Write.Update(inputArg, ok.carrier()), ch),
+                        new OperationMember.Write.Update(inputArg, ok.carrier()), Optional.empty()),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -7394,9 +6676,9 @@ class FieldBuilder {
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-                    (rex, ch) -> new MutationField.DmlTableField(
+                    rex -> new MutationField.DmlTableField(
                         parentTypeName, name, location, rex,
-                        new OperationMember.Write.Delete(inputArg, ok.carrier()), ch),
+                        new OperationMember.Write.Delete(inputArg, ok.carrier()), Optional.empty()),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -7789,8 +7071,8 @@ class FieldBuilder {
 
         var enc = encodeReturn;
         return buildDmlField(returnType, parentTypeName, name, location, fieldDef,
-            (rex, ch) -> new MutationField.DmlTableField(parentTypeName, name, location, rex,
-                new OperationMember.Write.Insert(tia), ch),
+            rex -> new MutationField.DmlTableField(parentTypeName, name, location, rex,
+                new OperationMember.Write.Insert(tia), Optional.empty()),
             enc);
     }
 

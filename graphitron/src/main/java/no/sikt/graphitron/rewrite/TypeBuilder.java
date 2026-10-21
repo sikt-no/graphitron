@@ -180,10 +180,9 @@ class TypeBuilder {
     /**
      * The one-question presence probe over the emitted-carrier arms: the
      * {@link no.sikt.graphitron.rewrite.model.EmittedCarrierBinding} bound to an SDL payload
-     * type, whichever producer family grounded it. This is the accessor the
-     * {@code activeChannel} gate in {@code FieldBuilder.transportForParent} reads, so a new
-     * emitted-carrier arm extends this method instead of a hand-maintained disjunction at the
-     * gate.
+     * type, whichever producer family grounded it. This is the accessor
+     * {@code FieldBuilder.isOutcome} reads, so a new emitted-carrier arm extends this method
+     * instead of a hand-maintained disjunction there.
      */
     java.util.Optional<no.sikt.graphitron.rewrite.model.EmittedCarrierBinding> emittedCarrierBinding(String sdlTypeName) {
         if (bindings == null) return java.util.Optional.empty();

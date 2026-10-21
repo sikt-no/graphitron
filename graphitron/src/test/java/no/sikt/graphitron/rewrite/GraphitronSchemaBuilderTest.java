@@ -6459,10 +6459,8 @@ class GraphitronSchemaBuilderTest {
                     .extracting(et -> et.name())
                     .containsExactly("ValidationErr", "DbErr");
                 // BehandleSakPayload is produced by a root @service field, so its errors field
-                // rides the Outcome wrapper transport (WrapperArm), not the
-                // developer-errors-slot PayloadAccessor passthrough.
-                assertThat(ef.transport())
-                    .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+                // rides the Outcome wrapper transport, an ErrorsField.
+                assertThat(ef).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
             }),
 
         INTERFACE_IMPLEMENTED_BY_ALL_ERROR_TYPES_LIFTS_TO_ERRORS_FIELD(
@@ -8654,15 +8652,13 @@ class GraphitronSchemaBuilderTest {
 
     @Test
     void mutationRoutineCarrierErrorsFieldBindsWrapperArmTransport() {
-        // The transport pin: the carrier's errors field classifies as ErrorsField with
-        // Transport.WrapperArm. This is the assertion that fails if the activeChannel gate
-        // was not widened to the routine arm — the errors field would silently fall through to
-        // PayloadAccessor, the one transport a directiveless structural carrier cannot serve —
-        // and it fails at classify time rather than three tiers later in execution.
+        // The outcome pin: the carrier's errors field classifies as ErrorsField. This is the
+        // assertion that fails if FieldBuilder.isOutcome missed the routine arm: the errors field
+        // would fall through to a plain property read, which a directiveless structural carrier
+        // cannot serve, and it fails at classify time rather than three tiers later in execution.
         var schema = build(RENT_FILM_CARRIER);
         var errors = (ErrorsField) schema.field("RentFilmPayload", "errors");
-        assertThat(errors.transport())
-            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.Transport.WrapperArm.class);
+        assertThat(errors).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
         // And the data field is the record-sourced re-fetch, correlated on the target's PK.
         var data = (BatchedTableField) schema.field("RentFilmPayload", "rental");
         assertThat(data.parentCorrelation())

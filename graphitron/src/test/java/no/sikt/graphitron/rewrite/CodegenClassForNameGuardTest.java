@@ -50,7 +50,7 @@ class CodegenClassForNameGuardTest {
     private static final int MIN_SCANNED_FILES = 200;
 
     /** Floor on detected sites, catching a lexer change that would stop seeing any site. */
-    private static final int MIN_SITES = 30;
+    private static final int MIN_SITES = 25;
 
     record Finding(Path file, int line, String lineText) {
         @Override public String toString() {

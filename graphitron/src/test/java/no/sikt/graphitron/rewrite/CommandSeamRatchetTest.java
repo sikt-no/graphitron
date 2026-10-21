@@ -105,9 +105,10 @@ class CommandSeamRatchetTest {
      * tested each leaf for a NodeId carrier retired with the stream lambda it chose between.
      * Raised 66 to 67 when the same-row table child landed: its fetcher read in
      * {@code FetcherEmitter.bindRaw}, a new leaf's one read site rather than new dispatch on an
-     * existing leaf.
+     * existing leaf. Lowered 67 to 64 when an errors field became an outcome's alone: the three
+     * probes that read an {@code ErrorsField}'s transport went with the transport.
      */
-    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 67;
+    private static final int GENERATOR_LEAF_INSTANCEOF_SITES = 64;
 
     /**
      * {@code case} patterns in {@code generators/} naming a leaf of the seven hierarchies.
@@ -146,9 +147,10 @@ class CommandSeamRatchetTest {
      * INSERT column plan: the column-list and cell-list switches over the two column carriers
      * retired, the plan already naming each column and whether its writer decodes.
      * Raised 57 to 58 when the same-row table child landed: its no-method arm in the fetcher
-     * dispatch, a new leaf's one dispatch site.
+     * dispatch, a new leaf's one dispatch site. Lowered 58 to 56 when an errors field became an
+     * outcome's alone: the switch over its two transports went with the transport.
      */
-    private static final int GENERATOR_LEAF_CASE_PATTERNS = 58;
+    private static final int GENERATOR_LEAF_CASE_PATTERNS = 56;
 
     /**
      * Leaf references ({@code instanceof} plus {@code case}) inside {@code plan/}: the relocation
