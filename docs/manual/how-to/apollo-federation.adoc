@@ -64,6 +64,19 @@ The execution-tier tests `twoArgBuildDoesNotThrow`, `resultHasServiceType`, `res
 
 *Don't double-wrap.* Calling `Federation.transform(...)` on a schema Graphitron already wrapped breaks composition: `_Service` and `_Entity` get added a second time, and the gateway sees a malformed subgraph. The wrap is automatic; let it happen.
 
+== Publish the subgraph SDL
+
+`Graphitron.schemaSdl(schema)` prints a federated schema the way its `_service { sdl }` query answers: the `schema @link(...)` declaration included, the GraphQL built-in directive definitions left out, the form Federation 2 composition expects.
+
+If you serve the subgraph with `graphitron-jakarta-rest`, pass it to your adapter's constructor and `GET /graphql/schema` serves that SDL, so a supergraph can be composed from the schema URL as well as by introspection:
+
+[source,java]
+----
+super(() -> Graphitron.buildSchema(b -> {}), Graphitron::schemaSdl);
+----
+
+The SDL is printed from the schema your application executes, so anything your `buildSchema` customizer adds is included.
+
 == Override the entity fetcher
 
 For every type Graphitron classifies, `_entities` resolution is wired automatically. `@node` types resolve via the NodeId path (decode the `id`, dispatch the per-type SELECT); types with a `@key` directive resolve via a column-value lookup. Both paths share the same per-type batched SELECT (one statement per `(__typename, alternative)` group), so federation gateway requests fan in without amplification.

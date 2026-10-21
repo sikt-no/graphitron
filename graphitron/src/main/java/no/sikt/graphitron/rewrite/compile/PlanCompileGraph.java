@@ -335,6 +335,8 @@ public final class PlanCompileGraph {
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(facade, r));
                     // A <tenantColumn> build's factories take or wrap the RequestTenants value.
                     runtimeUnit("RequestTenants").ifPresent(rt -> precise(facade, rt));
+                    // A federated @oneOf build's schemaSdl prints through the helper.
+                    refOf(GlobalUnitKind.ONE_OF_DIRECTIVE_SDL).ifPresent(o -> precise(facade, o));
                 }
                 case DEV_EXECUTOR -> {
                     var devExecutor = fixed.units().get(0);

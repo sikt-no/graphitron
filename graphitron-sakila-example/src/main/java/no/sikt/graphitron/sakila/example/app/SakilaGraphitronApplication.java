@@ -17,7 +17,8 @@ import org.jooq.SQLDialect;
  *
  * <p>This is the SPI seam in practice, wired to the owned-connection path: the schema is
  * supplied as a lambda over the generated {@code Graphitron} facade (the only generated-symbol
- * reference the library never names), {@link #engineBuilder()} builds the engine from the
+ * reference the library never names) and its SDL printer as a method reference to the facade's
+ * {@code schemaSdl}, which {@code /schema} serves, {@link #engineBuilder()} builds the engine from the
  * application-scoped {@code GraphitronRuntime} over the Quarkus-managed datasource so graphitron
  * takes one connection per operation, mounts the caller's identity through the configured
  * {@code <sessionState>} mount method, and demarcates transactions, and {@link #newExecutionInput()}
@@ -33,7 +34,7 @@ public class SakilaGraphitronApplication extends AbstractGraphitronApplication {
     AgroalDataSource dataSource;
 
     public SakilaGraphitronApplication() {
-        super(() -> Graphitron.buildSchema(builder -> {}));
+        super(() -> Graphitron.buildSchema(builder -> {}), Graphitron::schemaSdl);
     }
 
     @Override

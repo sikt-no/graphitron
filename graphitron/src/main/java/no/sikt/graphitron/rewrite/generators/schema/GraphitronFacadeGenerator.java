@@ -8,6 +8,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
+import no.sikt.graphitron.rewrite.generators.util.OneOfDirectiveSdlGenerator;
 import no.sikt.graphitron.rewrite.model.ResolvedContextArg;
 
 import javax.lang.model.element.Modifier;
@@ -38,6 +39,12 @@ import java.util.function.Consumer;
  * They are distinct names, not overloads, so a caller cannot silently opt out of the owned-path
  * guarantees by passing a {@code DSLContext}; the escape-hatch name is frozen by additive-by-construction.
  *
+ * <p>{@code schemaSdl(GraphQLSchema)} prints a built schema as the SDL to publish: on a federated
+ * schema the way its {@code _service { sdl }} query answers, which is what Federation 2 composition
+ * from a schema URL needs. The print policy lives here, in generated code that may name
+ * federation-jvm, so a runtime library serving the SDL receives it as a function rather than
+ * carrying a copy.
+ *
  * <p>The sealed {@code GraphitronContext} permits only the generated
  * {@code GraphitronContextImpl} singleton; the factories are the per-request wiring point.
  */
@@ -54,7 +61,16 @@ public final class GraphitronFacadeGenerator {
 
     private GraphitronFacadeGenerator() {}
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage, boolean federationLink) {
+    /**
+     * @param federationLink whether the schema carries a federation {@code @link}; picks the
+     *                       {@code buildSchema} overloads and the {@code schemaSdl} printer
+     * @param usesOneOf      whether the assembled schema uses {@code @oneOf}; on the federated arm,
+     *                       routes {@code schemaSdl} through the generated {@code OneOfDirectiveSdl}
+     *                       helper, the same gate {@link GraphitronSchemaClassGenerator} applies to
+     *                       its federation build
+     */
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
+                                          boolean federationLink, boolean usesOneOf) {
         String schemaPackage = outputPackage + ".schema";
         var graphQLSchema = ClassName.get("graphql.schema", "GraphQLSchema");
         var schemaBuilder = ClassName.get("graphql.schema", "GraphQLSchema", "Builder");
@@ -180,7 +196,8 @@ public final class GraphitronFacadeGenerator {
         }
         classBuilder
             .addMethod(newGraphQL)
-            .addMethod(runtime);
+            .addMethod(runtime)
+            .addMethod(schemaSdl(graphQLSchema, outputPackage, federationLink, usesOneOf));
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");
@@ -210,7 +227,54 @@ public final class GraphitronFacadeGenerator {
 
     /** Convenience overload for non-federation usage. */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, outputPackage, false);
+        return generate(schema, outputPackage, false, false);
+    }
+
+    /**
+     * Emits {@code schemaSdl(GraphQLSchema)}, the SDL a consumer publishes for the schema it
+     * executes. The federated arm prints the way the runtime {@code _service { sdl }} answers
+     * ({@code ServiceSDLPrinter.generateServiceSDLV2}, plus the {@code @oneOf} definition through
+     * the generated helper when the schema uses it); the plain arm uses the runtime-meaningful
+     * options of {@link SchemaSdlEmitter}'s plain print, whose directive and support-type filters
+     * are vacuous over the schema {@code GraphitronSchema.build} assembles.
+     */
+    private static MethodSpec schemaSdl(ClassName graphQLSchema, String outputPackage,
+                                        boolean federationLink, boolean usesOneOf) {
+        var method = MethodSpec.methodBuilder("schemaSdl")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(graphQLSchema, "schema");
+        if (federationLink && usesOneOf) {
+            method.addStatement("return $T.$L(schema)",
+                ClassName.get(outputPackage + ".util", OneOfDirectiveSdlGenerator.CLASS_NAME),
+                OneOfDirectiveSdlGenerator.SERVICE_SDL_METHOD);
+        } else if (federationLink) {
+            method.addStatement("return $T.generateServiceSDLV2(schema)",
+                ClassName.get("com.apollographql.federation.graphqljava.printer", "ServiceSDLPrinter"));
+        } else {
+            var schemaPrinter = ClassName.get("graphql.schema.idl", "SchemaPrinter");
+            method.addCode("return new $T($T.Options.defaultOptions()\n", schemaPrinter, schemaPrinter)
+                .addCode("        .includeSchemaDefinition(true)\n")
+                .addCode("        .includeScalarTypes(true)\n")
+                .addCode("        .includeIntrospectionTypes(false))\n")
+                .addCode("    .print(schema);\n");
+        }
+        return method.addJavadoc(schemaSdlJavadoc(federationLink)).build();
+    }
+
+    private static String schemaSdlJavadoc(boolean federationLink) {
+        return "Prints {@code schema} as the SDL to publish for this subgraph, for example from an\n"
+            + "HTTP schema endpoint. Pass the schema the application executes, so anything a\n"
+            + "{@code buildSchema} customizer added is printed too.\n"
+            + "\n"
+            + (federationLink
+               ? "<p>Printed the way the federation {@code _service { sdl }} query answers: the\n"
+               + "{@code schema @link(...)} declaration included and the GraphQL built-in directive\n"
+               + "definitions left out, the form Federation 2 composition expects.\n"
+               : "<p>Printed with the {@code schema} block and every scalar, and without the\n"
+               + "introspection types, matching the generated {@code schema.graphqls}.\n")
+            + "@param schema the executed schema, typically {@code buildSchema(...)}'s result\n"
+            + "@return the printed SDL\n";
     }
 
     /**

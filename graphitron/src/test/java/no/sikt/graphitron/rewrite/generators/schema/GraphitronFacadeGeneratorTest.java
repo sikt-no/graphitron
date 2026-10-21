@@ -3,6 +3,8 @@ package no.sikt.graphitron.rewrite.generators.schema;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -35,7 +37,23 @@ class GraphitronFacadeGeneratorTest {
     void generatedClass_exposesBuildSchemaBothFactoriesNewGraphQLAndRuntime() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactly("buildSchema", "newExecutionInput", "newOwnedExecutionInput", "newGraphQL", "runtime");
+            .containsExactly("buildSchema", "newExecutionInput", "newOwnedExecutionInput", "newGraphQL", "runtime",
+                "schemaSdl");
+    }
+
+    @ParameterizedTest(name = "federationLink={0}, usesOneOf={1}")
+    @CsvSource({"false, false", "true, false", "true, true"})
+    void schemaSdl_isPublicStaticTakingTheSchemaReturningString(boolean federationLink, boolean usesOneOf) {
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federationLink, usesOneOf)
+            .get(0).methodSpecs().stream()
+            .filter(m -> m.name().equals("schemaSdl"))
+            .toList();
+        assertThat(methods).hasSize(1);
+        var method = methods.get(0);
+        assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(method.returnType().toString()).isEqualTo("java.lang.String");
+        assertThat(method.parameters()).extracting(p -> p.type().toString())
+            .containsExactly("graphql.schema.GraphQLSchema");
     }
 
     @Test
@@ -182,7 +200,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void newGraphQL_isPresentExactlyOnceInFederationBuild() {
-        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0);
         var newGraphQLCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newGraphQL"))
             .count();
@@ -193,7 +211,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void nonFederation_exposesSingleBuildSchemaMethod() {
-        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", false).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", false, false).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .count();
@@ -202,7 +220,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_exposesTwoBuildSchemaMethods() {
-        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .count();
@@ -211,7 +229,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_secondBuildSchemaMethod_hasFederationCustomizerParameter() {
-        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0).methodSpecs().stream()
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .toList();
         var twoArg = methods.get(1);
@@ -222,7 +240,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_secondBuildSchemaMethod_delegatesToGraphitronSchemaBuildTwoArg() {
-        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true).get(0).methodSpecs().stream()
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .toList();
         var body = methods.get(1).code().toString();
@@ -231,7 +249,7 @@ class GraphitronFacadeGeneratorTest {
     }
 
     private static no.sikt.graphitron.javapoet.MethodSpec findFirstMethod(String name, boolean federation) {
-        return GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federation).get(0).methodSpecs().stream()
+        return GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federation, false).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals(name))
             .findFirst()
             .orElseThrow();

@@ -7,7 +7,6 @@ import graphql.GraphQLError;
 import graphql.language.Document;
 import graphql.language.OperationDefinition;
 import graphql.parser.Parser;
-import graphql.schema.idl.SchemaPrinter;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.json.bind.Jsonb;
@@ -225,13 +224,14 @@ public class GraphqlHttpHandler {
     }
 
     /**
-     * The schema as SDL, for an endpoint serving it as {@code text/plain}. Printed from the same
-     * {@link GraphitronApplication#schema()} the engine executes, so the two cannot drift.
+     * The schema as SDL, for an endpoint serving it as {@code text/plain}. Printed by
+     * {@link GraphitronApplication#schemaSdl()} from the same {@link GraphitronApplication#schema()}
+     * the engine executes, so the two cannot drift.
      *
      * @return the printed SDL
      */
     public String schema() {
-        return new SchemaPrinter().print(application.schema());
+        return application.schemaSdl();
     }
 
     /**

@@ -32,6 +32,11 @@ import java.util.List;
  * {@code SchemaPrinter}). The writer's orphan sweep removes the emitted source if a schema drops
  * {@code @oneOf} or federation.
  *
+ * <p>The string augment is its own {@code serviceSdl(GraphQLSchema)} method, which
+ * {@code withOneOfDefinition} calls and the federated {@code Graphitron.schemaSdl} facade method
+ * ({@link no.sikt.graphitron.rewrite.generators.schema.GraphitronFacadeGenerator}) returns, so the
+ * runtime {@code _Service.sdl} value and the SDL a consumer publishes are printed by one method.
+ *
  * <p>Generated as a source file so consuming projects take no runtime dependency on graphitron;
  * every type the helper references is already on the consumer's compile classpath.
  */
@@ -39,6 +44,7 @@ public final class OneOfDirectiveSdlGenerator {
 
     public static final String CLASS_NAME = "OneOfDirectiveSdl";
     public static final String WITH_ONE_OF_DEFINITION_METHOD = "withOneOfDefinition";
+    public static final String SERVICE_SDL_METHOD = "serviceSdl";
 
     private static final ClassName GRAPHQL_SCHEMA       = ClassName.get("graphql.schema", "GraphQLSchema");
     private static final ClassName GRAPHQL_NAMED_TYPE   = ClassName.get("graphql.schema", "GraphQLNamedType");
@@ -60,6 +66,28 @@ public final class OneOfDirectiveSdlGenerator {
                 + "the codegen-side {@code OneOfDirectiveSdl.DEFINITION}.\n")
             .build();
 
+        // The string augment, shared by the _Service.sdl correction below and the facade's
+        // schemaSdl, so the served value and the published SDL come from one piece of code.
+        var sdlBody = CodeBlock.builder();
+        sdlBody.addStatement("String sdl = $T.generateServiceSDLV2(schema)", SERVICE_SDL_PRINTER);
+        // Idempotence guard: when the printed SDL already carries the definition, return it
+        // untouched rather than appending a duplicate.
+        sdlBody.beginControlFlow("if (sdl.contains($S))", "directive @oneOf");
+        sdlBody.addStatement("return sdl");
+        sdlBody.endControlFlow();
+        sdlBody.addStatement("String base = sdl.endsWith($S) ? sdl : sdl + $S", "\n", "\n");
+        sdlBody.addStatement("return base + $S + DEFINITION + $S", "\n", "\n");
+
+        var serviceSdl = MethodSpec.methodBuilder(SERVICE_SDL_METHOD)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(GRAPHQL_SCHEMA, "schema")
+            .addJavadoc("Prints {@code schema} via {@code ServiceSDLPrinter.generateServiceSDLV2} and\n"
+                + "appends {@link #DEFINITION}, unless the printed SDL already carries it. The caller\n"
+                + "decides whether the schema uses {@code @oneOf}; this method does not ask.\n")
+            .addCode(sdlBody.build())
+            .build();
+
         var body = CodeBlock.builder();
         body.addStatement("boolean usesOneOf = false");
         body.beginControlFlow("for ($T type : schema.getAllTypesAsList())", GRAPHQL_NAMED_TYPE);
@@ -71,14 +99,7 @@ public final class OneOfDirectiveSdlGenerator {
         body.beginControlFlow("if (!usesOneOf)");
         body.addStatement("return schema");
         body.endControlFlow();
-        body.addStatement("String sdl = $T.generateServiceSDLV2(schema)", SERVICE_SDL_PRINTER);
-        // Idempotence guard: when the printed SDL already carries the definition, leave the
-        // served value untouched rather than appending a duplicate.
-        body.beginControlFlow("if (sdl.contains($S))", "directive @oneOf");
-        body.addStatement("return schema");
-        body.endControlFlow();
-        body.addStatement("String base = sdl.endsWith($S) ? sdl : sdl + $S", "\n", "\n");
-        body.addStatement("String augmented = base + $S + DEFINITION + $S", "\n", "\n");
+        body.addStatement("String augmented = $L(schema)", SERVICE_SDL_METHOD);
         body.addStatement("$T codeRegistry = schema.getCodeRegistry().transform(\n"
                 + "    registryBuilder -> registryBuilder.dataFetcher(\n"
                 + "        $T.coordinates($S, $S),\n"
@@ -92,10 +113,8 @@ public final class OneOfDirectiveSdlGenerator {
             .addParameter(GRAPHQL_SCHEMA, "schema")
             .addJavadoc("Returns {@code schema} with the {@code @oneOf} directive definition\n"
                 + "reinstated on the runtime {@code _Service.sdl} value. No-op unless an input\n"
-                + "object reports {@code isOneOf()} and the definition is not already present.\n"
-                + "Re-prints the served SDL via {@code ServiceSDLPrinter.generateServiceSDLV2},\n"
-                + "appends {@link #DEFINITION}, and reinstalls a {@code StaticDataFetcher} carrying\n"
-                + "the augmented string on the {@code _Service.sdl} field.\n")
+                + "object reports {@code isOneOf()}. Reinstalls a {@code StaticDataFetcher} on the\n"
+                + "{@code _Service.sdl} field carrying {@link #$L}'s output.\n", SERVICE_SDL_METHOD)
             .addCode(body.build())
             .build();
 
@@ -106,6 +125,7 @@ public final class OneOfDirectiveSdlGenerator {
                 + "{@code @oneOf}; see {@code OneOfDirectiveSdlGenerator} for emission semantics.\n")
             .addField(definition)
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
+            .addMethod(serviceSdl)
             .addMethod(withOneOfDefinition)
             .build();
 

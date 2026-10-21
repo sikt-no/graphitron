@@ -3,6 +3,7 @@ package no.sikt.graphitron.jakarta.rest;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.GraphQLSchema;
+import graphql.schema.idl.SchemaPrinter;
 
 /**
  * The dependency-inversion seam between {@code graphitron-jakarta-rest} and a Graphitron subgraph.
@@ -16,8 +17,8 @@ import graphql.schema.GraphQLSchema;
  * <p>This is a consumer-implemented SPI, so it is a plain (open) interface, not a sealed hierarchy:
  * the set of implementations is open by design, owned by each consuming subgraph rather than by the
  * generator. {@link AbstractGraphitronApplication} removes the boilerplate so a concrete adapter
- * writes only the auth-bearing {@link #newExecutionInput()} and, optionally, an
- * {@link #engineBuilder()} override.
+ * passes the facade's schema builder and SDL printer, writes the auth-bearing
+ * {@link #newExecutionInput()} and, optionally, an {@link #engineBuilder()} override.
  *
  * @see AbstractGraphitronApplication
  */
@@ -25,7 +26,7 @@ public interface GraphitronApplication {
 
     /**
      * The single executable schema. Source of truth for both the engine and the {@code /schema}
-     * SDL endpoint, so the two can never drift. Expected to be cached by the implementation
+     * SDL endpoint (printed through {@link #schemaSdl()}), so the two can never drift. Expected to be cached by the implementation
      * ({@link AbstractGraphitronApplication} builds it once); the library reads it freely.
      *
      * @return the built {@link GraphQLSchema}
@@ -66,6 +67,26 @@ public interface GraphitronApplication {
      */
     default GraphQL.Builder engineBuilder() {
         return GraphQL.newGraphQL(schema());
+    }
+
+    /**
+     * The SDL the {@code /schema} endpoint serves, printed from {@link #schema()} so it describes
+     * the schema the engine executes. An adapter returns the generated facade's print of it,
+     * {@code Graphitron.schemaSdl(schema())}, which on a federated subgraph is what its
+     * {@code _service { sdl }} query answers and what Federation 2 composition from a schema URL
+     * expects. {@link AbstractGraphitronApplication} does this when given the printer.
+     *
+     * <p>The default prints {@link #schema()} with graphql-java's default {@link SchemaPrinter},
+     * which keeps an implementation written before this method compiling. That print is
+     * <strong>not composition-ready for a federated subgraph</strong>: it omits the
+     * {@code schema @link(...)} declaration and prints the GraphQL built-in directive definitions,
+     * and a composer rejects both. The library cannot do better on its own, because the federation
+     * print policy belongs to the generated code, which may name federation-jvm.
+     *
+     * @return the schema as SDL
+     */
+    default String schemaSdl() {
+        return new SchemaPrinter().print(schema());
     }
 
     /**

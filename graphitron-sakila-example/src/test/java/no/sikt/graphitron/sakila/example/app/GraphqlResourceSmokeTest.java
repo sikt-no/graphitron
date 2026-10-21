@@ -17,8 +17,8 @@ import static org.hamcrest.Matchers.startsWith;
  * Smoke check that the Quarkus + JAX-RS shell boots and serves a GraphQL request end-to-end:
  * POST {@code /graphql} → live Postgres → non-empty response, plus the self-hosted GraphiQL
  * playground page and its asset endpoint. This class holds the claim that the built-in endpoint is
- * reachable at all; {@link GraphQLOverHttpConformanceTest}, {@link MountedEndpointTest} and
- * {@link OverlappingMountTest} are the module's other HTTP-shaped tests, and everything else stays
+ * reachable at all; {@link GraphQLOverHttpConformanceTest}, {@link MountedEndpointTest},
+ * {@link OverlappingMountTest} and {@link SchemaEndpointTest} are the module's other HTTP-shaped tests, and everything else stays
  * at the schema/engine level.
  */
 @QuarkusTest
