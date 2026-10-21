@@ -26,9 +26,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R1068` | A database value outside an enum's mapping reads as null instead of a per-row serialization error | Ready | 2026-10-21 <sub>created 2026-10-19</sub> | [plan](unmapped-enum-value-from-database-reads-as-null.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1081` | graphitron-jakarta-rest /graphql/schema serves SDL federation composition rejects | Ready | 2026-10-21 | [plan](schema-endpoint-serves-generated-federation-sdl.md) |
+| `R1068` | A database value outside an enum's mapping reads as null instead of a per-row serialization error | In Progress | 2026-10-21 <sub>created 2026-10-19</sub> | [plan](unmapped-enum-value-from-database-reads-as-null.md) |
 | `R1079` | A node-key column whose converter does not round-trip makes its ids resolve to null with no diagnostic | In Progress | 2026-10-21 <sub>created 2026-10-20</sub> | [plan](lossy-key-converter-fails-node-ids-silently.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -641,7 +641,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R1037` [**A @reference key element can ride its key inverted**](reference-key-rides-inverted.md) — Backlog, feature
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
-- `R1068` [**A database value outside an enum's mapping reads as null instead of a per-row serialization error**](unmapped-enum-value-from-database-reads-as-null.md) — Ready, bug
+- `R1068` [**A database value outside an enum's mapping reads as null instead of a per-row serialization error**](unmapped-enum-value-from-database-reads-as-null.md) — In Progress, bug
 - `R1074` [**A multi-table child connection pages and dispatches on the first column of a composite participant key**](multi-table-child-connection-truncates-composite-key.md) — Backlog, bug
 - `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Spec, validation
 - `R935` [**Lower a client-supplied ordering onto an inline child list, or refuse the shape**](inline-child-list-orderby-argument-not-lowered.md) — Backlog, architecture
