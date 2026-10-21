@@ -1,7 +1,7 @@
 ---
 id: R1068
 title: "A database value outside an enum's mapping reads as null instead of a per-row serialization error"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: codegen-correctness
