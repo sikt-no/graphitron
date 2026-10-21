@@ -227,3 +227,75 @@ R959, the sixth, already shipped (`f7b051e`) as one of the filters this item rem
 * **No class parallelism.** Removes the race at the cost of the parallelism the properties file
   measured as worth three cores, in the reactor's terminal module, where every second is build wall
   clock.
+
+## Reviewer findings
+
+### Round 1 (2026-10-21, Spec -> Ready, reviewer session 01Xo2fY4oBEyeUJ55YiU28NH)
+
+Verdict: withhold. The survey under "What is true today" is careful and I have no quarrel with its
+facts; the 19 failing methods and the 65 convention-safe ones are the right inventory. The finding
+is with the goal the inventory is put to. The item reads the cross-talk as a database that is
+shared too widely; it is tests that are not written for a shared database. The fix belongs in the
+tests, and the design should be inverted accordingly.
+
+**1. The goal targets the wrong invariant.** A test should assume other tests are running against
+the same database at the same time, because that is what a database is for: concurrent clients
+seeing each other's committed rows is the normal condition, not a fault in the fixture. The goal
+as written makes `hasSize(5)` over the shared `film` table mean "exactly five" by removing
+everyone else from the table. The assertion is what is wrong: over a table other clients may
+write, a whole-table count says nothing about the generated code. The goal should instead read
+along the lines of "every execution test is correct on a database other tests write to
+concurrently, so a red execution test means the generated code or the test is wrong", which keeps
+the item's outcome (no red build from a sibling's row) and states it as a property of the tests.
+
+**2. The cost is infrastructure spent on the wrong problem.** A pristine template per run, a clone
+per class, auxiliary databases, a run token, an advisory-lock liveness scheme to sweep dead runs'
+databases, and a guard to hold it all in place: that is a database lifecycle manager built so tests
+can avoid stating what their own query means. It also has to be kept working in three places (CI,
+the web sandbox, a laptop server shared by several sessions), each a new way for the build to fail
+that has nothing to do with generated code. Private databases per class are the wrong use of a
+database; they trade a test-writing rule for machinery, and the machinery grows with the class
+count rather than with the number of tests that are wrong.
+
+**3. Isolation hides behaviour the generated code meets in production.** Consumers run the
+generated code against databases other clients write to. A suite that can only pass in a private
+database cannot notice a generated query that leans on the table holding nothing but what it
+expects. Tests that pass among concurrent writers are the closer model.
+
+**4. The per-test filters are the start of the right answer, not debris.** The design removes the
+34 seeded-only filters. Under the rule above they are what every reader should do, generalised:
+a reader asserts over rows it can name (seeded keys, or the keys and marker values it wrote
+itself), never over a table's cardinality or tail. What is wrong with today's filters is that each
+was added ad hoc after a flake; the item should make the rule the default and rewrite the exposed
+set to it. Concretely, for the inventory already gathered:
+
+* the four unfiltered or broadly filtered readers filter to named rows;
+* the five two-instant comparisons (cursor tail, `totalCount` against an unpaged read) run over a
+  key range or marker the test owns, so a sibling's insert cannot fall inside it;
+* the one seeded-row writer (`updateFilmWithErrors_existingFilm_returnsTheUpdatedRow` on film 1)
+  inserts its own film and updates that, so the ten readers of film 1's title stop being exposed;
+  seeded rows become read-only by rule;
+* the roughly 65 convention-safe assertions (`film_actor` casts, whole-table `rental` counts) are
+  rewritten the same way now, rather than waiting for the writer that breaks them;
+* the two leaking tests still delete what they wrote, as hygiene, but a leak stops being able to
+  break anyone, so a persistent `rewrite_test` drifting run by run is harmless.
+
+**5. Two parts of the design stand and should be kept.** Provisioning copied 67 times is a real
+defect: one harness that alone reads `test.db.*` and starts the container, one server per test
+JVM, is right, and the guard against `new PostgreSQLContainer` and `test.db.url` outside it still
+earns its place. And the fixed cluster-scoped names (`tenant_1`, `fanout_t1`, `scatter_t1`, the
+`org_tenant_*` pair) do collide across concurrent runs on one server, two sessions on one laptop
+for instance, so minting those names from a run token is the shared-database rule applied to
+names, not isolation. The `graphitron` module's `TestDatabase` (test sources,
+`no.sikt.graphitron.rewrite.test.db`) is the precedent for the harness: one database per JVM,
+never reset, resilient tests, written up in `docs/architecture/how-to/testing.adoc` under the
+Execution tier.
+
+**6. Name the enforcer honestly.** A structural guard cannot tell a whole-table count from a
+filtered one, so the rule for readers and writers is held by review and by
+`docs/architecture/how-to/testing.adoc`, which should state it once for both modules. The item
+should say so, and may consider a cheap detector: running the execution tier at a higher class
+parallelism, or two runs at once against one server, surfaces a non-resilient test faster than
+waiting for CI to hit the interleaving. "Keep patching per test" under "Other solutions" then
+stops describing the plan, since the plan is a rule applied to the whole inventory at once, not
+a patch per flake.
