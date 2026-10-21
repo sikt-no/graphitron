@@ -5,7 +5,7 @@ import graphql.language.Directive;
 import graphql.language.EnumTypeDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.schema.idl.SchemaParser;
-import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
+import no.sikt.graphitron.model.schema.DeclaredDirectives;
 import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.schema.federation.FederationSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
@@ -155,8 +155,8 @@ class SchemaSdlEmissionTest {
 
     /**
      * The published SDL carries no Graphitron-internal surface, for every plugin
-     * execution in this module. Strictly internal support types never print; directive
-     * definitions and applications are survivor-only ({@link SchemaDirectiveRegistry});
+     * execution in this module. Strictly internal support types never print; no directive
+     * definition or application is one of graphitron's own ({@link DeclaredDirectives});
      * assertions are structural (re-parse, then walk), not substring matches.
      */
     @Test
@@ -176,23 +176,23 @@ class SchemaSdlEmissionTest {
                     .isNull());
 
             registry.getDirectiveDefinitions().keySet().forEach(name ->
-                assertThat(SchemaDirectiveRegistry.isSurvivor(name))
-                    .as("directive definition @%s in %s must be a survivor", name, outputPackage)
-                    .isTrue());
+                assertThat(DeclaredDirectives.names())
+                    .as("directive definition @%s in %s must not be graphitron's own", name, outputPackage)
+                    .doesNotContain(name));
 
             registry.types().values().forEach(type -> {
                 ((graphql.language.DirectivesContainer<?>) type).getDirectives().forEach(applied ->
-                    assertThat(SchemaDirectiveRegistry.isSurvivor(applied.getName()))
-                        .as("application @%s on type %s in %s must be a survivor",
+                    assertThat(DeclaredDirectives.names())
+                        .as("application @%s on type %s in %s must not be graphitron's own",
                             applied.getName(), type.getName(), outputPackage)
-                        .isTrue());
+                        .doesNotContain(applied.getName()));
                 if (type instanceof ObjectTypeDefinition object) {
                     object.getFieldDefinitions().forEach(field ->
                         field.getDirectives().forEach(applied ->
-                            assertThat(SchemaDirectiveRegistry.isSurvivor(applied.getName()))
-                                .as("application @%s on %s.%s in %s must be a survivor",
+                            assertThat(DeclaredDirectives.names())
+                                .as("application @%s on %s.%s in %s must not be graphitron's own",
                                     applied.getName(), type.getName(), field.getName(), outputPackage)
-                                .isTrue()));
+                                .doesNotContain(applied.getName())));
                 }
             });
         }

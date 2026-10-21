@@ -7,6 +7,7 @@ import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaPrinter;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.model.read.StoreHandle;
+import no.sikt.graphitron.model.schema.DeclaredDirectives;
 import no.sikt.graphitron.model.schema.DirectiveSupportTypes;
 import no.sikt.graphitron.model.schema.EmittedRegistry;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
@@ -14,7 +15,6 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.GraphitronSchemaBuilder;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.DisplayName;
@@ -200,10 +200,11 @@ class EmittedRegistryAgreementTest {
      * comparison is then of the two populations a consumer would receive.
      */
     private static SchemaPrinter published(GraphitronSchema model) {
+        var generatorOnly = DeclaredDirectives.names();
         return new SchemaPrinter(SchemaPrinter.Options.defaultOptions()
             .includeSchemaDefinition(true)
-            .includeDirectiveDefinition(SchemaDirectiveRegistry::isSurvivor)
-            .includeDirectives(SchemaDirectiveRegistry::isSurvivor)
+            .includeDirectiveDefinition(name -> !generatorOnly.contains(name))
+            .includeDirectives(name -> !generatorOnly.contains(name))
             .includeSchemaElement(element -> !(element instanceof GraphQLNamedType named
                 && DirectiveSupportTypes.isSupportType(named.getName())
                 && !model.types().containsKey(named.getName()))));

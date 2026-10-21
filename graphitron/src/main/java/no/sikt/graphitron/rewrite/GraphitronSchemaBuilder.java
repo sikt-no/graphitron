@@ -5,6 +5,7 @@ import graphql.language.DirectiveDefinition;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 import graphql.schema.GraphQLArgument;
+import graphql.schema.GraphQLDirective;
 import graphql.schema.GraphQLEnumType;
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLFieldsContainer;
@@ -24,9 +25,9 @@ import graphql.util.TraverserContext;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import graphql.schema.idl.errors.SchemaProblem;
 
-import no.sikt.graphitron.rewrite.generators.schema.DirectiveDefinitionEmitter;
 import no.sikt.graphitron.rewrite.model.CarriesObjectForm;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.model.schema.DeclaredDirectives;
 import no.sikt.graphitron.model.schema.OneOfDirectiveSdl;
 import no.sikt.graphitron.model.schema.SchemaAssembly;
 import no.sikt.graphitron.rewrite.model.DomainReturnType;
@@ -792,7 +793,14 @@ public class GraphitronSchemaBuilder {
                 }
             }
         }
-        for (var dir : DirectiveDefinitionEmitter.survivors(rebuiltAssembled)) {
+        // The walk's schema still carries graphitron's own directives, which the emitted schema
+        // does not publish, so only the others are checked.
+        var generatorOnly = DeclaredDirectives.names();
+        var directives = rebuiltAssembled.getDirectives().stream()
+            .filter(dir -> !generatorOnly.contains(dir.getName()))
+            .sorted(java.util.Comparator.comparing(GraphQLDirective::getName))
+            .toList();
+        for (var dir : directives) {
             for (var arg : dir.getArguments()) {
                 String scalarName = referencedTypeName(arg.getType());
                 if (scalarName == null

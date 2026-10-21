@@ -152,9 +152,8 @@ public final class EmittedRegistry {
     /**
      * The one definition of the directive that publishes a node type's wire id, written once and
      * parsed where it is added: federation-jvm supplies {@code @key}'s definition and knows nothing
-     * of this one. It must not be declared in graphitron's own {@code directives.graphqls}, which
-     * {@code SchemaDirectiveRegistry} reads as the generator-only set and would strip it from the
-     * output.
+     * of this one. It must not be declared in graphitron's own {@code directives.graphqls}, whose
+     * directives {@link #derive} strips from the output.
      */
     private static final String NODE_TYPE_DIRECTIVE_SDL = "directive @nodeType(typeId: String!) on OBJECT";
     private static final String NODE_TYPE_DIRECTIVE = "nodeType";

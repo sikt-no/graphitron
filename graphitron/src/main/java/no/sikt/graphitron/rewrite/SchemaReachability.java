@@ -192,9 +192,7 @@ public final class SchemaReachability {
             }
         }
         // Directive definitions that survive into the emitted schema (everything not declared in
-        // graphitron's own directives.graphqls, the same fact
-        // no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry#isSurvivor derives
-        // from) are re-declared by the schema-class generator, so their argument types are part
+        // graphitron's own directives.graphqls) are re-declared by the schema-class generator, so their argument types are part
         // of the emitted structure the same way an object's implements clause is: a scalar
         // reachable only through a survivor directive's argument (federation__FieldSet on @key)
         // must classify, or the emitted schema dangles a type reference. Graphitron's build-time

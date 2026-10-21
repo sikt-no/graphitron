@@ -11,27 +11,12 @@ import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 class DirectiveDefinitionEmitterTest {
 
     @Test
-    void survivors_excludesAllGeneratorOnlyDirectives() {
-        var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        var names = DirectiveDefinitionEmitter.survivors(schema).stream()
-            .map(GraphQLDirective::getName).toList();
-        assertThat(names).isNotEmpty();
-        names.forEach(n -> assertThat(n)
-            .isNotIn("table", "record", "field", "reference", "condition",
-                     "externalField", "notGenerated", "splitQuery", "service",
-                     "asConnection", "discriminate", "discriminator",
-                     "node", "nodeId", "mutation", "orderBy", "lookupKey", "error",
-                     "defaultOrder", "multitableReference", "enum", "index", "order",
-                     "experimental_constructType"));
-    }
-
-    @Test
-    void survivors_includesUserDeclaredDirectives() {
+    void definitions_includesUserDeclaredDirectives() {
         var schema = TestSchemaHelper.buildBundle("""
             directive @auth(roles: [String!]) on FIELD_DEFINITION
             type Query { x: String }
             """).assembled();
-        var names = DirectiveDefinitionEmitter.survivors(schema).stream()
+        var names = DirectiveDefinitionEmitter.definitions(schema).stream()
             .map(GraphQLDirective::getName).toList();
         assertThat(names).contains("auth");
     }
@@ -39,20 +24,20 @@ class DirectiveDefinitionEmitterTest {
     @Test
     void isSeededByGraphqlJava_holdsForIncludeAndSkipOnly() {
         var schema = TestSchemaHelper.buildBundle("type Query { x: String }").assembled();
-        var seeded = DirectiveDefinitionEmitter.survivors(schema).stream()
+        var seeded = DirectiveDefinitionEmitter.definitions(schema).stream()
             .filter(DirectiveDefinitionEmitter::isSeededByGraphqlJava)
             .map(GraphQLDirective::getName).toList();
         assertThat(seeded).containsExactlyInAnyOrder("include", "skip");
     }
 
     @Test
-    void survivors_sortedByName() {
+    void definitions_sortedByName() {
         var schema = TestSchemaHelper.buildBundle("""
             directive @zebra on FIELD_DEFINITION
             directive @alpha on FIELD_DEFINITION
             type Query { x: String }
             """).assembled();
-        var names = DirectiveDefinitionEmitter.survivors(schema).stream()
+        var names = DirectiveDefinitionEmitter.definitions(schema).stream()
             .map(GraphQLDirective::getName).toList();
         assertThat(names).isSorted();
     }

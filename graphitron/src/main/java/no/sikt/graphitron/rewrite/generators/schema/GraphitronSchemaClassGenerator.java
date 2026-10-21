@@ -286,7 +286,7 @@ public final class GraphitronSchemaClassGenerator {
             String helper = sink.addScalar(scalar, form);
             body.addStatement("schemaBuilder.additionalType($L())", helper);
         }
-        for (var dir : DirectiveDefinitionEmitter.survivors(assembled)) {
+        for (var dir : DirectiveDefinitionEmitter.definitions(assembled)) {
             if (DirectiveDefinitionEmitter.isSeededByGraphqlJava(dir)) {
                 continue;
             }

@@ -6,7 +6,6 @@ import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 
 import javax.lang.model.element.Modifier;
 import java.util.ArrayList;
@@ -15,7 +14,7 @@ import java.util.List;
 
 /**
  * Emits a {@code private static GraphQLDirective directiveDefinition_<sdlName>()} factory
- * method per survivor directive definition in the assembled schema. Used by
+ * method per directive definition in the emitted schema. Used by
  * {@link GraphitronSchemaClassGenerator} so each {@code schemaBuilder.additionalDirective(...)}
  * statement reduces to a single helper call instead of a fluent sub-chain whose length scales
  * with locations + arguments per directive.
@@ -33,16 +32,11 @@ public final class DirectiveDefinitionEmitter {
     private DirectiveDefinitionEmitter() {}
 
     /**
-     * Returns the list of survivor directive definitions in the assembled schema, sorted by
-     * name for stable output.
+     * The directive definitions in the emitted schema, sorted by name for stable output. Graphitron's
+     * own directives are not among them: the emitted schema never publishes them.
      */
-    public static List<GraphQLDirective> survivors(GraphQLSchema assembled) {
-        var result = new ArrayList<GraphQLDirective>();
-        for (var dir : assembled.getDirectives()) {
-            if (SchemaDirectiveRegistry.isSurvivor(dir.getName())) {
-                result.add(dir);
-            }
-        }
+    public static List<GraphQLDirective> definitions(GraphQLSchema emitted) {
+        var result = new ArrayList<>(emitted.getDirectives());
         result.sort(Comparator.comparing(GraphQLDirective::getName));
         return result;
     }
@@ -51,7 +45,7 @@ public final class DirectiveDefinitionEmitter {
      * Whether graphql-java's {@code GraphQLSchema.Builder} already holds {@code dir}: the builder
      * seeds {@code @include} and {@code @skip} into every schema and, unlike the other spec
      * directives it supplies, does not drop them when a same-named definition is registered, so
-     * registering a survivor of either name defines it twice and the schema prints SDL a parser
+     * registering either name defines it twice and the schema prints SDL a parser
      * rejects.
      */
     public static boolean isSeededByGraphqlJava(GraphQLDirective dir) {

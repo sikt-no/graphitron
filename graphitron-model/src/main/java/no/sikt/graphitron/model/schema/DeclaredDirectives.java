@@ -12,7 +12,7 @@ import java.util.Set;
  *
  * <p>The set is <em>derived</em> from {@link SchemaLoader#directivesSdl()}, not
  * hand-maintained: a directive belongs here iff it is declared in {@code directives.graphqls}.
- * Editing that file changes the set; {@code SchemaDirectiveRegistryTest} pins the expected
+ * Editing that file changes the set; {@code DeclaredDirectivesTest} pins the expected
  * membership so the change is made consciously. Sibling of {@link DirectiveSupportTypes},
  * which derives the support-<em>type</em> set from the same parse.
  */

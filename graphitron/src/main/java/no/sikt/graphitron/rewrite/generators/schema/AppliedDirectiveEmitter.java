@@ -17,21 +17,20 @@ import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.ScalarTypeResolver;
-import no.sikt.graphitron.rewrite.generators.util.SchemaDirectiveRegistry;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 
 import javax.lang.model.element.Modifier;
 import java.util.Locale;
 
 /**
- * Emits a {@code private static GraphQLAppliedDirective <name>()} factory method per survivor
- * applied directive on a {@link GraphQLDirectiveContainer} or schema. Per-type emitters
+ * Emits a {@code private static GraphQLAppliedDirective <name>()} factory method per applied
+ * directive on a {@link GraphQLDirectiveContainer} or schema. Per-type emitters
  * ({@link ObjectTypeGenerator}, {@link InputTypeGenerator}, {@link EnumTypeGenerator}) and
  * {@link GraphitronSchemaClassGenerator} register the methods on their enclosing class via
  * {@link HelperMethodSink} and then call them by name from the builder-statement body.
  *
- * <p>Filtering uses {@link SchemaDirectiveRegistry#isSurvivor(String)}: generator-only
- * directives (Graphitron's own build-time directives) are skipped; everything else survives.
+ * <p>Every application is carried over. The emitted schema never publishes graphitron's own
+ * directives, so there is nothing to filter.
  */
 public final class AppliedDirectiveEmitter {
 
@@ -51,7 +50,7 @@ public final class AppliedDirectiveEmitter {
     private AppliedDirectiveEmitter() {}
 
     /**
-     * Allocates one helper method per survivor applied directive on {@code container} via
+     * Allocates one helper method per applied directive on {@code container} via
      * {@code sink} and writes {@code <builderVar>.withAppliedDirective(<helperName>());}
      * statements onto {@code body}. Callers pass the local builder variable that the
      * surrounding statement-shaped body holds (e.g. {@code "b"} inside a {@code type()}
@@ -60,14 +59,13 @@ public final class AppliedDirectiveEmitter {
     static void emitApplications(CodeBlock.Builder body, String builderVar,
                                   GraphQLDirectiveContainer container, HelperMethodSink sink) {
         for (var applied : container.getAppliedDirectives()) {
-            if (!SchemaDirectiveRegistry.isSurvivor(applied.getName())) continue;
             String helper = sink.addAppliedDirective(applied);
             body.addStatement("$L.withAppliedDirective($L())", builderVar, helper);
         }
     }
 
     /**
-     * Allocates one helper method per survivor application sitting on the schema definition
+     * Allocates one helper method per application sitting on the schema definition
      * itself ({@link GraphQLSchema#getSchemaAppliedDirectives()}) and writes a single
      * {@code <builderVar>.withSchemaAppliedDirectives(java.util.List.of(<helperName>(), ...))}
      * statement onto {@code body}. Used to propagate the consumer's
@@ -80,9 +78,7 @@ public final class AppliedDirectiveEmitter {
      */
     static void emitSchemaApplications(CodeBlock.Builder body, String builderVar,
                                         GraphQLSchema schema, HelperMethodSink sink) {
-        var applications = schema.getSchemaAppliedDirectives().stream()
-            .filter(a -> SchemaDirectiveRegistry.isSurvivor(a.getName()))
-            .toList();
+        var applications = schema.getSchemaAppliedDirectives();
         if (applications.isEmpty()) return;
 
         var args = CodeBlock.builder();
