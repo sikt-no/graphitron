@@ -2677,8 +2677,11 @@ real failure look like noise.
   thread faulting on an address that is not one, while `NodeTypeCompletionsTest` ran; the rerun and
   the full build were green. No Java frame is on the crashing stack. The LSP loads tree-sitter
   natively, so native-memory corruption is the first suspect if it recurs. The report's header and
-  the crashing thread are in `roadmap/audits/2026-10-21-lsp-test-jvm-sigsegv-in-g1.md`, with what
-  to keep if it happens again.
+  the crashing thread are in `roadmap/audits/2026-10-21-lsp-test-jvm-sigsegv-in-g1.md`. It did not
+  reproduce: ten further runs the same day, two of them under G1's heap verification, were green,
+  one crash in thirteen runs of the suite; the attempt, what the report says about parallel test
+  workers and shared-arena closes before the fault, and what to keep if it happens again are in
+  `roadmap/audits/2026-10-21-lsp-test-jvm-sigsegv-not-reproduced.md`.
 
 ## Tests
 

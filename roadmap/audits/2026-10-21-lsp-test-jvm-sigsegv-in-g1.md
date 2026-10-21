@@ -53,3 +53,6 @@ recurs. A JVM fault is the other reading, and one occurrence cannot tell them ap
 If it recurs: keep the `hs_err_pid*.log` the fork writes into `graphitron-lsp/`, note which test
 class was running and how many had passed, and run the module with `-XX:+UseSerialGC` to see whether
 the fault follows the collector or the code.
+
+It did not reproduce in ten further runs the same day; see
+`2026-10-21-lsp-test-jvm-sigsegv-not-reproduced.md`.
