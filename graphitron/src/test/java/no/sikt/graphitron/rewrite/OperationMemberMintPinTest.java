@@ -167,7 +167,7 @@ class OperationMemberMintPinTest {
      */
     @Test
     void slotPresenceAgreesWithMintedMembership() {
-        var bundle = TestSchemaHelper.buildBundle("""
+        var bundle = TestSchemaHelper.walkBundle("""
             type Language @table(name: "language") { name: String }
             type Film @table(name: "film") {
               rating: String

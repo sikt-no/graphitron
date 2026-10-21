@@ -490,7 +490,7 @@ class AuthoredClaimConflictsTest {
                 untouched: [Language!]!
             }
             """;
-        var bundle = TestSchemaHelper.buildBundle(sdl);
+        var bundle = TestSchemaHelper.walkBundle(sdl);
         var nodes = TestSchemaHelper.nodeDeclaration();
         var facts = GatheredFacts.gather(bundle.assembled(), (s, v) -> SchemaReachability.walk(s, nodes, v));
         var triggered = bundle.assembled().getQueryType().getFieldDefinitions().stream()

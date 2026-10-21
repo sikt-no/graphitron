@@ -60,7 +60,7 @@ class SchemaReachabilityTest {
 
     @Test
     void everyReachableTypeIsClassified() {
-        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var bundle = TestSchemaHelper.walkBundle(SDL);
         var classified = bundle.model().types().keySet();
 
         var reachableTargets = reachableExcludingOperationRoots(bundle);
@@ -72,7 +72,7 @@ class SchemaReachabilityTest {
 
     @Test
     void eachDescentEdgeAndSeedReachesItsType() {
-        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var bundle = TestSchemaHelper.walkBundle(SDL);
         var reachable = SchemaReachability.reachableTypeNames(bundle.assembled(), TestSchemaHelper.nodeDeclaration());
 
         assertThat(reachable)
@@ -92,7 +92,7 @@ class SchemaReachabilityTest {
 
     @Test
     void noClassifiedOutputCompositeIsUnreachable() {
-        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var bundle = TestSchemaHelper.walkBundle(SDL);
         var reachable = SchemaReachability.reachableTypeNames(bundle.assembled(), TestSchemaHelper.nodeDeclaration());
 
         // The orphan prune is now an invariant, not an observation: the field-first
@@ -117,7 +117,7 @@ class SchemaReachabilityTest {
 
     @Test
     void walkClassifiesLeavesAndPrunesUnreachedOnes() {
-        var bundle = TestSchemaHelper.buildBundle(SDL);
+        var bundle = TestSchemaHelper.walkBundle(SDL);
         var types = bundle.model().types();
 
         // The input surface is classified by the same walk: LeafProbeFilter is reached only

@@ -99,6 +99,21 @@ public final class TestSchemaHelper {
     }
 
     /**
+     * The bundle the walk builds for {@code schemaText}, its assembled schema the walk's own: the
+     * schema a run hands reachability, the fact visitors and classification, which read graphitron's
+     * directives. A case pinning those against the store reads this; the emitted schema holds only
+     * what is published, so it carries none of the directives they read.
+     */
+    public static GraphitronSchemaBuilder.Bundle walkBundle(String schemaText) {
+        return walkBundle(schemaText, TestConfiguration.testContext());
+    }
+
+    /** {@link #walkBundle(String)} under the run context {@code ctx}. */
+    public static GraphitronSchemaBuilder.Bundle walkBundle(String schemaText, RunContext ctx) {
+        return GraphitronSchemaBuilder.buildBundle(parseRegistryWithPrelude(schemaText), ctx);
+    }
+
+    /**
      * The emitted schemas already derived in this JVM, keyed by the exact text captured.
      *
      * <p>The derivation is a function of that text and nothing else: the capture is handed the

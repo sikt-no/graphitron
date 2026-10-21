@@ -141,7 +141,7 @@ class NodeTypeShadowTest {
      * is the one the four walk consumers call, so it is the overload the comparison has to use.
      */
     private static Set<String> nodeTypesBy(NodeDeclaration nodes, String sdl) {
-        var assembled = TestSchemaHelper.buildBundle(sdl).assembled();
+        var assembled = TestSchemaHelper.walkBundle(sdl).assembled();
         var named = new LinkedHashSet<String>();
         for (var type : assembled.getAllTypesAsList()) {
             if (type instanceof GraphQLObjectType object && nodes.isNodeType(object)) {

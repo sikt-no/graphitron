@@ -351,7 +351,7 @@ class InputFieldFanInDiagnosticsTest {
         // write. The @asConnection-on-inline-TableField site used to list the absent @splitQuery.
         // The applied-at-declaration check reads the assembled schema: the carrier deliberately
         // holds no graphql-java node.
-        var bundle = TestSchemaHelper.buildBundle("""
+        var bundle = TestSchemaHelper.walkBundle("""
             type Customer @table(name: "customer") { firstName: String }
             type Store @table(name: "store") {
               customers: [Customer!]! @asConnection @defaultOrder(primaryKey: true)

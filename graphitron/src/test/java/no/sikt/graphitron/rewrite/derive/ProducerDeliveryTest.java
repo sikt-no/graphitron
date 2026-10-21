@@ -124,7 +124,7 @@ class ProducerDeliveryTest {
 
     private static GatheredFacts gather(String sdl) {
         var nodes = TestSchemaHelper.nodeDeclaration();
-        return GatheredFacts.gather(TestSchemaHelper.buildBundle(sdl).assembled(),
+        return GatheredFacts.gather(TestSchemaHelper.walkBundle(sdl).assembled(),
             (s, v) -> SchemaReachability.walk(s, nodes, v));
     }
 

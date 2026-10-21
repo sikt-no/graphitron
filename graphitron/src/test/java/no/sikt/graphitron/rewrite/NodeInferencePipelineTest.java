@@ -62,6 +62,11 @@ class NodeInferencePipelineTest {
         return TestSchemaHelper.buildBundle(sdl, FIXTURE_CTX);
     }
 
+    /** {@link #bundle} as the walk builds it, for the cases reading its reachability and nodehood. */
+    private static GraphitronSchemaBuilder.Bundle walkBundle(String sdl) {
+        return TestSchemaHelper.walkBundle(sdl, FIXTURE_CTX);
+    }
+
     private static NodeDeclaration fixtureNodes() {
         return TestSchemaHelper.nodeDeclaration(FIXTURE_CTX);
     }
@@ -269,7 +274,7 @@ class NodeInferencePipelineTest {
             type Query { qux: Qux }
             """;
 
-        assertThat(SchemaReachability.reachableTypeNames(bundle(sdl).assembled(), fixtureNodes()))
+        assertThat(SchemaReachability.reachableTypeNames(walkBundle(sdl).assembled(), fixtureNodes()))
             .as("returned by no field, reached only as a seed")
             .contains("Foo");
         assertThat(bundle(sdl).model().types()).containsKey("Foo");
@@ -279,7 +284,7 @@ class NodeInferencePipelineTest {
     void anInferredNodeFoldsToManyInTheArrivalIndex() {
         // Node lookups arrive batched, so a node is Many regardless of how many field edges reach
         // it. Foo has exactly one non-list reaching edge, which would fold to One without the seed.
-        var assembled = bundle("""
+        var assembled = walkBundle("""
             type Foo implements Node @table(name: "bar") { id: ID! name: String }
             type Query { foo: Foo }
             """).assembled();
@@ -755,7 +760,7 @@ class NodeInferencePipelineTest {
     @Test
     void anObjectTypeWithNoTableIsNeverANode() {
         var nodes = fixtureNodes();
-        var assembled = bundle("""
+        var assembled = walkBundle("""
             type Foo implements Node @table(name: "bar") { id: ID! }
             type Query { foo: Foo }
             """).assembled();
