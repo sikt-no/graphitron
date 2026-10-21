@@ -1388,13 +1388,16 @@ public sealed interface ChildField extends OutputField
      * {@code List} like every other wrapper-carrying leaf.
      *
      * <p>{@link #compaction()} is the wire direction, the same slot the column-backed carriers
-     * carry: {@link CallSiteCompaction.Direct} where the read's value is the field's value, and
+     * carry: {@link CallSiteCompaction.Direct} where the read's value is the field's value,
+     * {@link CallSiteCompaction.EnumKnownOrNull} where it is an enum's text value read off a jOOQ
+     * record (a typed-column or by-name read only, by the constructor invariant below), and
      * {@link CallSiteCompaction.NodeIdEncodeKeys} where the field carries
      * {@code @nodeId(typeName:)} and the read's value is a node key to encode. The read is one
      * value, so the encode arm here is single-key by construction; a composite-key node type at a
      * read coordinate is refused at classify time, and the constructor invariant below is the
-     * backstop rather than the author-facing statement. Which of the four locator arms produced
-     * the value is independent of the direction, which is why one slot serves all four.
+     * backstop rather than the author-facing statement. Beyond the enum wrap's restriction, which
+     * of the four locator arms produced the value is independent of the direction, which is why
+     * one slot serves all four.
      */
     record RecordReadField(
         String parentTypeName,
@@ -1414,6 +1417,15 @@ public sealed interface ChildField extends OutputField
                     "RecordReadField '" + name + "' encodes from a read, which yields one value, so"
                     + " the node key must be a single column; got arity "
                     + enc.encodeMethod().paramSignature().size());
+            }
+            // The enum wrap is for database reads only: a typed column or a by-name read off a
+            // jOOQ record. An accessor or a default read yields developer code's value, which
+            // the classifier never wraps; emission relies on that and has no arm for it.
+            if (compaction instanceof CallSiteCompaction.EnumKnownOrNull
+                    && !(locator instanceof ValueLocator.TypedColumn || locator instanceof ValueLocator.ByName)) {
+                throw new IllegalArgumentException(
+                    "RecordReadField '" + name + "' carries EnumKnownOrNull, which only a TypedColumn"
+                    + " or ByName read takes; got " + locator.getClass().getSimpleName());
             }
         }
         /**

@@ -35,7 +35,7 @@ public final class SchemaShapeRenderTestSupport {
         return SchemaShapePlanner.produce(schema, "").stream()
             .filter(r -> r.form() == TypeUnitCommand.SchemaShapeForm.ENUM)
             .map(r -> EnumTypeGenerator.generateFor((GraphitronType.EnumType) schema.type(r.typeName()),
-                assembled))
+                assembled, ""))
             .toList();
     }
 

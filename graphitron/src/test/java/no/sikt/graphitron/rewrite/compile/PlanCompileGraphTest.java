@@ -35,7 +35,8 @@ class PlanCompileGraphTest {
      * (fetcher edge row), an encode-carrying {@code @nodeId} id column, an inline single
      * reference (projection {@code Call}), a fetcher-owning nesting type, and an inline list
      * reference filtered by a {@code @nodeId}-decoding input (projection glue + decode-carrying
-     * condition row).
+     * condition row), and an enum read off a text column, wrapped in its schema shape's
+     * known-or-null helper, beside a nested enum read off a jOOQ-enum column, which is not.
      */
     private static final String SDL = """
         type Query {
@@ -46,13 +47,18 @@ class PlanCompileGraphTest {
         type Film implements Node @table(name: "film") @node {
           id: ID! @nodeId
           title: String
+          textRating: TextRating @field(name: "text_rating")
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
           meta: FilmMeta
         }
 
         type FilmMeta {
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
+          rating: MpaaRating
         }
+
+        enum TextRating { G PG PG_13 @field(name: "PG-13") R NC_17 @field(name: "NC-17") }
+        enum MpaaRating { G PG PG_13 R NC_17 }
 
         type Language @table(name: "language") {
           name: String
@@ -162,6 +168,15 @@ class PlanCompileGraphTest {
         // per-type-growing encoder is never blanketed).
         assertThat(refs(UNITS.fetchers("Film"))).contains(PKG + ".util.NodeIdEncoder");
         assertThat(refs(UNITS.fetchers("Language"))).doesNotContain(PKG + ".util.NodeIdEncoder");
+    }
+
+    @Test
+    void enumWrappingFetcherReachesTheEnumSchemaShapePrecisely() {
+        // Film.textRating reads a varchar column through TextRatingType.knownOrNull, so FilmFetchers
+        // names the enum's schema shape. FilmMeta.rating reads a jOOQ-enum column directly, and no
+        // fetchers unit is blanketed into an enum's schema shape, so FilmMetaFetchers gets no edge.
+        assertThat(refs(UNITS.fetchers("Film"))).contains(PKG + ".schema.TextRatingType");
+        assertThat(refs(UNITS.fetchers("FilmMeta"))).doesNotContain(PKG + ".schema.MpaaRatingType");
     }
 
     @Test

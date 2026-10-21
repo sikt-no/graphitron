@@ -396,9 +396,11 @@ INSERT INTO customer (store_id, first_name, last_name, email, address_id, active
     (1, 'Barbara',   'Jones',    'barbara.jones@example.com',    1, false, 0),
     (2, 'Elizabeth', 'Brown',    'elizabeth.brown@example.com',  2, false, 0);
 
--- Films spanning all ratings and a range of rental rates
+-- Films spanning all ratings and a range of rental rates. ACADEMY DINOSAUR's text_rating is a
+-- value the TextRating enum does not name, which reads as null (not an error) through
+-- Film.textRating and Inventory.filmTextRating; no textRating filter test counts it.
 INSERT INTO film (title, description, release_year, language_id, rental_rate, rating, text_rating, length) VALUES
-    ('ACADEMY DINOSAUR', 'A Epic Drama',         2006, 1, 0.99, 'PG',    'PG',    86),
+    ('ACADEMY DINOSAUR', 'A Epic Drama',         2006, 1, 0.99, 'PG',    'UNRATED', 86),
     ('ACE GOLDFINGER',   'A Thrilling Saga',     2006, 1, 4.99, 'G',     'G',     48),
     ('ADAPTATION HOLES', 'A Quirky Comedy',      2006, 1, 2.99, 'NC-17', 'NC-17', 50),
     ('AFFAIR PREJUDICE', 'A Classic Romance',    2006, 1, 2.99, 'G',     'G',    117),

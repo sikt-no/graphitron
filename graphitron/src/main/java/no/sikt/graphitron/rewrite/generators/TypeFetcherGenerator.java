@@ -782,7 +782,7 @@ public class TypeFetcherGenerator {
                 case MutationField.MutationDmlRecordField f    -> builder.addMethod(buildMutationDmlRecordFetcher(ctx, f, outputPackage));
                 case MutationField.MutationBulkDmlRecordField f -> builder.addMethod(buildMutationBulkDmlRecordFetcher(ctx, f, outputPackage));
                 // ColumnBackedReferenceField: inline projection via the type's $project unit
-                // (Direct compaction); the read of that aliased projection is reified by
+                // (plain-value compaction); the read of that aliased projection is reified by
                 // FetcherEmitter.bind and collected below. The validator rejects the
                 // NodeIdEncodeKeys (every arity) and condition-join shapes ahead of generation;
                 // no per-shape carve-out is needed here.

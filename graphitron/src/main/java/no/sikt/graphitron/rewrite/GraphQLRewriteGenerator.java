@@ -558,7 +558,7 @@ public class GraphQLRewriteGenerator {
                 .map(row -> switch (row.form()) {
                     case ENUM -> EnumTypeGenerator.generateFor(
                         (no.sikt.graphitron.rewrite.model.GraphitronType.EnumType) schema.type(row.typeName()),
-                        assembled);
+                        assembled, outputPackage);
                     case INPUT -> InputTypeGenerator.generateFor(
                         (no.sikt.graphitron.rewrite.model.GraphitronType.InputType) schema.type(row.typeName()),
                         assembled);

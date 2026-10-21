@@ -109,6 +109,29 @@ class JoinedTableReprojectionTest {
         assertThat(reprojection.deferrals()).isEmpty();
     }
 
+    /**
+     * An enum read wrapped in its known-or-null helper is still a plain single-column value: the
+     * projection is the column, only the read differs. Testing for {@code Direct} here instead of
+     * {@link CallSiteCompaction.PlainValue} would defer both carriers with no other signal.
+     */
+    @Test
+    void enumWrappedCarriers_projectLikeDirectOnes_notDeferred() {
+        var wrap = new CallSiteCompaction.EnumKnownOrNull(new CallSiteCompaction.KnownOrNullRef(
+            "com.example.schema.KindType", "knownOrNull"));
+        var ref = inheritedRef("displayName", DISPLAY_NAME);
+        var schema = schema(List.of(
+            new ChildField.ColumnBackedField("Individual", "birthDate", LOC, List.of(BIRTH_DATE), wrap),
+            new ChildField.ColumnBackedReferenceField(ref.parentTypeName(), ref.name(), ref.location(),
+                ref.columns(), ref.joinPath(), wrap, ref.parentCorrelation(), ref.aliasOwner(), ref.aliasScope())));
+        var reprojection = schema.joinedTableReprojectionOf("Party");
+        assertThat(reprojection.deferrals()).isEmpty();
+        assertThat(reprojection.baseSlice()).singleElement()
+            .isInstanceOfSatisfying(BaseSliceTerm.InheritedRef.class,
+                ir -> assertThat(ir.fieldName()).isEqualTo("displayName"));
+        assertThat(reprojection.detailFieldsOf("Individual")).singleElement()
+            .satisfies(df -> assertThat(df.fieldName()).isEqualTo("birthDate"));
+    }
+
     @Test
     void nodeIdCompactedCarrier_defersInsteadOfTruncating_validatorDrainsIt() {
         var encode = new CallSiteCompaction.NodeIdEncodeKeys(new HelperRef.Encode(

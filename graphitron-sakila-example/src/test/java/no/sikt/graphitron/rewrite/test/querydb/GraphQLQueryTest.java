@@ -1689,6 +1689,33 @@ class GraphQLQueryTest {
     }
 
     @Test
+    void films_textRating_readsUnmappedValueAsNullWithoutAnError() {
+        // film.text_rating is varchar. ACADEMY DINOSAUR holds 'UNRATED', which TextRating does not
+        // name: it reads as null and the response carries no error (execute asserts none). 'NC-17'
+        // reads as NC_17, the first of the two values mapping to it (NC17 is a deprecated alias),
+        // and 'PG' as its own name. Films other classes insert hold NULL and fall outside the seed.
+        Map<String, Object> data = execute("{ films { title textRating } }");
+        assertThat(seededByTitle(data, "films"))
+            .extracting(f -> f.get("title"), f -> f.get("textRating"))
+            .containsExactlyInAnyOrder(
+                tuple("ACADEMY DINOSAUR", null),
+                tuple("ACE GOLDFINGER", "G"),
+                tuple("ADAPTATION HOLES", "NC_17"),
+                tuple("AFFAIR PREJUDICE", "G"),
+                tuple("AGENT TRUMAN", "PG"));
+    }
+
+    @Test
+    void inventory_filmTextRating_readsThroughReferenceWithUnmappedValueAsNull() {
+        // The same column reached through a scalar @reference: inventory 1 is ACADEMY DINOSAUR
+        // ('UNRATED'), 2 is ACE GOLDFINGER ('G'), 3 is ADAPTATION HOLES ('NC-17').
+        Map<String, Object> data = execute("{ inventoryById(inventory_id: [1, 2, 3]) { inventoryId filmTextRating } }");
+        assertThat(data).extractingByKey("inventoryById", as(list(Map.class)))
+            .extracting(i -> i.get("inventoryId"), i -> i.get("filmTextRating"))
+            .containsExactlyInAnyOrder(tuple(1, null), tuple(2, "G"), tuple(3, "NC_17"));
+    }
+
+    @Test
     void films_orderedByFilmId() {
         Map<String, Object> data = execute("{ films { title } }");
         assertThat(seededTitlesInOrder((List<Map<String, Object>>) data.get("films")))
@@ -4508,11 +4535,13 @@ class GraphQLQueryTest {
         // the input fields default to [0, 1], which selects ACADEMY DINOSAUR (0.99) alone. Distinct
         // bounds keep each path honest: had the argument default's BigDecimals not arrived, the
         // field defaults would fill in and the omitted-argument query would answer [0, 1] instead.
-        List<Map<String, Object>> viaArgumentDefault = (List<Map<String, Object>>) execute(
-            "{ filmsByRentalRateRangeDefaulted { title } }").get("filmsByRentalRateRangeDefaulted");
-        List<Map<String, Object>> viaFieldDefaults = (List<Map<String, Object>>) execute(
-            "{ filmsByRentalRateRangeDefaulted(filter: {rentalRateRange: {}}) { title } }")
-            .get("filmsByRentalRateRangeDefaulted");
+        // Bounded to the seed: film.rental_rate defaults to 4.99, so a film another class in this
+        // module inserts without naming a rate falls inside [4, 5] while that class runs.
+        List<Map<String, Object>> viaArgumentDefault = seededByTitle(execute(
+            "{ filmsByRentalRateRangeDefaulted { title } }"), "filmsByRentalRateRangeDefaulted");
+        List<Map<String, Object>> viaFieldDefaults = seededByTitle(execute(
+            "{ filmsByRentalRateRangeDefaulted(filter: {rentalRateRange: {}}) { title } }"),
+            "filmsByRentalRateRangeDefaulted");
 
         assertThat(viaArgumentDefault).extracting(f -> f.get("title")).containsExactly("ACE GOLDFINGER");
         assertThat(viaFieldDefaults).extracting(f -> f.get("title")).containsExactly("ACADEMY DINOSAUR");

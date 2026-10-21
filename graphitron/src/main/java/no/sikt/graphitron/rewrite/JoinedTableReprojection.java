@@ -37,7 +37,7 @@ import java.util.Map;
  * participants (each projects against its own detail alias).
  *
  * <p>{@link #deferrals} carries the shapes that classify but have no reprojection emission: a
- * non-{@link CallSiteCompaction.Direct} (e.g. {@code @nodeId}-encoded) column carrier on a
+ * non-{@link CallSiteCompaction.PlainValue} (e.g. {@code @nodeId}-encoded) column carrier on a
  * joined-table participant, which the retired assembly silently truncated to its first column;
  * and an inherited reference whose stamped {@link AliasOwner} is qualified, whose bare base-slice
  * write no registered fetcher's qualified read can address (see
@@ -89,7 +89,7 @@ public record JoinedTableReprojection(
             var details = new ArrayList<DetailField>();
             for (var f : schema.fieldsOf(jtb.typeName())) {
                 if (f instanceof ChildField.ColumnBackedReferenceField crf) {
-                    if (!(crf.compaction() instanceof CallSiteCompaction.Direct)) {
+                    if (!(crf.compaction() instanceof CallSiteCompaction.PlainValue)) {
                         deferrals.add(deferral(jtb.typeName(), crf.name()));
                     } else if (crf.aliasOwner() instanceof AliasOwner.QualifiedBy qualified) {
                         deferrals.add(mixedParticipationDeferral(jtb.typeName(), crf.name(), qualified));
@@ -97,7 +97,7 @@ public record JoinedTableReprojection(
                         baseSlice.add(new BaseSliceTerm.InheritedRef(crf.name(), crf.columns().get(0)));
                     }
                 } else if (f instanceof ChildField.ColumnBackedField cf) {
-                    if (!(cf.compaction() instanceof CallSiteCompaction.Direct)) {
+                    if (!(cf.compaction() instanceof CallSiteCompaction.PlainValue)) {
                         deferrals.add(deferral(jtb.typeName(), cf.name()));
                         continue;
                     }

@@ -8585,10 +8585,63 @@ class FieldBuilder {
             // nothing; graphql-java's default property machinery reads the name.
             locator = new ValueLocator.DefaultRead(columnName);
         }
-        return new RecordReadField(parentTypeName, name, location, returnType, locator,
-            encode == null
-                ? new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct()
-                : encode.compaction());
+        no.sikt.graphitron.rewrite.model.CallSiteCompaction compaction;
+        if (encode != null) {
+            compaction = encode.compaction();
+        } else if (returnType instanceof ReturnTypeRef.ScalarReturnType) {
+            // Only a read off a jOOQ record reads a database value; an accessor or a default read
+            // yields developer code's value, which stays as it is.
+            compaction = switch (locator) {
+                case ValueLocator.TypedColumn tc -> databaseReadCompaction(fieldDef, tc.column());
+                case ValueLocator.ByName ignored -> databaseReadCompaction(fieldDef, null);
+                case ValueLocator.JavaAccessor ignored -> new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct();
+                case ValueLocator.DefaultRead ignored -> new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct();
+            };
+        } else {
+            compaction = new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct();
+        }
+        return new RecordReadField(parentTypeName, name, location, returnType, locator, compaction);
+    }
+
+    /**
+     * The wire direction of a plain database read: {@code EnumKnownOrNull} for a single-valued
+     * enum field read from a text column, so a column value the enum does not name resolves to
+     * {@code null} rather than to a serialization error carrying the value, and {@code Direct}
+     * otherwise. {@code column} is the typed column read, or {@code null} for a by-name read,
+     * which has no static type and takes the wrap on the strength of the helper's tolerance of
+     * any non-{@code String} value.
+     *
+     * <p>A typed column is a text column when {@link EnumMappingResolver#validateEnumFilter}
+     * finds no jOOQ enum and the column binds as {@code String}. A jOOQ-enum column
+     * ({@code Valid} or {@code Mismatch}) has a value set known at build time and stays
+     * {@code Direct}; so does any other non-{@code String} column, where the wrap would do
+     * nothing.
+     */
+    private no.sikt.graphitron.rewrite.model.CallSiteCompaction.PlainValue databaseReadCompaction(
+            GraphQLFieldDefinition fieldDef, ColumnRef column) {
+        var direct = new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct();
+        if (GraphQLTypeUtil.unwrapNonNull(fieldDef.getType()) instanceof GraphQLList) {
+            return direct;
+        }
+        String typeName = baseTypeName(fieldDef);
+        if (!(typeBuilder.lookAheadVerdict(typeName) instanceof GraphitronType.EnumType)) {
+            return direct;
+        }
+        if (column != null) {
+            boolean text = switch (enumMappingResolver.validateEnumFilter(typeName, column)) {
+                case EnumMappingResolver.EnumValidation.NotEnum ignored -> String.class.getName().equals(column.columnClass());
+                case EnumMappingResolver.EnumValidation.Valid ignored -> false;
+                case EnumMappingResolver.EnumValidation.Mismatch ignored -> false;
+            };
+            if (!text) {
+                return direct;
+            }
+        }
+        var host = new no.sikt.graphitron.plan.GeneratedUnits(ctx.ctx().outputPackage()).schemaShape(typeName);
+        return new no.sikt.graphitron.rewrite.model.CallSiteCompaction.EnumKnownOrNull(
+            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.KnownOrNullRef(
+                host.fqcn(),
+                no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator.KNOWN_OR_NULL_METHOD));
     }
 
     private ClassAccessorResolver.ParamShape mapArgsToParamShape(GraphQLFieldDefinition fieldDef) {
@@ -9702,7 +9755,7 @@ class FieldBuilder {
             }
             var crfParentCorrelation = ((BuildContext.ParentCorrelationResolution.Resolved) crfPcResolution).correlation();
             return new ColumnBackedReferenceField(parentTypeName, name, location, List.of(column.get()), refPath.elements(),
-                new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct(),
+                databaseReadCompaction(fieldDef, column.get()),
                 crfParentCorrelation, aliasOwnerOf(parentTypeName, name),
                 aliasScopeOf(parentTypeName));
         }
@@ -9750,7 +9803,7 @@ class FieldBuilder {
                 columnName, ctx.catalog.columnJavaNamesOf(tableSqlName)));
         }
         return new ColumnBackedField(parentTypeName, name, location, List.of(column.get()),
-            new no.sikt.graphitron.rewrite.model.CallSiteCompaction.Direct());
+            databaseReadCompaction(fieldDef, column.get()));
     }
 
     /**

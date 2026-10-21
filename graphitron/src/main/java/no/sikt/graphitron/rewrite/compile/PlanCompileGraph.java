@@ -34,7 +34,7 @@ import java.util.Set;
  * projection and WHERE glue, a projection row's callees and glue calls, a condition row's
  * decode/context facts, the fetcher edge relation's targets, the sealed
  * {@link GlobalCommand} arms' fixed-substrate wiring), never re-derived from the classified
- * model.
+ * model, save for the leaf-derived edges below.
  *
  * <p><b>Edge policy.</b> Two edge classes, and {@link #project} returns them separably:
  *
@@ -69,6 +69,12 @@ import java.util.Set;
  * depends on its input shape), so it rides the declared superset; the read-side encode leaves
  * are precise. The condition glue's decode edge, by contrast, is row data
  * ({@code ConditionCommand.decodesNodeId()}).
+ *
+ * <p><b>Leaf-derived enum schema-shape edges.</b> On the same grounds, a fetchers unit that passes
+ * a read through an enum's {@code knownOrNull} helper (a column-backed or record-read leaf with
+ * {@link CallSiteCompaction.EnumKnownOrNull} compaction) reaches that enum's {@code <Name>Type}
+ * schema-shape unit by a precise edge: wrapping a read is a fact about one call site, so the edge
+ * stays with the field.
  *
  * <p>Two external call shapes contribute no edge, matching the emitted source: a service
  * {@code MethodRef} (the developer's own class) and a {@code SelectTerm.HelperCall} (the
@@ -140,6 +146,7 @@ public final class PlanCompileGraph {
         private final Map<GlobalUnitKind, GlobalCommand> byKind = new LinkedHashMap<>();
         private final Map<String, UnitRef> fetchersByTypeName = new LinkedHashMap<>();
         private final Map<String, UnitRef> fetchersBySimpleName = new LinkedHashMap<>();
+        private final Map<String, UnitRef> schemaShapeBySimpleName = new LinkedHashMap<>();
 
         private Builder(EmitPlan plan, GraphitronSchema schema) {
             this.plan = plan;
@@ -159,6 +166,9 @@ public final class PlanCompileGraph {
             for (UnitRef unit : plan.typeUnits().fetchersUnits()) {
                 fetchersBySimpleName.put(unit.simpleName(), unit);
             }
+            for (UnitRef unit : plan.typeUnits().schemaShapeUnits()) {
+                schemaShapeBySimpleName.put(unit.simpleName(), unit);
+            }
         }
 
         private Projection build() {
@@ -169,6 +179,7 @@ public final class PlanCompileGraph {
             addLauncherEdges();
             addFetcherEdgeRows();
             addEncoderLeafEdges();
+            addEnumHelperLeafEdges();
             addBlanketEdges();
             return new Projection(graph.build(), superset.build());
         }
@@ -541,6 +552,49 @@ public final class PlanCompileGraph {
                 declared(fetchers, encoder);
             } else {
                 precise(fetchers, encoder);
+            }
+        }
+
+        // --------------------------------------------------------------------------------------
+        // Leaf-derived enum schema-shape edges (see the class javadoc's edge policy).
+        // --------------------------------------------------------------------------------------
+
+        private void addEnumHelperLeafEdges() {
+            for (var type : schema.types().values()) {
+                for (var field : schema.fieldsOf(type.name())) {
+                    addEnumHelperLeafEdges(field);
+                }
+            }
+        }
+
+        private void addEnumHelperLeafEdges(GraphitronField field) {
+            if (field instanceof ChildField.NestingField nesting) {
+                for (var nested : nesting.nestedFields()) {
+                    addEnumHelperLeafEdges(nested);
+                }
+            }
+            var compaction = switch (field) {
+                case ChildField.ColumnBackedField f -> f.compaction();
+                case ChildField.ColumnBackedReferenceField f -> f.compaction();
+                case ChildField.RecordReadField f -> f.compaction();
+                default -> null;
+            };
+            if (compaction instanceof CallSiteCompaction.EnumKnownOrNull wrap) {
+                // A nested field's parent is the nesting type, whose fetchers host the dual-shape
+                // read; the encoder edge reads its source the same way.
+                UnitRef fetchers = fetchersByTypeName.get(field.parentTypeName());
+                if (fetchers == null) {
+                    return;
+                }
+                // Looked up among the committed units, never minted again.
+                String host = wrap.helper().hostSimpleName();
+                UnitRef shape = schemaShapeBySimpleName.get(host);
+                if (shape == null) {
+                    throw new IllegalStateException("field " + field.qualifiedName() + " wraps its read in "
+                        + host + ", which the plan commits no schema-shape unit for; every classified enum"
+                        + " has one");
+                }
+                precise(fetchers, shape);
             }
         }
 

@@ -53,6 +53,13 @@ public sealed interface ErrorFieldRead {
             java.util.Objects.requireNonNull(sdlFieldName, "sdlFieldName");
             java.util.Objects.requireNonNull(accessorBase, "accessorBase");
             java.util.Objects.requireNonNull(wire, "wire");
+            // An @error type's field reads developer code, never a column, so no enum wrap; the
+            // registration reifies a method only for an encode and relies on that.
+            if (wire instanceof CallSiteCompaction.EnumKnownOrNull) {
+                throw new IllegalArgumentException(
+                    "SourceAccessor '" + sdlFieldName + "' cannot carry EnumKnownOrNull: an @error"
+                    + " field's value comes from the matched source, not a database column");
+            }
         }
     }
 }

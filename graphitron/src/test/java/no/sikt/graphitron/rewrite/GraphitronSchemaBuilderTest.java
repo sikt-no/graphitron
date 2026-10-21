@@ -27,6 +27,7 @@ import no.sikt.graphitron.rewrite.model.ChildField.UnionField;
 import no.sikt.graphitron.rewrite.model.AccessorResolution;
 import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.KeyLift;
+import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ValueLocator;
 import no.sikt.graphitron.rewrite.model.SourceKey;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -2555,6 +2556,185 @@ class GraphitronSchemaBuilderTest {
     @ParameterizedTest(name = "{0}")
     @EnumSource(NonTableParentCase.class)
     void nonTableParentFieldClassification(NonTableParentCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== The wire direction of an enum read from the database =====
+
+    /**
+     * A single-valued enum field read from a text column passes its read through the enum's
+     * {@code knownOrNull} helper ({@link CallSiteCompaction.EnumKnownOrNull}), so a column value
+     * the enum does not name resolves to {@code null} rather than to a serialization error. Each
+     * row pins one carrier's compaction: the three database-read construction sites take the arm,
+     * and every read whose value is not a text column's, or not a database read at all, stays
+     * {@link CallSiteCompaction.Direct}.
+     */
+    enum EnumReadCompactionCase implements ClassificationCase {
+        COLUMN_FIELD_OVER_TEXT_COLUMN(
+            "enum-typed ColumnBackedField over a varchar column -> EnumKnownOrNull naming the enum's schema shape",
+            TEXT_RATING_ENUM + """
+            type Film @table(name: "film") { textRating: TextRating @field(name: "text_rating") }
+            type Query { film: Film }
+            """,
+            schema -> {
+                var f = (ColumnBackedField) schema.field("Film", "textRating");
+                var wrap = (CallSiteCompaction.EnumKnownOrNull) f.compaction();
+                assertThat(wrap.helper().hostSimpleName()).isEqualTo("TextRatingType");
+                assertThat(wrap.helper().methodName()).isEqualTo(
+                    no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator.KNOWN_OR_NULL_METHOD);
+            }),
+
+        REFERENCE_FIELD_OVER_TEXT_COLUMN(
+            "enum-typed ColumnBackedReferenceField over a varchar column -> EnumKnownOrNull",
+            TEXT_RATING_ENUM + """
+            type Inventory @table(name: "inventory") {
+                filmTextRating: TextRating @field(name: "text_rating") @reference(path: [{key: "inventory_film_id_fkey"}])
+            }
+            type Query { inventory: Inventory }
+            """,
+            schema -> assertThat(((ColumnBackedReferenceField) schema.field("Inventory", "filmTextRating")).compaction())
+                .isInstanceOf(CallSiteCompaction.EnumKnownOrNull.class)),
+
+        RECORD_READ_TYPED_COLUMN(
+            "enum-typed RecordReadField with a TypedColumn locator on a jOOQ table-record parent -> EnumKnownOrNull",
+            TEXT_RATING_ENUM + """
+            type FilmRow { textRating: TextRating @field(name: "text_rating") }
+            type Holder { film: FilmRow }
+            type Query {
+                holder: Holder @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmRecordHolder"})
+            }
+            """,
+            schema -> {
+                var f = (RecordReadField) schema.field("FilmRow", "textRating");
+                assertThat(f.locator()).isInstanceOf(ValueLocator.TypedColumn.class);
+                assertThat(f.compaction()).isInstanceOf(CallSiteCompaction.EnumKnownOrNull.class);
+            }),
+
+        RECORD_READ_BY_NAME(
+            "enum-typed RecordReadField with a ByName locator (no static type) -> EnumKnownOrNull",
+            TEXT_RATING_ENUM + """
+            type Reader { textRating: TextRating @field(name: "text_rating") }
+            type Query {
+                read: Reader @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makePlainJooqRecord"})
+            }
+            """,
+            schema -> {
+                var f = (RecordReadField) schema.field("Reader", "textRating");
+                assertThat(f.locator()).isInstanceOf(ValueLocator.ByName.class);
+                assertThat(f.compaction()).isInstanceOf(CallSiteCompaction.EnumKnownOrNull.class);
+            }),
+
+        RECORD_READ_ON_OUTCOME_PARENT(
+            "enum-typed RecordReadField on an outcome payload (the inline success-arm read) -> EnumKnownOrNull",
+            TEXT_RATING_ENUM + """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) { path: [String!]! message: String! }
+            union SakError = ValidationErr
+            type FilmRecordPayload {
+                textRating: TextRating @field(name: "TEXT_RATING")
+                errors: [SakError]
+            }
+            type Query {
+                film: FilmRecordPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """,
+            schema -> {
+                var f = (RecordReadField) schema.field("FilmRecordPayload", "textRating");
+                assertThat(f.locator()).isInstanceOf(ValueLocator.TypedColumn.class);
+                assertThat(f.compaction()).isInstanceOf(CallSiteCompaction.EnumKnownOrNull.class);
+            }),
+
+        STRING_OVER_TEXT_COLUMN(
+            "the same column read as String -> Direct",
+            """
+            type Film @table(name: "film") { textRating: String @field(name: "text_rating") }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(((ColumnBackedField) schema.field("Film", "textRating")).compaction())
+                .isInstanceOf(CallSiteCompaction.Direct.class)),
+
+        ENUM_OVER_JOOQ_ENUM_COLUMN(
+            "an enum over a jOOQ-enum column -> Direct; its value set is known at build time",
+            """
+            enum MpaaRating { G PG PG_13 R NC_17 }
+            type Film @table(name: "film") { rating: MpaaRating }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(((ColumnBackedField) schema.field("Film", "rating")).compaction())
+                .isInstanceOf(CallSiteCompaction.Direct.class)),
+
+        ENUM_OVER_NON_STRING_COLUMN(
+            "an enum over a column that binds as neither String nor a jOOQ enum -> Direct; the wrap would do nothing",
+            """
+            enum Length { SHORT LONG }
+            type Film @table(name: "film") { length: Length }
+            type Query { film: Film }
+            """,
+            schema -> assertThat(((ColumnBackedField) schema.field("Film", "length")).compaction())
+                .isInstanceOf(CallSiteCompaction.Direct.class)),
+
+        LIST_VALUED_ENUM(
+            "a list-valued enum field -> Direct; nulling an element would change the list's shape",
+            TEXT_RATING_ENUM + """
+            type FilmRow { textRating: [TextRating] @field(name: "text_rating") }
+            type Holder { film: FilmRow }
+            type Query {
+                holder: Holder @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmRecordHolder"})
+            }
+            """,
+            schema -> assertThat(((RecordReadField) schema.field("FilmRow", "textRating")).compaction())
+                .isInstanceOf(CallSiteCompaction.Direct.class)),
+
+        JAVA_ACCESSOR_READ(
+            "an enum read through an accessor on a class-backed parent -> Direct; developer code supplies the value",
+            TEXT_RATING_ENUM + """
+            type FilmDetailsRating { rating: TextRating }
+            type Query {
+                details: FilmDetailsRating @service(service: {className: "no.sikt.graphitron.codereferences.dummyreferences.DummyService", method: "makeFilmDetailsRating"})
+            }
+            """,
+            schema -> {
+                var f = (RecordReadField) schema.field("FilmDetailsRating", "rating");
+                assertThat(f.locator()).isInstanceOf(ValueLocator.JavaAccessor.class);
+                assertThat(f.compaction()).isInstanceOf(CallSiteCompaction.Direct.class);
+            }),
+
+        ERROR_TYPE_FIELD(
+            "an enum field on an @error type (a DefaultRead off the matched source) -> Direct",
+            TEXT_RATING_ENUM + """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]! message: String! rating: TextRating
+            }
+            union SakError = ValidationErr
+            type FilmRecordPayload { title: String @field(name: "TITLE") errors: [SakError] }
+            type Query {
+                film: FilmRecordPayload
+                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "getFilm"})
+            }
+            """,
+            schema -> {
+                var f = (RecordReadField) schema.field("ValidationErr", "rating");
+                assertThat(f.locator()).isInstanceOf(ValueLocator.DefaultRead.class);
+                assertThat(f.compaction()).isInstanceOf(CallSiteCompaction.Direct.class);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        EnumReadCompactionCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    private static final String TEXT_RATING_ENUM = """
+        enum TextRating { G PG PG_13 @field(name: "PG-13") R NC_17 @field(name: "NC-17") }
+        """;
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(EnumReadCompactionCase.class)
+    void enumReadCompaction(EnumReadCompactionCase tc) {
         tc.assertions.accept(build(tc.sdl));
     }
 

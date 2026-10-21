@@ -246,9 +246,9 @@ public final class FetcherEmitter {
 
     /**
      * The nesting-arm column read for a dual-shape dispatch, off the pattern-bound {@code rec} record:
-     * {@code rec.get(Tables.X.COL)}, or the NodeId-encoded projection when the column field carries an
-     * encode compaction. Mirrors {@link #bindRaw}'s {@code ColumnBackedField} arm, differing only in the source
-     * subject (the narrowed {@code rec} local rather than {@code ((Record) source)}).
+     * {@code rec.get(Tables.X.COL)} through {@link #plainValueRead}, or the NodeId-encoded projection when the
+     * column field carries an encode compaction. Mirrors {@link #bindRaw}'s {@code ColumnBackedField} arm,
+     * differing only in the source subject (the narrowed {@code rec} local rather than {@code ((Record) source)}).
      */
     private static CodeBlock dualShapeRecordArmRead(ChildField recordArm, TableRef parentTable) {
         // A pivot-edge representative reads its slot by derived name off the pivot record; the
@@ -258,19 +258,39 @@ public final class FetcherEmitter {
             return CodeBlock.of("rec.get($T.field($T.name($S)))", DSL, DSL, slot.readName());
         }
         var cf = (ChildField.ColumnBackedField) recordArm;
-        if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
-            var encode = CodeBlock.builder()
-                .add("$T.$L(", enc.encodeMethod().encoderClass(), enc.encodeMethod().methodName());
-            for (int i = 0; i < cf.columns().size(); i++) {
-                if (i > 0) encode.add(", ");
-                encode.add("rec.get($T.$L.$L)",
-                    CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+        return switch (cf.compaction()) {
+            case CallSiteCompaction.NodeIdEncodeKeys enc -> {
+                var encode = CodeBlock.builder()
+                    .add("$T.$L(", enc.encodeMethod().encoderClass(), enc.encodeMethod().methodName());
+                for (int i = 0; i < cf.columns().size(); i++) {
+                    if (i > 0) encode.add(", ");
+                    encode.add("rec.get($T.$L.$L)",
+                        CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+                }
+                yield encode.add(")").build();
             }
-            return encode.add(")").build();
-        }
-        // Direct implies arity 1 (the carrier's constructor invariant).
-        return CodeBlock.of("rec.get($T.$L.$L)",
-            CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(0).javaName());
+            // A plain value implies arity 1 (the carrier's constructor invariant).
+            case CallSiteCompaction.PlainValue value -> plainValueRead(
+                CodeBlock.of("rec.get($T.$L.$L)",
+                    CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(0).javaName()),
+                value, cf);
+        };
+    }
+
+    /**
+     * The value a plain-value read hands graphql-java: {@code read} itself under
+     * {@link CallSiteCompaction.Direct}, and {@code read} passed through the enum's generated
+     * {@code knownOrNull} helper under {@link CallSiteCompaction.EnumKnownOrNull}, with the field's
+     * coordinate for the helper's log line. An expression, so the statement-shaped and the
+     * expression-shaped read sites share it; exhaustive over {@link CallSiteCompaction.PlainValue}
+     * with no default, so a new plain arm is a compile error here.
+     */
+    private static CodeBlock plainValueRead(CodeBlock read, CallSiteCompaction.PlainValue value, GraphitronField field) {
+        return switch (value) {
+            case CallSiteCompaction.Direct ignored -> read;
+            case CallSiteCompaction.EnumKnownOrNull e -> CodeBlock.of("$T.$L($L, $S)",
+                ClassName.bestGuess(e.helper().hostClassFqcn()), e.helper().methodName(), read, field.qualifiedName());
+        };
     }
 
     /**
@@ -349,10 +369,10 @@ public final class FetcherEmitter {
      * reaches here, its parent being table-bound). The parent {@code resultType} is consulted only for the cast target, per
      * arm, under the validate-time-checked arm/parent-shape compatibility.
      *
-     * <p>{@code encode} is the leaf's encode compaction or {@code null}, and it changes the
-     * by-name read's shape for the same reason it does in {@link #recordReadBinding}: an untyped
-     * {@code get} yields {@code Object}, which no {@code encode<TypeName>} signature takes. The
-     * wrapping itself is the caller's, through {@link #encodedReadReturn}.
+     * <p>An encode compaction changes the by-name read's shape for the same reason it does in
+     * {@link #recordReadBinding}: an untyped {@code get} yields {@code Object}, which no
+     * {@code encode<TypeName>} signature takes. The wrapping itself, encode or plain value, goes
+     * through {@link #encodedReadReturn}.
      */
     private static CodeBlock inlineSuccessReturn(
             GraphitronField field, GraphitronType.ResultType resultType, CodeBlock sourceExpr) {
@@ -364,17 +384,19 @@ public final class FetcherEmitter {
                 + " under an outcome parent; nesting fields classify only on table parents");
         }
         var rrf = (ChildField.RecordReadField) field;
-        var encode = rrf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys e ? e : null;
         CodeBlock read = switch (rrf.locator()) {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
                 yield CodeBlock.of("(($T) $L).get($T.$L.$L)",
                     RECORD, sourceExpr, CatalogRefs.constantsClass(table), table.javaFieldName(), tc.column().javaName());
             }
-            case ValueLocator.ByName bn -> encode == null
-                ? CodeBlock.of("(($T) $L).get($T.field($S))", RECORD, sourceExpr, DSL, bn.sqlName())
-                : CodeBlock.of("(($T) $L).get($T.field($S, $T.class))",
-                    RECORD, sourceExpr, DSL, bn.sqlName(), encodeKeyType(encode));
+            case ValueLocator.ByName bn -> switch (rrf.compaction()) {
+                case CallSiteCompaction.PlainValue ignored ->
+                    CodeBlock.of("(($T) $L).get($T.field($S))", RECORD, sourceExpr, DSL, bn.sqlName());
+                case CallSiteCompaction.NodeIdEncodeKeys encode ->
+                    CodeBlock.of("(($T) $L).get($T.field($S, $T.class))",
+                        RECORD, sourceExpr, DSL, bn.sqlName(), encodeKeyType(encode));
+            };
             case ValueLocator.JavaAccessor ja -> {
                 String javaBackingFqcn =
                     resultType instanceof GraphitronType.JavaRecordType jrt ? jrt.fqClassName()
@@ -389,7 +411,7 @@ public final class FetcherEmitter {
                 "inline success-projection arm-switch: DefaultRead locator on "
                 + field.qualifiedName() + " has no inline read");
         };
-        return encodedReadReturn(read, encode);
+        return encodedReadReturn(read, rrf.compaction(), rrf);
     }
 
     private static ClassName successClass(String outputPackage) {
@@ -569,27 +591,32 @@ public final class FetcherEmitter {
             return recordReadBinding(rrf, resultType, fetchersClass, outputPackage);
         }
         if (field instanceof ChildField.ColumnBackedField cf && parentTable != null) {
-            if (cf.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys enc) {
-                // NodeId-encoded projection: pass each key column positionally through
-                // encode<TypeName>(c1, ..., cN), one arity-uniform loop. The HelperRef.Encode
-                // reference carries both the encoder class and the helper method name, so neither
-                // is reconstructed from a raw typeId string at emission time.
-                var encoderClass = enc.encodeMethod().encoderClass();
-                var body = CodeBlock.builder()
-                    .add("$T r = ($T) source;\n", RECORD, RECORD)
-                    .add("return $T.$L(", encoderClass, enc.encodeMethod().methodName());
-                for (int i = 0; i < cf.columns().size(); i++) {
-                    if (i > 0) body.add(", ");
-                    body.add("r.get($T.$L.$L)",
-                        CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+            return switch (cf.compaction()) {
+                case CallSiteCompaction.NodeIdEncodeKeys enc -> {
+                    // NodeId-encoded projection: pass each key column positionally through
+                    // encode<TypeName>(c1, ..., cN), one arity-uniform loop. The HelperRef.Encode
+                    // reference carries both the encoder class and the helper method name, so neither
+                    // is reconstructed from a raw typeId string at emission time.
+                    var encoderClass = enc.encodeMethod().encoderClass();
+                    var body = CodeBlock.builder()
+                        .add("$T r = ($T) source;\n", RECORD, RECORD)
+                        .add("return $T.$L(", encoderClass, enc.encodeMethod().methodName());
+                    for (int i = 0; i < cf.columns().size(); i++) {
+                        if (i > 0) body.add(", ");
+                        body.add("r.get($T.$L.$L)",
+                            CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(i).javaName());
+                    }
+                    body.add(");\n");
+                    yield sourceOnly(field.name(), fetchersClass, outputPackage, body.build());
                 }
-                body.add(");\n");
-                return sourceOnly(field.name(), fetchersClass, outputPackage, body.build());
-            }
-            // Direct implies arity 1 (the carrier's constructor invariant): a plain typed-column read.
-            return sourceOnly(field.name(), fetchersClass, outputPackage,
-                CodeBlock.of("return (($T) source).get($T.$L.$L);\n",
-                    RECORD, CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(), cf.columns().get(0).javaName()));
+                // A plain value implies arity 1 (the carrier's constructor invariant): a typed-column read.
+                case CallSiteCompaction.PlainValue value -> sourceOnly(field.name(), fetchersClass, outputPackage,
+                    CodeBlock.of("return $L;\n", plainValueRead(
+                        CodeBlock.of("(($T) source).get($T.$L.$L)",
+                            RECORD, CatalogRefs.constantsClass(parentTable), parentTable.javaFieldName(),
+                            cf.columns().get(0).javaName()),
+                        value, cf)));
+            };
         }
         if (field instanceof ChildField.TableField tf) {
             boolean single = tf.returnType().wrapper() instanceof FieldWrapper.Single;
@@ -611,7 +638,7 @@ public final class FetcherEmitter {
                 return envDependent(field.name(), fetchersClass,
                     singleRowBody(tf, tf.returnType().table(), schema.nullContractOf(tf), outputPackage));
             }
-            return columnByAlias(field.name(), fetchersClass, tf, outputPackage);
+            return columnByAlias(tf, fetchersClass, new CallSiteCompaction.Direct(), outputPackage);
         }
         if (field instanceof ChildField.PivotField pvf) {
             // Inline @pivot: the projection is a single-row multiset aliased __rk_<resultKey>
@@ -639,7 +666,7 @@ public final class FetcherEmitter {
         if (field instanceof ChildField.ComputedField cmp) {
             // Wired by name: the type's $project unit inlines the developer's method call
             // aliased to the result key; the read picks the result Record up by that alias.
-            return columnByAlias(field.name(), fetchersClass, cmp, outputPackage);
+            return columnByAlias(cmp, fetchersClass, new CallSiteCompaction.Direct(), outputPackage);
         }
         if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {
             // Cross-table participant field on a TableInterfaceType participant: the interface
@@ -652,14 +679,17 @@ public final class FetcherEmitter {
                     RECORD, DSL, DSL, pcrf.aliasName(),
                     CatalogRefs.columnType(pcrf.column())));
         }
-        if (field instanceof ChildField.ColumnBackedReferenceField crf
-                && crf.compaction() instanceof CallSiteCompaction.Direct) {
-            // Direct-compaction scalar @reference: the type's $project unit projects an aliased
-            // correlated subquery; read the value out of the parent Record by alias. A
-            // NodeIdEncodeKeys instance never reaches emission: the validator rejects it as
-            // deferred, and one leaking through falls to the ResultKeyAliasedField guard below
-            // and fails loudly.
-            return columnByAlias(field.name(), fetchersClass, crf, outputPackage);
+        if (field instanceof ChildField.ColumnBackedReferenceField crf) {
+            switch (crf.compaction()) {
+                // Plain-value scalar @reference: the type's $project unit projects an aliased
+                // correlated subquery; read the value out of the parent Record by alias.
+                case CallSiteCompaction.PlainValue value -> {
+                    return columnByAlias(crf, fetchersClass, value, outputPackage);
+                }
+                // Never reaches emission: the validator rejects it as deferred, and one leaking
+                // through falls to the ResultKeyAliasedField guard below and fails loudly.
+                case CallSiteCompaction.NodeIdEncodeKeys ignored -> { }
+            }
         }
         // A ResultKeyAliasedField reaching here would fall through to a plain method-backed
         // reference and never read its __rk_ alias, silently mis-resolving aliased duplicates.
@@ -691,12 +721,17 @@ public final class FetcherEmitter {
      * <p>The lookup is name-based ({@code DSL.field(DSL.name(...))}), not the plain-SQL
      * {@code DSL.field(String)} form: an owner qualifier puts a {@code $} in the alias, and a
      * quoted-name reference addresses the projected alias whatever characters it carries.
+     *
+     * <p>The read passes through {@link #plainValueRead} under {@code value}: carriers without a
+     * compaction slot pass {@link CallSiteCompaction.Direct}.
      */
-    private static FetcherBinding columnByAlias(String name, ClassName fetchersClass,
-            ResultKeyAliasedField field, String outputPackage) {
-        return envDependent(name, fetchersClass,
-            CodeBlock.of("return (($T) env.getSource()).get($T.field($T.name($L)));\n",
-                RECORD, DSL, DSL, resultKeyAliasRead(field, outputPackage)));
+    private static <F extends GraphitronField & ResultKeyAliasedField> FetcherBinding columnByAlias(
+            F field, ClassName fetchersClass, CallSiteCompaction.PlainValue value, String outputPackage) {
+        return envDependent(field.name(), fetchersClass,
+            CodeBlock.of("return $L;\n", plainValueRead(
+                CodeBlock.of("(($T) env.getSource()).get($T.field($T.name($L)))",
+                    RECORD, DSL, DSL, resultKeyAliasRead(field, outputPackage)),
+                value, field)));
     }
 
     /**
@@ -874,32 +909,35 @@ public final class FetcherEmitter {
      * accessor switch lives in one place. Each arm's parent-shape cast is guaranteed by the
      * validator's record-read gating rule, not construction-site coincidence.
      *
-     * <p>An encode compaction wraps whichever value the arm read, through
-     * {@link #encodedReadReturn}. Two arms change shape to feed it rather than being wrapped
-     * as-is: the by-name read asks for the key column's type instead of returning {@code Object},
-     * and the default read has to run graphql-java's property machinery itself rather than handing
-     * the registration a bare {@code PropertyDataFetcher}, there being nowhere else to apply the
-     * encode.
+     * <p>The compaction wraps whichever value the arm read, through {@link #encodedReadReturn}.
+     * Two arms change shape to feed an encode rather than being wrapped as-is: the by-name read
+     * asks for the key column's type instead of returning {@code Object}, and the default read has
+     * to run graphql-java's property machinery itself rather than handing the registration a bare
+     * {@code PropertyDataFetcher}, there being nowhere else to apply the encode. The enum wrap
+     * never meets a default read (the carrier's constructor invariant).
      */
     private static FetcherBinding recordReadBinding(
             ChildField.RecordReadField field, GraphitronType.ResultType resultType,
             ClassName fetchersClass, String outputPackage) {
-        var encode = field.compaction() instanceof CallSiteCompaction.NodeIdEncodeKeys e ? e : null;
+        var compaction = field.compaction();
         return switch (field.locator()) {
             case ValueLocator.TypedColumn tc -> {
                 var table = ((GraphitronType.JooqTableRecordType) resultType).table();
                 var read = CodeBlock.of("(($T) source).get($T.$L.$L)",
                     RECORD, CatalogRefs.constantsClass(table), table.javaFieldName(), tc.column().javaName());
                 yield sourceOnly(field.name(), fetchersClass, outputPackage,
-                    encodedReadReturn(read, encode));
+                    encodedReadReturn(read, compaction, field));
             }
             case ValueLocator.ByName bn -> {
-                var read = encode == null
-                    ? CodeBlock.of("(($T) source).get($T.field($S))", RECORD, DSL, bn.sqlName())
-                    : CodeBlock.of("(($T) source).get($T.field($S, $T.class))",
-                        RECORD, DSL, bn.sqlName(), encodeKeyType(encode));
+                var read = switch (compaction) {
+                    case CallSiteCompaction.PlainValue ignored ->
+                        CodeBlock.of("(($T) source).get($T.field($S))", RECORD, DSL, bn.sqlName());
+                    case CallSiteCompaction.NodeIdEncodeKeys encode ->
+                        CodeBlock.of("(($T) source).get($T.field($S, $T.class))",
+                            RECORD, DSL, bn.sqlName(), encodeKeyType(encode));
+                };
                 yield sourceOnly(field.name(), fetchersClass, outputPackage,
-                    encodedReadReturn(read, encode));
+                    encodedReadReturn(read, compaction, field));
             }
             case ValueLocator.JavaAccessor ja -> {
                 String fqClassName = (resultType instanceof GraphitronType.JavaRecordType jrt)
@@ -908,44 +946,50 @@ public final class FetcherEmitter {
                 var backingClass = ClassName.bestGuess(fqClassName);
                 if (isEnvDependentAccessorRead(field)) {
                     yield envDependent(field.name(), fetchersClass, encodedReadReturn(
-                        recordBackedAccessorRead(backingClass, ja.accessor(), ENV_SOURCE), encode));
+                        recordBackedAccessorRead(backingClass, ja.accessor(), ENV_SOURCE), compaction, field));
                 }
                 yield sourceOnly(field.name(), fetchersClass, outputPackage, encodedReadReturn(
-                    recordBackedAccessorRead(backingClass, ja.accessor(), CodeBlock.of("source")), encode));
+                    recordBackedAccessorRead(backingClass, ja.accessor(), CodeBlock.of("source")), compaction, field));
             }
             // Graphitron located nothing: register graphql-java's default property machinery
             // explicitly, keyed on the located name (mirrors the ErrorsField PayloadAccessor arm).
             case ValueLocator.DefaultRead dr -> {
                 var propertyDataFetcher = ClassName.get("graphql.schema", "PropertyDataFetcher");
-                if (encode == null) {
-                    yield new FetcherBinding.Inline(
+                yield switch (compaction) {
+                    case CallSiteCompaction.Direct ignored -> new FetcherBinding.Inline(
                         CodeBlock.of("$T.fetching($S)", propertyDataFetcher, dr.name()));
-                }
-                yield throwingEnvDependent(field.name(), fetchersClass, encodedReadReturn(
-                    CodeBlock.of("($T) $T.fetching($S).get(env)",
-                        encodeKeyType(encode), propertyDataFetcher, dr.name()),
-                    encode));
+                    // Unreachable: RecordReadField's constructor admits the enum wrap only on a
+                    // typed-column or by-name read.
+                    case CallSiteCompaction.EnumKnownOrNull ignored -> throw new IllegalStateException(
+                        "record read " + field.qualifiedName() + ": EnumKnownOrNull on a DefaultRead locator");
+                    case CallSiteCompaction.NodeIdEncodeKeys encode -> throwingEnvDependent(field.name(), fetchersClass,
+                        encodedReadReturn(
+                            CodeBlock.of("($T) $T.fetching($S).get(env)",
+                                encodeKeyType(encode), propertyDataFetcher, dr.name()),
+                            encode, field));
+                };
             }
         };
     }
 
     /**
-     * The {@code return} statement for a record read, encoded or not. The encoded form binds the
-     * read to a local of the key column's own declared type, which is what makes the four arms
-     * feed one {@code encode<TypeName>} signature: a boxing or widening conversion applies at the
+     * The {@code return} statement for a record read under its compaction. A plain value returns
+     * the read through {@link #plainValueRead}. The encoded form binds the read to a local of the
+     * key column's own declared type, which is what makes the four arms feed one
+     * {@code encode<TypeName>} signature: a boxing or widening conversion applies at the
      * assignment, and a read that genuinely cannot feed the encode is a javac error naming both
      * types at the one line that names them. The null test is on the value rather than the id: a
      * read yielding nothing is an absent field, never an id encoding the absence.
      */
-    private static CodeBlock encodedReadReturn(CodeBlock read, CallSiteCompaction.NodeIdEncodeKeys encode) {
-        if (encode == null) {
-            return CodeBlock.of("return $L;\n", read);
-        }
-        return CodeBlock.builder()
-            .add("$T key = $L;\n", encodeKeyType(encode), read)
-            .add("return key == null ? null : $T.$L(key);\n",
-                encode.encodeMethod().encoderClass(), encode.encodeMethod().methodName())
-            .build();
+    private static CodeBlock encodedReadReturn(CodeBlock read, CallSiteCompaction compaction, GraphitronField field) {
+        return switch (compaction) {
+            case CallSiteCompaction.PlainValue value -> CodeBlock.of("return $L;\n", plainValueRead(read, value, field));
+            case CallSiteCompaction.NodeIdEncodeKeys encode -> CodeBlock.builder()
+                .add("$T key = $L;\n", encodeKeyType(encode), read)
+                .add("return key == null ? null : $T.$L(key);\n",
+                    encode.encodeMethod().encoderClass(), encode.encodeMethod().methodName())
+                .build();
+        };
     }
 
     /**

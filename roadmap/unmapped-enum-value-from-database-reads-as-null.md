@@ -380,6 +380,51 @@ costs one `switch` arm per carrier, and keeps leg 3's bounded gap where it is.
   At Done, if the execution test sees the enum on the wire, R231 is `Discarded` as stale in the same
   commit.
 
+## Implementation notes
+
+The plan above landed as written. Where the implementation chose between options the plan left
+open, or departed from its letter, it is recorded here for the In Review gate.
+
+* **The arm's reference** is `CallSiteCompaction.KnownOrNullRef(hostClassFqcn, methodName)`,
+  carried as `EnumKnownOrNull.helper()`. The plan said "the host `ClassName`", but
+  `ModelEmitVocabularyGuardTest` keeps the emit library out of the model, so the reference holds
+  the class's name and `FetcherEmitter` builds the `ClassName`. The classifier mints the name through
+  `GeneratedUnits.schemaShape(enumName)` over `RunContext.outputPackage()`, and reads the method
+  name from `EnumTypeGenerator.KNOWN_OR_NULL_METHOD`. `EnumTypeGenerator.generateFor` gained an
+  `outputPackage` parameter so its class name and the logger category come from the same call.
+* **The compile-graph lookup is by simple name,** as the plan's analogy to
+  `fetchersBySimpleName` says, not by fully qualified name. Test fixtures classify under one
+  output package and plan under another (`PlanCompileGraphTest` plans under `com.example.gen`),
+  so a qualified-name lookup would miss there; schema-shape simple names are unique within the
+  plan's schema sub-package.
+* **The duplicate mapping and the seeded unmapped row.** The unmapped value sits on
+  `ACADEMY DINOSAUR` (film 1), which neither `films(textRating:)` filter test counts. Film 1 was
+  picked over another uncounted row because it has an inventory row, which lets the `@reference`
+  execution test reach the null case too. `AGENT TRUMAN` still reads `PG`.
+* **The `@reference` execution case** got its schema field: `Inventory.filmTextRating`, a scalar
+  `@reference` over `inventory_film_id_fkey`, tested through `inventoryById`.
+* **The audit test is unit tier,** in `JoinedTableReprojectionTest`, beside the existing pin that
+  a node-id carrier is deferred, rather than a pipeline-tier test. The fold reads only the
+  classified carriers, and the hand-built schema there is the fixture the other deferral pin uses.
+* **Excluded reads.** The classification family pins `Direct` for a `JavaAccessor` read and for
+  an `@error` field (a `DefaultRead`). A `DefaultRead` on a class-backed parent arises only when
+  the backing class cannot be loaded, which no SDL fixture produces; that combination is pinned
+  by the `RecordReadField` invariant test instead, and the classifier maps the locator to `Direct`
+  statically.
+* **Node-id output is unchanged.** Each site's node-id code moved under its `case` without being
+  rewritten, and no existing test changed. The `IncrementalCompileHarnessTest` corpus gained
+  `Film.textRating`; with the new edge removed, leg 2 fails naming
+  `FilmFetchers -> TextRatingType`, so the edge is what keeps that leg green.
+* **R231.** The execution test sees `NC_17`, `G` and `PG` on the wire for `Film.textRating`, so the
+  Done gate's R231 condition holds.
+* **A test outside the item was bounded to the seed.**
+  `GraphQLQueryTest.inputFieldCondition_customScalarDefaults_bindAsBigDecimalBounds` failed twice
+  in a row in the local-db build once the two new execution tests sat beside it. It counted
+  every film with a rate in [4, 5], and the films `ServiceListGapExecutionTest` inserts while it
+  runs default to 4.99. It now filters to the seeded titles, as its neighbours do.
+* **Out-of-scope carriers** were not surveyed for reachability in consumer schemas; nothing in the
+  sakila schema reads an enum through one.
+
 ## Reviewer findings
 
 ### Round 1 (2026-10-20, Spec -> Ready, reviewer session 01J1ffEvZ1P5aKUV6yTkxuoA)

@@ -80,6 +80,10 @@ class IncrementalCompileHarnessTest {
      * generated unit, so the fixture exercises exactly the schema-shape-to-fetcher wiring edge (the
      * node the {@code addNestedFetcherNodes} walk registers) and not the deferred nested-fetcher
      * per-field outgoing gap (filed separately as a Backlog stub).
+     *
+     * <p>Corpus extension: {@code Film.textRating: TextRating} reads a varchar column through the
+     * enum's {@code knownOrNull} helper, so {@code FilmFetchers} references {@code TextRatingType};
+     * leg 2 holds the graph's leaf-derived edge for it against the emitted source.
      */
     private static final String SCHEMA = """
         interface Node { id: ID! }
@@ -93,6 +97,7 @@ class IncrementalCompileHarnessTest {
         type Film implements Node @table(name: "film") @node {
           id: ID! @nodeId
           title: String
+          textRating: TextRating @field(name: "text_rating")
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
           meta: FilmMeta
         }
@@ -111,6 +116,8 @@ class IncrementalCompileHarnessTest {
         }
 
         input FilmInput { title: String }
+
+        enum TextRating { G PG PG_13 @field(name: "PG-13") R NC_17 @field(name: "NC-17") }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
@@ -131,6 +138,7 @@ class IncrementalCompileHarnessTest {
           id: ID! @nodeId
           title: String
           description: String
+          textRating: TextRating @field(name: "text_rating")
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
           meta: FilmMeta
         }
@@ -149,6 +157,8 @@ class IncrementalCompileHarnessTest {
         }
 
         input FilmInput { title: String }
+
+        enum TextRating { G PG PG_13 @field(name: "PG-13") R NC_17 @field(name: "NC-17") }
 
         type Mutation {
           createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)

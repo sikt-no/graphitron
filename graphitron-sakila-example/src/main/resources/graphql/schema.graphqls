@@ -2348,6 +2348,9 @@ type ConverterOrgSummary {
 # @record-parent paths.
 type Inventory @table(name: "inventory") {
     inventoryId:  Int!     @field(name: "INVENTORY_ID")
+    # The text-column enum read through a scalar @reference: the aliased subquery's value passes
+    # through TextRating's known-or-null helper like a plain column read does.
+    filmTextRating: TextRating @field(name: "TEXT_RATING") @reference(path: [{key: "inventory_film_id_fkey"}])
     # Field<FilmRecord> via DSL.row(...).convertFrom(...). Children of FilmCard read
     # from the lifted FilmRecord (PK only); the GraphQL field shape exposes filmId
     # which the ColumnFetcher resolves from the FilmRecord's setFilmId-populated value.
@@ -2593,7 +2596,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # createFilm_omittedFieldUsesColumnDefault execution test (DSL.defaultValue lands the 3).
     rentalDuration: Int          @field(name: "RENTAL_DURATION")
     rating:      MpaaRating   @field(name: "RATING")
-    textRating:  String       @field(name: "TEXT_RATING")
+    # A text column read as an enum: film.text_rating is varchar, and a value TextRating does not
+    # map (the seeded 'UNRATED' row) resolves to null rather than to a serialization error.
+    textRating:  TextRating   @field(name: "TEXT_RATING")
     length:      Int          @field(name: "LENGTH")
     # Collision-repro fixture: a multiset-backed object field whose GraphQL name case-insensitively
     # collides with the physical FILM.LENGTH column (smallint). Selected alongside titleTitlecase
@@ -3425,6 +3430,9 @@ enum TextRating {
     PG_13 @field(name: "PG-13")
     R
     NC_17 @field(name: "NC-17")
+    # A second value mapping to the same database string, as a renamed value's deprecated
+    # spelling would. graphql-java serializes 'NC-17' as the first match, NC_17.
+    NC17 @field(name: "NC-17") @deprecated(reason: "Use NC_17.")
 }
 
 enum FilmSort {

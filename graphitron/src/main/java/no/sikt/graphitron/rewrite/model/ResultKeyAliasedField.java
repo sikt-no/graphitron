@@ -41,11 +41,11 @@ package no.sikt.graphitron.rewrite.model;
  * pattern-match with {@code instanceof ResultKeyAliasedField}.
  *
  * <p>{@link ChildField.ColumnBackedReferenceField} is a member on every emittable instance: only
- * its {@code CallSiteCompaction.Direct} compaction projects and reads a scalar aliased subquery;
- * the {@code NodeIdEncodeKeys} compaction is rejected at validate time regardless of arity
- * ({@code GraphitronSchemaValidator.validateColumnBackedReferenceField}), so it never reaches
- * emission on a valid schema, and by the carrier's constructor invariant every {@code Direct}
- * instance is single-column.
+ * its {@code CallSiteCompaction.PlainValue} compactions project and read a scalar aliased
+ * subquery; the {@code NodeIdEncodeKeys} compaction is rejected at validate time regardless of
+ * arity ({@code GraphitronSchemaValidator.validateColumnBackedReferenceField}), so it never
+ * reaches emission on a valid schema, and by the carrier's constructor invariant every
+ * plain-value instance is single-column.
  */
 public interface ResultKeyAliasedField {
 
