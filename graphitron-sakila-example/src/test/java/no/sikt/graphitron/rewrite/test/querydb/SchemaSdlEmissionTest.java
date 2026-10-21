@@ -50,19 +50,23 @@ class SchemaSdlEmissionTest {
     void federatedExecutionEmitsServiceSdl() throws IOException {
         Path sdlFile = sdlFor("no.sikt.graphitron.generated.federated");
         assertThat(sdlFile).exists();
-        String sdl = Files.readString(sdlFile, StandardCharsets.UTF_8);
+        var registry = new SchemaParser().parse(Files.readString(sdlFile, StandardCharsets.UTF_8));
 
-        assertThat(sdl)
-            .as("federated SDL declares the canonical @key directive with federation__FieldSet")
-            .containsPattern(
-                "directive\\s+@key\\s*\\(\\s*fields\\s*:\\s*federation__FieldSet\\s*!\\s*,\\s*"
-                    + "resolvable\\s*:\\s*Boolean\\s*=\\s*true\\s*\\)\\s+repeatable\\s+on")
-            .as("federated SDL registers the synthesised federation__FieldSet scalar")
-            .contains("scalar federation__FieldSet")
-            .as("federated SDL carries the @link directive referencing FederationSpec.URL")
-            .contains(FederationSpec.URL)
-            .as("federated SDL carries the schema-applied @link declaration (R250)")
-            .containsPattern("schema\\s+[^{]*@link\\s*\\(");
+        var key = registry.getDirectiveDefinition("key").orElseThrow();
+        assertThat(key.isRepeatable()).as("@key repeats").isTrue();
+        assertThat(key.getInputValueDefinitions().stream()
+                .map(argument -> argument.getName() + ": " + AstPrinter.printAst(argument.getType())
+                    + (argument.getDefaultValue() == null ? ""
+                        : " = " + AstPrinter.printAst(argument.getDefaultValue()))))
+            .as("the canonical @key, its fields: typed by federation's own scalar")
+            .containsExactly("fields: federation__FieldSet!", "resolvable: Boolean = true");
+        assertThat(registry.scalars())
+            .as("federated SDL declares the federation__FieldSet scalar")
+            .containsKey("federation__FieldSet");
+        assertThat(registry.schemaDefinition().orElseThrow().getDirectives("link").stream()
+                .map(link -> argument(link, "url")))
+            .as("the schema applies the federation @link, at FederationSpec.URL")
+            .contains("\"" + FederationSpec.URL + "\"");
     }
 
     /**
@@ -127,15 +131,15 @@ class SchemaSdlEmissionTest {
     void unfederatedExecutionEmitsPlainSdl() throws IOException {
         Path sdlFile = sdlFor("no.sikt.graphitron.generated");
         assertThat(sdlFile).exists();
-        String sdl = Files.readString(sdlFile, StandardCharsets.UTF_8);
+        var registry = new SchemaParser().parse(Files.readString(sdlFile, StandardCharsets.UTF_8));
 
-        assertThat(sdl)
-            .as("non-federation arm must not route through ServiceSDLPrinter")
-            .doesNotContain("federation__FieldSet")
-            .doesNotContain(FederationSpec.URL);
-        assertThat(new SchemaParser().parse(sdl))
-            .as("non-federation SDL is parseable by graphql-java SchemaParser")
-            .isNotNull();
+        assertThat(registry.scalars())
+            .as("an unfederated schema declares no federation scalar")
+            .doesNotContainKey("federation__FieldSet");
+        assertThat(registry.schemaDefinition().stream()
+                .flatMap(schema -> schema.getDirectives("link").stream()))
+            .as("an unfederated schema applies no @link")
+            .isEmpty();
     }
 
     @Test
