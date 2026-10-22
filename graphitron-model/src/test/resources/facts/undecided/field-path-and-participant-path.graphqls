@@ -28,16 +28,40 @@ type Film @table(name: "film") {
   actors: [Actor!]!
     @reference(path: [{table: "film_actor"}])
     @reference(path: [{table: "actor"}])
+  # A path of one application, its elements in the order written inside it.
+  cast: [Actor!]!
+    @reference(path: [{table: "film_actor"}, {table: "actor"}])
 }
 
 extend type Query {
   films: [Film!]!
 }
 
-extend schema @expectEquals(relation: "graphitron_field_path", rows: """
-  type_name, field_name, position
-  Film,      actors,     0
-  Film,      actors,     1
+# A field's own applications have places in its path, and a participant's have none.
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Film' AND name = 'actors')
+  """, rows: """
+  position, element_column
+  0,        23
+  1,        23
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Film' AND name = 'cast')
+  """, rows: """
+  position, element_column
+  0,        23
+  1,        46
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Film' AND name = 'people')
   """)
 
 extend schema @expectEquals(relation: "graphitron_field_participant_path", rows: """

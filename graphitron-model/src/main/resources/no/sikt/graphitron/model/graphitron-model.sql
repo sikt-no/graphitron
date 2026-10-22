@@ -5870,37 +5870,6 @@ COMMENT ON COLUMN graphitron_node_id_candidate.graph_name IS 'the owning graph''
 COMMENT ON COLUMN graphitron_node_id_candidate.coordinate IS 'the schema coordinate the bare @nodeId was written on, a Node.id field or an argument. The application itself is the entry row at the position graphql_directive_application gives this coordinate, so the coordinate is all this relation repeats of it';
 COMMENT ON COLUMN graphitron_node_id_candidate.node_type_name IS 'a node type the ID may belong to. The foreign key into graphitron_node is the rule that only a node can be a candidate, so a declaring type, a return type or a member that is not a node is a row this relation cannot hold rather than one a reader filters out';
 
-CREATE TABLE graphitron_field_path (
-  graph_name          VARCHAR NOT NULL,
-  type_name           VARCHAR NOT NULL,
-  field_name          VARCHAR NOT NULL,
-  position            INT     NOT NULL,
-  source_name         VARCHAR NOT NULL,
-  source_line         INT     NOT NULL,
-  source_column       INT     NOT NULL,
-  touched_at          TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, position),
-  FOREIGN KEY (graph_name, type_name, field_name)
-    REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
-  -- Where the link was written. One reference and not one per shape: the AST supertype is what
-  -- makes a @routine application and a path element the same kind of thing to point at.
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-      ON DELETE CASCADE,
-  -- One link per written position, which is what says the position column numbers this chain's
-  -- own links rather than being an index a reader has to hope is dense.
-  UNIQUE (graph_name, type_name, field_name, source_name, source_line, source_column)
-);
-COMMENT ON TABLE graphitron_field_path IS 'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field. For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.';
-COMMENT ON COLUMN graphitron_field_path.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_path.type_name IS 'the type owning the field whose chain this link is part of';
-COMMENT ON COLUMN graphitron_field_path.field_name IS 'the field whose chain this link is part of; with the two columns above a reference into graphql_field_element, the authored population, a macro-minted field writing no chain of its own';
-COMMENT ON COLUMN graphitron_field_path.position IS 'the link''s place in the chain, numbered from zero without a hole. Ranked over the written order rather than copied from any directive''s own numbering, for two reasons that both bite. @routine and @reference each number their applications from zero independently, so neither ordinal can say which of the two was written first; and the entry stratum numbers a path element by its authored index, which skips an element it does not transcribe, where a chain wants its links counted. The order ranked over is the directive''s written position, then the element''s authored index inside it, and a field coordinate being declared once is what makes two positions comparable: every directive of one field is written in one file';
-COMMENT ON COLUMN graphitron_field_path.source_name IS 'the file the link was written in, the first of the three columns naming its written position; a reference into graphql_ast_entry, which is where a routine application and a path element are one kind of thing. Spelled the way every relation holding a written position spells one, graphql_ast_entry included; an element in this schema is a schema coordinate, which is what the first three columns of this row already carry';
-COMMENT ON COLUMN graphitron_field_path.source_line IS 'the link''s source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_field_path.source_column IS 'the link''s source column; with the two columns above, the written position the link''s own facts are keyed by. A @routine link points at the FIELD_DIRECTIVE entry and a path element at the VALUE entry, and what each link joins on is those facts rather than anything carried here: this states that the chain has a link here and where to read it, and never what the link does';
-COMMENT ON COLUMN graphitron_field_path.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
 CREATE TABLE graphitron_field_participant_path (
   graph_name           VARCHAR NOT NULL,
   type_name            VARCHAR NOT NULL,
@@ -5925,7 +5894,7 @@ COMMENT ON COLUMN graphitron_field_participant_path.graph_name IS 'the owning gr
 COMMENT ON COLUMN graphitron_field_participant_path.type_name IS 'the type owning the field the path is written on';
 COMMENT ON COLUMN graphitron_field_participant_path.field_name IS 'the field the path is written on; with the column above a reference into graphql_field_element';
 COMMENT ON COLUMN graphitron_field_participant_path.participant_type_ref IS 'the participant the path is for, as the application names it in type:; one application per participant, so with the field this names one path';
-COMMENT ON COLUMN graphitron_field_participant_path.position IS 'the element''s place in its participant''s path, numbered from zero without a hole, ranked over the written order on graphitron_field_path.position''s terms';
+COMMENT ON COLUMN graphitron_field_participant_path.position IS 'the element''s place in its participant''s path, numbered from zero without a hole, ranked over the written order on graphitron_ast_field_path_entry.position''s terms';
 COMMENT ON COLUMN graphitron_field_participant_path.source_name IS 'the file the element was written in, the first of the three columns naming its written position; a reference into graphql_ast_entry';
 COMMENT ON COLUMN graphitron_field_participant_path.source_line IS 'the element''s source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_field_participant_path.source_column IS 'the element''s source column; with the two columns above, the written position the element''s facts are keyed by, the same step twins a chain link''s are';
@@ -6015,12 +5984,6 @@ CREATE TABLE graphitron_field_table_link (
   FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
     REFERENCES graphitron_field_target_table
       (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
-  -- The written link this resolves, so a resolution cannot outlive the writing it is about, and
-  -- the chain's own length is one join away: a chain with links this relation holds no row for is
-  -- one the resolution did not finish, and a reader can see that rather than having to trust it.
-  FOREIGN KEY (graph_name, type_name, field_name, position)
-    REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
-      ON DELETE CASCADE,
   FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
     REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
       ON DELETE CASCADE,
@@ -6050,7 +6013,7 @@ COMMENT ON COLUMN graphitron_field_table_link.graph_name IS 'the owning graph''s
 COMMENT ON COLUMN graphitron_field_table_link.type_name IS 'the type owning the field whose chain this link is part of';
 COMMENT ON COLUMN graphitron_field_table_link.field_name IS 'the field whose chain this link is part of';
 COMMENT ON COLUMN graphitron_field_table_link.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
-COMMENT ON COLUMN graphitron_field_table_link.position IS 'the link''s place in the chain, carried from graphitron_field_path, where the order is stated and what makes it an order is argued. Numbered from zero without a hole there; a hole here is a link this resolution could not answer for';
+COMMENT ON COLUMN graphitron_field_table_link.position IS 'the link''s place in the chain, carried from graphitron_ast_field_path_entry, where capture states the order. Numbered from zero without a hole there; a hole here is a link this resolution could not answer for';
 COMMENT ON COLUMN graphitron_field_table_link.via IS 'which authored arm moved the chain, in a closed vocabulary of five. ROUTINE: the link is a @routine application and its arrival is the function result. KEY: the element named a foreign key, and the constraint columns beside this one say which and which way round. TABLE: the element named a table and a foreign key between the departure and it is what joins them. NAME_MATCH: the element named a table and the departure is a function result, which declares no foreign key, so the join is the whole primary-key name match sql_name_matched_key_column states. CONDITION: the element named neither a key nor a table and carried a condition, whose method signature declares both ends. Provenance and fork at once: it says which relation holds the link''s join columns, so a reader never has to try each in turn';
 COMMENT ON COLUMN graphitron_field_table_link.key_matched_by IS 'which name the author''s key spelling matched, SQL_NAME for the constraint''s own name in the catalog and JOOQ_NAME for the generated constant''s, in that precedence. NULL off the KEY arm, no other arm matching a key name at all. The precedence is the generator''s resolver''s: a written qualifier binds against the schema of the table holding the constraint, an unqualified name matches the SQL name, and the generated name becomes eligible only where no SQL name in this graph''s sources answers';
 COMMENT ON COLUMN graphitron_field_table_link.constraint_source_name IS 'the catalog partition of the referential constraint this link joins through, the first of four columns naming it';
@@ -6859,9 +6822,6 @@ CREATE TABLE graphitron_field_path_resolution_keyed (
   FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
     REFERENCES graphitron_field_target_table
       (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, field_name, position)
-    REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
-      ON DELETE CASCADE,
   FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
     REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
       ON DELETE CASCADE,
@@ -6925,9 +6885,6 @@ CREATE TABLE graphitron_field_path_resolution_keyless (
   FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
     REFERENCES graphitron_field_target_table
       (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, field_name, position)
-    REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
-      ON DELETE CASCADE,
   FOREIGN KEY (from_source_name, from_schema, from_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   FOREIGN KEY (to_source_name, to_schema, to_table)
@@ -6976,9 +6933,6 @@ CREATE TABLE graphitron_field_path_resolution_open (
   FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
     REFERENCES graphitron_field_target_table
       (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, field_name, position)
-    REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
-      ON DELETE CASCADE,
   FOREIGN KEY (to_source_name, to_schema, to_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   -- A @routine heads a chain and departs from nothing.
@@ -7029,9 +6983,6 @@ CREATE TABLE graphitron_field_path_resolution_condition (
   FOREIGN KEY (graph_name, type_name, field_name, arriving_type_name)
     REFERENCES graphitron_field_target_table
       (graph_name, type_name, field_name, arriving_type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, field_name, position)
-    REFERENCES graphitron_field_path (graph_name, type_name, field_name, position)
-      ON DELETE CASCADE,
   FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
     REFERENCES code_condition_method (source_name, class_name, method_name, descriptor)
       ON DELETE CASCADE,
@@ -7116,7 +7067,7 @@ COMMENT ON COLUMN graphitron_field_path_resolution.graph_name IS 'the owning gra
 COMMENT ON COLUMN graphitron_field_path_resolution.type_name IS 'the type owning the field whose chain this reading is of';
 COMMENT ON COLUMN graphitron_field_path_resolution.field_name IS 'the field whose chain this reading is of';
 COMMENT ON COLUMN graphitron_field_path_resolution.arriving_type_name IS 'the type whose table the chain this row stands in arrives at, one of the field''s graphitron_field_target_table rows; its table is graphitron_resolved_type_binding''s. A field with several arriving types walks once per type';
-COMMENT ON COLUMN graphitron_field_path_resolution.position IS 'the link''s place in the chain, carried from graphitron_field_path where the order is stated';
+COMMENT ON COLUMN graphitron_field_path_resolution.position IS 'the link''s place in the chain, carried from graphitron_ast_field_path_entry where capture states the order';
 COMMENT ON COLUMN graphitron_field_path_resolution.via IS 'which authored arm this reading takes, in graphitron_field_table_link''s vocabulary of five, whose comment argues each';
 COMMENT ON COLUMN graphitron_field_path_resolution.key_matched_by IS 'which name the author''s key spelling matched, on graphitron_field_table_link''s terms; NULL off the KEY arm';
 COMMENT ON COLUMN graphitron_field_path_resolution.constraint_source_name IS 'the catalog partition of the referential constraint this reading joins through, the first of four columns naming it';
@@ -15504,9 +15455,6 @@ INSERT INTO meta_grain VALUES
   ('field-arriving-type',
    'one type whose table one of a field''s statements lands on, at one field, in one graph',
    'graph_name, type_name, field_name, arriving_type_name', 'sdl'),
-  ('field-path',
-   'one link of the chain one field''s rows travel, in one graph',
-   'graph_name, type_name, field_name, position', 'sdl'),
   ('field-participant-path',
    'one element of one participant''s own path at one field, in one graph',
    'graph_name, type_name, field_name, participant_type_ref, position', 'sdl'),
@@ -16449,14 +16397,10 @@ INSERT INTO meta_relation VALUES
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',
    'Half of a node''s identity as a resolved fact, beside graphitron_node which carries the other. Three populations answer and one wins: what the author pinned, what the bound table''s generated class publishes, and the table''s own primary key. Standing on the nodehood anchor is what makes resolution possible at all. The relation this replaces reaches the pinned tier through a decode keyed by graph and type alone, so that tier had no table to resolve against and forwarded the authored spelling untouched; a node is table bound unambiguously by construction, so the table is in hand and the column is a reference rather than a name. Both authored tiers fold to resolve, against the column''s SQL name and its generated field name alike, and neither spelling survives into the row. A tier that applies and fails to resolve yields nothing rather than falling through: an author who pinned a column the table does not have has made an error, and encoding ids against the primary key instead would publish a wire format nobody asked for, silently. The same holds within a tier, a key list with a hole decoding values into the wrong positions. The bound table rides along in three columns so the row can reference both the type''s binding and the column, which together make a row naming another table''s column impossible. The order is why this is a relation rather than a list: an id encoded against one order and decoded against another finds the wrong row rather than failing.'),
-  ('graphitron_field_path', 'field-path', 'graphitron',
-   'One link of the chain a field''s rows travel, in the order it was written: one row per element of the composed @routine and @reference applications at one field.',
-   'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) draws two links, the routine at position 0 and the table element at position 1.',
-   'The chain between a field''s endpoints, which nothing held: readers wanting the endpoints outnumber readers wanting the hops, so the pair was stated first and the route left to be walked. The position is why this exists rather than a column elsewhere. A chain composes @routine and @reference applications in written order, and neither directive''s ordinal can express it: each numbers its own applications from zero, so a routine at ordinal 0 and a reference at ordinal 0 say nothing about which came first. That order survives only in the entry stratum, where a written position is the primary key, and it is ranked here rather than copied because the entry numbers a path element by its authored index and skips one it does not transcribe, where a chain wants its links counted. Keyed at the coordinate and not at the target: the order is the same for every table a field''s rows may come from, so keying by target would state one order once per participant. What varies by target is where each link departs and arrives, which is a resolution rather than a reading. What a link does is likewise not here; its facts are keyed by the written position this row points at, one relation per shape as the entry stratum states them, so this never grows a discriminator that would have to be single-valued where an element writing a table beside a condition is one link with two facts.'),
   ('graphitron_field_participant_path', 'field-participant-path', 'graphitron',
    'One element of one participant''s own path, in the order it was written: one row per element of a @referenceFor application on a field returning a union or an interface.',
    'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book_shelf"}, {table: "book"}]) draws two elements for Book, at positions 0 and 1.',
-   'A @referenceFor application is one participant''s complete path, independent of the field''s path and of every other participant''s, so its elements are numbered within the participant and never as steps of graphitron_field_path, which a coordinate''s @routine and @reference applications compose. The element grammar is the field path''s, so an element''s facts are the same step twins keyed by its written position, and the position is ranked over the written order on its terms.'),
+   'A @referenceFor application is one participant''s complete path, independent of the field''s path and of every other participant''s, so its elements are numbered within the participant and never as steps of the field''s own path, which its @routine and @reference applications compose in graphitron_ast_field_path_entry. The element grammar is the field path''s, so an element''s facts are the same step twins keyed by its written position, and the position is ranked over the written order on its terms.'),
   ('graphitron_condition_method_route', 'condition-method-route', 'graphitron',
    'How a condition method''s own signature routes a hop: the departing tables its first parameter admits, beside the table its second parameter names.',
    'For example a method taking a film table and an actor table routes film to actor, whatever element named it.',
@@ -16496,7 +16440,7 @@ INSERT INTO meta_relation VALUES
   ('graphitron_field_table_link', 'field-table-link', 'graphitron',
    'Where one link of a field''s chain departs and where it arrives, toward one of the field''s targets: one row per written link per target, with the constraint it joins through where it joins through one.',
    'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws two rows toward the film target, actor to film_actor and then film_actor to film.',
-   'Where every link of a chain departs and arrives, which no relation held: the whole chain''s endpoints were stated first because more readers want the pair than want the hops, and the route was left to be walked at read time. Two views walked it, one seeded from a type''s binding and one from a @routine result, and neither could answer for the other''s shape. Keyed per target because that is what varies: graphitron_field_path states the order once at the coordinate, the order being the same whichever table a field''s rows come from, and where each link stands is a resolution that begins at the enclosing type''s binding and so belongs to one target. Resolved sequentially, each link departing where the one before it arrived, which is what collapses the candidacy the read-time rule carried: a named foreign key is a hop in either direction and which one an element means is only answerable where the chain stands, so both were rows and a walk narrowed them. Here the departure is known and the orientation follows. The constraint travels with the endpoints rather than being dropped, which is the complaint the read-time relation makes about itself: two foreign keys may join one pair of tables, so the endpoints do not name the constraint. via discriminates honestly, a link having one route however many facts the element states: a condition beside a key filters that hop rather than routing it.'),
+   'Where every link of a chain departs and arrives, which no relation held: the whole chain''s endpoints were stated first because more readers want the pair than want the hops, and the route was left to be walked at read time. Two views walked it, one seeded from a type''s binding and one from a @routine result, and neither could answer for the other''s shape. Keyed per target because that is what varies: graphitron_ast_field_path_entry states the order once at the field, the order being the same whichever table a field''s rows come from, and where each link stands is a resolution that begins at the enclosing type''s binding and so belongs to one target. Resolved sequentially, each link departing where the one before it arrived, which is what collapses the candidacy the read-time rule carried: a named foreign key is a hop in either direction and which one an element means is only answerable where the chain stands, so both were rows and a walk narrowed them. Here the departure is known and the orientation follows. The constraint travels with the endpoints rather than being dropped, which is the complaint the read-time relation makes about itself: two foreign keys may join one pair of tables, so the endpoints do not name the constraint. via discriminates honestly, a link having one route however many facts the element states: a condition beside a key filters that hop rather than routing it.'),
   ('graphitron_path_element_key', 'path-element-key-candidate', 'graphitron',
    'A foreign key a path element names: one row per element and candidate key.',
    'For example {key: "film_actor_actor_id_fkey"} names public.film_actor''s key to actor, and an unqualified {key: "note_event_fk"} names both schemas'' note_event_fk.',

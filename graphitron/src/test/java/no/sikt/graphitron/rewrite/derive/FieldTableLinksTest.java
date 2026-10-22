@@ -365,10 +365,14 @@ class FieldTableLinksTest {
 
     /** Every written chain link, which is what a reading is a reading of. */
     private static List<String> chainLinks(DSLContext dsl) {
-        var l = no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
-        return dsl.select(l.TYPE_NAME, l.FIELD_NAME, l.POSITION, l.SOURCE_LINE, l.SOURCE_COLUMN)
-            .from(l).where(l.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .orderBy(l.TYPE_NAME, l.FIELD_NAME, l.POSITION)
+        var l = no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
+        var fd = no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
+        return dsl.select(fd.TYPE_NAME, fd.NAME, l.POSITION, l.ELEMENT_LINE, l.ELEMENT_COLUMN)
+            .from(l)
+            .join(fd).on(fd.GRAPH_NAME.eq(l.GRAPH_NAME), fd.SOURCE_NAME.eq(l.SOURCE_NAME),
+                fd.SOURCE_LINE.eq(l.FIELD_LINE), fd.SOURCE_COLUMN.eq(l.FIELD_COLUMN))
+            .where(l.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .orderBy(fd.TYPE_NAME, fd.NAME, l.POSITION)
             .fetch(FieldTableLinksTest::line);
     }
 

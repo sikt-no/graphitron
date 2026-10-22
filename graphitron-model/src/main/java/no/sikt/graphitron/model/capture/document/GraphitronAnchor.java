@@ -12,7 +12,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PARTICIPANT_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
@@ -144,7 +143,6 @@ public final class GraphitronAnchor {
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
-        fieldPaths(dsl, graph, touchedAt);
         participantPaths(dsl, graph, touchedAt);
         // The bound name in both habitats it can be written in. One relation rather than two,
         // because what a reader asks is which name a slot binds and not which kind of slot it is.
@@ -154,112 +152,6 @@ public final class GraphitronAnchor {
         // Last, and children before parents within it, for the reason every delete here has that
         // order: a sweep that took a parent first would meet its own child's foreign key.
         sweep(dsl, graph, touchedAt);
-    }
-
-    /**
-     * The path a field's rows travel, one row per written element in written order. A
-     * {@code @referenceFor} path is a participant's own, not a step of this one, and
-     * {@link #participantPaths} holds it.
-     *
-     * <p>Here and not with the endpoint relations, because the order is only in this stratum. A
-     * chain composes {@code @routine} and {@code @reference} applications in the order they were
-     * written, and capture numbers applications per directive name, so a routine at ordinal 0 and a
-     * reference at ordinal 0 are two different writings whose numbers do not compare. A written
-     * position is this stratum's primary key, and every directive of one field shares a parent, so
-     * the order is a read rather than a reconstruction.
-     *
-     * <p>Ranked over three keys and not one: the declaration's merge order, a field declared across
-     * several files having its directives spread over them; the directive's own position within a
-     * declaration; and the element's authored index inside the directive, which orders the elements
-     * of one {@code path:} against each other.
-     *
-     * <p>Ranked and not copied, which {@code GraphitronAstEntries.elementsOf} is the reason for: it
-     * increments past an element it does not transcribe, so an authored index can skip. A chain
-     * wants its links counted, so position 1 is the second link and never the second thing typed.
-     *
-     * <p>{@code graphql_ast_entry} is this relation's element reference and not one of its inputs:
-     * what the supertype buys is one checked foreign key reaching either shape, where the statement
-     * below reads each shape's own relation.
-     *
-     * <p>An element is one written thing, whatever it says. A {@code @routine} application is the
-     * directive itself, and its decode is what admits it: an application this stratum refused
-     * states no routine and composes no chain. A path element is the object written in the
-     * {@code path:} list, either a member of it or the whole expression where GraphQL coerced a
-     * lone value into the list of one; an object written inside an element, which is what a
-     * condition's own shape is, has a parent and no position and is not an element.
-     *
-     * <p>Nothing here says what a link does. Those facts are keyed by the written position the row
-     * points at, one relation per shape as this stratum already states them, so an element writing
-     * a table beside a condition is one link with two facts and no column here has to choose.
-     */
-    private static void fieldPaths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
-        var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
-        var t = GRAPHITRON_FIELD_PATH;
-
-        var applications = fieldApplications(dsl, graph);
-
-        var routines = dsl
-            .select(applications.field(TYPE_NAME),
-                applications.field(FIELD_NAME),
-                applications.field(SITE_LINE),
-                applications.field(SITE_COLUMN),
-                inline(0).as("authored"),
-                applications.field(SITE_NAME).as("el_source"),
-                applications.field(SITE_LINE).as("el_line"),
-                applications.field(SITE_COLUMN).as("el_column"))
-            .from(applications)
-            .join(ra).on(ra.GRAPH_NAME.eq(graph),
-                ra.SOURCE_NAME.eq(applications.field(SITE_NAME)),
-                ra.SOURCE_LINE.eq(applications.field(SITE_LINE)),
-                ra.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN)));
-
-        var steps = pathElements(dsl, graph, applications, "reference");
-
-        var elements = routines.unionAll(steps).asTable("elements");
-        var d = GRAPHQL_AST_ENTRY;
-        var ranked = dsl
-            .select(elements.field(TYPE_NAME),
-                elements.field(FIELD_NAME),
-                elements.field("el_source", String.class),
-                elements.field("el_line", Integer.class),
-                elements.field("el_column", Integer.class),
-                rowNumber().over(partitionBy(elements.field(TYPE_NAME),
-                        elements.field(FIELD_NAME))
-                    .orderBy(elements.field(SITE_LINE).asc(),
-                        elements.field(SITE_COLUMN).asc(),
-                        elements.field("authored", Integer.class).asc()))
-                    .minus(inline(1)).as("position"))
-            .from(elements)
-            // The relation the element reference points at, joined because it is referenced: a row
-            // naming a position the supertype does not hold would be a dangling reference, so the
-            // join is what makes integrity hold by construction rather than by the order two
-            // readings happen to run in. It is also the filter that makes a link a link, an element
-            // this stratum never transcribed being nothing to travel through. Joined before the
-            // rank, so the numbering counts the links that survive it.
-            .join(d).on(d.GRAPH_NAME.eq(graph),
-                d.SOURCE_NAME.eq(elements.field("el_source", String.class)),
-                d.SOURCE_LINE.eq(elements.field("el_line", Integer.class)),
-                d.SOURCE_COLUMN.eq(elements.field("el_column", Integer.class)))
-            .asTable("ranked");
-
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.POSITION, t.SOURCE_NAME,
-                t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME),
-                    ranked.field(FIELD_NAME),
-                    ranked.field("position", Integer.class),
-                    ranked.field("el_source", String.class),
-                    ranked.field("el_line", Integer.class),
-                    ranked.field("el_column", Integer.class),
-                    val(touchedAt, t.TOUCHED_AT))
-                .from(ranked))
-            .onDuplicateKeyUpdate()
-            .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
-            .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
-            .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
     }
 
     /**
@@ -345,7 +237,8 @@ public final class GraphitronAnchor {
      * Each participant's own path, one row per written element in written order. A
      * {@code @referenceFor} application is one participant's complete path, independent of the
      * field's path and of every other participant's, so its elements are numbered within the
-     * participant and none of them is a step of {@link #fieldPaths}'s path.
+     * participant and none of them is a step of the field's own path, which capture composes into
+     * {@code graphitron_ast_field_path_entry}.
      */
     private static void participantPaths(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         var rf = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
@@ -373,7 +266,8 @@ public final class GraphitronAnchor {
                 rf.SOURCE_NAME.eq(elements.field("el_source", String.class)),
                 rf.SOURCE_LINE.eq(elements.field(SITE_LINE)),
                 rf.SOURCE_COLUMN.eq(elements.field(SITE_COLUMN)))
-            // Joined because it is referenced, before the rank, on fieldPaths' terms.
+            // Joined because it is referenced, before the rank, so the numbering counts the elements
+            // the supertype holds.
             .join(d).on(d.GRAPH_NAME.eq(graph),
                 d.SOURCE_NAME.eq(elements.field("el_source", String.class)),
                 d.SOURCE_LINE.eq(elements.field("el_line", Integer.class)),
@@ -410,7 +304,7 @@ public final class GraphitronAnchor {
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
-            GRAPHITRON_FIELD_PATH, GRAPHITRON_FIELD_PARTICIPANT_PATH,
+            GRAPHITRON_FIELD_PARTICIPANT_PATH,
             GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
 
     /**
@@ -847,7 +741,7 @@ public final class GraphitronAnchor {
      * declared once, two declarations of one field being a duplicate-field error rather than an
      * order to settle, so all of a field's applications sit in one definition in one file and their
      * written positions already order them. The coordinate comes off the entry stratum's own index
-     * instead, as {@link #fieldPaths} takes it.
+     * instead.
      *
      * <p>Numbered over the applications and joined to the decode afterwards, which is what keeps the
      * ordinals agreeing with the walk this replaces: {@code routine_ref} is NOT NULL, so an

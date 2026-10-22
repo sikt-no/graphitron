@@ -35,8 +35,6 @@ class UpsertKeyGateTest {
 
     /** Upserts known to match on either key when this gate landed, each with why it stands. */
     private static final Map<String, String> KNOWN = Map.of(
-        "GRAPHITRON_FIELD_PATH", "the anchor's chain writes it, and goes when \"The field grain reads "
-            + "only the walk\" lands",
         "GRAPHITRON_FIELD_PARTICIPANT_PATH", "keyed by the participant's element position and unique "
             + "by where the element was written, neither derived from the other; decided per table",
         "GRAPHITRON_FEDERATION_DEFINITION", "the unique local name is not derived from the key, so "
