@@ -182,7 +182,30 @@ resolutions and links built beside it are gone.
   `graphitron_routine_field_path` with their column pairs, key and join method, and the stops, a
   stop being a step not taken, stored for the defect rule to read.
 * **A child `@routine` is a lateral step of the path** `open`. A child `@routine` that is not split,
-  such as `Actor.films`, is a step of the walk rather than left out of it.
+  such as `Actor.films`, is a step of the walk rather than left out of it. `@routine` means two
+  things depending on where it is written, and the store states which one each application is:
+  * A **producer routine** starts the query, and its result is the field's rows. Only a root
+    field has one (`graphitron_producer_routine`). A `@reference` element written before it has
+    nowhere to start from, which is a defect.
+  * A **path routine** is a step of the walk. A child field's `@routine` always has a source
+    table, the one the walk stands on, and it is called with that table's columns. It can take
+    arguments as well.
+
+  The editor and the MCP server ask the store which of the two an application is, and answer
+  differently: a path routine's mapping completes against the columns of the table the walk
+  stands on as well as the field's arguments.
+
+  `columnMapping` dissolves. It hand-writes what the path already holds. A path routine's step
+  joins on column pairs from the table the walk stands on into the routine's parameters
+  (`sql_routine_parameter`), which are `graphitron_field_path_column` rows like any other step's.
+  `argMapping` names both kinds of value: a field argument, or a column of the table the walk
+  stands on. A name that is both is a defect, since a precedence rule would silently change
+  meaning when the table gains a column. Both `columnMapping` capture families and the directive
+  argument go, along with the generator's previous-node binding, and the sakila fixtures that
+  write it are converted.
+
+  It may be deferred to an item of its own. No schema outside the sakila fixtures uses a child
+  `@routine`, and nothing else in this graph waits on it.
 * **A broken or refused path is a defect at its position** `blocked`, on "A path is resolved by a deterministic forward walk over what each element names". A walk that stops, ends at the wrong
   table or has no source, an element naming nothing, and `@reference` beside `@referenceFor` or
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
