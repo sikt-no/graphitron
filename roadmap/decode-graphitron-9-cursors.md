@@ -97,3 +97,25 @@ R1085 (`manual-v9-cursor-and-error-path-claims`) fixes the same `migrating-from-
 - **Write numbers and booleans bare**, matching 9's bytes more closely. Rejected above: the tag carries nothing the column's `DataType` does not, and choosing it by Java class is a parallel type system. Byte-for-byte equality with 9 is not reachable anyway, since 9 used each database's JSON rendering.
 - **`Record.formatJSON` in array format** for the writer. It renders values by their Java type (bare numbers) and through jOOQ's JSON formatting rules rather than the cursor's, so it brings back the type tag and couples the wire format to a formatting API; the writer needed is a dozen lines of string escaping.
 - **A JSON library on the consumer classpath** (as 9 depended on `org.json`). The generated code is a consumer artifact with no runtime dependency on graphitron beyond jOOQ and graphql-java; a scalar-array reader does not justify one.
+
+## Reviewer findings
+
+### Round 1 (2026-10-22, Spec -> Ready, reviewer session 01J2wz2E4yVTVQsiJkhi7WXn)
+
+Verdict: withhold. One blocking finding, on question one (viability). The goal comes across on its own: a cursor a client stored under Graphitron 9 keeps working as `after:`/`before:` after the upgrade, on an unchanged order, because Graphitron 10 adopts 9's wire format instead of its NUL-joined one. Question two passes: the plan rewrites the one codec in place (`ConnectionHelper.encodeCursor` / `decodeCursor`, the only emitted cursor code, reached by `MultiTablePolymorphicEmitter` only through `PageRequest` and `encodeCursor`), stands no second codec beside it, keeps `DataType` as the only type authority, and adds no consumer dependency. Every other claim the spec makes about the tree and about `v9.3.0` checks out.
+
+**Finding 1 (question one: viability). The converter-backed test targets a multi-table connection, so it cannot pin the one open question the design leaves to it.**
+
+The design defers the converter-backed case to a test: "`converterPlacesConnection` ... pins it. If it does not, the fix is to try the converter's database type ..., the implementer decides from the test." `converterPlacesConnection` returns `[ConverterPlace!]!`, and `ConverterPlace` is `union ConverterCampus | ConverterSite`: a multi-table connection. That breaks the test two ways.
+
+- Graphitron 9 never issued a plain JSON array for a multi-table connection; it issued the `{"typeName", "fields"}` object the spec itself puts out of scope. A "9 cursor" for this field is a cursor 9 did not emit.
+- 10's multi-table cursor carries the order slot, then the participant key columns (`__pk0__`...), then `__typename` (`MultiTablePolymorphicEmitter`, the `extraFields` built from `ordering.columns()`). A one-element `[186]` fails strict arity before `DataType.convert` is reached, so the test fails for a reason unrelated to the converter, and the fork it is meant to decide stays undecided.
+
+There is no single-table connection over a converter-backed order column in the sakila schema today (`converterOrgs` and `converterCampuses` are plain lists, not connections), so pointing the test elsewhere needs a fixture the spec does not name. Note also that `OrgCodeStringConverter`'s user type is `String`, so the decoder sees a string element whatever the cursor holds and the converted type's `convert` likely short-circuits on it; a pin on this column may pass without exercising the database-type path the design worries about. `UtcLocalDateTimeConverter` over `change_instant_domain` is the existing converter whose user type differs from its database rendering.
+
+What would satisfy it: name a single-table connection ordered on a converter-backed column (adding the fixture to `schema.graphqls` if needed, and saying so under Implementation), chosen so a 9 cursor's raw database rendering actually differs from the user value's text, and either settle the "try the database type" fork or state precisely what the test's outcome decides.
+
+**Non-blocking.**
+
+- `roadmap/workflow.adoc` asks a plan with a wire-protocol change to carry a first-client draft of the user docs. The Implementation bullets describe the `connections.adoc` rewrite closely enough to build from; drafting the section's new text in the body would let the next pass judge how it reads.
+- `## Roadmap entries` says R1085's cursor finding is dropped from its body when this item moves to Ready, without saying who does it. Whoever flips this item should make that edit in the same commit.
