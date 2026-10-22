@@ -5,7 +5,7 @@ status: Backlog
 bucket: enhancement
 priority: 3
 theme: error-channel
-depends-on: []
+depends-on: [unmatched-error-fallback-logged-and-computed]
 created: 2026-07-02
 last-updated: 2026-07-02
 ---
@@ -51,5 +51,7 @@ library shippable to consumers who do *not* run OTel, so the same artifact serve
   sites.
 
 ## Depends on
+
+R1087 adds the seam this item fills: `FetcherErrorResponse.reference` on the fetcher side and `GraphitronApplication.newReference` on the resource side, both called wherever a reference is minted. Reading the MDC becomes those two defaults, so the shared-helper question in the scope sketch is settled there.
 
 R421 (the resource-side redaction site this generalises); the generated `ErrorRouter` redaction contract.

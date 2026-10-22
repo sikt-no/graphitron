@@ -161,6 +161,8 @@ The 9.x line carries a working version of all three parts, on branch `graphitron
 Its shape is a reference for the Spec, not a template: trunk has no handler to subclass, which is why
 the memo goes in per-request state and the override goes through the sink.
 
+R1087 adds the per-request record keyed on throwable identity (the generated `ErrorRouter`'s claim record, which carries a claimed source's chain roots and reference); the memo here is meant to become a second writer to that record, not a second holder.
+
 Open at Spec: whether the client-facing errors should all quote the one shared reference (better for
 a support ticket, and the reading this goal assumes) or keep per-field ids while collapsing only the
 log. Also whether `redact` should log at a lower level, or without the stack trace, for the
