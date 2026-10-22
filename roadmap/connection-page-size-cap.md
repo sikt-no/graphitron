@@ -1,7 +1,7 @@
 ---
 id: R1090
 title: "A connection has no maximum page size, so first: 100000 reads 100000 rows"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: pagination
