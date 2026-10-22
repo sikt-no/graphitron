@@ -684,9 +684,13 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   The field carrying `@routine` binds the type, which is what the directive used to repeat.
 * **Removed: the MCP schema tool's `demand` slot** ("the demand relations go"). A tool reading it gets no slot; it
   restated directives the same entry shows.
-* **Changed: `graphitron:capture` never fails over the schema it read** ("capture captures, and
-  nothing else"). A schema that will not parse, assemble or classify is still captured, and what
-  refused it is in the store as `graphql_schema_problem` rows rather than in the build's exit code.
+* **Changed: `graphitron:capture` never fails over a schema that parses** ("capture captures, and
+  nothing else"; "a document that does not parse ends the round at the parse"). A schema that will
+  not assemble or classify is still captured, and what refused it is in the store as
+  `graphql_schema_problem` rows rather than in the build's exit code. A document that will not
+  parse fails the goal, as it does `graphitron:generate` and `graphitron:validate`: the parse
+  problems are recorded, the store keeps its last clean reading, and in `graphitron:dev` the round
+  ends at the parse, every changed file read again once it parses.
 * **Changed: a reactor sibling is read from its own output** ("a workspace module is read from its
   own output, in place"). In a multi-module project every graphitron goal, `graphitron:generate`
   and `graphitron:dev` among them, reads a sibling module from its `target/classes`, else its jar in
@@ -702,6 +706,18 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   read stale"). A module whose sources changed since it compiled, or one read from its installed
   copy for want of output, is named once with the command that compiles it: in the console, in MCP
   `status` and diagnostics, and as an editor message.
+* **Added: each capture's time per stage is recorded and reported** ("every stage's time is
+  recorded in the store"). `store_graph_write` holds, per capture, the statements, rows and
+  milliseconds each gatherer spent on each table. MCP `status` names the latest capture's five
+  slowest writes as `slowestWrites`, across the store with `allGraphs`, and a `graphitron:dev` round
+  that captured prints its three slowest.
+* **Faster: the emitted schema's tag narrowing** ("the tag narrowing joins the coinage to its
+  minted type before the fields"). The read took 9 to 12.5 s on a large schema and now takes
+  under 50 ms.
+* **Contributors: a rule's plan is gated** ("a rule's plan probes an index wherever it looks a row
+  up"). `RulePlanGateTest` fails a derivation rule whose plan reads a whole partition per row, over
+  a scaled fixture whose plans match a large consumer schema's. Its list of known exemptions only
+  shrinks.
 
 ## Retired vocabulary
 
