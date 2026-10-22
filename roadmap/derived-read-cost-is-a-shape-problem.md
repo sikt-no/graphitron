@@ -397,8 +397,16 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
   * **A generating harness captures the run's output coordinates** `done`.
   * **The output package is read from the store** `done`.
-  * **The tenant column and the session hook signature are captured** `open`. The column the
-    configured tenant name resolves to, and which mount signatures get a hook class, are stored.
+  * **The tenant column and the session hook signature are captured** `blocked`, on "An argument's and an input field's target is modelled first, as tables" and "The generator builds no schema".
+    `<tenantColumn>` is one pattern, matched against database names as jOOQ matches them: a Java
+    regular expression, case-insensitive, whole-name against `column`, `table.column` or
+    `schema.table.column`, so a plain name matches what it matched before. The fact is per matched
+    column, `graphitron_tenant_column`, anchored from `store_graph_tenant_column` and `sql_column`
+    through the graph's sources; matched columns that disagree on type, and a pattern that matches
+    nothing, are defects located in the build file the configuration was read from. An argument or
+    input field is a tenant field when its column joins a matched column, which needs the argument
+    model; the walk's classifier goes with the walk rather than learning the pattern. The session
+    hook half reads `code_method`, waiting on the two `CodeCapture` lines in the register.
 * **`graphitron` does no orchestration** `open`. A harness in `graphitron`'s tests that captures and
   reads nothing of the generator moves to the model's test fixtures, with the tests that exercise
   capture alone.
