@@ -307,6 +307,16 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_type_federation", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_site", Arm.DERIVED);
         registrations.put("graphitron_code_reference", Arm.DERIVED);
+        registrations.put("graphitron_field_path_start", Arm.DERIVED);
+        registrations.put("graphitron_field_path_start_result", Arm.DERIVED);
+        registrations.put("graphitron_field_path_start_routine", Arm.DERIVED);
+        registrations.put("graphitron_field_path_start_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_path", Arm.DERIVED);
+        registrations.put("graphitron_field_path_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_path_column", Arm.DERIVED);
+        registrations.put("graphitron_field_path_key", Arm.DERIVED);
+        registrations.put("graphitron_field_path_method", Arm.DERIVED);
+        registrations.put("graphitron_field_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_participant_path", Arm.DERIVED);
         registrations.put("graphitron_field_table_link", Arm.DERIVED);
         registrations.put("graphitron_element", Arm.DERIVED);

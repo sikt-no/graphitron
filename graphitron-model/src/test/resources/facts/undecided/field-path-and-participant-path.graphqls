@@ -70,3 +70,19 @@ extend schema @expectEquals(relation: "graphitron_field_participant_path", rows:
   Film,      people,     Actor,                1
   Film,      people,     Staff,                0
   """)
+
+# The walk starts each field that wrote a path on the table its parent's result is a row of, and
+# steps through the field's own elements, two applications or one alike.
+extend schema @expectEquals(relation: "graphitron_field_path_start", rows: """
+  type_name, field_name, start_table, kind
+  Film,      actors,     film,        RESULT
+  Film,      cast,       film,        RESULT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path", rows: """
+  type_name, field_name, start_table, position, from_table, to_table
+  Film,      actors,     film,        0,        film,       film_actor
+  Film,      actors,     film,        1,        film_actor, actor
+  Film,      cast,       film,        0,        film,       film_actor
+  Film,      cast,       film,        1,        film_actor, actor
+  """)

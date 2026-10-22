@@ -9,6 +9,7 @@ import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
 import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Fetchers;
+import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.PathElements;
@@ -98,6 +99,10 @@ public final class GraphitronAssemblyCapture {
         FieldTableLinks.derive(dsl, graph, readAt);
         // Last, each output field's fetcher, off the targets, bindings and backings above.
         Fetchers.derive(dsl, graph, readAt);
+        // Then each field's path, off the producers and results just written: walked from every
+        // table its parent's result is a row of, or from a root routine's own table, one written
+        // element at a time.
+        FieldPaths.derive(dsl, graph, readAt);
     }
 
     /**

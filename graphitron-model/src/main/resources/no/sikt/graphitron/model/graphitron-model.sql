@@ -11104,6 +11104,548 @@ COMMENT ON COLUMN graphitron_producer_routine.table_schema IS 'the routine''s sc
 COMMENT ON COLUMN graphitron_producer_routine.routine_name IS 'the routine, the one callable the written name resolves to';
 COMMENT ON COLUMN graphitron_producer_routine.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+CREATE TABLE graphitron_field_path_start (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  start_source_name VARCHAR   NOT NULL,
+  start_schema      VARCHAR   NOT NULL,
+  start_table       VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table),
+  UNIQUE (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (start_source_name, start_schema, start_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind IN ('RESULT', 'ROUTINE'))
+);
+COMMENT ON TABLE graphitron_field_path_start IS 'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table or a root''s routine. For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.';
+COMMENT ON COLUMN graphitron_field_path_start.graph_name IS 'the owning graph''s partition, carried from the field';
+COMMENT ON COLUMN graphitron_field_path_start.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_start.field_name IS 'the field whose path starts here';
+COMMENT ON COLUMN graphitron_field_path_start.start_source_name IS 'the catalog partition of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start.start_schema IS 'the SQL schema of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start.start_table IS 'the table the walk starts on. A field under a parent whose result is a row of several tables is walked once from each';
+COMMENT ON COLUMN graphitron_field_path_start.kind IS 'what the start is: RESULT, a table the parent type''s result is a row of, or ROUTINE, the table of the routine a root field''s query starts with. Each has its subtype, which says why the walk starts there';
+COMMENT ON COLUMN graphitron_field_path_start.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads, so a start a reading no longer finds goes with its path';
+
+CREATE TABLE graphitron_field_path_start_result (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  start_source_name VARCHAR   NOT NULL,
+  start_schema      VARCHAR   NOT NULL,
+  start_table       VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
+    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
+                                            start_schema, start_table, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, start_source_name, start_schema, start_table)
+    REFERENCES graphitron_result_table (graph_name, type_name, table_source_name, table_schema,
+                                        table_name) ON DELETE CASCADE,
+  CHECK (kind = 'RESULT')
+);
+COMMENT ON TABLE graphitron_field_path_start_result IS 'A field''s path walked from its parent''s result: one row per field and table the parent type''s result is a row of. For example Film.language starts on film, and a field of a type nested under customer and store starts on each.';
+COMMENT ON COLUMN graphitron_field_path_start_result.graph_name IS 'the owning graph''s partition, carried from the start';
+COMMENT ON COLUMN graphitron_field_path_start_result.type_name IS 'the type owning the field, whose result the walk starts from';
+COMMENT ON COLUMN graphitron_field_path_start_result.field_name IS 'the field whose path starts here';
+COMMENT ON COLUMN graphitron_field_path_start_result.start_source_name IS 'the catalog partition of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start_result.start_schema IS 'the SQL schema of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start_result.start_table IS 'the table the walk starts on; with the type and the two columns before it, a reference into graphitron_result_table, so the start goes when the parent''s result stops being a row of it';
+COMMENT ON COLUMN graphitron_field_path_start_result.kind IS 'RESULT, the start''s kind, carried so the reference into the start names it';
+COMMENT ON COLUMN graphitron_field_path_start_result.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
+
+CREATE TABLE graphitron_field_path_start_routine (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  start_source_name VARCHAR   NOT NULL,
+  start_schema      VARCHAR   NOT NULL,
+  start_table       VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
+    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
+                                            start_schema, start_table, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_producer_routine (graph_name, type_name, field_name) ON DELETE CASCADE,
+  CHECK (kind = 'ROUTINE')
+);
+COMMENT ON TABLE graphitron_field_path_start_routine IS 'A field''s path walked from the routine its query starts with: one row per routine producer, on the function''s table, the FUNCTION row of sql_table sharing the routine''s key. For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) starts on films_for_actor, and its walk begins at the place after the routine.';
+COMMENT ON COLUMN graphitron_field_path_start_routine.graph_name IS 'the owning graph''s partition, carried from the producer';
+COMMENT ON COLUMN graphitron_field_path_start_routine.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_start_routine.field_name IS 'the field whose query starts on the routine; with the two columns before it, a reference into graphitron_producer_routine, one start per producer';
+COMMENT ON COLUMN graphitron_field_path_start_routine.start_source_name IS 'the catalog partition of the function''s table';
+COMMENT ON COLUMN graphitron_field_path_start_routine.start_schema IS 'the SQL schema of the function''s table';
+COMMENT ON COLUMN graphitron_field_path_start_routine.start_table IS 'the function''s table, which shares the routine''s key';
+COMMENT ON COLUMN graphitron_field_path_start_routine.kind IS 'ROUTINE, the start''s kind, carried so the reference into the start names it';
+COMMENT ON COLUMN graphitron_field_path_start_routine.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
+
+CREATE TABLE graphitron_field_path (
+  graph_name             VARCHAR NOT NULL,
+  type_name              VARCHAR NOT NULL,
+  field_name             VARCHAR NOT NULL,
+  start_source_name      VARCHAR NOT NULL,
+  start_schema           VARCHAR NOT NULL,
+  start_table            VARCHAR NOT NULL,
+  position               INT     NOT NULL,
+  element_source_name    VARCHAR NOT NULL,
+  element_source_line    INT     NOT NULL,
+  element_source_column  INT     NOT NULL,
+  from_source_name       VARCHAR NOT NULL,
+  from_schema            VARCHAR NOT NULL,
+  from_table             VARCHAR NOT NULL,
+  to_source_name         VARCHAR NOT NULL,
+  to_schema              VARCHAR NOT NULL,
+  to_table               VARCHAR NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table)
+    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
+                                            start_schema, start_table) ON DELETE CASCADE,
+  -- A step is of an element the field's path was written with, each element at one place.
+  FOREIGN KEY (graph_name, element_source_name, element_source_line, element_source_column)
+    REFERENCES graphitron_ast_field_path_entry (graph_name, source_name, element_line,
+                                                element_column) ON DELETE CASCADE,
+  FOREIGN KEY (from_source_name, from_schema, from_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  FOREIGN KEY (to_source_name, to_schema, to_table)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_field_path IS 'A step a field''s path takes from where its rows start: one row per field, start table and written element the walk stepped through. For example Film.language over @reference(path: [{key: "film_language_id_fkey"}]) is one step from film to language, and a field of a type nested under two tables is walked once from each.';
+COMMENT ON COLUMN graphitron_field_path.graph_name IS 'the owning graph''s partition, carried from the start';
+COMMENT ON COLUMN graphitron_field_path.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path.field_name IS 'the field whose path this is a step of';
+COMMENT ON COLUMN graphitron_field_path.start_source_name IS 'the catalog partition of the table the walk started from';
+COMMENT ON COLUMN graphitron_field_path.start_schema IS 'the SQL schema of the table the walk started from';
+COMMENT ON COLUMN graphitron_field_path.start_table IS 'the table the walk started from; with the field and the two columns before it, a reference into graphitron_field_path_start, so a path goes with the start it was walked from';
+COMMENT ON COLUMN graphitron_field_path.position IS 'the element''s place in the field''s path, as graphitron_ast_field_path_entry states it. A walk from a parent''s result starts at place 0 and one from a routine at the place after it. A step is a row only where the walk took it, so the first place with no row is where the path broke';
+COMMENT ON COLUMN graphitron_field_path.element_source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_field_path.element_source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_field_path.element_source_column IS 'the element''s source column. With the two columns before it, the element''s place in graphitron_ast_field_path_entry, and through its position what the element names';
+COMMENT ON COLUMN graphitron_field_path.from_source_name IS 'the catalog partition of the table the step leaves';
+COMMENT ON COLUMN graphitron_field_path.from_schema IS 'the SQL schema of the table the step leaves';
+COMMENT ON COLUMN graphitron_field_path.from_table IS 'the table the step leaves: the start at the first step, the previous step''s to_table after it';
+COMMENT ON COLUMN graphitron_field_path.to_source_name IS 'the catalog partition of the table the step reaches';
+COMMENT ON COLUMN graphitron_field_path.to_schema IS 'the SQL schema of the table the step reaches';
+COMMENT ON COLUMN graphitron_field_path.to_table IS 'the table the step reaches, where the next step leaves from; the last step''s is where the path ends';
+COMMENT ON COLUMN graphitron_field_path.touched_at IS 'when the walk that last took this step ran: the mark the sweep reads, so a step a reading no longer takes goes with its children';
+
+CREATE TABLE graphitron_field_path_column (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  start_source_name VARCHAR NOT NULL,
+  start_schema      VARCHAR NOT NULL,
+  start_table       VARCHAR NOT NULL,
+  position          INT     NOT NULL,
+  ordinal           INT     NOT NULL,
+  from_source_name  VARCHAR NOT NULL,
+  from_schema       VARCHAR NOT NULL,
+  from_table        VARCHAR NOT NULL,
+  from_column       VARCHAR NOT NULL,
+  to_source_name    VARCHAR NOT NULL,
+  to_schema         VARCHAR NOT NULL,
+  to_table          VARCHAR NOT NULL,
+  to_column         VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position, ordinal),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position)
+    REFERENCES graphitron_field_path (graph_name, type_name, field_name, start_source_name,
+                                      start_schema, start_table, position) ON DELETE CASCADE,
+  FOREIGN KEY (from_source_name, from_schema, from_table, from_column)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  FOREIGN KEY (to_source_name, to_schema, to_table, to_column)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (ordinal >= 0)
+);
+COMMENT ON TABLE graphitron_field_path_column IS 'A column pair a step of a field''s path joins on: one row per step and pair. For example the step from film to language joins film.language_id to language.language_id, one pair; a step from a function''s result joins its columns to the named table''s key by name.';
+COMMENT ON COLUMN graphitron_field_path_column.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_field_path_column.type_name IS 'the type owning the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_column.field_name IS 'the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_column.start_source_name IS 'the start''s catalog partition, as on the step';
+COMMENT ON COLUMN graphitron_field_path_column.start_schema IS 'the start''s SQL schema, as on the step';
+COMMENT ON COLUMN graphitron_field_path_column.start_table IS 'the start table, as on the step';
+COMMENT ON COLUMN graphitron_field_path_column.position IS 'the step''s position; with the columns before it, the step this pair belongs to';
+COMMENT ON COLUMN graphitron_field_path_column.ordinal IS 'the pair''s place in the key, numbered from zero in the key''s own column order';
+COMMENT ON COLUMN graphitron_field_path_column.from_source_name IS 'the catalog partition of the step''s from_table';
+COMMENT ON COLUMN graphitron_field_path_column.from_schema IS 'the SQL schema of the step''s from_table';
+COMMENT ON COLUMN graphitron_field_path_column.from_table IS 'the step''s from_table';
+COMMENT ON COLUMN graphitron_field_path_column.from_column IS 'the column on the side the step leaves';
+COMMENT ON COLUMN graphitron_field_path_column.to_source_name IS 'the catalog partition of the step''s to_table';
+COMMENT ON COLUMN graphitron_field_path_column.to_schema IS 'the SQL schema of the step''s to_table';
+COMMENT ON COLUMN graphitron_field_path_column.to_table IS 'the step''s to_table';
+COMMENT ON COLUMN graphitron_field_path_column.to_column IS 'the column on the side the step reaches, equal to from_column in the join';
+COMMENT ON COLUMN graphitron_field_path_column.touched_at IS 'when the walk that last took the step ran, as on the step';
+
+CREATE TABLE graphitron_field_path_key (
+  graph_name             VARCHAR NOT NULL,
+  type_name              VARCHAR NOT NULL,
+  field_name             VARCHAR NOT NULL,
+  start_source_name      VARCHAR NOT NULL,
+  start_schema           VARCHAR NOT NULL,
+  start_table            VARCHAR NOT NULL,
+  position               INT     NOT NULL,
+  constraint_source_name VARCHAR NOT NULL,
+  constraint_schema      VARCHAR NOT NULL,
+  constraint_table       VARCHAR NOT NULL,
+  constraint_name        VARCHAR NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position)
+    REFERENCES graphitron_field_path (graph_name, type_name, field_name, start_source_name,
+                                      start_schema, start_table, position) ON DELETE CASCADE,
+  FOREIGN KEY (constraint_source_name, constraint_schema, constraint_table, constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_path_key IS 'The foreign key a step of a field''s path rode: one row per step that rode one, written or inferred. For example {key: "film_language_id_fkey"} and {table: "language"} from film both ride film_language_id_fkey; a step matched by name or joined by a method rides none.';
+COMMENT ON COLUMN graphitron_field_path_key.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_field_path_key.type_name IS 'the type owning the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_key.field_name IS 'the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_key.start_source_name IS 'the start''s catalog partition, as on the step';
+COMMENT ON COLUMN graphitron_field_path_key.start_schema IS 'the start''s SQL schema, as on the step';
+COMMENT ON COLUMN graphitron_field_path_key.start_table IS 'the start table, as on the step';
+COMMENT ON COLUMN graphitron_field_path_key.position IS 'the step''s position; with the columns before it, the step';
+COMMENT ON COLUMN graphitron_field_path_key.constraint_source_name IS 'the catalog partition of the table holding the key';
+COMMENT ON COLUMN graphitron_field_path_key.constraint_schema IS 'the SQL schema of the table holding the key';
+COMMENT ON COLUMN graphitron_field_path_key.constraint_table IS 'the table holding the key, the referencing side, whichever way the step rode it';
+COMMENT ON COLUMN graphitron_field_path_key.constraint_name IS 'the key''s SQL name. Whether the author wrote it is whether the element has a graphitron_path_element_key row';
+COMMENT ON COLUMN graphitron_field_path_key.touched_at IS 'when the walk that last took the step ran, as on the step';
+
+CREATE TABLE graphitron_field_path_method (
+  graph_name         VARCHAR NOT NULL,
+  type_name          VARCHAR NOT NULL,
+  field_name         VARCHAR NOT NULL,
+  start_source_name  VARCHAR NOT NULL,
+  start_schema       VARCHAR NOT NULL,
+  start_table        VARCHAR NOT NULL,
+  position           INT     NOT NULL,
+  method_source_name VARCHAR NOT NULL,
+  method_class_name  VARCHAR NOT NULL,
+  method_name        VARCHAR NOT NULL,
+  method_descriptor  VARCHAR NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position, method_source_name, method_class_name, method_name, method_descriptor),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position)
+    REFERENCES graphitron_field_path (graph_name, type_name, field_name, start_source_name,
+                                      start_schema, start_table, position) ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_condition_method (source_name, class_name, method_name, descriptor)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_path_method IS 'The condition method a step of a field''s path joins or filters by: one row per step and overload. For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.';
+COMMENT ON COLUMN graphitron_field_path_method.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_field_path_method.type_name IS 'the type owning the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_method.field_name IS 'the field, as on the step';
+COMMENT ON COLUMN graphitron_field_path_method.start_source_name IS 'the start''s catalog partition, as on the step';
+COMMENT ON COLUMN graphitron_field_path_method.start_schema IS 'the start''s SQL schema, as on the step';
+COMMENT ON COLUMN graphitron_field_path_method.start_table IS 'the start table, as on the step';
+COMMENT ON COLUMN graphitron_field_path_method.position IS 'the step''s position; with the columns before it, the step. A step with column rows is filtered by this method, one without is joined by it, read from the rows rather than stated twice';
+COMMENT ON COLUMN graphitron_field_path_method.method_source_name IS 'the classpath entry the method was read from';
+COMMENT ON COLUMN graphitron_field_path_method.method_class_name IS 'the class declaring the method';
+COMMENT ON COLUMN graphitron_field_path_method.method_name IS 'the method';
+COMMENT ON COLUMN graphitron_field_path_method.method_descriptor IS 'the method''s descriptor; with the three columns before it, code_condition_method''s key';
+COMMENT ON COLUMN graphitron_field_path_method.touched_at IS 'when the walk that last took the step ran, as on the step';
+
+CREATE TABLE graphitron_field_path_stop (
+  graph_name             VARCHAR NOT NULL,
+  type_name              VARCHAR NOT NULL,
+  field_name             VARCHAR NOT NULL,
+  start_source_name      VARCHAR NOT NULL,
+  start_schema           VARCHAR NOT NULL,
+  start_table            VARCHAR NOT NULL,
+  position               INT     NOT NULL,
+  element_source_name    VARCHAR NOT NULL,
+  element_source_line    INT     NOT NULL,
+  element_source_column  INT     NOT NULL,
+  moves                  INT     NOT NULL,
+  touched_at             TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table)
+    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
+                                            start_schema, start_table) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, element_source_name, element_source_line, element_source_column)
+    REFERENCES graphitron_ast_field_path_entry (graph_name, source_name, element_line,
+                                                element_column) ON DELETE CASCADE,
+  CHECK (position >= 0),
+  CHECK (moves <> 1 AND moves >= 0)
+);
+COMMENT ON TABLE graphitron_field_path_stop IS 'Where a field''s path stopped short of its written elements: one row per field and start whose walk met an element it could not step through. For example {key: "film_actor_actor_id_fkey"} on a Film field stops the walk from film at position 0, no move leaving film, and {table: "film"} from a table two keys join to it stops with two.';
+COMMENT ON COLUMN graphitron_field_path_stop.graph_name IS 'the owning graph''s partition, carried from the start';
+COMMENT ON COLUMN graphitron_field_path_stop.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_stop.field_name IS 'the field whose path stopped';
+COMMENT ON COLUMN graphitron_field_path_stop.start_source_name IS 'the catalog partition of the table the walk started from';
+COMMENT ON COLUMN graphitron_field_path_stop.start_schema IS 'the SQL schema of the table the walk started from';
+COMMENT ON COLUMN graphitron_field_path_stop.start_table IS 'the table the walk started from; with the field and the two columns before it, the start in graphitron_field_path_start whose walk stopped, one stop per walk';
+COMMENT ON COLUMN graphitron_field_path_stop.position IS 'the written position of the element the walk could not step through, the first one with no step in graphitron_field_path';
+COMMENT ON COLUMN graphitron_field_path_stop.element_source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_field_path_stop.element_source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_field_path_stop.element_source_column IS 'the element''s source column. With the two columns before it, the element''s place in graphitron_ast_field_path_entry, which is where a defect about the stop is reported';
+COMMENT ON COLUMN graphitron_field_path_stop.moves IS 'how many moves the element allowed from where the walk stood: none, where it names nothing or nothing it names leaves from there, or several, where it names more than one way away; never one, one being a step';
+COMMENT ON COLUMN graphitron_field_path_stop.touched_at IS 'when the walk that last stopped here ran: the mark the sweep reads';
+
+CREATE VIEW graphitron_field_path_start_rule
+  (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind) AS
+-- A field that wrote a path is walked from each table its parent's result is a row of, unless its
+-- query starts on a routine. The path read is the one the declaration graphql_field anchored.
+SELECT p.graph_name, gf.type_name, gf.field_name,
+       rt.table_source_name, rt.table_schema, rt.table_name, 'RESULT'
+  FROM graphitron_ast_field_path_entry p
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = p.graph_name AND fd.source_name = p.source_name
+   AND fd.source_line = p.field_line AND fd.source_column = p.field_column
+  JOIN graphql_field gf
+    ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
+   AND gf.field_name = fd.name AND gf.source_name = fd.source_name
+   AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
+  JOIN graphitron_result_table rt
+    ON rt.graph_name = gf.graph_name AND rt.type_name = gf.type_name
+  JOIN store_graph g ON g.graph_name = rt.graph_name AND g.last_captured = rt.touched_at
+ WHERE p.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_routine pr
+                    WHERE pr.graph_name = gf.graph_name AND pr.type_name = gf.type_name
+                      AND pr.field_name = gf.field_name)
+UNION ALL
+-- A routine producer is walked from its function's table, the FUNCTION row of sql_table sharing
+-- the routine's key.
+SELECT pr.graph_name, pr.type_name, pr.field_name,
+       st.source_name, st.table_schema, st.table_name, 'ROUTINE'
+  FROM graphitron_producer_routine pr
+  JOIN sql_table st
+    ON st.source_name = pr.routine_source_name AND st.table_schema = pr.table_schema
+   AND st.table_name = pr.routine_name;
+COMMENT ON VIEW graphitron_field_path_start_rule IS 'Where each field''s path is walked from, with why: one row per field and start table. For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_field_path_start_rule.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_field_path_start_rule.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_start_rule.field_name IS 'the field whose path starts here';
+COMMENT ON COLUMN graphitron_field_path_start_rule.start_source_name IS 'the catalog partition of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start_rule.start_schema IS 'the SQL schema of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start_rule.start_table IS 'the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_start_rule.kind IS 'RESULT or ROUTINE, which subtype the start is written to';
+
+CREATE VIEW graphitron_field_path_rule
+  (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+   element_source_name, element_source_line, element_source_column,
+   from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
+   constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from) AS
+-- Where each walk stands: at its start, from place 0 on a parent's result table and from the place
+-- after the routine on a routine's; and after each step this reading took.
+WITH frontier (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position, from_source_name, from_schema, from_table,
+               field_source_name, field_line, field_column) AS (
+  SELECT s.graph_name, s.type_name, s.field_name,
+         s.start_source_name, s.start_schema, s.start_table, 0,
+         s.start_source_name, s.start_schema, s.start_table,
+         gf.source_name, gf.source_line, gf.source_column
+    FROM graphitron_field_path_start s
+    JOIN store_graph g ON g.graph_name = s.graph_name AND g.last_captured = s.touched_at
+    JOIN graphql_field gf
+      ON gf.graph_name = s.graph_name AND gf.type_name = s.type_name
+     AND gf.field_name = s.field_name
+   WHERE s.kind = 'RESULT'
+  UNION ALL
+  SELECT s.graph_name, s.type_name, s.field_name,
+         s.start_source_name, s.start_schema, s.start_table, w.position + 1,
+         s.start_source_name, s.start_schema, s.start_table,
+         w.source_name, w.field_line, w.field_column
+    FROM graphitron_field_path_start s
+    JOIN store_graph g ON g.graph_name = s.graph_name AND g.last_captured = s.touched_at
+    JOIN graphitron_producer_routine pr
+      ON pr.graph_name = s.graph_name AND pr.type_name = s.type_name
+     AND pr.field_name = s.field_name
+    JOIN graphitron_ast_field_path_entry w
+      ON w.graph_name = pr.graph_name AND w.source_name = pr.source_name
+     AND w.element_line = pr.source_line AND w.element_column = pr.source_column
+   WHERE s.kind = 'ROUTINE'
+  UNION ALL
+  SELECT p.graph_name, p.type_name, p.field_name,
+         p.start_source_name, p.start_schema, p.start_table, p.position + 1,
+         p.to_source_name, p.to_schema, p.to_table,
+         e.source_name, e.field_line, e.field_column
+    FROM graphitron_field_path p
+    JOIN store_graph g ON g.graph_name = p.graph_name AND g.last_captured = p.touched_at
+    JOIN graphitron_ast_field_path_entry e
+      ON e.graph_name = p.graph_name AND e.source_name = p.element_source_name
+     AND e.element_line = p.element_source_line AND e.element_column = p.element_source_column
+),
+-- The element written next where each walk stands, read by its place in the field's path, and
+-- whether the field reads one row, which is what decides the way a key from a table to itself is
+-- ridden until the field states it. The flags are CASE expressions rather than bare EXISTS: H2 pushes a
+-- predicate onto a view's boolean column and writes one over a bare EXISTS it cannot parse back.
+step (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+      source_name, source_line, source_column, from_source_name, from_schema, from_table,
+      single_valued, has_key, has_table, has_condition) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name,
+         fr.start_source_name, fr.start_schema, fr.start_table, fr.position,
+         w.source_name, w.element_line, w.element_column,
+         fr.from_source_name, fr.from_schema, fr.from_table,
+         NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM'),
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_ast_reference_key_step_entry k
+                  WHERE k.graph_name = w.graph_name AND k.source_name = w.source_name
+                    AND k.source_line = w.element_line AND k.source_column = w.element_column) THEN TRUE ELSE FALSE END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_ast_reference_table_step_entry t
+                  WHERE t.graph_name = w.graph_name AND t.source_name = w.source_name
+                    AND t.source_line = w.element_line AND t.source_column = w.element_column) THEN TRUE ELSE FALSE END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_ast_reference_condition_step_entry c
+                  WHERE c.graph_name = w.graph_name AND c.source_name = w.source_name
+                    AND c.source_line = w.element_line AND c.source_column = w.element_column) THEN TRUE ELSE FALSE END
+    FROM frontier fr
+    JOIN graphitron_ast_field_path_entry w
+      ON w.graph_name = fr.graph_name AND w.source_name = fr.field_source_name
+     AND w.field_line = fr.field_line AND w.field_column = fr.field_column
+     AND w.position = fr.position
+    JOIN graphitron_field f
+      ON f.graph_name = fr.graph_name AND f.type_name = fr.type_name AND f.field_name = fr.field_name
+    JOIN graphitron_field_target nv
+      ON nv.graph_name = fr.graph_name AND nv.type_name = fr.type_name AND nv.field_name = fr.field_name
+    JOIN graphitron_type nt ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
+),
+-- Every move the next element allows from where the walk stands, one row per way of taking it. A
+-- @routine written after where the walk starts is a path routine, a step no arm takes yet, so it is
+-- a step with no move.
+move (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+      source_name, source_line, source_column, from_source_name, from_schema, from_table,
+      to_source_name, to_schema, to_table,
+      constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from) AS (
+  -- A key, ridden away from where the walk stands; a key from a table to itself the way the
+  -- field's cardinality reads it.
+  SELECT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema, s.start_table,
+         s.position, s.source_name, s.source_line, s.source_column,
+         s.from_source_name, s.from_schema, s.from_table, h.to_source_name, h.to_schema, h.to_table,
+         h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from
+    FROM step s
+    JOIN graphitron_path_element_key k
+      ON k.graph_name = s.graph_name AND k.source_name = s.source_name
+     AND k.source_line = s.source_line AND k.source_column = s.source_column
+    JOIN sql_constraint_hop h
+      ON h.source_name = k.constraint_source_name AND h.table_schema = k.constraint_schema
+     AND h.table_name = k.constraint_table AND h.constraint_name = k.constraint_name
+     AND h.from_source_name = s.from_source_name AND h.from_schema = s.from_schema
+     AND h.from_table = s.from_table
+   WHERE s.has_key
+     AND (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+               AND h.from_table = h.to_table)
+          OR h.fk_on_from = s.single_valued)
+  UNION ALL
+  -- A table, reached by a key between it and where the walk stands.
+  SELECT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema, s.start_table,
+         s.position, s.source_name, s.source_line, s.source_column,
+         s.from_source_name, s.from_schema, s.from_table, h.to_source_name, h.to_schema, h.to_table,
+         h.source_name, h.table_schema, h.table_name, h.constraint_name, h.fk_on_from
+    FROM step s
+    JOIN graphitron_path_element_table t
+      ON t.graph_name = s.graph_name AND t.source_name = s.source_name
+     AND t.source_line = s.source_line AND t.source_column = s.source_column
+    JOIN sql_constraint_hop h
+      ON h.from_source_name = s.from_source_name AND h.from_schema = s.from_schema
+     AND h.from_table = s.from_table
+     AND h.to_source_name = t.table_source_name AND h.to_schema = t.table_schema
+     AND h.to_table = t.table_name
+   WHERE s.has_table AND NOT s.has_key
+     AND (NOT (h.from_source_name = h.to_source_name AND h.from_schema = h.to_schema
+               AND h.from_table = h.to_table)
+          OR h.fk_on_from = s.single_valued)
+  UNION ALL
+  -- A table, reached from a function's result by the named table's key matched by column name.
+  SELECT DISTINCT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema,
+         s.start_table, s.position, s.source_name, s.source_line, s.source_column,
+         s.from_source_name, s.from_schema, s.from_table,
+         t.table_source_name, t.table_schema, t.table_name,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BOOLEAN)
+    FROM step s
+    JOIN graphitron_path_element_table t
+      ON t.graph_name = s.graph_name AND t.source_name = s.source_name
+     AND t.source_line = s.source_line AND t.source_column = s.source_column
+    JOIN sql_name_matched_key_column n
+      ON n.source_name = s.from_source_name AND n.table_schema = s.from_schema
+     AND n.table_name = s.from_table
+     AND n.to_source_name = t.table_source_name AND n.to_schema = t.table_schema
+     AND n.to_table = t.table_name
+   WHERE s.has_table AND NOT s.has_key
+  UNION ALL
+  -- A condition alone: its method's second parameter names where it lands, and its first, where it
+  -- names a table, has to be the one the walk stands at.
+  SELECT DISTINCT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema,
+         s.start_table, s.position, s.source_name, s.source_line, s.source_column,
+         s.from_source_name, s.from_schema, s.from_table,
+         arrives.source_name, arrives.table_schema, arrives.table_name,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BOOLEAN)
+    FROM step s
+    JOIN graphitron_path_element_method pm
+      ON pm.graph_name = s.graph_name AND pm.source_name = s.source_name
+     AND pm.source_line = s.source_line AND pm.source_column = s.source_column
+    JOIN code_method_parameter ap
+      ON ap.source_name = pm.method_source_name AND ap.class_name = pm.method_class_name
+     AND ap.method_name = pm.method_name AND ap.descriptor = pm.method_descriptor AND ap.position = 1
+    JOIN store_graph_source am ON am.graph_name = s.graph_name
+    JOIN sql_table arrives ON arrives.source_name = am.source_name AND arrives.class_fqn = ap.erased_class
+   WHERE s.has_condition AND NOT s.has_key AND NOT s.has_table
+     AND NOT EXISTS (SELECT 1 FROM code_method_parameter dp
+                       JOIN store_graph_source dm ON dm.graph_name = s.graph_name
+                       JOIN sql_table d ON d.source_name = dm.source_name AND d.class_fqn = dp.erased_class
+                      WHERE dp.source_name = pm.method_source_name AND dp.class_name = pm.method_class_name
+                        AND dp.method_name = pm.method_name AND dp.descriptor = pm.method_descriptor
+                        AND dp.position = 0
+                        AND NOT (d.source_name = s.from_source_name AND d.table_schema = s.from_schema
+                                 AND d.table_name = s.from_table))
+)
+-- Every move, and every step once more as a row with no destination, which is all a step that
+-- allows no move has and is where its path broke. How many moves a step allows is counted by the
+-- stage over its own graph's rows, the count passing the empty row by: a window here would hide the
+-- graph's partition from the predicate the stage reads this with, and a join or a NOT EXISTS
+-- between step and move would walk move again for every step.
+SELECT m.graph_name, m.type_name, m.field_name, m.start_source_name, m.start_schema, m.start_table,
+       m.position, m.source_name, m.source_line, m.source_column,
+       m.from_source_name, m.from_schema, m.from_table, m.to_source_name, m.to_schema, m.to_table,
+       m.constraint_source_name, m.constraint_schema, m.constraint_table, m.constraint_name, m.fk_on_from
+  FROM move m
+UNION ALL
+SELECT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema, s.start_table,
+       s.position, s.source_name, s.source_line, s.source_column,
+       s.from_source_name, s.from_schema, s.from_table,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+       CAST(NULL AS BOOLEAN)
+  FROM step s;
+COMMENT ON VIEW graphitron_field_path_rule IS 'One round of the walk that fills graphitron_field_path: every move the next written element allows from where each walk stands, and every step once with no destination, which is all a step allowing no move has. For example a capture merges the rows with one move into graphitron_field_path until a round adds nothing; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+COMMENT ON COLUMN graphitron_field_path_rule.graph_name IS 'the owning graph''s partition, carried from the field';
+COMMENT ON COLUMN graphitron_field_path_rule.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_rule.field_name IS 'the field whose next step this is';
+COMMENT ON COLUMN graphitron_field_path_rule.start_source_name IS 'the start''s catalog partition';
+COMMENT ON COLUMN graphitron_field_path_rule.start_schema IS 'the start''s SQL schema';
+COMMENT ON COLUMN graphitron_field_path_rule.start_table IS 'the table the walk started from';
+COMMENT ON COLUMN graphitron_field_path_rule.position IS 'the written position of the element the step reads';
+COMMENT ON COLUMN graphitron_field_path_rule.element_source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_field_path_rule.element_source_line IS 'the element''s source line';
+COMMENT ON COLUMN graphitron_field_path_rule.element_source_column IS 'the element''s source column';
+COMMENT ON COLUMN graphitron_field_path_rule.from_source_name IS 'the catalog partition of the table the walk stands at';
+COMMENT ON COLUMN graphitron_field_path_rule.from_schema IS 'the SQL schema of the table the walk stands at';
+COMMENT ON COLUMN graphitron_field_path_rule.from_table IS 'the table the walk stands at';
+COMMENT ON COLUMN graphitron_field_path_rule.to_source_name IS 'the catalog partition of the table the move reaches; NULL on a step with no move';
+COMMENT ON COLUMN graphitron_field_path_rule.to_schema IS 'the SQL schema of the table the move reaches; NULL on a step with no move';
+COMMENT ON COLUMN graphitron_field_path_rule.to_table IS 'the table the move reaches; NULL on a step with no move';
+COMMENT ON COLUMN graphitron_field_path_rule.constraint_source_name IS 'the catalog partition of the table holding the key the move rides; NULL where it rides none';
+COMMENT ON COLUMN graphitron_field_path_rule.constraint_schema IS 'the SQL schema of that table; NULL where the move rides no key';
+COMMENT ON COLUMN graphitron_field_path_rule.constraint_table IS 'the table holding the key the move rides; NULL where it rides none';
+COMMENT ON COLUMN graphitron_field_path_rule.constraint_name IS 'the key the move rides; NULL where it rides none';
+COMMENT ON COLUMN graphitron_field_path_rule.fk_on_from IS 'whether the move leaves from the table holding the key; NULL where it rides none';
+
 CREATE TABLE graphitron_producer_service (
   graph_name         VARCHAR   NOT NULL,
   type_name          VARCHAR   NOT NULL,
@@ -15186,6 +15728,24 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('field-path-start',
+   'one table one field''s path starts on, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table', 'sdl'),
+  ('field-path',
+   'one step one field''s path takes from one start, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position', 'sdl'),
+  ('field-path-column',
+   'one column pair one step of a field''s path joins on, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position, ordinal', 'sdl'),
+  ('field-path-key',
+   'the key one step of a field''s path rode, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position', 'sdl'),
+  ('field-path-method',
+   'one condition method one step of a field''s path joins or filters by, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
+  ('field-path-stop',
+   'where one walk of one field''s path stopped, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table', 'sdl'),
   ('stale-module-hint',
    'one graph whose run read a workspace module stale',
    'graph_name', 'classpath'),
@@ -15710,6 +16270,46 @@ INSERT INTO graphitron_defect_type VALUES
    'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.');
 
 INSERT INTO meta_relation VALUES
+  ('graphitron_field_path_start', 'field-path-start', 'graphitron',
+   'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table or a root''s routine.',
+   'For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.',
+   'The two ways a walk starts take the same steps from there, so the start is the supertype and the path one relation under it rather than two mirrored ones; each subtype says why the walk starts where it does and goes when that stops being so.'),
+  ('graphitron_field_path_start_result', 'field-path-start', 'graphitron',
+   'A field''s path walked from its parent''s result: one row per field and table the parent type''s result is a row of.',
+   'For example Film.language starts on film, and a field of a type nested under customer and store starts on each.',
+   'The start a parent''s result gives, referencing graphitron_result_table so the walk goes when the parent''s result stops being a row of the table. A field whose query starts on a routine has none.'),
+  ('graphitron_field_path_start_routine', 'graph-field', 'graphitron',
+   'A field''s path walked from the routine its query starts with: one row per routine producer, on the function''s table, the FUNCTION row of sql_table sharing the routine''s key.',
+   'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) starts on films_for_actor, and its walk begins at the place after the routine.',
+   'The start a routine producer gives, referencing graphitron_producer_routine. Only the first @routine at a root is the producer; a later one is a place in the path, a step the walk does not take yet.'),
+  ('graphitron_field_path_start_rule', 'field-path-start', 'graphitron',
+   'Where each field''s path is walked from, with why: one row per field and start table.',
+   'For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'Kept in the catalog rather than in the stage that writes it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_field_path', 'field-path', 'graphitron',
+   'A step a field''s path takes from where its rows start: one row per field, start table and written element the walk stepped through.',
+   'For example Film.language over @reference(path: [{key: "film_language_id_fkey"}]) is one step from film to language, and a field of a type nested under two tables is walked once from each.',
+   'The walk''s answer: a row is a step the walk took, so from_table and to_table are never null and a broken path is the first written element with no row. Keyed by the start as well as the field, because a field on a type nested under several tables is walked once from each, and the start is graphitron_field_path_start''s, so a path goes with the start it was walked from. Each step is of an element graphitron_ast_field_path_entry holds. How the step joins is its children''s.'),
+  ('graphitron_field_path_column', 'field-path-column', 'graphitron',
+   'A column pair a step of a field''s path joins on: one row per step and pair.',
+   'For example the step from film to language joins film.language_id to language.language_id, one pair; a step from a function''s result joins its columns to the named table''s key by name.',
+   'A join is column pairs, and the key the step rode is where they came from, so a foreign key ridden either way and a function''s result matched by name are one join form, and the way a key from a table to itself was ridden is which of its columns is from_column.'),
+  ('graphitron_field_path_key', 'field-path-key', 'graphitron',
+   'The foreign key a step of a field''s path rode: one row per step that rode one, written or inferred.',
+   'For example {key: "film_language_id_fkey"} and {table: "language"} from film both ride film_language_id_fkey; a step matched by name or joined by a method rides none.',
+   'Provenance for the editor and the messages, which name the key a step rode whether the author wrote it, inferred it from a table or it was discovered; the columns are the join.'),
+  ('graphitron_field_path_method', 'field-path-method', 'graphitron',
+   'The condition method a step of a field''s path joins or filters by: one row per step and overload.',
+   'For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.',
+   'A method alone is the step''s join and beside a key or a table a filter on it, read from whether the step has column rows rather than stated twice; one row per overload, the generator choosing by the arguments it maps.'),
+  ('graphitron_field_path_stop', 'field-path-stop', 'graphitron',
+   'Where a field''s path stopped short of its written elements: one row per field and start whose walk met an element it could not step through.',
+   'For example {key: "film_actor_actor_id_fkey"} on a Film field stops the walk from film at position 0, no move leaving film, and {table: "film"} from a table two keys join to it stops with two.',
+   'Stored by the walk beside its steps because a stop is a step not taken, which graphitron_field_path cannot hold, a row there being a step. The entry defects read it rather than the walk''s rule, a walk read from a correlated subquery being walked again for every row that drives it; it is the break the editor and the messages name, at the element the author edits.'),
+  ('graphitron_field_path_rule', 'field-path', 'graphitron',
+   'One round of the walk that fills graphitron_field_path: every move the next written element allows from where each walk stands, and every step once with no destination, which is all a step allowing no move has.',
+   'For example a capture merges the rows with one move into graphitron_field_path until a round adds nothing; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads. One round only: a view cannot state the fixpoint, and H2 evaluates a recursive view again for every row joined to it, so the stage merges rounds until one adds nothing.'),
   ('build_warning_stale_module_hint', 'stale-module-hint', 'derivation',
    'One graph whose run read a workspace module stale, and the clause its errors carry for it.',
    'For example a graph whose run read opptak-service stale, whose errors then end saying that one module was read stale and may be why.',

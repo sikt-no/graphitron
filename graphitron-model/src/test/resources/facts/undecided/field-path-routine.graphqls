@@ -37,3 +37,22 @@ extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: 
   0,        5
   1,        23
   """)
+
+# A root's routine is where its query starts, so its walk starts on the function's table and is no
+# step of it: a routine alone has no step, and the element after it is the first, at the place after
+# the routine, leaving the function's table for film by the key matched by name.
+extend schema @expectEquals(relation: "graphitron_field_path_start", rows: """
+  type_name, field_name, start_schema, start_table,     kind
+  Query,     rows,       public,       films_for_actor, ROUTINE
+  Query,     hopped,     public,       films_for_actor, ROUTINE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path", rows: """
+  type_name, field_name, start_table,     position, from_schema, from_table,      to_table
+  Query,     hopped,     films_for_actor, 1,        public,      films_for_actor, film
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_path_column", rows: """
+  type_name, field_name, position, from_table,      from_column, to_table, to_column
+  Query,     hopped,     1,        films_for_actor, film_id,     film,     film_id
+  """)

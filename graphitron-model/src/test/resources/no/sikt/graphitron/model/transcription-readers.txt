@@ -97,3 +97,11 @@ graphitron_field_minted graphql_field
 # declaration was anchored is a declaration site, which only the transcription states, and a field
 # the macro minted wrote no path.
 graphitron_field_path_reading graphql_field
+
+# Adjudicated and kept: a walk starts from a field's anchored declaration.
+#
+# graphitron_field_path_start_rule and graphitron_field_path_rule find where a field's walk starts
+# and the element it takes next through the declaration graphql_field anchored, on the reading's
+# terms above: the path is the anchored declaration's, and a field the macro minted wrote none.
+graphitron_field_path_rule graphql_field
+graphitron_field_path_start_rule graphql_field

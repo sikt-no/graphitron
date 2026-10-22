@@ -39,3 +39,27 @@ extend schema @assertContains(relation: "graphitron_field_table_link", rows: """
   type_name, field_name,         position, via,       from_table, to_table
   Customer,  addressByOverloads, 0,        CONDITION, customer,   address
   """)
+
+# The walk takes a condition alone as the step its method's signature routes, joined by the method
+# and no column, and a condition beside nothing else whose overloads agree as one step.
+extend schema @assertContains(relation: "graphitron_field_path", rows: """
+  type_name, field_name,         start_table, position, from_table, to_table
+  Film,      filmActors,         film,        0,        film,       film_actor
+  Customer,  addressByOverloads, customer,    0,        customer,   address
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_path_method", rows: """
+  type_name, field_name, position, method_class_name,                                                         method_name
+  Film,      filmActors, 0,        no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures, filmToFilmActor
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_path_column", rows: """
+  type_name, field_name
+  Film,      filmActors
+  Customer,  addressByOverloads
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_field_path_stop", rows: """
+  type_name, field_name
+  Customer,  addressByOverloads
+  """)
