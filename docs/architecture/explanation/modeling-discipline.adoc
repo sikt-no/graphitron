@@ -70,6 +70,47 @@ are holding: extract the supertype, lift out what does not vary, key it. Decidin
 model has to carry at all** is the part nothing tells you except the questions, and it is the same
 decision this page opens with.
 
+=== A missing fact is a capture question first
+
+When a derivation struggles because a fact is missing, go back to capture before writing the rule.
+Capture may have had the fact all along. A gatherer often sees whole what a reader would otherwise
+have to put back together.
+
+The worked example is a field's path. A field's path is the elements of its `@routine` and
+`@reference` applications, in the order they were written. The directive entries were shaped by the
+directives: one decode per application, with each element at its index within its own application,
+in `graphitron_ast_reference_element_entry`. No entry stated where an element sits in the field's
+path. So every reader that needed that position rebuilt it:
+
+* the forward walk, the chain defects and the `@sourceRow` source all needed the field's first
+  element, or the one after the element they stood on;
+* the inherited-table check, the column match and hover needed to know whether the field wrote a
+  path at all.
+
+Each one climbed from the element to its application to the field declaration, then ranked the
+applications with a window or asked whether anything was written before it. The same structure was
+re-derived from the same rows on every question.
+
+The graphitron AST gatherer reads every directive on a field together, so the order was available
+at capture all along. Capture now states it once. `graphitron_ast_field_path_entry` holds one row per
+element, at its place in the field's composed path, keyed by the field declaration's position in
+`graphql_ast_field_definition_entry`. The readers' questions became keyed lookups:
+
+* the first element is place 0;
+* the next element is the place after;
+* a field wrote a path when it has a row.
+
+The new relation is still an entry at the source document grain, keyed by where the declaration
+was written, and the graphitron AST gatherer marks and sweeps it with the rest of its path rows.
+
+The ranking had also been a cost. A window blocks the graph filter a stage reads its rule with, so in
+a store holding many graphs every capture paid for all of them. Where the walk was still slow, the
+rest of the cost was the rule's shape, a separate lesson.
+
+The sign to watch for is a reader rebuilding a structure from many rows each time it asks: a rank, a
+window, or a "nothing was written before this one" test. That structure is usually a fact the corpus
+held whole. Capture it in the form the question needs, not the form the directives were written in.
+
 == Otherwise the facts are derived
 
 When the inputs are already in the store, the fact is a derivation. Nothing has to be read again and
