@@ -856,6 +856,26 @@ INSERT INTO xlat_comp_child (child_id, fk_a, fk_b, note) VALUES
     ('CC3', 'X2', 'Y2', 'only child of A2/B2'),
     ('CC4', 'X1', 'Y2', 'only child of the decoy A1/B2');
 
+-- A primary key that interleaves a node id with a plain column. `split_key_child`'s key is
+-- (a, b, c), and its FK to `split_key_parent` covers (a, c), so a DELETE input keyed by a
+-- SplitKeyParent node id plus a plain `b` binds the key in the order a, c, b, which is not the
+-- key's own. Every key column is `integer`, so an echo that put a value in the wrong slot would
+-- still compile; only decoding the echoed id catches it. No seed rows: the execution tests insert
+-- and roll back their own.
+CREATE TABLE split_key_parent (
+    a integer NOT NULL,
+    c integer NOT NULL,
+    PRIMARY KEY (a, c)
+);
+
+CREATE TABLE split_key_child (
+    a integer NOT NULL,
+    b integer NOT NULL,
+    c integer NOT NULL,
+    PRIMARY KEY (a, b, c),
+    FOREIGN KEY (a, c) REFERENCES split_key_parent (a, c)
+);
+
 -- A code table carrying node metadata with no node type over it in the execution schema:
 -- `StudyLevel` is a @table type without `implements Node`, the shape of a federation stub whose
 -- owning subgraph publishes the node. `level_interval` points at it twice through non-key foreign

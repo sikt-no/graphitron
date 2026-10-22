@@ -4790,6 +4790,42 @@ type DeletedFilmsIdPayload {
     deletedIds: [ID!]
 }
 
+# missingAsDeleted execution-tier fixtures (DmlBulkMutationsExecutionTest). The single-row twin of
+# DeletedFilmsIdPayload: with missingAsDeleted: true a film id that matches no row is echoed here
+# rather than rendering the payload null.
+type DeletedFilmIdPayload {
+    deletedId: ID
+}
+
+# The composite-key node-id bulk delete with an errors field, so the missingAsDeleted echo runs the
+# Outcome-wrapped path.
+type DeletedFilmActorsWithErrorsPayload {
+    deletedIds: [ID!]
+    errors: [FilmCreateError]
+}
+
+# A primary key interleaving a node id with a plain column: split_key_child's key is (a, b, c) and
+# its FK to split_key_parent covers (a, c). SplitKeyChildDeleteInput binds the key a, c (decoded
+# from the parent id) then b, which is not key order; the missingAsDeleted echo must still encode
+# (a, b, c). See the split_key_* tables in init.sql.
+type SplitKeyParent implements Node @table(name: "split_key_parent") @node {
+    id: ID! @nodeId
+}
+
+type SplitKeyChild implements Node @table(name: "split_key_child") @node {
+    id: ID! @nodeId
+    b: Int!
+}
+
+input SplitKeyChildDeleteInput {
+    parent: ID! @nodeId(typeName: "SplitKeyParent")
+    b: Int! @field(name: "b")
+}
+
+type DeletedSplitKeyChildrenPayload {
+    deletedIds: [ID!]
+}
+
 # R514 execution-tier fixture: a payload-returning single-row DELETE whose write target is named on
 # the consuming field with @mutation(table: "storage_bin"). Before the
 # DmlEmitted @mutation(table:) grounding, the binding grounder had no field-relative write-target
@@ -5145,6 +5181,19 @@ type Mutation {
     # follow-up SELECT runs after the row is gone. (R287 removed the @table-element DELETE carrier:
     # a full @table projection off a deleted row is impossible — RETURNING carries only the PK.)
     deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE, table: "film")
+
+    # missingAsDeleted: true on the payload-returning DELETE: an input key that matches no row
+    # counts as already deleted, the call commits, and the payload echoes every input key in input
+    # order. deleteFilmsIdCarrier above is the default-behaviour twin (a missing key rolls the call
+    # back). Pinned by DmlBulkMutationsExecutionTest's missingAsDeleted cases.
+    deleteFilmsMissingAsDeleted(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
+        @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+    deleteFilmMissingAsDeleted(in: FilmDeleteInput!): DeletedFilmIdPayload
+        @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+    deleteFilmActorsMissingAsDeleted(in: [DeleteFilmActorByNodeIdInput!]!): DeletedFilmActorsWithErrorsPayload
+        @mutation(typeName: DELETE, table: "film_actor", missingAsDeleted: true)
+    deleteSplitKeyChildrenMissingAsDeleted(in: [SplitKeyChildDeleteInput!]!): DeletedSplitKeyChildrenPayload
+        @mutation(typeName: DELETE, table: "split_key_child", missingAsDeleted: true)
 
     # R158 execution-tier surfaces: @service-backed mutations returning carrier-payload
     # types whose data field is the @service producer's typed jOOQ record (List<FilmRecord>

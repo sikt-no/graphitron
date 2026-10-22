@@ -253,11 +253,12 @@ final class FactWrites {
                          t.SOURCE_COLUMN,
                          t.OPERATION,
                          t.MULTI_ROW,
+                         t.MISSING_AS_DELETED,
                          t.TABLE_REF,
                          t.TABLE_REF_NAMESPACE_PART,
                          t.TABLE_REF_NAME_PART,
                          t.TOUCHED_AT)
-                .values(markers(12)));
+                .values(markers(13)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -267,6 +268,7 @@ final class FactWrites {
                                row.get(t.SOURCE_COLUMN),
                                row.get(t.OPERATION),
                                row.get(t.MULTI_ROW),
+                               row.get(t.MISSING_AS_DELETED),
                                row.get(t.TABLE_REF),
                                row.get(t.TABLE_REF_NAMESPACE_PART),
                                row.get(t.TABLE_REF_NAME_PART),

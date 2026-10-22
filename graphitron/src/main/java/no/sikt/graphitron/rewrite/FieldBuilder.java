@@ -6223,6 +6223,17 @@ class FieldBuilder {
                             MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
                 }
 
+                // @mutation(missingAsDeleted:) means something only for the verbs in
+                // MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS; on any other verb it
+                // rejects loudly rather than being silently ignored, beside the table: verb check.
+                if (MutationInputResolver.parseMissingAsDeleted(fieldDef)
+                        && !MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS.contains(kind)) {
+                    return new UnclassifiedField(parentTypeName, name, location,
+                        new no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb(
+                            kind.name(),
+                            MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
+                }
+
                 // Every @mutation(typeName: UPDATE) classifies through the
                 // UpdateRowsWalker, not MutationInputResolver. Branch here on leaf identity (the
                 // return type): the direct-@table/ID-return shape goes to
@@ -6624,11 +6635,18 @@ class FieldBuilder {
      * Unlike UPDATE, {@code multiRow: true} is admitted (the walker turns it into the
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm). A pre-check failure or a
      * walker {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed
-     * {@code DeleteRowsError} arm verbatim for the LSP projector.
+     * {@code DeleteRowsError} arm verbatim for the LSP projector. {@code missingAsDeleted: true}
+     * is rejected first: only the payload-returning DELETE echoes a missing key, and the leaf's
+     * compact constructor refuses the carrier arm it would produce.
      */
     private GraphitronField classifyDeleteTableField(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef returnType) {
+        if (MutationInputResolver.parseMissingAsDeleted(fieldDef)) {
+            return new UnclassifiedField(parentTypeName, name, location,
+                new no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedReturnShape(
+                    parentTypeName + "." + name));
+        }
         TableRef writeTarget;
         List<InputField> inputFields;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
@@ -6669,7 +6687,7 @@ class FieldBuilder {
         // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, false, inputArg.name());
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
@@ -6726,11 +6744,13 @@ class FieldBuilder {
         var dataFieldLocation = locationOf(dataField);
 
         // DeleteRows walker: PK-or-UK identification over the already-classified input fields,
-        // multiRow opting into the Broadcast arm. Run it before the per-field reclassify so an
-        // under-keyed input rejects without leaving an orphaned data-field carrier in the registry.
+        // multiRow opting into the Broadcast arm and missingAsDeleted into the
+        // IdempotentByPrimaryKey arm. Run it before the per-field reclassify so an under-keyed
+        // input rejects without leaving an orphaned data-field carrier in the registry.
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
+        boolean missingAsDeleted = MutationInputResolver.parseMissingAsDeleted(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, missingAsDeleted, inputArg.name());
         if (walkerResult instanceof no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err) {
             return new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
         }

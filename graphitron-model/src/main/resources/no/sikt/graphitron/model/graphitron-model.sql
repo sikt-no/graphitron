@@ -2713,6 +2713,7 @@ CREATE TABLE graphitron_ast_mutation_entry (
   touched_at    TIMESTAMP NOT NULL,
   operation     VARCHAR NOT NULL,
   multi_row     BOOLEAN,
+  missing_as_deleted BOOLEAN,
   table_ref     VARCHAR,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR,
@@ -2730,6 +2731,7 @@ COMMENT ON COLUMN graphitron_ast_mutation_entry.source_column IS 'source column 
 COMMENT ON COLUMN graphitron_ast_mutation_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_mutation_entry.operation IS 'the typeName argument as the author spelled it, an enum token being kept as its own text and never checked against the vocabulary the definition declares. Nothing upstream has validated it, so a CHECK here would turn a typo into a constraint violation; membership is a detection';
 COMMENT ON COLUMN graphitron_ast_mutation_entry.multi_row IS 'the multiRow argument as written, or NULL where the author wrote none; the definition''s own default of false stands in graphql_directive_argument.default_value_sdl rather than being filled in here';
+COMMENT ON COLUMN graphitron_ast_mutation_entry.missing_as_deleted IS 'the missingAsDeleted argument as written, or NULL where the author wrote none; the definition''s own default of false stands in graphql_directive_argument.default_value_sdl rather than being filled in here';
 COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref IS 'the table argument as written, or NULL where none was; what an omitted table resolves to is a resolution and not this relation''s business';
 COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_mutation_entry.table_ref_name_part IS 'the table half of the same';
@@ -3838,6 +3840,7 @@ CREATE TABLE graphitron_mutation_entry (
   source_column INT,
   operation     VARCHAR NOT NULL,
   multi_row     BOOLEAN,
+  missing_as_deleted BOOLEAN,
   table_ref     VARCHAR,
   table_ref_namespace_part VARCHAR,
   table_ref_name_part      VARCHAR,
@@ -3857,6 +3860,7 @@ COMMENT ON COLUMN graphitron_mutation_entry.source_line IS 'source line, 1-based
 COMMENT ON COLUMN graphitron_mutation_entry.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_mutation_entry.operation IS 'the typeName argument as written (INSERT / UPDATE / DELETE / UPSERT); open column per the enum-literal rule';
 COMMENT ON COLUMN graphitron_mutation_entry.multi_row IS 'as written; NULL when omitted';
+COMMENT ON COLUMN graphitron_mutation_entry.missing_as_deleted IS 'as written; NULL when omitted';
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref IS 'the table argument as written (may carry a schema qualifier); it names the write target of a DELETE, INSERT or UPDATE, the three verbs the resolver accepts it for, and resolves through the same qualified-name route a @table binding takes';
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_namespace_part IS 'left of table_ref''s first period, NULL when no period appeared and the empty string when one appeared with nothing before it; for a table name this namespace is the SQL schema in every dialect jOOQ models. Written by capture, because splitting on a period is a decode and decodes happen there';
 COMMENT ON COLUMN graphitron_mutation_entry.table_ref_name_part IS 'right of table_ref''s first period, or the whole value when none; the empty string when a period was written with nothing after it, which joins nothing and is meant to';

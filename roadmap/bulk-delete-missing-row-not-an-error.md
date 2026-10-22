@@ -151,7 +151,13 @@ The directive's SDL description in `directives.graphqls` carries the Parameters-
 - **A policy enum on `DeleteRows.Identified` instead of a third arm.** The opt-in only exists where the key is the primary key and the binding covers it exactly once. A flag on `Identified` leaves both of those untyped, so the emitter would trust a cross-field check and recover the primary-key slot order itself. Its default value would also mean something different on each leaf that reads it.
 - **Reading the argument without capturing it in the store.** The two capture relations are the as-written decode of one `@mutation` application. A row that drops an argument the generator consumes no longer says what the application says, and the fact would be missing when the emitter is sourced from the store.
 
-## Reviewer findings
+## Implementation notes
+
+Two places where the implementation departs from the plan's letter:
+
+- **Fixture schema.** `split_key_parent` / `split_key_child` are in `init.sql`'s `public` schema, not `nodeidfixture`. The execution tier (`graphitron-sakila-example`) types its fixtures over `public` tables, as the `xlat_*` twins of `nodeidfixture.parent_node` do, so a `nodeidfixture` pair would have had no execution coverage. The unit and pipeline tiers read the same catalog, so they reach the pair there too. `jooq.codegen.schema.version` moves to 2.44 for the DDL.
+- **Capture test.** Besides `EntryFamilyFixture.deleteFilm` (per the round 2 note), the as-written assertions live in `graphitron-model/src/test/resources/facts/undecided/field-site-payloads.graphqls`, which already carried the `graphitron_mutation_entry` `@expectEquals`; it now asserts `missing_as_deleted` (`TRUE` written, `NULL` omitted) on both capture relations. `corpus/mutation-roots.graphqls` is unchanged, since every field there is a classification verdict and the admitted shape is a payload DELETE that file does not carry.
+
 
 ### Round 1 (Spec → Ready): request revisions
 

@@ -10,7 +10,8 @@ Every `INSERT`, `UPDATE` and `UPSERT` checks the strings it writes against their
 
 [source,graphql]
 ----
-directive @mutation(typeName: MutationType!, multiRow: Boolean = false, table: String) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false, table: String,
+                    missingAsDeleted: Boolean = false) on FIELD_DEFINITION
 
 enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 ----
@@ -23,6 +24,7 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 | `typeName` | `MutationType!` | (required) | The SQL shape to emit. `INSERT` writes a row; `UPDATE` modifies the row identified by the input's primary-key-or-unique-key coverage; `DELETE` removes the row(s) identified the same way; `UPSERT` emits `INSERT … ON CONFLICT … DO UPDATE`.
 | `multiRow` | `Boolean` | `false` | On `DELETE`, opts into a broadcast delete when the input covers no primary key or unique key (the filter may match more than one row). Rejected on `INSERT` (no `WHERE` clause), `UPDATE` (no broadcast shape; cover a key), and `UPSERT`.
 | `table` | `String` | (none) | Names the SQL table to write to, on the consuming field. It gives a write that carries no table on its return side a field-relative write target: a bare `ID` / `Boolean` / count return names no table, so `@mutation(table: "film")` names it directly (the field-level analogue of xref:service.adoc[`@service(argMapping:)`]). A `DELETE` always names its table this way; on `INSERT` and `UPDATE` it is the fallback for a return that names no table, and a field whose return *does* name the table (a `@table` return, or a payload's `@table`-element data field) needs no `table:`. Wired for `DELETE`, `INSERT`, and `UPDATE`; supplying it on `UPSERT` is rejected.
+| `missingAsDeleted` | `Boolean` | `false` | On a payload-returning `DELETE`, an input key that matches no row counts as already deleted: the call deletes the rows that exist, commits, and the payload echoes every input key, in input order. Requires the input to identify rows by exactly the primary key. Rejected on `INSERT`, `UPDATE`, `UPSERT`, and on a `DELETE` that returns `ID` or `[ID!]` directly. See <<_when_a_key_matches_no_row>>.
 |===
 
 == Input shape
@@ -147,7 +149,7 @@ extend type Mutation {
 
 The carrier field's element type must be `ID` (single DELETE) or `[ID!]` (bulk DELETE). The list wrapper must be list-of-non-null; `[ID]` (list-of-nullable) is rejected, because every element of a successful DELETE response is the encoded PK of an actually-deleted row, the slot cannot be null. The encoder is recognised implicitly when the mutation's write-target table backs a `@node` type. If the write-target table is not `@node`-backed, the carrier is rejected with the same diagnostic as the bare-`ID` DELETE path; register the table's SDL type as `@node` first. To pin the encoder explicitly (recommended when grep-ability matters), attach `@nodeId(typeName: "...")` to the carrier field; the directive's encoder must resolve to the same table as the mutation's write target. An `@nodeId` whose encoder resolves to a different table is rejected: you would be returning IDs of a different entity than the one the DML acted on.
 
-The response contains exactly the IDs of rows the DML actually removed.
+The response contains exactly the IDs of rows the DML actually removed, unless the field sets `missingAsDeleted: true`.
 
 === Projecting the deleted row's primary key onto an SDL type
 
@@ -169,6 +171,20 @@ The classifier inspects every field on the element type and rejects the carrier 
 === Single vs bulk
 
 Both shapes work with single and bulk DELETE; cardinality follows the carrier field's wrapper (`ID`/`Foo` for single, `[ID!]`/`[Foo!]` for bulk).
+
+=== When a key matches no row
+
+By default a bulk `DELETE` whose input names a key that matches no row fails the whole call: nothing is deleted, and the field reports an error (a typed one if a handler in the payload's errors field matches, otherwise a redacted one). A single-row `DELETE` renders the payload `null`.
+
+Set `missingAsDeleted: true` to treat such a key as already deleted. The rows that exist are deleted, the call commits, and the payload's id field holds every input key in input order, whether or not its row existed. A retried batch, or two clients deleting the same row, then succeed, and the response does not tell the caller which rows existed.
+
+[source,graphql]
+----
+deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
+    @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+----
+
+The input must identify rows by exactly the table's primary key, directly or through a node id. A unique key is not enough, because the response echoes the primary key and only the input can supply it for a row that is not there; an extra filter column is refused, because a key whose row survives the filter would be echoed as deleted.
 
 === What you can't return
 
@@ -192,7 +208,7 @@ Three rules follow from that:
 
 * The data field must be nullable, at its outer position: on the error path it renders `null`, and a non-null field would let null propagation erase the errors list. `Film!` and `[Film!]!` are rejected at build time; `Film`, `[Film]` and `[Film!]` are accepted.
 * A list data field renders `null` on the error path, not an empty list, since nothing was written.
-* A single-row write whose key matches no row renders the whole payload `null`, the same as on a payload without an errors field.
+* A single-row write whose key matches no row renders the whole payload `null`, the same as on a payload without an errors field, unless the field sets `missingAsDeleted: true`.
 
 Give one `@error` type in the errors field `{handler: VALIDATION}` and the column-length check's errors become entries in the errors list rather than top-level errors; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check]. Without that member a payload with an errors field skips the check.
 

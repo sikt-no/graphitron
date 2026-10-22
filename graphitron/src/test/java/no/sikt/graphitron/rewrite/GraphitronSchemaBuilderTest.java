@@ -10086,6 +10086,268 @@ class GraphitronSchemaBuilderTest {
                     .doesNotContain("@splitQuery", "use ID or a @table type");
             }),
 
+        MISSING_AS_DELETED_BULK_PAYLOAD_ADMITS(
+            "missingAsDeleted: true on a bulk payload-returning DELETE keyed by the primary key → "
+                + "MutationBulkDmlRecordField whose Delete arm carries DeleteRows.IdempotentByPrimaryKey",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms(in: [FilmDeleteInput!]!): DeletedFilmsPayload
+                    @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteFilms");
+                var idem = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey) deleteRowsOf(f);
+                assertThat(idem.key().columns()).extracting(c -> c.sqlName()).containsExactly("film_id");
+                assertThat(idem.keyBinding()).extracting(k -> k.sdlFieldName()).containsExactly("filmId");
+                assertThat(idem.whereColumns()).isEqualTo(idem.keyBinding());
+            }),
+
+        MISSING_AS_DELETED_SINGLE_PAYLOAD_ADMITS(
+            "missingAsDeleted: true on a single payload-returning DELETE keyed by the primary key → "
+                + "MutationDmlRecordField whose Delete arm carries DeleteRows.IdempotentByPrimaryKey",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmPayload { deletedId: ID }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm(in: FilmDeleteInput!): DeletedFilmPayload
+                    @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationDmlRecordField) schema.field("Mutation", "deleteFilm");
+                assertThat(deleteRowsOf(f))
+                    .isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey.class);
+            }),
+
+        MISSING_AS_DELETED_COMPOSITE_KEY_BINDING_IN_KEY_ORDER(
+            "missingAsDeleted: true on a composite-PK DELETE whose input declares the key columns "
+                + "out of key order → keyBinding lists them in the primary key's own order",
+            """
+            type FilmActor implements Node @table(name: "film_actor") @node { id: ID! @nodeId }
+            input FilmActorDeleteInput {
+                filmId: Int! @field(name: "film_id")
+                actorId: Int! @field(name: "actor_id")
+            }
+            type DeletedFilmActorsPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation {
+                deleteFilmActors(in: [FilmActorDeleteInput!]!): DeletedFilmActorsPayload
+                    @mutation(typeName: DELETE, table: "film_actor", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteFilmActors");
+                var idem = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey) deleteRowsOf(f);
+                assertThat(idem.keyBinding()).extracting(k -> k.targetColumn().sqlName())
+                    .containsExactly("actor_id", "film_id");
+                assertThat(idem.keyBinding()).extracting(k -> k.sdlFieldName())
+                    .containsExactly("actorId", "filmId");
+            }),
+
+        MISSING_AS_DELETED_SPLIT_KEY_BINDING_IN_KEY_ORDER(
+            "missingAsDeleted: true where a node id over (a, c) and a plain b bind the key (a, b, c) → "
+                + "keyBinding names a and c from the node id and b from the plain field, in key order",
+            """
+            type SplitKeyParent implements Node @table(name: "split_key_parent") @node { id: ID! @nodeId }
+            type SplitKeyChild implements Node @table(name: "split_key_child") @node { id: ID! @nodeId }
+            input SplitKeyChildDeleteInput {
+                parent: ID! @nodeId(typeName: "SplitKeyParent")
+                b: Int! @field(name: "b")
+            }
+            type DeletedSplitKeyChildrenPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation {
+                deleteChildren(in: [SplitKeyChildDeleteInput!]!): DeletedSplitKeyChildrenPayload
+                    @mutation(typeName: DELETE, table: "split_key_child", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteChildren");
+                var idem = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey) deleteRowsOf(f);
+                assertThat(idem.keyBinding()).extracting(k -> k.targetColumn().sqlName())
+                    .containsExactly("a", "b", "c");
+                assertThat(idem.keyBinding()).extracting(k -> k.sdlFieldName())
+                    .containsExactly("parent", "b", "parent");
+                assertThat(idem.keyBinding()).extracting(k -> k.decodeSlot())
+                    .containsExactly(0, 0, 1);
+            }),
+
+        MISSING_AS_DELETED_ON_UPDATE_REJECTED(
+            "missingAsDeleted: true on UPDATE → UnclassifiedField carrying MissingAsDeletedError.UnsupportedVerb",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
+            type Query { x: String }
+            type Mutation {
+                updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE, missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "updateFilm");
+                assertThat(f.rejection()).isInstanceOfSatisfying(
+                    no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb.class,
+                    r -> {
+                        assertThat(r.verb()).isEqualTo("UPDATE");
+                        assertThat(r.supportedVerbs()).containsExactly("DELETE");
+                        assertThat(r.lspCode()).isEqualTo("graphitron.missing-as-deleted.unsupported-verb");
+                    });
+            }),
+
+        MISSING_AS_DELETED_ON_INSERT_REJECTED(
+            "missingAsDeleted: true on INSERT → UnclassifiedField carrying MissingAsDeletedError.UnsupportedVerb",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput { title: String }
+            type Query { x: String }
+            type Mutation { createFilm(in: FilmInput!): Film @mutation(typeName: INSERT, missingAsDeleted: true) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "createFilm");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb.class);
+            }),
+
+        MISSING_AS_DELETED_ON_UPSERT_REJECTED(
+            "missingAsDeleted: true on UPSERT → UnclassifiedField carrying MissingAsDeletedError.UnsupportedVerb, "
+                + "ahead of UPSERT's own deferral",
+            """
+            type Film @table(name: "film") { title: String }
+            input FilmInput { filmId: Int! @field(name: "film_id") title: String }
+            type Query { x: String }
+            type Mutation { upsertFilm(in: FilmInput!): Film @mutation(typeName: UPSERT, missingAsDeleted: true) }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "upsertFilm");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb.class);
+            }),
+
+        MISSING_AS_DELETED_DIRECT_RETURN_REJECTED(
+            "missingAsDeleted: true on a direct-return DELETE (ID) → UnclassifiedField carrying "
+                + "MissingAsDeletedError.UnsupportedReturnShape",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilm");
+                assertThat(f.rejection()).isInstanceOfSatisfying(
+                    no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedReturnShape.class,
+                    r -> {
+                        assertThat(r.fieldCoordinate()).isEqualTo("Mutation.deleteFilm");
+                        assertThat(r.lspCode()).isEqualTo("graphitron.missing-as-deleted.unsupported-return-shape");
+                    });
+                assertThat(f.reason()).contains("payload-returning DELETE");
+            }),
+
+        MISSING_AS_DELETED_DIRECT_LIST_RETURN_REJECTED(
+            "missingAsDeleted: true on a direct-return bulk DELETE ([ID!]) → UnclassifiedField carrying "
+                + "MissingAsDeletedError.UnsupportedReturnShape",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedReturnShape.class);
+            }),
+
+        MISSING_AS_DELETED_UNIQUE_KEY_ONLY_REJECTED(
+            "missingAsDeleted: true where the input covers a unique key but not the primary key → "
+                + "UnclassifiedField carrying DeleteRowsError.MissingAsDeletedNeedsPrimaryKey",
+            """
+            type StorageBin implements Node @table(name: "storage_bin") @node { id: ID! @nodeId }
+            input StorageBinDeleteInput { code: String! @field(name: "code") }
+            type DeletedStorageBinPayload { deletedId: ID }
+            type Query { x: String }
+            type Mutation {
+                deleteBin(in: StorageBinDeleteInput!): DeletedStorageBinPayload
+                    @mutation(typeName: DELETE, table: "storage_bin", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteBin");
+                assertThat(f.rejection()).isInstanceOfSatisfying(
+                    no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class,
+                    r -> {
+                        assertThat(r.primaryKeyColumns()).extracting(c -> c.sqlName()).containsExactly("bin_id");
+                        assertThat(r.inputColumns()).extracting(c -> c.sqlName()).containsExactly("code");
+                        assertThat(r.lspCode())
+                            .isEqualTo("graphitron.delete-rows.missing-as-deleted-needs-primary-key");
+                    });
+            }),
+
+        MISSING_AS_DELETED_EXTRA_FILTER_COLUMN_REJECTED(
+            "missingAsDeleted: true where the input adds a filter column beside the primary key → "
+                + "UnclassifiedField carrying DeleteRowsError.MissingAsDeletedNeedsPrimaryKey",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") releaseYear: Int @field(name: "release_year") }
+            type DeletedFilmsPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms(in: [FilmDeleteInput!]!): DeletedFilmsPayload
+                    @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class);
+            }),
+
+        MISSING_AS_DELETED_BROADCAST_REJECTED(
+            "missingAsDeleted: true on a multiRow: true broadcast DELETE → UnclassifiedField carrying "
+                + "DeleteRowsError.MissingAsDeletedNeedsPrimaryKey",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmByYearInput { releaseYear: Int! @field(name: "release_year") }
+            type DeletedFilmPayload { deletedId: ID }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms(in: FilmByYearInput!): DeletedFilmPayload
+                    @mutation(typeName: DELETE, table: "film", multiRow: true, missingAsDeleted: true)
+            }
+            """,
+            schema -> {
+                var f = (UnclassifiedField) schema.field("Mutation", "deleteFilms");
+                assertThat(f.rejection())
+                    .isInstanceOf(no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class);
+            }),
+
+        MISSING_AS_DELETED_FALSE_IS_TODAYS_BEHAVIOUR(
+            "missingAsDeleted: false on a bulk payload-returning DELETE → the default DeleteRows.Identified carrier",
+            """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
+            type DeletedFilmsPayload { deletedIds: [ID!] }
+            type Query { x: String }
+            type Mutation {
+                deleteFilms(in: [FilmDeleteInput!]!): DeletedFilmsPayload
+                    @mutation(typeName: DELETE, table: "film", missingAsDeleted: false)
+            }
+            """,
+            schema -> {
+                var f = (MutationField.MutationBulkDmlRecordField) schema.field("Mutation", "deleteFilms");
+                assertThat(deleteRowsOf(f)).isInstanceOf(no.sikt.graphitron.rewrite.model.DeleteRows.Identified.class);
+            }),
+
         R310_FORBIDDEN_DIRECTIVE_ON_NON_CARRIER_FALLS_THROUGH(
             "R310 negative control (the would-admit gate): a forbidden directive (@splitQuery) on a "
                 + "payload that would NOT otherwise admit — two data-channel-shaped fields — still "

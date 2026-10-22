@@ -34,6 +34,12 @@ import java.util.Optional;
  * {@link DeleteRows.Broadcast} when {@code multiRow: true}, and
  * {@link DeleteRowsError.NoUniqueKeyCoverage} otherwise.
  *
+ * <p>With {@code missingAsDeleted: true} the walker admits only an input that identifies rows by
+ * exactly the primary key: the matched key is the primary key and the contributions bind each of
+ * its columns once and nothing else. That yields {@link DeleteRows.IdempotentByPrimaryKey}, with
+ * the supplying {@link KeyColumn} picked for each primary-key slot in key order; anything else is
+ * {@link DeleteRowsError.MissingAsDeletedNeedsPrimaryKey}.
+ *
  * <p><b>Substrate concession (mirrors {@link UpdateRowsWalker}).</b> Re-deriving the column
  * classification from raw SDL would duplicate the upstream input-field classifier, so this walker
  * translates over the already-classified {@link InputField} permits instead. The {@code field}
@@ -53,6 +59,7 @@ public final class DeleteRowsWalker {
         List<InputField> inputFields,
         JooqCatalog catalog,
         boolean multiRow,
+        boolean missingAsDeleted,
         String outerArgName
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
@@ -85,6 +92,9 @@ public final class DeleteRowsWalker {
         // A covered key proves single-row; the matched key is a cardinality guard, not a column
         // subset, so whereColumns is unaffected.
         MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, inputColumnSqlNames).orElse(null);
+        if (missingAsDeleted) {
+            return idempotentByPrimaryKey(catalog, table, matchedKey, whereColumns, inputColumns);
+        }
         if (matchedKey != null) {
             return new WalkerResult.Ok<>(new DeleteRows.Identified(matchedKey, whereColumns));
         }
@@ -97,6 +107,44 @@ public final class DeleteRowsWalker {
         return new WalkerResult.Err<>(List.of(
             new DeleteRowsError.NoUniqueKeyCoverage(
                 table.tableName(), inputColumns, MatchedKeys.candidates(catalog, table))));
+    }
+
+    /**
+     * The {@code missingAsDeleted: true} admission: the matched key must be the primary key, and
+     * every WHERE column must bind a distinct primary-key column, so the binding covers the key
+     * exactly once with nothing beside it. A unique-key match, an extra filter column, a column
+     * bound twice (a node id and a plain field both filling it) and no covered key at all are each
+     * the one typed rejection. The binding is re-ordered into the key's column order here, since
+     * the contribution order is the WHERE's and need not be the key's.
+     */
+    private static WalkerResult<DeleteRows> idempotentByPrimaryKey(
+        JooqCatalog catalog, TableRef table, MatchedKey matchedKey,
+        List<KeyColumn> whereColumns, List<ColumnRef> inputColumns
+    ) {
+        if (matchedKey instanceof MatchedKey.PrimaryKey pk && whereColumns.size() == pk.columns().size()) {
+            var bySqlName = new java.util.HashMap<String, KeyColumn>();
+            for (var kc : whereColumns) {
+                bySqlName.putIfAbsent(kc.targetColumn().sqlName(), kc);
+            }
+            var binding = new ArrayList<KeyColumn>();
+            for (var col : pk.columns()) {
+                var kc = bySqlName.get(col.sqlName());
+                if (kc != null) {
+                    binding.add(kc);
+                }
+            }
+            if (binding.size() == pk.columns().size()) {
+                return new WalkerResult.Ok<>(new DeleteRows.IdempotentByPrimaryKey(pk, binding));
+            }
+        }
+        var primaryKeyColumns = MatchedKeys.candidates(catalog, table).stream()
+            .filter(k -> k instanceof MatchedKey.PrimaryKey)
+            .findFirst()
+            .map(MatchedKey::columns)
+            .orElse(List.of());
+        return new WalkerResult.Err<>(List.of(
+            new DeleteRowsError.MissingAsDeletedNeedsPrimaryKey(
+                table.tableName(), inputColumns, primaryKeyColumns)));
     }
 
     /**

@@ -356,6 +356,12 @@ cannot silently broadcast; `multiRow: true` opts into that broadcast deliberatel
 (broadcast UPDATE is not supported; cover a PK or UK), and on `typeName: UPSERT` (refused under
 the new regime; see R145).
 
+`missingAsDeleted`: on a payload-returning `@mutation(typeName: DELETE)`, an input key that
+matches no row counts as already deleted: the call deletes the rows that exist, commits, and the
+payload echoes every input key, in input order. Requires the input to identify rows by exactly
+the primary key. Rejected on `typeName: INSERT`, `UPDATE` and `UPSERT`, and on a `DELETE` that
+returns `ID` or `[ID!]` directly.
+
 `table`: the SQL table a `@mutation(typeName: DELETE)` deletes from, named on the consuming field.
 This is the preferred way to give a DELETE its write target: a bare `ID` / `Boolean` / count return
 carries no table, so `@mutation(table: "film")` names it directly (the field-level analogue of
@@ -365,7 +371,8 @@ Currently wired for
 `typeName: DELETE` only; supplying it on any other verb is rejected (INSERT/UPDATE/UPSERT derive their
 write target by other means). See R457.
 """
-directive @mutation(typeName: MutationType!, multiRow: Boolean = false, table: String) on FIELD_DEFINITION
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false, table: String,
+                    missingAsDeleted: Boolean = false) on FIELD_DEFINITION
 
 """
 Marks a list field as a Relay cursor-paginated connection. The rewrite pipeline synthesizes

@@ -1,6 +1,6 @@
 # What a field-site decode carries, as the editor's claim surface reads it: @service's reference
 # spread into its class and its method, and @mutation's statement as the literal the author spelled,
-# with or without the table beside it.
+# with or without the table beside it, and its missingAsDeleted opt-in as written, NULL where omitted.
 
 type Film @table(name: "film") { title: String }
 
@@ -12,7 +12,11 @@ extend type Query {
 type Mutation {
   createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
   deleteFilm(in: FilmKeyInput!): ID @mutation(typeName: DELETE, table: "film")
+  deleteFilms(in: [FilmKeyInput!]!): DeletedFilmsPayload
+    @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
 }
+
+type DeletedFilmsPayload { deletedIds: [ID!] }
 
 input FilmInput { title: String }
 input FilmKeyInput { filmId: Int! @field(name: "film_id") }
@@ -23,7 +27,15 @@ extend schema @expectEquals(relation: "graphitron_service_entry", rows: """
   """)
 
 extend schema @expectEquals(relation: "graphitron_mutation_entry", rows: """
-  type_name, field_name, operation
-  Mutation,  createFilm, INSERT
-  Mutation,  deleteFilm, DELETE
+  type_name, field_name,  operation, missing_as_deleted
+  Mutation,  createFilm,  INSERT,
+  Mutation,  deleteFilm,  DELETE,
+  Mutation,  deleteFilms, DELETE,    TRUE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_mutation_entry", rows: """
+  operation, table_ref, missing_as_deleted
+  INSERT,    ,
+  DELETE,    film,
+  DELETE,    film,      TRUE
   """)

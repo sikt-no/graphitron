@@ -76,7 +76,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * so no follow-up projection exists to feed a table-bound return; the classifier rejects
      * DELETE with any table-bound return at authoring time, and the constructor makes the
      * pairing structural, which keeps the validator's reentry key-arity check provably
-     * vacuous for Delete.
+     * vacuous for Delete. Nor does a Delete arm here carry
+     * {@link DeleteRows.IdempotentByPrimaryKey}: only the payload-returning DELETE echoes a key
+     * that matched no row, and the classifier rejects {@code missingAsDeleted: true} on this
+     * shape first.
      */
     record DmlTableField(
         String parentTypeName,
@@ -99,6 +102,13 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + "written row is impossible. The @mutation classifier rejects "
                     + "DELETE with a @table return at authoring time; this carrier only ever "
                     + "holds an encoded-ID return beside a Delete arm.");
+            }
+            if (write instanceof OperationMember.Write.Delete d
+                    && d.deleteRows() instanceof DeleteRows.IdempotentByPrimaryKey) {
+                throw new IllegalArgumentException(
+                    "a direct-return DELETE cannot carry an IdempotentByPrimaryKey carrier: "
+                    + "missingAsDeleted: true is supported only on a payload-returning DELETE, and "
+                    + "the @mutation classifier rejects it on this shape at authoring time.");
             }
         }
 

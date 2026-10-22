@@ -29,6 +29,9 @@ public final class WriteFactVisitor implements FactVisitor {
     /** The directive's bulk flag. */
     public static final String ARG_MULTI_ROW = "multiRow";
 
+    /** The directive's opt-in that a key matching no row counts as deleted. */
+    public static final String ARG_MISSING_AS_DELETED = "missingAsDeleted";
+
     /** The directive's field-relative write-target argument. */
     public static final String ARG_TABLE = "table";
 
@@ -46,7 +49,7 @@ public final class WriteFactVisitor implements FactVisitor {
             return;
         }
         rows.put(fieldDef, new WriteFacts.Row(parentTypeName, fieldDef.getName(),
-            verbToken(dir), multiRow(dir), tableArg(dir)));
+            verbToken(dir), flag(dir, ARG_MULTI_ROW), flag(dir, ARG_MISSING_AS_DELETED), tableArg(dir)));
     }
 
     /**
@@ -66,8 +69,8 @@ public final class WriteFactVisitor implements FactVisitor {
         return Optional.ofNullable(raw);
     }
 
-    private static boolean multiRow(GraphQLAppliedDirective dir) {
-        var arg = dir.getArgument(ARG_MULTI_ROW);
+    private static boolean flag(GraphQLAppliedDirective dir, String argName) {
+        var arg = dir.getArgument(argName);
         if (arg == null || arg.getValue() == null) {
             return false;
         }

@@ -26,7 +26,8 @@ import java.util.stream.Collectors;
 public sealed interface DeleteRowsError extends Rejection.AuthorError permits
     DeleteRowsError.NoUniqueKeyCoverage,
     DeleteRowsError.UnsupportedInputFieldShape,
-    DeleteRowsError.OverrideConditionNotSupported
+    DeleteRowsError.OverrideConditionNotSupported,
+    DeleteRowsError.MissingAsDeletedNeedsPrimaryKey
 {
     /** LSP wire code under the {@code graphitron.delete-rows.} namespace. */
     String lspCode();
@@ -114,5 +115,39 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
                 + "or wait for override-condition emit support to land.";
         }
         @Override public String lspCode() { return "graphitron.delete-rows.override-condition-not-supported"; }
+    }
+
+    /**
+     * {@code missingAsDeleted: true} on a DELETE whose input does not identify rows by exactly the
+     * primary key: it covers only a unique key, contributes a column beyond the primary key, binds
+     * a primary-key column twice, or covers no key at all. The echo for a missing row is the
+     * primary key, which only an input supplying the whole primary key can build, and an extra
+     * filter column would let the echo claim a deletion that did not happen. Names the table's
+     * primary key (empty for a table without one) and the input's columns.
+     */
+    record MissingAsDeletedNeedsPrimaryKey(
+        String table,
+        List<ColumnRef> inputColumns,
+        List<ColumnRef> primaryKeyColumns
+    ) implements DeleteRowsError {
+        public MissingAsDeletedNeedsPrimaryKey {
+            inputColumns = List.copyOf(inputColumns);
+            primaryKeyColumns = List.copyOf(primaryKeyColumns);
+        }
+        @Override public String message() {
+            var sb = new StringBuilder("@mutation(typeName: DELETE, missingAsDeleted: true) input for table '")
+                .append(table).append("' must identify rows by exactly the primary key, binding each "
+                    + "primary-key column once and no other column. Input contributes ")
+                .append(sqlNames(inputColumns)).append("; ");
+            if (primaryKeyColumns.isEmpty()) {
+                sb.append("the table declares no primary key. ");
+            } else {
+                sb.append("the primary key is ").append(sqlNames(primaryKeyColumns)).append(". ");
+            }
+            return sb.append("A key that matches no row is echoed as deleted, and only the primary "
+                + "key supplied by the input can be echoed. Change the input to bind exactly the "
+                + "primary key, or remove missingAsDeleted: true.").toString();
+        }
+        @Override public String lspCode() { return "graphitron.delete-rows.missing-as-deleted-needs-primary-key"; }
     }
 }

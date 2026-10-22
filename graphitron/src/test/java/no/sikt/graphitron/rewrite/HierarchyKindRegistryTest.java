@@ -34,6 +34,7 @@ import no.sikt.graphitron.rewrite.model.MappingEntry;
 import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.MutationField;
+import no.sikt.graphitron.model.diagnostics.MissingAsDeletedError;
 import no.sikt.graphitron.model.diagnostics.MutationTableArgError;
 import no.sikt.graphitron.rewrite.model.On;
 import no.sikt.graphitron.rewrite.model.OperationMember;
@@ -307,6 +308,7 @@ class HierarchyKindRegistryTest {
         Map.entry(ErrorChannelWalkerError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(JooqRecordInputError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(MutationTableArgError.class, HierarchyKind.ERROR_CHANNEL),
+        Map.entry(MissingAsDeletedError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(PivotError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(ReflectionError.class, HierarchyKind.ERROR_CHANNEL),
         Map.entry(ServiceCarrierShapeError.class, HierarchyKind.ERROR_CHANNEL),

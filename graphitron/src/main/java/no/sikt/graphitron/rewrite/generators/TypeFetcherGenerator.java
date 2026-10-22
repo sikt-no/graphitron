@@ -4407,8 +4407,16 @@ public class TypeFetcherGenerator {
      * per-NodeId decode locals (for {@link InputColumnBindingGroup.DecodedRecordGroup} and for
      * arity-1 NodeId-decoded {@link InputColumnBinding.MapBinding}), plus the WHERE expression
      * that reads the typed slot values out of those locals.
+     *
+     * <p>{@code keyValues} holds, per bound target column (keyed by its SQL name), the value the
+     * WHERE compares as a Java value of the column's type: the decode local's {@code valueN()} for a
+     * node-id binding, {@code <column>.getDataType().convert(<wire value>)} for a plain one. It is
+     * keyed by column rather than listed because the groups emit in first-occurrence order, which
+     * is not the key's column order; a reader that needs key order walks its own column list and
+     * looks each one up.
      */
-    private record LookupWhereChunk(CodeBlock decodeLocals, CodeBlock whereExpr) {}
+    private record LookupWhereChunk(CodeBlock decodeLocals, CodeBlock whereExpr,
+                                    Map<String, CodeBlock> keyValues) {}
 
     /**
      * Builds the single-row lookup-WHERE chunk: decode locals lifted to {@code postInGuard}, plus
@@ -4459,6 +4467,7 @@ public class TypeFetcherGenerator {
             String mapLocal) {
         var locals = CodeBlock.builder();
         var whereExpr = CodeBlock.builder();
+        var keyValues = new java.util.LinkedHashMap<String, CodeBlock>();
         int slotIndex = 0;
         for (int gi = 0; gi < groups.size(); gi++) {
             var g = groups.get(gi);
@@ -4468,8 +4477,9 @@ public class TypeFetcherGenerator {
                         if (slotIndex > 0) whereExpr.add(".and(");
                         whereExpr.add("$T.$L.$L.eq(",
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
-                        appendMapBindingValueExpr(whereExpr, locals, binding, mapLocal,
-                            tablesOnly, tableRef, gi);
+                        keyValues.putIfAbsent(binding.targetColumn().sqlName(),
+                            appendMapBindingValueExpr(whereExpr, locals, binding, mapLocal,
+                                tablesOnly, tableRef, gi));
                         whereExpr.add(")");
                         if (slotIndex > 0) whereExpr.add(")");
                         slotIndex++;
@@ -4484,13 +4494,15 @@ public class TypeFetcherGenerator {
                         whereExpr.add("$T.$L.$L.eq($L.value$L())",
                             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName(),
                             recLocal, binding.index() + 1);
+                        keyValues.putIfAbsent(binding.targetColumn().sqlName(),
+                            CodeBlock.of("$L.value$L()", recLocal, binding.index() + 1));
                         if (slotIndex > 0) whereExpr.add(")");
                         slotIndex++;
                     }
                 }
             }
         }
-        return new LookupWhereChunk(locals.build(), whereExpr.build());
+        return new LookupWhereChunk(locals.build(), whereExpr.build(), Map.copyOf(keyValues));
     }
 
     /**
@@ -4501,9 +4513,10 @@ public class TypeFetcherGenerator {
      * {@link CallSiteExtraction.NodeIdDecodeKeys} leaf extraction, lifts the per-binding decode call
      * to a local (declared into {@code locals}) reading that wire value and emits
      * {@code DSL.val(decoded.value1(), t.col.getDataType())}; otherwise emits
-     * {@code DSL.val(<wire value>, t.col.getDataType())}.
+     * {@code DSL.val(<wire value>, t.col.getDataType())}. Returns the same value as a Java value of
+     * the column's type, unwrapped from {@code DSL.val}, for {@link LookupWhereChunk#keyValues()}.
      */
-    private static void appendMapBindingValueExpr(
+    private static CodeBlock appendMapBindingValueExpr(
             CodeBlock.Builder whereExpr,
             CodeBlock.Builder locals,
             InputColumnBinding.MapBinding binding,
@@ -4518,11 +4531,13 @@ public class TypeFetcherGenerator {
             whereExpr.add("$T.val($L.value$L(), $T.$L.$L.getDataType())",
                 DSL, recLocal, binding.decodeSlot() + 1,
                 tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
-        } else {
-            whereExpr.add("$T.val($L, $T.$L.$L.getDataType())",
-                DSL, wireValue,
-                tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+            return CodeBlock.of("$L.value$L()", recLocal, binding.decodeSlot() + 1);
         }
+        whereExpr.add("$T.val($L, $T.$L.$L.getDataType())",
+            DSL, wireValue,
+            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+        return CodeBlock.of("$T.$L.$L.getDataType().convert($L)",
+            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName(), wireValue);
     }
 
     /**
@@ -5419,7 +5434,7 @@ public class TypeFetcherGenerator {
                 yield buildSingleRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildRecordDeleteChain(
-                        whereGroups, w.inputArg().table(), tablesOnly, tableLocal),
+                        w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal),
                     outputPackage);
             }
         };
@@ -5457,7 +5472,8 @@ public class TypeFetcherGenerator {
      * {@code Outcome.ErrorList} through {@link ChannelCatchArmEmitter}. A write that matches no row
      * ({@code fetchOne()} answering {@code null}) returns null data ahead of the wrap, so the whole
      * payload renders {@code null} with or without a channel; wrapping it as {@code Success(null)}
-     * would hand the data field a non-null payload with no key to read.
+     * would hand the data field a non-null payload with no key to read. The exception is a chain
+     * carrying a {@link DmlChainAndGuards#missingRowEcho()}, whose no-match answer is the echo.
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
@@ -5498,6 +5514,11 @@ public class TypeFetcherGenerator {
 
         builder.addCode(renderTransactionalKeyFetch(chainAndGuards.statement(), payloadType, "payload",
             buildPkFieldList(pkCols, tablesOnly, tableRef), payloadType, ".fetchOne()"));
+        // A missingAsDeleted DELETE whose key matched no row answers the key the client sent,
+        // ahead of the null-data check below, which then never fires for that shape.
+        chainAndGuards.missingRowEcho().ifPresent(echo -> builder.beginControlFlow("if (payload == null)")
+            .addStatement("payload = $L", echo)
+            .endControlFlow());
 
         if (wrap) {
             builder.addCode(CodeBlock.builder().add("if (payload == null) ")
@@ -5618,8 +5639,16 @@ public class TypeFetcherGenerator {
             preGuard.build());
     }
 
-    /** Pair: the key-returning DML statement plus any pre-DML guard statements (e.g. dynamic SET-map construction). */
-    private record DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard) {}
+    /**
+     * The key-returning DML statement plus any pre-DML guard statements (e.g. dynamic SET-map
+     * construction), and, for a {@code missingAsDeleted: true} DELETE, the key record to answer
+     * when the statement matches no row ({@link #missingRowEcho}).
+     */
+    private record DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard, Optional<CodeBlock> missingRowEcho) {
+        DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard) {
+            this(statement, preGuard, Optional.empty());
+        }
+    }
 
     /**
      * The DML statement a terminator fetches its key rows from, before the terminator supplies the
@@ -5755,9 +5784,12 @@ public class TypeFetcherGenerator {
      * The enclosing {@link #buildMutationDeletePayloadFetcher} adds {@code .returningResult(pkCols)} so
      * the fetcher's value (consumed by the per-field
      * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}
-     * carrier) is a PK-only RETURNING Record.
+     * carrier) is a PK-only RETURNING Record. On
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} the chain also
+     * carries the echo record the fetcher answers when no row matched.
      */
     private static DmlChainAndGuards buildRecordDeleteChain(
+            no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
             List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal) {
         var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
@@ -5766,7 +5798,10 @@ public class TypeFetcherGenerator {
             .add(".deleteFrom($L)\n", tableLocal)
             .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
-        return new DmlChainAndGuards(new KeyStatement.Chain(chain), preGuard.build());
+        Optional<CodeBlock> echo = deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem
+            ? Optional.of(missingRowEcho(idem, whereChunk, "dsl", tablesOnly, tableRef))
+            : Optional.empty();
+        return new DmlChainAndGuards(new KeyStatement.Chain(chain), preGuard.build(), echo);
     }
 
     private static DmlChainAndGuards buildRecordInsertChain(
@@ -5889,8 +5924,8 @@ public class TypeFetcherGenerator {
                 yield buildBulkRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
-                        whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType,
-                        f.qualifiedName()),
+                        w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols,
+                        recordRowType, f.qualifiedName()),
                     outputPackage);
             }
             case OperationMember.Write.Upsert _ -> throw new IllegalStateException(
@@ -6080,8 +6115,13 @@ public class TypeFetcherGenerator {
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows}
      * carrier ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}. Like the UPDATE
      * twin, the no-match message names the row by index and the field by {@code fieldCoordinate}.
+     *
+     * <p>On {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} a row that
+     * matches no target is not an error: its slot takes the key the client sent
+     * ({@link #missingRowEcho}), so {@code acc} still holds one entry per input row in input order.
      */
     private static CodeBlock buildBulkRecordPerRowDeleteBody(
+            no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
             List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
@@ -6094,12 +6134,16 @@ public class TypeFetcherGenerator {
             .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
             .add("    .fetchOne();\n");
-        body.beginControlFlow("if (rec == null)")
-            .addStatement("throw new $T($S + acc.size() + $S)", IllegalStateException.class,
+        body.beginControlFlow("if (rec == null)");
+        if (deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem) {
+            body.addStatement("rec = $L", missingRowEcho(idem, whereChunk, "txd", tablesOnly, tableRef));
+        } else {
+            body.addStatement("throw new $T($S + acc.size() + $S)", IllegalStateException.class,
                 "@mutation(typeName: DELETE) bulk row matched zero rows; @lookupKey filter "
                     + "found no target for input row at index ",
-                " of " + fieldCoordinate)
-            .endControlFlow();
+                " of " + fieldCoordinate);
+        }
+        body.endControlFlow();
         body.add("acc.add(rec);\n");
         return body.build();
     }
@@ -6120,6 +6164,38 @@ public class TypeFetcherGenerator {
             .add("    .fetchOne();\n")
             .add("acc.add(rec);\n");
         return body.build();
+    }
+
+    /**
+     * The key record a {@code missingAsDeleted: true} DELETE answers for an input key that matched
+     * no row: {@code <dsl>.newRecord(<pk fields>).values(<key values>)}, the primary key the client
+     * sent, built the way a deleted row's {@code RETURNING} record is. Walks
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey#keyBinding()}, which
+     * is in primary-key order, and looks each column's value up in the chunk's
+     * {@link LookupWhereChunk#keyValues()}, so the echo encodes exactly the values the WHERE
+     * compared whatever order the WHERE compared them in.
+     */
+    private static CodeBlock missingRowEcho(
+            no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem,
+            LookupWhereChunk whereChunk, String dslLocal,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var fields = CodeBlock.builder();
+        var values = CodeBlock.builder();
+        for (int i = 0; i < idem.keyBinding().size(); i++) {
+            var column = idem.keyBinding().get(i).targetColumn();
+            var value = whereChunk.keyValues().get(column.sqlName());
+            if (value == null) {
+                throw new IllegalStateException("missingAsDeleted echo: primary-key column '"
+                    + column.sqlName() + "' has no bound value in the DELETE's WHERE");
+            }
+            if (i > 0) {
+                fields.add(", ");
+                values.add(", ");
+            }
+            fields.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), column.javaName());
+            values.add(value);
+        }
+        return CodeBlock.of("$L.newRecord($L).values($L)", dslLocal, fields.build(), values.build());
     }
 
     /** Builds the comma-separated list of PK column references for a {@code returningResult(...)} call. */

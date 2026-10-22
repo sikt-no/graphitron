@@ -246,6 +246,10 @@ A nullable field returning one object resolves to `null` when the object would h
 
 A client that tested such a field for `null` should test the fields inside it instead.
 
+== Behavior divergence: a `DELETE` whose key matches no row
+
+Graphitron 9 did not check row counts on `DELETE`, so a bulk delete naming a key that matched no row deleted the rest and succeeded. The rewrite fails the whole call by default: nothing is deleted, and a single-row payload-returning delete renders its payload `null`. A schema that relied on Graphitron 9's behavior adds `missingAsDeleted: true` to the field, which treats such a key as already deleted and echoes every input key in the payload; see xref:../reference/directives/mutation.adoc#_when_a_key_matches_no_row[`@mutation`] under "When a key matches no row". It applies to a payload-returning `DELETE` keyed by exactly the primary key.
+
 == Things that didn't change
 
 Every other directive on the legacy surface reads under the rewrite the same way, with one nuance per directive worth flagging:

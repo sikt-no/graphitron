@@ -1204,6 +1204,195 @@ class DmlBulkMutationsExecutionTest {
         });
     }
 
+    // ===== missingAsDeleted: a key that matches no row counts as already deleted =====
+    //
+    // The opted-in twins of deleteFilmsIdCarrier. Each input key that matches no row is echoed in
+    // its payload slot, encoded the way a deleted row's key is, and the call commits. 2147483000 is
+    // a film id no fixture reaches.
+
+    private static final int MISSING_FILM_ID = 2147483000;
+
+    private static int countFilm(DSLContext ctx, int filmId) {
+        return ctx.fetchCount(DSL.selectOne().from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).eq(filmId)));
+    }
+
+    private static String filmId(int filmId) {
+        return NodeIdEncoder.encode("Film", filmId);
+    }
+
+    private static List<String> deletedIds(Map<String, Object> data, String field) {
+        return (List<String>) ((Map<String, Object>) data.get(field)).get("deletedIds");
+    }
+
+    @Test
+    void deleteFilmsMissingAsDeleted_existingThenMissing_deletesTheExistingAndEchoesBoth() {
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                }
+                """.formatted(existing, MISSING_FILM_ID),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            assertThat(result.getErrors()).isEmpty();
+            Map<String, Object> data = result.getData();
+            assertThat(deletedIds(data, "deleteFilmsMissingAsDeleted"))
+                .containsExactly(filmId(existing), filmId(MISSING_FILM_ID));
+            assertThat(NodeIdEncoder.decodeValues("Film", deletedIds(data, "deleteFilmsMissingAsDeleted").get(1)))
+                .containsExactly(String.valueOf(MISSING_FILM_ID));
+            assertThat(countFilm(tx, existing)).isZero();
+            assertThat(logged).isEmpty();
+        });
+    }
+
+    @Test
+    void deleteFilmsMissingAsDeleted_missingThenExisting_keepsInputOrder() {
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                }
+                """.formatted(MISSING_FILM_ID, existing));
+
+            assertThat(deletedIds(data, "deleteFilmsMissingAsDeleted"))
+                .containsExactly(filmId(MISSING_FILM_ID), filmId(existing));
+            assertThat(countFilm(tx, existing)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmsMissingAsDeleted_duplicateKey_echoesBothSlots() {
+        // The second row's delete matches nothing, since the first already removed the film.
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                }
+                """.formatted(existing, existing));
+
+            assertThat(deletedIds(data, "deleteFilmsMissingAsDeleted"))
+                .containsExactly(filmId(existing), filmId(existing));
+            assertThat(countFilm(tx, existing)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmsMissingAsDeleted_retriedBatch_answersTheSameWithoutError() {
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            String query = """
+                mutation {
+                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                }
+                """.formatted(existing, MISSING_FILM_ID);
+
+            Map<String, Object> first = execute(tx, query);
+            Map<String, Object> second = execute(tx, query);
+
+            assertThat(deletedIds(second, "deleteFilmsMissingAsDeleted"))
+                .isEqualTo(deletedIds(first, "deleteFilmsMissingAsDeleted"))
+                .containsExactly(filmId(existing), filmId(MISSING_FILM_ID));
+            assertThat(countFilm(tx, existing)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmMissingAsDeleted_singleMissingKey_echoesTheInputRatherThanNull() {
+        inRolledBackTransaction(tx -> {
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteFilmMissingAsDeleted(in: { filmId: %d }) { deletedId }
+                }
+                """.formatted(MISSING_FILM_ID));
+
+            var payload = (Map<String, Object>) data.get("deleteFilmMissingAsDeleted");
+            assertThat(payload).isNotNull();
+            assertThat(payload.get("deletedId")).isEqualTo(filmId(MISSING_FILM_ID));
+        });
+    }
+
+    @Test
+    void deleteFilmMissingAsDeleted_singleExistingKey_deletesAndEchoes() {
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteFilmMissingAsDeleted(in: { filmId: %d }) { deletedId }
+                }
+                """.formatted(existing));
+
+            var payload = (Map<String, Object>) data.get("deleteFilmMissingAsDeleted");
+            assertThat(payload.get("deletedId")).isEqualTo(filmId(existing));
+            assertThat(countFilm(tx, existing)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmActorsMissingAsDeleted_compositeNodeId_echoesTheMissingKeyThroughTheOutcomePath() {
+        // film_actor's key is (actor_id, film_id), decoded from one node id; the payload declares an
+        // errors field, so the fetcher's value is Outcome-wrapped. Pairs (4, 5) and (5, 6) are not in
+        // the init.sql seed; only (4, 5) is seeded here.
+        inRolledBackTransaction(tx -> {
+            seedFilmActor(tx, 4, 5);
+            String existing = NodeIdEncoder.encode("FilmActor", 4, 5);
+            String missing = NodeIdEncoder.encode("FilmActor", 5, 6);
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteFilmActorsMissingAsDeleted(in: [{ id: "%s" }, { id: "%s" }]) {
+                        deletedIds
+                        errors { __typename }
+                    }
+                }
+                """.formatted(existing, missing));
+
+            var payload = (Map<String, Object>) data.get("deleteFilmActorsMissingAsDeleted");
+            assertThat((List<String>) payload.get("deletedIds")).containsExactly(existing, missing);
+            assertThat(NodeIdEncoder.decodeValues("FilmActor", ((List<String>) payload.get("deletedIds")).get(1)))
+                .containsExactly("5", "6");
+            assertThat(payload.get("errors")).isNull();
+            assertThat(countFilmActor(tx, 4, 5)).isZero();
+        });
+    }
+
+    @Test
+    void deleteSplitKeyChildrenMissingAsDeleted_interleavedKey_echoesEachKeyInItsOwnSlots() {
+        // split_key_child's key is (a, b, c); the input binds a and c from a SplitKeyParent node id
+        // and b from a plain field, so the WHERE compares a, c, b. Every value is distinct, so an
+        // echo that zipped the values in WHERE order would decode to (1, 3, 2) / (7, 9, 8).
+        inRolledBackTransaction(tx -> {
+            tx.insertInto(DSL.table("split_key_parent"))
+                .set(DSL.field("a"), 1).set(DSL.field("c"), 3).execute();
+            tx.insertInto(DSL.table("split_key_child"))
+                .set(DSL.field("a"), 1).set(DSL.field("b"), 2).set(DSL.field("c"), 3).execute();
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteSplitKeyChildrenMissingAsDeleted(in: [
+                        { parent: "%s", b: 2 },
+                        { parent: "%s", b: 8 }
+                    ]) { deletedIds }
+                }
+                """.formatted(NodeIdEncoder.encode("SplitKeyParent", 1, 3),
+                    NodeIdEncoder.encode("SplitKeyParent", 7, 9)));
+
+            var ids = deletedIds(data, "deleteSplitKeyChildrenMissingAsDeleted");
+            assertThat(ids).hasSize(2);
+            assertThat(NodeIdEncoder.decodeValues("SplitKeyChild", ids.get(0))).containsExactly("1", "2", "3");
+            assertThat(NodeIdEncoder.decodeValues("SplitKeyChild", ids.get(1))).containsExactly("7", "8", "9");
+            assertThat(tx.fetchCount(DSL.selectOne().from(DSL.table("split_key_child")))).isZero();
+        });
+    }
+
     // ===== UK-covering single-row DELETE =====
     //
     // storage_bin is the one public-schema table with a UNIQUE constraint (`code`) distinct from

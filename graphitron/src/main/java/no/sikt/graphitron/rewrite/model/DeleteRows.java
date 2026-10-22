@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
 import no.sikt.graphitron.model.diagnostics.MatchedKey;
+import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The DELETE-shape walker carrier. Holds the WHERE columns {@code DeleteRowsWalker} derived
@@ -23,10 +24,16 @@ import no.sikt.graphitron.model.diagnostics.MatchedKey;
  * on the non-PK {@code release_year}), so the carrier needs a {@link Broadcast} arm for it. The
  * {@link Broadcast} compact constructor rejects an empty {@link #whereColumns()} so an empty input
  * cannot degenerate into an unfiltered {@code DELETE}.
+ *
+ * <p>A third arm, {@link IdempotentByPrimaryKey}, is the {@code missingAsDeleted: true} refinement
+ * of {@link Identified}: the matched key is the primary key and the input binds each of its
+ * columns exactly once and nothing else, so a key that matches no row can be echoed from the input
+ * as if it had been deleted. Outside the payload-returning emitters it reads exactly like
+ * {@link Identified}.
  */
-public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Broadcast {
+public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Broadcast, DeleteRows.IdempotentByPrimaryKey {
 
-    /** Every admitted input column, each a WHERE filter. Non-empty on both arms. */
+    /** Every admitted input column, each a WHERE filter. Non-empty on every arm. */
     List<KeyColumn> whereColumns();
 
     /**
@@ -45,6 +52,44 @@ public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Bro
                     "Identified.whereColumns cannot be empty; a covered key contributes at least "
                     + "one WHERE column");
             }
+        }
+    }
+
+    /**
+     * {@code missingAsDeleted: true}: the input identifies rows by exactly the primary key, so an
+     * input key that matches no row counts as already deleted and its payload slot echoes the key
+     * the client sent. {@link #keyBinding()} names, for each primary-key column in
+     * {@code key.columns()} order, the one input contribution that supplies it; that is the order
+     * of the {@code RecordN} the echo builds, independent of the order the WHERE compares the
+     * columns in. {@link #whereColumns()} answers {@link #keyBinding()}: the input contributes no
+     * other column.
+     */
+    record IdempotentByPrimaryKey(MatchedKey.PrimaryKey key, List<KeyColumn> keyBinding) implements DeleteRows {
+        public IdempotentByPrimaryKey {
+            if (key == null) {
+                throw new IllegalArgumentException("key required");
+            }
+            keyBinding = List.copyOf(keyBinding);
+            List<ColumnRef> keyColumns = key.columns();
+            if (keyBinding.size() != keyColumns.size()) {
+                throw new IllegalArgumentException(
+                    "IdempotentByPrimaryKey.keyBinding must bind each of the " + keyColumns.size()
+                    + " primary-key columns exactly once, got " + keyBinding.size() + " bindings");
+            }
+            for (int i = 0; i < keyColumns.size(); i++) {
+                String expected = keyColumns.get(i).sqlName();
+                String actual = keyBinding.get(i).targetColumn().sqlName();
+                if (!expected.equals(actual)) {
+                    throw new IllegalArgumentException(
+                        "IdempotentByPrimaryKey.keyBinding[" + i + "] binds '" + actual
+                        + "' where the primary key's column in that position is '" + expected + "'");
+                }
+            }
+        }
+
+        @Override
+        public List<KeyColumn> whereColumns() {
+            return keyBinding;
         }
     }
 

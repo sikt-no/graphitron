@@ -454,6 +454,23 @@ class RejectionSeverityCoverageTest {
             return new no.sikt.graphitron.model.diagnostics.DeleteRowsError.OverrideConditionNotSupported(
                 "syntheticName", new SourceLocation(1, 1));
         }
+        if (permit == no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class) {
+            return new no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedNeedsPrimaryKey(
+                "film",
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("title", "TITLE", "java.lang.String")),
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
+        }
+        // MissingAsDeletedError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
+        // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
+        // lspCodeOf forwards each arm's stable graphitron.missing-as-deleted.* code.
+        if (permit == no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb.class) {
+            return new no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb(
+                "UPDATE", List.of("DELETE"));
+        }
+        if (permit == no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedReturnShape.class) {
+            return new no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedReturnShape(
+                "Mutation.deleteFilm");
+        }
         // MutationTableArgError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards the stable graphitron.mutation-table-arg.* code.

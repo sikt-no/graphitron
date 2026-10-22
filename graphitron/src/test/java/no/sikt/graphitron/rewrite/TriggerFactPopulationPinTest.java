@@ -62,7 +62,7 @@ class TriggerFactPopulationPinTest {
             }
             type Mutation {
                 createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
-                deleteFilm(id: ID!): ID @mutation(typeName: DELETE, multiRow: true, table: "film")
+                deleteFilm(id: ID!): ID @mutation(typeName: DELETE, multiRow: true, table: "film", missingAsDeleted: true)
             }
             input FilmInput { title: String }
             """.formatted(STUB, STUB, STUB));
@@ -148,9 +148,10 @@ class TriggerFactPopulationPinTest {
         var facts = gatherFixture();
         assertThat(facts.write().rows())
             .extracting(r -> r.parentTypeName() + "." + r.fieldName() + ":"
-                + r.verb().orElse("-") + ":" + r.multiRow() + ":" + r.table().orElse("-"))
+                + r.verb().orElse("-") + ":" + r.multiRow() + ":" + r.missingAsDeleted() + ":"
+                + r.table().orElse("-"))
             .containsExactlyInAnyOrder(
-                "Mutation.createFilm:INSERT:false:-",
-                "Mutation.deleteFilm:DELETE:true:film");
+                "Mutation.createFilm:INSERT:false:false:-",
+                "Mutation.deleteFilm:DELETE:true:true:film");
     }
 }
