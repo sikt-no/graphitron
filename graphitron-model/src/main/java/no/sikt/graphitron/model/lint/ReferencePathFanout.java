@@ -9,10 +9,10 @@ import java.util.List;
 import java.util.Objects;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_FANOUT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_FANOUT;
 
 /**
- * The fan-out advisory, read off {@code intent_field_reference_step_fanout}: a list field whose
+ * The fan-out advisory, read off {@code graphitron_field_path_fanout}: a list field whose
  * {@code @reference} path passes <em>through</em> a table that can hold more than one row per pair
  * of columns the entering and the leaving hop bind gets a warning naming the hop that multiplies.
  *
@@ -30,10 +30,10 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_REFERENCE_STEP_FANOUT
  * two of its four arms deliberately mint
  * nothing, being the view's way of saying it declined to judge rather than that it found nothing.
  *
- * <p>A producer rather than a lint visitor, and the read shape is what decides it. The view it
- * drives from sits on a {@code WITH RECURSIVE} walk carrying window terms, which the fact model
- * requires be taken once per answer and paired on its key rather than correlated per driving row;
- * a visitor at field grain would correlate it once per field. It is folded into the build's one
+ * <p>A producer rather than a lint visitor, and the read shape is what decides it. The view pairs
+ * every walked step with the one after it across the graph, an answer taken once and read on its
+ * key rather than correlated per driving row; a visitor at field grain would correlate it once per
+ * field. It is folded into the build's one
  * warning-assembly point beside the codegen advisories, so it inherits the suppression filter, the
  * editor replay and the MCP projection with nothing moved.
  */
@@ -87,7 +87,7 @@ public final class ReferencePathFanout {
     public static List<BuildWarning.LintFinding> findings(StoreHandle store, ExcludedTypes excluded) {
         Objects.requireNonNull(store, "store");
         Objects.requireNonNull(excluded, "excluded");
-        var v = INTENT_FIELD_REFERENCE_STEP_FANOUT;
+        var v = GRAPHITRON_FIELD_PATH_FANOUT;
         var f = GRAPHITRON_FIELD;
         return store.dsl()
             .select(v.TYPE_NAME, v.FIELD_NAME, v.POSITION, v.TABLE_SCHEMA, v.TABLE_NAME,
@@ -96,7 +96,7 @@ public final class ReferencePathFanout {
             .join(f).on(f.GRAPH_NAME.eq(v.GRAPH_NAME), f.TYPE_NAME.eq(v.TYPE_NAME),
                 f.FIELD_NAME.eq(v.FIELD_NAME))
             .where(v.GRAPH_NAME.eq(store.graphName()), f.IS_LIST.isTrue())
-            .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.ORDINAL, v.POSITION)
+            .orderBy(v.TYPE_NAME, v.FIELD_NAME, v.POSITION)
             .fetch()
             .stream()
             .filter(row -> !excluded.matches(row.value1()))

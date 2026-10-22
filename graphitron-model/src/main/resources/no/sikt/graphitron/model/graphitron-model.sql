@@ -10062,6 +10062,134 @@ COMMENT ON VIEW graphitron_field_path_rule IS 'One round of the walk that fills 
 -- COMMENT ON COLUMN graphitron_field_path_rule.constraint_name IS 'the key the move rides; NULL where it rides none';
 -- COMMENT ON COLUMN graphitron_field_path_rule.fk_on_from IS 'whether the move leaves from the table holding the key; NULL where it rides none';
 
+CREATE VIEW graphitron_field_path_fanout
+  (graph_name, type_name, field_name, position, verdict,
+   table_source_name, table_schema, table_name, covering_constraint_name,
+   source_name, source_line, source_column) AS
+-- Each intermediate of a walk, whichever way it started: the table one step arrives at and the next
+-- leaves, with how each of the two steps joins. A step with a key row rode a key; one with column
+-- pairs and no key matched a function's result by name; one with neither joins by its method alone.
+WITH pair (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+           position, enter_via, leave_via, table_source_name, table_schema, table_name,
+           element_source_name, element_source_line, element_source_column) AS (
+  SELECT e.graph_name, e.type_name, e.field_name,
+         e.start_source_name, e.start_schema, e.start_table, e.position,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_path_key k
+                            WHERE k.graph_name = e.graph_name AND k.type_name = e.type_name
+                              AND k.field_name = e.field_name AND k.start_source_name = e.start_source_name
+                              AND k.start_schema = e.start_schema AND k.start_table = e.start_table
+                              AND k.position = e.position) THEN 'KEY'
+              WHEN EXISTS (SELECT 1 FROM graphitron_field_path_column c
+                            WHERE c.graph_name = e.graph_name AND c.type_name = e.type_name
+                              AND c.field_name = e.field_name AND c.start_source_name = e.start_source_name
+                              AND c.start_schema = e.start_schema AND c.start_table = e.start_table
+                              AND c.position = e.position) THEN 'NAME_MATCH'
+              ELSE 'CONDITION' END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_path_key k
+                            WHERE k.graph_name = l.graph_name AND k.type_name = l.type_name
+                              AND k.field_name = l.field_name AND k.start_source_name = l.start_source_name
+                              AND k.start_schema = l.start_schema AND k.start_table = l.start_table
+                              AND k.position = l.position) THEN 'KEY'
+              WHEN EXISTS (SELECT 1 FROM graphitron_field_path_column c
+                            WHERE c.graph_name = l.graph_name AND c.type_name = l.type_name
+                              AND c.field_name = l.field_name AND c.start_source_name = l.start_source_name
+                              AND c.start_schema = l.start_schema AND c.start_table = l.start_table
+                              AND c.position = l.position) THEN 'NAME_MATCH'
+              ELSE 'CONDITION' END,
+         e.to_source_name, e.to_schema, e.to_table,
+         e.element_source_name, e.element_source_line, e.element_source_column
+    FROM graphitron_field_path e
+    JOIN graphitron_field_path l
+      ON l.graph_name = e.graph_name AND l.type_name = e.type_name
+     AND l.field_name = e.field_name AND l.start_source_name = e.start_source_name
+     AND l.start_schema = e.start_schema AND l.start_table = e.start_table
+     AND l.position = e.position + 1
+),
+-- The intermediate's columns the two steps bind: where the entering step arrives and where the
+-- leaving step departs.
+bound (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+       column_name) AS (
+  SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
+         p.position, c.to_column
+    FROM pair p
+    JOIN graphitron_field_path_column c
+      ON c.graph_name = p.graph_name AND c.type_name = p.type_name AND c.field_name = p.field_name
+     AND c.start_source_name = p.start_source_name AND c.start_schema = p.start_schema
+     AND c.start_table = p.start_table AND c.position = p.position
+  UNION
+  SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
+         p.position, c.from_column
+    FROM pair p
+    JOIN graphitron_field_path_column c
+      ON c.graph_name = p.graph_name AND c.type_name = p.type_name AND c.field_name = p.field_name
+     AND c.start_source_name = p.start_source_name AND c.start_schema = p.start_schema
+     AND c.start_table = p.start_table AND c.position = p.position + 1
+),
+-- The lowest-named PRIMARY KEY or UNIQUE constraint on the intermediate whose every column is bound.
+covering (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+          constraint_name) AS (
+  SELECT graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+         MIN(constraint_name)
+    FROM (SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema,
+                 p.start_table, p.position, k.constraint_name,
+                 COUNT(*) AS key_columns, COUNT(b.column_name) AS bound_columns
+            FROM pair p
+            JOIN sql_constraint k
+              ON k.source_name = p.table_source_name AND k.table_schema = p.table_schema
+             AND k.table_name = p.table_name
+             AND k.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
+            JOIN sql_constraint_column kc
+              ON kc.source_name = k.source_name AND kc.table_schema = k.table_schema
+             AND kc.table_name = k.table_name AND kc.constraint_name = k.constraint_name
+            LEFT JOIN bound b
+              ON b.graph_name = p.graph_name AND b.type_name = p.type_name
+             AND b.field_name = p.field_name AND b.start_source_name = p.start_source_name
+             AND b.start_schema = p.start_schema AND b.start_table = p.start_table
+             AND b.position = p.position AND b.column_name = kc.column_name
+           GROUP BY p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema,
+                    p.start_table, p.position, k.constraint_name) counted
+   WHERE counted.key_columns = counted.bound_columns
+   GROUP BY graph_name, type_name, field_name, start_source_name, start_schema, start_table, position
+)
+-- One row per intermediate whichever start reached it, reported at the @reference application that
+-- wrote the entering element. The covering name is gated on the verdict: a declined intermediate
+-- can be covered by its one readable step alone, and naming that beside a verdict that declined to
+-- judge would read as a cleared step.
+SELECT DISTINCT p.graph_name, p.type_name, p.field_name, p.position,
+       CASE WHEN p.enter_via = 'CONDITION' OR p.leave_via = 'CONDITION'
+              THEN 'UNDECIDABLE_CONDITION_HOP'
+            WHEN p.enter_via = 'NAME_MATCH' OR p.leave_via = 'NAME_MATCH'
+              THEN 'UNDECIDABLE_NAME_MATCH_HOP'
+            WHEN cov.constraint_name IS NOT NULL THEN 'COVERED'
+            ELSE 'FANS_OUT' END,
+       p.table_source_name, p.table_schema, p.table_name,
+       CASE WHEN p.enter_via <> 'CONDITION' AND p.leave_via <> 'CONDITION'
+             AND p.enter_via <> 'NAME_MATCH' AND p.leave_via <> 'NAME_MATCH'
+            THEN cov.constraint_name END,
+       re.source_name, re.application_line, re.application_column
+  FROM pair p
+  LEFT JOIN covering cov
+    ON cov.graph_name = p.graph_name AND cov.type_name = p.type_name
+   AND cov.field_name = p.field_name AND cov.start_source_name = p.start_source_name
+   AND cov.start_schema = p.start_schema AND cov.start_table = p.start_table
+   AND cov.position = p.position
+  LEFT JOIN graphitron_ast_reference_element_entry re
+    ON re.graph_name = p.graph_name AND re.source_name = p.element_source_name
+   AND re.source_line = p.element_source_line AND re.source_column = p.element_source_column;
+COMMENT ON VIEW graphitron_field_path_fanout IS 'Where a field''s path passes through an intermediate table, and whether that table can hold more than one row per set of columns the entering and leaving steps bind: one row per field and intermediate, in a closed verdict vocabulary of four. For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two steps bind, while a junction carrying a key column neither step binds reads FANS_OUT there instead.';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.graph_name IS 'the owning graph''s partition, carried from the walk';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.type_name IS 'the type owning the field';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.field_name IS 'the field whose path this is';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.position IS 'the entering step''s place in the field''s path. The intermediate is the table that step arrives at and the next departs from, so a path''s last step is no intermediate and draws no row: the terminal-hop exemption falls out of the shape';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.verdict IS 'what the coverage question answered at this intermediate. FANS_OUT where no PRIMARY KEY or UNIQUE constraint on it has every column among the ones the two steps bind, so a list over the path may repeat rows; COVERED where one does; UNDECIDABLE_CONDITION_HOP or UNDECIDABLE_NAME_MATCH_HOP where either step joins by a method or by matched names, whose columns no key states';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.table_source_name IS 'the intermediate table''s catalog partition';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.table_schema IS 'the intermediate table''s SQL schema';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.table_name IS 'the intermediate table''s SQL name: where the entering step arrives and the leaving step departs';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.covering_constraint_name IS 'the PRIMARY KEY or UNIQUE constraint on the intermediate whose every column the two steps bind, the lowest name where several do; NULL under every verdict but COVERED. A constraint pins a row only where the join knows a value for every column of it, so the subset runs from the constraint into the bound columns';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.source_name IS 'the document the @reference application writing the entering element is in, so a message underlines what the author wrote';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.source_line IS 'source line of that @reference application, 1-based';
+-- COMMENT ON COLUMN graphitron_field_path_fanout.source_column IS 'source column of that @reference application, 1-based';
+
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
@@ -14879,6 +15007,9 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('field-path-intermediate',
+   'one table a field''s path passes through, at the place of the step arriving there, in one graph',
+   'graph_name, type_name, field_name, position', 'sdl'),
   ('field-path-start',
    'one table one field''s path starts on, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table', 'sdl'),
@@ -15409,6 +15540,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A type read as a row of a statement has a field of errors, and an error is something a producer caught, which a row never holds: move the errors to the type a root service or write returns.');
 
 INSERT INTO meta_relation VALUES
+  ('graphitron_field_path_fanout', 'field-path-intermediate', 'graphitron',
+   'Where a field''s path passes through an intermediate table, and whether that table can hold more than one row per set of columns the entering and leaving steps bind: one row per field and intermediate, in a closed verdict vocabulary of four.',
+   'For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two steps bind, while a junction carrying a key column neither step binds reads FANS_OUT there instead.',
+   'A path is foreign-key traversal and a SQL join yields a bag, so a list field over a path that fans out returns a child row several times, and the fan-out advisory says so. Read off the walk, whose steps already carry the column pairs they join on, so the columns bound on an intermediate are the arriving step''s and the leaving step''s, with no key re-derived to orient them.'),
   ('graphitron_field_path_start', 'field-path-start', 'graphitron',
    'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table or a root''s routine.',
    'For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.',

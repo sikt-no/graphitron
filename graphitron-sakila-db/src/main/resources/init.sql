@@ -1982,6 +1982,45 @@ CREATE TABLE film_actor_note (
     FOREIGN KEY (actor_id, film_id) REFERENCES film_actor(actor_id, film_id)
 );
 
+-- Shapes a @reference path passes through, for the fan-out advisory. film_actor_credit is a junction
+-- carrying its own key column, lang_code, which neither the step arriving from film_actor nor the
+-- step leaving for actor binds, so it may hold several rows per pair. stint and stint_single carry
+-- one person per crew member and differ in their uniqueness: stint's is over the person and the
+-- date, which a path binding the person alone does not pin; stint_single's is over the person.
+CREATE TABLE film_actor_credit (
+    actor_id   int         NOT NULL,
+    film_id    int         NOT NULL,
+    lang_code  varchar(3)  NOT NULL,
+    PRIMARY KEY (actor_id, film_id, lang_code),
+    CONSTRAINT film_actor_credit_pair_fkey FOREIGN KEY (actor_id, film_id)
+        REFERENCES film_actor(actor_id, film_id),
+    CONSTRAINT film_actor_credit_actor_id_fkey FOREIGN KEY (actor_id) REFERENCES actor(actor_id)
+);
+
+CREATE TABLE stint_person (
+    person_id  int  PRIMARY KEY
+);
+
+CREATE TABLE stint_crew (
+    person_id  int  PRIMARY KEY
+);
+
+CREATE TABLE stint (
+    person_id   int   NOT NULL,
+    valid_from  date  NOT NULL,
+    CONSTRAINT stint_person_from_key UNIQUE (person_id, valid_from),
+    CONSTRAINT stint_person_fkey FOREIGN KEY (person_id) REFERENCES stint_person(person_id),
+    CONSTRAINT stint_crew_fkey FOREIGN KEY (person_id) REFERENCES stint_crew(person_id)
+);
+
+CREATE TABLE stint_single (
+    person_id   int   NOT NULL,
+    valid_from  date  NOT NULL,
+    CONSTRAINT stint_single_person_key UNIQUE (person_id),
+    CONSTRAINT stint_single_person_fkey FOREIGN KEY (person_id) REFERENCES stint_person(person_id),
+    CONSTRAINT stint_single_crew_fkey FOREIGN KEY (person_id) REFERENCES stint_crew(person_id)
+);
+
 CREATE TABLE film_price (
     film_id       int          NOT NULL REFERENCES film(film_id),
     currency_code varchar(3)   NOT NULL,
