@@ -1,13 +1,13 @@
 ---
 id: R1084
 title: "A DML mutation without an error channel sends an over-long value to the database"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: mutation-write
 depends-on: []
 created: 2026-10-21
-last-updated: 2026-10-21
+last-updated: 2026-10-22
 ---
 
 # A DML mutation without an error channel sends an over-long value to the database
