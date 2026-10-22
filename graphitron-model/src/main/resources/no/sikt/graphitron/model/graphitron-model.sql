@@ -6765,9 +6765,11 @@ CREATE TABLE graphitron_path_element_key (
   constraint_schema      VARCHAR NOT NULL,
   constraint_table       VARCHAR NOT NULL,
   constraint_name        VARCHAR NOT NULL,
+  matched_by             VARCHAR NOT NULL,
   touched_at             TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column,
                constraint_source_name, constraint_schema, constraint_table, constraint_name),
+  CHECK (matched_by IN ('SQL_NAME', 'JOOQ_NAME')),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphitron_ast_reference_key_step_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
@@ -6784,17 +6786,18 @@ COMMENT ON COLUMN graphitron_path_element_key.constraint_source_name IS 'the cat
 COMMENT ON COLUMN graphitron_path_element_key.constraint_schema IS 'the SQL schema of the table holding the key';
 COMMENT ON COLUMN graphitron_path_element_key.constraint_table IS 'the table holding the key, the referencing side';
 COMMENT ON COLUMN graphitron_path_element_key.constraint_name IS 'the key''s SQL name. With the three columns before it, sql_referential_constraint''s key';
+COMMENT ON COLUMN graphitron_path_element_key.matched_by IS 'which name the written spelling matched: SQL_NAME, the key''s SQL name, or JOOQ_NAME, the generated Keys constant, which answers only where no SQL name in the graph''s catalogs does. The editor and the MCP server say which an author wrote';
 COMMENT ON COLUMN graphitron_path_element_key.touched_at IS 'when the reading that last found this candidate ran: the mark the sweep reads, so a candidate no longer found goes';
 
 CREATE VIEW graphitron_path_element_key_rule
   (graph_name, source_name, source_line, source_column,
-   constraint_source_name, constraint_schema, constraint_table, constraint_name) AS
+   constraint_source_name, constraint_schema, constraint_table, constraint_name, matched_by) AS
 -- The generator's precedence: a written name is a key's SQL name wherever one in the graph's
 -- catalogs answers it, and only where none does is it the generated Keys constant. A schema written
 -- before the name binds the schema of the table holding the key, after that choice and never
 -- instead of it. Both sides are stored folded columns, so each match is an equality.
 SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
-       c.source_name, c.table_schema, c.table_name, c.constraint_name
+       c.source_name, c.table_schema, c.table_name, c.constraint_name, 'SQL_NAME'
   FROM graphitron_ast_reference_key_step_entry k
   JOIN store_graph_source m ON m.graph_name = k.graph_name
   JOIN sql_constraint c
@@ -6805,7 +6808,7 @@ SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
  WHERE k.key_ref_namespace_part_upper IS NULL OR c.table_schema_upper = k.key_ref_namespace_part_upper
 UNION ALL
 SELECT k.graph_name, k.source_name, k.source_line, k.source_column,
-       c.source_name, c.table_schema, c.table_name, c.constraint_name
+       c.source_name, c.table_schema, c.table_name, c.constraint_name, 'JOOQ_NAME'
   FROM graphitron_ast_reference_key_step_entry k
   JOIN store_graph_source m ON m.graph_name = k.graph_name
   JOIN sql_constraint c
@@ -6830,6 +6833,7 @@ COMMENT ON VIEW graphitron_path_element_key_rule IS 'One row the path element ke
 -- COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_schema IS 'the SQL schema of that table';
 -- COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_table IS 'the table holding the candidate key';
 -- COMMENT ON COLUMN graphitron_path_element_key_rule.constraint_name IS 'the candidate key''s SQL name';
+-- COMMENT ON COLUMN graphitron_path_element_key_rule.matched_by IS 'SQL_NAME or JOOQ_NAME, the arm that matched the spelling';
 
 CREATE TABLE graphitron_path_element_table (
   graph_name        VARCHAR NOT NULL,

@@ -32,8 +32,8 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
     SELECT graph_name, source_name, source_line, source_column
       FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'film_language_id_fkey')
   """, rows: """
-  constraint_schema, constraint_table, constraint_name
-  public,            film,             film_language_id_fkey
+  constraint_schema, constraint_table, constraint_name,       matched_by
+  public,            film,             film_language_id_fkey, SQL_NAME
   """)
 
 # The Keys constant, where no SQL name answers.
@@ -42,8 +42,8 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
     SELECT graph_name, source_name, source_line, source_column
       FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'FILM__FILM_LANGUAGE_ID_FKEY')
   """, rows: """
-  constraint_schema, constraint_table, constraint_name
-  public,            film,             film_language_id_fkey
+  constraint_schema, constraint_table, constraint_name,       matched_by
+  public,            film,             film_language_id_fkey, JOOQ_NAME
   """)
 
 # The Keys constant with its schema, as opptak writes most of its keys.
@@ -52,8 +52,8 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
     SELECT graph_name, source_name, source_line, source_column
       FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'public.FILM__FILM_LANGUAGE_ID_FKEY')
   """, rows: """
-  constraint_schema, constraint_table, constraint_name
-  public,            film,             film_language_id_fkey
+  constraint_schema, constraint_table, constraint_name,       matched_by
+  public,            film,             film_language_id_fkey, JOOQ_NAME
   """)
 
 # The SQL name with its schema.
@@ -62,8 +62,8 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
     SELECT graph_name, source_name, source_line, source_column
       FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'public.film_language_id_fkey')
   """, rows: """
-  constraint_schema, constraint_table, constraint_name
-  public,            film,             film_language_id_fkey
+  constraint_schema, constraint_table, constraint_name,       matched_by
+  public,            film,             film_language_id_fkey, SQL_NAME
   """)
 
 extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
@@ -71,9 +71,9 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
     SELECT graph_name, source_name, source_line, source_column
       FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'note_event_fk')
   """, rows: """
-  constraint_schema, constraint_table, constraint_name
-  multischema_a,     note,             note_event_fk
-  multischema_b,     note,             note_event_fk
+  constraint_schema, constraint_table, constraint_name, matched_by
+  multischema_a,     note,             note_event_fk,   SQL_NAME
+  multischema_b,     note,             note_event_fk,   SQL_NAME
   """)
 
 extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
@@ -81,8 +81,8 @@ extend schema @expectEquals(relation: "graphitron_path_element_key", where: """
     SELECT graph_name, source_name, source_line, source_column
       FROM graphitron_ast_reference_key_step_entry WHERE key_ref = 'multischema_a.note_event_fk')
   """, rows: """
-  constraint_schema, constraint_table, constraint_name
-  multischema_a,     note,             note_event_fk
+  constraint_schema, constraint_table, constraint_name, matched_by
+  multischema_a,     note,             note_event_fk,   SQL_NAME
   """)
 
 extend schema @assertEmpty(relation: "graphitron_path_element_key", where: """
