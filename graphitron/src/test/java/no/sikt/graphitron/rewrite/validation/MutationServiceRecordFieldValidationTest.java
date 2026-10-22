@@ -71,7 +71,7 @@ class MutationServiceRecordFieldValidationTest {
             TypeName.VOID, ServiceMethodCall.ReturnContainer.Other.INSTANCE,
             List.of(new ServiceMethodCall.ValidatedArgument.InputObjectNestedList("grid", "GridInput")));
         var channel = new ErrorChannel.Mapped(
-            List.of(new GraphitronType.ErrorType("GridErr", null, handlers, List.of())), "GRID_PAYLOAD");
+            List.of(new GraphitronType.ErrorType("GridErr", null, handlers, List.of())));
         return new MutationServiceRecordField("Mutation", "externalMutation", null,
             new ReturnTypeRef.ResultReturnType("GridPayload", new FieldWrapper.Single(true), null, null),
             carrier, Optional.of(channel));

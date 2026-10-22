@@ -164,36 +164,11 @@ public final class GeneratedUnits {
     }
 
     /**
-     * The bare name of the {@code Mapping[]} constant on {@link #errorMappings()} that holds one
-     * error channel's dispatch table: {@code SCREAMING_SNAKE} of the name the channel mints from.
-     * Which name that is belongs to the channel's transport and not to this formula: the payload
-     * class's simple name where the catch arm constructs one, and the payload's own SDL type name
-     * where it does not, both of which the store carries as columns beside the channel so no
-     * caller has to re-derive which applies.
-     *
-     * <p>Bare because two channels can arrive at the same one; the disambiguation is
-     * {@link #disambiguatedMappingsConstant} and it applies there rather than at the call site.
+     * The name of the {@code Mapping[]} constant on {@link #errorMappings()} that holds an outcome
+     * type's dispatch table: {@code SCREAMING_SNAKE} of the outcome type's SDL name.
      */
     public static String mappingsConstant(String mintedFrom) {
         return screamingSnake(mintedFrom);
-    }
-
-    /**
-     * The name of the {@code Mapping[]} constant for a channel that had to be disambiguated:
-     * a {@link #mappingsConstant} with a suffix derived from {@code fingerprint}, the digest over
-     * the channel's canonicalised handler list. Two channels minting from the same name but
-     * declaring different mappings cannot share a constant; the one that keeps the bare name is
-     * the first classified, and every later shape passes its own fingerprint here.
-     *
-     * <p>The suffix is the fingerprint's first eight hex characters, uppercased. Distinct shapes
-     * that collide on those eight characters would collide on the whole digest and therefore be
-     * one shape, so the suffix cannot manufacture a collision the grouping did not already have.
-     *
-     * @param bareConstant the already-folded bare name, as {@link #mappingsConstant} produced it
-     * @param fingerprint  a hex digest, at least eight characters
-     */
-    public static String disambiguatedMappingsConstant(String bareConstant, String fingerprint) {
-        return bareConstant + "_" + fingerprint.substring(0, 8).toUpperCase(java.util.Locale.ROOT);
     }
 
     /**

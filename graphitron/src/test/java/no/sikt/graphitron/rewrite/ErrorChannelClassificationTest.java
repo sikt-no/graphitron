@@ -59,7 +59,6 @@ class ErrorChannelClassificationTest {
         assertThat(ch.mappedErrorTypes())
             .extracting(et -> et.name())
             .containsExactly("ValidationErr", "DbErr");
-        assertThat(ch.mappingsConstantName()).isEqualTo("SAK_PAYLOAD");
     }
 
     @Test

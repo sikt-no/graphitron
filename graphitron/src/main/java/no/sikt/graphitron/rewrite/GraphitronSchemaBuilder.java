@@ -325,12 +325,9 @@ public class GraphitronSchemaBuilder {
         emitTableOnInputDeprecationWarnings(ctx);
         rejectNonIdNodeId(ctx);
         rejectFacetMisuse(ctx, connectionSynthesis);
-        // Apply the collision-suffix rule to ErrorChannel.mappingsConstantName on every
-        // WithErrorChannel field so the resolved name lands on the carrier before the emitter
-        // runs. Pass-through for the common case (at most one channel shape per payload class).
-        var dedupedFields = MappingsConstantNameDedup.apply(ctx.fieldRegistry.entries());
+        var classifiedFields = ctx.fieldRegistry.entries();
         Map<String, EntityResolution> entitiesByType =
-            EntityResolutionBuilder.build(ctx.typeRegistry, dedupedFields, rebuiltAssembled,
+            EntityResolutionBuilder.build(ctx.typeRegistry, classifiedFields, rebuiltAssembled,
                 ctx::addWarning, ctx::addDiagnostic);
         // The ancestor-product arrival fold, computed once over the assembled (pre-connection-
         // promotion) SDL. Pure SDL fact (list-ness needs no classification), independent of walk
@@ -341,30 +338,30 @@ public class GraphitronSchemaBuilder {
         // reached through more than one source shape (a directiveless type reached both as a
         // nesting projection and as a producer-backed result). Pure fold over the classified
         // types and fields; the dispatch emitter and the validator's shape-set rule read one fact.
-        var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, dedupedFields);
+        var reachableSourceShapes = MixedSourceReachIndex.compute(ctx.types, classifiedFields);
         // The minted operation member relation: the post-walk join of the gathered trigger
         // slots with the shape facts, the production GraphitronSchema.operationMembersOf reads.
         // Computed over the pre-rewrite schema's definition nodes, the same artifact the
         // trigger gather keyed. Computed ahead of the tenant fold, whose direct-binding
         // surface reads these rows.
         var operationMembers = OperationMemberRelation.compute(
-            ctx.schema, dedupedFields, ctx.types, ctx.facts);
+            ctx.schema, classifiedFields, ctx.types, ctx.facts);
         // Every predicate a condition member emits must have its slot in the column-binding
         // ledger the tenant fold reads, or a new predicate arm would divine nothing with no
         // failure anywhere. Ungated on tenancy, so every schema any build makes enforces it.
         var columnBindings = ctx.columnBindingLedger();
-        columnBindings.requireCovers(operationMembers, dedupedFields);
+        columnBindings.requireCovers(operationMembers, classifiedFields);
         // The materialized delivery fact: the post-walk fold of the gathered delivery markers
         // with the shape facts, read through GraphitronSchema.deliveryOf; anchor-hood (the
         // launcher membership predicate) is its first view.
         var deliveryFacts = DeliveryFactRelation.compute(
-            ctx.schema, dedupedFields, ctx.types, ctx.facts);
+            ctx.schema, classifiedFields, ctx.types, ctx.facts);
         // The per-field tenant-binding fold. Ancestor-context fact (Inherited needs every
         // reaching path bound), so it is computed post-walk; read by the validator's tenant
         // mirror and the routing emitters.
         var tenantBindings = TenantBindingIndex.compute(
             ctx.schema, SchemaReachability.reachableTypeNames(ctx.schema, ctx.nodeDeclaration),
-            dedupedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
+            classifiedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
             columnBindings);
         // The session-hook resolution: the authored <sessionState> strings arrive on
         // RunContext and are reflected here, the stage that owns ServiceCatalog, into the
@@ -385,7 +382,7 @@ public class GraphitronSchemaBuilder {
         // thing only. Runs after the walk and writes only where a mint site left nothing.
         NodeIdDecodeNotReached.sweep(ctx.schema, ctx.fieldRegistry, ctx.decodeLedger());
         var model = new GraphitronSchema(
-            ctx.types, Collections.unmodifiableMap(dedupedFields), entitiesByType, ctx.warnings(),
+            ctx.types, Collections.unmodifiableMap(classifiedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
             connectionSynthesis, operationMembers, deliveryFacts,
             sessionHookResolution.hooks(), ctx.catalogNodeDecodes());

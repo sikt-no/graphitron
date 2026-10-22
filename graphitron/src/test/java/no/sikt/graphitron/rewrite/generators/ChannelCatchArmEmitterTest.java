@@ -4,7 +4,6 @@ import graphql.language.SourceLocation;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -33,9 +32,7 @@ class ChannelCatchArmEmitterTest {
 
     @Test
     void emit_mappedChannel_claimsAgainstItsMappingsAndReturnsErrorList() {
-        var channel = new ErrorChannel.Mapped(List.of(anyErrorType()), "FILM_PAYLOAD");
-
-        var code = ChannelCatchArmEmitter.emit(channel, OUTCOME_OF_RECORD, OUTPUT_PACKAGE).toString();
+        var code = ChannelCatchArmEmitter.emit("FILM_PAYLOAD", OUTCOME_OF_RECORD, OUTPUT_PACKAGE).toString();
 
         assertThat(code)
             .contains(".FILM_PAYLOAD")

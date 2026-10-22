@@ -31,6 +31,9 @@ import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 @PipelineTier
 class FetcherPipelineTest {
 
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path tmp;
+
     @Test
     void singleTableType_producesOneFetchersClass() {
         var classes = generate("""
@@ -271,7 +274,7 @@ class FetcherPipelineTest {
         // mapping-walk + no-channel-disposition fallthrough) is pinned behaviourally by ChannelCatchArmEmitterTest
         // (unit) and the GraphQLQueryTest execution-tier round-trip, not by a code-string
         // assertion on the generated body (banned per development-principles.adoc).
-        var sak = method(findSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
+        var sak = method(findStoreBackedSpec("QueryFetchers", SAK_DISPATCH_SDL), "sak");
         assertThat(sak.returnType().toString())
             .contains("graphql.execution.DataFetcherResult")
             .contains("Outcome");
@@ -325,7 +328,7 @@ class FetcherPipelineTest {
         // shape as the non-outcome BatchedTableField), not a stub or a registration fall-through.
         // The arm-switch prelude (narrow Success / completedFuture(null) on ErrorList) is pinned
         // behaviourally by the GraphQLQueryTest execution round-trip, not a body-string here.
-        var fetchers = findSpec("SakPayloadFetchers", OUTCOME_TABLE_FIELD_SDL);
+        var fetchers = findStoreBackedSpec("SakPayloadFetchers", OUTCOME_TABLE_FIELD_SDL);
         assertThat(method(fetchers, "language").returnType().toString())
             .isEqualTo("java.util.concurrent.CompletableFuture<graphql.execution.DataFetcherResult<org.jooq.Record>>");
     }
@@ -359,7 +362,7 @@ class FetcherPipelineTest {
         var bodies = fetcherBodies(OUTCOME_COLUMN_FIELD_SDL);
         assertThat(TypeSpecAssertions.wiringFor(bodies, "FilmRecordPayload", "title"))
             .contains(DataFetcherKind.COLUMN_FETCHER);
-        assertThat(findSpec("FilmRecordPayloadFetchers", OUTCOME_COLUMN_FIELD_SDL).methodSpecs())
+        assertThat(findStoreBackedSpec("FilmRecordPayloadFetchers", OUTCOME_COLUMN_FIELD_SDL).methodSpecs())
             .extracting(MethodSpec::name).contains("title");
     }
 
@@ -1066,8 +1069,7 @@ class FetcherPipelineTest {
                     @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithInputBean"})
             }
             """;
-        var bundle = TestSchemaHelper.buildBundle(sdl);
-        var specs = TypeFetcherRenderTestSupport.generate(bundle.model(), bundle.assembled(), DEFAULT_OUTPUT_PACKAGE);
+        var specs = TestSchemaHelper.storeBackedFetchers(tmp, sdl);
         var mutationFetchers = specs.stream()
             .filter(t -> t.name().equals("MutationFetchers"))
             .findFirst()
@@ -1105,6 +1107,17 @@ class FetcherPipelineTest {
 
     private TypeSpec findSpec(String className, String sdl) {
         return TypeFetcherRenderTestSupport.generate(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals(className))
+            .findFirst()
+            .orElseThrow(() -> new AssertionError("Class not found: " + className));
+    }
+
+    /**
+     * {@link #findSpec} from a plan read off a captured store, for a fixture whose producer catches
+     * into an outcome: its catch arm names the outcome type's table from the store.
+     */
+    private TypeSpec findStoreBackedSpec(String className, String sdl) {
+        return TestSchemaHelper.storeBackedFetchers(tmp, sdl).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()
             .orElseThrow(() -> new AssertionError("Class not found: " + className));

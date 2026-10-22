@@ -29,6 +29,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 @PipelineTier
 class TenantRoutedFetcherPipelineTest {
 
+    @org.junit.jupiter.api.io.TempDir
+    static java.nio.file.Path tmp;
+
     private static GraphitronSchema multiTenant(String sdl) {
         return TestSchemaHelper.buildSchema(
             sdl, TestConfiguration.testContext().withTenantColumn("film_id"));
@@ -113,15 +116,17 @@ class TenantRoutedFetcherPipelineTest {
             "rateFilmOutcome", "rateFilmOutcome(in: RateFilmInput!): SakPayload " + service("rateFilmOutcome"),
             "pickFilm", "pickFilm(in: RateFilmInput!): Film " + service("pickFilm"));
         shapes.forEach((name, field) -> {
-            var schema = multiTenant(SERVICE_TYPES + """
+            var sdl = SERVICE_TYPES + """
                 type DbErr @error(handlers: [{handler: DATABASE}]) { path: [String!]! message: String! }
                 union RateError = DbErr
                 type SakPayload { data: String errors: [RateError] }
                 type Mutation { %s }
-                """.formatted(field));
+                """.formatted(field);
+            var schema = multiTenant(sdl);
             assertThat(schema.tenantBindingOf("Mutation", name)).as(name)
                 .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ArgumentBound.class);
-            assertIsTenantSlotHelper(method(schema, "MutationFetchers", "decodeFilmTenantSlot0OrThrow"));
+            assertIsTenantSlotHelper(storeBackedMethod(tmp.resolve(name), sdl, "MutationFetchers",
+                "decodeFilmTenantSlot0OrThrow"));
         });
     }
 
@@ -134,7 +139,7 @@ class TenantRoutedFetcherPipelineTest {
      */
     @Test
     void tenantRoutedDmlPayloadWithErrorsRidesTheOutcomeTransport() {
-        var schema = multiTenant("""
+        var sdl = """
             interface Node { id: ID! }
             type Film implements Node @table(name: "film") @node(keyColumns: ["film_id"]) {
                 id: ID! @nodeId
@@ -148,7 +153,8 @@ class TenantRoutedFetcherPipelineTest {
             type Mutation {
                 retitleFilms(in: [RetitleFilmInput!]!): FilmsRetitledPayload @mutation(typeName: UPDATE, table: "film")
             }
-            """);
+            """;
+        var schema = multiTenant(sdl);
 
         assertThat(schema.tenantBindingOf("Mutation", "retitleFilms"))
             .isInstanceOf(no.sikt.graphitron.rewrite.model.TenantBinding.ArgumentBound.class);
@@ -157,7 +163,7 @@ class TenantRoutedFetcherPipelineTest {
             .get().isInstanceOf(no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped.class);
         assertThat(((no.sikt.graphitron.rewrite.model.ChildField.ErrorsField)
                 schema.field("FilmsRetitledPayload", "errors"))).isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ErrorsField.class);
-        assertReturnsOutcome(method(schema, "MutationFetchers", "retitleFilms"));
+        assertReturnsOutcome(storeBackedMethod(tmp, sdl, "MutationFetchers", "retitleFilms"));
     }
 
     /** {@code DataFetcherResult<Outcome<…>>}: the fetcher's declared value is the typed wrapper. */
@@ -256,8 +262,24 @@ class TenantRoutedFetcherPipelineTest {
             method(schema, "QueryFetchers", "decodeFilmActorTenantSlot1OrThrow"));
     }
 
+    /**
+     * A method of the class a multi-tenant run over {@code sdl} generates from its store, for a
+     * fixture whose producer catches into an outcome: its catch arm names the outcome type's table
+     * from the store, which a store-less plan has none of.
+     */
+    private static MethodSpec storeBackedMethod(java.nio.file.Path directory, String sdl,
+            String className, String methodName) {
+        return methodOf(TestSchemaHelper.storeBackedFetchers(directory, sdl,
+            TestConfiguration.testContext().withTenantColumn("film_id")), className, methodName);
+    }
+
     private static MethodSpec method(GraphitronSchema schema, String className, String methodName) {
-        TypeSpec spec = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+        return methodOf(TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE), className,
+            methodName);
+    }
+
+    private static MethodSpec methodOf(java.util.List<TypeSpec> specs, String className, String methodName) {
+        TypeSpec spec = specs.stream()
             .filter(t -> className.equals(t.name()))
             .findFirst()
             .orElseThrow(() -> new AssertionError("no generated class named " + className));

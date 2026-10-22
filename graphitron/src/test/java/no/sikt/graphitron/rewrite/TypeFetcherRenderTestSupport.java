@@ -21,9 +21,10 @@ import java.util.List;
  * being orchestrated and made the emitter's main sources depend on the plan layer for a path
  * production never takes, production passing the plan's rows to the canonical method instead.
  *
- * <p>The routine-write rows are empty because a fixture holding no store cannot read them. A
- * {@code @routine}-writing coordinate reaching here therefore fails the dispatch's drift guard by
- * name rather than emitting something plausible; such a fixture wants the store-backed plan.
+ * <p>The routine-write rows and the error channels are empty because a fixture holding no store
+ * cannot read them. A {@code @routine}-writing coordinate, or a producer catching into an outcome,
+ * reaching here therefore fails its drift guard by name rather than emitting something plausible;
+ * such a fixture wants the store-backed plan.
  */
 public final class TypeFetcherRenderTestSupport {
 
@@ -39,7 +40,8 @@ public final class TypeFetcherRenderTestSupport {
             typeUnits.fetchers(),
             typeUnits.errorFetchers(),
             RoutineWriteQuery.Rows.empty(),
-            KeyProjectionRelation.empty());
+            KeyProjectionRelation.empty(),
+            no.sikt.graphitron.emit.ErrorChannelRelation.empty());
     }
 
     /**

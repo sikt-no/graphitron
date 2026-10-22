@@ -51,6 +51,10 @@ final class TypeFetcherEmissionContext {
     private no.sikt.graphitron.command.KeyProjectionRelation keyProjections =
         no.sikt.graphitron.command.KeyProjectionRelation.empty();
 
+    // The store's error channels, for the catch arms naming their outcome type's dispatch table.
+    private no.sikt.graphitron.emit.ErrorChannelRelation errorChannels =
+        no.sikt.graphitron.emit.ErrorChannelRelation.empty();
+
     TypeFetcherEmissionContext(String parentTypeName,
             no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema) {
         this.parentTypeName = parentTypeName;
@@ -109,6 +113,26 @@ final class TypeFetcherEmissionContext {
     /** Installs the graph's projected {@code argMapping} bindings for this class's emission. */
     void setKeyProjections(no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         this.keyProjections = keyProjections;
+    }
+
+    /** Installs the store's error channels for this class's emission. */
+    void setErrorChannels(no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
+        this.errorChannels = errorChannels;
+    }
+
+    /**
+     * The {@code ErrorMappings} constant a catch arm on this class's field {@code fieldName} names:
+     * the dispatch table of the outcome type the store says that producer catches into. A field
+     * the walk gave a channel and the store gave no outcome is drift between the two, refused
+     * rather than given a name nothing emits.
+     */
+    String mappingsConstant(String fieldName) {
+        return errorChannels.outcomeOf(parentTypeName, fieldName)
+            .map(no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator::channelConstantName)
+            .orElseThrow(() -> new IllegalStateException("Graphitron generator bug (error channel): '"
+                + parentTypeName + "." + fieldName + "' catches into an outcome the classified schema"
+                + " states and graphitron_producer_outcome does not; the walk and the store have"
+                + " drifted"));
     }
 
     /**

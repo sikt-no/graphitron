@@ -40,7 +40,6 @@ class ErrorChannelWalkerTest {
             loader(), t -> String.class);
 
         var mapped = ok(result);
-        assertThat(mapped.mappingsConstantName()).isEqualTo("FILM_PAYLOAD");
         assertThat(mapped.mappedErrorTypes()).extracting(ErrorType::name).containsExactly("NotFound");
     }
 

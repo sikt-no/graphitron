@@ -6,20 +6,17 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.emit.ErrorChannelRelation;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.MappingsConstantNameDedup;
-import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.Handler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.WithErrorChannel;
 
 import javax.lang.model.element.Modifier;
-import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -36,36 +33,20 @@ import java.util.TreeMap;
  *       type name ({@code ByType.FILM_LOOKUP_INVALID}). This is the definition-keyed grain, and
  *       it is what {@code <ErrorType>Fetchers.message} walks to resolve a handler's authored
  *       {@code description:} for a matched source.</li>
- *   <li><b>Per fetcher channel</b>, as top-level constants keyed on
- *       {@link ErrorChannel#mappingsConstantName}: the ordered concatenation of the per-type
- *       arrays the channel maps. This is the use-keyed grain the per-fetcher try/catch wrapper
- *       passes to {@code ErrorRouter.claim}. Channels with identical declarations share one
- *       constant, so a schema with N fetchers mapping K {@code @error} types produces K mapping
- *       instances rather than K·N.</li>
+ *   <li><b>Per outcome type</b>, as top-level constants named by {@link #channelConstantName}:
+ *       the ordered concatenation of the per-type arrays of the outcome type's errors field
+ *       members. This is the use-keyed grain the per-fetcher try/catch wrapper passes to
+ *       {@code ErrorRouter.claim}. Every producer catching into one outcome type catches into the
+ *       same errors field, so they share its constant.</li>
  * </ul>
  *
- * <p>The two grains are kept in separate namespaces on purpose. Channel constant names come from
- * three sources (an SDL outcome type name, a payload class simple name, a wrapper SDL type name),
- * and a payload class simple name can collide with an {@code @error} type name: a
- * {@code com.example.NotAllowed} payload alongside an {@code @error type NotAllowed} would mint
- * {@code NOT_ALLOWED} twice, and a duplicate field is invalid generated Java rather than a
- * diagnostic. Nesting the per-type constants makes that collision-free by construction, so the
- * mint needs no clash check and no invented suffix.
+ * <p>The outcome types and their members are read from the store
+ * ({@link ErrorChannelRelation}); the per-type grain is the model's own {@code errorTypes()}
+ * fold, the population {@code FetchersPlanner} mints a fetchers class for, and every member a
+ * channel names must be in it.
  *
- * <p>Membership for the per-type grain is the model's own {@code errorTypes()} fold, unioned with
- * every type any channel maps. That fold alone is the population
- * {@code FetchersPlanner} mints a fetchers class for, so it is the population whose
- * {@code message} body names a {@code ByType} constant; the channel side is unioned in so the
- * concatenation is total no matter which population is the wider, rather than resting on an
- * argument that the two agree. Array content is determined by the {@code @error} type's name (the
- * {@code ErrorIndex} fixed point resolves every union member through a name-keyed map), so a type
- * reached from both populations contributes one constant; a name carrying two different handler
- * lists is a classifier bug and fails loudly here.
- *
- * <p>Channel constant names arrive already resolved: the classifier-side dedup pass
- * ({@code MappingsConstantNameDedup}) has applied any hash suffix before an emitter sees the
- * schema, so a shared constant name here guarantees a shared handler shape and a mismatch is an
- * internal classifier bug rather than an author-facing error.
+ * <p>The two grains are kept in separate namespaces so an outcome type and an {@code @error} type
+ * folding to one SCREAMING_SNAKE name cannot emit one field twice.
  */
 public final class ErrorMappingsClassGenerator {
 
@@ -98,44 +79,35 @@ public final class ErrorMappingsClassGenerator {
         return GeneratedUnits.screamingSnake(errorTypeName);
     }
 
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
+    /** The constant an outcome type's dispatch table is emitted under, and every catch arm names. */
+    public static String channelConstantName(String outcomeTypeName) {
+        return GeneratedUnits.mappingsConstant(outcomeTypeName);
+    }
+
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
+                                          ErrorChannelRelation channels) {
         var errorRouter = ErrorRouterClassGenerator.routerClass(outputPackage);
         var mapping = errorRouter.nestedClass(ErrorRouterClassGenerator.MAPPING_INTERFACE);
         var mappingArray = ArrayTypeName.of(mapping);
 
-        var errorTypes = perTypeMembership(schema);
-
-        // Group every classified channel by its already-resolved mappingsConstantName, preserving
-        // first-seen order. A mismatch under one name would mean the dedup pass missed a
-        // WithErrorChannel variant; that is surfaced as an internal sanity check, not an
-        // author-facing error.
-        var byConstant = new LinkedHashMap<String, ErrorChannel>();
-        for (var field : schema.fields().values()) {
-            if (!(field instanceof WithErrorChannel withChannel)) continue;
-            withChannel.errorChannel().ifPresent(channel -> {
-                var prior = byConstant.putIfAbsent(channel.mappingsConstantName(), channel);
-                if (prior != null && !sameHandlerShape(prior, channel)) {
-                    throw new IllegalStateException(
-                        "ErrorMappings: two channels share the constant '"
-                            + channel.mappingsConstantName()
-                            + "' but declare different handler lists. The hash-suffix dedup"
-                            + " pass should have rewritten one of them; this is an internal"
-                            + " classifier bug. Add the missing WithErrorChannel variant to"
-                            + " MappingsConstantNameDedup.withResolvedChannel.");
-                }
-            });
-        }
+        var errorTypes = new TreeMap<>(schema.errorTypes());
+        channels.membersByOutcome().forEach((outcome, members) -> members.forEach(member -> {
+            if (!errorTypes.containsKey(member)) {
+                throw new IllegalStateException("ErrorMappings: the store's errors field on '"
+                    + outcome + "' holds '" + member + "', which the schema registers as no @error"
+                    + " type; the store and the classified schema have drifted");
+            }
+        }));
 
         var builder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addJavadoc("{@code Mapping[]} dispatch tables at two grains. {@link $L} holds one\n"
                 + "constant per {@code @error} type, which is where an authored\n"
                 + "{@code description:} lives and what each {@code <ErrorType>Fetchers.message}\n"
-                + "walks; the constants on this class hold one per distinct fetcher channel, each\n"
-                + "the ordered concatenation of the per-type arrays it maps, and the per-fetcher\n"
-                + "try/catch wrapper passes those to {@link $T#dispatch}. Channels with identical\n"
-                + "declarations share a constant, so a schema with N fetchers mapping K\n"
-                + "{@code @error} types produces K mapping instances total instead of K·N.\n",
+                + "walks; the constants on this class hold one per outcome type, each the ordered\n"
+                + "concatenation of the per-type arrays its errors field holds, and the per-fetcher\n"
+                + "try/catch wrapper passes those to {@link $T#dispatch}. Every fetcher returning\n"
+                + "one outcome type shares its constant.\n",
                 BY_TYPE_HOLDER, errorRouter);
 
         // Private no-arg constructor — utility class.
@@ -148,50 +120,20 @@ public final class ErrorMappingsClassGenerator {
         }
 
         var byTypeHolder = ClassName.get("", BY_TYPE_HOLDER);
-        for (var entry : byConstant.entrySet()) {
-            builder.addField(FieldSpec.builder(mappingArray, entry.getKey(),
+        channels.membersByOutcome().forEach((outcome, members) ->
+            builder.addField(FieldSpec.builder(mappingArray, channelConstantName(outcome),
                     Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
-                .initializer(buildChannelInitializer(entry.getValue(), byTypeHolder))
-                .addJavadoc("Dispatch table for fetchers returning {@code $L}: the mapped\n"
-                    + "{@code @error} types' {@link $L} arrays, concatenated in declaration order.\n",
-                    channelLabel(entry.getValue()), BY_TYPE_HOLDER)
-                .build());
-        }
+                .initializer(buildChannelInitializer(members, byTypeHolder))
+                .addJavadoc("Dispatch table for fetchers returning {@code $L}: its errors field's\n"
+                    + "{@code @error} types' {@link $L} arrays, concatenated in match order.\n",
+                    outcome, BY_TYPE_HOLDER)
+                .build()));
 
-        if (!byConstant.isEmpty()) {
+        if (!channels.membersByOutcome().isEmpty()) {
             builder.addMethod(buildConcatMethod(mapping, mappingArray));
         }
 
         return List.of(builder.build());
-    }
-
-    /**
-     * The per-type grain's membership: every {@code ErrorType} the schema registers, unioned with
-     * every type any channel maps, ordered by type name so the emitted field list is stable
-     * regardless of which population a type came from. Two rows under one name must agree; they
-     * do by construction (an {@code @error} type name determines its handler list through the
-     * {@code ErrorIndex} fixed point), and a disagreement is a classifier bug.
-     */
-    private static Map<String, ErrorType> perTypeMembership(GraphitronSchema schema) {
-        var byName = new TreeMap<String, ErrorType>();
-        schema.errorTypes().values().forEach(et -> admit(byName, et));
-        for (var field : schema.fields().values()) {
-            if (!(field instanceof WithErrorChannel withChannel)) continue;
-            withChannel.errorChannel()
-                .ifPresent(channel -> channel.mappedErrorTypes().forEach(et -> admit(byName, et)));
-        }
-        return byName;
-    }
-
-    private static void admit(Map<String, ErrorType> byName, ErrorType et) {
-        var prior = byName.putIfAbsent(et.name(), et);
-        if (prior != null && !prior.handlers().equals(et.handlers())) {
-            throw new IllegalStateException(
-                "ErrorMappings: the @error type '" + et.name() + "' reaches the per-type mint with"
-                    + " two different handler lists. An @error type name determines its handler"
-                    + " list through the ErrorIndex fixed point, so this is an internal classifier"
-                    + " bug: the schema registry and a channel's mappedErrorTypes have diverged.");
-        }
     }
 
     /**
@@ -248,16 +190,16 @@ public final class ErrorMappingsClassGenerator {
     }
 
     /**
-     * A channel constant's initializer: {@code concat(ByType.A, ByType.B)} over the channel's
-     * {@code mappedErrorTypes()} in declaration order. Always a concatenation, even for a
+     * A channel constant's initializer: {@code concat(ByType.A, ByType.B)} over the outcome
+     * type's {@code @error} members in match order. Always a concatenation, even for a
      * single-type channel, so no two constants alias one array instance.
      */
-    private static CodeBlock buildChannelInitializer(ErrorChannel channel, ClassName byTypeHolder) {
+    private static CodeBlock buildChannelInitializer(List<String> members, ClassName byTypeHolder) {
         var call = CodeBlock.builder().add("$L(", CONCAT_METHOD);
         boolean first = true;
-        for (var errType : channel.mappedErrorTypes()) {
+        for (var member : members) {
             if (!first) call.add(", ");
-            call.add("$T.$L", byTypeHolder, byTypeConstantName(errType.name()));
+            call.add("$T.$L", byTypeHolder, byTypeConstantName(member));
             first = false;
         }
         return call.add(")").build();
@@ -343,22 +285,5 @@ public final class ErrorMappingsClassGenerator {
     /** Renders a Java string literal or the bare {@code null} keyword. */
     private static CodeBlock literalOrNull(String value) {
         return value == null ? CodeBlock.of("null") : CodeBlock.of("$S", value);
-    }
-
-    /** Human-readable label for the channel used in the per-constant Javadoc: its constant name. */
-    private static String channelLabel(ErrorChannel channel) {
-        return channel.mappingsConstantName();
-    }
-
-    /**
-     * Whether two channels declare the same handler list, decided on the fingerprint the dedup
-     * pass suffixes with rather than on a flattening of this file's own. One spelling of what
-     * counts as the same shape is what makes the check below meaningful: a second one could call
-     * two channels equal that the dedup pass had already separated, and the disagreement would
-     * emit a constant holding the wrong dispatch table instead of failing here.
-     */
-    private static boolean sameHandlerShape(ErrorChannel a, ErrorChannel b) {
-        return MappingsConstantNameDedup.canonicalHash(a)
-            .equals(MappingsConstantNameDedup.canonicalHash(b));
     }
 }

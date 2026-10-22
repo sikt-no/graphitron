@@ -1,12 +1,10 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import graphql.schema.FieldCoordinates;
-import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.emit.ErrorChannelRelation;
 import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
-import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType;
@@ -15,11 +13,6 @@ import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandle
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.DatabaseHandler;
 import no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
-import no.sikt.graphitron.rewrite.TestFixtures;
-import no.sikt.graphitron.rewrite.model.MethodRef;
-import no.sikt.graphitron.rewrite.model.QueryField;
-import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -31,105 +24,46 @@ import java.util.Optional;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * Pipeline test for {@link ErrorMappingsClassGenerator}: builds a synthesized schema with
- * one or more {@link ErrorChannel}-bearing fields and asserts the emitted {@code ErrorMappings}
- * class has the expected constants. Avoids the SDL-driven pipeline so every test scenario can
- * exercise channel shapes without requiring a Java-class fixture per {@code @error} type.
+ * Pipeline test for {@link ErrorMappingsClassGenerator}: a synthesized schema registering the
+ * {@code @error} types, and a store relation naming the outcome types that hold them, and the
+ * constants the emitted {@code ErrorMappings} class carries. Avoids the SDL-driven pipeline so every
+ * scenario can state its handler shapes without a Java-class fixture per {@code @error} type.
  */
 @UnitTier
 class ErrorMappingsClassGeneratorTest {
 
     private static final String OUTPUT_PACKAGE = "com.example";
-    private static final String FILM_PAYLOAD_FQN = "com.example.FilmPayload";
-    private static final String CREATE_FILM_PAYLOAD_FQN = "com.example.CreateFilmPayload";
     private static final String FILM_NOT_FOUND_FQN = "com.example.FilmNotFoundException";
     private static final String FILM_FK_FQN = "com.example.FilmFkViolation";
     private static final String FILM_VALIDATION_FQN = "com.example.FilmValidation";
 
     @Test
     void emits_emptyClass_whenNoChannelsExist() {
-        var schema = synthesizeSchema(List.of());
-        var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
+        var spec = generate();
         assertThat(spec.name()).isEqualTo("ErrorMappings");
         assertThat(spec.fieldSpecs()).isEmpty();
     }
 
     @Test
-    void emits_oneConstant_perChannelKeyedByMappingsConstantName() {
-        var filmChannel = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
-            List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
+    void emits_oneConstant_perOutcomeType() {
+        var spec = generate(
+            outcome("FilmPayload", List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
-                    Optional.empty(), new ClientMessage.FromSource())))));
-        var schema = synthesizeSchema(List.of(filmChannel));
-
-        var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
-        assertThat(spec.fieldSpecs()).extracting(FieldSpec::name)
-            .containsExactly("FILM_PAYLOAD");
-    }
-
-    @Test
-    void dedups_twoIdenticalChannelsIntoOneConstant() {
-        var handler = new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource());
-        var errorTypes = List.of(errorType("FilmFkViolation", FILM_FK_FQN, List.of(handler)));
-        var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", errorTypes);
-        var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", errorTypes);
-
-        var schema = synthesizeSchema(List.of(ch1, ch2));
-        var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
-
-        assertThat(spec.fieldSpecs()).extracting(FieldSpec::name).containsExactly("FILM_PAYLOAD");
-    }
-
-    @Test
-    void dedups_collidingChannelsWithDifferentHandlerLists_intoSuffixedConstants() {
-        // Same payload class with different handler lists: the §3 hash-suffix dedup pass
-        // (MappingsConstantNameDedup, run during schema build) resolves the collision by
-        // keeping the first-seen channel's bare name and assigning suffixed names to subsequent
-        // distinct shapes. The emitter sees already-resolved names and just emits.
-        var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
-            List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-                List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
-                    Optional.empty(), new ClientMessage.FromSource())))));
-        var ch2 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
-            List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
-
-        var schema = synthesizeSchemaWithDedup(List.of(ch1, ch2));
-        var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
-
-        var names = spec.fieldSpecs().stream().map(FieldSpec::name).toList();
-        assertThat(names).hasSize(2);
-        assertThat(names).contains("FILM_PAYLOAD");
-        assertThat(names.stream().filter(n -> n.startsWith("FILM_PAYLOAD_") && n.length() == "FILM_PAYLOAD_".length() + 8))
-            .as("expected one suffixed FILM_PAYLOAD_<8hex> constant alongside the bare name")
-            .hasSize(1);
-    }
-
-    @Test
-    void distinctPayloadClasses_yieldDistinctConstants() {
-        var ch1 = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
-            List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
-                List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
-                    Optional.empty(), new ClientMessage.FromSource())))));
-        var ch2 = channel("CreateFilmPayload", CREATE_FILM_PAYLOAD_FQN, "CREATE_FILM_PAYLOAD",
-            List.of(errorType("FilmFkViolation", FILM_FK_FQN,
-                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
-
-        var schema = synthesizeSchema(List.of(ch1, ch2));
-        var spec = ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE).get(0);
+                    Optional.empty(), new ClientMessage.FromSource()))))),
+            outcome("CreateFilmPayload", List.of(errorType("FilmFkViolation", FILM_FK_FQN,
+                List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource()))))));
 
         assertThat(spec.fieldSpecs()).extracting(FieldSpec::name)
-            .containsExactlyInAnyOrder("FILM_PAYLOAD", "CREATE_FILM_PAYLOAD");
+            .containsExactly("CREATE_FILM_PAYLOAD", "FILM_PAYLOAD");
     }
 
     @Test
     void initializer_emitsExceptionMappingForExceptionHandler() {
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
                 List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalArgumentException"),
                     Optional.of("not found"), new ClientMessage.Static("Film not found"))))));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         var init = byTypeEntries(spec, "FILM_NOT_FOUND_EXCEPTION");
         // Source-direct emission: ExceptionMapping(IllegalArgumentException.class, matches, description).
@@ -144,11 +78,10 @@ class ErrorMappingsClassGeneratorTest {
 
     @Test
     void initializer_emitsDatabaseMappingForSqlStateDiscriminator() {
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
                 List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
         // An absent vendor code, an absent matches and a FromSource client message all render
@@ -159,11 +92,10 @@ class ErrorMappingsClassGeneratorTest {
 
     @Test
     void initializer_emitsDatabaseMappingForVendorCodeDiscriminator() {
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
                 List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.VendorCode("1452"), Optional.empty(), new ClientMessage.FromSource())))));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
         assertThat(init).contains("DatabaseMapping(null, \"1452\", null, null)");
@@ -175,12 +107,11 @@ class ErrorMappingsClassGeneratorTest {
         // {DATABASE, matches: ...} without code or sqlState is its own DatabaseMapping, not an
         // ExceptionMapping on SQLException: its matches text reaches the wrappers above the
         // SQLException, which a GENERIC mapping's does not.
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(errorType("FilmFkViolation", FILM_FK_FQN,
                 List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.Any(), Optional.of("rental_rate"),
                     new ClientMessage.Static("Too large"))))));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         var init = byTypeEntries(spec, "FILM_FK_VIOLATION");
         assertThat(init).contains("DatabaseMapping(null, null, \"rental_rate\", \"Too large\")");
@@ -192,11 +123,10 @@ class ErrorMappingsClassGeneratorTest {
         // §5: ValidationHandler entries produce no Mapping. The wrapper invokes
         // jakarta.validation.Validator as a pre-execution step and routes the resulting
         // GraphQLErrors directly into the errors slot, bypassing the dispatcher entirely.
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(errorType("FilmValidation", FILM_VALIDATION_FQN,
                 List.of(new ValidationHandler()))));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         var init = byTypeEntries(spec, "FILM_VALIDATION");
         assertThat(init).doesNotContain("ValidationMapping");
@@ -209,14 +139,13 @@ class ErrorMappingsClassGeneratorTest {
         // ValidationHandler interleaved with dispatch handlers: the dispatch handlers still
         // emit Mappings; the ValidationHandler is silently dropped from its type's array, which
         // leaves that type's ByType constant empty rather than absent.
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(
                 errorType("FilmValidation", FILM_VALIDATION_FQN,
                     List.of(new ValidationHandler())),
                 errorType("FilmFkViolation", FILM_FK_FQN,
                     List.of(new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState("23503"), Optional.empty(), new ClientMessage.FromSource())))));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         assertThat(byTypeEntries(spec, "FILM_VALIDATION")).doesNotContain("Mapping(");
         var fk = byTypeEntries(spec, "FILM_FK_VIOLATION");
@@ -236,9 +165,8 @@ class ErrorMappingsClassGeneratorTest {
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN, List.of(
             new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(et1, et2));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var ch = outcome("FilmPayload", List.of(et1, et2));
+        var spec = generate(ch);
 
         var fk = byTypeEntries(spec, "FILM_FK_VIOLATION");
         assertThat(fk.indexOf("\"23503\"")).isNotNegative().isLessThan(fk.indexOf("\"23505\""));
@@ -256,11 +184,9 @@ class ErrorMappingsClassGeneratorTest {
         var et2 = errorType("FilmNotFoundException", FILM_NOT_FOUND_FQN,
             List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.RuntimeException"),
                 Optional.empty(), new ClientMessage.FromSource())));
-        var spec = ErrorMappingsClassGenerator.generate(synthesizeSchema(List.of(
-            channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(et2, et1)))),
-            OUTPUT_PACKAGE).get(0);
+        var spec = generate(outcome("FilmPayload", List.of(et2, et1)));
 
-        // Reversed relative to the test above: the concatenation follows mappedErrorTypes order,
+        // Reversed relative to the test above: the concatenation follows the members' match order,
         // not the (name-sorted) order the ByType constants are declared in.
         assertThat(channelInitializer(spec, "FILM_PAYLOAD"))
             .isEqualTo("concat(ByType.FILM_NOT_FOUND_EXCEPTION, ByType.FILM_FK_VIOLATION)");
@@ -279,12 +205,7 @@ class ErrorMappingsClassGeneratorTest {
         var unmapped = errorType("FilmValidation", FILM_VALIDATION_FQN,
             List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalStateException"),
                 Optional.empty(), new ClientMessage.Static("nope"))));
-        var raw = synthesizeSchema(List.of(
-            channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD", List.of(mapped))));
-        var types = new LinkedHashMap<>(raw.types());
-        types.put("FilmValidation", unmapped);
-        var spec = ErrorMappingsClassGenerator
-            .generate(new GraphitronSchema(types, raw.fields()), OUTPUT_PACKAGE).get(0);
+        var spec = generate(List.of(unmapped), outcome("FilmPayload", List.of(mapped)));
 
         assertThat(byTypeHolder(spec).fieldSpecs()).extracting(FieldSpec::name)
             .containsExactly("FILM_FK_VIOLATION", "FILM_VALIDATION");
@@ -306,10 +227,9 @@ class ErrorMappingsClassGeneratorTest {
         var withoutClass = new ErrorType("Untyped", null,
             List.of(new ExceptionHandler(new ExceptionClass.ClasspathClass("java.lang.IllegalStateException"),
                 Optional.empty(), new ClientMessage.FromSource())), List.of());
-        var ch = channel("FilmPayload", FILM_PAYLOAD_FQN, "FILM_PAYLOAD",
+        var ch = outcome("FilmPayload",
             List.of(withClass, withoutClass));
-        var spec = ErrorMappingsClassGenerator
-            .generate(synthesizeSchema(List.of(ch)), OUTPUT_PACKAGE).get(0);
+        var spec = generate(ch);
 
         assertThat(byTypeEntries(spec, "FILM_NOT_FOUND_EXCEPTION")).contains("RuntimeException");
         assertThat(byTypeEntries(spec, "UNTYPED")).contains("IllegalStateException");
@@ -348,46 +268,32 @@ class ErrorMappingsClassGeneratorTest {
         return new ErrorType(name, null, handlers, List.of());
     }
 
-    private static ErrorChannel.Mapped channel(String payloadSimple, String payloadFqn, String constantName,
-                                        List<ErrorType> mappedErrorTypes) {
-        return new ErrorChannel.Mapped(mappedErrorTypes, constantName);
+    /** An outcome type and the {@code @error} types its errors field holds, in match order. */
+    private record Outcome(String name, List<ErrorType> members) {}
+
+    private static Outcome outcome(String name, List<ErrorType> members) {
+        return new Outcome(name, members);
+    }
+
+    private static TypeSpec generate(Outcome... outcomes) {
+        return generate(List.of(), outcomes);
     }
 
     /**
-     * Synthesises a minimal schema with one payload-returning DML mutation field per channel
-     * supplied: the lightest field variant whose channel is real.
+     * The {@code ErrorMappings} class for a schema registering every member of {@code outcomes} and
+     * {@code unmapped} as an {@code @error} type, over a store relation naming {@code outcomes}.
      */
-    private static GraphitronSchema synthesizeSchema(List<ErrorChannel.Mapped> channels) {
+    private static TypeSpec generate(List<ErrorType> unmapped, Outcome... outcomes) {
         Map<String, GraphitronType> types = new LinkedHashMap<>();
         types.put("Query", new GraphitronType.RootType("Query", null));
-        Map<FieldCoordinates, GraphitronField> fields = new LinkedHashMap<>();
-        for (int i = 0; i < channels.size(); i++) {
-            String fieldName = "fetch" + i;
-            var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
-                "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
-                List.of(), List.of(), List.of());
-            var field = new no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField(
-                "Query",
-                fieldName,
-                null,
-                new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
-                    "FilmPayload", new no.sikt.graphitron.rewrite.model.FieldWrapper.Single(true), null, null),
-                new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
-                Optional.of(channels.get(i)));
-            fields.put(FieldCoordinates.coordinates("Query", fieldName), field);
+        var membersByOutcome = new LinkedHashMap<String, List<String>>();
+        for (var outcome : outcomes) {
+            outcome.members().forEach(member -> types.put(member.name(), member));
+            membersByOutcome.put(outcome.name(), outcome.members().stream().map(ErrorType::name).toList());
         }
-        return new GraphitronSchema(types, fields);
-    }
-
-    /**
-     * Same as {@link #synthesizeSchema} but runs the §3 hash-suffix dedup pass over the
-     * synthesized fields before constructing the {@link GraphitronSchema}. Mirrors the
-     * production schema-build flow where {@code MappingsConstantNameDedup} runs between
-     * field classification and emitter invocation.
-     */
-    private static GraphitronSchema synthesizeSchemaWithDedup(List<ErrorChannel.Mapped> channels) {
-        var raw = synthesizeSchema(channels);
-        var deduped = no.sikt.graphitron.rewrite.MappingsConstantNameDedup.apply(raw.fields());
-        return new GraphitronSchema(raw.types(), deduped);
+        unmapped.forEach(type -> types.put(type.name(), type));
+        var schema = new GraphitronSchema(types, Map.<FieldCoordinates, GraphitronField>of());
+        return ErrorMappingsClassGenerator.generate(schema, OUTPUT_PACKAGE,
+            new ErrorChannelRelation(Map.of(), membersByOutcome)).get(0);
     }
 }

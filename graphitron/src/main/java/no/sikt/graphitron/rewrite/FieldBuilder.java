@@ -5529,9 +5529,7 @@ class FieldBuilder {
             if (nonNullable != null) {
                 return new StructuralDmlErrorChannel.RuleViolation(nonNullable);
             }
-            return new StructuralDmlErrorChannel.Present(
-                new ErrorChannel.Mapped(errorTypes,
-                    no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(payloadSdlName)));
+            return new StructuralDmlErrorChannel.Present(new ErrorChannel.Mapped(errorTypes));
         }
         return new StructuralDmlErrorChannel.None();
     }

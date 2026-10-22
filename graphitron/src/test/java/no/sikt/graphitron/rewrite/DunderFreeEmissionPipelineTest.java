@@ -94,6 +94,9 @@ class DunderFreeEmissionPipelineTest {
     private static final Pattern DUNDER_IDENTIFIER = Pattern.compile("(?<![\\w$])__\\w+");
     private static final List<String> EXTERNAL_TOKEN_PREFIXES = List.of("__NODE_");
 
+    @org.junit.jupiter.api.io.TempDir
+    java.nio.file.Path tmp;
+
     @Test
     void emittedTypeSpecsHaveNoDunderIdentifiers() {
         List<TypeSpec> emitted = new ArrayList<>();
@@ -102,9 +105,9 @@ class DunderFreeEmissionPipelineTest {
         emitted.addAll(TypeFetcherRenderTestSupport.generate(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
         emitted.addAll(ProjectionRenderTestSupport.renderProjections(referenceSchema, DEFAULT_OUTPUT_PACKAGE));
 
+        // Its producer catches into an outcome, whose table the catch arm names from the store.
         var validatorBundle = TestSchemaHelper.buildBundle(VALIDATOR_INPUT_SDL);
-        emitted.addAll(TypeFetcherRenderTestSupport.generate(
-            validatorBundle.model(), validatorBundle.assembled(), DEFAULT_OUTPUT_PACKAGE));
+        emitted.addAll(TestSchemaHelper.storeBackedFetchers(tmp, VALIDATOR_INPUT_SDL));
         emitted.addAll(InputRecordRenderTestSupport.renderInputRecords(
             VALIDATOR_INPUT_SDL, validatorBundle.model(), DEFAULT_OUTPUT_PACKAGE));
 

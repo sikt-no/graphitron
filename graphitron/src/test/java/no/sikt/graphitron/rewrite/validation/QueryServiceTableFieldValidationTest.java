@@ -134,7 +134,7 @@ class QueryServiceTableFieldValidationTest {
                     new GraphitronType.ErrorType.ExceptionClass.ClasspathClass("java.lang.RuntimeException"), Optional.empty(),
                     new GraphitronType.ErrorType.ClientMessage.FromSource())),
                 List.of());
-            return new ErrorChannel.Mapped(List.of(errorType), "FILM_PAYLOAD");
+            return new ErrorChannel.Mapped(List.of(errorType));
         }
 
         @Override public GraphitronField field() { return field; }

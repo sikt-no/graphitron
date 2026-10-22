@@ -383,11 +383,12 @@ generated Java or SQL as text.
   from the store, and `PlanCompileGraph` and `FetcherEdgeRelation` go.
 * **`emit` imports no `render` class** `open`. The shared one-spelling helpers move into `emit`, the
   old renderers import them from there, and the import rule's exception list is empty.
-* **The error-mapping constant is named by its producer, and the dedup goes** `open`.
-  `ErrorMappingsClassGenerator` names each producer's constant from `graphitron_producer_outcome`,
-  so the dedup, the hash and the first-classified rule go.
-* **Routine writes read only the store** `blocked`, on "The error-mapping constant is named by its producer, and the dedup goes". The write's tenancy is a store fact too, so `RoutineWriteEmitter`
-  takes nothing from `GraphitronSchema`.
+* **The error-mapping constant is named by its outcome type, and the dedup goes** `done`.
+  `ErrorMappingsClassGenerator` emits one constant per `graphitron_errors_field` row, and each catch
+  arm names its producer's from `graphitron_producer_outcome`; the dedup, the hash and the
+  first-classified rule went.
+* **Routine writes read only the store** `open`. The write's tenancy is a store fact too, so
+  `RoutineWriteEmitter` takes nothing from `GraphitronSchema`.
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
   `OperationMembers.membersOf` and `DeliveryFact.leafDerivedOf` move to the relations,
   `LauncherCommands`' two productions merge, and the crosswalk goes.

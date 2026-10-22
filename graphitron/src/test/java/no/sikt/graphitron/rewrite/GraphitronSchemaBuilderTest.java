@@ -8647,7 +8647,6 @@ class GraphitronSchemaBuilderTest {
         assertThat(f.capturedPairs().get(0).targetSide().sqlName()).isEqualToIgnoringCase("rental_id");
         assertThat(f.dataFieldArrival()).isEqualTo(Arity.ONE);
         assertThat(f.errorChannel()).isPresent();
-        assertThat(f.errorChannel().get().mappingsConstantName()).isEqualTo("RENT_FILM_PAYLOAD");
     }
 
     @Test

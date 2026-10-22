@@ -5,6 +5,7 @@ import no.sikt.graphitron.command.KeyProjectionRelation;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
+import no.sikt.graphitron.emit.ErrorChannelRelation;
 import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -48,7 +49,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                        ProjectionRelation projections, LauncherRelation launchers,
                        FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits,
                        RoutineWriteQuery.Rows routineWrites,
-                       KeyProjectionRelation keyProjections) {
+                       KeyProjectionRelation keyProjections,
+                       ErrorChannelRelation errorChannels) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -76,6 +78,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (keyProjections == null) {
             throw new IllegalArgumentException("the plan carries the key-projection relation; an empty relation is a value, not null");
+        }
+        if (errorChannels == null) {
+            throw new IllegalArgumentException("the plan carries the error-channel relation; an empty relation is a value, not null");
         }
     }
 
@@ -151,6 +156,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.DEV_EXECUTOR, units.rootUnit("GraphitronDevExecutor")));
         var conditions = ConditionCommands.produce(schema, outputPackage);
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty() : RoutineWriteQuery.read(store);
+        var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
         var keyProjections = KeyProjectionCommands.produce(projections);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage);
@@ -162,7 +168,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             FetcherEdgeCommands.produce(schema, conditions, outputPackage),
             typeUnits(store, schema, outputPackage),
             routineWrites,
-            keyProjections);
+            keyProjections,
+            errorChannels);
     }
 
     /**

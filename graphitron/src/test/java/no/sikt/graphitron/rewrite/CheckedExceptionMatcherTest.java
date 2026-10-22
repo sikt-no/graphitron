@@ -188,6 +188,6 @@ class CheckedExceptionMatcherTest {
 
     private static ErrorChannel channelWith(ErrorType.Handler handler) {
         var errorType = new ErrorType("Err", null, List.of(handler), List.of());
-        return new ErrorChannel.Mapped(List.of(errorType), "PAYLOAD");
+        return new ErrorChannel.Mapped(List.of(errorType));
     }
 }

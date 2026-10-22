@@ -4,6 +4,7 @@ next-id: R1091
 
 # Rewrite Changelog
 
+- Discarded: Pin MappingsConstantNameDedup.groupKey javadoc to the current three ErrorChannel arms (`mappings-constant-name-dedup-error-channel-arms`, R496): `MappingsConstantNameDedup` is gone, R876 naming each error-mapping constant by its outcome type, one per `graphitron_errors_field` row, so no two producers' channels can share a name with different handler lists.
 - Discarded: The dev-executor fidelity test reads a mutating table twice and calls the difference a fidelity failure (`dev-executor-fidelity-reads-a-mutating-table-twice`, R823): absorbed by R863 (`execution-tier-shared-db-cross-talk`), which gives every execution-tier class its own database cloned from `init.sql`, so the colliding pair this item recorded cannot meet.
 - Discarded: A mutation test seeds film_actor rows a query test asserts the absence of (`film-actor-fixture-mutated-and-read-concurrently`, R825): absorbed by R863 (`execution-tier-shared-db-cross-talk`), which gives every execution-tier class its own database cloned from `init.sql`, so the colliding pair this item recorded cannot meet.
 - Discarded: Execution-tier test classes mutate shared Sakila rows other classes assert on (`parallel-execution-tier-shares-sakila-rows`, R843): absorbed by R863 (`execution-tier-shared-db-cross-talk`), which gives every execution-tier class its own database cloned from `init.sql`, so the colliding pair this item recorded cannot meet.

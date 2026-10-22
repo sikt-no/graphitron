@@ -232,7 +232,7 @@ public final class TestSchemaHelper {
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
             bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),
             plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(), plan.routineWrites(),
-            plan.keyProjections());
+            plan.keyProjections(), plan.errorChannels());
     }
 
     /**

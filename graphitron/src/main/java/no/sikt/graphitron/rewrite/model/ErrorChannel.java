@@ -11,12 +11,9 @@ import java.util.List;
  * <p>Carrier-side counterpart of the payload-side
  * {@link no.sikt.graphitron.rewrite.model.ChildField.ErrorsField}: where {@code ErrorsField}
  * names the payload field that holds the list of typed errors at request time, this carrier
- * captures everything the emitter needs to construct that list: which {@code @error} types
- * are mapped, and the constant on the per-package {@code ErrorMappings} helper that holds the
- * dispatch table. A producer's catch hands what it claims back on the {@code Outcome} wrapper's
- * error arm; {@link #mappedErrorTypes()} and {@link #mappingsConstantName()} are what
- * {@code MappingsConstantNameDedup}, {@code ErrorMappingsClassGenerator} and
- * {@code CheckedExceptionMatcher} read.
+ * records which {@code @error} types are mapped. A producer's catch hands what it claims back on
+ * the {@code Outcome} wrapper's error arm, through the {@code ErrorMappings} constant of its outcome
+ * type, which the generator names from the store's {@code graphitron_producer_outcome}.
  */
 public sealed interface ErrorChannel permits ErrorChannel.Mapped {
 
@@ -26,14 +23,6 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped {
      * unions and interfaces of {@code @error} types.
      */
     List<GraphitronType.ErrorType> mappedErrorTypes();
-
-    /**
-     * The name of the {@code Mapping[]} constant on the per-package {@code ErrorMappings} helper
-     * that holds this channel's dispatch table (e.g. {@code "FILM_PAYLOAD"}). Distinct channels
-     * with identical mappings dedup to the same constant; identical-shape channels with
-     * different mappings get a hash suffix.
-     */
-    String mappingsConstantName();
 
     /**
      * Whether any handler on any mapped {@code @error} type is a {@code VALIDATION} handler: the
@@ -47,18 +36,16 @@ public sealed interface ErrorChannel permits ErrorChannel.Mapped {
     }
 
     /**
-     * The classify-time descriptor of which {@code @error} types map and which
-     * {@code ErrorMappings} constant drives them; it drives the {@code Outcome} wrapper emit (the
+     * The classify-time descriptor of which {@code @error} types map; it drives the
+     * {@code Outcome} wrapper emit (the
      * success path wraps the jOOQ record in {@code Success}, the error path returns
      * {@code ErrorList(matchedErrors)}). No developer payload class is constructed or reflected on.
      *
      * <p>Every producer of an outcome rides it, at a root or below one: an {@code @service} field,
-     * a DML carrier ({@code @mutation} returning a payload) and a {@code @routine} write carrier. The {@code mappingsConstantName} for the structural carriers
-     * is minted from the payload's SDL name, no developer payload class being consulted.
+     * a DML carrier ({@code @mutation} returning a payload) and a {@code @routine} write carrier.
      */
     record Mapped(
-        List<GraphitronType.ErrorType> mappedErrorTypes,
-        String mappingsConstantName
+        List<GraphitronType.ErrorType> mappedErrorTypes
     ) implements ErrorChannel {
         public Mapped {
             mappedErrorTypes = List.copyOf(mappedErrorTypes);

@@ -27,9 +27,6 @@ import java.util.List;
  * {@link ErrorChannel.Mapped}; {@link WalkerResult.Err} carries the typed
  * {@link ErrorChannelWalkerError} arms, and the orchestrator drops the field from the classified
  * set (no fallback to {@link no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField}).
- *
- * <p>The walker stamps the bare mappings-constant name; the build-scoped, post-classification
- * {@link no.sikt.graphitron.rewrite.MappingsConstantNameDedup} pass rewrites collisions downstream.
  */
 public final class ErrorChannelWalker {
 
@@ -62,8 +59,6 @@ public final class ErrorChannelWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        String mappingsConstantName =
-            no.sikt.graphitron.plan.GeneratedUnits.mappingsConstant(outcomeTypeName);
-        return new WalkerResult.Ok<>(new ErrorChannel.Mapped(mapped, mappingsConstantName));
+        return new WalkerResult.Ok<>(new ErrorChannel.Mapped(mapped));
     }
 }

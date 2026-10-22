@@ -476,7 +476,8 @@ public class GraphQLRewriteGenerator {
         var fetcherClasses = TypeFetcherGenerator.generate(schema, assembled, outputPackage,
             plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
             plan.routineWrites(),
-            plan.keyProjections());
+            plan.keyProjections(),
+            plan.errorChannels());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());
@@ -505,7 +506,7 @@ public class GraphQLRewriteGenerator {
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
-                    federationLink),
+                    federationLink, plan.errorChannels()),
                 emittedThisRun);
         }
         var fixedRuntime = FixedRuntimeEmitter.render(store);
@@ -596,7 +597,8 @@ public class GraphQLRewriteGenerator {
     private List<TypeSpec> renderGlobal(GlobalCommand command, GraphitronSchema schema, GraphQLSchema assembled,
                                         List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> schemaShapeRows,
                                         TypeName tenantKeyType, CodeBlock tenantColumn,
-                                        boolean federationLink) {
+                                        boolean federationLink,
+                                        no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
@@ -615,7 +617,7 @@ public class GraphQLRewriteGenerator {
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ERROR_ROUTER, OUTCOME -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
-            case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage);
+            case ERROR_MAPPINGS -> ErrorMappingsClassGenerator.generate(schema, outputPackage, errorChannels);
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,

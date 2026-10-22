@@ -745,15 +745,21 @@ class TypeFetcherGeneratorTest {
 
     // ===== try/catch wrapper: Outcome-wrapper arm vs redact arm =====
 
+    /** The store's word that {@code coordinate} catches into {@code SakPayload}. */
+    private static no.sikt.graphitron.emit.ErrorChannelRelation sakOutcome(String coordinate) {
+        return new no.sikt.graphitron.emit.ErrorChannelRelation(
+            java.util.Map.of(coordinate, "SakPayload"), java.util.Map.of());
+    }
+
     private static ErrorChannel.Mapped sakMappedChannel() {
         // A root @service outcome field's channel: Mapped (the Outcome-wrapper transport).
-        // One handler suffices; the catch-arm emission walks only mappingsConstantName.
+        // One handler suffices; the catch arm names its outcome type's table from the store.
         var errorType = new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType(
             "SakError", null,
             List.of(new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionHandler(
                 new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ExceptionClass.ClasspathClass("java.lang.RuntimeException"), Optional.empty(), new no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ClientMessage.FromSource())),
             List.of());
-        return new ErrorChannel.Mapped(List.of(errorType), "SAK_PAYLOAD");
+        return new ErrorChannel.Mapped(List.of(errorType));
     }
 
     @Test
@@ -771,7 +777,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()),             TestFixtures.stubServiceCall(method),
             Optional.of(sakMappedChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Query", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, sakOutcome("Query.sak"));
 
         var emitted = method(spec, "sak");
         assertThat(emitted.returnType().toString()).contains(".schema.Outcome<");
@@ -906,7 +912,7 @@ class TypeFetcherGeneratorTest {
             new ReturnTypeRef.ScalarReturnType("SakPayload", single()),             TestFixtures.stubServiceCall(method),
             Optional.of(sakMappedChannel()));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
-            List.of(field), DEFAULT_OUTPUT_PACKAGE);
+            List.of(field), DEFAULT_OUTPUT_PACKAGE, sakOutcome("Mutation.createSak"));
 
         var emitted = method(spec, "createSak");
         assertThat(emitted.returnType().toString()).contains(".schema.Outcome<");

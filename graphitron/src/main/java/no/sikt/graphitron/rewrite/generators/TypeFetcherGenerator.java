@@ -117,7 +117,9 @@ public class TypeFetcherGenerator {
      * store, which the two {@code @routine}-writing mutation shapes render their entry points from.
      * {@code keyProjections} is the graph's projected {@code argMapping} bindings, the one relation
      * that comes from the fact store rather than the walk; a routine call whose IN parameter binds one
-     * reads its column off a decoded node id instead of off the wire map.
+     * reads its column off a decoded node id instead of off the wire map. {@code errorChannels} is the
+     * store's error channels, from which every catch arm names the dispatch table of the outcome type
+     * its producer catches into.
      * The overloads above default the walk-derived relations to ones produced from the same schema and
      * the projections to empty, there being no store behind a schema-only caller.
      */
@@ -127,7 +129,8 @@ public class TypeFetcherGenerator {
             List<no.sikt.graphitron.command.TypeUnitCommand.FetchersUnit> rows,
             List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
-            no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -149,7 +152,8 @@ public class TypeFetcherGenerator {
             if (type instanceof GraphitronType.TableType || type instanceof GraphitronType.NodeType
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
-                    nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections));
+                    nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
+                    errorChannels));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -172,7 +176,8 @@ public class TypeFetcherGenerator {
                     // nesting-reached type's children are never mutation roots, so every lookup
                     // against it comes back empty, which is exactly the behaviour this arm wants.
                     routineWrites,
-                    keyProjections));
+                    keyProjections,
+                    errorChannels));
             }
         }
         for (var row : errorRows) {
@@ -260,7 +265,8 @@ public class TypeFetcherGenerator {
             ChildField.NestingField dualWiring,
             no.sikt.graphitron.plan.LauncherRelation launchers,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
-            no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -269,7 +275,7 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites, keyProjections);
+            dualWiring, launchers, routineWrites, keyProjections, errorChannels);
     }
 
     /**
@@ -459,6 +465,23 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * The model-only form for a caller whose producers catch into an outcome: the outcome types the
+     * store would state, given as {@code errorChannels}, since a catch arm names its outcome type's
+     * dispatch table from the store and a model-only caller has none.
+     */
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            String outputPackage, no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
+        return generateTypeSpec(typeName, parentTable, resultType, fields, null, outputPackage, null,
+            null,
+            no.sikt.graphitron.plan.LauncherCommands.produceWithoutSchema(fields, outputPackage,
+                no.sikt.graphitron.command.CarrierDsl.ENV_ACQUIRED),
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows.empty(),
+            no.sikt.graphitron.command.KeyProjectionRelation.empty(),
+            errorChannels);
+    }
+
+    /**
      * Canonical form. {@code graphitronSchema} is the classified schema, threaded so the
      * joined-table interface fetcher can read each participant's classified fields and the
      * tenant-routing emitter each field's binding; {@code null} for unit-tier model-only callers.
@@ -479,6 +502,21 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.plan.LauncherRelation launchers,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage,
+            graphitronSchema, dualWiring, launchers, routineWrites, keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation.empty());
+    }
+
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            graphql.schema.GraphQLSchema assembled,
+            String outputPackage,
+            GraphitronSchema graphitronSchema,
+            ChildField.NestingField dualWiring,
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -494,6 +532,7 @@ public class TypeFetcherGenerator {
         // helper methods to materialise.
         var ctx = new TypeFetcherEmissionContext(typeName, graphitronSchema);
         ctx.setKeyProjections(keyProjections);
+        ctx.setErrorChannels(errorChannels);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
@@ -1443,7 +1482,7 @@ public class TypeFetcherGenerator {
             units.fetcherEntryMethod(ctx.parentTypeName(), field.name()).methodName(),
             className(units.typeClass(row.returnTypeName())),
             className(units.selectionOccurrences()),
-            routineWriteErrors(field, units), routineWriteTenancy(ctx, coordinate, units),
+            routineWriteErrors(ctx, field, units), routineWriteTenancy(ctx, coordinate, units),
             () -> ctx.requestContextRead().call(), ctx.argPathHelpers(),
             ctx.projectedKeyHost().at(coordinate));
     }
@@ -1453,7 +1492,8 @@ public class TypeFetcherGenerator {
      * router's privacy disposition; a mapped one rides the typed {@code Outcome}.
      */
     private static no.sikt.graphitron.emit.RoutineWriteEmitter.Errors routineWriteErrors(
-            no.sikt.graphitron.rewrite.model.OutputField field, no.sikt.graphitron.plan.GeneratedUnits units) {
+            TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field,
+            no.sikt.graphitron.plan.GeneratedUnits units) {
         var channel = field instanceof no.sikt.graphitron.rewrite.model.WithErrorChannel withChannel
             ? withChannel.errorChannel()
             : Optional.<no.sikt.graphitron.rewrite.model.ErrorChannel>empty();
@@ -1463,7 +1503,7 @@ public class TypeFetcherGenerator {
         }
         return new no.sikt.graphitron.emit.RoutineWriteEmitter.Errors.OutcomeWrapped(router,
             className(units.errorMappings()), className(units.outcome()),
-            channel.get().mappingsConstantName());
+            ctx.mappingsConstant(field.name()));
     }
 
     /**
@@ -1769,7 +1809,8 @@ public class TypeFetcherGenerator {
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
         if (wrap) {
-            builder.addCode(ChannelCatchArmEmitter.emit(errorChannel.get(), payloadType, outputPackage));
+            builder.addCode(ChannelCatchArmEmitter.emit(ctx.mappingsConstant(field.name()), payloadType,
+                outputPackage));
         } else {
             builder.addCode(noChannelCatchArm(outputPackage));
         }
@@ -5466,7 +5507,7 @@ public class TypeFetcherGenerator {
             builder.addCode(returnSyncSuccess(payloadType, "payload", tenantDsl.handDown()));
         }
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(dmlCarrierCatchArm(errorChannel, valueType, outputPackage));
+        builder.addCode(dmlCarrierCatchArm(ctx, field.name(), errorChannel, valueType, outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -5539,10 +5580,10 @@ public class TypeFetcherGenerator {
      * The DML payload carriers' catch arm: the {@code Outcome}-wrapped dispatch when the payload
      * declares an errors field, the no-channel disposition otherwise.
      */
-    private static CodeBlock dmlCarrierCatchArm(Optional<ErrorChannel.Mapped> errorChannel,
-            TypeName valueType, String outputPackage) {
+    private static CodeBlock dmlCarrierCatchArm(TypeFetcherEmissionContext ctx, String fieldName,
+            Optional<ErrorChannel.Mapped> errorChannel, TypeName valueType, String outputPackage) {
         return errorChannel.isPresent()
-            ? ChannelCatchArmEmitter.emit(errorChannel.get(), valueType, outputPackage)
+            ? ChannelCatchArmEmitter.emit(ctx.mappingsConstant(fieldName), valueType, outputPackage)
             : noChannelCatchArm(outputPackage);
     }
 
@@ -5948,7 +5989,7 @@ public class TypeFetcherGenerator {
             ? returnSyncSuccessWrapped(valueType, outputPackage, "payload", tenantDsl.handDown())
             : returnSyncSuccess(resultType, "payload", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(dmlCarrierCatchArm(errorChannel, valueType, outputPackage));
+        builder.addCode(dmlCarrierCatchArm(ctx, field.name(), errorChannel, valueType, outputPackage));
         builder.endControlFlow();
         return builder.build();
     }
@@ -6170,7 +6211,8 @@ public class TypeFetcherGenerator {
         if (errorChannel.isPresent()) {
             var outcome = outcomeClass(outputPackage);
             resultValueType = ParameterizedTypeName.get(outcome, boxed(valueType));
-            asyncTail = outcomeAsyncWrapTail(resultValueType, outcome, errorChannel.get(), outputPackage);
+            asyncTail = outcomeAsyncWrapTail(resultValueType, outcome, ctx.mappingsConstant(fieldName),
+                outputPackage);
             syncCatch = outcomeSyncCatchBody(valueType, asyncTail);
         } else {
             asyncTail = asyncWrapTail(valueType, outputPackage);
@@ -6569,7 +6611,7 @@ public class TypeFetcherGenerator {
      * {@code outcomeValueType} is {@code Outcome<V>}.
      */
     private static CodeBlock outcomeAsyncWrapTail(TypeName outcomeValueType, ClassName outcome,
-            ErrorChannel.Mapped channel, String outputPackage) {
+            String mappingsConstant, String outputPackage) {
         return CodeBlock.builder()
             .add(".thenApply(payload -> $T.<$T>newResult().data(new $T<>(payload)).build())\n",
                 DATA_FETCHER_RESULT, outcomeValueType,
@@ -6578,7 +6620,7 @@ public class TypeFetcherGenerator {
             .indent()
             .add(no.sikt.graphitron.render.ErrorDispatchFragments.outcomeCatchArm(
                 errorRouterClass(outputPackage), errorMappingsClass(outputPackage),
-                channel.mappingsConstantName(), outcomeValueType, outcome, "t"))
+                mappingsConstant, outcomeValueType, outcome, "t"))
             .unindent()
             .add("})")
             .build();
