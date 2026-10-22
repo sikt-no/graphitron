@@ -31,8 +31,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
-| `R1087` | Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed | Ready | 2026-10-22 | [plan](unmatched-error-fallback-logged-and-computed.md) |
 | `R1090` | A connection has no maximum page size, so first: 100000 reads 100000 rows | In Progress | 2026-10-22 | [plan](connection-page-size-cap.md) |
+| `R1087` | Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed | In Progress | 2026-10-22 | [plan](unmatched-error-fallback-logged-and-computed.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -573,7 +573,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### error-channel
 
 - `R1091` [**A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer []**](payload-list-field-empty-on-error-arm.md) — Spec, enhancement
-- `R1087` [**Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed**](unmatched-error-fallback-logged-and-computed.md) — Ready, enhancement
+- `R1087` [**Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed**](unmatched-error-fallback-logged-and-computed.md) — In Progress, enhancement
 - `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Backlog, bug
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement, blocked by [unmatched-error-fallback-logged-and-computed](unmatched-error-fallback-logged-and-computed.md)
 - `R747` [**Generated input records carry no constraint annotations, so the VALIDATION handler can never fire**](generated-input-records-carry-no-constraints.md) — Backlog, architecture
