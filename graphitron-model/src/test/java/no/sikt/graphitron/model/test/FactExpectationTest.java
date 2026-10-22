@@ -224,12 +224,15 @@ class FactExpectationTest {
     /**
      * A scenario has no defect and a defect document has one, counted from what the store
      * records for the graph rather than from what the document states, so a document cannot pass
-     * by forgetting to state what it holds.
+     * by forgetting to state what it holds. A scenario holding some names each one, so the report
+     * says what to fix rather than how many things there are to find.
      */
     @Test
     @DisplayName("every scenario stores no defect, and every defect document stores one")
     void everyFolderHoldsWhatItClaims() {
         var defect = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+        // The site only names what the position is about; the count is the defect relation's.
+        var site = no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT_SITE;
         var problem = no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
         var dsl = captured.dsl();
         var misplaced = new ArrayList<String>();
@@ -237,11 +240,26 @@ class FactExpectationTest {
             if (claim != FactDocuments.Claim.SCENARIO && claim != FactDocuments.Claim.DEFECT) {
                 return;
             }
-            int held = dsl.fetchCount(defect, defect.GRAPH_NAME.eq(graph))
-                + dsl.fetchCount(problem, problem.GRAPH_NAME.eq(graph));
-            if ((claim == FactDocuments.Claim.SCENARIO) != (held == 0)) {
-                misplaced.add(claim.folder().name() + "/" + graph + " stores " + held
-                    + " defects and schema problems");
+            var held = new ArrayList<String>();
+            dsl.select(defect.CODE, site.COORDINATE, defect.SOURCE_LINE, defect.SOURCE_COLUMN,
+                    defect.DETAIL)
+                .from(defect)
+                .leftJoin(site).on(site.GRAPH_NAME.eq(defect.GRAPH_NAME),
+                    site.SOURCE_NAME.eq(defect.SOURCE_NAME), site.SOURCE_LINE.eq(defect.SOURCE_LINE),
+                    site.SOURCE_COLUMN.eq(defect.SOURCE_COLUMN), site.CODE.eq(defect.CODE))
+                .where(defect.GRAPH_NAME.eq(graph))
+                .orderBy(defect.SOURCE_LINE, defect.SOURCE_COLUMN, defect.CODE)
+                .forEach(r -> held.add(r.value1() + " at " + r.value2() + " (" + r.value3() + ":"
+                    + r.value4() + ")" + (r.value5() == null ? "" : ": " + r.value5())));
+            dsl.select(problem.STAGE, problem.ERROR_CLASS, problem.MESSAGE, problem.SOURCE_LINE)
+                .from(problem)
+                .where(problem.GRAPH_NAME.eq(graph))
+                .orderBy(problem.ORDINAL)
+                .forEach(r -> held.add(r.value1() + " " + r.value2() + " (line " + r.value4()
+                    + "): " + r.value3()));
+            if ((claim == FactDocuments.Claim.SCENARIO) != held.isEmpty()) {
+                misplaced.add(claim.folder().name() + "/" + graph + " stores " + held.size()
+                    + " defects and schema problems" + (held.isEmpty() ? "" : ": " + held));
             }
         });
         assertThat(misplaced).as("documents whose folder claims what the store does not hold").isEmpty();
