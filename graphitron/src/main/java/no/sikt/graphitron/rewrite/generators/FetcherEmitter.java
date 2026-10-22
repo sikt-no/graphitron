@@ -14,6 +14,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.rewrite.model.ErrorArmAnswer;
 import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -174,7 +175,9 @@ public final class FetcherEmitter {
      *                      child of an outcome type flipped to the {@code Outcome} wrapper
      *                      transport: its fetcher receives an {@code Outcome} as
      *                      {@code env.getSource()}, so a data-channel field's read must unwrap
-     *                      {@code Success} first and resolve null on the {@code ErrorList} arm.
+     *                      {@code Success} first and resolve the field's
+     *                      {@link ErrorArmAnswer} on the {@code ErrorList} arm ({@code null}, or
+     *                      {@code []} for a non-null list).
      *                      The errors field itself is exempt (it reads {@code ErrorList.errors()}
      *                      directly via its {@code WrapperArm} transport).
      */
@@ -315,9 +318,10 @@ public final class FetcherEmitter {
 
     /**
      * An inline-resolved data-channel child of a flipped outcome type reads off
-     * {@code Success.value()} of the non-null {@code Outcome} source and resolves null on the
-     * {@code ErrorList} arm. Both halves come from the {@link ParentSourceBinding} producer: the
-     * prelude narrows the subject and escapes with {@code null}, and the success-arm read is the
+     * {@code Success.value()} of the non-null {@code Outcome} source and resolves its
+     * {@link ErrorArmAnswer} on the {@code ErrorList} arm. Both halves come from the
+     * {@link ParentSourceBinding} producer: the prelude narrows the subject and escapes with the
+     * answer as a plain value, and the success-arm read is the
      * field's <em>own</em> read, source-bound to the binding's source expression instead of the
      * subject; record-backed accessors go via the shared {@link #recordBackedAccessorRead} (the
      * same helper {@link #recordReadBinding} uses), so there is no parallel accessor taxonomy.
@@ -328,9 +332,14 @@ public final class FetcherEmitter {
             ParentSourceBinding parentSource) {
         boolean envDependent = isEnvDependentAccessorRead(field);
         CodeBlock subject = envDependent ? ENV_SOURCE : CodeBlock.of("source");
+        // The success read first: it owns the throw for the unreachable nesting arm, the one shape
+        // here that is not a record read and so has no answer to consult.
+        CodeBlock successReturn = inlineSuccessReturn(field, resultType, parentSource.sourceExpr(subject));
+        var answer = ErrorArmAnswer.of(((ChildField.RecordReadField) field).returnType().wrapper());
         CodeBlock body = CodeBlock.builder()
-            .add(parentSource.prelude(subject, CodeBlock.of("null")))
-            .add(inlineSuccessReturn(field, resultType, parentSource.sourceExpr(subject)))
+            .add(parentSource.prelude(subject, field.qualifiedName(), answer,
+                new ParentSourceBinding.EscapeForm.Plain()))
+            .add(successReturn)
             .build();
         return envDependent
             ? envDependent(field.name(), fetchersClass, body)
@@ -428,7 +437,9 @@ public final class FetcherEmitter {
 
     /**
      * Emit the {@code source} local for a record-carrier fetcher body, narrowing the
-     * {@code Outcome} wrapper when the producer flipped to it ({@code OUTCOME_SUCCESS}).
+     * {@code Outcome} wrapper when the producer flipped to it ({@code OUTCOME_SUCCESS}): the
+     * leaf-level twin of {@link ParentSourceBinding.OutcomeRecord#prelude}, with the same guard and
+     * the same escape.
      *
      * <p>Both paths are cast-free and warning-free. {@code env.getSource()} is {@code <T> T}, so
      * the typed local drives inference: under DIRECT we bind {@code env.getSource()} straight to
@@ -436,18 +447,34 @@ public final class FetcherEmitter {
      * first, then pattern-match the <em>concrete</em> {@code Success<elementType>}. Because
      * {@code Success<T> implements Outcome<T>} with the same argument, that type test is checked
      * (not a {@code Success<?>} capture), so {@code success.value()} is already {@code elementType}
-     * and needs no cast. The {@code ErrorList} arm falls through to {@code return null}.
+     * and needs no cast. The {@code ErrorList} arm and a {@code Success} carrying {@code null}
+     * (nothing was produced) return the field's {@link ErrorArmAnswer} as a plain value, so on the
+     * wrapped arm {@code source} is non-null after this; on the DIRECT arm it may still be
+     * {@code null}, which the caller guards.
      */
     private static void emitRecordSourceLocal(
-            CodeBlock.Builder body, TypeName elementType, boolean outcomeWrapped, String outputPackage) {
+            CodeBlock.Builder body, TypeName elementType, boolean outcomeWrapped, String outputPackage,
+            String coordinate, ErrorArmAnswer answer) {
         if (outcomeWrapped) {
             body.add("    $T outcome = env.getSource();\n",
                 ParameterizedTypeName.get(outcomeClass(outputPackage), elementType));
-            body.add("    if (!(outcome instanceof $T success)) return null;\n",
-                ParameterizedTypeName.get(successClass(outputPackage), elementType));
+            body.add("    if (!(outcome instanceof $T success) || success.value() == null) return $L;\n",
+                ParameterizedTypeName.get(successClass(outputPackage), elementType),
+                ParentSourceBinding.errorArmEscape(coordinate, answer, new ParentSourceBinding.EscapeForm.Plain()));
             body.add("    $T source = success.value();\n", elementType);
         } else {
             body.add("    $T source = env.getSource();\n", elementType);
+        }
+    }
+
+    /**
+     * The DIRECT arm's null-source guard for a record-carrier body after
+     * {@link #emitRecordSourceLocal}: a producer that hands down no record answers {@code null}.
+     * Nothing on the wrapped arm, where the narrowing already escaped on a {@code null} value.
+     */
+    private static void emitDirectNullSourceGuard(CodeBlock.Builder body, boolean outcomeWrapped) {
+        if (!outcomeWrapped) {
+            body.add("    if (source == null) return null;\n");
         }
     }
 
@@ -751,6 +778,7 @@ public final class FetcherEmitter {
         var encoder = carrier.encode().encodeMethod();
         boolean many = carrier.returnType().wrapper().isList();
         boolean outcomeWrapped = carrier.envelope() == SourceEnvelope.OUTCOME_SUCCESS;
+        var answer = ErrorArmAnswer.of(carrier.returnType().wrapper());
 
         var body = CodeBlock.builder();
         if (many) {
@@ -760,8 +788,8 @@ public final class FetcherEmitter {
             var listOfString = ParameterizedTypeName.get(javaUtilList, stringClass);
             var arrayListOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "ArrayList"), stringClass);
-            emitRecordSourceLocal(body, listOfRecord, outcomeWrapped, outputPackage);
-            body.add("    if (source == null) return null;\n");
+            emitRecordSourceLocal(body, listOfRecord, outcomeWrapped, outputPackage, carrier.qualifiedName(), answer);
+            emitDirectNullSourceGuard(body, outcomeWrapped);
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", recordType);
             body.add("        if (row == null) continue;\n");
@@ -776,8 +804,8 @@ public final class FetcherEmitter {
             body.add("    }\n");
             body.add("    return ids;\n");
         } else {
-            emitRecordSourceLocal(body, recordType, outcomeWrapped, outputPackage);
-            body.add("    if (source == null) return null;\n");
+            emitRecordSourceLocal(body, recordType, outcomeWrapped, outputPackage, carrier.qualifiedName(), answer);
+            emitDirectNullSourceGuard(body, outcomeWrapped);
             body.add("    return $T.$L(", encoder.encoderClass(), encoder.methodName());
             for (int i = 0; i < keyColumns.size(); i++) {
                 if (i > 0) body.add(", ");
@@ -797,8 +825,9 @@ public final class FetcherEmitter {
      * {@code List<Composite>} or {@code Composite}, then returns it unchanged. No database access
      * and no DataLoader: graphql-java maps each element onto the data field's element result
      * type, whose {@code @field}-mapped {@code @table} children resolve through their own
-     * record-backed fetchers. The {@code ErrorList} arm falls through to {@code return null},
-     * rendering {@code data: null} on the error arm.
+     * record-backed fetchers. The {@code ErrorList} arm, and a {@code Success} carrying
+     * {@code null}, return the field's {@link ErrorArmAnswer}: {@code null} for a nullable field,
+     * the empty list for a non-null list.
      */
     private static CodeBlock buildRecordCompositeFetcherValue(
             ChildField.RecordCompositeField field, String outputPackage) {
@@ -810,7 +839,8 @@ public final class FetcherEmitter {
             ? ParameterizedTypeName.get(ClassName.get("java.util", "List"), compositeClass)
             : compositeClass;
         var body = CodeBlock.builder();
-        emitRecordSourceLocal(body, sourceType, outcomeWrapped, outputPackage);
+        emitRecordSourceLocal(body, sourceType, outcomeWrapped, outputPackage, field.qualifiedName(),
+            ErrorArmAnswer.of(field.returnType().wrapper()));
         body.add("    return source;\n");
         return body.build();
     }
@@ -838,6 +868,7 @@ public final class FetcherEmitter {
         var jooqResult = ClassName.get("org.jooq", "Result");
         boolean isList = carrier.returnType().wrapper().isList();
         boolean outcomeWrapped = carrier.envelope() == SourceEnvelope.OUTCOME_SUCCESS;
+        var answer = ErrorArmAnswer.of(carrier.returnType().wrapper());
         var body = CodeBlock.builder();
         if (isList) {
             var resultOfRecord = ParameterizedTypeName.get(jooqResult, jooqRecord);
@@ -846,8 +877,8 @@ public final class FetcherEmitter {
                 ClassName.get("java.util", "ArrayList"), stringClass);
             var listOfString = ParameterizedTypeName.get(
                 ClassName.get("java.util", "List"), stringClass);
-            emitRecordSourceLocal(body, resultOfRecord, outcomeWrapped, outputPackage);
-            body.add("    if (source == null) return null;\n");
+            emitRecordSourceLocal(body, resultOfRecord, outcomeWrapped, outputPackage, carrier.qualifiedName(), answer);
+            emitDirectNullSourceGuard(body, outcomeWrapped);
             body.add("    $T ids = new $T(source.size());\n", listOfString, arrayListOfString);
             body.add("    for ($T row : source) {\n", jooqRecord);
             body.add("        ids.add($T.$L(", encoderClass, encoderMethod);
@@ -861,8 +892,8 @@ public final class FetcherEmitter {
             body.add("    }\n");
             body.add("    return ids;\n");
         } else {
-            emitRecordSourceLocal(body, jooqRecord, outcomeWrapped, outputPackage);
-            body.add("    if (source == null) return null;\n");
+            emitRecordSourceLocal(body, jooqRecord, outcomeWrapped, outputPackage, carrier.qualifiedName(), answer);
+            emitDirectNullSourceGuard(body, outcomeWrapped);
             body.add("    return $T.$L(", encoderClass, encoderMethod);
             for (int i = 0; i < pkColumns.size(); i++) {
                 if (i > 0) body.add(", ");

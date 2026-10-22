@@ -903,6 +903,13 @@ type Query {
             className: "no.sikt.graphitron.rewrite.test.services.OccupantsWithErrorsService",
             method: "addressById"
         })
+    # The non-null list sibling of occupantsWithErrors: addressId 999 renders occupants [] beside
+    # the errors list.
+    occupantsNonNullWithErrors(addressId: Int!): OccupantsNonNullWithErrorsPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.OccupantsWithErrorsService",
+            method: "listByAddressId"
+        })
     # R503 mixed-source nested type fixture (producer edge). Returns a POJO carrying FilmBlurb, so
     # FilmBlurb binds class-backed through the parent accessor while also nesting off @table Film.
     filmBlurbHolder(filmId: Int!): FilmBlurbHolder
@@ -1473,10 +1480,18 @@ union OccupantLookupError = OccupantLookupMissingAddress
 # children receive an Outcome as env.getSource(), so both deliveries must narrow
 # Outcome.Success and read the hub off success.value(): the success arm resolves the occupants,
 # the error arm renders the children null while the sibling errors field renders the error
-# list. Success-projection fields are nullable per the outcome-type invariant.
+# list. Both children are nullable; OccupantsNonNullWithErrorsPayload below is the non-null list form.
 type OccupantsWithErrorsPayload {
     firstOccupant: AddressOccupant @field(name: "address")
     occupants: [AddressOccupant!] @field(name: "addresses")
+    errors: [OccupantLookupError]
+}
+
+# The non-null half of the minimal pair above: a non-null list data field beside an errors field
+# answers [] on the error arm instead of null (the batched polymorphic list delivery). Backed by
+# OccupantsListWithErrorsPayload, the addresses() hub accessor alone.
+type OccupantsNonNullWithErrorsPayload {
+    occupants: [AddressOccupant!]! @field(name: "addresses")
     errors: [OccupantLookupError]
 }
 
@@ -1705,6 +1720,20 @@ type FilmsWithActorsPayload {
     errors: [FilmsWithActorsErr]
 }
 
+# The non-null half of the minimal pair above: the record-composite list declared non-null answers
+# [] on the error arm, and also when the producer returns null (nothing was produced).
+type FilmsWithActorsNonNullPayload {
+    results: [FilmWithActorsResult!]!
+    errors: [FilmsWithActorsErr]
+}
+
+# A class-backed @service payload whose non-null scalar list is read inline off the producer
+# object (the arm-switched inline read): [] on the error arm.
+type FilmReviewScoresPayload {
+    scores: [Int!]!
+    errors: [FilmReviewError]
+}
+
 # R154 fixture: setter-shape sibling of FilmReviewPayload. The backing class is a hand-rolled
 # POJO with a public no-arg constructor and Java-bean setters; the carrier classifier resolves
 # R154's MutableBean construction shape against it.
@@ -1726,8 +1755,8 @@ type FieldRenamedSetterShapeFilmReviewPayload {
 # that pairs a @table-bound DataLoader data field with the errors field — the combination
 # R244's inventory found nowhere in sakila. `film` is the @sourceRow leaf-PK shape proven by
 # CreateFilmPayload.language (a record-sourced BatchedTableField resolved via a DataLoader batch keyed off the
-# payload's backing object), here sibling to a WrapperArm errors field. It is nullable per the
-# success-projection rule: on the ErrorList arm the generated film fetcher narrows
+# payload's backing object), here sibling to a WrapperArm errors field. It is nullable, so
+# on the ErrorList arm the generated film fetcher narrows
 # Outcome.Success, sees the error arm, and returns completedFuture(null) before key extraction
 # (no NPE on a missing key), so the field renders null while the sibling errors field stays
 # reachable. reviewId is the inline-read arm-switch (record accessor off success.value()).
@@ -1746,7 +1775,8 @@ type FilmReviewWithFilmPayload {
 # returns the typed Outcome wrapper: Outcome.Success around the RETURNING keys on success,
 # Outcome.ErrorList around the matched throwable on a mapped error. The errors field reads the
 # list off the Outcome, and the data field renders null on the error arm, so the SDL response is
-# { film: null, errors: [{ __typename, path, message }] }. The data fields must be nullable.
+# { film: null, errors: [{ __typename, path, message }] }. A data field must be nullable or a
+# non-null list, which renders [] on the error arm (see FilmsCreateCheckedNonNullPayload).
 type FilmCreateConstraintViolation @error(handlers: [{
         handler: GENERIC,
         className: "org.jooq.exception.IntegrityConstraintViolationException"
@@ -1783,10 +1813,24 @@ type FilmCreateCheckedPayload {
     errors: [FilmCreateError]
 }
 
-# The bulk form: on the error arm the list data field renders null, not an empty list, since
-# the whole batch rolled back.
+# The bulk form: on the error arm this nullable list data field renders null, since the whole
+# batch rolled back; the non-null form below renders [] instead.
 type FilmsCreateCheckedPayload {
     films: [Film]
+    errors: [FilmCreateError]
+}
+
+# The non-null half of the minimal pair: a non-null list data field renders [] on the error arm
+# instead, which is how a payload states that its clients never see null there.
+type FilmsCreateCheckedNonNullPayload {
+    films: [Film!]!
+    errors: [FilmCreateError]
+}
+
+# A payload-returning bulk DELETE carrier with an errors field and a non-null id list: a delete
+# the database refuses (a referenced film) renders deletedIds [] beside the errors list.
+type DeletedFilmsIdWithErrorsPayload {
+    deletedIds: [ID!]! @nodeId(typeName: "Film")
     errors: [FilmCreateError]
 }
 
@@ -4757,6 +4801,18 @@ type FilmIdsCarrierWithErrorsPayload {
     errors: [FilmReviewError]
 }
 
+# The non-null halves of the two list carriers above: a non-null list data field answers [] on
+# the error arm, and when the producer returned null.
+type FilmsCarrierWithErrorsNonNullPayload {
+    films: [Film!]!
+    errors: [FilmReviewError]
+}
+
+type FilmIdsCarrierWithErrorsNonNullPayload {
+    filmIds: [ID!]! @nodeId(typeName: "Film")
+    errors: [FilmReviewError]
+}
+
 type FilmsServicePayload {
     films: [Film!]
 }
@@ -5153,6 +5209,9 @@ type Mutation {
     # createFilmsWithErrors_* and updateFilmWithErrors_* cases.
     createFilmWithErrors(in: FilmCreateInput!): FilmCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
     createFilmsWithErrors(in: [FilmCreateInput!]!): FilmsCreateCheckedPayload @mutation(typeName: INSERT, table: "film")
+    # The non-null list sibling of createFilmsWithErrors: a mapped failure renders films [] instead
+    # of null. Pinned by GraphQLQueryTest's createFilmsWithErrorsNonNull_* cases.
+    createFilmsWithErrorsNonNull(in: [FilmCreateInput!]!): FilmsCreateCheckedNonNullPayload @mutation(typeName: INSERT, table: "film")
     updateFilmWithErrors(in: FilmUpdateInput!): FilmUpdateCheckedPayload @mutation(typeName: UPDATE)
 
     # A numeric overflow on either price column maps to the error type whose DATABASE matches
@@ -5194,6 +5253,11 @@ type Mutation {
         @mutation(typeName: DELETE, table: "film_actor", missingAsDeleted: true)
     deleteSplitKeyChildrenMissingAsDeleted(in: [SplitKeyChildDeleteInput!]!): DeletedSplitKeyChildrenPayload
         @mutation(typeName: DELETE, table: "split_key_child", missingAsDeleted: true)
+
+    # The bulk DELETE id carrier with an errors field and a non-null [ID!]!: deleting a referenced
+    # film violates a foreign key, the batch rolls back, and deletedIds renders []. Pinned by
+    # GraphQLQueryTest's deleteFilmsIdCarrierWithErrors_* cases.
+    deleteFilmsIdCarrierWithErrors(in: [FilmDeleteInput!]!): DeletedFilmsIdWithErrorsPayload @mutation(typeName: DELETE, table: "film")
 
     # R158 execution-tier surfaces: @service-backed mutations returning carrier-payload
     # types whose data field is the @service producer's typed jOOQ record (List<FilmRecord>
@@ -5304,6 +5368,24 @@ type Mutation {
             method: "deleteFilmsByIds"
         })
 
+    # The non-null list siblings of the three carriers above: the error arm (id 999) and a producer
+    # that returns null (an empty id list, filmsByIdsWithNulls) render the list [] instead of null.
+    serviceFilmsByIdsNonNullWithErrors(ids: [Int!]!): FilmsCarrierWithErrorsNonNullPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "filmsByIds"
+        })
+    serviceFilmsByIdsWithNullsNonNullWithErrors(ids: [Int!]!): FilmsCarrierWithErrorsNonNullPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "filmsByIdsWithNulls"
+        })
+    serviceDeleteFilmsByIdsNonNullWithErrors(ids: [Int!]!): FilmIdsCarrierWithErrorsNonNullPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierWithErrorsService",
+            method: "deleteFilmsByIds"
+        })
+
     # R158 composite-PK MANY-arm execution-tier surface: @service-backed mutation whose
     # carrier payload's data field types as List<FilmActorRecord>, exercising the new
     # composite-PK shapes in FetcherEmitter's Wrap.TableRecord MANY arm (typed
@@ -5348,6 +5430,22 @@ type Mutation {
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService",
             method: "create"
+        })
+
+    # The non-null list sibling of createFilmsWithActors: a filmId of -1 renders results [] beside
+    # the errors list, and an empty filmIds list (the producer returns null) renders results [].
+    createFilmsWithActorsNonNull(filmIds: [Int!]!): FilmsWithActorsNonNullPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService",
+            method: "createOrNull"
+        })
+
+    # A non-null scalar list read inline off the class-backed producer object: filmId 999 renders
+    # scores [] beside the errors list. See FilmReviewWithFilmService.scores.
+    submitFilmReviewScores(filmId: Int!, rating: Int!): FilmReviewScoresPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewWithFilmService",
+            method: "scores"
         })
 
     # R268 fixture (errorchannel-arm-switch-table-data-fields.md): a root @service Outcome

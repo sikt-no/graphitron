@@ -205,10 +205,9 @@ type FilmsPayload {
 }
 ----
 
-Three rules follow from that:
+Two rules follow from that:
 
-* The data field must be nullable, at its outer position: on the error path it renders `null`, and a non-null field would let null propagation erase the errors list. `Film!` and `[Film!]!` are rejected at build time; `Film`, `[Film]` and `[Film!]` are accepted.
-* A list data field renders `null` on the error path, not an empty list, since nothing was written.
+* On the error path a nullable data field renders `null`. A non-null list data field renders `[]`, since nothing was written; declare `[Film!]!` when your clients should never see `null` there. Every other data field must be nullable: `Film!` beside an errors field is rejected at build time, because there is no empty value to give it and a `null` would let null propagation erase the errors list. A connection (`@asConnection`) counts as a single value here, not a list.
 * A single-row write whose key matches no row renders the whole payload `null`, the same as on a payload without an errors field, unless the field sets `missingAsDeleted: true`.
 
 Give one `@error` type in the errors field `{handler: VALIDATION}` and the column-length check's errors become entries in the errors list rather than top-level errors; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check]. Without that member a payload with an errors field skips the check.

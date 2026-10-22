@@ -139,6 +139,54 @@ class OutcomePolymorphicChildExecutionTest {
         assertThat(errors.get(0)).containsEntry("message", "address 999 not found");
     }
 
+    // ===== Non-null batched list child =====
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void nonNullListChild_errorArm_rendersEmptyListAndErrorsPopulated() {
+        // The non-null half of the pair above: a [AddressOccupant!]! child answers [] on the
+        // ErrorList arm where the nullable occupants child answers null.
+        var data = execute("""
+            { occupantsNonNullWithErrors(addressId: 999) {
+                occupants { __typename }
+                errors { ... on OccupantLookupMissingAddress { message } }
+              }
+            }
+            """);
+
+        var payload = (Map<String, Object>) data.get("occupantsNonNullWithErrors");
+        assertThat((List<Object>) payload.get("occupants"))
+            .as("the non-null batched list child resolves [] on the ErrorList arm")
+            .isEmpty();
+        var errors = (List<Map<String, Object>>) payload.get("errors");
+        assertThat(errors).hasSize(1);
+        assertThat(errors.get(0)).containsEntry("message", "address 999 not found");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void nonNullListChild_successArm_resolvesTheOccupants() {
+        var data = execute("""
+            { occupantsNonNullWithErrors(addressId: 3) {
+                occupants {
+                  __typename
+                  ... on Staff    { firstName }
+                  ... on Customer { firstName }
+                }
+                errors { ... on OccupantLookupMissingAddress { message } }
+              }
+            }
+            """);
+
+        var payload = (Map<String, Object>) data.get("occupantsNonNullWithErrors");
+        assertThat((List<Map<String, Object>>) payload.get("occupants"))
+            .extracting(o -> o.get("__typename"), o -> o.get("firstName"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple("Staff", "Mike"),
+                org.assertj.core.groups.Tuple.tuple("Customer", "Linda"));
+        assertThat(payload.get("errors")).isNull();
+    }
+
     // ===== Payload backed by the jOOQ record itself =====
 
     @Test

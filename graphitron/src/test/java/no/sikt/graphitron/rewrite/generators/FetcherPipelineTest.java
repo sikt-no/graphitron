@@ -408,8 +408,10 @@ class FetcherPipelineTest {
     void outcomePayload_polymorphicChildren_emitFetcherAndRowsMethods() {
         // The single-valued child keeps the sync per-parent fetcher shape and the batched list
         // child keeps the DataLoader fetcher + rows-method pair under the wrapper payload; the
-        // wrapper flips the parent-source binding, never the delivery split.
-        var fetchers = findSpec("FilmFetchers", OUTCOME_POLYMORPHIC_CHILD_SDL);
+        // wrapper flips the parent-source binding, never the delivery split. The non-null list
+        // child answers [] on the error arm, so the producer classifies and its catch arm names
+        // the outcome's dispatch table from the store.
+        var fetchers = findStoreBackedSpec("FilmFetchers", OUTCOME_POLYMORPHIC_CHILD_SDL);
         assertThat(method(fetchers, "referrer").returnType().toString())
             .isEqualTo("graphql.execution.DataFetcherResult<org.jooq.Record>");
         assertThat(method(fetchers, "referrers").returnType().toString())

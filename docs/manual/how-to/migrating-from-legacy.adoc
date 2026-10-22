@@ -1,8 +1,8 @@
 = How-to: Migrating from the legacy generator
-:description: Walk a schema from the legacy graphitron-codegen-parent generator to the rewrite. Covers the hard removals, the locations that still warn but will retire, the deprecated arguments to phase out, and the one intentional behavior divergence.
+:description: Walk a schema from the legacy graphitron-codegen-parent generator to the rewrite. Covers the hard removals, the locations that still warn but will retire, the deprecated arguments to phase out, and the intentional behavior divergences.
 :!toc:
 
-The rewrite generator (`graphitron-rewrite`) is directive-compatible with the legacy generator (`graphitron-codegen-parent`): the same `@table`, `@field`, `@service`, `@reference`, `@asConnection`, `@nodeId`, `@condition` directives all do approximately the same thing on the rewrite, and a schema authored against the legacy generator's directive surface will mostly compile under the rewrite without changes. The "mostly" is what this recipe covers: the hard removals (build fails until you remove the directive, or, in one case, resolves differently with no error at all), the locations that still warn today and will fail later, the deprecated arguments (build succeeds with a deprecation notice from graphql-java), and the one behavior divergence the rewrite intentionally preserves over legacy semantics.
+The rewrite generator (`graphitron-rewrite`) is directive-compatible with the legacy generator (`graphitron-codegen-parent`): the same `@table`, `@field`, `@service`, `@reference`, `@asConnection`, `@nodeId`, `@condition` directives all do approximately the same thing on the rewrite, and a schema authored against the legacy generator's directive surface will mostly compile under the rewrite without changes. The "mostly" is what this recipe covers: the hard removals (build fails until you remove the directive, or, in one case, resolves differently with no error at all), the locations that still warn today and will fail later, the deprecated arguments (build succeeds with a deprecation notice from graphql-java), and the intentional behavior divergences from legacy semantics.
 
 include::../_generator-internals-note.adoc[]
 
@@ -249,6 +249,10 @@ A client that tested such a field for `null` should test the fields inside it in
 == Behavior divergence: a `DELETE` whose key matches no row
 
 Graphitron 9 did not check row counts on `DELETE`, so a bulk delete naming a key that matched no row deleted the rest and succeeded. The rewrite fails the whole call by default: nothing is deleted, and a single-row payload-returning delete renders its payload `null`. A schema that relied on Graphitron 9's behavior adds `missingAsDeleted: true` to the field, which treats such a key as already deleted and echoes every input key in the payload; see xref:../reference/directives/mutation.adoc#when-a-key-matches-no-row[`@mutation`] under "When a key matches no row". It applies to a payload-returning `DELETE` keyed by exactly the primary key.
+
+== Behavior divergence: a list field on a payload with errors
+
+In Graphitron 9 a `@splitQuery` list data field on a payload with an errors field answered `[]` when the call failed into the errors list; a list data field without `@splitQuery` answered `null`. The rewrite decides from the field's type instead: a nullable list answers `null` and a non-null list answers `[]`. To keep `[]`, declare the field non-null (`[Film!]!`); tightening an output type does not break a client query. See xref:../reference/directives/mutation.adoc[`@mutation`] for the rule.
 
 == Things that didn't change
 

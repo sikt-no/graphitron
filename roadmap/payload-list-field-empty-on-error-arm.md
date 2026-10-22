@@ -132,6 +132,15 @@ R274 (OutcomeType carries its success projection) states the invariant it would 
 - **A second, validate-time check over the payload's classified leaves.** It would read the same `buildWrapper` result the classifier check reads, so it guards against no drift, and because a payload still classifies when its producer is rejected, it would report every `Film!` twice.
 - **Answer `[]` by running the field's query or DataLoader with no keys.** That is what 9's split-query fetcher did in effect. It costs a dispatch for nothing, and it does not cover the inline and `@nodeId` shapes, which have no query to run.
 
+## Implementation notes
+
+Where the implementation narrows or departs from the plan text above:
+
+- `ParentSourceBinding.prelude` also takes the field's coordinate, `prelude(subject, coordinate, answer, form)`: the `NONE` throw names the coordinate as planned, and the binding has no other way to learn it. The escape itself is rendered by one helper, `ParentSourceBinding.errorArmEscape`, which both `OutcomeRecord.prelude` and the leaf-level `FetcherEmitter.emitRecordSourceLocal` call; `TypeFetcherGenerator.emptyBatchedResult` renders through the same `EscapeForm.Async`, so the batched builder's `[]` has one spelling.
+- The `[Film!]! @asConnection` rejection is pinned in `ErrorChannelClassificationTest` (root `@service`) only. A DML carrier refuses `@asConnection` on its data field with its own structural rejection before the error-arm check runs, so that row cannot be reached through `CarrierPayloadErrorChannelValidationTest`.
+- The `DirectRecord` generation case (a non-null single child on a record parent without an errors field) is in `SingleRecordPayloadPipelineTest`.
+- The batched polymorphic execution case sits beside its nullable siblings in `OutcomePolymorphicChildExecutionTest` rather than in `GraphQLQueryTest`. The synchronous polymorphic builder (`MultiTablePolymorphicEmitter.buildScalarPerParentFetcher`) reaches a list only on the degenerate all-unbound interface or union, which no fixture places under an errors payload, so it has no execution case; it takes the answer through the same binding call as the other four.
+
 ## Reviewer findings
 
 ### Round 1 (Spec → Ready): request revisions

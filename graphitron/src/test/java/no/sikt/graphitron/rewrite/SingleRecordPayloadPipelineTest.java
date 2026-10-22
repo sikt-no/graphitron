@@ -80,6 +80,25 @@ class SingleRecordPayloadPipelineTest {
     }
 
     @Test
+    void payload_withoutErrors_nonNullSingleDataField_generatesThroughTheDirectBinding() {
+        // Only the outcome arm reads a data field's error-arm answer. Without an errors field the
+        // payload rides no Outcome wrapper, so a non-null single data field (no answer at all)
+        // is legal and its fetcher is emitted through the plain null-source guard.
+        var schema = TestSchemaHelper.buildSchema(
+            payloadDmlSingleInput(DmlKind.INSERT, "type FilmPayload { film: Film! }"));
+        assertThat(schema.field("Mutation", mutationName(DmlKind.INSERT)))
+            .isInstanceOf(MutationField.MutationDmlRecordField.class);
+        assertThat(schema.field("FilmPayload", "film"))
+            .isInstanceOfSatisfying(ChildField.BatchedTableField.class,
+                f -> assertThat(f.returnType().wrapper()).isEqualTo(new FieldWrapper.Single(false)));
+        var payloadFetchers = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
+            .filter(t -> t.name().equals("FilmPayloadFetchers"))
+            .findFirst()
+            .orElseThrow();
+        assertThat(payloadFetchers.methodSpecs()).extracting(m -> m.name()).contains("film");
+    }
+
+    @Test
     void payload_bulkInput_listDataField_upsertDeferred() {
         var schema = TestSchemaHelper.buildSchema(payloadDml(DmlKind.UPSERT, "type FilmPayload { films: [Film!] }"));
         var mutField = schema.field("Mutation", mutationName(DmlKind.UPSERT));

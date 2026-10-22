@@ -9275,6 +9275,95 @@ class GraphQLQueryTest {
             .containsEntry("message", "invalid film id: -1");
     }
 
+    // The non-null list sibling of createFilmsWithActors, and a non-null scalar list read inline off
+    // the producer object.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithActorsNonNull_errorArm_rendersEmptyResults() {
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmsWithActorsNonNull(filmIds: [-1]) {
+                    results { film { title } }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("createFilmsWithActorsNonNull", as(MAP));
+        payload.extractingByKey("results", as(LIST)).isEmpty();
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .containsEntry("__typename", "FilmsWithActorsError");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithActorsNonNull_producerReturnsNull_rendersEmptyResults() {
+        // An empty filmIds list makes the producer return null: Success(null), which a nullable
+        // composite list would render null and this non-null one renders [].
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmsWithActorsNonNull(filmIds: []) {
+                    results { film { title } }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("createFilmsWithActorsNonNull", as(MAP));
+        payload.extractingByKey("results", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithActorsNonNull_successArm_projectsComposites() {
+        Map<String, Object> data = execute("""
+            mutation {
+                createFilmsWithActorsNonNull(filmIds: [1, 2]) {
+                    results { film { title } }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("createFilmsWithActorsNonNull", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.extractingByKey("results", as(LIST)).hasSize(2);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReviewScores_errorArm_rendersEmptyScores() {
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReviewScores(filmId: 999, rating: 3) {
+                    scores
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReviewScores", as(MAP));
+        payload.extractingByKey("scores", as(LIST)).isEmpty();
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .containsEntry("__typename", "FilmReviewMissingFilm");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void submitFilmReviewScores_successArm_readsTheScores() {
+        Map<String, Object> data = execute("""
+            mutation {
+                submitFilmReviewScores(filmId: 1, rating: 3) {
+                    scores
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("submitFilmReviewScores", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.extractingByKey("scores", as(LIST)).containsExactly(3, 6);
+    }
+
     // ===== Arm-switch: @table DataLoader data field under a root @service Outcome payload =====
     //
     // submitFilmReviewWithFilm returns a FilmReviewWithFilmPayload whose `film` field is a
@@ -9547,6 +9636,98 @@ class GraphQLQueryTest {
         only.containsEntry("message", "film 999 not found");
     }
 
+    // The non-null list siblings of the two list carriers above.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmsByIdsNonNullWithErrors_missingFilm_rendersEmptyFilms() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmsByIdsNonNullWithErrors(ids: [1, 999]) {
+                    films { filmId }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmsByIdsNonNullWithErrors", as(MAP));
+        payload.extractingByKey("films", as(LIST)).isEmpty();
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .containsEntry("__typename", "FilmReviewMissingFilm");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmsByIdsNonNullWithErrors_validIds_projectsFilmsInInputOrder() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmsByIdsNonNullWithErrors(ids: [2, 1]) {
+                    films { filmId }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmsByIdsNonNullWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.extractingByKey("films", as(list(Map.class)))
+            .extracting(m -> m.get("filmId"))
+            .containsExactly(2, 1);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceFilmsByIdsWithNullsNonNullWithErrors_producerReturnsNull_rendersEmptyFilms() {
+        // An empty id list makes the producer return null: Success(null), nothing was produced, so
+        // the non-null list renders [] and errors stays null.
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceFilmsByIdsWithNullsNonNullWithErrors(ids: []) {
+                    films { filmId }
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceFilmsByIdsWithNullsNonNullWithErrors", as(MAP));
+        payload.extractingByKey("films", as(LIST)).isEmpty();
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmsByIdsNonNullWithErrors_missingFilm_rendersEmptyIds() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceDeleteFilmsByIdsNonNullWithErrors(ids: [9001, 999]) {
+                    filmIds
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceDeleteFilmsByIdsNonNullWithErrors", as(MAP));
+        payload.extractingByKey("filmIds", as(LIST)).isEmpty();
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .containsEntry("__typename", "FilmReviewMissingFilm");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void serviceDeleteFilmsByIdsNonNullWithErrors_validIds_encodesNodeIdsInProducerOrder() {
+        Map<String, Object> data = execute("""
+            mutation {
+                serviceDeleteFilmsByIdsNonNullWithErrors(ids: [9002, 9001]) {
+                    filmIds
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("serviceDeleteFilmsByIdsNonNullWithErrors", as(MAP));
+        payload.containsEntry("errors", null);
+        payload.extractingByKey("filmIds", as(LIST)).containsExactly(
+            no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9002),
+            no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 9001));
+    }
+
     // ===== DML error channel end-to-end =====
     //
     // Mirrors the @service-backed submitFilmReview tests on the DML pillar. The
@@ -9697,6 +9878,118 @@ class GraphQLQueryTest {
         } finally {
             dsl.deleteFrom(DSL.table("film"))
                 .where(DSL.field("title", String.class).startsWith(title))
+                .execute();
+        }
+    }
+
+    // ===== Non-null list data fields on the error arm =====
+    //
+    // The non-null halves of the minimal pairs above and below: a list data field declared non-null
+    // beside an errors field renders [] where its nullable sibling renders null, both on the error
+    // arm and when the producer returned null; the success arm reads the ordinary list.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithErrorsNonNull_invalidLanguageId_rendersEmptyListDataField() {
+        String title = "BULK-NN-ERR-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilmsWithErrorsNonNull(in: [
+                    { title: "%s", languageId: 1 },
+                    { title: "%s", languageId: 99999 }
+                ]) {
+                    films { title }
+                    errors { __typename }
+                }
+            }
+            """.formatted(title, title));
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("createFilmsWithErrorsNonNull", as(MAP));
+        payload.extractingByKey("films", as(LIST)).isEmpty();
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .containsEntry("__typename", "FilmCreateConstraintViolation");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void createFilmsWithErrorsNonNull_validRows_returnRowsInInputOrder() {
+        String title = "BULK-NN-OK-" + java.util.UUID.randomUUID();
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    createFilmsWithErrorsNonNull(in: [
+                        { title: "%s-a", languageId: 1 },
+                        { title: "%s-b", languageId: 2 }
+                    ]) {
+                        films { title }
+                        errors { __typename }
+                    }
+                }
+                """.formatted(title, title));
+            var payload = assertThat(data).extractingByKey("createFilmsWithErrorsNonNull", as(MAP));
+            payload.containsEntry("errors", null);
+            payload.extractingByKey("films", as(list(Map.class)))
+                .extracting(m -> m.get("title"))
+                .containsExactly(title + "-a", title + "-b");
+        } finally {
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("title", String.class).startsWith(title))
+                .execute();
+        }
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deleteFilmsIdCarrierWithErrors_referencedFilm_rendersEmptyIdList() {
+        // Film 1 is referenced from film_actor, so the DELETE violates a foreign key and the
+        // whole batch rolls back; the RETURNING-sourced id list renders [] beside the error.
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                deleteFilmsIdCarrierWithErrors(in: [{ filmId: 1 }]) {
+                    deletedIds
+                    errors { __typename }
+                }
+            }
+            """);
+        assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var payload = assertThat(data).extractingByKey("deleteFilmsIdCarrierWithErrors", as(MAP));
+        payload.extractingByKey("deletedIds", as(LIST)).isEmpty();
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .singleElement(as(MAP))
+            .containsEntry("__typename", "FilmCreateConstraintViolation");
+        assertThat(dsl.fetchCount(DSL.table("film"), DSL.field("film_id", Integer.class).eq(1)))
+            .as("the refused delete removed nothing")
+            .isOne();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deleteFilmsIdCarrierWithErrors_unreferencedFilm_encodesTheDeletedId() {
+        String title = "DEL-NN-OK-" + java.util.UUID.randomUUID();
+        Integer filmId = dsl.insertInto(DSL.table("film"),
+                DSL.field("title", String.class), DSL.field("language_id", Integer.class))
+            .values(title, 1)
+            .returningResult(DSL.field("film_id", Integer.class))
+            .fetchOne(0, Integer.class);
+        try {
+            Map<String, Object> data = execute("""
+                mutation {
+                    deleteFilmsIdCarrierWithErrors(in: [{ filmId: %d }]) {
+                        deletedIds
+                        errors { __typename }
+                    }
+                }
+                """.formatted(filmId));
+            var payload = assertThat(data).extractingByKey("deleteFilmsIdCarrierWithErrors", as(MAP));
+            payload.containsEntry("errors", null);
+            payload.extractingByKey("deletedIds", as(LIST))
+                .containsExactly(no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", filmId));
+        } finally {
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("title", String.class).eq(title))
                 .execute();
         }
     }

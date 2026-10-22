@@ -16,6 +16,7 @@ import no.sikt.graphitron.render.ValuesJoinRowBuilder;
 import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.BatchKeyField;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ErrorArmAnswer;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.LoaderRegistration;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
@@ -579,6 +580,7 @@ public final class MultiTablePolymorphicEmitter {
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
             boolean isList,
+            ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -588,7 +590,7 @@ public final class MultiTablePolymorphicEmitter {
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildScalarPerParentFetcher(ctx, fieldName, tableBoundParticipants,
             participantJoinPaths, parentKeyLift, sourceKey, parentKeyOwnerTable, isList,
-            parentSource, outputPackage));
+            answer, parentSource, outputPackage));
         for (var participant : tableBoundParticipants) {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, List.of(),
                 outputPackage));
@@ -616,6 +618,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -624,7 +627,7 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildBatchedListFetcher(ctx, batchKey, rowsMethodName,
-            parentKeyLift, parentKeyOwnerTable, parentResultType, parentSource, outputPackage));
+            parentKeyLift, parentKeyOwnerTable, parentResultType, answer, parentSource, outputPackage));
         methods.add(buildBatchedListRowsMethod(ctx, batchKey.name(), rowsMethodName,
             tableBoundParticipants, participantJoinPaths, batchKey.sourceKey(),
             parentKeyOwnerTable, outputPackage));
@@ -706,6 +709,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage) {
         var tableBoundParticipants = participants.stream()
@@ -714,7 +718,7 @@ public final class MultiTablePolymorphicEmitter {
             .toList();
         var methods = new ArrayList<MethodSpec>();
         methods.add(buildBatchedConnectionFetcher(ctx, batchKey, rowsMethodName,
-            parentKeyLift, parentKeyOwnerTable, parentResultType, parentSource, outputPackage));
+            parentKeyLift, parentKeyOwnerTable, parentResultType, answer, parentSource, outputPackage));
         methods.add(buildBatchedConnectionRowsMethod(ctx, batchKey.name(), rowsMethodName,
             tableBoundParticipants, participantJoinPaths, defaultPageSize, batchKey.sourceKey(),
             parentKeyOwnerTable, outputPackage));
@@ -933,7 +937,7 @@ public final class MultiTablePolymorphicEmitter {
             Map<String, ParticipantCorrelation> participantJoinPaths,
             KeyLift parentKeyLift,
             SourceKey parentSourceKey, TableRef parentKeyOwnerTable,
-            boolean isList, ParentSourceBinding parentSource, String outputPackage) {
+            boolean isList, ErrorArmAnswer answer, ParentSourceBinding parentSource, String outputPackage) {
 
         var listOfRecord = ParameterizedTypeName.get(LIST, RECORD);
         TypeName valueType = isList ? listOfRecord : RECORD;
@@ -945,10 +949,10 @@ public final class MultiTablePolymorphicEmitter {
 
         // The binding's prelude runs first (outside the try: its escape is deliberate control
         // flow, not a failure path), narrowing Outcome.Success or short-circuiting a null
-        // source; the sync escape is a null-data DataFetcherResult, the shape the sibling
-        // errors field renders beside on the error arm.
-        builder.addCode(parentSource.prelude(ENV_SOURCE,
-            CodeBlock.of("$T.<$T>newResult().data(null).build()", DATA_FETCHER_RESULT, valueType)));
+        // source; the sync escape is a DataFetcherResult carrying the field's error-arm answer,
+        // the shape the sibling errors field renders beside on the error arm.
+        builder.addCode(parentSource.prelude(ENV_SOURCE, ctx.parentTypeName() + "." + fieldName,
+            answer, new ParentSourceBinding.EscapeForm.Sync(valueType)));
 
         builder.beginControlFlow("try");
         builder.addStatement("$T dsl = $L", DSL_CONTEXT, TenantDslEmitter.dslExpression(ctx, fieldName, outputPackage));
@@ -1669,6 +1673,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage) {
 
@@ -1696,10 +1701,11 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         // The binding's prelude runs ahead of the loader registration: narrow Outcome.Success
-        // (escaping completedFuture(null) on the ErrorList arm) or short-circuit a null source
+        // (escaping with the field's error-arm answer on the ErrorList arm, always null for a
+        // connection that classified beside an errors field) or short-circuit a null source
         // before touching the loader registry.
-        builder.addCode(parentSource.prelude(ENV_SOURCE,
-            CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE)));
+        builder.addCode(parentSource.prelude(ENV_SOURCE, ctx.parentTypeName() + "." + fieldName,
+            answer, new ParentSourceBinding.EscapeForm.Async(valueType)));
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"
@@ -1750,6 +1756,7 @@ public final class MultiTablePolymorphicEmitter {
             KeyLift parentKeyLift,
             TableRef parentKeyOwnerTable,
             GraphitronType.ResultType parentResultType,
+            ErrorArmAnswer answer,
             ParentSourceBinding parentSource,
             String outputPackage) {
 
@@ -1776,8 +1783,8 @@ public final class MultiTablePolymorphicEmitter {
             .addParameter(ENV, "env");
 
         // Same prelude placement as the connection twin: ahead of the loader registration.
-        builder.addCode(parentSource.prelude(ENV_SOURCE,
-            CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE)));
+        builder.addCode(parentSource.prelude(ENV_SOURCE, ctx.parentTypeName() + "." + fieldName,
+            answer, new ParentSourceBinding.EscapeForm.Async(valueType)));
         builder.addCode(TenantDslEmitter.loaderNameDeclaration(ctx, fieldName, "name", outputPackage));
         builder.addCode(
             "$T loader = env.getDataLoaderRegistry()\n"

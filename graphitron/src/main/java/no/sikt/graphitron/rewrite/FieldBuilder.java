@@ -46,6 +46,7 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.NodeProvenance;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
 import no.sikt.graphitron.rewrite.model.DmlKind;
+import no.sikt.graphitron.rewrite.model.ErrorArmAnswer;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
 import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
@@ -4519,8 +4520,8 @@ class FieldBuilder {
         // first-class success path, so a non-null single data field would have graphql-java's
         // non-null propagation null the whole payload and destroy the errors list. A list data
         // field renders the zero-row read as an empty list and is exempt from this rule; with an
-        // errors field present, detectStructuralDmlErrorChannel's nullable-success-projection
-        // check still rejects a non-null list, which the Outcome error arm renders null.
+        // errors field present, detectStructuralDmlErrorChannel's error-arm check admits a non-null
+        // list too, which the Outcome error arm renders as an empty list.
         var dataWrapper = buildWrapper(admit.dataField());
         if (dataWrapper instanceof FieldWrapper.Single single && !single.nullable()) {
             return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
@@ -4939,8 +4940,9 @@ class FieldBuilder {
      * Resolves the {@link ErrorChannel.Mapped} carrier for an {@code @service} outcome field.
      * Finds the payload's
      * single errors field (reusing {@link BuildContext#detectErrorsFieldShape}), enforces the
-     * nullable-success-projection invariant
-     * ({@link ErrorChannelWalkerError.NonNullableSuccessProjectionField}), then runs the
+     * error-arm invariant on its data fields ({@link #nonNullableSuccessProjection}: nullable or
+     * a non-null plain list, else
+     * {@link ErrorChannelWalkerError.NonNullableSuccessProjectionField}), then runs the
      * {@link no.sikt.graphitron.rewrite.walker.ErrorChannelWalker} over the classified
      * {@link OutcomeType} to run the channel-level rules + accessor coverage and stamp the
      * mappings-constant name. A payload with no errors field is not an outcome type ({@code NoChannel}).
@@ -4983,8 +4985,8 @@ class FieldBuilder {
         var errorsField = new ChildField.ErrorsField(result.returnTypeName(), errorsFieldDef.getName(),
             errorsLocation, mappedErrorTypes);
         // successProjection is left empty here, not "no data fields": the walker reads only
-        // errorsField off the OutcomeType, and the nullable-success-projection invariant is
-        // already enforced inline above where SDL nullability is visible.
+        // errorsField off the OutcomeType, and the error-arm invariant is already enforced
+        // inline above where the data fields' wrappers are derived.
         var outcomeType = new OutcomeType(backing, errorsField, List.of());
         var walkerResult = new no.sikt.graphitron.rewrite.walker.ErrorChannelWalker()
             .walk(outcomeType, ctx.schema, ctx.codegenLoader(), this::errorFieldAccessorReturn);
@@ -4997,18 +4999,24 @@ class FieldBuilder {
     }
 
     /**
-     * The nullable-success-projection invariant of an outcome payload: a non-null data field
-     * resolves null on the {@code ErrorList} arm and bubbles {@code NonNullableFieldWasNullError}
+     * The error-arm invariant of an outcome payload: every data field needs an
+     * {@link ErrorArmAnswer} other than {@link ErrorArmAnswer#NONE}. On the {@code ErrorList} arm
+     * (and on a {@code Success} whose value is {@code null}) a nullable data field answers
+     * {@code null} and a non-null plain list answers {@code []}; a non-null single or connection
+     * has no empty value, and a {@code null} there would bubble {@code NonNullableFieldWasNullError}
      * up, dropping the sibling errors field. One rule for every producer on the {@code Outcome}
-     * transport (root {@code @service}, DML and {@code @routine} carriers), enforced at classify
-     * time where the SDL nullability is visible. Returns the rejection naming the first non-null
-     * sibling of {@code errorsFieldDef}, or {@code null} when every sibling is nullable.
+     * transport (root {@code @service}, DML and {@code @routine} carriers), enforced here at
+     * classify time and nowhere else. The answer is derived from {@link BuildContext#buildWrapper},
+     * the same derivation every classified leaf's wrapper comes from, so an {@code @asConnection}
+     * list (still a list on the pre-rewrite schema read here) counts as a connection. Returns the
+     * rejection naming the first sibling of {@code errorsFieldDef} without an answer, or
+     * {@code null} when every sibling has one.
      */
-    private static ErrorChannelWalkerError.NonNullableSuccessProjectionField nonNullableSuccessProjection(
+    private ErrorChannelWalkerError.NonNullableSuccessProjectionField nonNullableSuccessProjection(
             GraphQLObjectType payloadObj, String payloadName, GraphQLFieldDefinition errorsFieldDef) {
         for (var f : payloadObj.getFieldDefinitions()) {
             if (f == errorsFieldDef) continue;
-            if (graphql.schema.GraphQLTypeUtil.isNonNull(f.getType())) {
+            if (ErrorArmAnswer.of(ctx.buildWrapper(f)) == ErrorArmAnswer.NONE) {
                 return new ErrorChannelWalkerError.NonNullableSuccessProjectionField(payloadName, f.getName());
             }
         }
@@ -5494,7 +5502,7 @@ class FieldBuilder {
      * Structural detection of a DML payload's error channel. Scans the payload
      * SDL for an errors-shaped field (via {@link BuildContext#detectErrorsFieldShape}), runs
      * the channel-level handler rules (rule 7 and rule 8) inline, then the
-     * nullable-success-projection rule ({@link #nonNullableSuccessProjection}), and produces
+     * error-arm rule on the data fields ({@link #nonNullableSuccessProjection}), and produces
      * either an {@link ErrorChannel.Mapped} binding, an empty result when the payload has no
      * errors-shaped field, or a rule-violation rejection naming the offending field.
      */

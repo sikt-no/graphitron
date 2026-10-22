@@ -49,4 +49,13 @@ public final class FilmsWithActorsService {
         }
         return out;
     }
+
+    /**
+     * {@link #create}, except that an empty {@code filmIds} list returns {@code null}: the producer
+     * produced nothing, which a non-null list data field renders as {@code []}.
+     */
+    public static List<FilmWithActors> createOrNull(DSLContext dsl, List<Integer> filmIds) {
+        if (filmIds == null || filmIds.isEmpty()) return null;
+        return create(dsl, filmIds);
+    }
 }

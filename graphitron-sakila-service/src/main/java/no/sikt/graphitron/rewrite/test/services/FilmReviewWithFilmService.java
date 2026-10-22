@@ -31,4 +31,19 @@ public final class FilmReviewWithFilmService {
         }
         return new FilmReviewWithFilmPayload(rating * 10000 + filmId, filmId, java.util.List.of());
     }
+
+    /**
+     * The inline-read arm of the non-null list error-arm fixture: returns the review's scores, or
+     * throws the mapped missing-film {@code @error} for filmId 999 (the {@code Outcome.ErrorList}
+     * arm, where the non-null {@code scores} list renders {@code []}).
+     */
+    public static FilmReviewScoresPayload scores(Integer filmId, Integer rating) {
+        if (filmId == null || rating == null) {
+            throw new FilmReviewBadRatingException("filmId and rating are required");
+        }
+        if (filmId == 999) {
+            throw new FilmReviewMissingFilmException("film " + filmId + " not found");
+        }
+        return new FilmReviewScoresPayload(java.util.List.of(rating, rating * 2));
+    }
 }

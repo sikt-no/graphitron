@@ -31,6 +31,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.PivotSpecField;
 import no.sikt.graphitron.rewrite.model.DialectRequirement;
+import no.sikt.graphitron.rewrite.model.ErrorArmAnswer;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.SqlDialectFamily;
@@ -875,7 +876,8 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitInlineMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
                                 f.sourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
-                                f.returnType().wrapper().isList(), parentSource, outputPackage)
+                                f.returnType().wrapper().isList(), ErrorArmAnswer.of(f.returnType().wrapper()),
+                                parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -889,7 +891,8 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitInlineMethods(ctx, f.name(), f.participants(), f.participantJoinPaths(),
                                 f.sourceKey(), f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
-                                f.returnType().wrapper().isList(), parentSource, outputPackage)
+                                f.returnType().wrapper().isList(), ErrorArmAnswer.of(f.returnType().wrapper()),
+                                parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -904,12 +907,14 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), parentSource, outputPackage)
+                                f.parentResultType(), ErrorArmAnswer.of(f.returnType().wrapper()), parentSource,
+                                outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitBatchedListMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
-                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), parentSource, outputPackage)
+                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
+                                ErrorArmAnswer.of(f.returnType().wrapper()), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -920,12 +925,14 @@ public class TypeFetcherGenerator {
                         MultiTablePolymorphicEmitter
                             .emitBatchedConnectionMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
                                 conn.defaultPageSize(), f.parentKeyLift(), f.parentKeyOwnerTable(),
-                                f.parentResultType(), parentSource, outputPackage)
+                                f.parentResultType(), ErrorArmAnswer.of(f.returnType().wrapper()), parentSource,
+                                outputPackage)
                             .forEach(builder::addMethod);
                     } else {
                         MultiTablePolymorphicEmitter
                             .emitBatchedListMethods(ctx, f, rowsName, f.participants(), f.participantJoinPaths(),
-                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(), parentSource, outputPackage)
+                                f.parentKeyLift(), f.parentKeyOwnerTable(), f.parentResultType(),
+                                ErrorArmAnswer.of(f.returnType().wrapper()), parentSource, outputPackage)
                             .forEach(builder::addMethod);
                     }
                 }
@@ -6416,9 +6423,11 @@ public class TypeFetcherGenerator {
             // Record arms: the binding's prelude runs ahead of the loader registration (narrowing
             // Outcome.Success, or short-circuiting a null source) and its source
             // expression repoints the field's own key extraction — the same backing object the
-            // non-wrapped source would have been (the Success.value() invariant).
-            var escape = CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE);
-            prelude = parentSource.prelude(envSource, escape);
+            // non-wrapped source would have been (the Success.value() invariant). The escape's
+            // async envelope is the one emptyBatchedResult renders its empty values in.
+            prelude = parentSource.prelude(envSource, field.qualifiedName(),
+                ErrorArmAnswer.of(returnType.wrapper()),
+                new ParentSourceBinding.EscapeForm.Async(resultValueType));
             keyExtraction = GeneratorUtils.buildRecordParentKeyExtraction(
                 sourceKey, lift, returnType.table(), resultType, parentSource.sourceExpr(envSource));
         }
@@ -6488,11 +6497,8 @@ public class TypeFetcherGenerator {
                     "Graphitron generator bug (batched fetcher): a table-batched launcher row"
                     + " carries the service arms' LoaderDelegated result");
         };
-        if (empty == null) {
-            return CodeBlock.of("$T.completedFuture(null)", COMPLETABLE_FUTURE);
-        }
-        return CodeBlock.of("$T.completedFuture($T.<$T>newResult().data($L).build())",
-            COMPLETABLE_FUTURE, DATA_FETCHER_RESULT, boxed(resultValueType), empty);
+        var form = new ParentSourceBinding.EscapeForm.Async(resultValueType);
+        return empty == null ? form.nullValue() : form.wrap(empty);
     }
 
     /**

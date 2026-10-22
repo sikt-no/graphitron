@@ -23,6 +23,11 @@ public final class OccupantsWithErrorsService {
         return new OccupantsWithErrorsPayload(address, java.util.List.of(address));
     }
 
+    /** Non-null list arm: the loaded address row behind the list hub accessor; throws for the reserved missing id. */
+    public static OccupantsListWithErrorsPayload listByAddressId(Integer addressId, DSLContext dsl) {
+        return new OccupantsListWithErrorsPayload(java.util.List.of(loadAddress(addressId, dsl)));
+    }
+
     /** Record-payload arm: returns the loaded address row itself; throws for the reserved missing id. */
     public static AddressRecord addressById(Integer addressId, DSLContext dsl) {
         return loadAddress(addressId, dsl);

@@ -2085,8 +2085,8 @@ public class GraphitronSchemaValidator {
      * The sibling rule for errors fields on the {@code Outcome} wrapper transport.
      * Under the wrapper transport (a {@link ChildField.ErrorsField} on the type), every immediate child
      * of an in-scope outcome type receives a non-null {@code Outcome} as {@code env.getSource()}, so
-     * each data-channel fetcher must unwrap {@code Success} before its existing read (returning null
-     * on {@code ErrorList}). An un-switched child is a silent runtime hole: graphql-java's default
+     * each data-channel fetcher must unwrap {@code Success} before its existing read (returning the
+     * field's error-arm answer on {@code ErrorList}). An un-switched child is a silent runtime hole: graphql-java's default
      * {@code PropertyDataFetcher} would read a property off the {@code Outcome} object itself.
      *
      * <p>The arm-switch lives with the emit: inline-resolved reads narrow {@code Success} in the

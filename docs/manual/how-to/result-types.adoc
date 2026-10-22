@@ -21,7 +21,7 @@ Input-side class-backed types follow the same shape with parallel permits on `In
 
 === Class-backed payloads with an `errors:` field
 
-A class-backed payload with an xref:error-channel.adoc[`errors:` field] needs no errors slot of its own. Graphitron never constructs the payload class: the producing field hands back the value your service returned on success, and on a claimed throw the errors arrive at the `errors:` field while every other field reads null. The class only has to expose the data fields the payload declares.
+A class-backed payload with an xref:error-channel.adoc[`errors:` field] needs no errors slot of its own. Graphitron never constructs the payload class: the producing field hands back the value your service returned on success, and on a claimed throw the errors arrive at the `errors:` field while every other field reads null, or `[]` for a non-null list (see xref:../reference/directives/mutation.adoc[`@mutation`] for the rule). The class only has to expose the data fields the payload declares.
 
 == jOOQ-record parents: catalog drives everything
 

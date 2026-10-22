@@ -58,9 +58,11 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     }
 
     /**
-     * Raised by the {@code OutcomeType} classification: a success-projection (data) field is
-     * non-null, which would bubble null up and drop the errors field on the error arm.
-     * Success-projection fields must be nullable.
+     * Raised by the {@code OutcomeType} classification: a success-projection (data) field has no
+     * value to answer on the error arm. On that arm a nullable data field answers {@code null} and
+     * a non-null plain list answers {@code []}; a non-null single value or connection has no empty
+     * value, and a {@code null} would bubble up and drop the errors field. Data fields must be
+     * nullable or non-null plain lists.
      */
     record NonNullableSuccessProjectionField(
         String outcomeTypeName,
@@ -68,9 +70,10 @@ public sealed interface ErrorChannelWalkerError extends Rejection.AuthorError pe
     ) implements ErrorChannelWalkerError {
         @Override public String message() {
             return "outcome type '" + outcomeTypeName + "' has a non-null success-projection field '"
-                + fieldName + "'; on the error arm this field resolves null and would raise "
-                + "NonNullableFieldWasNullError, dropping the sibling errors field. "
-                + "Success-projection fields must be nullable";
+                + fieldName + "' with no empty value; on the error arm this field would resolve null "
+                + "and raise NonNullableFieldWasNullError, dropping the sibling errors field. "
+                + "Success-projection fields must be nullable or a non-null plain list, which "
+                + "answers [] on the error arm (a connection counts as a single value)";
         }
         @Override public String lspCode() { return "graphitron.error-channel.non-nullable-success-field"; }
     }

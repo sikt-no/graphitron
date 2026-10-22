@@ -2,8 +2,11 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.render.FetcherResult;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.ErrorArmAnswer;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.InputField;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -37,21 +40,26 @@ import java.util.Set;
  * this binding is the type-level derivation of the same fork
  * {@code SourceEnvelope} carries leaf-level.
  *
- * <p>The one thing that varies per consumer is the escape the prelude returns when the parent
- * carries no readable backing on this request ({@code CompletableFuture.completedFuture(null)}
- * in async fetchers, a null-data {@code DataFetcherResult} in sync ones, plain {@code null} in
- * inline reads), so {@link #prelude} takes it as a parameter and everything else is derived.
- * {@code subject} is the expression the GraphQL source arrives as: {@code env.getSource()} in
- * env-dependent fetchers, the {@code source} parameter in {@code LightFetcher} reads.
+ * <p>What varies per consumer is the escape the prelude returns when the parent carries no
+ * readable backing on this request. Its envelope is the fetcher's return shape
+ * ({@link EscapeForm}: a plain value in inline reads, a {@code DataFetcherResult} in sync
+ * fetchers, a completed future in async ones), and on the {@link OutcomeRecord} arm its value is
+ * the field's {@link ErrorArmAnswer}: {@code null} for a nullable data field, the empty list for
+ * a non-null plain list. {@link #prelude} takes both and renders the escape itself, so no caller
+ * spells the escape value. {@code subject} is the expression the GraphQL source arrives as:
+ * {@code env.getSource()} in env-dependent fetchers, the {@code source} parameter in
+ * {@code LightFetcher} reads.
  */
 public sealed interface ParentSourceBinding {
 
     /**
      * Statements emitted before any read of the parent's backing object: narrows or guards
      * {@code subject}, escaping with {@code return <escape>;} when there is nothing to read.
-     * Empty on the {@link TableRow} arm.
+     * Empty on the {@link TableRow} arm. The escape is rendered in {@code form}; only the
+     * {@link OutcomeRecord} arm reads {@code answer} (the field at {@code coordinate}'s
+     * {@link ErrorArmAnswer}), since {@link ErrorArmAnswer#NONE} is legal on every other arm.
      */
-    CodeBlock prelude(CodeBlock subject, CodeBlock escape);
+    CodeBlock prelude(CodeBlock subject, String coordinate, ErrorArmAnswer answer, EscapeForm form);
 
     /** The expression the parent's backing object is read from, valid after {@link #prelude}. */
     CodeBlock sourceExpr(CodeBlock subject);
@@ -75,7 +83,8 @@ public sealed interface ParentSourceBinding {
      * {@code Outcome}-wrapped. Empty prelude; the backing object is the subject itself.
      */
     record TableRow() implements ParentSourceBinding {
-        @Override public CodeBlock prelude(CodeBlock subject, CodeBlock escape) {
+        @Override public CodeBlock prelude(CodeBlock subject, String coordinate, ErrorArmAnswer answer,
+                EscapeForm form) {
             return CodeBlock.of("");
         }
         @Override public CodeBlock sourceExpr(CodeBlock subject) {
@@ -87,13 +96,15 @@ public sealed interface ParentSourceBinding {
      * A producer-handed backing object with no wrapper transport in play. The null-source guard
      * covers a producer that hands down no backing object for this child (a list element or
      * nested object the producer left null), so a consumer reading straight off the source does
-     * not throw {@code NullPointerException}.
+     * not throw {@code NullPointerException}. The escape is {@code null} in the form's envelope
+     * whatever the field's answer: without the wrapper transport there is no error arm.
      */
     record DirectRecord() implements ParentSourceBinding {
-        @Override public CodeBlock prelude(CodeBlock subject, CodeBlock escape) {
+        @Override public CodeBlock prelude(CodeBlock subject, String coordinate, ErrorArmAnswer answer,
+                EscapeForm form) {
             return CodeBlock.builder()
                 .beginControlFlow("if ($L == null)", subject)
-                .addStatement("return $L", escape)
+                .addStatement("return $L", form.nullValue())
                 .endControlFlow()
                 .build();
         }
@@ -105,26 +116,99 @@ public sealed interface ParentSourceBinding {
     /**
      * A producer-handed backing object behind the wrapper transport: the source is a non-null
      * {@code Outcome}, the backing object lives in {@code Success.value()}, and the
-     * {@code ErrorList} arm escapes (the sibling errors field renders the error list). A
-     * {@code Success} whose value is {@code null} (a producer that returned {@code null}) escapes
-     * too, which is {@link DirectRecord}'s null-source guard on the wrapped arm. The
-     * narrowed {@code success} local the prelude binds is what {@link #sourceExpr} reads, so the
-     * two halves cannot be consumed apart.
+     * {@code ErrorList} arm escapes with the field's {@link ErrorArmAnswer} (the sibling errors
+     * field renders the error list). A {@code Success} whose value is {@code null} (a producer
+     * that returned {@code null}) escapes the same way, which is {@link DirectRecord}'s
+     * null-source guard on the wrapped arm: nothing was produced either way. The narrowed
+     * {@code success} local the prelude binds is what {@link #sourceExpr} reads, so the two halves
+     * cannot be consumed apart.
      */
     record OutcomeRecord(String outputPackage) implements ParentSourceBinding {
-        @Override public CodeBlock prelude(CodeBlock subject, CodeBlock escape) {
+        @Override public CodeBlock prelude(CodeBlock subject, String coordinate, ErrorArmAnswer answer,
+                EscapeForm form) {
             var successClass = ClassName
                 .get(outputPackage + ".schema", OutcomeClassGenerator.CLASS_NAME)
                 .nestedClass(OutcomeClassGenerator.SUCCESS_CLASS);
             return CodeBlock.builder()
                 .beginControlFlow("if (!($L instanceof $T<?> success) || success.value() == null)",
                     subject, successClass)
-                .addStatement("return $L", escape)
+                .addStatement("return $L", errorArmEscape(coordinate, answer, form))
                 .endControlFlow()
                 .build();
         }
         @Override public CodeBlock sourceExpr(CodeBlock subject) {
             return CodeBlock.of("success.value()");
+        }
+    }
+
+    /**
+     * The value a data field of an outcome payload answers when nothing was produced, in
+     * {@code form}'s envelope: {@code null} for {@link ErrorArmAnswer#NULL}, the empty list for
+     * {@link ErrorArmAnswer#EMPTY_LIST}. Shared by {@link OutcomeRecord#prelude} and the leaf-level
+     * envelope narrowing in {@code FetcherEmitter}, so the error arm has one spelling.
+     * {@link ErrorArmAnswer#NONE} throws: the classifier rejects a data field without an answer
+     * ({@code FieldBuilder}'s {@code NonNullableSuccessProjectionField} check), so a leaf reaching
+     * here with one is a generator bug.
+     */
+    static CodeBlock errorArmEscape(String coordinate, ErrorArmAnswer answer, EscapeForm form) {
+        return switch (answer) {
+            case NULL -> form.nullValue();
+            case EMPTY_LIST -> form.wrap(CodeBlock.of("$T.of()", ClassName.get("java.util", "List")));
+            case NONE -> throw new IllegalStateException(
+                "Graphitron generator bug (outcome error arm): data field '" + coordinate
+                + "' has no error-arm answer; a non-null single or connection beside an errors"
+                + " field is rejected at classify time");
+        };
+    }
+
+    /**
+     * The envelope a fetcher returns its escape in, matching its declared return type. Each arm
+     * renders the field's data value into that envelope ({@link #wrap}) and names the envelope's
+     * null escape ({@link #nullValue}), which is the spelling each family used before the escape
+     * moved into the binding.
+     */
+    sealed interface EscapeForm {
+        /** {@code data} in this envelope. */
+        CodeBlock wrap(CodeBlock data);
+
+        /** The envelope's escape for a field that answers {@code null}. */
+        CodeBlock nullValue();
+
+        /** A plain value: the inline reads and leaf-level envelope fetchers. */
+        record Plain() implements EscapeForm {
+            @Override public CodeBlock wrap(CodeBlock data) {
+                return data;
+            }
+            @Override public CodeBlock nullValue() {
+                return CodeBlock.of("null");
+            }
+        }
+
+        /** A synchronous {@code DataFetcherResult<V>}, null data on the null escape. */
+        record Sync(TypeName valueType) implements EscapeForm {
+            @Override public CodeBlock wrap(CodeBlock data) {
+                return CodeBlock.of("$T.<$T>newResult().data($L).build()",
+                    ClassName.get("graphql.execution", "DataFetcherResult"),
+                    FetcherResult.boxed(valueType), data);
+            }
+            @Override public CodeBlock nullValue() {
+                return wrap(CodeBlock.of("null"));
+            }
+        }
+
+        /**
+         * An asynchronous {@code CompletableFuture<DataFetcherResult<V>>}. The null escape is a
+         * future completed with {@code null}, which graphql-java renders as a {@code null} field.
+         */
+        record Async(TypeName valueType) implements EscapeForm {
+            @Override public CodeBlock wrap(CodeBlock data) {
+                return CodeBlock.of("$T.completedFuture($L)",
+                    ClassName.get("java.util.concurrent", "CompletableFuture"), new Sync(valueType).wrap(data));
+            }
+            @Override public CodeBlock nullValue() {
+                return CodeBlock.of("$T.completedFuture(null)",
+                    ClassName.get("java.util.concurrent", "CompletableFuture"));
+            }
         }
     }
 

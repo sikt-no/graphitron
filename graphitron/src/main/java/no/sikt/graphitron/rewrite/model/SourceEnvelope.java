@@ -28,8 +28,9 @@ public enum SourceEnvelope {
     /**
      * {@code env.getSource()} is the non-null {@code Outcome} of an error-channel
      * carrier: the value(s) live in
-     * {@code Outcome.Success.value()}, and the {@code Outcome.ErrorList} arm resolves the
-     * data field to {@code null}.
+     * {@code Outcome.Success.value()}, and the {@code Outcome.ErrorList} arm (or a {@code Success}
+     * carrying {@code null}) resolves the data field to its {@link ErrorArmAnswer}: {@code null},
+     * or the empty list for a non-null list.
      */
     OUTCOME_SUCCESS
 }

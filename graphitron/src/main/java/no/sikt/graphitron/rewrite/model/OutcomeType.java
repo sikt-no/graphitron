@@ -13,8 +13,9 @@ import no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError;
  * {@code ErrorChannelWalker} relies on are structural rather than prose. The classifier is the
  * single producer: it runs {@code BuildContext.detectErrorsFieldShape}, enforces the
  * single-errors-field invariant ({@link ErrorChannelWalkerError.MultipleErrorsFields}) and the
- * nullable-success-projection invariant
- * ({@link ErrorChannelWalkerError.NonNullableSuccessProjectionField}), and only then constructs
+ * error-arm invariant that every data field has an {@link ErrorArmAnswer} other than
+ * {@link ErrorArmAnswer#NONE} ({@link ErrorChannelWalkerError.NonNullableSuccessProjectionField}),
+ * and only then constructs
  * {@code OutcomeType}. Possessing an {@code OutcomeType} is therefore the proof those invariants
  * hold; the walker reads {@link #errorsField()} directly rather than re-scanning.
  *

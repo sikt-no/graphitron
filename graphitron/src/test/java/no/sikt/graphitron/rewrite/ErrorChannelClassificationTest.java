@@ -167,7 +167,8 @@ class ErrorChannelClassificationTest {
 
     @Test
     void nonNullableSuccessProjectionField_rejectsCarrier() {
-        // A success-projection (data) field declared non-null resolves null on the ErrorList
+        // A success-projection (data) field declared non-null with no empty value (a single
+        // value here) would resolve null on the ErrorList
         // arm, which raises NonNullableFieldWasNullError and bubbles the null up to the outcome
         // field, dropping the sibling errors field (the silent errors-drop the wrapper transport
         // exists to prevent). The classifier rejects such an outcome type at classify time, before
@@ -196,6 +197,53 @@ class ErrorChannelClassificationTest {
         assertThat(u.reason())
             .contains("non-null success-projection field 'data'")
             .contains("must be nullable");
+    }
+
+    private static final String SAK_ERRORS_SDL = """
+            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
+                path: [String!]!
+                message: String!
+            }
+            union SakError = ValidationErr
+            """;
+
+    @Test
+    void nonNullListSuccessProjectionField_isAccepted() {
+        // A non-null plain list answers [] on the ErrorList arm, so it has a value to give there and
+        // the carrier classifies; the list's element nullability does not matter.
+        for (var dataType : java.util.List.of("[String!]!", "[String]!")) {
+            var schema = build(SAK_ERRORS_SDL + """
+                type SakPayload {
+                    data: %s
+                    errors: [SakError]
+                }
+                type Query { sak: SakPayload %s }
+                """.formatted(dataType, SERVICE_DECL));
+
+            assertThat(schema.field("Query", "sak"))
+                .as("data: %s", dataType)
+                .isInstanceOf(QueryField.QueryServiceRecordField.class);
+        }
+    }
+
+    @Test
+    void nonNullConnectionSuccessProjectionField_rejectsCarrier() {
+        // @asConnection is still a list on the pre-rewrite schema the classifier reads; the rule
+        // keys on the field's wrapper, which resolves the directive to a connection, and a
+        // connection counts as a single value on the error arm.
+        var schema = build(SAK_ERRORS_SDL + """
+            type Film @table(name: "film") { title: String }
+            type SakPayload {
+                data: [Film!]! @asConnection
+                errors: [SakError]
+            }
+            type Query { sak: SakPayload %s }
+            """.formatted(SERVICE_DECL));
+
+        assertThat(schema.field("Query", "sak"))
+            .isInstanceOfSatisfying(UnclassifiedField.class, u -> assertThat(u.rejection())
+                .isEqualTo(new no.sikt.graphitron.model.diagnostics.ErrorChannelWalkerError
+                    .NonNullableSuccessProjectionField("SakPayload", "data")));
     }
 
     @Test

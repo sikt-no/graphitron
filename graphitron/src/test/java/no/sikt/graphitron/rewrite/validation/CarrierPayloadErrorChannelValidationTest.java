@@ -18,8 +18,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The build-time rules a DML or {@code @routine} payload carrier answers to once its errors ride
  * the typed {@code Outcome} wrapper, the transport root {@code @service} payloads already use. The
- * error arm renders every data field {@code null}, so the nullable-success-projection rule applies
- * to these carriers exactly as it does to {@code @service} ones, and the sibling rules keyed on the
+ * error arm renders a nullable data field {@code null} and a non-null plain list {@code []}, so the
+ * error-arm rule (a data field must be nullable or a non-null plain list) applies to these carriers
+ * exactly as it does to {@code @service} ones, and the sibling rules keyed on the
  * {@code WrapperArm} transport ({@code validateOutcomeChildArmSwitch},
  * {@code validateWrapperArmSiblingPosture}) govern the carrier's data fields.
  */
@@ -47,9 +48,19 @@ class CarrierPayloadErrorChannelValidationTest {
 
     private static void assertRejectedForNonNullData(GraphitronSchema schema, String fieldName,
             String payload, String dataField) {
+        var expected = new ErrorChannelWalkerError.NonNullableSuccessProjectionField(payload, dataField);
         assertThat(schema.field("Mutation", fieldName))
             .isInstanceOfSatisfying(GraphitronField.UnclassifiedField.class, u -> assertThat(u.rejection())
-                .isEqualTo(new ErrorChannelWalkerError.NonNullableSuccessProjectionField(payload, dataField)));
+                .isEqualTo(expected));
+        // The rule has one home, the classifier: the payload still classifies when its producer is
+        // rejected, so a second check over the payload's leaves would report the field again.
+        assertThat(validate(schema))
+            .filteredOn(e -> e.rejection() instanceof ErrorChannelWalkerError.NonNullableSuccessProjectionField)
+            .singleElement()
+            .satisfies(e -> {
+                assertThat(e.coordinate()).isEqualTo("Mutation." + fieldName);
+                assertThat(e.message()).contains(expected.message());
+            });
     }
 
     @Test
@@ -62,12 +73,26 @@ class CarrierPayloadErrorChannelValidationTest {
     }
 
     @Test
-    void dmlPayloadWithErrors_nonNullListDataField_isRejected() {
+    void dmlPayloadWithErrors_nonNullListDataField_isAccepted() {
+        // A non-null plain list answers [] on the error arm, so it has a value to give there.
         var schema = TestSchemaHelper.buildSchema(ERRORS + FILM + """
             type FilmsPayload { films: [Film!]! errors: [CarrierError] }
             type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT, table: "film") }
             """);
-        assertRejectedForNonNullData(schema, "createFilms", "FilmsPayload", "films");
+        assertThat(schema.field("Mutation", "createFilms"))
+            .isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+        assertThat(validate(schema)).isEmpty();
+    }
+
+    @Test
+    void dmlPayloadWithErrors_nonNullListOfNullableDataField_isAccepted() {
+        var schema = TestSchemaHelper.buildSchema(ERRORS + FILM + """
+            type FilmsPayload { films: [Film]! errors: [CarrierError] }
+            type Mutation { createFilms(in: [FilmInput!]!): FilmsPayload @mutation(typeName: INSERT, table: "film") }
+            """);
+        assertThat(schema.field("Mutation", "createFilms"))
+            .isInstanceOf(MutationField.MutationBulkDmlRecordField.class);
+        assertThat(validate(schema)).isEmpty();
     }
 
     @Test
@@ -85,10 +110,10 @@ class CarrierPayloadErrorChannelValidationTest {
     }
 
     @Test
-    void routinePayloadWithErrors_nonNullListDataField_isRejected() {
+    void routinePayloadWithErrors_nonNullListDataField_isAccepted() {
         // The routine classifier's own rule exempts a list data field (the zero-row re-read is an
-        // empty list); with an errors field the Outcome error arm renders it null, so the shared
-        // nullable-success-projection rule rejects the outer '!'.
+        // empty list); with an errors field the Outcome error arm renders it [] too, so the shared
+        // error-arm rule admits the outer '!' as well.
         var schema = TestSchemaHelper.buildSchema(ERRORS + RENTAL + """
             type RentFilmPayload { rentals: [Rental!]! errors: [CarrierError] }
             type Mutation {
@@ -96,7 +121,25 @@ class CarrierPayloadErrorChannelValidationTest {
                 @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
             }
             """);
-        assertRejectedForNonNullData(schema, "rentFilm", "RentFilmPayload", "rentals");
+        assertThat(schema.field("Mutation", "rentFilm"))
+            .isInstanceOf(MutationField.MutationRoutineWriteRecordField.class);
+        assertThat(validate(schema)).isEmpty();
+    }
+
+    @Test
+    void routinePayloadWithErrors_nonNullSingleDataField_isRejected() {
+        // The routine classifier's zero-row rule fires first for a non-null single; either way
+        // the producer is rejected exactly once.
+        var schema = TestSchemaHelper.buildSchema(ERRORS + RENTAL + """
+            type RentFilmPayload { rental: Rental! errors: [CarrierError] }
+            type Mutation {
+              rentFilm(inventoryId: Int!, customerId: Int!): RentFilmPayload
+                @routine(name: "rent_film", argMapping: "pInventoryId: inventoryId, pCustomerId: customerId")
+            }
+            """);
+        assertThat(schema.field("Mutation", "rentFilm")).isInstanceOf(GraphitronField.UnclassifiedField.class);
+        assertThat(validate(schema)).filteredOn(e -> e.coordinate().startsWith("RentFilmPayload")).isEmpty();
+        assertThat(validate(schema)).filteredOn(e -> e.coordinate().equals("Mutation.rentFilm")).hasSize(1);
     }
 
     @Test

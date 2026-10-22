@@ -22,17 +22,20 @@ import java.util.List;
  * <p>The wrapper exists because graphql-java short-circuits <em>all</em> of an object type's
  * children when the source is null, so an errors field on a forking type would never be fetched
  * and the typed error silently dropped. With {@code Outcome} the source is always non-null and
- * graphql-java always descends: data fields project {@code Success.value} (null on the
- * {@code ErrorList} arm) and the errors field projects {@code ErrorList.errors}.
+ * graphql-java always descends: data fields project {@code Success.value} (their
+ * {@link no.sikt.graphitron.rewrite.model.ErrorArmAnswer} on the {@code ErrorList} arm) and the
+ * errors field projects {@code ErrorList.errors}.
  *
  * <p>Two corollaries every immediate child of an outcome type must honour:
  * <ul>
- *   <li><b>Every immediate child arm-switches</b>: unwrap {@code Success} before the read, null on
- *       {@code ErrorList}. Pinned at build time by
+ *   <li><b>Every immediate child arm-switches</b>: unwrap {@code Success} before the read, the field's
+ *       error-arm answer on {@code ErrorList}. Pinned at build time by
  *       {@code GraphitronSchemaValidator.validateOutcomeChildArmSwitch}.</li>
- *   <li><b>Success-projection fields must be nullable</b>: on a non-null SDL type the error-arm
- *       null raises {@code NonNullableFieldWasNullError} and bubbles up, dropping the sibling
- *       errors field. Rejected at classify time as
+ *   <li><b>Success-projection fields must be nullable or non-null plain lists</b>: a nullable
+ *       field answers {@code null} on the error arm and a non-null list answers {@code []}; a
+ *       non-null single or connection has no empty value, and a {@code null} there raises
+ *       {@code NonNullableFieldWasNullError} and bubbles up, dropping the sibling errors field.
+ *       Rejected at classify time as
  *       {@code ErrorChannelWalkerError.NonNullableSuccessProjectionField}.</li>
  * </ul>
  *
@@ -106,14 +109,15 @@ public final class OutcomeClassGenerator {
                 + "\n"
                 + "<p>The source is always non-null so graphql-java always descends into the outcome\n"
                 + "type's children: data fields project {@code Success.value} (null on the error arm,\n"
-                + "so they render null and their children are not visited) and the errors field\n"
-                + "projects {@code ErrorList.errors}. A null source would make graphql-java\n"
+                + "or an empty list for a non-null list, so their children are not visited) and the\n"
+                + "errors field projects {@code ErrorList.errors}. A null source would make graphql-java\n"
                 + "short-circuit all children, silently dropping the typed error.\n"
                 + "\n"
                 + "<p>Every immediate child of an outcome type must arm-switch: each data-channel\n"
-                + "fetcher unwraps {@code Success} before its read and returns null on\n"
-                + "{@code ErrorList}. Success-projection fields must be nullable, else the error-arm\n"
-                + "null bubbles up and drops the sibling errors field.\n")
+                + "fetcher unwraps {@code Success} before its read and returns null, or an empty\n"
+                + "list for a non-null list, on {@code ErrorList}. Any other success-projection\n"
+                + "field must be nullable, else the error-arm null bubbles up and drops the sibling\n"
+                + "errors field.\n")
             .addType(success)
             .addType(errorList)
             .build();
