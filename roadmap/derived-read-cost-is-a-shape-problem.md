@@ -195,10 +195,8 @@ resolutions and links built beside it are gone.
   `FilmDetailsCarrier.language` have none until "A consumed key is a source".
   * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
 * **The field grain reads only the walk** `done`.
-* **A key element states which name it matched by** `open`. `graphitron_path_element_key` records
-  whether the SQL name or the jOOQ `Keys` constant answered, which the step targets carry as
-  `key_matched_by` today and `SchemaQueries` shows.
-* **The step targets' readers read the walk** `blocked`, on "A key element states which name it matched by". The column scope rule, the node-id instruction rule,
+* **A key element states which name it matched by** `done`.
+* **The step targets' readers read the walk** `open`. The column scope rule, the node-id instruction rule,
   `SchemaQueries`, `ReferencePathFanout` and the routine writes read `graphitron_field_path`, its
   children and its stops, and the `intent_field_path_` views, `graphitron_field_path_application`
   and `FieldPathApplications` go.
