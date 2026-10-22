@@ -1,7 +1,7 @@
 ---
 id: R1087
 title: "Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed"
-status: Spec
+status: Ready
 bucket: enhancement
 priority: 3
 theme: error-channel
@@ -29,7 +29,7 @@ Graphitron 9 also logged each top-level exception once, however many fields a ba
 
 ## The consumer's view (first-client check)
 
-This section drafts the manual text the item ships. It goes into `docs/manual/how-to/error-channel.adoc`, replacing the closing paragraph of § `message:` resolution that recommends overriding `getMessage()`, and adding a section after § Choosing how unmatched exceptions are logged.
+This section drafts the manual text the item ships. It goes into `docs/manual/how-to/error-channel.adoc`, replacing the closing paragraph of § `path:`, `message:` field fetchers that recommends overriding `getMessage()`, and adding a section after § Choosing how unmatched exceptions are logged.
 
 The catch-all is plain `@error` SDL, valid today. This is the sis shape: the existing `UgyldigInput` member that catches Graphitron's own client errors, with two broad handlers appended last so they only see what every earlier handler passed over.
 
@@ -138,7 +138,7 @@ It joins the `CONNECTION_RUNTIME` unit set the way `FetcherErrorLog` did: `EmitP
 
 **`graphitron-jakarta-rest`** (`GraphitronApplication`, `GraphqlHttpHandler`). Two default methods on the SPI, `String newReference(Throwable thrown)` (default a random UUID) and `String redactedMessage(Throwable thrown, String reference)` (default today's text), which `GraphqlHttpHandler`'s broad catch arm calls in place of its inline UUID and string. A throw from either falls back to the default under the same one-line containment; the module compiles at 17, so no pattern-matching `instanceof` on the catch. The `WebApplicationException` passthrough above it is unchanged. The defaults duplicate the generated ones, unavoidably: the module compiles before, and independently of, any generated code. `GraphQLOverHttpConformanceTest.redactionShapeMatchesFetcherPath` is the enforcer that keeps the two sets of defaults agreeing.
 
-**Manual.** `docs/manual/how-to/error-channel.adoc` takes the first-client text above: § `message:` resolution's last paragraph points at `matchedMessage` instead of `getMessage()`, § Unmatched exceptions shows `newReference` and `unmatchedMessage` in the `redactBody` excerpt, and a new section after § Choosing how unmatched exceptions are logged carries `matched`, `FetcherErrorResponse` and the pitfall; the § Pitfalls list gains the catch-all bullet. `docs/manual/reference/directives/error.adoc`'s `description` row says it is the default a `matchedMessage` can replace. `docs/manual/how-to/migrating-from-legacy.adoc`'s `@error` bullet gains one sentence for the `SchemaBasedErrorStrategy` / `TopLevelErrorHandler` subclass: declare the catch-all, then move the subclass's message code into `FetcherErrorResponse` and its logging into `FetcherErrorLog`.
+**Manual.** `docs/manual/how-to/error-channel.adoc` takes the first-client text above: § `path:`, `message:` field fetchers's last paragraph points at `matchedMessage` instead of `getMessage()`, § Unmatched exceptions shows `newReference` and `unmatchedMessage` in the `redactBody` excerpt, and a new section after § Choosing how unmatched exceptions are logged carries `matched`, `FetcherErrorResponse` and the pitfall; the § Pitfalls list gains the catch-all bullet. `docs/manual/reference/directives/error.adoc`'s `description` row says it is the default a `matchedMessage` can replace. `docs/manual/how-to/migrating-from-legacy.adoc`'s `@error` bullet gains one sentence for the `SchemaBasedErrorStrategy` / `TopLevelErrorHandler` subclass: declare the catch-all, then move the subclass's message code into `FetcherErrorResponse` and its logging into `FetcherErrorLog`.
 
 ## Tests
 
