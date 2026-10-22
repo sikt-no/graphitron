@@ -34,13 +34,19 @@ import static no.sikt.graphitron.model.Tables.INTENT_AUTHORED_TYPE_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TYPE_BACKING;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_BACKING_CONFLICT;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
+import static org.jooq.impl.DSL.coalesce;
 import static org.jooq.impl.DSL.concat;
+import static org.jooq.impl.DSL.when;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
@@ -144,6 +150,7 @@ final class SchemaQueries {
         ClaimSet claims,
         Optional<Conflict> conflict,
         List<Hop> joinPath,
+        List<PathStop> pathStops,
         List<MethodBinding> producerMethods,
         List<MethodBinding> conditionMethods
     ) {
@@ -289,29 +296,35 @@ final class SchemaQueries {
     record ColumnBinding(String table, String column, String matchedName, String matchedBy) {}
 
     /**
-     * One element of a field's {@code @reference} path, resolved: where the chain stands when it reads
-     * the element and where the element lands.
+     * One step of a field's path as the store walks it: where the walk stands when it reads the
+     * element and where the element lands.
      *
-     * <p>Both endpoints are schema-qualified, which is the whole of what the retired projection's bare
-     * target name could not carry. Each row states its own {@code (ordinal, position)} key, so a field
-     * carrying two {@code @reference} applications reports two paths without either being concatenated
-     * into the other by a grouping done here.
+     * <p>Both endpoints are schema-qualified. A field's {@code @routine} and {@code @reference}
+     * elements compose one path, so {@code position} is the element's place in the field's path rather
+     * than within its own application; a field walked from more than one start reports each walk,
+     * the first step of each departing its start.
      *
-     * @param ordinal the owning application's ordinal, the directive being repeatable
-     * @param position the element's 0-based position within its own application's path
-     * @param via {@code KEY} where the element named a constraint, {@code TABLE} where it named a table
-     * @param keyMatchedBy which namespace answered a {@code KEY} element, {@code null} on a
-     *     {@code TABLE} one
-     * @param targets how many distinct tables the element reaches; above one the destination is
-     *     uncertain
-     * @param candidates how many resolutions the element has, counting routes and not just
-     *     destinations; the arity the generator's "which foreign key did you mean" rejection counts
+     * @param position the element's 0-based place in the field's path
+     * @param via {@code KEY} where the element named a constraint, {@code CONDITION} where it names a
+     *     method the join is, {@code TABLE} otherwise
+     * @param keyMatchedBy which namespace answered a {@code KEY} element, {@code null} on any other
+     * @param constraintName the constraint a {@code KEY} step crosses, {@code null} on any other
+     * @param fkOnFrom whether that constraint is declared on the table the step departs
      */
     record Hop(
-        int ordinal, int position, String via, String keyMatchedBy,
-        String fromTable, String toTable, String constraintName, boolean fkOnFrom,
-        int targets, int candidates
+        int position, String via, String keyMatchedBy,
+        String fromTable, String toTable, String constraintName, boolean fkOnFrom
     ) {}
+
+    /**
+     * Where a field's walk stops short of its path's end: the element it could not take one step
+     * through.
+     *
+     * @param fromTable where the walk stands at the element
+     * @param moves how many steps the element offers there: none means it reaches nothing from that
+     *     table, more than one that the store declines to pick between them
+     */
+    record PathStop(int position, String fromTable, int moves) {}
 
     /**
      * One census method a field's authored Java reference names.
@@ -660,7 +673,7 @@ final class SchemaQueries {
         var claims = claims(store, typeNames);
         var rows = store.dsl()
             .select(GRAPHQL_FIELD.TYPE_NAME, GRAPHQL_FIELD.FIELD_NAME, GRAPHQL_FIELD.TYPE_SDL,
-                fieldConflict(), joinPath(), producerMethods(),
+                fieldConflict(), joinPath(), pathStops(), producerMethods(),
                 conditionMethods(store))
             .from(GRAPHQL_FIELD)
             .where(GRAPHQL_FIELD.GRAPH_NAME.eq(store.graphName())
@@ -683,13 +696,13 @@ final class SchemaQueries {
      */
     private record FieldRow(
         String typeName, String fieldName, String typeSdl,
-        Optional<Conflict> conflict, List<Hop> joinPath, List<MethodBinding> producerMethods,
-        List<MethodBinding> conditionMethods
+        Optional<Conflict> conflict, List<Hop> joinPath, List<PathStop> pathStops,
+        List<MethodBinding> producerMethods, List<MethodBinding> conditionMethods
     ) {
 
         FieldEntry withClaims(ClaimSet claims) {
             return new FieldEntry(typeName, fieldName, typeSdl, claims, conflict, joinPath,
-                producerMethods, conditionMethods);
+                pathStops, producerMethods, conditionMethods);
         }
     }
 
@@ -804,42 +817,66 @@ final class SchemaQueries {
     }
 
     /**
-     * The field's {@code @reference} path as the store resolves it: each element walked from the
-     * enclosing type's table binding, so a row exists only for an element the chain can be shown to
-     * reach.
-     *
-     * <p>The resolved relation rather than the local one underneath it. The hop relation enumerates
-     * every table-to-table hop an element could express, both orientations of every foreign key
-     * included, before anything decides where the chain stands; rendering that as a join path would show
-     * one element departing from two different tables at once. Absence here means the chain did not
-     * reach the element, never that the element resolves to nothing in particular.
+     * The field's path as the store walks it: each element stepped from where the one before it
+     * landed, so a row exists only for an element the walk took. Where it could not take one, the
+     * field's {@link #pathStops()} says which element and why.
      */
     private static Field<List<Hop>> joinPath() {
+        var p = GRAPHITRON_FIELD_PATH;
+        var k = GRAPHITRON_FIELD_PATH_KEY;
+        var e = GRAPHITRON_PATH_ELEMENT_KEY;
+        var m = GRAPHITRON_FIELD_PATH_METHOD;
         return multiset(
-            select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.ORDINAL,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.KEY_MATCHED_BY,
-                qualified(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_SCHEMA,
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE),
-                qualified(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA,
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE),
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FK_ON_FROM,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TARGETS,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CANDIDATES)
-                .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
-                .where(ofField(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME,
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TYPE_NAME,
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FIELD_NAME))
-                .orderBy(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.ORDINAL.asc(),
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.POSITION.asc(),
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_SCHEMA.asc(),
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE.asc(),
-                    GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.CONSTRAINT_NAME.asc()))
+            select(p.POSITION,
+                when(k.CONSTRAINT_NAME.isNotNull(), inline("KEY"))
+                    .when(exists(selectOne().from(m).where(
+                        m.GRAPH_NAME.eq(p.GRAPH_NAME), m.TYPE_NAME.eq(p.TYPE_NAME),
+                        m.FIELD_NAME.eq(p.FIELD_NAME), m.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
+                        m.START_SCHEMA.eq(p.START_SCHEMA), m.START_TABLE.eq(p.START_TABLE),
+                        m.POSITION.eq(p.POSITION))), inline("CONDITION"))
+                    .otherwise(inline("TABLE")),
+                e.MATCHED_BY,
+                qualified(p.FROM_SCHEMA, p.FROM_TABLE),
+                qualified(p.TO_SCHEMA, p.TO_TABLE),
+                k.CONSTRAINT_NAME,
+                k.CONSTRAINT_SCHEMA.eq(p.FROM_SCHEMA).and(k.CONSTRAINT_TABLE.eq(p.FROM_TABLE)))
+                .from(p)
+                .leftJoin(k).on(k.GRAPH_NAME.eq(p.GRAPH_NAME), k.TYPE_NAME.eq(p.TYPE_NAME),
+                    k.FIELD_NAME.eq(p.FIELD_NAME), k.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
+                    k.START_SCHEMA.eq(p.START_SCHEMA), k.START_TABLE.eq(p.START_TABLE),
+                    k.POSITION.eq(p.POSITION))
+                .leftJoin(e).on(e.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    e.SOURCE_NAME.eq(p.ELEMENT_SOURCE_NAME),
+                    e.SOURCE_LINE.eq(p.ELEMENT_SOURCE_LINE),
+                    e.SOURCE_COLUMN.eq(p.ELEMENT_SOURCE_COLUMN),
+                    e.CONSTRAINT_SOURCE_NAME.eq(k.CONSTRAINT_SOURCE_NAME),
+                    e.CONSTRAINT_SCHEMA.eq(k.CONSTRAINT_SCHEMA),
+                    e.CONSTRAINT_TABLE.eq(k.CONSTRAINT_TABLE),
+                    e.CONSTRAINT_NAME.eq(k.CONSTRAINT_NAME))
+                .where(ofField(p.GRAPH_NAME, p.TYPE_NAME, p.FIELD_NAME))
+                .orderBy(p.START_SCHEMA.asc(), p.START_TABLE.asc(), p.POSITION.asc()))
             .convertFrom(r -> r.map(row -> new Hop(row.value1(), row.value2(), row.value3(),
-                row.value4(), row.value5(), row.value6(), row.value7(),
-                Boolean.TRUE.equals(row.value8()), row.value9(), row.value10())));
+                row.value4(), row.value5(), row.value6(), Boolean.TRUE.equals(row.value7()))));
+    }
+
+    /** Where each of the field's walks stopped short of its path's end; empty where none did. */
+    private static Field<List<PathStop>> pathStops() {
+        var s = GRAPHITRON_FIELD_PATH_STOP;
+        var p = GRAPHITRON_FIELD_PATH;
+        // Where the walk stands at the stopping element: the table the step before it landed on, or
+        // the start where it stops on the first.
+        var standing = field(select(qualified(p.TO_SCHEMA, p.TO_TABLE)).from(p).where(
+            p.GRAPH_NAME.eq(s.GRAPH_NAME), p.TYPE_NAME.eq(s.TYPE_NAME), p.FIELD_NAME.eq(s.FIELD_NAME),
+            p.START_SOURCE_NAME.eq(s.START_SOURCE_NAME), p.START_SCHEMA.eq(s.START_SCHEMA),
+            p.START_TABLE.eq(s.START_TABLE), p.POSITION.eq(s.POSITION.minus(1))));
+        return multiset(
+            select(s.POSITION,
+                coalesce(standing, qualified(s.START_SCHEMA, s.START_TABLE)),
+                s.MOVES)
+                .from(s)
+                .where(ofField(s.GRAPH_NAME, s.TYPE_NAME, s.FIELD_NAME))
+                .orderBy(s.START_SCHEMA.asc(), s.START_TABLE.asc()))
+            .convertFrom(r -> r.map(Records.mapping(PathStop::new)));
     }
 
     /**
