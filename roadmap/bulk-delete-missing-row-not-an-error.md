@@ -1,7 +1,7 @@
 ---
 id: R1089
 title: "A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest"
-status: Ready
+status: In Progress
 bucket: enhancement
 priority: 3
 theme: mutation-write
