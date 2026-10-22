@@ -9978,15 +9978,32 @@ UNION ALL
 -- Where a chain broke, in a vocabulary of three told apart by what is true at the break. The
 -- chain overshot its target, or the element there resolves to nothing at all, or it resolves and
 -- none of its routes departs where the chain is standing. Three codes and one row, the three
--- being mutually exclusive by construction rather than by ranking.
+-- being mutually exclusive by construction rather than by ranking. Whether the element resolves is
+-- read off what it was resolved to at its own position, the stored key, table or method, or the one
+-- function a routine names: asked of the path reading instead, the view was evaluated again per
+-- broken chain over every graph in the store.
 SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
        CASE WHEN b.overshot THEN 'NO_ROUTE_TO_TARGET'
-            WHEN NOT EXISTS (SELECT 1 FROM graphitron_field_path_reading rd
-                              WHERE rd.graph_name = b.graph_name
-                                AND rd.type_name = b.type_name
-                                AND rd.field_name = b.field_name
-                                AND rd.arriving_type_name = b.arriving_type_name
-                                AND rd.position = b.break_position)
+            WHEN NOT EXISTS (SELECT 1 FROM graphitron_path_element_key k
+                              WHERE k.graph_name = cl.graph_name AND k.source_name = cl.source_name
+                                AND k.source_line = cl.source_line
+                                AND k.source_column = cl.source_column)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_table t
+                              WHERE t.graph_name = cl.graph_name AND t.source_name = cl.source_name
+                                AND t.source_line = cl.source_line
+                                AND t.source_column = cl.source_column)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_method m
+                              WHERE m.graph_name = cl.graph_name AND m.source_name = cl.source_name
+                                AND m.source_line = cl.source_line
+                                AND m.source_column = cl.source_column)
+             AND NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry e
+                               JOIN store_graph_source gs ON gs.graph_name = e.graph_name
+                               JOIN sql_table st
+                                 ON st.source_name = gs.source_name AND st.table_type = 'FUNCTION'
+                                AND st.table_name_upper = UPPER(e.routine_ref_name_part)
+                              WHERE e.graph_name = cl.graph_name AND e.source_name = cl.source_name
+                                AND e.source_line = cl.source_line
+                                AND e.source_column = cl.source_column)
               THEN 'ELEMENT_UNRESOLVED'
             ELSE 'NO_ROUTE_FROM_DEPARTURE' END, CAST(NULL AS VARCHAR)
   FROM broken b
