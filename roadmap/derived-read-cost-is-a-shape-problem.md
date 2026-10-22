@@ -264,7 +264,8 @@ classpath and catalog, and every reader reads that resolution rather than a view
   * **`@externalField` is `@routine`** `blocked`, on "A method's form is read off its signature". A
     value form bound to the parent's table; its readers move to the form, and the directive is
     deprecated later as an alias.
-  * **A table-valued function returned as a scalar is a defect** `blocked`, on "A routine is enriched by the database construct behind it". It can land before the reads.
+  * **A table-valued function returned as a scalar is a defect** `blocked`, on "A routine is enriched by the database construct behind it". It can land before the reads. Today
+    `Query.titleFor`, a scalar over `films_for_actor`, draws nothing.
 
 ### The graphitron family completes its flip and subtract `open`
 
