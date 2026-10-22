@@ -286,7 +286,10 @@ public final class JooqFactCapture {
             dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME,
                     t.CONSTRAINT_TYPE, t.JOOQ_NAME, t.KEY_POSITION, t.TOUCHED_AT)
                 .values(markers)
-                .onDuplicateKeyUpdate()
+                // The key named: left to find any key, the upsert matches the primary key or the
+                // unique one, and an OR finds no index.
+                .onConflict(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME)
+                .doUpdate()
                 .set(t.CONSTRAINT_TYPE, excluded(t.CONSTRAINT_TYPE))
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
                 .set(t.KEY_POSITION, excluded(t.KEY_POSITION))

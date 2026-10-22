@@ -428,7 +428,9 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
                 .where(a.GRAPH_NAME.eq(graph)))
-            .onDuplicateKeyUpdate()
+            // The primary key named; the coordinate the unique key holds spells the same names.
+            .onConflict(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME)
+            .doUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
@@ -449,7 +451,9 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
                 .where(a.GRAPH_NAME.eq(graph)))
-            .onDuplicateKeyUpdate()
+            // The primary key named; the coordinate the unique key holds spells the same names.
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME)
+            .doUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
@@ -569,7 +573,10 @@ public final class GraphQLAstCapture {
                 // a base-less chain's first extension holds 0, which the column's own comment and
                 // the density gate both state.
                 .and(m.MERGE_ORDINAL.eq(0)))
-            .onDuplicateKeyUpdate()
+            // The key named: left to find any key, the upsert matches the primary key or the
+            // unique one, and an OR finds no index, so every graph's types were scanned.
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME)
+            .doUpdate()
             .set(t.KIND, excluded(t.KIND))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
