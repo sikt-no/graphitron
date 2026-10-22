@@ -1,0 +1,44 @@
+# Where a field's path ends, from each table its rows start on. A walk that took the step at the
+# field's last written place lands where that step arrives; a routine nothing follows lands on its
+# own function, having nothing written to walk. A routine's walk begins at the place after it, so
+# the routine is never a step and its landing has no place.
+
+type Tilgang {
+  organisasjonskode: Int
+  rollekode: String
+}
+
+type Film @table(name: "film") {
+  title: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type FilmTranslation @table(name: "film_translation") {
+  title: String @field(name: "title_txt")
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+extend type Query {
+  films: [Film]
+  tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+    @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+  recentFilms(actorId: Int!, minLength: Int!): [Film!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}])
+  recentTranslations(actorId: Int!, minLength: Int!): [FilmTranslation!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}, {table: "film_translation"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_field_path_landing", rows: """
+  type_name, field_name,         start_table,                                  kind,    position, table_name
+  Film,      language,           film,                                         RESULT,  0,        language
+  Query,     tilganger,          tilganger_for_feidebruker_med_fs_fiktivt_fnr, ROUTINE, ,         tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  Query,     recentFilms,        films_for_actor,                              ROUTINE, 1,        film
+  Query,     recentTranslations, films_for_actor,                              ROUTINE, 2,        film_translation
+  """)
