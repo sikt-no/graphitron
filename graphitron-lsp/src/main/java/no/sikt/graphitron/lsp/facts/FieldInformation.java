@@ -1,7 +1,6 @@
 package no.sikt.graphitron.lsp.facts;
 
 import no.sikt.graphitron.model.read.StoreHandle;
-import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.Field;
 import org.jooq.Record;
 import org.jooq.Record1;
@@ -9,13 +8,11 @@ import org.jooq.Records;
 
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_SOURCE_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET;
@@ -219,36 +216,15 @@ public final class FieldInformation {
             .convertFrom(rows -> rows.map(Records.mapping(Added::new)))
             .as("info_added");
 
-        // The path written at the field, read from the entries: each @routine application under its
-        // definition and each element of a @reference application there, a @referenceFor being a
-        // participant's path and not the field's. Each by where it was written, which is what the
-        // count counts and what a defect at one of them is keyed by.
+        // The path written at the field, as capture composed it: each element by where it was
+        // written, which is what the count counts and what a defect at one of them is keyed by.
         var fe = GRAPHQL_AST_ELEMENT_ENTRY;
-        var fd = GRAPHQL_AST_ENTRY.as("fd");
-        var ap = GRAPHQL_AST_ENTRY.as("ap");
-        var ra = GRAPHITRON_AST_ROUTINE_ENTRY;
-        var pe = GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
-        var pf = GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
-        var applications = ap
-            .join(fe).on(fe.GRAPH_NAME.eq(ap.GRAPH_NAME), fe.SOURCE_NAME.eq(ap.SOURCE_NAME),
-                fe.SOURCE_LINE.eq(ap.PARENT_LINE), fe.SOURCE_COLUMN.eq(ap.PARENT_COLUMN))
-            .join(fd).on(fd.GRAPH_NAME.eq(fe.GRAPH_NAME), fd.SOURCE_NAME.eq(fe.SOURCE_NAME),
-                fd.SOURCE_LINE.eq(fe.SOURCE_LINE), fd.SOURCE_COLUMN.eq(fe.SOURCE_COLUMN),
-                fd.ENTRY_KIND.eq(EntryKind.FIELD_DEFINITION));
-        var written = select(ap.SOURCE_NAME, ap.SOURCE_LINE, ap.SOURCE_COLUMN)
-            .from(applications)
-            .join(ra).on(ra.GRAPH_NAME.eq(ap.GRAPH_NAME), ra.SOURCE_NAME.eq(ap.SOURCE_NAME),
-                ra.SOURCE_LINE.eq(ap.SOURCE_LINE), ra.SOURCE_COLUMN.eq(ap.SOURCE_COLUMN))
-            .where(fe.GRAPH_NAME.eq(graph), fe.COORDINATE.eq(coordinate))
-            .unionAll(select(pe.SOURCE_NAME, pe.SOURCE_LINE, pe.SOURCE_COLUMN)
-                .from(applications)
-                .join(pe).on(pe.GRAPH_NAME.eq(ap.GRAPH_NAME), pe.SOURCE_NAME.eq(ap.SOURCE_NAME),
-                    pe.APPLICATION_LINE.eq(ap.SOURCE_LINE),
-                    pe.APPLICATION_COLUMN.eq(ap.SOURCE_COLUMN))
-                .where(fe.GRAPH_NAME.eq(graph), fe.COORDINATE.eq(coordinate))
-                .andNotExists(selectOne().from(pf)
-                    .where(pf.GRAPH_NAME.eq(ap.GRAPH_NAME), pf.SOURCE_NAME.eq(ap.SOURCE_NAME),
-                        pf.SOURCE_LINE.eq(ap.SOURCE_LINE), pf.SOURCE_COLUMN.eq(ap.SOURCE_COLUMN))));
+        var fp = GRAPHITRON_AST_FIELD_PATH_ENTRY;
+        var written = select(fp.SOURCE_NAME, fp.ELEMENT_LINE, fp.ELEMENT_COLUMN)
+            .from(fp)
+            .join(fe).on(fe.GRAPH_NAME.eq(fp.GRAPH_NAME), fe.SOURCE_NAME.eq(fp.SOURCE_NAME),
+                fe.SOURCE_LINE.eq(fp.FIELD_LINE), fe.SOURCE_COLUMN.eq(fp.FIELD_COLUMN))
+            .where(fe.GRAPH_NAME.eq(graph), fe.COORDINATE.eq(coordinate));
         pathElements = selectCount().from(written.asTable("written")).asField("info_path_elements");
 
         // A defect at the field is reported at one of three kinds of position the author wrote

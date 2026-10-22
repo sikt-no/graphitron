@@ -6395,23 +6395,32 @@ condition_spelling (graph_name, source_name, source_line, source_column, class_n
 link (graph_name, type_name, field_name, position, last_position,
       source_name, source_line, source_column,
       arriving_type_name, single_valued) AS (
-  SELECT cl.graph_name, cl.type_name, cl.field_name, cl.position,
-         (SELECT MAX(cl2.position) FROM graphitron_field_path cl2
-           WHERE cl2.graph_name = cl.graph_name AND cl2.type_name = cl.type_name
-             AND cl2.field_name = cl.field_name),
-         cl.source_name, cl.source_line, cl.source_column,
+  -- The path the field's anchored declaration wrote, as capture composed it.
+  SELECT cl.graph_name, gf.type_name, gf.field_name, cl.position,
+         (SELECT MAX(cl2.position) FROM graphitron_ast_field_path_entry cl2
+           WHERE cl2.graph_name = cl.graph_name AND cl2.source_name = cl.source_name
+             AND cl2.field_line = cl.field_line AND cl2.field_column = cl.field_column),
+         cl.source_name, cl.element_line, cl.element_column,
          tt.arriving_type_name,
          NOT (f.is_list OR nv.wrapper_type_name IS NOT NULL) OR nt.kind IN ('SCALAR', 'ENUM')
-    FROM graphitron_field_path cl
+    FROM graphitron_ast_field_path_entry cl
+    JOIN graphql_ast_field_definition_entry fd
+      ON fd.graph_name = cl.graph_name AND fd.source_name = cl.source_name
+     AND fd.source_line = cl.field_line AND fd.source_column = cl.field_column
+    -- the declaration the anchor chose, a field declared twice reading once
+    JOIN graphql_field gf
+      ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
+     AND gf.field_name = fd.name AND gf.source_name = fd.source_name
+     AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
     JOIN graphitron_field_target_table tt
-      ON tt.graph_name = cl.graph_name AND tt.type_name = cl.type_name
-     AND tt.field_name = cl.field_name
+      ON tt.graph_name = cl.graph_name AND tt.type_name = gf.type_name
+     AND tt.field_name = gf.field_name
     JOIN graphitron_field f
-      ON f.graph_name = cl.graph_name AND f.type_name = cl.type_name
-     AND f.field_name = cl.field_name
+      ON f.graph_name = cl.graph_name AND f.type_name = gf.type_name
+     AND f.field_name = gf.field_name
     JOIN graphitron_field_target nv
-      ON nv.graph_name = cl.graph_name AND nv.type_name = cl.type_name
-     AND nv.field_name = cl.field_name
+      ON nv.graph_name = cl.graph_name AND nv.type_name = gf.type_name
+     AND nv.field_name = gf.field_name
     JOIN graphitron_type nt
       ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
 )
@@ -9641,30 +9650,13 @@ WITH site (graph_name, type_name, field_name, from_source_name, from_schema, fro
     LEFT JOIN graphitron_field_binding_entry fb
       ON fb.graph_name = st.graph_name AND fb.type_name = st.type_name AND fb.field_name = st.field_name
    WHERE st.basis IN ('SOURCE_TYPE', 'INHERITED', 'RECORD_CLASS')
-     -- No path written at the field: no @routine application under its definition, and no element
-     -- of a @reference application there, a @referenceFor being a participant's and not the field's.
+     -- No path written at the field: no place in the path capture composed for its definition.
      AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
-                      JOIN graphql_ast_entry fd
-                        ON fd.graph_name = fe.graph_name AND fd.source_name = fe.source_name
-                       AND fd.source_line = fe.source_line AND fd.source_column = fe.source_column
-                       AND fd.entry_kind = 'FIELD_DEFINITION'
-                      JOIN graphql_ast_entry ap
-                        ON ap.graph_name = fe.graph_name AND ap.source_name = fe.source_name
-                       AND ap.parent_line = fe.source_line AND ap.parent_column = fe.source_column
+                     JOIN graphitron_ast_field_path_entry pe
+                       ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
+                      AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
                      WHERE fe.graph_name = st.graph_name
-                       AND fe.coordinate = st.type_name || '.' || st.field_name
-                       AND (EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
-                                     WHERE r.graph_name = ap.graph_name AND r.source_name = ap.source_name
-                                       AND r.source_line = ap.source_line AND r.source_column = ap.source_column)
-                            OR EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
-                                        WHERE e.graph_name = ap.graph_name AND e.source_name = ap.source_name
-                                          AND e.application_line = ap.source_line
-                                          AND e.application_column = ap.source_column
-                                          AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry f
-                                                           WHERE f.graph_name = e.graph_name
-                                                             AND f.source_name = e.source_name
-                                                             AND f.source_line = e.application_line
-                                                             AND f.source_column = e.application_column))))
+                       AND fe.coordinate = st.type_name || '.' || st.field_name)
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application a
                       WHERE a.graph_name = st.graph_name
                         AND a.coordinate = st.type_name || '.' || st.field_name
@@ -9912,9 +9904,17 @@ chain (graph_name, type_name, field_name,
        arriving_type_name, last_position) AS (
   SELECT tt.graph_name, tt.type_name, tt.field_name, tt.arriving_type_name, MAX(cl.position)
     FROM graphitron_field_target_table tt
-    JOIN graphitron_field_path cl
-      ON cl.graph_name = tt.graph_name AND cl.type_name = tt.type_name
-     AND cl.field_name = tt.field_name
+    JOIN graphql_field gf
+      ON gf.graph_name = tt.graph_name AND gf.type_name = tt.type_name
+     AND gf.field_name = tt.field_name
+    -- through the declaration's entry, so each join is a key whichever end the plan starts from
+    JOIN graphql_ast_field_definition_entry fd
+      ON fd.graph_name = gf.graph_name AND fd.source_name = gf.source_name
+     AND fd.source_line = gf.source_line AND fd.source_column = gf.source_column
+     AND fd.type_name = gf.type_name AND fd.name = gf.field_name
+    JOIN graphitron_ast_field_path_entry cl
+      ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
+     AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
    GROUP BY tt.graph_name, tt.type_name, tt.field_name, tt.arriving_type_name
 ),
 -- How far the head walk got, which is the half that says where a chain stopped. The tail says
@@ -9999,12 +9999,21 @@ UNION ALL
 -- however many chains it breaks, and one row is one thing for the author to look at. Which routes
 -- competed is one join from this position to graphitron_field_path_resolution, which is why
 -- the count is not in detail; it also varies per target, where this key does not.
-SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+SELECT DISTINCT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
        'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
   FROM routes r
-  JOIN graphitron_field_path cl
-    ON cl.graph_name = r.graph_name AND cl.type_name = r.type_name
-   AND cl.field_name = r.field_name AND cl.position = r.position
+  JOIN graphql_field gf
+    ON gf.graph_name = r.graph_name AND gf.type_name = r.type_name
+   AND gf.field_name = r.field_name
+  -- through the declaration's entry, so each join is a key whichever end the plan starts from
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = gf.graph_name AND fd.source_name = gf.source_name
+   AND fd.source_line = gf.source_line AND fd.source_column = gf.source_column
+   AND fd.type_name = gf.type_name AND fd.name = gf.field_name
+  JOIN graphitron_ast_field_path_entry cl
+    ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
+   AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
+   AND cl.position = r.position
  WHERE r.routes > 1
 UNION ALL
 -- Where a chain broke, in a vocabulary of three told apart by what is true at the break. The
@@ -10014,34 +10023,43 @@ UNION ALL
 -- read off what it was resolved to at its own position, the stored key, table or method, or the one
 -- function a routine names: asked of the path reading instead, the view was evaluated again per
 -- broken chain over every graph in the store.
-SELECT DISTINCT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+SELECT DISTINCT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
        CASE WHEN b.overshot THEN 'NO_ROUTE_TO_TARGET'
             WHEN NOT EXISTS (SELECT 1 FROM graphitron_path_element_key k
                               WHERE k.graph_name = cl.graph_name AND k.source_name = cl.source_name
-                                AND k.source_line = cl.source_line
-                                AND k.source_column = cl.source_column)
+                                AND k.source_line = cl.element_line
+                                AND k.source_column = cl.element_column)
              AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_table t
                               WHERE t.graph_name = cl.graph_name AND t.source_name = cl.source_name
-                                AND t.source_line = cl.source_line
-                                AND t.source_column = cl.source_column)
+                                AND t.source_line = cl.element_line
+                                AND t.source_column = cl.element_column)
              AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_method m
                               WHERE m.graph_name = cl.graph_name AND m.source_name = cl.source_name
-                                AND m.source_line = cl.source_line
-                                AND m.source_column = cl.source_column)
+                                AND m.source_line = cl.element_line
+                                AND m.source_column = cl.element_column)
              AND NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry e
                                JOIN store_graph_source gs ON gs.graph_name = e.graph_name
                                JOIN sql_table st
                                  ON st.source_name = gs.source_name AND st.table_type = 'FUNCTION'
                                 AND st.table_name_upper = UPPER(e.routine_ref_name_part)
                               WHERE e.graph_name = cl.graph_name AND e.source_name = cl.source_name
-                                AND e.source_line = cl.source_line
-                                AND e.source_column = cl.source_column)
+                                AND e.source_line = cl.element_line
+                                AND e.source_column = cl.element_column)
               THEN 'ELEMENT_UNRESOLVED'
             ELSE 'NO_ROUTE_FROM_DEPARTURE' END, CAST(NULL AS VARCHAR)
   FROM broken b
-  JOIN graphitron_field_path cl
-    ON cl.graph_name = b.graph_name AND cl.type_name = b.type_name
-   AND cl.field_name = b.field_name AND cl.position = b.break_position
+  JOIN graphql_field gf
+    ON gf.graph_name = b.graph_name AND gf.type_name = b.type_name
+   AND gf.field_name = b.field_name
+  -- through the declaration's entry, so each join is a key whichever end the plan starts from
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = gf.graph_name AND fd.source_name = gf.source_name
+   AND fd.source_line = gf.source_line AND fd.source_column = gf.source_column
+   AND fd.type_name = gf.type_name AND fd.name = gf.field_name
+  JOIN graphitron_ast_field_path_entry cl
+    ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
+   AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
+   AND cl.position = b.break_position
 UNION ALL
 -- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
 -- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
@@ -10058,28 +10076,39 @@ UNION ALL
 -- Judged only where the target could bind a table: a scalar or an enum read through a path takes
 -- its column from wherever the path arrives, and a @pivot reads its projection from the path's
 -- last table, so neither has a table of its own to be missing.
-SELECT cl.graph_name, cl.source_name, cl.source_line, cl.source_column,
+SELECT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
        'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_path cl
+  FROM graphitron_ast_field_path_entry cl
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = cl.graph_name AND fd.source_name = cl.source_name
+   AND fd.source_line = cl.field_line AND fd.source_column = cl.field_column
+  -- the declaration the anchor chose, a field declared twice reading once
+  JOIN graphql_field gf
+    ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
+   AND gf.field_name = fd.name AND gf.source_name = fd.source_name
+   AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
   JOIN graphitron_field_target ft
-    ON ft.graph_name = cl.graph_name AND ft.type_name = cl.type_name
-   AND ft.field_name = cl.field_name
+    ON ft.graph_name = cl.graph_name AND ft.type_name = gf.type_name
+   AND ft.field_name = gf.field_name
   JOIN graphitron_type t
     ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
  WHERE cl.position = 0
    AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION')
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_target_table tt
-                    WHERE tt.graph_name = cl.graph_name AND tt.type_name = cl.type_name
-                      AND tt.field_name = cl.field_name)
+                    WHERE tt.graph_name = cl.graph_name AND tt.type_name = gf.type_name
+                      AND tt.field_name = gf.field_name)
    AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
                      JOIN graphql_element_field ef
                        ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
-                    WHERE ef.graph_name = cl.graph_name AND ef.type_name = cl.type_name
-                      AND ef.field_name = cl.field_name AND da.directive_name = 'pivot')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_path_application ca
-                    WHERE ca.graph_name = cl.graph_name AND ca.type_name = cl.type_name
-                      AND ca.field_name = cl.field_name
-                      AND ca.directive_name = 'routine')
+                    WHERE ef.graph_name = cl.graph_name AND ef.type_name = gf.type_name
+                      AND ef.field_name = gf.field_name AND da.directive_name = 'pivot')
+   -- a @routine anywhere in the path takes its target from the function result instead
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry rp
+                     JOIN graphitron_ast_routine_entry r
+                       ON r.graph_name = rp.graph_name AND r.source_name = rp.source_name
+                      AND r.source_line = rp.element_line AND r.source_column = rp.element_column
+                    WHERE rp.graph_name = cl.graph_name AND rp.source_name = cl.source_name
+                      AND rp.field_line = cl.field_line AND rp.field_column = cl.field_column)
 UNION ALL
 -- A code reference that resolves to no one method, at the position it was written: exactly the
 -- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
@@ -11546,30 +11575,14 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
       ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
    WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
                       WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
-     -- The field wrote no path: no @routine application under its definition and no element of a
-     -- @reference application there, read from the entries as the column match reads it.
+     -- The field wrote no path: no place in the path capture composed for its definition, read as
+     -- the column match reads it.
      AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
-                      JOIN graphql_ast_entry fd
-                        ON fd.graph_name = fe.graph_name AND fd.source_name = fe.source_name
-                       AND fd.source_line = fe.source_line AND fd.source_column = fe.source_column
-                       AND fd.entry_kind = 'FIELD_DEFINITION'
-                      JOIN graphql_ast_entry ap
-                        ON ap.graph_name = fe.graph_name AND ap.source_name = fe.source_name
-                       AND ap.parent_line = fe.source_line AND ap.parent_column = fe.source_column
+                     JOIN graphitron_ast_field_path_entry pe
+                       ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
+                      AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
                      WHERE fe.graph_name = p.graph_name
-                       AND fe.coordinate = p.type_name || '.' || p.field_name
-                       AND (EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
-                                     WHERE r.graph_name = ap.graph_name AND r.source_name = ap.source_name
-                                       AND r.source_line = ap.source_line AND r.source_column = ap.source_column)
-                            OR EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
-                                        WHERE e.graph_name = ap.graph_name AND e.source_name = ap.source_name
-                                          AND e.application_line = ap.source_line
-                                          AND e.application_column = ap.source_column
-                                          AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry f
-                                                           WHERE f.graph_name = e.graph_name
-                                                             AND f.source_name = e.source_name
-                                                             AND f.source_line = e.application_line
-                                                             AND f.source_column = e.application_column))))
+                       AND fe.coordinate = p.type_name || '.' || p.field_name)
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application pa
                       WHERE pa.graph_name = p.graph_name
                         AND pa.coordinate = p.type_name || '.' || p.field_name
@@ -11585,30 +11598,14 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
    WHERE POSITION(',' || p.target_type_name || ',' IN i.visited) = 0
      AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
                       WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
-     -- The field wrote no path: no @routine application under its definition and no element of a
-     -- @reference application there, read from the entries as the column match reads it.
+     -- The field wrote no path: no place in the path capture composed for its definition, read as
+     -- the column match reads it.
      AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
-                      JOIN graphql_ast_entry fd
-                        ON fd.graph_name = fe.graph_name AND fd.source_name = fe.source_name
-                       AND fd.source_line = fe.source_line AND fd.source_column = fe.source_column
-                       AND fd.entry_kind = 'FIELD_DEFINITION'
-                      JOIN graphql_ast_entry ap
-                        ON ap.graph_name = fe.graph_name AND ap.source_name = fe.source_name
-                       AND ap.parent_line = fe.source_line AND ap.parent_column = fe.source_column
+                     JOIN graphitron_ast_field_path_entry pe
+                       ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
+                      AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
                      WHERE fe.graph_name = p.graph_name
-                       AND fe.coordinate = p.type_name || '.' || p.field_name
-                       AND (EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
-                                     WHERE r.graph_name = ap.graph_name AND r.source_name = ap.source_name
-                                       AND r.source_line = ap.source_line AND r.source_column = ap.source_column)
-                            OR EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry e
-                                        WHERE e.graph_name = ap.graph_name AND e.source_name = ap.source_name
-                                          AND e.application_line = ap.source_line
-                                          AND e.application_column = ap.source_column
-                                          AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry f
-                                                           WHERE f.graph_name = e.graph_name
-                                                             AND f.source_name = e.source_name
-                                                             AND f.source_line = e.application_line
-                                                             AND f.source_column = e.application_column))))
+                       AND fe.coordinate = p.type_name || '.' || p.field_name)
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application pa
                       WHERE pa.graph_name = p.graph_name
                         AND pa.coordinate = p.type_name || '.' || p.field_name
@@ -11641,48 +11638,19 @@ SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema,
 UNION ALL
 -- A field carrying @sourceRow departs from the table declaring its path's first key: the lifter
 -- returns that key's source-side columns, which is the generator's contract for it. The first
--- element is read from the entries: element 0 of a @reference application under the field's
--- definition, a @referenceFor being a participant's, with no @routine or @reference application
--- written before it there.
+-- element is the field path's place 0, which is no key when a @routine was written first.
 SELECT ef.graph_name, ef.type_name, ef.field_name,
        k.constraint_source_name, k.constraint_schema, k.constraint_table, 'SOURCE_ROW'
-  FROM graphitron_ast_reference_element_entry e
+  FROM graphitron_ast_field_path_entry p
   JOIN graphitron_path_element_key k
-    ON k.graph_name = e.graph_name AND k.source_name = e.source_name
-   AND k.source_line = e.source_line AND k.source_column = e.source_column
-  JOIN graphql_ast_entry ap
-    ON ap.graph_name = e.graph_name AND ap.source_name = e.source_name
-   AND ap.source_line = e.application_line AND ap.source_column = e.application_column
-  JOIN graphql_ast_entry fd
-    ON fd.graph_name = ap.graph_name AND fd.source_name = ap.source_name
-   AND fd.source_line = ap.parent_line AND fd.source_column = ap.parent_column
-   AND fd.entry_kind = 'FIELD_DEFINITION'
+    ON k.graph_name = p.graph_name AND k.source_name = p.source_name
+   AND k.source_line = p.element_line AND k.source_column = p.element_column
   JOIN graphql_ast_element_entry fe
-    ON fe.graph_name = fd.graph_name AND fe.source_name = fd.source_name
-   AND fe.source_line = fd.source_line AND fe.source_column = fd.source_column
+    ON fe.graph_name = p.graph_name AND fe.source_name = p.source_name
+   AND fe.source_line = p.field_line AND fe.source_column = p.field_column
   JOIN graphql_element_field ef
     ON ef.graph_name = fe.graph_name AND ef.coordinate = fe.coordinate
- WHERE e.position = 0
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry rf
-                    WHERE rf.graph_name = e.graph_name AND rf.source_name = e.source_name
-                      AND rf.source_line = e.application_line AND rf.source_column = e.application_column)
-   AND NOT EXISTS (SELECT 1 FROM graphql_ast_entry before
-                    WHERE before.graph_name = fd.graph_name AND before.source_name = fd.source_name
-                      AND before.parent_line = fd.source_line AND before.parent_column = fd.source_column
-                      AND (before.source_line < ap.source_line
-                           OR (before.source_line = ap.source_line AND before.source_column < ap.source_column))
-                      AND (EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
-                                    WHERE r.graph_name = before.graph_name AND r.source_name = before.source_name
-                                      AND r.source_line = before.source_line AND r.source_column = before.source_column)
-                           OR EXISTS (SELECT 1 FROM graphitron_ast_reference_element_entry be
-                                       WHERE be.graph_name = before.graph_name AND be.source_name = before.source_name
-                                         AND be.application_line = before.source_line
-                                         AND be.application_column = before.source_column
-                                         AND NOT EXISTS (SELECT 1 FROM graphitron_ast_reference_for_entry bf
-                                                          WHERE bf.graph_name = be.graph_name
-                                                            AND bf.source_name = be.source_name
-                                                            AND bf.source_line = be.application_line
-                                                            AND bf.source_column = be.application_column))))
+ WHERE p.position = 0
    AND EXISTS (SELECT 1 FROM graphql_directive_application da
                 WHERE da.graph_name = ef.graph_name AND da.coordinate = ef.coordinate
                   AND da.directive_name = 'sourceRow');

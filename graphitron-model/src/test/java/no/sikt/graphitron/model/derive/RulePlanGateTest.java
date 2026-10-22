@@ -102,7 +102,7 @@ class RulePlanGateTest {
             dsl.execute("DROP INDEX graphql_ast_element_entry_coordinate_ix");
             assertThat(keys(unexplainedReads(dsl)))
                 .as("a field's declaration looked up by coordinate")
-                .contains("GRAPHITRON_FIELD_TARGET_COLUMN_RULE GRAPHQL_AST_ENTRY");
+                .contains("GRAPHITRON_FIELD_TARGET_COLUMN_RULE GRAPHQL_AST_ELEMENT_ENTRY");
             dsl.execute("DROP INDEX sql_constraint_name_upper_ix");
             dsl.execute("DROP INDEX sql_constraint_jooq_name_upper_ix");
             assertThat(keys(unexplainedReads(dsl)))
