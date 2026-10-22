@@ -251,11 +251,24 @@ classpath and catalog, and every reader reads that resolution rather than a view
   * **A routine result's name-matched pairs are written where a join asks for them** `open`. By the
     anchor, keyed to the element or the routine write and to both `sql_column` rows, read by the
     walk's step rule and `RoutineWriteQuery`.
-* **A scalar routine is a path element that lands on a value** `blocked`, on the child below. A
-  scalar function reads at a root or projects in its parent's statement.
-  * **`sql_routine` holds every routine with its result kind** `open`. Table, scalar or void, and a
-    scalar's return type.
-  * **A table-valued function returned as a scalar is a defect** `blocked`, on "`sql_routine` holds every routine with its result kind". It can land before the reads.
+* **A scalar routine is a path element that lands on a value** `blocked`, on the children below.
+  A scalar function reads at a root or projects in its parent's statement. jOOQ's routine model and
+  what the store takes from it are in `roadmap/audits/2026-10-22-jooq-routine-model.md`.
+  * **A method's form is read off its signature** `open`. The `code_` family states, for every
+    public static method whose signature is jOOQ-shaped, the form it offers: execute (`Configuration`
+    first), value (a `Field` returned, over values or over fields), table (a `Table` returned) and
+    aggregate. A method written to these rules is available as if jOOQ had generated it, whoever
+    wrote it, so jOOQ's holder classes are read for their members like any other class.
+  * **A routine is enriched by the database construct behind it** `blocked`, on "A method's form is
+    read off its signature". The `sql_` family states each routine jOOQ generated, read from its
+    `AbstractRoutine` instance found by type: qualified name with package, parameters with mode,
+    `DataType` and default, and return, tied to the holder methods that call it by name and arity. A
+    generated class that does not load is a stored fact, not a skip.
+  * **`@externalField` is `@routine`** `blocked`, on "A method's form is read off its signature". A
+    value form bound to the parent's table; its readers move to the form, and the directive is
+    deprecated later as an alias.
+  * **A table-valued function returned as a scalar is a defect** `blocked`, on "A routine is
+    enriched by the database construct behind it". It can land before the reads.
 
 ### The graphitron family completes its flip and subtract `open`
 
@@ -415,8 +428,9 @@ generated Java or SQL as text.
 * **`emit` imports no `render` class** `open`. The shared one-spelling helpers move into `emit`, the
   old renderers import them from there, and the import rule's exception list is empty.
 * **The error-mapping constant is named by its outcome type, and the dedup goes** `done`.
-* **Routine writes read only the store** `open`. The write's tenancy is a store fact too, so
-  `RoutineWriteEmitter` takes nothing from `GraphitronSchema`.
+* **Routine writes read only the store** `blocked`, on "The tenant column and the session hook signature are captured". The write's tenancy is read from the tenant table that node captures, not decided a second
+  way, so `RoutineWriteEmitter` takes nothing from `GraphitronSchema`, and its inherited and
+  argument-bound routings, which a rejected tenant-scoped write never reaches, go.
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
   `OperationMembers.membersOf` and `DeliveryFact.leafDerivedOf` move to the relations,
   `LauncherCommands`' two productions merge, and the crosswalk goes.
