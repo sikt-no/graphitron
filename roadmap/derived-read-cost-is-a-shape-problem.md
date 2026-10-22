@@ -259,16 +259,14 @@ classpath and catalog, and every reader reads that resolution rather than a view
     first), value (a `Field` returned, over values or over fields), table (a `Table` returned) and
     aggregate. A method written to these rules is available as if jOOQ had generated it, whoever
     wrote it, so jOOQ's holder classes are read for their members like any other class.
-  * **A routine is enriched by the database construct behind it** `blocked`, on "A method's form is
-    read off its signature". The `sql_` family states each routine jOOQ generated, read from its
+  * **A routine is enriched by the database construct behind it** `blocked`, on "A method's form is read off its signature". The `sql_` family states each routine jOOQ generated, read from its
     `AbstractRoutine` instance found by type: qualified name with package, parameters with mode,
     `DataType` and default, and return, tied to the holder methods that call it by name and arity. A
     generated class that does not load is a stored fact, not a skip.
   * **`@externalField` is `@routine`** `blocked`, on "A method's form is read off its signature". A
     value form bound to the parent's table; its readers move to the form, and the directive is
     deprecated later as an alias.
-  * **A table-valued function returned as a scalar is a defect** `blocked`, on "A routine is
-    enriched by the database construct behind it". It can land before the reads.
+  * **A table-valued function returned as a scalar is a defect** `blocked`, on "A routine is enriched by the database construct behind it". It can land before the reads.
 
 ### The graphitron family completes its flip and subtract `open`
 
