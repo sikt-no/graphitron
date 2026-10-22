@@ -1,7 +1,7 @@
 ---
 id: R1089
 title: "A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: mutation-write
@@ -158,6 +158,8 @@ Two places where the implementation departs from the plan's letter:
 - **Fixture schema.** `split_key_parent` / `split_key_child` are in `init.sql`'s `public` schema, not `nodeidfixture`. The execution tier (`graphitron-sakila-example`) types its fixtures over `public` tables, as the `xlat_*` twins of `nodeidfixture.parent_node` do, so a `nodeidfixture` pair would have had no execution coverage. The unit and pipeline tiers read the same catalog, so they reach the pair there too. `jooq.codegen.schema.version` moves to 2.44 for the DDL.
 - **Capture test.** Besides `EntryFamilyFixture.deleteFilm` (per the round 2 note), the as-written assertions live in `graphitron-model/src/test/resources/facts/undecided/field-site-payloads.graphqls`, which already carried the `graphitron_mutation_entry` `@expectEquals`; it now asserts `missing_as_deleted` (`TRUE` written, `NULL` omitted) on both capture relations. `corpus/mutation-roots.graphqls` is unchanged, since every field there is a classification verdict and the admitted shape is a payload DELETE that file does not carry.
 - **Plain key value.** A plain binding's echo value is `DSL.val(<wire value>, <column>.getDataType()).getValue()` rather than `<column>.getDataType().convert(<wire value>)`: jOOQ 3.20 deprecates `DataType.convert(Object)` for removal, which fails the example module's `-Werror` compile. The coercion is the same one the WHERE binds with.
+
+Verification: the full reactor build, run serially. Every module's tests pass except `GraphCountGrowthGateTest` in `graphitron-model`, a timing gate that fails the same way on trunk without this item's commits whenever the whole module's suite runs (it flags `GRAPHITRON_CARRIER_DATA_FIELD` there, and passes when run alone). This item touches none of the tables it flags.
 
 
 ### Round 1 (Spec → Ready): request revisions
