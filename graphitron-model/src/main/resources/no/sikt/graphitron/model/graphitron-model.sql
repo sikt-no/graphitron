@@ -9839,783 +9839,6 @@ COMMENT ON COLUMN graphitron_producer_outcome.outcome_type_name IS 'the type the
 COMMENT ON COLUMN graphitron_producer_outcome.errors_field_name IS 'the outcome type''s one errors field; with the outcome type, a graphitron_errors_field key';
 COMMENT ON COLUMN graphitron_producer_outcome.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
-CREATE VIEW graphitron_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
--- The @routine that heads a chain: the last one written at a mutation-root field.
-WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
-    FROM graphitron_routine_entry r
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
-     AND ro.operation = 'MUTATION'
-   WHERE r.source_name IS NOT NULL
-     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
-                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
-                         AND r2.field_name = r.field_name)
-),
--- How many routes each written link resolves by, toward each of its field's targets: the count
--- graphitron_field_table_link_rule keeps only where it is 1. A reading both walks reach lies on a
--- chain that runs the whole way; two routes at one position is a chain that runs the whole way
--- twice. Two overloads of a condition method naming one table pair are one route.
-routes (graph_name, type_name, field_name, arriving_type_name,
-        position, routes) AS (
-  SELECT graph_name, type_name, field_name, arriving_type_name,
-         position, COUNT(*)
-    FROM (SELECT DISTINCT graph_name, type_name, field_name, arriving_type_name,
-           position, via, key_matched_by,
-           constraint_source_name, constraint_schema, constraint_table, constraint_name,
-           fk_on_from, from_source_name, from_schema, from_table,
-           to_source_name, to_schema, to_table
-            FROM graphitron_field_path_resolution
-           WHERE reached_by_tail AND reached_by_head) route
-   GROUP BY graph_name, type_name, field_name, arriving_type_name,
-            position
-),
--- Each chain a field has, with the last position it was written to. One per arriving type, a
--- field with several resolving each on its own.
-chain (graph_name, type_name, field_name,
-       arriving_type_name, last_position) AS (
-  SELECT tt.graph_name, tt.type_name, tt.field_name, tt.arriving_type_name, MAX(cl.position)
-    FROM graphitron_field_target_table tt
-    JOIN graphql_field gf
-      ON gf.graph_name = tt.graph_name AND gf.type_name = tt.type_name
-     AND gf.field_name = tt.field_name
-    -- through the declaration's entry, so each join is a key whichever end the plan starts from
-    JOIN graphql_ast_field_definition_entry fd
-      ON fd.graph_name = gf.graph_name AND fd.source_name = gf.source_name
-     AND fd.source_line = gf.source_line AND fd.source_column = gf.source_column
-     AND fd.type_name = gf.type_name AND fd.name = gf.field_name
-    JOIN graphitron_ast_field_path_entry cl
-      ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
-     AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
-   GROUP BY tt.graph_name, tt.type_name, tt.field_name, tt.arriving_type_name
-),
--- How far the head walk got, which is the half that says where a chain stopped. The tail says
--- nothing about it: a suffix reaching the target is reachable from nowhere in particular.
-head_reach (graph_name, type_name, field_name,
-            arriving_type_name, reached) AS (
-  SELECT graph_name, type_name, field_name,
-         arriving_type_name, MAX(position)
-    FROM graphitron_field_path_resolution
-   WHERE reached_by_head
-   GROUP BY graph_name, type_name, field_name,
-            arriving_type_name
-),
--- The chains that resolve nowhere, and the one position each of them broke at.
---
--- One position and not every hole, which is what keeps this from being noise. A chain resolves at
--- every position or at none: a reading the tail reaches passes its departure back to the link
--- before it, and one the head reaches passes its arrival forward, so one reading reached by both
--- makes every position reached by both. A broken chain therefore has one thing wrong with it, and
--- reporting the first position the head could not reach names the element an author edits rather
--- than every element downstream of it.
---
--- Where the head reached the last position and nothing resolved, the chain ran the whole way and
--- landed somewhere else, so the break is the last link rather than one past it.
-broken (graph_name, type_name, field_name, arriving_type_name,
-        break_position, overshot) AS (
-  SELECT c.graph_name, c.type_name, c.field_name,
-         c.arriving_type_name,
-         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN c.last_position
-              ELSE COALESCE(h.reached, -1) + 1 END,
-         CASE WHEN COALESCE(h.reached, -1) >= c.last_position THEN TRUE ELSE FALSE END
-    FROM chain c
-    LEFT JOIN head_reach h
-      ON h.graph_name = c.graph_name AND h.type_name = c.type_name
-     AND h.field_name = c.field_name AND h.arriving_type_name = c.arriving_type_name
-   WHERE NOT EXISTS (SELECT 1 FROM routes rt
-                      WHERE rt.graph_name = c.graph_name AND rt.type_name = c.type_name
-                        AND rt.field_name = c.field_name
-                        AND rt.arriving_type_name = c.arriving_type_name)
-),
--- A root field's first @reference on a field with no @routine. A root field has no source row, so a
--- path written there departs from nothing until a routine gives it one; its chain then breaks at the
--- first element whatever that element names, which is why such a field is told this and not one of
--- the three chain breaks.
-root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
-    FROM graphitron_field_reference_entry fr
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
-     AND ro.operation IN ('QUERY', 'MUTATION')
-   WHERE fr.source_name IS NOT NULL
-     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
-                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
-                          AND f2.field_name = fr.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
-                      WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
-                        AND r.field_name = fr.field_name)
-)
--- More than one write on one field. The row sits at the head, the individual applications
--- being legal each on their own and the plurality being what has no emitter.
-SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'MULTIPLE_ROUTINE_NODES', NULL
-  FROM head h
- WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
-             WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
-               AND r2.field_name = h.field_name)
-UNION ALL
--- A paginated return on a write. Stated for every write and not only for the chain shape:
--- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
--- so a coordinate the seat would have answered about its carrier says this as well.
-SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
-       'CONNECTION_RETURN', NULL
-  FROM head h
-  JOIN graphitron_field cf
-    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
-   AND cf.field_name = h.field_name
-  JOIN graphitron_connection_element_type ce
-    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
-UNION ALL
--- A read surface written on a write. Three sites state one, and each row sits at its own.
--- On the field or on one of its arguments, each at its own application.
-SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
-       'READ_SURFACE_ON_WRITE', 'condition'
-  FROM graphql_directive_application dc
-  JOIN graphql_element_field ef
-    ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
-  JOIN head h
-    ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
- WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
-UNION ALL
-SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
-       'READ_SURFACE_ON_WRITE', 'orderBy'
-  FROM graphitron_order_by_entry ob
-  JOIN head h
-    ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
- WHERE ob.source_name IS NOT NULL
-UNION ALL
--- A chain link with more than one route to its destination, at the element that wrote it. The
--- targets are folded away: a field with several of them is ambiguous at one written element
--- however many chains it breaks, and one row is one thing for the author to look at. Which routes
--- competed is one join from this position to graphitron_field_path_resolution, which is why
--- the count is not in detail; it also varies per target, where this key does not.
-SELECT DISTINCT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
-       'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
-  FROM routes r
-  JOIN graphql_field gf
-    ON gf.graph_name = r.graph_name AND gf.type_name = r.type_name
-   AND gf.field_name = r.field_name
-  -- through the declaration's entry, so each join is a key whichever end the plan starts from
-  JOIN graphql_ast_field_definition_entry fd
-    ON fd.graph_name = gf.graph_name AND fd.source_name = gf.source_name
-   AND fd.source_line = gf.source_line AND fd.source_column = gf.source_column
-   AND fd.type_name = gf.type_name AND fd.name = gf.field_name
-  JOIN graphitron_ast_field_path_entry cl
-    ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
-   AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
-   AND cl.position = r.position
- WHERE r.routes > 1
-UNION ALL
--- Where a chain broke, in a vocabulary of three told apart by what is true at the break. The
--- chain overshot its target, or the element there resolves to nothing at all, or it resolves and
--- none of its routes departs where the chain is standing. Three codes and one row, the three
--- being mutually exclusive by construction rather than by ranking. Whether the element resolves is
--- read off what it was resolved to at its own position, the stored key, table or method, or the one
--- function a routine names: asked of the path reading instead, the view was evaluated again per
--- broken chain over every graph in the store.
-SELECT DISTINCT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
-       CASE WHEN b.overshot THEN 'NO_ROUTE_TO_TARGET'
-            WHEN NOT EXISTS (SELECT 1 FROM graphitron_path_element_key k
-                              WHERE k.graph_name = cl.graph_name AND k.source_name = cl.source_name
-                                AND k.source_line = cl.element_line
-                                AND k.source_column = cl.element_column)
-             AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_table t
-                              WHERE t.graph_name = cl.graph_name AND t.source_name = cl.source_name
-                                AND t.source_line = cl.element_line
-                                AND t.source_column = cl.element_column)
-             AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_method m
-                              WHERE m.graph_name = cl.graph_name AND m.source_name = cl.source_name
-                                AND m.source_line = cl.element_line
-                                AND m.source_column = cl.element_column)
-             AND NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry e
-                               JOIN store_graph_source gs ON gs.graph_name = e.graph_name
-                               JOIN sql_table st
-                                 ON st.source_name = gs.source_name AND st.table_type = 'FUNCTION'
-                                AND st.table_name_upper = UPPER(e.routine_ref_name_part)
-                              WHERE e.graph_name = cl.graph_name AND e.source_name = cl.source_name
-                                AND e.source_line = cl.element_line
-                                AND e.source_column = cl.element_column)
-              THEN 'ELEMENT_UNRESOLVED'
-            ELSE 'NO_ROUTE_FROM_DEPARTURE' END, CAST(NULL AS VARCHAR)
-  FROM broken b
-  JOIN graphql_field gf
-    ON gf.graph_name = b.graph_name AND gf.type_name = b.type_name
-   AND gf.field_name = b.field_name
-  -- through the declaration's entry, so each join is a key whichever end the plan starts from
-  JOIN graphql_ast_field_definition_entry fd
-    ON fd.graph_name = gf.graph_name AND fd.source_name = gf.source_name
-   AND fd.source_line = gf.source_line AND fd.source_column = gf.source_column
-   AND fd.type_name = gf.type_name AND fd.name = gf.field_name
-  JOIN graphitron_ast_field_path_entry cl
-    ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
-   AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
-   AND cl.position = b.break_position
- WHERE NOT EXISTS (SELECT 1 FROM root_reference rr
-                    WHERE rr.graph_name = b.graph_name AND rr.type_name = b.type_name
-                      AND rr.field_name = b.field_name)
-UNION ALL
--- A root field's path with nothing to depart from, at the @reference that starts it.
-SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
-       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR)
-  FROM root_reference rr
-UNION ALL
--- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
--- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
--- toward and no element can be read against one. Reported at the first element, the whole chain
--- being the one thing wrong.
---
--- @reference-only chains, which is what makes this a fact about the schema rather than about the
--- catalog. Such a chain takes its target from the return type's binding and from nowhere else, so
--- an unbound return is an error no catalog could repair. A chain carrying a @routine takes its
--- target from the function result instead, and the same silence there means the routine name
--- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
--- fault is real and is not this one; it is owed its own arm at the routine's own position.
---
--- Judged only where the target could bind a table: a scalar or an enum read through a path takes
--- its column from wherever the path arrives, and a @pivot reads its projection from the path's
--- last table, so neither has a table of its own to be missing.
-SELECT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
-       'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
-  FROM graphitron_ast_field_path_entry cl
-  JOIN graphql_ast_field_definition_entry fd
-    ON fd.graph_name = cl.graph_name AND fd.source_name = cl.source_name
-   AND fd.source_line = cl.field_line AND fd.source_column = cl.field_column
-  -- the declaration the anchor chose, a field declared twice reading once
-  JOIN graphql_field gf
-    ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
-   AND gf.field_name = fd.name AND gf.source_name = fd.source_name
-   AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = cl.graph_name AND ft.type_name = gf.type_name
-   AND ft.field_name = gf.field_name
-  JOIN graphitron_type t
-    ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
- WHERE cl.position = 0
-   AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION')
-   AND NOT EXISTS (SELECT 1 FROM graphitron_field_target_table tt
-                    WHERE tt.graph_name = cl.graph_name AND tt.type_name = gf.type_name
-                      AND tt.field_name = gf.field_name)
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
-                     JOIN graphql_element_field ef
-                       ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
-                    WHERE ef.graph_name = cl.graph_name AND ef.type_name = gf.type_name
-                      AND ef.field_name = gf.field_name AND da.directive_name = 'pivot')
-   -- a @routine anywhere in the path takes its target from the function result instead
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry rp
-                     JOIN graphitron_ast_routine_entry r
-                       ON r.graph_name = rp.graph_name AND r.source_name = rp.source_name
-                      AND r.source_line = rp.element_line AND r.source_column = rp.element_column
-                    WHERE rp.graph_name = cl.graph_name AND rp.source_name = cl.source_name
-                      AND rp.field_line = cl.field_line AND rp.field_column = cl.field_column)
-UNION ALL
--- A code reference that resolves to no one method, at the position it was written: exactly the
--- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
--- classpath holds under the names. No class, a class without the method, or more than one method;
--- exclusive by construction, a single match being the resolution's row. One arm for every site,
--- the reference being one fact wherever it is written.
-SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
-       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
-            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
-            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
-       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
-  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
-               c.type_name, c.field_name, c.class_name, c.method_name,
-               (SELECT COUNT(*) FROM store_graph_source g
-                  JOIN code_class k ON k.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
-               (SELECT COUNT(*) FROM store_graph_source g
-                  JOIN code_method m ON m.source_name = g.source_name
-                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
-                   AND m.method_name = c.method_name) AS methods
-          FROM graphitron_code_reference_site c
-         WHERE c.method_name IS NOT NULL
-           AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
-                            WHERE r.graph_name = c.graph_name AND r.source_name = c.source_name
-                              AND r.source_line = c.source_line
-                              AND r.source_column = c.source_column)
-           -- A graph whose classpath was never read has told the store nothing about any class, so
-           -- no name it writes is wrong yet: a store before its first build, or a capture with no
-           -- classpath at all. Only a reading that read something can say a class is absent.
-           AND EXISTS (SELECT 1 FROM store_graph_source g
-                         JOIN code_class k ON k.source_name = g.source_name
-                        WHERE g.graph_name = c.graph_name)) s
-UNION ALL
--- A @table naming a table-valued function. A type is not bound to a function: the field carrying
--- @routine binds its return type to the routine's result, so the directive names something a type
--- cannot stand on. Reported at the @table, with the spelling as written.
-SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_NAMES_ROUTINE', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
-  JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
-  JOIN sql_table st
-    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
-   AND st.table_name = sp.table_name
- WHERE t.source_line IS NOT NULL
-   AND st.table_type = 'FUNCTION'
-UNION ALL
--- A @node on a type that does not implement Node. The interface is the contract @node publishes to
--- clients, so a type cannot be promoted to a node without it. Reported at the @node, which is where
--- an author decides between adding the interface and dropping the directive. A root operation type
--- is a root before it is anything else.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
-  FROM graphitron_node_entry n
- WHERE n.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
-                    WHERE i.graph_name = n.graph_name AND i.type_name = n.type_name
-                      AND i.interface_name = 'Node')
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
-UNION ALL
--- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
--- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
--- root operation type is a root before it is anything else. A type that also lacks the interface
--- is both defects, each its own decision for the author.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR)
-  FROM graphitron_node_entry n
- WHERE n.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry t
-                    WHERE t.graph_name = n.graph_name AND t.type_name = n.type_name)
-   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
-                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
-UNION ALL
--- A @node(keyColumns:) naming a column the bound table cannot answer to with exactly one column,
--- folded the way NodeKeyColumns folds: against the SQL name and the generated field name alike. One
--- row per @node, naming the first spelling that fails in the order written; the pinned tier yields
--- nothing for the whole list when any position fails, and the others are rows of
--- graphitron_node_keycolumn_entry under their own key rather than a list in this one. A type whose
--- @table did not resolve has no binding to judge against and is that defect instead.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref
-  FROM graphitron_node_entry n
-  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
-  JOIN graphitron_node_keycolumn_entry e
-    ON e.graph_name = n.graph_name AND e.type_name = n.type_name
- WHERE n.source_line IS NOT NULL
-   AND (SELECT COUNT(*) FROM sql_column c
-         WHERE c.source_name = b.table_source_name AND c.table_schema = b.table_schema
-           AND c.table_name = b.table_name
-           AND (c.column_name_upper = UPPER(e.column_ref)
-                OR c.jooq_name_upper = UPPER(e.column_ref))) <> 1
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry f
-                    WHERE f.graph_name = e.graph_name AND f.type_name = e.type_name
-                      AND f.position < e.position
-                      AND (SELECT COUNT(*) FROM sql_column c
-                            WHERE c.source_name = b.table_source_name
-                              AND c.table_schema = b.table_schema AND c.table_name = b.table_name
-                              AND (c.column_name_upper = UPPER(f.column_ref)
-                                   OR c.jooq_name_upper = UPPER(f.column_ref))) <> 1)
-UNION ALL
--- A @node with nothing to build an id from. It pinned no columns, its bound table publishes no node
--- metadata, and the table has no primary key, which are the three tiers NodeKeyColumns tries in
--- turn; with all three silent the node has no key. Metadata a class publishes and graphitron cannot
--- use is no row of sql_node_metadata, so such a table is judged here as well as warned about by
--- NODE_METADATA_UNREADABLE. The detail is the table.
-SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
-       'NODE_WITHOUT_KEY', b.table_name
-  FROM graphitron_node_entry n
-  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
- WHERE n.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry e
-                    WHERE e.graph_name = n.graph_name AND e.type_name = n.type_name)
-   AND NOT EXISTS (SELECT 1 FROM sql_node_metadata m
-                    WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
-                      AND m.table_name = b.table_name)
-   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
-                    WHERE pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
-                      AND pk.table_name = b.table_name)
-UNION ALL
--- A @table naming nothing the catalog holds: no candidate at all for its spelling. Reported at the
--- @table with the spelling as written. A graph captured with no catalog has said nothing about any
--- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_UNRESOLVED', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
- WHERE t.source_line IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphitron_spelled_table sp
-                    WHERE sp.graph_name = t.graph_name
-                      AND sp.spelling = COALESCE(t.table_ref, t.type_name))
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN sql_table st ON st.source_name = g.source_name
-                WHERE g.graph_name = t.graph_name)
-UNION ALL
--- A @table naming a table two schemas declare. The spelling has candidates and more than one, so
--- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
--- settles it. Reported once per @table.
-SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'TABLE_AMBIGUOUS', COALESCE(t.table_ref, t.type_name)
-  FROM graphitron_table_entry t
-  JOIN graphitron_spelled_table sp
-    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
- WHERE t.source_line IS NOT NULL
-   AND sp.candidates > 1
-UNION ALL
--- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
--- period, or nothing on one side of the last one. Reported with the reference as written.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref
-  FROM graphitron_scalar_type_entry e
- WHERE e.source_line IS NOT NULL
-   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
-UNION ALL
--- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
--- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
--- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part
-  FROM graphitron_scalar_type_entry e
- WHERE e.source_line IS NOT NULL
-   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
-                     JOIN code_class k ON k.source_name = g.source_name
-                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN code_class k ON k.source_name = g.source_name
-                WHERE g.graph_name = e.graph_name)
-UNION ALL
--- A @scalarType naming a class the reading read and a constant it does not declare as a public
--- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
--- declared as some other type are one refusal, and the reference is what the author edits.
-SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
-       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref
-  FROM graphitron_scalar_type_entry e
- WHERE e.source_line IS NOT NULL
-   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
-   AND EXISTS (SELECT 1 FROM store_graph_source g
-                 JOIN code_class k ON k.source_name = g.source_name
-                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
-   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
-                     JOIN code_scalar_constant c ON c.source_name = g.source_name
-                    WHERE g.graph_name = e.graph_name
-                      AND c.class_name = e.scalar_ref_class_part
-                      AND c.field_name = e.scalar_ref_field_part)
-UNION ALL
--- Two node types answering to one type id, so Query.node has an id it cannot dispatch. Reported at
--- each type's @table, which every node carries where only some carry @node: a node the backing
--- class publishes is a node without one. The detail is the shared id.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_TYPE_ID_SHARED', n.type_id
-  FROM graphitron_node n
-  JOIN graphitron_table_entry t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
- WHERE t.source_line IS NOT NULL
-   AND EXISTS (SELECT 1 FROM graphitron_node o
-                WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
-                  AND o.type_name <> n.type_name)
-UNION ALL
--- A table whose class declares node metadata graphitron cannot use, so a type over it encodes its
--- ids from the fallback tiers. Reported at each bound type's @table, on NODE_TYPE_ID_SHARED's terms,
--- and saying that the attempt failed rather than how. The detail is the table.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'NODE_METADATA_UNREADABLE', b.table_name
-  FROM graphitron_tabletype b
-  JOIN graphitron_table_entry t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
-  JOIN sql_node_metadata_unreadable u
-    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
-   AND u.table_name = b.table_name
- WHERE t.source_line IS NOT NULL
-UNION ALL
--- Two types whose names differ only in case, among the types the generator writes a file for, which
--- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
--- two files are one, and neither name is the right one to keep. Reported at each authored type's
--- base declaration; a minted type has none, and its authored sibling carries the row. The detail
--- names a sibling, the first by name where there are several, the rest being rows of their own.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'TYPE_NAME_CASE_COLLISION',
-       (SELECT MIN(o.type_name) FROM graphitron_type o
-         WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
-  FROM graphitron_type g
-  JOIN graphql_type_declaration d
-    ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
- WHERE g.kind <> 'SCALAR'
-   AND EXISTS (SELECT 1 FROM graphitron_type o
-                WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
-                  AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
-UNION ALL
--- A scalar or enum field with no path whose spelling names no column, or several, on a table its
--- read departs from: graphitron_field_target_column_match's departures with no candidate or more
--- than one. A field departing from two tables is one site, reported once, the detail being the
--- spelling; the columns an ambiguous one folds onto are the match's rows. Reported at the @field where one is
--- written, since that is the spelling to fix, and at the field otherwise.
-SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
-       COALESCE(fb.source_column, f.source_column), 'COLUMN_UNRESOLVED', MIN(m.spelling)
-  FROM graphitron_field_target_column_match m
-  JOIN graphql_field f
-    ON f.graph_name = m.graph_name AND f.type_name = m.type_name AND f.field_name = m.field_name
-  LEFT JOIN graphitron_field_binding_entry fb
-    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
- WHERE m.candidates = 0
-   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
- GROUP BY f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
-          COALESCE(fb.source_column, f.source_column)
-UNION ALL
-SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
-       COALESCE(fb.source_column, f.source_column), 'COLUMN_AMBIGUOUS', MIN(m.spelling)
-  FROM graphitron_field_target_column_match m
-  JOIN graphql_field f
-    ON f.graph_name = m.graph_name AND f.type_name = m.type_name AND f.field_name = m.field_name
-  LEFT JOIN graphitron_field_binding_entry fb
-    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
- WHERE m.candidates > 1
-   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
- GROUP BY f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
-          COALESCE(fb.source_column, f.source_column)
-UNION ALL
--- A scalar or enum field reading a column the terminal table of its @reference path does not have,
--- folded by SQL name and generated name alike, the table being graphitron_field_column_scope's
--- PATH_TERMINAL answer. A path that does not resolve has no scope row and is the chain's defect
--- instead. Excluded and reported on the terms of the rule above, until the forward walk states
--- where a path lands and this one reads the target column too.
-SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
-       COALESCE(fb.source_column, f.source_column),
-       'COLUMN_UNRESOLVED', COALESCE(fb.name_ref, f.field_name)
-  FROM graphitron_field_column_scope sc
-  JOIN graphql_field f
-    ON f.graph_name = sc.graph_name AND f.type_name = sc.type_name AND f.field_name = sc.field_name
-  JOIN graphql_type nt
-    ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type AND nt.kind IN ('SCALAR', 'ENUM')
-  LEFT JOIN graphitron_field_binding_entry fb
-    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
- WHERE sc.basis = 'PATH_TERMINAL'
-   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
-   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application a
-                    WHERE a.graph_name = f.graph_name
-                      AND a.coordinate = f.type_name || '.' || f.field_name
-                      AND a.directive_name IN ('service', 'externalField', 'routine', 'nodeId',
-                                               'sourceRow', 'pivot'))
-   AND NOT (fb.name_ref IS NULL AND f.field_name = 'id'
-            AND EXISTS (SELECT 1 FROM graphitron_node n
-                         WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name))
-   AND NOT EXISTS (SELECT 1 FROM sql_column c
-                    WHERE c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
-                      AND c.table_name = sc.table_name
-                      AND (c.column_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))
-                           OR c.jooq_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))))
-UNION ALL
--- A declared ordering on a field read once per participant, at the directive that declared it. The
--- branches are combined on their primary keys and nothing carries the declaration down onto one, so
--- the rows arrive in participant primary-key order whatever was declared. Graphitron does not
--- lower it yet, which is why this rests on UNSUPPORTED. One case is lowered, and it is excluded
--- by transcribing the classifier's precedence: a field on the query root, list-shaped (a list, or
--- a connection, authored or @asConnection-built), that reaches the multitable read rather than an
--- earlier route (@service, a Node named type, an argument @lookupKey, @routine). A new route ahead
--- of that read owes a clause here.
-SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
-       'ORDERING_ACROSS_PARTICIPANTS', o.detail
-  FROM (SELECT d.graph_name, d.type_name, d.field_name,
-               d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
-          FROM graphitron_default_order_entry d
-        UNION ALL
-        SELECT ob.graph_name, ob.type_name, ob.field_name,
-               ob.source_name, ob.source_line, ob.source_column, 'orderBy'
-          FROM graphitron_order_by_entry ob) o
- WHERE o.source_name IS NOT NULL
-   -- Read once per participant: the target binds no table of its own and has a table-bound
-   -- member, and no @mutation(table:) names where the statement is rooted instead.
-   AND EXISTS (SELECT 1 FROM graphitron_field_target ft
-                 JOIN graphql_poly_member m
-                   ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
-                 JOIN graphitron_resolved_type_binding bt
-                   ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
-                  AND bt.candidates = 1
-                WHERE ft.graph_name = o.graph_name AND ft.type_name = o.type_name
-                  AND ft.field_name = o.field_name
-                  AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
-                                   WHERE cb.graph_name = ft.graph_name
-                                     AND cb.type_name = ft.target_type_name))
-   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry mu
-                     JOIN graphitron_spelled_table sp
-                       ON sp.graph_name = mu.graph_name AND sp.spelling = mu.table_ref
-                      AND sp.candidates = 1
-                    WHERE mu.graph_name = o.graph_name AND mu.type_name = o.type_name
-                      AND mu.field_name = o.field_name)
-   AND NOT (EXISTS (SELECT 1 FROM graphql_root_operation ro
-                     WHERE ro.graph_name = o.graph_name AND ro.operation = 'QUERY'
-                       AND ro.type_name = o.type_name)
-            AND EXISTS (SELECT 1 FROM graphitron_field f
-                          JOIN graphitron_field_target ft
-                            ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name
-                           AND ft.field_name = f.field_name
-                         WHERE f.graph_name = o.graph_name AND f.type_name = o.type_name
-                           AND f.field_name = o.field_name
-                           AND (f.is_list OR ft.wrapper_type_name IS NOT NULL)
-                           AND f.named_type <> 'Node')
-            AND NOT EXISTS (SELECT 1 FROM graphitron_service_entry se
-                             WHERE se.graph_name = o.graph_name AND se.type_name = o.type_name
-                               AND se.field_name = o.field_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_argument_lookup_key_entry lk
-                             WHERE lk.graph_name = o.graph_name AND lk.type_name = o.type_name
-                               AND lk.field_name = o.field_name)
-            AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry re
-                             WHERE re.graph_name = o.graph_name AND re.type_name = o.type_name
-                               AND re.field_name = o.field_name))
-UNION ALL
--- A connection carrier whose resolved first default is larger than the build's maximum page size,
--- so the schema advertises a default no request can receive. Reported where the author wrote the
--- default: at the first argument's declaration where the carrier declares first itself, and
--- otherwise at the @asConnection application whose defaultFirstValue set it. The minted default
--- never fires it, being lowered to the maximum where it is minted. The detail says which of the two
--- was written. A connection type an author declared without @asConnection is no carrier and is not
--- judged here; the runtime serves its oversized default at the maximum like any value a client
--- sends.
-SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
-       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail
-  FROM (SELECT c.graph_name,
-               COALESCE(el.source_name, c.source_name) AS source_name,
-               COALESCE(el.source_line, c.source_line) AS source_line,
-               COALESCE(el.source_column, c.source_column) AS source_column,
-               CASE WHEN el.source_line IS NOT NULL THEN 'first' ELSE 'defaultFirstValue' END
-                 AS detail
-          FROM graphitron_connection_carrier c
-          JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
-          JOIN graphitron_argument ga
-            ON ga.graph_name = c.graph_name AND ga.type_name = c.type_name
-           AND ga.field_name = c.field_name AND ga.argument_name = 'first'
-          LEFT JOIN graphql_ast_element_entry el
-            ON el.graph_name = c.graph_name AND el.coordinate = c.coordinate || '(first:)'
-         -- An integer literal short enough to cast; a longer one is no Int at all, which the
-         -- schema build refuses on its own.
-         WHERE REGEXP_LIKE(ga.default_value_sdl, '^[0-9]{1,18}$')
-           AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
- WHERE p.source_line IS NOT NULL
-UNION ALL
--- A field whose written directives claim two kinds of producer, at the field's own declaration: a
--- fetcher runs one thing. @lookupKey with @routine is deferred rather than refused.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'PRODUCER_KINDS_CONFLICT', CAST(NULL AS VARCHAR)
-  FROM (SELECT graph_name, type_name, field_name
-          FROM graphitron_producer_claim
-         GROUP BY graph_name, type_name, field_name
-        HAVING COUNT(*) > 1
-           AND NOT (COUNT(*) = 2 AND MIN(kind) = 'LOOKUP' AND MAX(kind) = 'ROUTINE')) c
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
-UNION ALL
--- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
--- rule, and every field of the type would be fetched both ways.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR)
-  FROM (SELECT graph_name, type_name FROM graphitron_result
-         GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
-  JOIN graphql_ast_type_declaration_entry d
-    ON d.graph_name = r.graph_name AND d.name = r.type_name
-UNION ALL
--- A field whose union or interface lists an @error type but which is no errors field, at its
--- declaration, by the first rule it breaks: every member @error, a list, and a list that may be null.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       CASE WHEN EXISTS (SELECT 1 FROM graphql_poly_member pm
-                          WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
-                            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application de
-                                             WHERE de.graph_name = pm.graph_name
-                                               AND de.coordinate = pm.member_type_name
-                                               AND de.directive_name = 'error'))
-              THEN 'ERRORS_FIELD_MIXED_MEMBERS'
-            WHEN NOT f.is_list THEN 'ERRORS_FIELD_NOT_A_LIST'
-            ELSE 'ERRORS_FIELD_NON_NULL' END,
-       CAST(NULL AS VARCHAR)
-  FROM graphitron_field f
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE EXISTS (SELECT 1 FROM graphql_poly_member pm
-                JOIN graphitron_directive_application de
-                  ON de.graph_name = pm.graph_name AND de.coordinate = pm.member_type_name
-                 AND de.directive_name = 'error'
-               WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
-                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
-                      AND e.field_name = f.field_name)
-UNION ALL
--- A type with two errors fields, at the first: an outcome has one place for its errors.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR)
-  FROM graphitron_errors_field e
-  JOIN graphitron_field f
-    ON f.graph_name = e.graph_name AND f.type_name = e.type_name AND f.field_name = e.field_name
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = e.graph_name AND d.type_name = e.type_name AND d.name = e.field_name
- WHERE f.ordinal = (SELECT MIN(f2.ordinal)
-                      FROM graphitron_errors_field e2
-                      JOIN graphitron_field f2
-                        ON f2.graph_name = e2.graph_name AND f2.type_name = e2.type_name
-                       AND f2.field_name = e2.field_name
-                     WHERE e2.graph_name = e.graph_name AND e2.type_name = e.type_name
-                    HAVING COUNT(*) > 1)
-UNION ALL
--- A field of an outcome other than its errors field that may not be null, at its declaration: on
--- failure the value is absent, and graphql-java would drop the errors with it.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR)
-  FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
-          FROM graphitron_producer_outcome) o
-  JOIN graphitron_field f
-    ON f.graph_name = o.graph_name AND f.type_name = o.outcome_type_name
-   AND f.field_name <> o.errors_field_name
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
- WHERE f.non_null
-UNION ALL
--- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
--- is an exception a producer caught, and a row of a statement holds none.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_target ft
-  JOIN graphitron_result r
-    ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
- WHERE EXISTS (SELECT 1 FROM graphitron_errors_field e
-                WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
-                  AND e.field_name = ft.field_name)
-    OR EXISTS (SELECT 1 FROM graphitron_directive_application de
-                WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
-                  AND de.directive_name = 'error')
-UNION ALL
--- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
--- holding one result, with neither a producer nor a reader. A field claiming two kinds, the fields of
--- a type holding two shapes, and a field returning a type nobody declared carry their own defect
--- instead.
-SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
-       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR)
-  FROM graphitron_field f
-  JOIN graphql_ast_field_definition_entry d
-    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
-  JOIN graphitron_field_target ft
-    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-  JOIN graphitron_type tt
-    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
- WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
-                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-                   AND ro.operation IN ('QUERY', 'MUTATION'))
-        OR (SELECT COUNT(*) FROM graphitron_result r
-             WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name) = 1)
-   AND NOT EXISTS (SELECT 1 FROM graphitron_fetcher fe
-                    WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
-                      AND fe.field_name = f.field_name)
-   AND (SELECT COUNT(*) FROM graphitron_producer_claim c
-         WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
-           AND c.field_name = f.field_name) < 2
-UNION ALL
--- A field on the subscription root, at the field's own declaration. Meaningful under the
--- specification and under the directives alike: graphitron generates no subscription resolver
--- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
--- a type's name, a schema block binding the subscription root under another name being the same
--- schema.
-SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
-       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR)
-  FROM graphql_ast_field_definition_entry f
-  JOIN graphql_root_operation ro
-    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-   AND ro.operation = 'SUBSCRIPTION';
-COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
-COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
-COMMENT ON COLUMN graphitron_entry_defect_rule.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_entry_defect_rule.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
-COMMENT ON COLUMN graphitron_entry_defect_rule.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
-COMMENT ON COLUMN graphitron_entry_defect_rule.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
 CREATE VIEW intent_column_match_claim
   (graph_name, type_name, field_name, classifier, matched_name, matched_by,
    table_source_name, table_schema, table_name, column_name,
@@ -11722,6 +10945,694 @@ COMMENT ON COLUMN graphitron_field_path_rule.constraint_schema IS 'the SQL schem
 COMMENT ON COLUMN graphitron_field_path_rule.constraint_table IS 'the table holding the key the move rides; NULL where it rides none';
 COMMENT ON COLUMN graphitron_field_path_rule.constraint_name IS 'the key the move rides; NULL where it rides none';
 COMMENT ON COLUMN graphitron_field_path_rule.fk_on_from IS 'whether the move leaves from the table holding the key; NULL where it rides none';
+
+CREATE VIEW graphitron_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+-- The @routine that heads a chain: the last one written at a mutation-root field.
+WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
+    FROM graphitron_routine_entry r
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.source_name IS NOT NULL
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
+                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
+                         AND r2.field_name = r.field_name)
+),
+-- A root field's first @reference on a field with no @routine. A root field has no source row, so a
+-- path written there departs from nothing until a routine gives it one; its chain then breaks at the
+-- first element whatever that element names, which is why such a field is told this and not one of
+-- the three chain breaks.
+root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
+    FROM graphitron_field_reference_entry fr
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
+     AND ro.operation IN ('QUERY', 'MUTATION')
+   WHERE fr.source_name IS NOT NULL
+     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
+                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
+                          AND f2.field_name = fr.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
+                      WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
+                        AND r.field_name = fr.field_name)
+)
+-- More than one write on one field. The row sits at the head, the individual applications
+-- being legal each on their own and the plurality being what has no emitter.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'MULTIPLE_ROUTINE_NODES', NULL
+  FROM head h
+ WHERE 1 < (SELECT COUNT(*) FROM graphitron_routine_entry r2
+             WHERE r2.graph_name = h.graph_name AND r2.type_name = h.type_name
+               AND r2.field_name = h.field_name)
+UNION ALL
+-- A paginated return on a write. Stated for every write and not only for the chain shape:
+-- the wrapper and the write are both seat-independent facts, and this relation ranks nothing,
+-- so a coordinate the seat would have answered about its carrier says this as well.
+SELECT h.graph_name, h.source_name, h.source_line, h.source_column,
+       'CONNECTION_RETURN', NULL
+  FROM head h
+  JOIN graphitron_field cf
+    ON cf.graph_name = h.graph_name AND cf.type_name = h.type_name
+   AND cf.field_name = h.field_name
+  JOIN graphitron_connection_element_type ce
+    ON ce.graph_name = cf.graph_name AND ce.type_name = cf.named_type
+UNION ALL
+-- A read surface written on a write. Three sites state one, and each row sits at its own.
+-- On the field or on one of its arguments, each at its own application.
+SELECT dc.graph_name, dc.source_name, dc.source_line, dc.source_column,
+       'READ_SURFACE_ON_WRITE', 'condition'
+  FROM graphql_directive_application dc
+  JOIN graphql_element_field ef
+    ON ef.graph_name = dc.graph_name AND ef.coordinate = dc.coordinate
+  JOIN head h
+    ON h.graph_name = ef.graph_name AND h.type_name = ef.type_name AND h.field_name = ef.field_name
+ WHERE dc.directive_name = 'condition' AND dc.source_name IS NOT NULL
+UNION ALL
+SELECT ob.graph_name, ob.source_name, ob.source_line, ob.source_column,
+       'READ_SURFACE_ON_WRITE', 'orderBy'
+  FROM graphitron_order_by_entry ob
+  JOIN head h
+    ON h.graph_name = ob.graph_name AND h.type_name = ob.type_name AND h.field_name = ob.field_name
+ WHERE ob.source_name IS NOT NULL
+UNION ALL
+-- A step with more than one move from where its walk stands, at the element that wrote it: two keys
+-- between the table the walk stands at and a named table, or a key name two schemas share and both
+-- of them touch. One row per element however many walks stopped there.
+SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
+       st.element_source_column, 'ROUTE_AMBIGUOUS', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_path_stop st
+ WHERE st.moves > 1
+UNION ALL
+-- Where a walk broke: an element it could not step through, with no move from where it stood. The
+-- element names nothing, or it names something and none of it leaves from there. A @routine after
+-- the walk's start is a path routine, a step the walk does not take yet, and draws nothing here.
+SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
+       st.element_source_column,
+       CASE WHEN EXISTS (SELECT 1 FROM graphitron_path_element_key k
+                          WHERE k.graph_name = st.graph_name AND k.source_name = st.element_source_name
+                            AND k.source_line = st.element_source_line
+                            AND k.source_column = st.element_source_column)
+              OR EXISTS (SELECT 1 FROM graphitron_path_element_table t
+                          WHERE t.graph_name = st.graph_name AND t.source_name = st.element_source_name
+                            AND t.source_line = st.element_source_line
+                            AND t.source_column = st.element_source_column)
+              OR EXISTS (SELECT 1 FROM graphitron_path_element_method m
+                          WHERE m.graph_name = st.graph_name AND m.source_name = st.element_source_name
+                            AND m.source_line = st.element_source_line
+                            AND m.source_column = st.element_source_column)
+            THEN 'NO_ROUTE_FROM_DEPARTURE' ELSE 'ELEMENT_UNRESOLVED' END, CAST(NULL AS VARCHAR)
+  FROM graphitron_field_path_stop st
+ WHERE st.moves = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
+                    WHERE r.graph_name = st.graph_name AND r.source_name = st.element_source_name
+                      AND r.source_line = st.element_source_line
+                      AND r.source_column = st.element_source_column)
+UNION ALL
+-- Where a walk took every written step and ended somewhere other than its target, at the last step,
+-- whose element is the one that lands there: a walk with no stop, read at its last step. A target
+-- with no table of its own, a scalar or a pivot read off the last table, has no table to miss.
+SELECT DISTINCT p.graph_name, p.element_source_name, p.element_source_line, p.element_source_column,
+       'NO_ROUTE_TO_TARGET', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_path p
+  JOIN graphitron_field_target_table tt
+    ON tt.graph_name = p.graph_name AND tt.type_name = p.type_name AND tt.field_name = p.field_name
+  JOIN graphitron_resolved_type_binding b
+    ON b.graph_name = tt.graph_name AND b.type_name = tt.arriving_type_name AND b.candidates = 1
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_field_path nx
+                    WHERE nx.graph_name = p.graph_name AND nx.type_name = p.type_name
+                      AND nx.field_name = p.field_name AND nx.start_source_name = p.start_source_name
+                      AND nx.start_schema = p.start_schema AND nx.start_table = p.start_table
+                      AND nx.position > p.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_path_stop st
+                    WHERE st.graph_name = p.graph_name AND st.type_name = p.type_name
+                      AND st.field_name = p.field_name AND st.start_source_name = p.start_source_name
+                      AND st.start_schema = p.start_schema AND st.start_table = p.start_table)
+   AND NOT (b.table_source_name = p.to_source_name AND b.table_schema = p.to_schema
+            AND b.table_name = p.to_table)
+UNION ALL
+-- A root field's path with nothing to depart from, at the @reference that starts it.
+SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
+       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR)
+  FROM root_reference rr
+UNION ALL
+-- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
+-- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
+-- toward and no element can be read against one. Reported at the first element, the whole chain
+-- being the one thing wrong.
+--
+-- @reference-only chains, which is what makes this a fact about the schema rather than about the
+-- catalog. Such a chain takes its target from the return type's binding and from nowhere else, so
+-- an unbound return is an error no catalog could repair. A chain carrying a @routine takes its
+-- target from the function result instead, and the same silence there means the routine name
+-- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
+-- fault is real and is not this one; it is owed its own arm at the routine's own position.
+--
+-- Judged only where the target could bind a table: a scalar or an enum read through a path takes
+-- its column from wherever the path arrives, and a @pivot reads its projection from the path's
+-- last table, so neither has a table of its own to be missing.
+SELECT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
+       'CHAIN_WITHOUT_TARGET', CAST(NULL AS VARCHAR)
+  FROM graphitron_ast_field_path_entry cl
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = cl.graph_name AND fd.source_name = cl.source_name
+   AND fd.source_line = cl.field_line AND fd.source_column = cl.field_column
+  -- the declaration the anchor chose, a field declared twice reading once
+  JOIN graphql_field gf
+    ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
+   AND gf.field_name = fd.name AND gf.source_name = fd.source_name
+   AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = cl.graph_name AND ft.type_name = gf.type_name
+   AND ft.field_name = gf.field_name
+  JOIN graphitron_type t
+    ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
+ WHERE cl.position = 0
+   AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION')
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_target_table tt
+                    WHERE tt.graph_name = cl.graph_name AND tt.type_name = gf.type_name
+                      AND tt.field_name = gf.field_name)
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application da
+                     JOIN graphql_element_field ef
+                       ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
+                    WHERE ef.graph_name = cl.graph_name AND ef.type_name = gf.type_name
+                      AND ef.field_name = gf.field_name AND da.directive_name = 'pivot')
+   -- a @routine anywhere in the path takes its target from the function result instead
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry rp
+                     JOIN graphitron_ast_routine_entry r
+                       ON r.graph_name = rp.graph_name AND r.source_name = rp.source_name
+                      AND r.source_line = rp.element_line AND r.source_column = rp.element_column
+                    WHERE rp.graph_name = cl.graph_name AND rp.source_name = cl.source_name
+                      AND rp.field_line = cl.field_line AND rp.field_column = cl.field_column)
+UNION ALL
+-- A code reference that resolves to no one method, at the position it was written: exactly the
+-- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
+-- classpath holds under the names. No class, a class without the method, or more than one method;
+-- exclusive by construction, a single match being the resolution's row. One arm for every site,
+-- the reference being one fact wherever it is written.
+SELECT s.graph_name, s.source_name, s.source_line, s.source_column,
+       CASE WHEN s.classes = 0 THEN 'CODE_REFERENCE_CLASS_NOT_READ'
+            WHEN s.methods = 0 THEN 'CODE_REFERENCE_METHOD_NOT_FOUND'
+            ELSE 'CODE_REFERENCE_METHOD_AMBIGUOUS' END,
+       CASE WHEN s.classes = 0 THEN s.class_name ELSE s.class_name || '.' || s.method_name END
+  FROM (SELECT c.graph_name, c.source_name, c.source_line, c.source_column,
+               c.type_name, c.field_name, c.class_name, c.method_name,
+               (SELECT COUNT(*) FROM store_graph_source g
+                  JOIN code_class k ON k.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND k.class_name = c.class_name) AS classes,
+               (SELECT COUNT(*) FROM store_graph_source g
+                  JOIN code_method m ON m.source_name = g.source_name
+                 WHERE g.graph_name = c.graph_name AND m.class_name = c.class_name
+                   AND m.method_name = c.method_name) AS methods
+          FROM graphitron_code_reference_site c
+         WHERE c.method_name IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM graphitron_code_reference r
+                            WHERE r.graph_name = c.graph_name AND r.source_name = c.source_name
+                              AND r.source_line = c.source_line
+                              AND r.source_column = c.source_column)
+           -- A graph whose classpath was never read has told the store nothing about any class, so
+           -- no name it writes is wrong yet: a store before its first build, or a capture with no
+           -- classpath at all. Only a reading that read something can say a class is absent.
+           AND EXISTS (SELECT 1 FROM store_graph_source g
+                         JOIN code_class k ON k.source_name = g.source_name
+                        WHERE g.graph_name = c.graph_name)) s
+UNION ALL
+-- A @table naming a table-valued function. A type is not bound to a function: the field carrying
+-- @routine binds its return type to the routine's result, so the directive names something a type
+-- cannot stand on. Reported at the @table, with the spelling as written.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_NAMES_ROUTINE', COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+  JOIN sql_table st
+    ON st.source_name = sp.table_source_name AND st.table_schema = sp.table_schema
+   AND st.table_name = sp.table_name
+ WHERE t.source_line IS NOT NULL
+   AND st.table_type = 'FUNCTION'
+UNION ALL
+-- A @node on a type that does not implement Node. The interface is the contract @node publishes to
+-- clients, so a type cannot be promoted to a node without it. Reported at the @node, which is where
+-- an author decides between adding the interface and dropping the directive. A root operation type
+-- is a root before it is anything else.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_NODE_INTERFACE', CAST(NULL AS VARCHAR)
+  FROM graphitron_node_entry n
+ WHERE n.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphql_implements_interface i
+                    WHERE i.graph_name = n.graph_name AND i.type_name = n.type_name
+                      AND i.interface_name = 'Node')
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
+UNION ALL
+-- A @node on a type with no @table. A node is a row of a table, its id encoding that row's key, so
+-- a type bound to none has nothing to be a node of. Reported at the @node, on the terms above: a
+-- root operation type is a root before it is anything else. A type that also lacks the interface
+-- is both defects, each its own decision for the author.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_TABLE', CAST(NULL AS VARCHAR)
+  FROM graphitron_node_entry n
+ WHERE n.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_table_entry t
+                    WHERE t.graph_name = n.graph_name AND t.type_name = n.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation r
+                    WHERE r.graph_name = n.graph_name AND r.type_name = n.type_name)
+UNION ALL
+-- A @node(keyColumns:) naming a column the bound table cannot answer to with exactly one column,
+-- folded the way NodeKeyColumns folds: against the SQL name and the generated field name alike. One
+-- row per @node, naming the first spelling that fails in the order written; the pinned tier yields
+-- nothing for the whole list when any position fails, and the others are rows of
+-- graphitron_node_keycolumn_entry under their own key rather than a list in this one. A type whose
+-- @table did not resolve has no binding to judge against and is that defect instead.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_KEY_COLUMN_UNRESOLVED', e.column_ref
+  FROM graphitron_node_entry n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
+  JOIN graphitron_node_keycolumn_entry e
+    ON e.graph_name = n.graph_name AND e.type_name = n.type_name
+ WHERE n.source_line IS NOT NULL
+   AND (SELECT COUNT(*) FROM sql_column c
+         WHERE c.source_name = b.table_source_name AND c.table_schema = b.table_schema
+           AND c.table_name = b.table_name
+           AND (c.column_name_upper = UPPER(e.column_ref)
+                OR c.jooq_name_upper = UPPER(e.column_ref))) <> 1
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry f
+                    WHERE f.graph_name = e.graph_name AND f.type_name = e.type_name
+                      AND f.position < e.position
+                      AND (SELECT COUNT(*) FROM sql_column c
+                            WHERE c.source_name = b.table_source_name
+                              AND c.table_schema = b.table_schema AND c.table_name = b.table_name
+                              AND (c.column_name_upper = UPPER(f.column_ref)
+                                   OR c.jooq_name_upper = UPPER(f.column_ref))) <> 1)
+UNION ALL
+-- A @node with nothing to build an id from. It pinned no columns, its bound table publishes no node
+-- metadata, and the table has no primary key, which are the three tiers NodeKeyColumns tries in
+-- turn; with all three silent the node has no key. Metadata a class publishes and graphitron cannot
+-- use is no row of sql_node_metadata, so such a table is judged here as well as warned about by
+-- NODE_METADATA_UNREADABLE. The detail is the table.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column,
+       'NODE_WITHOUT_KEY', b.table_name
+  FROM graphitron_node_entry n
+  JOIN graphitron_tabletype b ON b.graph_name = n.graph_name AND b.type_name = n.type_name
+ WHERE n.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn_entry e
+                    WHERE e.graph_name = n.graph_name AND e.type_name = n.type_name)
+   AND NOT EXISTS (SELECT 1 FROM sql_node_metadata m
+                    WHERE m.source_name = b.table_source_name AND m.table_schema = b.table_schema
+                      AND m.table_name = b.table_name)
+   AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                    WHERE pk.source_name = b.table_source_name AND pk.table_schema = b.table_schema
+                      AND pk.table_name = b.table_name)
+UNION ALL
+-- A @table naming nothing the catalog holds: no candidate at all for its spelling. Reported at the
+-- @table with the spelling as written. A graph captured with no catalog has said nothing about any
+-- table, so no name it writes is wrong yet, on the terms the code-reference arm states for classes.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_UNRESOLVED', COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+ WHERE t.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_spelled_table sp
+                    WHERE sp.graph_name = t.graph_name
+                      AND sp.spelling = COALESCE(t.table_ref, t.type_name))
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN sql_table st ON st.source_name = g.source_name
+                WHERE g.graph_name = t.graph_name)
+UNION ALL
+-- A @table naming a table two schemas declare. The spelling has candidates and more than one, so
+-- the type would be bound to whichever a reader happened to pick; qualifying it with the schema
+-- settles it. Reported once per @table.
+SELECT DISTINCT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'TABLE_AMBIGUOUS', COALESCE(t.table_ref, t.type_name)
+  FROM graphitron_table_entry t
+  JOIN graphitron_spelled_table sp
+    ON sp.graph_name = t.graph_name AND sp.spelling = COALESCE(t.table_ref, t.type_name)
+ WHERE t.source_line IS NOT NULL
+   AND sp.candidates > 1
+UNION ALL
+-- A @scalarType reference ConstantReferenceGrammar cannot split into a class and a constant: no
+-- period, or nothing on one side of the last one. Reported with the reference as written.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_REFERENCE_MALFORMED', e.scalar_ref
+  FROM graphitron_scalar_type_entry e
+ WHERE e.source_line IS NOT NULL
+   AND (e.scalar_ref_class_part IS NULL OR e.scalar_ref_field_part IS NULL)
+UNION ALL
+-- A @scalarType naming a class the classpath reading did not read: misspelt, or in an entry the
+-- build does not hand the generator, which is the walk's not-found and not-nameable cases at once.
+-- Only a reading that read something can say a class is absent, on the code-reference arm's terms.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CLASS_NOT_READ', e.scalar_ref_class_part
+  FROM graphitron_scalar_type_entry e
+ WHERE e.source_line IS NOT NULL
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                     JOIN code_class k ON k.source_name = g.source_name
+                    WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name)
+UNION ALL
+-- A @scalarType naming a class the reading read and a constant it does not declare as a public
+-- static GraphQLScalarType, which code_scalar_constant is exactly: absent, not public static, or
+-- declared as some other type are one refusal, and the reference is what the author edits.
+SELECT e.graph_name, e.source_name, e.source_line, e.source_column,
+       'SCALAR_TYPE_CONSTANT_NOT_FOUND', e.scalar_ref
+  FROM graphitron_scalar_type_entry e
+ WHERE e.source_line IS NOT NULL
+   AND e.scalar_ref_class_part IS NOT NULL AND e.scalar_ref_field_part IS NOT NULL
+   AND EXISTS (SELECT 1 FROM store_graph_source g
+                 JOIN code_class k ON k.source_name = g.source_name
+                WHERE g.graph_name = e.graph_name AND k.class_name = e.scalar_ref_class_part)
+   AND NOT EXISTS (SELECT 1 FROM store_graph_source g
+                     JOIN code_scalar_constant c ON c.source_name = g.source_name
+                    WHERE g.graph_name = e.graph_name
+                      AND c.class_name = e.scalar_ref_class_part
+                      AND c.field_name = e.scalar_ref_field_part)
+UNION ALL
+-- Two node types answering to one type id, so Query.node has an id it cannot dispatch. Reported at
+-- each type's @table, which every node carries where only some carry @node: a node the backing
+-- class publishes is a node without one. The detail is the shared id.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_TYPE_ID_SHARED', n.type_id
+  FROM graphitron_node n
+  JOIN graphitron_table_entry t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
+ WHERE t.source_line IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_node o
+                WHERE o.graph_name = n.graph_name AND o.type_id = n.type_id
+                  AND o.type_name <> n.type_name)
+UNION ALL
+-- A table whose class declares node metadata graphitron cannot use, so a type over it encodes its
+-- ids from the fallback tiers. Reported at each bound type's @table, on NODE_TYPE_ID_SHARED's terms,
+-- and saying that the attempt failed rather than how. The detail is the table.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_METADATA_UNREADABLE', b.table_name
+  FROM graphitron_tabletype b
+  JOIN graphitron_table_entry t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
+  JOIN sql_node_metadata_unreadable u
+    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
+   AND u.table_name = b.table_name
+ WHERE t.source_line IS NOT NULL
+UNION ALL
+-- Two types whose names differ only in case, among the types the generator writes a file for, which
+-- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
+-- two files are one, and neither name is the right one to keep. Reported at each authored type's
+-- base declaration; a minted type has none, and its authored sibling carries the row. The detail
+-- names a sibling, the first by name where there are several, the rest being rows of their own.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'TYPE_NAME_CASE_COLLISION',
+       (SELECT MIN(o.type_name) FROM graphitron_type o
+         WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
+           AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
+  FROM graphitron_type g
+  JOIN graphql_type_declaration d
+    ON d.graph_name = g.graph_name AND d.type_name = g.type_name AND NOT d.is_extension
+ WHERE g.kind <> 'SCALAR'
+   AND EXISTS (SELECT 1 FROM graphitron_type o
+                WHERE o.graph_name = g.graph_name AND o.kind <> 'SCALAR'
+                  AND UPPER(o.type_name) = UPPER(g.type_name) AND o.type_name <> g.type_name)
+UNION ALL
+-- A scalar or enum field with no path whose spelling names no column, or several, on a table its
+-- read departs from: graphitron_field_target_column_match's departures with no candidate or more
+-- than one. A field departing from two tables is one site, reported once, the detail being the
+-- spelling; the columns an ambiguous one folds onto are the match's rows. Reported at the @field where one is
+-- written, since that is the spelling to fix, and at the field otherwise.
+SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
+       COALESCE(fb.source_column, f.source_column), 'COLUMN_UNRESOLVED', MIN(m.spelling)
+  FROM graphitron_field_target_column_match m
+  JOIN graphql_field f
+    ON f.graph_name = m.graph_name AND f.type_name = m.type_name AND f.field_name = m.field_name
+  LEFT JOIN graphitron_field_binding_entry fb
+    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
+ WHERE m.candidates = 0
+   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
+ GROUP BY f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
+          COALESCE(fb.source_column, f.source_column)
+UNION ALL
+SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
+       COALESCE(fb.source_column, f.source_column), 'COLUMN_AMBIGUOUS', MIN(m.spelling)
+  FROM graphitron_field_target_column_match m
+  JOIN graphql_field f
+    ON f.graph_name = m.graph_name AND f.type_name = m.type_name AND f.field_name = m.field_name
+  LEFT JOIN graphitron_field_binding_entry fb
+    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
+ WHERE m.candidates > 1
+   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
+ GROUP BY f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
+          COALESCE(fb.source_column, f.source_column)
+UNION ALL
+-- A scalar or enum field reading a column the terminal table of its @reference path does not have,
+-- folded by SQL name and generated name alike, the table being graphitron_field_column_scope's
+-- PATH_TERMINAL answer. A path that does not resolve has no scope row and is the chain's defect
+-- instead. Excluded and reported on the terms of the rule above, until the forward walk states
+-- where a path lands and this one reads the target column too.
+SELECT f.graph_name, COALESCE(fb.source_name, f.source_name), COALESCE(fb.source_line, f.source_line),
+       COALESCE(fb.source_column, f.source_column),
+       'COLUMN_UNRESOLVED', COALESCE(fb.name_ref, f.field_name)
+  FROM graphitron_field_column_scope sc
+  JOIN graphql_field f
+    ON f.graph_name = sc.graph_name AND f.type_name = sc.type_name AND f.field_name = sc.field_name
+  JOIN graphql_type nt
+    ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type AND nt.kind IN ('SCALAR', 'ENUM')
+  LEFT JOIN graphitron_field_binding_entry fb
+    ON fb.graph_name = f.graph_name AND fb.type_name = f.type_name AND fb.field_name = f.field_name
+ WHERE sc.basis = 'PATH_TERMINAL'
+   AND COALESCE(fb.source_line, f.source_line) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphql_directive_application a
+                    WHERE a.graph_name = f.graph_name
+                      AND a.coordinate = f.type_name || '.' || f.field_name
+                      AND a.directive_name IN ('service', 'externalField', 'routine', 'nodeId',
+                                               'sourceRow', 'pivot'))
+   AND NOT (fb.name_ref IS NULL AND f.field_name = 'id'
+            AND EXISTS (SELECT 1 FROM graphitron_node n
+                         WHERE n.graph_name = f.graph_name AND n.type_name = f.type_name))
+   AND NOT EXISTS (SELECT 1 FROM sql_column c
+                    WHERE c.source_name = sc.table_source_name AND c.table_schema = sc.table_schema
+                      AND c.table_name = sc.table_name
+                      AND (c.column_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))
+                           OR c.jooq_name_upper = UPPER(COALESCE(fb.name_ref, f.field_name))))
+UNION ALL
+-- A declared ordering on a field read once per participant, at the directive that declared it. The
+-- branches are combined on their primary keys and nothing carries the declaration down onto one, so
+-- the rows arrive in participant primary-key order whatever was declared. Graphitron does not
+-- lower it yet, which is why this rests on UNSUPPORTED. One case is lowered, and it is excluded
+-- by transcribing the classifier's precedence: a field on the query root, list-shaped (a list, or
+-- a connection, authored or @asConnection-built), that reaches the multitable read rather than an
+-- earlier route (@service, a Node named type, an argument @lookupKey, @routine). A new route ahead
+-- of that read owes a clause here.
+SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
+       'ORDERING_ACROSS_PARTICIPANTS', o.detail
+  FROM (SELECT d.graph_name, d.type_name, d.field_name,
+               d.source_name, d.source_line, d.source_column, 'defaultOrder' AS detail
+          FROM graphitron_default_order_entry d
+        UNION ALL
+        SELECT ob.graph_name, ob.type_name, ob.field_name,
+               ob.source_name, ob.source_line, ob.source_column, 'orderBy'
+          FROM graphitron_order_by_entry ob) o
+ WHERE o.source_name IS NOT NULL
+   -- Read once per participant: the target binds no table of its own and has a table-bound
+   -- member, and no @mutation(table:) names where the statement is rooted instead.
+   AND EXISTS (SELECT 1 FROM graphitron_field_target ft
+                 JOIN graphql_poly_member m
+                   ON m.graph_name = ft.graph_name AND m.container_name = ft.target_type_name
+                 JOIN graphitron_resolved_type_binding bt
+                   ON bt.graph_name = m.graph_name AND bt.type_name = m.member_type_name
+                  AND bt.candidates = 1
+                WHERE ft.graph_name = o.graph_name AND ft.type_name = o.type_name
+                  AND ft.field_name = o.field_name
+                  AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding cb
+                                   WHERE cb.graph_name = ft.graph_name
+                                     AND cb.type_name = ft.target_type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_mutation_entry mu
+                     JOIN graphitron_spelled_table sp
+                       ON sp.graph_name = mu.graph_name AND sp.spelling = mu.table_ref
+                      AND sp.candidates = 1
+                    WHERE mu.graph_name = o.graph_name AND mu.type_name = o.type_name
+                      AND mu.field_name = o.field_name)
+   AND NOT (EXISTS (SELECT 1 FROM graphql_root_operation ro
+                     WHERE ro.graph_name = o.graph_name AND ro.operation = 'QUERY'
+                       AND ro.type_name = o.type_name)
+            AND EXISTS (SELECT 1 FROM graphitron_field f
+                          JOIN graphitron_field_target ft
+                            ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name
+                           AND ft.field_name = f.field_name
+                         WHERE f.graph_name = o.graph_name AND f.type_name = o.type_name
+                           AND f.field_name = o.field_name
+                           AND (f.is_list OR ft.wrapper_type_name IS NOT NULL)
+                           AND f.named_type <> 'Node')
+            AND NOT EXISTS (SELECT 1 FROM graphitron_service_entry se
+                             WHERE se.graph_name = o.graph_name AND se.type_name = o.type_name
+                               AND se.field_name = o.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_argument_lookup_key_entry lk
+                             WHERE lk.graph_name = o.graph_name AND lk.type_name = o.type_name
+                               AND lk.field_name = o.field_name)
+            AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry re
+                             WHERE re.graph_name = o.graph_name AND re.type_name = o.type_name
+                               AND re.field_name = o.field_name))
+UNION ALL
+-- A connection carrier whose resolved first default is larger than the build's maximum page size,
+-- so the schema advertises a default no request can receive. Reported where the author wrote the
+-- default: at the first argument's declaration where the carrier declares first itself, and
+-- otherwise at the @asConnection application whose defaultFirstValue set it. The minted default
+-- never fires it, being lowered to the maximum where it is minted. The detail says which of the two
+-- was written. A connection type an author declared without @asConnection is no carrier and is not
+-- judged here; the runtime serves its oversized default at the maximum like any value a client
+-- sends.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
+       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail
+  FROM (SELECT c.graph_name,
+               COALESCE(el.source_name, c.source_name) AS source_name,
+               COALESCE(el.source_line, c.source_line) AS source_line,
+               COALESCE(el.source_column, c.source_column) AS source_column,
+               CASE WHEN el.source_line IS NOT NULL THEN 'first' ELSE 'defaultFirstValue' END
+                 AS detail
+          FROM graphitron_connection_carrier c
+          JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
+          JOIN graphitron_argument ga
+            ON ga.graph_name = c.graph_name AND ga.type_name = c.type_name
+           AND ga.field_name = c.field_name AND ga.argument_name = 'first'
+          LEFT JOIN graphql_ast_element_entry el
+            ON el.graph_name = c.graph_name AND el.coordinate = c.coordinate || '(first:)'
+         -- An integer literal short enough to cast; a longer one is no Int at all, which the
+         -- schema build refuses on its own.
+         WHERE REGEXP_LIKE(ga.default_value_sdl, '^[0-9]{1,18}$')
+           AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
+ WHERE p.source_line IS NOT NULL
+UNION ALL
+-- A field whose written directives claim two kinds of producer, at the field's own declaration: a
+-- fetcher runs one thing. @lookupKey with @routine is deferred rather than refused.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'PRODUCER_KINDS_CONFLICT', CAST(NULL AS VARCHAR)
+  FROM (SELECT graph_name, type_name, field_name
+          FROM graphitron_producer_claim
+         GROUP BY graph_name, type_name, field_name
+        HAVING COUNT(*) > 1
+           AND NOT (COUNT(*) = 2 AND MIN(kind) = 'LOOKUP' AND MAX(kind) = 'ROUTINE')) c
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = c.graph_name AND d.type_name = c.type_name AND d.name = c.field_name
+UNION ALL
+-- A type a result reaches as a row and as an object, at its declarations: one kind per field is the
+-- rule, and every field of the type would be fetched both ways.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'RESULT_SHAPES_CONFLICT', CAST(NULL AS VARCHAR)
+  FROM (SELECT graph_name, type_name FROM graphitron_result
+         GROUP BY graph_name, type_name HAVING COUNT(*) > 1) r
+  JOIN graphql_ast_type_declaration_entry d
+    ON d.graph_name = r.graph_name AND d.name = r.type_name
+UNION ALL
+-- A field whose union or interface lists an @error type but which is no errors field, at its
+-- declaration, by the first rule it breaks: every member @error, a list, and a list that may be null.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       CASE WHEN EXISTS (SELECT 1 FROM graphql_poly_member pm
+                          WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type
+                            AND NOT EXISTS (SELECT 1 FROM graphitron_directive_application de
+                                             WHERE de.graph_name = pm.graph_name
+                                               AND de.coordinate = pm.member_type_name
+                                               AND de.directive_name = 'error'))
+              THEN 'ERRORS_FIELD_MIXED_MEMBERS'
+            WHEN NOT f.is_list THEN 'ERRORS_FIELD_NOT_A_LIST'
+            ELSE 'ERRORS_FIELD_NON_NULL' END,
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_field f
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE EXISTS (SELECT 1 FROM graphql_poly_member pm
+                JOIN graphitron_directive_application de
+                  ON de.graph_name = pm.graph_name AND de.coordinate = pm.member_type_name
+                 AND de.directive_name = 'error'
+               WHERE pm.graph_name = f.graph_name AND pm.container_name = f.named_type)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_errors_field e
+                    WHERE e.graph_name = f.graph_name AND e.type_name = f.type_name
+                      AND e.field_name = f.field_name)
+UNION ALL
+-- A type with two errors fields, at the first: an outcome has one place for its errors.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'MULTIPLE_ERRORS_FIELDS', CAST(NULL AS VARCHAR)
+  FROM graphitron_errors_field e
+  JOIN graphitron_field f
+    ON f.graph_name = e.graph_name AND f.type_name = e.type_name AND f.field_name = e.field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = e.graph_name AND d.type_name = e.type_name AND d.name = e.field_name
+ WHERE f.ordinal = (SELECT MIN(f2.ordinal)
+                      FROM graphitron_errors_field e2
+                      JOIN graphitron_field f2
+                        ON f2.graph_name = e2.graph_name AND f2.type_name = e2.type_name
+                       AND f2.field_name = e2.field_name
+                     WHERE e2.graph_name = e.graph_name AND e2.type_name = e.type_name
+                    HAVING COUNT(*) > 1)
+UNION ALL
+-- A field of an outcome other than its errors field that may not be null, at its declaration: on
+-- failure the value is absent, and graphql-java would drop the errors with it.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'OUTCOME_FIELD_NON_NULL', CAST(NULL AS VARCHAR)
+  FROM (SELECT DISTINCT graph_name, outcome_type_name, errors_field_name
+          FROM graphitron_producer_outcome) o
+  JOIN graphitron_field f
+    ON f.graph_name = o.graph_name AND f.type_name = o.outcome_type_name
+   AND f.field_name <> o.errors_field_name
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+ WHERE f.non_null
+UNION ALL
+-- A field of a type holding a row that returns errors or an @error type, at its declaration: an error
+-- is an exception a producer caught, and a row of a statement holds none.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'ERRORS_IN_A_ROW', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_target ft
+  JOIN graphitron_result r
+    ON r.graph_name = ft.graph_name AND r.type_name = ft.type_name AND r.shape = 'ROW'
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = ft.graph_name AND d.type_name = ft.type_name AND d.name = ft.field_name
+ WHERE EXISTS (SELECT 1 FROM graphitron_errors_field e
+                WHERE e.graph_name = ft.graph_name AND e.type_name = ft.type_name
+                  AND e.field_name = ft.field_name)
+    OR EXISTS (SELECT 1 FROM graphitron_directive_application de
+                WHERE de.graph_name = ft.graph_name AND de.coordinate = ft.target_type_name
+                  AND de.directive_name = 'error')
+UNION ALL
+-- A field nothing fetches, at its declaration: a query or mutation root field, or a field of a type
+-- holding one result, with neither a producer nor a reader. A field claiming two kinds, the fields of
+-- a type holding two shapes, and a field returning a type nobody declared carry their own defect
+-- instead.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
+       'FIELD_WITHOUT_FETCHER', CAST(NULL AS VARCHAR)
+  FROM graphitron_field f
+  JOIN graphql_ast_field_definition_entry d
+    ON d.graph_name = f.graph_name AND d.type_name = f.type_name AND d.name = f.field_name
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+  JOIN graphitron_type tt
+    ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+ WHERE (EXISTS (SELECT 1 FROM graphql_root_operation ro
+                 WHERE ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+                   AND ro.operation IN ('QUERY', 'MUTATION'))
+        OR (SELECT COUNT(*) FROM graphitron_result r
+             WHERE r.graph_name = f.graph_name AND r.type_name = f.type_name) = 1)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_fetcher fe
+                    WHERE fe.graph_name = f.graph_name AND fe.type_name = f.type_name
+                      AND fe.field_name = f.field_name)
+   AND (SELECT COUNT(*) FROM graphitron_producer_claim c
+         WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
+           AND c.field_name = f.field_name) < 2
+UNION ALL
+-- A field on the subscription root, at the field's own declaration. Meaningful under the
+-- specification and under the directives alike: graphitron generates no subscription resolver
+-- yet, so an author works around it rather than fixing it. Keyed on the root operation and not on
+-- a type's name, a schema block binding the subscription root under another name being the same
+-- schema.
+SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
+       'SUBSCRIPTION_FIELD', CAST(NULL AS VARCHAR)
+  FROM graphql_ast_field_definition_entry f
+  JOIN graphql_root_operation ro
+    ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
+   AND ro.operation = 'SUBSCRIPTION';
+COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
+COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_line IS 'the offending directive''s source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_entry_defect_rule.source_column IS 'the offending directive''s source column; with the two columns above, the entry this defect is about. The key is the entry and not the coordinate, because a coordinate is an aggregate over the sites that declare it and two offending applications at one coordinate are two things to fix';
+COMMENT ON COLUMN graphitron_entry_defect_rule.code IS 'which defect, a graphitron_defect_type key. With the entry the whole key: one entry may break two rules and then carries two rows, there being no ranking here and nothing to choose between them';
+COMMENT ON COLUMN graphitron_entry_defect_rule.detail IS 'the specific a rendered message quotes back, null where the code says everything. One column and never a payload: what a consumer needs beyond this is a join from the entry, and the columns that used to differ per defect were all message material';
 
 CREATE TABLE graphitron_producer_service (
   graph_name         VARCHAR   NOT NULL,
