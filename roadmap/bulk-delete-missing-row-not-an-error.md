@@ -1,7 +1,7 @@
 ---
 id: R1089
 title: "A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest"
-status: Backlog
+status: Spec
 bucket: enhancement
 priority: 3
 theme: mutation-write
@@ -14,18 +14,137 @@ last-updated: 2026-10-22
 
 ## Goal
 
-A consumer should be able to declare that a list-input `@mutation(typeName: DELETE)` treats an id that matches no row as already deleted, as Graphitron 9 did. In that mode the call deletes the rows that exist, commits, and answers the payload with every input id, with no error. Today the per-row guard in `TypeFetcherGenerator.buildBulkRecordPerRowDeleteBody` throws "matched zero rows" and the whole call rolls back. With no handler for that exception, the client gets the redacted "An error occurred. Reference: …". Graphitron 10's behaviour stays the default. The new behaviour is opt-in per field.
+A consumer should be able to declare that a payload-returning `@mutation(typeName: DELETE)` treats an id that matches no row as already deleted, as Graphitron 9 did. In that mode a list-input call deletes the rows that exist, commits, and answers the payload with every input id in input order, with no error; a single-input call answers its payload with the input id instead of `null`. Today a list-input call throws "matched zero rows" on the first missing id and rolls the whole call back, and with no handler for that exception the client gets the redacted "An error occurred. Reference: …". Graphitron 10's behaviour stays the default. The new behaviour is opt-in per field.
+
+The minimal pair, on the Sakila fixture that already covers the bulk payload-returning DELETE (`graphitron-sakila-example/src/main/resources/graphql/schema.graphqls`):
+
+```graphql
+input FilmDeleteInput {
+    filmId: Int! @field(name: "film_id")
+}
+type DeletedFilmsIdPayload {
+    deletedIds: [ID!]
+}
+
+# Today: one missing filmId rolls back every row and the field errors.
+deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
+    @mutation(typeName: DELETE, table: "film")
+
+# Opted in: the existing films are deleted, and deletedIds names every input film, missing ones included.
+deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
+    @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+```
+
+For `in: [{filmId: 1}, {filmId: 2147483000}]`, where film 2147483000 does not exist, the opted-in field deletes film 1, commits, and answers `{ deletedIds: ["<id of film 1>", "<id of film 2147483000>"] }`.
 
 ## Why
 
 Reported by sis, whose Graphitron 9 deletes did not check row counts (9 failed only UPDATE and UPSERT on zero rows). Affected: stable `slettTimeplan` and `slettTimeplanroller`, beta `slettPersonbilder` and `trekkVurderingsmeldinger`, and 23 experimental deletes. None of them has a type for the zero-row case in its errors union. Two reasons to keep 9's behaviour:
 
-- **Idempotency.** A client that retries a partly applied batch, or two clients that delete the same row, should not have the whole call rolled back because a row is already gone. After the call the id does not exist, which is what the client asked for.
+- **Idempotency.** A client that retries a partly applied batch, or two clients that delete the same row, should not have the whole call rolled back because a row is already gone. After the call no row with that key exists, which is what the client asked for.
 - **No existence signal.** sis's developers do not want a delete to tell the caller whether a row with that key existed. Tenant routing already refuses an id from another institution before any write, so what is left is whether a row visible and writable to the caller exists. Only echoing every input id hides that. Leaving the missing ids out of the payload leaks the same bit as the error does.
 
-## Sketch (fill in at Spec)
+## What a DELETE does today with a key that matches no row
 
-- **Where to declare it**: an argument on `@mutation` (for example `onMissingRow: FAIL | IGNORE`), or a plugin-wide default. Per field fits better, since UPDATE keeps failing and a consumer may want both kinds of DELETE.
-- **The echo**: the payload today comes from the `RETURNING` primary key of each deleted row. In the ignore mode, a missing row's slot is filled from the decoded input key, so the payload keeps one entry per input row, in input order.
-- **Single-row DELETE**: the Spec records what a single-row DELETE does today with a key that matches no row, and whether the ignore mode applies there too.
-- **Logging**: none for a missing row in the ignore mode. It is not an error.
+Three emission paths in `TypeFetcherGenerator`, three behaviours. The *payload-returning* shapes are the ones whose return is a payload type with an `ID` / `[ID!]` data field echoing the deleted primary keys; the *direct-return* shapes return `ID` / `[ID!]` themselves.
+
+| Shape | Emitter | Key that matches no row |
+|---|---|---|
+| Payload-returning, list input (`MutationField.MutationBulkDmlRecordField`) | `buildBulkRecordTwoStepFetcher` with `buildBulkRecordPerRowDeleteBody`: one `deleteFrom(...).where(<key>).returningResult(<pk>).fetchOne()` per input row inside one `transactionResult` | Throws `IllegalStateException` "@mutation(typeName: DELETE) bulk row matched zero rows"; the transaction rolls back, and the catch arm redacts it unless an errors handler matches. This is the behaviour the item changes. |
+| Payload-returning, single input (`MutationField.MutationDmlRecordField`) | `buildSingleRecordTwoStepFetcher` with `buildRecordDeleteChain` | `fetchOne()` answers `null` and the whole payload renders `null`, with or without an errors field. No error, nothing written. |
+| Direct-return, single input (`MutationField.DmlTableField`) | `buildMutationDeleteFetcher` | The field resolves `null`, or a non-null violation on `ID!`. |
+| Direct-return, list input (`MutationField.DmlTableField`) | `buildMutationDeleteFetcher`, one statement with `WHERE (<key>) IN (<rows>)` | The existing rows are deleted and only their ids are echoed; the missing ids are silently absent. No error. |
+
+The opt-in applies to the two payload-returning rows. The direct-return rows reject it (see Rejections), so a consumer on a direct-return shape learns at build time rather than getting a silently ignored argument.
+
+## Directive surface
+
+`@mutation` gains one argument:
+
+```graphql
+directive @mutation(typeName: MutationType!, multiRow: Boolean = false, table: String,
+                    missingAsDeleted: Boolean = false) on FIELD_DEFINITION
+```
+
+A Boolean rather than an `onMissingRow: FAIL | IGNORE` enum: today's default differs per shape (fail on the bulk payload, `null` on the single payload), so an enum default named `FAIL` would misdescribe half the shapes it covers. A Boolean names only the opt-in, and its sibling `multiRow:` already sets the style. The name says what the mode asserts, that a missing row counts as deleted. A name built on "ignore" would read as "skip it", which is what the direct-return list shape already does and what the goal's existence-signal reason rules out.
+
+What `missingAsDeleted: true` means, stated once for both admitted shapes: an input key that matches no row counts as already deleted. Its slot in the payload holds the key the client sent, encoded the way a deleted row's key is; a row that was deleted echoes what `RETURNING` returned, exactly as today. Nothing is logged for a missing key, since it is not an error. Every other failure, such as a foreign-key violation on a row that does exist, still rolls the call back through the error channel as today.
+
+Admission requires the input to identify rows by exactly the primary key: the walker's matched key is the primary key, and the input contributes no other column. Two reasons. The echo for a missing row is the primary key, and only an input that supplies the whole primary key can build it; a unique-key-only input cannot. And an extra filter column would let the echo claim a deletion that did not happen: `{filmId: 5, releaseYear: 2006}` against a film 5 from 2007 deletes nothing, film 5 still exists, and an echo of 5 would say otherwise. A composite primary key and a node-id input that decodes to the primary key both qualify.
+
+## Implementation
+
+- **Directive**: `graphitron-model/src/main/resources/no/sikt/graphitron/model/schema/directives.graphqls` gains `missingAsDeleted: Boolean = false` with a description paragraph beside `multiRow:`'s. `BuildContext` gains `ARG_MISSING_AS_DELETED`, and `GraphitronSchemaBuilder`'s `assertDirective(ctx, DIR_MUTATION, ...)` names it.
+- **Capture, as written.** The argument is part of what a `@mutation` application says, so every relation whose grain is that application carries it, as written and `NULL` where the author wrote none, worded like the `multi_row` comments: a `missing_as_deleted BOOLEAN` column on `graphitron_ast_mutation_entry` (filled by `GraphitronFieldEntries.mutations`) and on `graphitron_mutation_entry` (filled by `GraphitronFactCapture`, written by `FactWrites.graphitronMutation`), and a `missingAsDeleted` component on the in-memory `WriteFacts.Row` (filled by `WriteFactVisitor`). The `NULL`-versus-`false` distinction lets a reader tell a harmless written `false` on an INSERT from a written `true`. No resolved column is added to `graphitron_producer_write` or its rule view; nothing reads one yet. The corpus fixture `graphitron-model/src/test/resources/corpus/mutation-roots.graphqls` gains an application that writes the argument, so the as-written comparison in `CaptureCorpusIsolationTest` covers a non-empty column.
+- **Read**: `MutationInputResolver.parseMissingAsDeleted(fieldDef)`, the twin of `parseMultiRow`. This is the classifier's existing read site for `@mutation` arguments. Moving the classifier onto `WriteFacts` or the store is a change for every argument at once, not for this one.
+- **Verb gate**: `MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS = Set.of(DmlKind.DELETE)`, single-sourced like `TABLE_ARG_SUPPORTED_VERBS`. `FieldBuilder`'s `@mutation` dispatch rejects `missingAsDeleted: true` on any other verb, beside the `table:` verb check. The rejection is a typed arm of a new sub-seal `MissingAsDeletedError` of `Rejection.AuthorError`, built like `MutationTableArgError`: `MissingAsDeletedError.UnsupportedVerb(verb, supportedVerbs)`, LSP code `graphitron.missing-as-deleted.unsupported-verb`.
+- **Walker**: `DeleteRowsWalker.walk` takes the flag. With it set, the walker admits only an input whose covered key is the primary key and whose contributions bind each primary-key column exactly once and nothing else. It then returns the new carrier arm below, having picked the supplying `KeyColumn` for each primary-key slot. Any other outcome is a new typed arm `DeleteRowsError.MissingAsDeletedNeedsPrimaryKey(table, inputColumns, primaryKeyColumns)` with LSP code `graphitron.delete-rows.missing-as-deleted-needs-primary-key`. Those outcomes are a `UniqueKey` match, extra filter columns, a broadcast, or a primary-key column bound twice (a node id and a plain column both filling it). The message names the table's primary key and the input's columns. The walker already owns row identification, and its typed errors already reach the LSP projector, so admission sits with it.
+- **Carrier**: a third `DeleteRows` arm, `DeleteRows.IdempotentByPrimaryKey(MatchedKey.PrimaryKey key, List<KeyColumn> keyBinding)`. Its compact constructor asserts exactly one binding per primary-key column, in `key.columns()` order, and `whereColumns()` answers `keyBinding`. The arm types what the mode needs: the key is a primary key, and the binding is already in the order of the `RecordN` the echo builds, so the emitter zips rather than matches columns. The absence of the arm is today's per-shape behaviour, which therefore needs no name. `Identified` and `Broadcast` are unchanged. Every `switch` over `DeleteRows` gains the arm; outside the emitters below, it reads exactly like `Identified`.
+- **Leaf gate**: `MutationField.DmlTableField`'s compact constructor, which already pairs a Delete arm with an encoded-ID return, also rejects a Delete arm carrying `IdempotentByPrimaryKey`, so a direct-return leaf cannot hold it. `FieldBuilder.classifyDeleteTableField` meets the gate first with a typed `MissingAsDeletedError.UnsupportedReturnShape(fieldCoordinate)`, LSP code `graphitron.missing-as-deleted.unsupported-return-shape`, whose message names the payload-returning shape as the supported one. Admitting the direct-return shapes later is removing this gate and adding their emit arm, not a model change.
+- **Key values**: `TypeFetcherGenerator.LookupWhereChunk` gains, beside `decodeLocals` and `whereExpr`, the per-binding value expression as a Java value of the column's type. For a node-id binding that is the decode local's `valueN()`; for a plain one it is `<column>.getDataType().convert(<wire value>)`. `buildLookupWhereSingleRow` already computes both, and today only wraps them in `DSL.val`. Over an `IdempotentByPrimaryKey` binding these come out in primary-key order, so the echo encodes exactly the values the WHERE compared.
+- **Bulk emit**: `buildMutationBulkDmlRecordFetcher`'s Delete arm passes the carrier to `buildBulkRecordPerRowDeleteBody`. On `IdempotentByPrimaryKey`, the `rec == null` arm assigns `rec = txd.newRecord(<pk fields>).values(<key values>)` instead of throwing. `acc.add(rec)` then runs as before, so `acc` keeps one entry per input row in input order, and the order-preservation invariant on `buildBulkRecordTwoStepFetcher` holds unchanged. On the other arms the body is today's.
+- **Single emit**: on `IdempotentByPrimaryKey`, `buildRecordDeleteChain`'s `DmlChainAndGuards` carries the echo record expression, and `buildSingleRecordTwoStepFetcher` assigns it to `payload` when `fetchOne()` answers `null`. That happens ahead of the existing null-data check, which then never fires for this shape. The insert, upsert and update chains carry no echo and are unchanged.
+
+## Rejections
+
+| Application | Outcome |
+|---|---|
+| `missingAsDeleted: true` on `INSERT`, `UPDATE` or `UPSERT` | `MissingAsDeletedError.UnsupportedVerb` |
+| On a direct-return DELETE (`ID`, `[ID!]`) | `MissingAsDeletedError.UnsupportedReturnShape` |
+| On a DELETE whose input covers a unique key but not the primary key, contributes columns beyond the primary key, binds a primary-key column twice, or is a `multiRow: true` broadcast | `DeleteRowsError.MissingAsDeletedNeedsPrimaryKey` |
+| `missingAsDeleted: false`, or the argument omitted | Today's behaviour on every shape; nothing changes. |
+
+## Tests
+
+The tiers per `docs/architecture/how-to/testing.adoc`. The behaviour is runtime, so the execution tier carries the acceptance evidence; no test asserts generated code text.
+
+- **Execution** (`DmlBulkMutationsExecutionTest`, against new Sakila fixtures beside `deleteFilmsIdCarrier`):
+  - A bulk `missingAsDeleted: true` film delete with `[existing, missing]`: no errors, `deletedIds` holds both encoded ids in input order (the missing one decodes back to 2147483000), the existing film is gone, and a `FetcherErrorLog` installed as in `deleteFilmsIdCarrier_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow` is never called.
+  - The same field with `[missing, existing]`, so the order is pinned when the missing row comes first.
+  - The same field with a duplicate `[existing, existing]`: the second delete matches nothing, and both slots echo the id.
+  - The `[existing, missing]` batch run twice: the second run deletes nothing, raises no error and answers the same `deletedIds` as the first. This is the retry case from the goal.
+  - A bulk `missingAsDeleted: true` delete keyed by the composite-primary-key node id (`DeleteFilmActorByNodeIdInput`, a new payload type for `film_actor`), whose payload declares an errors field: the missing node id's slot holds an id that decodes to the same key and, for an id Graphitron issued, equals the one sent; this runs the `Outcome`-wrapped path.
+  - A single-input `missingAsDeleted: true` film delete with a missing key: the payload is non-null and its id field echoes the input.
+  - The existing `deleteFilmsIdCarrier_zeroRowRow_...` test stays, unchanged, as the proof that the default did not move.
+- **Pipeline** (`GraphitronSchemaBuilderTest`, DELETE cases): each Rejections row is a classification case that asserts the typed arm. The admitted bulk and single payload cases classify to `MutationBulkDmlRecordField` / `MutationDmlRecordField` whose Delete arm carries `DeleteRows.IdempotentByPrimaryKey`, with a composite-key case pinning the binding order.
+- **Capture**: the corpus application above appears with `missing_as_deleted = true` in both capture relations, and an omitted argument stays `NULL`.
+- **Unit** (`DeleteRowsWalkerTest`): with the flag, a PK-only input yields `IdempotentByPrimaryKey` with the binding in key order. A UK-only input, a PK-plus-extra-column input, a twice-bound PK column and a broadcast each yield `MissingAsDeletedNeedsPrimaryKey`. Without the flag, every existing case is unchanged. The `IdempotentByPrimaryKey` compact constructor and the `DmlTableField` gate each get a case. `RejectionResidueDrainageTest` and any LSP-code registry that enumerates the `Rejection.AuthorError` sub-seals pick up `MissingAsDeletedError` and the new `DeleteRowsError` arm.
+
+## User documentation (first-client check)
+
+`docs/manual/reference/directives/mutation.adoc`:
+
+- The SDL signature and the Parameters table gain the row:
+
+  > `missingAsDeleted` | `Boolean` | `false` | On a payload-returning `DELETE`, an input key that matches no row counts as already deleted: the call deletes the rows that exist, commits, and the payload echoes every input key, in input order. Requires the input to identify rows by exactly the primary key. Rejected on `INSERT`, `UPDATE`, `UPSERT`, and on a `DELETE` that returns `ID` or `[ID!]` directly.
+
+- Under "Payload-returning DELETE", a new subsection after "Single vs bulk":
+
+  > === When a key matches no row
+  >
+  > By default a bulk `DELETE` whose input names a key that matches no row fails the whole call: nothing is deleted, and the field reports an error (a typed one if a handler in the payload's errors field matches, otherwise a redacted one). A single-row `DELETE` renders the payload `null`.
+  >
+  > Set `missingAsDeleted: true` to treat such a key as already deleted. The rows that exist are deleted, the call commits, and the payload's id field holds every input key in input order, whether or not its row existed. A retried batch, or two clients deleting the same row, then succeed, and the response does not tell the caller which rows existed.
+  >
+  > ```graphql
+  > deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
+  >     @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
+  > ```
+  >
+  > The input must identify rows by exactly the table's primary key, directly or through a node id. A unique key is not enough, because the response echoes the primary key and only the input can supply it for a row that is not there; an extra filter column is refused, because a key whose row survives the filter would be echoed as deleted.
+
+- The "Echoing the deleted primary key" subsection's "The response contains exactly the IDs of rows the DML actually removed." gains ", unless the field sets `missingAsDeleted: true`".
+- The errors-field rule "A single-row write whose key matches no row renders the whole payload `null`" gains the same exception.
+
+`docs/manual/how-to/migrating-from-legacy.adoc` gains a short entry: Graphitron 9 did not check row counts on `DELETE`; a schema that relied on that adds `missingAsDeleted: true` to the field.
+
+The directive's SDL description in `directives.graphqls` carries the Parameters-row text.
+
+## Other solutions we've considered
+
+- **A plugin-wide default instead of a per-field argument.** UPDATE keeps failing on zero rows either way, and one schema can want both kinds of DELETE (an admin delete that should report a stale id beside a client delete that should not), so the choice belongs to the field.
+- **Leaving missing keys out of the payload instead of echoing them.** This is what the direct-return list path already does. It keeps the payload truthful about what was deleted, but it leaks whether a row existed exactly as the error does, which is the second half of the goal.
+- **Admitting the direct-return shapes too.** The single direct-return shape would be a one-line echo, but the list shape is one `IN` statement whose `RETURNING` has no slot for a missing key, so it needs a second emit arm built from the input list. No consumer has asked for either; the rejection keeps the argument from being silently ignored there, and lifting it later is additive.
+- **Admitting a unique-key or extra-filter input and echoing what is known.** A unique-key-only input has no primary key to echo for a missing row, and echoing a key whose row survived an extra filter misreports a deletion. Both would need a different echo contract; none is asked for.
+- **A policy enum on `DeleteRows.Identified` instead of a third arm.** The opt-in only exists where the key is the primary key and the binding covers it exactly once. A flag on `Identified` leaves both of those untyped, so the emitter would trust a cross-field check and recover the primary-key slot order itself. Its default value would also mean something different on each leaf that reads it.
+- **Reading the argument without capturing it in the store.** The two capture relations are the as-written decode of one `@mutation` application. A row that drops an argument the generator consumes no longer says what the application says, and the fact would be missing when the emitter is sourced from the store.
