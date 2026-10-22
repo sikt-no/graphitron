@@ -60,7 +60,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1082` | Manual says child @service needs @splitQuery; the classifier requires a Sources parameter instead | In Review | 2026-10-22 <sub>created 2026-10-21</sub> | [plan](child-service-docs-drop-splitquery-requirement.md) |
 
 ---
 
@@ -821,7 +820,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1055` [**GraphitronTransactionProvider closes the enclosing scope when a begin fails**](transaction-provider-failed-begin-closes-enclosing-scope.md)
 - `R862` [**Input-field @condition rewrap drops the enum leaf extraction**](preserve-enum-extraction-through-condition-rewrap.md)
 - `R786` [**MCP issue.report tool: dedup search over issues, roadmap and changelog, plus a draft report**](mcp-issue-report-tool.md)
-- `R1082` [**Manual says child @service needs @splitQuery; the classifier requires a Sources parameter instead**](child-service-docs-drop-splitquery-requirement.md)
 - `R788` [**Publish stops when the verification build did not cover HEAD**](publish-build-coverage-guard.md)
 - `R599` [**Remove the stray @notGenerated and @experimental_constructType declarations**](remove-stray-directive-declarations.md)
 - `R547` [**Retire transient roadmap-ID citations from pom.xml comments**](pom-comment-roadmap-citations.md)
