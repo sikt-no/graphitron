@@ -260,7 +260,7 @@ store keeps one shape of each fact. That means no coordinate-keyed entries, no s
 pass and no stratum that clears and recomputes.
 
 * **No `graphitron_*_entry` survives, an entry being the transcription's alone** `blocked`, on the
-  four below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
+  five below. Only the `graphitron_ast_` family holds entries, and the registry decode that wrote
   the others goes.
   * **The per-site triples collapse onto a coordinate** `open`. As `graphql_directive_application`
     did, so one collapse retires several relations.
@@ -270,6 +270,13 @@ pass and no stratum that clears and recomputes.
     Whether a coordinate writes a path is read off its applications, and nothing else reads them.
   * **The untwinned entries get an ast entry first** `open`. Each entry with no `graphitron_ast_`
     twin gets one, its readers move, and the old one goes.
+  * **A field's producer claim is an entry, what the author wrote, one per field** `open`. The
+    transcription states, for each field whose own directives claim a producer, the kind it claims
+    (`SERVICE`, `ROUTINE`, `INSERT`, `UPDATE`, `DELETE`) and the application that claims it, read
+    from the field and its directives alone; two claims on one field are a defect at the entry.
+    `graphitron_producer_claim` stops assembling claims from the per-directive entries and reads
+    this one. The kinds no author writes stay the anchor's, decided by position: a root's `SELECT`,
+    a connection's `COUNT` and `FACETS`, and the `LOOKUP` a result type's table child re-reads by.
 * **The supertype roster becomes shrink-only** `open`. The roster of duplicated entries is a
   ratchet that can only lose rows.
 * **`GraphitronAssemblyCapture` is gone, its steps the anchor's own lines** `blocked`, on the child
