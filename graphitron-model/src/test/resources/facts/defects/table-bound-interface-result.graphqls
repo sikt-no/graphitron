@@ -1,0 +1,58 @@
+# A table-bound interface is a row of its table, as a table-bound object type is, so it has a result
+# of its own and not only through its members. Its fields' paths are walked from that table: one
+# whose first key departs from it walks on, and one whose first key departs from another table
+# breaks at that element and is told so.
+
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") {
+  title: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  stores: [Store!]! @reference(path: [{key: "inventory_store_id_fkey"}])
+}
+
+type Film implements MediaItem @table(name: "film") @discriminator(value: "G") {
+  title: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+  stores: [Store!]! @reference(path: [{key: "inventory_store_id_fkey"}])
+}
+
+type Language @table(name: "language") { name: String }
+type Store @table(name: "store") { storeId: Int @field(name: "store_id") }
+
+extend type Query {
+  topMedia: MediaItem
+}
+
+extend schema @assertContains(relation: "graphitron_result", rows: """
+  type_name, shape
+  MediaItem, ROW
+  """)
+
+extend schema @assertContains(relation: "graphitron_result_table", rows: """
+  type_name, table_name
+  MediaItem, film
+  """)
+
+# Both of the interface's path fields are walked from its table.
+extend schema @assertContains(relation: "graphitron_field_path_start", rows: """
+  type_name, field_name, start_table, kind
+  MediaItem, language,   film,        RESULT
+  MediaItem, stores,     film,        RESULT
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_path", rows: """
+  type_name, field_name, position, from_table, to_table
+  MediaItem, language,   0,        film,       language
+  """)
+
+# The key that departs from inventory cannot be taken from film: a chain break at that element.
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate
+  NO_ROUTE_FROM_DEPARTURE, MediaItem.stores
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate
+  NO_ROUTE_FROM_DEPARTURE, MediaItem.language
+  ELEMENT_UNRESOLVED,      MediaItem.language
+  NO_ROUTE_TO_TARGET,      MediaItem.language
+  """)

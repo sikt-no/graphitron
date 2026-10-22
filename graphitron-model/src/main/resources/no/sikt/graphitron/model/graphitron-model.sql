@@ -11046,8 +11046,9 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
    WHERE p.field_name IS NULL
 ),
--- Each field hands an object type itself, or each object member of a union or interface; the two
--- are separate arms so each lands by an index probe.
+-- Each field hands an object type itself, or each object member of a union or interface, and a
+-- table-bound interface itself too, which is a row of its table as a table-bound object type is;
+-- separate arms so each lands by an index probe.
 handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
         table_source_name, table_schema, table_name, pivot_type_name, pivot_field_name,
         producer_kind) AS (
@@ -11066,6 +11067,15 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
       ON pm.graph_name = e.graph_name AND pm.container_name = e.target
     JOIN graphitron_type mt
       ON mt.graph_name = pm.graph_name AND mt.type_name = pm.member_type_name AND mt.kind = 'OBJECT'
+  UNION ALL
+  SELECT e.graph_name, e.field_type, e.field_name, e.coordinate, t.type_name, e.wrapped, e.shape,
+         e.table_source_name, e.table_schema, e.table_name, e.pivot_type_name, e.pivot_field_name,
+         e.producer_kind
+    FROM edge e
+    JOIN graphitron_type t
+      ON t.graph_name = e.graph_name AND t.type_name = e.target AND t.kind = 'INTERFACE'
+   WHERE EXISTS (SELECT 1 FROM graphitron_resolved_type_binding ib
+                  WHERE ib.graph_name = e.graph_name AND ib.type_name = e.target)
 )
 -- What each handed row becomes. A pivot field's type is the row its aggregate makes; a connection's
 -- wrapper holds the page as an object its fields read; an @error type holds the exception a producer
