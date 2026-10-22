@@ -1,7 +1,7 @@
 ---
 id: R1082
 title: "Manual says child @service needs @splitQuery; the classifier requires a Sources parameter instead"
-status: In Progress
+status: In Review
 bucket: docs
 depends-on: []
 created: 2026-10-21
@@ -95,6 +95,15 @@ No consumer's build breaks: no rule id is retired, so a `<lint><disabledRules>` 
 * A negative: a child `@service` without `@splitQuery` draws no finding under either `@splitQuery` rule.
 
 The docs half is demonstrated by the five pages reading as the draft above, and by a grep of `docs/manual` for `@splitQuery` within a sentence of "non-root" or "child" that finds only the redundancy bullet and the migration rows. Under `## Retired vocabulary` below, the Done reviewer has the query.
+
+## Implementation notes
+
+Shipped at `d0b3d6a`, as planned, with two additions the plan's grep turned up:
+
+* `docs/manual/how-to/split-vs-inline.adoc` carried the same claim in its "When the classifier *requires* split" section (a "Non-root `@service`" bullet citing `City.filmsFromCity`). The bullet is removed, the section's count drops to one case (`@asConnection`), and a short paragraph after the list says a child `@service` is split without the directive and warns about it.
+* `splitQuery.adoc`'s intro sentence listed `@service` among the directives `@splitQuery` "composes with", which read against the new redundancy bullet; `@service` is dropped from that list.
+
+The intro sentence of `handle-services.adoc` ("the contract the rewrite imposes when `@service` lands on a non-root field") names no directive and is accurate against the new section, so it stays. The tests are as the plan lists, in `ClassifierAdvisoryFixPipelineTest` (the `@table`-parent fix, the warning beside a Sources-less rejection, and the negative) and `ServiceRecordParentBatchKeyTest` (the `@sourceRow` pin moved to the new rule, plus the class-backed parent without `@sourceRow`). The Done entry in `roadmap/changelog.md` owes the note that a `<disabledRules>` entry naming `splitquery-redundant-on-record-parent` no longer silences the warning at a `@sourceRow` + `@service` coordinate.
 
 ## Retired vocabulary
 
