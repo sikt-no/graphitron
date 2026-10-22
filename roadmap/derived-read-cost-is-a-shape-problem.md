@@ -83,7 +83,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
   graphs in a store until it goes: filtered to one graph at 20 units, `path_node` 4 to 137 ms and
   `ResolvedTypeBindings` 4 to 195 ms from one graph to eight.
 * Argument and input-field walks from `graphitron_field_scope_table` beside the target. Ends at
-  "Arguments and input fields walk from their field's target".
+  "The argument readers read the target and its walk".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
 * The code reference in the twins' columns beside `graphitron_ast_code_reference_entry`. Ends at
   "The per-site copies and coordinate-keyed entries go".
@@ -174,15 +174,8 @@ walk, starting from the source and reading each written element once, resolves e
 grain into rows that say where each step comes from, where it goes and how it joins; the readings,
 resolutions and links built beside it are gone.
 
-* **Capture states each field's path in the order it was written** `done`. The graphitron AST
-  gatherer writes `graphitron_ast_field_path_entry`, every element of a field's `@routine` and
-  `@reference` applications at its place, and every reader of a field's written path reads it by
-  key; the anchor's chain is gone.
+* **Capture states each field's path in the order it was written** `done`.
 * **A path is resolved by a deterministic forward walk over what each element names** `done`.
-  `graphitron_field_path_start` says where each walk starts, a parent's result table or a root
-  routine's function, and `graphitron_field_path` holds the steps from there with their column
-  pairs, key, methods and stops, merged round by round from one keyed rule. A `@routine` after the
-  start is a step no arm takes yet.
 * **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
@@ -200,14 +193,8 @@ resolutions and links built beside it are gone.
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
   neither a result table nor a consumed key starts the walk, so `@sourceRow` fields and
   `FilmDetailsCarrier.language` have none until "A consumed key is a source".
-  * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`. The
-    has-no-source case on a root field: `ROOT_REFERENCE_WITHOUT_ROUTINE`, basis `UNSUPPORTED`, in
-    place of the chain break its first element drew, which is now kept from such a field.
-    `facts/defects/root-reference-without-routine.graphqls` pins it, and that a leading `@routine`
-    draws nothing.
-* **The field grain reads only the walk** `done`. The chain defects read the walk's stops and
-  steps, and `graphitron_field_path_reading`, the resolution with its arms and
-  `graphitron_field_table_link` are gone.
+  * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
+* **The field grain reads only the walk** `done`.
 * **A key element states which name it matched by** `open`. `graphitron_path_element_key` records
   whether the SQL name or the jOOQ `Keys` constant answered, which the step targets carry as
   `key_matched_by` today and `SchemaQueries` shows.
@@ -217,14 +204,31 @@ resolutions and links built beside it are gone.
   and `FieldPathApplications` go.
 * **A scalar with a path has a target column where its path lands** `open`. The `PATH_TERMINAL` rule of `COLUMN_UNRESOLVED` and the `@field` hint read
   it, and `graphitron_field_column_scope` goes.
-* **Arguments and input fields walk from their field's target** `open`. Path relations at both
-  grains, started from `graphitron_field_target_table` rather than `graphitron_field_scope_table`,
-  with the composed order capture states per holder, as it does for a field.
 * **Nothing resolves a path but the walk** `blocked`, on "The step targets' readers read the walk" and "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
 * **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target
   is stated as path rows, so no reader falls back to discovery for itself, and the editor's
   omitted-`@reference` hint fills in from those rows.
+
+### Arguments and input fields are resolved as fields are, from a target model `open`
+
+An argument or input field binds the way a field does: to a target table, the column or key it
+names there, and the path from its holder's target to it. Today `graphitron_field_scope_table`,
+`intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
+`intent_argument_reference_step_hop` and the `intent_argmapping_` relations derive that at read
+time. This branch replaces argument handling whole, as the path branch replaced reference handling,
+and those relations dissolve. Deferred on 2026-10-22: it starts after the work in hand, with the model.
+
+* **An argument's and an input field's target is modelled first, as tables** `open`. The target
+  relations are declared with keys, foreign keys and grain sentences before anything writes them,
+  an argument at its field and an input field at the use site of its input type.
+* **The corpus is written against the target model** `blocked`, on "An argument's and an input field's target is modelled first, as tables". Fact documents state the target each argument
+  and input field gets, for every written and inferred form, defects beside facts.
+* **Arguments and input fields walk from their field's target** `blocked`, on "The corpus is written against the target model". Path relations at both grains, started from
+  `graphitron_field_target_table` rather than `graphitron_field_scope_table`, with the composed
+  order capture states per holder, as it does for a field.
+* **The argument readers read the target and its walk** `blocked`, on "Arguments and input fields walk from their field's target". The condition, lookup-key, node-id and `argMapping`
+  readers move, and `graphitron_field_scope_table` and the `intent_` relations above go.
 
 ### A reference resolves where its directive is decoded `open`
 
@@ -378,10 +382,8 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
 * **The generator reads its configuration from the store** `open`. Each setting it still takes off
   `RunContext` or `BuildContext` (the tenant column, the lint configuration, the session hooks, the
   output coordinates) is read from the `store_graph_` relations, and `RunContext` stops carrying it.
-  * **A generating harness captures the run's output coordinates** `done`. `GenerateTestSchemas`
-    runs each scenario as a generating run, a `RunContext` captured by `GraphitronStore.captured`.
-  * **The output package is read from the store** `done`, for the fixed runtime classes.
-    `FixedRuntimeEmitter` reads it off `store_graph_output`.
+  * **A generating harness captures the run's output coordinates** `done`.
+  * **The output package is read from the store** `done`.
   * **The tenant column and the session hook signature are captured** `open`. The column the
     configured tenant name resolves to, and which mount signatures get a hook class, are stored.
 * **`graphitron` does no orchestration** `open`. A harness in `graphitron`'s tests that captures and
@@ -413,9 +415,6 @@ generated Java or SQL as text.
 * **`emit` imports no `render` class** `open`. The shared one-spelling helpers move into `emit`, the
   old renderers import them from there, and the import rule's exception list is empty.
 * **The error-mapping constant is named by its outcome type, and the dedup goes** `done`.
-  `ErrorMappingsClassGenerator` emits one constant per `graphitron_errors_field` row, and each catch
-  arm names its producer's from `graphitron_producer_outcome`; the dedup, the hash and the
-  first-classified rule went.
 * **Routine writes read only the store** `open`. The write's tenancy is a store fact too, so
   `RoutineWriteEmitter` takes nothing from `GraphitronSchema`.
 * **Operation members and delivery are read from their relations alone** `open`. The readers of
@@ -430,11 +429,7 @@ The generator turns over one emitter at a time, each held to behaviour by tests 
 generated classes against PostgreSQL from the fact scenarios. The fixed runtime classes and the
 output package they are written to are settled.
 
-* **The schema package's fixed classes are written without a plan** `done`. `FixedRuntimeEmitter`
-  writes `GraphitronContext`, `GraphitronTransactionProvider`, `ConstraintViolations`,
-  `GraphitronClientException`, `ErrorRouter` and `Outcome` from the package it reads off
-  `store_graph_output`, and the plan carries no entry for them. The incremental compile graph takes
-  them from what the emitter wrote, under the same wiring rules.
+* **The schema package's fixed classes are written without a plan** `done`.
 * **The fixed classes' renderers move into `emit`** `open`. The six classes `FixedRuntimeEmitter`
   renders are written by generators that name `GeneratedUnits`, `ErrorDispatchFragments` and the
   model, so the emitter sits beside them in `rewrite.generators.schema` rather than in `emit`.
@@ -501,10 +496,7 @@ someone to profile.
     store** `open`, unowned. `graphitron_carrier_data_field` 10 to 59 ms and
     `graphql_ast_element_declaration` 12 to 57 ms from one graph to eight at 20 units; both pass
     the backstop's slack.
-  * **An upsert finds the row it updates through one key** `done`. `UpsertKeyGateTest` reads every
-    `MERGE` a capture runs and fails on one whose `ON` matches either of two keys, which finds no
-    index and scans every graph's rows; the fetcher, producer and four capture upserts name their
-    primary key.
+  * **An upsert finds the row it updates through one key** `done`.
   * **An upsert into a table with an independent unique key is decided per table** `open`.
     `graphitron_federation_definition` is unique by local name, `graphitron_field_participant_path`
     by where the element was written, and `graphitron_ast_reference_element_entry` and
@@ -528,10 +520,7 @@ today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.
   reruns the document gatherers it reaches and leaves the catalog and classpath gatherers alone.
 * **A classpath change reruns only the gatherers that read the classpath** `open`. A round that
   succeeds says which gatherers it ran and which it skipped.
-* **A document that does not parse ends the round at the parse** `done`. The source reading writes
-  the parse problems and claims nothing, and `ModelCapture` throws there, so the store keeps its
-  last clean reading whole and every changed file is read again once the document parses.
-  `DocumentStateCaptureTest` and `GraphQLSchemaProblemsTest` pin it.
+* **A document that does not parse ends the round at the parse** `done`.
 * **Every `code_` row hangs off a class** `open`. `code_throwable` and `code_throwable_supertype`
   key into `code_class` rather than the entry, so a class that goes takes them with it.
 * **A single changed class re-reads only itself, swept at the class file** `blocked`, on "Every `code_` row hangs off a class" and "`code_type` and `code_type_element` are gone". `CodeCapture`
@@ -732,8 +721,7 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
 
 * **Class initialization cannot deadlock in javapoet** `open`. `TypeName`'s initializer builds no
   `ClassName`, and a test initializing the two from opposite ends on two threads pins it.
-* **A refused compaction does not depend on luck** `done`. H2 2.5.252 removes the assertion its
-  parallel compaction tripped (h2database#4286, fixed by PR #4288), and the store's retry is gone.
+* **A refused compaction does not depend on luck** `done`.
 
 ## Tests
 
