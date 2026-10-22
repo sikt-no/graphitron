@@ -319,7 +319,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_method", Arm.DERIVED);
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_participant_path", Arm.DERIVED);
-        registrations.put("graphitron_field_table_link", Arm.DERIVED);
         registrations.put("graphitron_element", Arm.DERIVED);
         registrations.put("graphitron_type", Arm.DERIVED);
         registrations.put("graphitron_field", Arm.DERIVED);
@@ -397,15 +396,7 @@ class RelationRegistrationGateTest {
         registrations.put("sql_constraint_hop", Arm.DERIVED);
         registrations.put("graphql_ast_element_declaration", Arm.DERIVED);
         registrations.put("graphql_ast_element_declaration_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_path_reading", Arm.DERIVED);
-        registrations.put("graphitron_field_path_resolution", Arm.DERIVED);
-        registrations.put("graphitron_field_path_resolution_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_path_resolution_keyed", Arm.DERIVED);
-        registrations.put("graphitron_field_path_resolution_keyless", Arm.DERIVED);
-        registrations.put("graphitron_field_path_resolution_open", Arm.DERIVED);
-        registrations.put("graphitron_field_path_resolution_condition", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_table_link_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop", Arm.DERIVED);

@@ -44,9 +44,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <p>Nothing here restates the order of a field's chain or walks it again. Where a chain departs
  * from, and whether consecutive links meet, is resolved by the assembly gatherer; what a chain arm
- * here reads is the resolution's own leftovers, which the rule that stores one row per link throws
- * away. {@code graphitron_field_path_resolution} carries both walks labelled by which reached
- * a reading, so a chain arm is a count over rows that already exist rather than a second walk.
+ * here reads is the walk's own record, the steps it took and the places it stopped with how many
+ * moves each allowed, so a chain arm is a read over rows that already exist rather than a second
+ * walk.
  *
  * <p>A chain arm needs a real catalog, an authored key being ambiguous only against tables that
  * declare more than one way between them, so those cases capture against the jOOQ catalog where

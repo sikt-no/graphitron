@@ -1,13 +1,11 @@
 package no.sikt.graphitron.model.capture.document;
 
 import no.sikt.graphitron.model.derive.FieldPathApplications;
-import no.sikt.graphitron.model.derive.FieldPathResolutions;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetColumns;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.FieldReferenceStepTargets;
-import no.sikt.graphitron.model.derive.FieldTableLinks;
 import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
@@ -90,13 +88,6 @@ public final class GraphitronAssemblyCapture {
         FieldSourceTables.derive(dsl, graph, readAt);
         // The column each scalar with no path reads on those departing tables.
         FieldTargetColumns.derive(dsl, graph, readAt);
-        // Then walking the links of each chain against the stages above: a link's departure is the
-        // previous link's arrival, and a routine link's arrival is the function its name resolves
-        // to. Stored rather than left a view because two readers walk it, the line below and the
-        // entry defects at the tail of the derivation stratum.
-        FieldPathResolutions.derive(dsl, graph, readAt);
-        // Keeping the one reading per link that both walks reach.
-        FieldTableLinks.derive(dsl, graph, readAt);
         // Last, each output field's fetcher, off the targets, bindings and backings above.
         Fetchers.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every

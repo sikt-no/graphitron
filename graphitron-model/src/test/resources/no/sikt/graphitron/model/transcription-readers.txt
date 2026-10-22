@@ -63,8 +63,8 @@ graphitron_connection_carrier graphql_field
 # field has no line to report at, and none of the macro's minted fields is a scalar read off a
 # parent column, so the expanded population would add rows the arm can only skip. The named type is
 # read from the transcription for the same reason, to ask whether the authored field returns a
-# scalar or an enum. Its chain arms reach a field's written path through the declaration
-# graphql_field anchored, as graphitron_field_path_reading does below.
+# scalar or an enum. CHAIN_WITHOUT_TARGET reaches a field's written path through the declaration
+# graphql_field anchored, on the walk's terms below.
 graphitron_entry_defect_rule graphql_field
 graphitron_entry_defect_rule graphql_type
 
@@ -90,18 +90,11 @@ graphitron_type_backing_rule graphql_type
 # file declared before the expansion restated it.
 graphitron_field_minted graphql_field
 
-# Adjudicated and kept: a field's written path is its anchored declaration's.
-#
-# graphitron_field_path_reading reaches the path a field wrote through the declaration
-# graphql_field anchored, by its source position, so a field declared twice reads one path. Which
-# declaration was anchored is a declaration site, which only the transcription states, and a field
-# the macro minted wrote no path.
-graphitron_field_path_reading graphql_field
-
 # Adjudicated and kept: a walk starts from a field's anchored declaration.
 #
 # graphitron_field_path_start_rule and graphitron_field_path_rule find where a field's walk starts
-# and the element it takes next through the declaration graphql_field anchored, on the reading's
-# terms above: the path is the anchored declaration's, and a field the macro minted wrote none.
+# and the element it takes next through the declaration graphql_field anchored, by its source
+# position, so a field declared twice is walked once. Which declaration was anchored is a
+# declaration site, which only the transcription states, and a field the macro minted wrote no path.
 graphitron_field_path_rule graphql_field
 graphitron_field_path_start_rule graphql_field

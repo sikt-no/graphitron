@@ -1,4 +1,4 @@
-# A chain link a condition method routes, read off the method's signature and keyed to the method.
+# A step a condition method routes, read off the method's signature and keyed to the method.
 # filmToFilmActor(Film, FilmActor) is real Java in the classpath corpus and the tables are the sakila
 # catalog's: the first parameter names the departure and the second the arrival, each the table
 # whose generated class is the parameter's erased class.
@@ -12,8 +12,7 @@ type Film @table(name: "film") {
 type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
 
 # Two declarations of one name that agree on both slots, agreeingOnBoth(Customer, Address) and the
-# same with a third parameter beside: two readings, one per declaration, and one route, so the path
-# resolves to one link.
+# same with a third parameter beside: two overloads and one route, so the walk takes one step.
 type Customer @table(name: "customer") {
   customerId: Int @field(name: "customer_id")
   addressByOverloads: Address @reference(path: [{condition: {
@@ -24,21 +23,6 @@ type Customer @table(name: "customer") {
 type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
 
 extend type Query { films: [Film!]! customers: [Customer!]! }
-
-extend schema @assertContains(relation: "graphitron_field_path_resolution_condition", rows: """
-  type_name, field_name, position, method_class_name,                                                         method_name,     from_table, to_table
-  Film,      filmActors, 0,        no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures, filmToFilmActor, film,       film_actor
-  """)
-
-extend schema @assertContains(relation: "graphitron_field_path_resolution_condition", rows: """
-  type_name, field_name,         method_name,    from_table, to_table
-  Customer,  addressByOverloads, agreeingOnBoth, customer,   address
-  """)
-
-extend schema @assertContains(relation: "graphitron_field_table_link", rows: """
-  type_name, field_name,         position, via,       from_table, to_table
-  Customer,  addressByOverloads, 0,        CONDITION, customer,   address
-  """)
 
 # The walk takes a condition alone as the step its method's signature routes, joined by the method
 # and no column, and a condition beside nothing else whose overloads agree as one step.

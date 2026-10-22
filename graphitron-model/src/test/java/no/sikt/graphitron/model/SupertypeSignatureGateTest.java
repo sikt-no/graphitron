@@ -205,14 +205,6 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_argument_reference_step_target_keyless",
                "graphitron_field_reference_step_target_keyless",
                "graphitron_input_field_reference_step_target_keyless"),
-        // Two arms of the chain-link resolution's split on key shape. Their payload is the same
-        // because what a reading says past its identity is the same, which arm it takes and which
-        // walks reached it; the keys differ because one states a departure and the other does not.
-        // No supertype is owed, on the pairs' reason above: a relation over both would carry a
-        // departure null on every row of one arm, which is the shape the split exists to remove.
-        // The keyed third is not here only because key_matched_by makes its payload wider.
-        Set.of("graphitron_field_path_resolution_keyless",
-               "graphitron_field_path_resolution_open"),
         // A path's start and the start a parent's result gives. The subtype adds no payload, only the
         // reference into graphitron_result_table that says why the walk starts there, so its columns
         // are its supertype's; that is the supertype and subtype shape, not two relations holding one
@@ -365,10 +357,6 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
-        // The chain-link resolution's canonical name over its arms, which is the presentation
-        // surface the split owes its readers and the one place the absent columns are cast to
-        // NULL, on graphitron_field_reference_step_hop's terms.
-        "graphitron_field_path_resolution|graphitron_field_path_resolution_keyless,graphitron_field_path_resolution_open",
         // Older than this roster and unchanged by it. It unions two element relations, which was
         // not a reconstruction while the four declared over graphql_element and discharged; adding
         // the entry position to their set is what made the set undeclared and this view visible as

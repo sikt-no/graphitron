@@ -49,15 +49,10 @@ class StageAnswerAgreementTest {
 
     /**
      * The stage-written tables and their rules, in the stratum's order, led by the element
-     * declarations capture stores before the directive application anchor reads them, then the
-     * chain-link resolution from the assembly pass: its rule's columns are exactly the union view's over its
-     * three arm tables, where {@code FieldTableLinks}' table carries a mark its rule does not and
-     * is compared in {@code FieldTableLinksTest} instead.
+     * declarations capture stores before the directive application anchor reads them.
      */
     private static final List<Stage> STAGES = List.of(
         new Stage("graphql_ast_element_declaration", "graphql_ast_element_declaration_rule"),
-        new Stage("graphitron_field_path_resolution",
-            "graphitron_field_path_resolution_rule"),
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),
@@ -216,33 +211,6 @@ class StageAnswerAgreementTest {
             .as("the tables the fixture classifies an input field against; an agreement over an"
                 + " empty relation asserts nothing at all")
             .containsExactly("film"));
-    }
-
-    /**
-     * The chain-link resolution's own non-vacuity case, on the axis its split is on. The agreement
-     * above compares the union view, which a routing mistake filing every reading under one arm
-     * would still pass; each arm table holding rows on some fixture is what says the four key
-     * shapes, and the constraints each table states, were written to at all.
-     */
-    @Test
-    @DisplayName("the fixtures reach every arm of the path resolution")
-    void theFixturesReachEveryArmOfThePathResolution() {
-        var arms = List.of("graphitron_field_path_resolution_keyed",
-            "graphitron_field_path_resolution_keyless",
-            "graphitron_field_path_resolution_open",
-            "graphitron_field_path_resolution_condition");
-        var populated = new java.util.HashSet<String>();
-        for (var fixture : Fixture.values()) {
-            withCapturedStore(fixture, dsl -> arms.forEach(arm -> {
-                if (dsl.fetchCount(table(name(arm.toUpperCase()))) > 0) {
-                    populated.add(arm);
-                }
-            }));
-        }
-        assertThat(arms.stream().filter(arm -> !populated.contains(arm)).toList())
-            .as("arm tables of the chain-link resolution no fixture populates; an agreement over the"
-                + " union asserts nothing about the arm it never filled")
-            .isEmpty();
     }
 
     /**
