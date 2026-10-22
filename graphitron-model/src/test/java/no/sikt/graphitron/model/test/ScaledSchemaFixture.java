@@ -55,10 +55,11 @@ public final class ScaledSchemaFixture {
      * <p>{@code inventoryForFilm} is in that list for one target's sake and is the arm to understand
      * before touching it. A node-id argument populates the decode walk's hop relations only where the
      * argument's own scope table differs from the node type's table <em>and</em> exactly one foreign
-     * key joins the two, which is what the endpoint view's {@code DISCOVERED_KEY} arm requires. The
-     * {@code storeForFilm} arm above looks like it should qualify and does not: film reaches store
-     * through inventory rather than directly, so no single key joins them and the endpoint contributes
-     * no hop. Returning inventory instead gives the one key inventory declares on film. Without this
+     * key joins the two, which is what the endpoint view's {@code DISCOVERED_KEY} arm requires.
+     * Returning store would not qualify: film reaches store through inventory rather than directly,
+     * so no single key joins them. Returning inventory gives the one key inventory declares on film.
+     * The two-key chain from film to store is {@code Film.stores} instead, a field with a source, a
+     * root field's path needing a leading {@code @routine} to start from. Without this
      * arm the hop-column table holds no rows at any size, and every case over this fixture that reads
      * the decode chain compares two readings of an empty table.
      *
@@ -123,6 +124,10 @@ public final class ScaledSchemaFixture {
               releaseYear: Int @field(name: "release_year")
               language: Language%1$d @reference(path: [{key: "film_language_id_fkey"}])
               inventory: [Inventory%1$d!]! @reference(path: [{key: "inventory_film_id_fkey"}])
+              stores: [Store%1$d!]! @reference(path: [
+                {key: "inventory_film_id_fkey"},
+                {key: "inventory_store_id_fkey"}
+              ])
             }
             type Language%1$d implements Node @table(name: "language") @node(keyColumns: ["language_id"]) {
               id: ID! @nodeId
@@ -149,10 +154,6 @@ public final class ScaledSchemaFixture {
               films%1$d(filter: FilmFilter%1$d): [Film%1$d!]!
               film%1$d(id: ID! @nodeId(typeName: "Film%1$d")): Film%1$d
               filmsByKey%1$d(film_id: [ID] @lookupKey): [Film%1$d!]!
-              storeForFilm%1$d(id: ID! @nodeId(typeName: "Film%1$d")): [Store%1$d!]! @reference(path: [
-                {key: "inventory_film_id_fkey"},
-                {key: "inventory_store_id_fkey"}
-              ])
               inventoryForFilm%1$d(id: ID! @nodeId(typeName: "Film%1$d")): [Inventory%1$d!]!
               media%1$d(filmId: Int @field(name: "film_id")): [Media%1$d!]!
             """.formatted(i)));
