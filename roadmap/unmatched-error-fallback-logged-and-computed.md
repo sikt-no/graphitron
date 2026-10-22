@@ -1,7 +1,7 @@
 ---
 id: R1087
 title: "Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: error-channel
@@ -154,6 +154,18 @@ Execution tier in `graphitron-sakila-example`, against the existing `Query.filmL
 * **HTTP agreement.** `GraphQLOverHttpConformanceTest.redactionShapeMatchesFetcherPath` keeps passing on defaults. Its application fixture gains an override pair for a second case asserting the input-building fault and a fetcher fault carry the same computed text and the same reference source.
 
 Generator tier: `ErrorRouterClassGeneratorTest` and the connection-runtime generator test assert structure only (the new methods and interface exist with the stated signatures, and `FetcherErrorLog` keeps exactly one abstract method), no matches on generated bodies.
+
+## Implementation notes
+
+Landed as planned, in one commit (`R1087: a catch-all handler is logged and its message can be computed`). Where it differs from or adds to the plan:
+
+- **The claim record is two identity maps.** `ChainRoots` became `Claims`, holding chain roots and references side by side; `claim` delegates its write to a private `recordClaim` so the arguments are effectively final for the `matched` lambda. `claim` mints only when a log or a response is in the request's context, and skips minting when the source already has a reference, so a consumer's `reference` runs once per source in the common case; two racing claims each mint, one wins `assignReference`, and only the winner calls `matched`.
+- **One containment helper with a subject supplier.** `contained(hookClass, hook, call, subject)` is the one spelling for both hooks; its failure line is `"<Interface> <class> threw <class>; <subject>"`, which keeps the existing `FetcherErrorLog ... threw ...; reference = ...` text. `answer(response, call, subject)` falls back to the private `DEFAULT_RESPONSE`, so the default text exists only on the interface. `newReference`'s subject is the field's path, as planned.
+- **`clientMessage` fails loudly on a missing claim**, after confirming against the tree that `ErrorDispatchFragments.outcomeArm` is the one producer of a `Throwable` in an `ErrorList` (`ChannelEarlyReturnEmitter` puts `GraphQLError`s, not `Throwable`s, there).
+- **jakarta-rest's defaults live in one package-private class**, `RedactionDefaults`, which both the SPI defaults and `GraphqlHttpHandler`'s fallback call, so the module spells its default text once.
+- **Fixture:** `FilmLookupError` gained a catch-all `FilmLookupCatchAll` member last in the union (`GraphqlErrorException` with no `description:`, standing in for `GraphitronClientException`; `IllegalStateException` with one), and `FilmLookupService` gained `id == 778` (a both-shapes source) and `id == 779` (one shared `IllegalStateException`, `SHARED_FAILURE`). The unmatched cases fail `Film.durabilityError` on `filmById(film_id: ["1"])`.
+- **Acceptance evidence:** `FetcherErrorResponseExecutionTest` (eight cases, one per bullet of the plan's Tests section: logged match, shared exception logged once with one reference, lambda log, computed message by parent type, `GraphQLError` source on a no-description type, unmatched message with the log's reference, containment, escape hatch); `GraphQLOverHttpConformanceTest.computedRedactionMatchesFetcherPath` beside the unchanged `redactionShapeMatchesFetcherPath`; structural pins in `ConnectionRuntimeClassGeneratorTest` (`matched` is a default, `FetcherErrorResponse` has three defaults and no abstract method, the withers keep each other's hook) and `ErrorRouterClassGeneratorTest` (`newReference`, `clientMessage`, `DEFAULT_RESPONSE`, `Claims`).
+- **Verification-build notes.** Four things outside this diff stopped runs on this 4-core sandbox: a rebase that brought `presence_*` DDL (re-seeded per `.claude/web-environment.md`); `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` reading films another class wrote (the shared-database cross-talk item); an mvnd daemon running a pre-R1090 copy of the snapshot plugin, so `PageSizeMaximumQueryTest` saw no cap (green under plain `mvn`); and `GraphCountGrowthGateTest` exceeding its ratio while other modules' test JVMs ran (green alone, and green single-threaded). The covering build ran the reactor to `graphitron-model` in parallel and resumed from there with `-T 1` on the same tree.
 
 ## Roadmap entries
 
