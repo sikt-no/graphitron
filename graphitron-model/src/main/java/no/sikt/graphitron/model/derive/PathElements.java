@@ -40,14 +40,15 @@ public final class PathElements {
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
                 t.CONSTRAINT_SOURCE_NAME, t.CONSTRAINT_SCHEMA, t.CONSTRAINT_TABLE, t.CONSTRAINT_NAME,
-                t.TOUCHED_AT)
+                t.MATCHED_BY, t.TOUCHED_AT)
             .select(dsl
                 .select(r.GRAPH_NAME, r.SOURCE_NAME, r.SOURCE_LINE, r.SOURCE_COLUMN,
                     r.CONSTRAINT_SOURCE_NAME, r.CONSTRAINT_SCHEMA, r.CONSTRAINT_TABLE,
-                    r.CONSTRAINT_NAME, val(touchedAt, t.TOUCHED_AT))
+                    r.CONSTRAINT_NAME, r.MATCHED_BY, val(touchedAt, t.TOUCHED_AT))
                 .from(r)
                 .where(r.GRAPH_NAME.eq(graphName)))
             .onDuplicateKeyUpdate()
+            .set(t.MATCHED_BY, excluded(t.MATCHED_BY))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
         dsl.deleteFrom(t)
