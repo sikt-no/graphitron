@@ -1,11 +1,11 @@
 ---
 id: R1082
 title: "Manual says child @service needs @splitQuery; the classifier requires a Sources parameter instead"
-status: Ready
+status: In Progress
 bucket: docs
 depends-on: []
 created: 2026-10-21
-last-updated: 2026-10-21
+last-updated: 2026-10-22
 ---
 
 # Manual says child @service needs @splitQuery; the classifier requires a Sources parameter instead
