@@ -76,10 +76,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
   at "No `graphitron_*_entry` survives, an entry being the transcription's alone".
 * `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
   "`graphitron_routine_entry` is gone".
-* `graphitron_path_element_*` beside the step hops, the reading, the resolution and
-  `graphitron_field_table_link`. Ends at "Nothing resolves a path but the walk".
-* `graphitron_field_path`, the walk, beside the reading, the resolution and
-  `graphitron_field_table_link`, both every capture. Ends at "The field grain reads only the walk".
+* `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
 * The read-time path views `intent_field_path_start`, `_node` and `_terminus`. Ends at "Nothing resolves a path but the walk".
   `intent_field_path_node`'s recursive walk evaluates every graph's paths whatever the graph filter,
   so `ResolvedTypeBindings`, reading it through `intent_routine_return_binding`, grows with the
@@ -208,9 +205,9 @@ resolutions and links built beside it are gone.
     place of the chain break its first element drew, which is now kept from such a field.
     `facts/defects/root-reference-without-routine.graphqls` pins it, and that a leading `@routine`
     draws nothing.
-* **The field grain reads only the walk** `open`. `graphitron_field_path_reading`,
-  `graphitron_field_path_resolution` and `graphitron_field_table_link` go, their readers moved to
-  the path; the chain defects and the path fact documents keep their answers.
+* **The field grain reads only the walk** `done`. The chain defects read the walk's stops and
+  steps, and `graphitron_field_path_reading`, the resolution with its arms and
+  `graphitron_field_table_link` are gone.
 * **A key element states which name it matched by** `open`. `graphitron_path_element_key` records
   whether the SQL name or the jOOQ `Keys` constant answered, which the step targets carry as
   `key_matched_by` today and `SchemaQueries` shows.
@@ -218,14 +215,14 @@ resolutions and links built beside it are gone.
   `SchemaQueries`, `ReferencePathFanout` and the routine writes read `graphitron_field_path`, its
   children and its stops, and the `intent_field_path_` views, `graphitron_field_path_application`
   and `FieldPathApplications` go.
-* **A scalar with a path has a target column where its path lands** `blocked`, on "The field grain reads only the walk". The `PATH_TERMINAL` rule of `COLUMN_UNRESOLVED` and the `@field` hint read
+* **A scalar with a path has a target column where its path lands** `open`. The `PATH_TERMINAL` rule of `COLUMN_UNRESOLVED` and the `@field` hint read
   it, and `graphitron_field_column_scope` goes.
 * **Arguments and input fields walk from their field's target** `open`. Path relations at both
   grains, started from `graphitron_field_target_table` rather than `graphitron_field_scope_table`,
   with the composed order capture states per holder, as it does for a field.
-* **Nothing resolves a path but the walk** `blocked`, on "The field grain reads only the walk", "The step targets' readers read the walk" and "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
+* **Nothing resolves a path but the walk** `blocked`, on "The step targets' readers read the walk" and "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
-* **Every field has a path, the written one or the one discovery implies** `blocked`, on "The field grain reads only the walk". Where nothing is written the one key between source and target
+* **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target
   is stated as path rows, so no reader falls back to discovery for itself, and the editor's
   omitted-`@reference` hint fills in from those rows.
 
