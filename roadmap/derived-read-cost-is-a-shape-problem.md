@@ -186,6 +186,10 @@ resolutions and links built beside it are gone.
   routine's function, and `graphitron_field_path` holds the steps from there with their column
   pairs, key, methods and stops, merged round by round from one keyed rule. A `@routine` after the
   start is a step no arm takes yet.
+* **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
+  start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
+  capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
+  added, and writes their keys, columns and stops as it goes, reads each step once.
 * **A child `@routine` is a lateral step of the path** `open`. Only a root's first `@routine` is
   a producer; any other is a step called with the columns of the table the walk stands on, the
   store says which, so the editor and the MCP server answer each differently, and `columnMapping`
