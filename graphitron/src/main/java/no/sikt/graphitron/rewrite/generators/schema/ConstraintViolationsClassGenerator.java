@@ -26,8 +26,9 @@ import java.util.List;
  * classify time that {@code GraphQLError.getExtensions()} satisfies the read.
  *
  * <p>A second public method, {@code sizeExceeded}, builds the same shape for the column-length
- * check a payload-returning DML mutation runs before its statement. Both delegate to one private
- * builder, so there is one copy of the wire shape of a validation error.
+ * check a DML mutation runs before its statement. Both delegate to one private builder, so there
+ * is one copy of the wire shape of a validation error, classification
+ * {@link graphql.ErrorType#ValidationError} included.
  */
 public final class ConstraintViolationsClassGenerator {
 
@@ -39,6 +40,7 @@ public final class ConstraintViolationsClassGenerator {
     private static final ClassName ENV                  = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName GRAPHQL_ERROR        = ClassName.get("graphql", "GraphQLError");
     private static final ClassName GRAPHQL_ERROR_BUILDER= ClassName.get("graphql", "GraphqlErrorBuilder");
+    private static final ClassName ERROR_TYPE           = ClassName.get("graphql", "ErrorType");
     private static final ClassName ARRAY_LIST           = ClassName.get("java.util", "ArrayList");
     private static final ClassName LINKED_HASH_MAP      = ClassName.get("java.util", "LinkedHashMap");
     private static final ClassName MAP                  = ClassName.get("java.util", "Map");
@@ -91,7 +93,7 @@ public final class ConstraintViolationsClassGenerator {
             .addParameter(listOfObject, "argPath")
             .addParameter(int.class, "max")
             .addJavadoc("A {@link $T} for a written string longer than its column's declared length\n"
-                + "{@code max}, raised by a payload-returning DML mutation's pre-execution length\n"
+                + "{@code max}, raised by a DML mutation's pre-execution length\n"
                 + "check. {@code argPath} is the argument name followed by the input path to the\n"
                 + "offending field (list indices included). The wire shape is\n"
                 + "{@link #toGraphQLError}'s, with {@code \"Size\"} as the constraint name.\n",
@@ -101,7 +103,8 @@ public final class ConstraintViolationsClassGenerator {
             .build();
 
         // The one copy of a validation error's wire shape, so a length error cannot drift from a
-        // Jakarta one: the execution-path prefix, the extensions map and the builder call.
+        // Jakarta one: the execution-path prefix, the extensions map, the ValidationError
+        // classification and the builder call.
         var validationError = MethodSpec.methodBuilder("validationError")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(GRAPHQL_ERROR)
@@ -120,8 +123,9 @@ public final class ConstraintViolationsClassGenerator {
             .addStatement("return $T.newError(env)\n"
                 + "        .message(message)\n"
                 + "        .path(path)\n"
+                + "        .errorType($T.ValidationError)\n"
                 + "        .extensions(extensions)\n"
-                + "        .build()", GRAPHQL_ERROR_BUILDER)
+                + "        .build()", GRAPHQL_ERROR_BUILDER, ERROR_TYPE)
             .build();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
@@ -130,7 +134,9 @@ public final class ConstraintViolationsClassGenerator {
                 + "Each {@link $T} produced by {@code Validator.validate(input)} fans into one\n"
                 + "{@link $T} placed directly into the payload's errors slot; graphql-java's\n"
                 + "{@code TypeResolver} routes each entry to the channel's VALIDATION-marked\n"
-                + "{@code @error} SDL type at serialisation time.\n",
+                + "{@code @error} SDL type at serialisation time. A DML mutation without an errors\n"
+                + "field returns the same errors from its column-length check as top-level field\n"
+                + "errors.\n",
                 CONSTRAINT_VIOLATION, GRAPHQL_ERROR)
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addMethod(toGraphQLError)

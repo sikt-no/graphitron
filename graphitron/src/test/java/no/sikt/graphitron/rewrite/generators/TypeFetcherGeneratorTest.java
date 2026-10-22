@@ -958,8 +958,7 @@ class TypeFetcherGeneratorTest {
                 List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
             new no.sikt.graphitron.rewrite.model.OperationMember.Write.Upsert(
                 ArgumentRef.InputTypeArg.TableInputArg.of(
-                    "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of())),
-            Optional.empty());
+                    "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of())));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(upsert), DEFAULT_OUTPUT_PACKAGE);
 
@@ -985,8 +984,7 @@ class TypeFetcherGeneratorTest {
                 List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
             new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(
                 ArgumentRef.InputTypeArg.TableInputArg.of(
-                    "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of())),
-            Optional.empty());
+                    "in", "FilmInput", true, false, FILM_TABLE, List.of(), Optional.empty(), List.of())));
         var spec = TypeFetcherGenerator.generateTypeSpec("Mutation", null, null,
             List.of(insert), DEFAULT_OUTPUT_PACKAGE);
 

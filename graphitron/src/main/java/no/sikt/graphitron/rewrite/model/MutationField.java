@@ -83,8 +83,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         String name,
         SourceLocation location,
         DmlReturnExpression returnExpression,
-        OperationMember.Write.Dml write,
-        Optional<ErrorChannel.Mapped> errorChannel
+        OperationMember.Write.Dml write
     ) implements MutationField, DmlWriteField {
 
         public DmlTableField {
@@ -126,6 +125,14 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                             + "different dialect, or split the upsert into INSERT and UPDATE.");
                 default -> DialectRequirement.None.INSTANCE;
             };
+        }
+
+        /**
+         * Pinned empty: the field returns its {@code @table} type or an encoded ID directly, so
+         * there is no payload to put an errors field on.
+         */
+        @Override public Optional<ErrorChannel.Mapped> errorChannel() {
+            return Optional.empty();
         }
 
         @Override public DomainReturnType domainReturnType() {
@@ -495,15 +502,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(write.table());
         }
-
-        /**
-         * Whether the strings this write stores are checked against their columns' declared
-         * lengths before the statement, derived from the write plan and the error channel; see
-         * {@link LengthCheck#of}.
-         */
-        public LengthCheck lengthCheck() {
-            return LengthCheck.of(write, errorChannel);
-        }
     }
 
     /**
@@ -571,11 +569,6 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(write.table());
-        }
-
-        /** The bulk twin of {@link MutationDmlRecordField#lengthCheck()}; see {@link LengthCheck#of}. */
-        public LengthCheck lengthCheck() {
-            return LengthCheck.of(write, errorChannel);
         }
     }
 

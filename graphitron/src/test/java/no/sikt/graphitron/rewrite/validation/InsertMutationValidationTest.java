@@ -37,8 +37,7 @@ class InsertMutationValidationTest {
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     List.of(),
                     Optional.empty(),
-                    List.of())),
-                Optional.empty()),
+                    List.of()))),
             List.of()),
 
         // Row22-cap guard on the reentry key, mirroring the multi-table parent-PK pins in
@@ -56,8 +55,7 @@ class InsertMutationValidationTest {
                     wideTable(),
                     List.of(),
                     Optional.empty(),
-                    List.of())),
-                Optional.empty()),
+                    List.of()))),
             List.of("Field 'Mutation.createWides': bulk @mutation with a @table return re-fetches "
                 + "the written rows through a keyed re-query whose key is table 'wide's primary key; "
                 + "22 key columns exceeds jOOQ's typed Row22 cap (key + idx must fit in Row<N+1>). "
@@ -74,8 +72,7 @@ class InsertMutationValidationTest {
                     wideTable(),
                     List.of(),
                     Optional.empty(),
-                    List.of())),
-                Optional.empty()),
+                    List.of()))),
             List.of());
 
         private final String description;

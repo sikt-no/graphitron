@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import graphql.ErrorType;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.DataFetchingEnvironment;
@@ -9838,6 +9839,158 @@ class GraphQLQueryTest {
             var payload = assertThat(data).extractingByKey("createFilmWithErrors", as(MAP));
             payload.containsEntry("errors", null);
             payload.extractingByKey("film", as(MAP)).containsEntry("title", title);
+        } finally {
+            dsl.deleteFrom(DSL.table("film")).where(DSL.field("title", String.class).eq(title)).execute();
+        }
+    }
+
+    // A carrier without an errors field, and a mutation returning its @table type directly, run
+    // the same check and answer with the violations as top-level errors classified
+    // ValidationError. Without the check the value reached PostgreSQL (22001) and came back as a
+    // redacted top-level error.
+
+    private static String overLongTitle(String prefix) {
+        return prefix + "x".repeat(256 - prefix.length());
+    }
+
+    private static void assertTitleTooLong(graphql.GraphQLError error, Object... path) {
+        assertThat(error.getMessage()).isEqualTo("size must be between 0 and 255");
+        assertThat(error.getPath()).containsExactly(path);
+        assertThat(error.getErrorType()).isEqualTo(ErrorType.ValidationError);
+        assertThat(error.toSpecification()).extractingByKey("extensions", as(MAP))
+            .containsEntry("classification", "ValidationError")
+            .containsEntry("constraint", "Size");
+    }
+
+    private int filmsTitled(String prefix) {
+        return dsl.fetchCount(DSL.table("film"), DSL.field("title", String.class).startsWith(prefix));
+    }
+
+    @Test
+    void createFilmPayload_overLongTitle_isATopLevelValidationError() {
+        String prefix = "LEN-TOP-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { createFilmPayload(in: { title: "%s", languageId: 1 }) { film { title } } }
+            """.formatted(overLongTitle(prefix)));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("createFilmPayload", null);
+        assertThat(result.getErrors()).singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "createFilmPayload", "in", "title"));
+        assertThat(filmsTitled(prefix)).as("nothing was written").isZero();
+    }
+
+    @Test
+    void createFilmsPayload_overLongTitleOnOneRow_rejectsTheWholeBatch() {
+        String prefix = "LEN-TOP-BULK-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilmsPayload(in: [
+                    { title: "%s-ok", languageId: 1 },
+                    { title: "%s", languageId: 1 }
+                ]) { films { title } }
+            }
+            """.formatted(prefix, overLongTitle(prefix)));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("createFilmsPayload", null);
+        assertThat(result.getErrors()).singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "createFilmsPayload", "in", 1, "title"));
+        assertThat(filmsTitled(prefix)).as("neither row was inserted, the valid first one included").isZero();
+    }
+
+    @Test
+    void updateFilmPayload_overLongTitle_leavesTheRowUnchanged() {
+        String original = dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class);
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { updateFilmPayload(in: { filmId: 1, title: "%s" }) { film { title } } }
+            """.formatted("y".repeat(256)));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("updateFilmPayload", null);
+        assertThat(result.getErrors()).singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "updateFilmPayload", "in", "title"));
+        assertThat(dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class))
+            .as("the row's title is unchanged").isEqualTo(original);
+    }
+
+    @Test
+    void createFilm_overLongTitle_isATopLevelValidationError() {
+        String prefix = "LEN-DIRECT-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { createFilm(in: { title: "%s", languageId: 1 }) { title } }
+            """.formatted(overLongTitle(prefix)));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("createFilm", null);
+        assertThat(result.getErrors()).singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "createFilm", "in", "title"));
+        assertThat(filmsTitled(prefix)).as("nothing was written").isZero();
+    }
+
+    @Test
+    void updateFilm_overLongTitle_leavesTheRowUnchanged() {
+        String original = dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class);
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { updateFilm(in: { filmId: 1, title: "%s" }) { title } }
+            """.formatted("y".repeat(256)));
+        Map<String, Object> data = result.getData();
+        assertThat(data).containsEntry("updateFilm", null);
+        assertThat(result.getErrors()).singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "updateFilm", "in", "title"));
+        assertThat(dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class))
+            .as("the row's title is unchanged").isEqualTo(original);
+    }
+
+    @Test
+    void createFilmPayloadRequired_overLongTitle_nullsData() {
+        // A top-level error on a non-null root field nulls data; graphql-java may add its own
+        // non-null error beside the violation, so the violation is asserted among the errors.
+        String prefix = "LEN-REQ-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { createFilmPayloadRequired(in: { title: "%s", languageId: 1 }) { film { title } } }
+            """.formatted(overLongTitle(prefix)));
+        Object data = result.getData();
+        assertThat(data).isNull();
+        assertThat(result.getErrors())
+            .filteredOn(e -> e.getErrorType() == ErrorType.ValidationError)
+            .singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "createFilmPayloadRequired", "in", "title"));
+        assertThat(filmsTitled(prefix)).as("nothing was written").isZero();
+    }
+
+    @Test
+    void createFilms_overLongTitleOnOneRow_nullsData() {
+        String prefix = "LEN-DIRECT-BULK-" + java.util.UUID.randomUUID();
+        graphql.ExecutionResult result = executeRaw("""
+            mutation {
+                createFilms(in: [
+                    { title: "%s-ok", languageId: 1 },
+                    { title: "%s", languageId: 1 }
+                ]) { title }
+            }
+            """.formatted(prefix, overLongTitle(prefix)));
+        Object data = result.getData();
+        assertThat(data).isNull();
+        assertThat(result.getErrors())
+            .filteredOn(e -> e.getErrorType() == ErrorType.ValidationError)
+            .singleElement()
+            .satisfies(e -> assertTitleTooLong(e, "createFilms", "in", 1, "title"));
+        assertThat(filmsTitled(prefix)).as("neither row was inserted, the valid first one included").isZero();
+    }
+
+    @Test
+    void createFilm_titleOf255SupplementaryCharacters_isAccepted() {
+        // The direct-return twin of createFilmWithErrors_titleOf255SupplementaryCharacters_isAccepted:
+        // the check counts code points, as PostgreSQL's varchar(255) counts characters.
+        String title = "\uD83C\uDFAC".repeat(255);
+        try {
+            var result = executeRaw("""
+                mutation { createFilm(in: { title: "%s", languageId: 1 }) { title } }
+                """.formatted(title));
+            assertThat(result.getErrors()).as("top-level errors: %s", result.getErrors()).isEmpty();
+            Map<String, Object> data = result.getData();
+            assertThat(data).extractingByKey("createFilm", as(MAP)).containsEntry("title", title);
         } finally {
             dsl.deleteFrom(DSL.table("film")).where(DSL.field("title", String.class).eq(title)).execute();
         }

@@ -59,4 +59,14 @@ public final class FetcherResult {
         return CodeBlock.of("return $T.<$T>newResult().data(null).build();\n",
             DATA_FETCHER_RESULT, boxed(valueType));
     }
+
+    /**
+     * {@code return DataFetcherResult.<P>newResult().data(null).errors(<errorsLocal>).build();}:
+     * a field that answers with top-level errors and no value. {@code errorsLocal} names a
+     * {@code List<GraphQLError>}.
+     */
+    public static CodeBlock errors(TypeName valueType, String errorsLocal) {
+        return CodeBlock.of("return $T.<$T>newResult().data(null).errors($L).build();\n",
+            DATA_FETCHER_RESULT, boxed(valueType), errorsLocal);
+    }
 }

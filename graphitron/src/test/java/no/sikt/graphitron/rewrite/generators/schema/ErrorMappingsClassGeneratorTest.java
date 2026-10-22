@@ -354,8 +354,8 @@ class ErrorMappingsClassGeneratorTest {
     }
 
     /**
-     * Synthesises a minimal schema with one direct-return DML mutation field per channel
-     * supplied: the lightest field variant with a channel slot.
+     * Synthesises a minimal schema with one payload-returning DML mutation field per channel
+     * supplied: the lightest field variant whose channel is real.
      */
     private static GraphitronSchema synthesizeSchema(List<ErrorChannel.Mapped> channels) {
         Map<String, GraphitronType> types = new LinkedHashMap<>();
@@ -366,15 +366,12 @@ class ErrorMappingsClassGeneratorTest {
             var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
                 "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
                 List.of(), List.of(), List.of());
-            var field = new no.sikt.graphitron.rewrite.model.MutationField.DmlTableField(
+            var field = new no.sikt.graphitron.rewrite.model.MutationField.MutationDmlRecordField(
                 "Query",
                 fieldName,
                 null,
-                new no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle(
-                    new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
-                        no.sikt.graphitron.javapoet.ClassName.get("fake.code.generated", "NodeIdEncoder"),
-                        "encodeFilm",
-                        List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
+                new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
+                    "FilmPayload", new no.sikt.graphitron.rewrite.model.FieldWrapper.Single(true), null, null),
                 new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
                 Optional.of(channels.get(i)));
             fields.put(FieldCoordinates.coordinates("Query", fieldName), field);

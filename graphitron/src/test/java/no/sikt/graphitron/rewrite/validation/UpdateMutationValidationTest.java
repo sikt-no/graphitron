@@ -50,8 +50,7 @@ class UpdateMutationValidationTest {
                     List.of(),
                     List.of(new no.sikt.graphitron.rewrite.model.CarrierNullRule(
                         "title", new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
-                        new no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull.Clears())))),
-                Optional.empty()),
+                        new no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull.Clears()))))),
             List.of());
 
         private final String description;

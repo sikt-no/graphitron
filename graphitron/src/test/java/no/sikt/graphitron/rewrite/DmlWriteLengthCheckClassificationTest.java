@@ -19,12 +19,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.entry;
 
 /**
- * Pipeline-tier coverage of the column-length check on payload-returning DML carriers: which
- * written cells {@link ColumnWriteBound} marks {@link ColumnWriteBound.Length}, what
+ * Pipeline-tier coverage of the column-length check on DML carriers: which written cells
+ * {@link ColumnWriteBound} marks {@link ColumnWriteBound.Length}, what
  * {@link OperationMember.Write.Dml#writtenCells()} reads off each write plan, how
- * {@link MutationField.MutationDmlRecordField#lengthCheck()} combines that with the error channel,
- * and the {@link LintRule#DML_WRITE_LENGTH_UNROUTED} advisory the {@link LengthCheck.Unrouted} arm
- * raises. The generated check itself is exercised at the execution tier against PostgreSQL.
+ * {@link no.sikt.graphitron.rewrite.model.DmlWriteField#lengthCheck()} combines that with the error
+ * channel (and its {@link LengthCheck.Sink}), and the {@link LintRule#DML_WRITE_LENGTH_UNROUTED}
+ * advisory the {@link LengthCheck.Unrouted} arm raises. The generated check itself is exercised at the execution tier against PostgreSQL.
  */
 @PipelineTier
 class DmlWriteLengthCheckClassificationTest {
@@ -74,8 +74,10 @@ class DmlWriteLengthCheckClassificationTest {
         // An int column and a text column (no declared length) carry no bound.
         assertThat(f.write().writtenCells()).filteredOn(c -> !c.inputPath().equals(List.of("title")))
             .extracting(WrittenCell::bound).containsOnly(ColumnWriteBound.Unbounded.INSTANCE);
-        assertThat(f.lengthCheck()).isInstanceOfSatisfying(LengthCheck.Checked.class,
-            c -> assertThat(c.bounded()).containsExactly(title));
+        assertThat(f.lengthCheck()).isInstanceOfSatisfying(LengthCheck.Checked.class, c -> {
+            assertThat(c.bounded()).containsExactly(title);
+            assertThat(c.sink()).isEqualTo(LengthCheck.Sink.CHANNEL);
+        });
         assertThat(lengthFindings(schema)).isEmpty();
     }
 
@@ -94,11 +96,42 @@ class DmlWriteLengthCheckClassificationTest {
     }
 
     @Test
-    void payloadWithoutErrorsField_isNoneAndSilent() {
+    void payloadWithoutErrorsField_isCheckedTopLevelAndSilent() {
         var schema = insertFilm("", "", FILM_INSERT_INPUT);
         var f = recordField(schema, "createFilm");
 
-        assertThat(f.lengthCheck()).isEqualTo(LengthCheck.None.INSTANCE);
+        assertThat(f.lengthCheck()).isInstanceOfSatisfying(LengthCheck.Checked.class, c -> {
+            assertThat(paths(c.bounded())).containsExactly("title");
+            assertThat(c.sink()).isEqualTo(LengthCheck.Sink.TOP_LEVEL);
+        });
+        assertThat(lengthFindings(schema)).isEmpty();
+    }
+
+    @Test
+    void directReturnInsertAndUpdate_areCheckedTopLevel_directReturnDelete_isNone() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
+            input FilmInput { %s }
+            input FilmUpdateInput { filmId: Int! @field(name: "film_id") title: String }
+            input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
+            type Query { x: String }
+            type Mutation {
+                createFilm(in: FilmInput!): Film @mutation(typeName: INSERT)
+                updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)
+                deleteFilm(in: FilmDeleteInput!): ID @mutation(typeName: DELETE, table: "film")
+            }
+            """.formatted(FILM_INSERT_INPUT));
+
+        for (var name : List.of("createFilm", "updateFilm")) {
+            var f = (MutationField.DmlTableField) classified(schema, name);
+            assertThat(f.errorChannel()).as(name).isEmpty();
+            assertThat(f.lengthCheck()).as(name).isInstanceOfSatisfying(LengthCheck.Checked.class, c -> {
+                assertThat(paths(c.bounded())).containsExactly("title");
+                assertThat(c.sink()).isEqualTo(LengthCheck.Sink.TOP_LEVEL);
+            });
+        }
+        var delete = (MutationField.DmlTableField) classified(schema, "deleteFilm");
+        assertThat(delete.lengthCheck()).isEqualTo(LengthCheck.None.INSTANCE);
         assertThat(lengthFindings(schema)).isEmpty();
     }
 
@@ -196,7 +229,9 @@ class DmlWriteLengthCheckClassificationTest {
         var single = recordField(schema, "createFilm");
         var bulk = (MutationField.MutationBulkDmlRecordField) classified(schema, "createFilms");
 
-        assertThat(bulk.lengthCheck()).isInstanceOf(LengthCheck.Checked.class).isEqualTo(single.lengthCheck());
+        assertThat(bulk.lengthCheck()).isInstanceOfSatisfying(LengthCheck.Checked.class,
+                c -> assertThat(c.sink()).isEqualTo(LengthCheck.Sink.CHANNEL))
+            .isEqualTo(single.lengthCheck());
     }
 
     @Test

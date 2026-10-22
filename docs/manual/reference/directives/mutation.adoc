@@ -4,6 +4,8 @@
 
 Marks a mutation field as fully generated and picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). The write runs inside a transaction graphitron opens, with a primary-key-only `RETURNING`; a `@table`-typed response is then read back by a follow-up SELECT keyed on those primary keys, so the response selection set never widens the write statement itself. The delegated alternative carries no such boundary: graphitron opens no transaction around a xref:service.adoc#transaction-demarcation[`@service`] invocation, and the method owns its own commit point.
 
+Every `INSERT`, `UPDATE` and `UPSERT` checks the strings it writes against their columns' declared lengths before the statement runs, and rejects an over-long value without writing anything; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check].
+
 == SDL signature
 
 [source,graphql]
@@ -192,7 +194,7 @@ Three rules follow from that:
 * A list data field renders `null` on the error path, not an empty list, since nothing was written.
 * A single-row write whose key matches no row renders the whole payload `null`, the same as on a payload without an errors field.
 
-Give one `@error` type in the errors field `{handler: VALIDATION}` and every string the write stores is also checked against its column's declared length before the statement runs; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check].
+Give one `@error` type in the errors field `{handler: VALIDATION}` and the column-length check's errors become entries in the errors list rather than top-level errors; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check]. Without that member a payload with an errors field skips the check.
 
 The same rules hold in a database-per-tenant build: the payload's fields read the tenant the write ran on, and the errors travel with the payload.
 

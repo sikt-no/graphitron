@@ -161,10 +161,12 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
-     * The one definition of the no-channel error disposition:
+     * The one definition of the no-channel disposition of a thrown exception:
      * {@code ErrorRouter.surfaceClientErrorOrRedact(<throwableVar>, env)}. Every no-channel emit
      * site (sync catch arms and async {@code .exceptionally} arms) consults this helper, so a
-     * disposition change is one edit, not a multi-site coordination.
+     * disposition change is one edit, not a multi-site coordination. A DML field's column-length
+     * check is the one way a no-channel field answers with errors without throwing: it returns
+     * its violations as top-level errors before the statement runs.
      */
     public static CodeBlock noChannelRouterCall(String outputPackage, String throwableVar) {
         return no.sikt.graphitron.render.ErrorDispatchFragments.redact(

@@ -34,8 +34,7 @@ class UpsertMutationValidationTest {
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     List.of(),
                     Optional.empty(),
-                    List.of())),
-                Optional.empty()),
+                    List.of()))),
             List.of());
 
         private final String description;

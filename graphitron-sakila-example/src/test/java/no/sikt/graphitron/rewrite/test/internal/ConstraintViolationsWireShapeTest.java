@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
+import graphql.ErrorType;
 import graphql.GraphQLError;
 import graphql.Scalars;
 import graphql.execution.ExecutionStepInfo;
@@ -27,7 +28,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * cases observe a validation error through an {@code @error} type's {@code path} and
  * {@code message} fields, but no sakila {@code @error} type exposes the extensions map, so
  * {@code extensions.constraint} (which the error-channel how-to promises) is visible only on the
- * {@code GraphQLError} itself. The column-length error ({@code sizeExceeded}) and a Bean Validation
+ * {@code GraphQLError} itself, as is the {@code ValidationError} classification a top-level
+ * error carries. The column-length error ({@code sizeExceeded}) and a Bean Validation
  * error ({@code toGraphQLError}) are built side by side so the two cannot drift.
  */
 @UnitTier
@@ -61,6 +63,7 @@ class ConstraintViolationsWireShapeTest {
         assertThat(error.getMessage()).isEqualTo("size must be between 0 and 255");
         assertThat(error.getPath()).containsExactly(FIELD, "in", 1, "title");
         assertThat(error.getExtensions()).containsExactly(Map.entry("constraint", "Size"));
+        assertThat(error.getErrorType()).isEqualTo(ErrorType.ValidationError);
     }
 
     @Test
@@ -75,6 +78,8 @@ class ConstraintViolationsWireShapeTest {
         assertThat(jakarta.getPath()).containsExactly(FIELD, "in", "title").isEqualTo(length.getPath());
         assertThat(jakarta.getExtensions()).containsExactly(Map.entry("constraint", "Size"))
             .isEqualTo(length.getExtensions());
+        assertThat(jakarta.getErrorType()).isEqualTo(ErrorType.ValidationError)
+            .isEqualTo(length.getErrorType());
         assertThat(jakarta.getMessage()).isEqualTo(violation.getMessage());
     }
 

@@ -1,5 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
+import java.util.Optional;
+
 /**
  * Capability of the mutation leaves that carry a DML write payload: the coordinate's write
  * member is the carried {@link OperationMember.Write.Dml} arm, verbatim. The member view
@@ -18,4 +20,16 @@ public sealed interface DmlWriteField
 
     /** The DML write payload: verb identity and per-verb input surface, one home. */
     OperationMember.Write.Dml write();
+
+    /** The payload's typed-error channel, or empty when there is no errors field to route into. */
+    Optional<ErrorChannel.Mapped> errorChannel();
+
+    /**
+     * Whether the strings this write stores are checked against their columns' declared lengths
+     * before the statement, and where a violation goes, derived from the write plan and the error
+     * channel; see {@link LengthCheck#of}.
+     */
+    default LengthCheck lengthCheck() {
+        return LengthCheck.of(write(), errorChannel());
+    }
 }

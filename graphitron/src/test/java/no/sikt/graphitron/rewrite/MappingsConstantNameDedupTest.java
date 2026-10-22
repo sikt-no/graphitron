@@ -163,21 +163,18 @@ class MappingsConstantNameDedupTest {
         return new DatabaseHandler(new DatabaseHandler.Discriminator.SqlState(state), Optional.empty(), new ClientMessage.FromSource());
     }
 
-    /** A direct-return DML mutation field: the lightest {@link WithErrorChannel} variant. */
-    private static MutationField.DmlTableField routedField(
+    /** A payload-returning DML mutation field: the lightest {@link WithErrorChannel} variant whose channel is real. */
+    private static MutationField.MutationDmlRecordField routedField(
             String fieldName, Optional<ErrorChannel.Mapped> channel) {
         var tableInputArg = new no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg(
             "in", "FilmInput", true, false, TestFixtures.filmTable(), List.of(), Optional.empty(),
             List.of(), List.of(), List.of());
-        return new MutationField.DmlTableField(
+        return new MutationField.MutationDmlRecordField(
             "Query",
             fieldName,
             null,
-            new no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle(
-                new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
-                    no.sikt.graphitron.javapoet.ClassName.get("fake.code.generated", "NodeIdEncoder"),
-                    "encodeFilm",
-                    List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
+            new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ResultReturnType(
+                "FilmPayload", new no.sikt.graphitron.rewrite.model.FieldWrapper.Single(true), null, null),
             new no.sikt.graphitron.rewrite.model.OperationMember.Write.Insert(tableInputArg),
             channel);
     }

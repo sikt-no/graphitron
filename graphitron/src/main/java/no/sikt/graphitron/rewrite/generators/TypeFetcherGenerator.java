@@ -4777,7 +4777,10 @@ public class TypeFetcherGenerator {
      *       semantics drift) and bulk UPDATE carries {@link DialectRequirement.RequiresFamily}
      *       ({@code POSTGRES}) (the {@code UPDATE ... FROM (VALUES ...)} form is a Postgres
      *       extension); INSERT / DELETE / single-row UPDATE carry {@code None} and emit nothing.</li>
-     *   <li>{@code postInGuard} — emitted immediately after the {@code in} cast and before
+     *   <li>{@code postInGuard} — emitted after the {@code in} cast and the column-length
+     *       pre-step ({@link #lengthCheckPreStep}, when the field's
+     *       {@link no.sikt.graphitron.rewrite.model.DmlWriteField#lengthCheck()} is
+     *       {@link no.sikt.graphitron.rewrite.model.LengthCheck.Checked}), and before
      *       {@code tableLocal} is bound (and after the empty-list short-circuit when
      *       {@code listInput}). Used by UPDATE / UPSERT to build the dynamic SET map from the
      *       present-key set (UPDATE reads an empty map as an empty patch, see
@@ -4843,6 +4846,9 @@ public class TypeFetcherGenerator {
         emitDialectGuard(builder, dialectRequirement);
         if (!listInput) {
             builder.addStatement("$T<?, ?> in = ($T<?, ?>) env.getArgument($S)", MAP, MAP, inputArgName);
+        }
+        if (field.lengthCheck() instanceof no.sikt.graphitron.rewrite.model.LengthCheck.Checked checked) {
+            builder.addCode(lengthCheckPreStep(checked, inputArgName, listInput, valueType, outputPackage));
         }
         if (!postInGuard.isEmpty()) {
             builder.addCode(postInGuard);
@@ -5466,14 +5472,20 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The column-length pre-step of a payload-returning DML carrier whose channel carries a
-     * {@code VALIDATION} handler: every length-bounded written cell
+     * The column-length pre-step of a DML fetcher: every length-bounded written cell
      * ({@link no.sikt.graphitron.rewrite.model.LengthCheck.Checked#bounded()}) is tested on the raw
      * argument map before the statement, its decode or its transaction, and any violation returns
-     * the whole list through {@link ChannelEarlyReturnEmitter} so nothing is written. The value is
-     * read with {@link ArgCallEmitter#nestedMapValueExpr}, the read the VALUES and SET emit use, so an
-     * absent or null field is not checked. Lengths count code points, which is what a character-length
+     * the whole list so nothing is written. The value is read with
+     * {@link ArgCallEmitter#nestedMapValueExpr}, the read the VALUES and SET emit use, so an absent
+     * or null field is not checked. Lengths count code points, which is what a character-length
      * column counts; the model guarantees a bounded cell's raw value is the column's own text.
+     *
+     * <p>The {@link no.sikt.graphitron.rewrite.model.LengthCheck.Sink} decides the return: a
+     * {@code CHANNEL} check returns the violations through {@link ChannelEarlyReturnEmitter} as
+     * entries in the payload's errors union, a {@code TOP_LEVEL} check returns them as the field's
+     * top-level errors with no value ({@link no.sikt.graphitron.render.FetcherResult#errors}). The
+     * errors are returned rather than thrown, so a list input reports every violation with its own
+     * path and a client mistake stays out of the redaction log.
      *
      * <p>{@code bulk} loops the list argument by index, putting the index into the error path, and
      * checks every row before any statement runs.
@@ -5483,8 +5495,13 @@ public class TypeFetcherGenerator {
         var constraintViolations = ClassName.get(outputPackage + ".schema",
             ConstraintViolationsClassGenerator.CLASS_NAME);
         String mapLocal = bulk ? "lengthRow" : "in";
+        // Outcome.ErrorList takes List<Object>; a DataFetcherResult's errors take List<GraphQLError>.
+        TypeName element = switch (check.sink()) {
+            case CHANNEL -> ClassName.get(Object.class);
+            case TOP_LEVEL -> ClassName.get("graphql", "GraphQLError");
+        };
         var b = CodeBlock.builder();
-        b.addStatement("$T<$T> violations = new $T<>()", LIST, Object.class, ArrayList.class);
+        b.addStatement("$T<$T> violations = new $T<>()", LIST, element, ArrayList.class);
         if (bulk) {
             b.beginControlFlow("for (int i = 0; i < in.size(); i++)");
             b.addStatement("$T<?, ?> $L = in.get(i)", MAP, mapLocal);
@@ -5510,7 +5527,10 @@ public class TypeFetcherGenerator {
             b.endControlFlow();
         }
         b.beginControlFlow("if (!violations.isEmpty())");
-        b.add(ChannelEarlyReturnEmitter.emit(valueType, "violations", outputPackage));
+        b.add(switch (check.sink()) {
+            case CHANNEL -> ChannelEarlyReturnEmitter.emit(valueType, "violations", outputPackage);
+            case TOP_LEVEL -> no.sikt.graphitron.render.FetcherResult.errors(valueType, "violations");
+        });
         b.endControlFlow();
         return b.build();
     }

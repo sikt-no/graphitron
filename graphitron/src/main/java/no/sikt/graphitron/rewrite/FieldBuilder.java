@@ -605,7 +605,7 @@ class FieldBuilder {
      * Emits the {@link LintRule#DML_WRITE_LENGTH_UNROUTED} advisory when a payload-returning DML
      * carrier writes length-bounded columns into a payload whose errors field has no
      * {@code VALIDATION} member, and hands the carrier back unchanged. Reads the carrier's derived
-     * {@link MutationField.MutationDmlRecordField#lengthCheck()}, the same accessor the emitter reads.
+     * {@link no.sikt.graphitron.rewrite.model.DmlWriteField#lengthCheck()}, the same accessor the emitter reads.
      */
     private MutationField.MutationDmlRecordField advisedOnLength(MutationField.MutationDmlRecordField field) {
         warnLengthUnrouted(field.qualifiedName(), field.location(), field.write(), field.lengthCheck());
@@ -6355,7 +6355,7 @@ class FieldBuilder {
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                     rex -> new MutationField.DmlTableField(
                         parentTypeName, name, location, rex,
-                        new OperationMember.Write.Update(inputArg, ok.carrier()), Optional.empty()),
+                        new OperationMember.Write.Update(inputArg, ok.carrier())),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -6678,7 +6678,7 @@ class FieldBuilder {
                 buildDmlField(returnType, parentTypeName, name, location, fieldDef,
                     rex -> new MutationField.DmlTableField(
                         parentTypeName, name, location, rex,
-                        new OperationMember.Write.Delete(inputArg, ok.carrier()), Optional.empty()),
+                        new OperationMember.Write.Delete(inputArg, ok.carrier())),
                     enc);
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -7072,7 +7072,7 @@ class FieldBuilder {
         var enc = encodeReturn;
         return buildDmlField(returnType, parentTypeName, name, location, fieldDef,
             rex -> new MutationField.DmlTableField(parentTypeName, name, location, rex,
-                new OperationMember.Write.Insert(tia), Optional.empty()),
+                new OperationMember.Write.Insert(tia)),
             enc);
     }
 

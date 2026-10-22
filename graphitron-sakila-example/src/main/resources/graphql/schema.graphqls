@@ -5055,6 +5055,9 @@ type Mutation {
     # statement and RETURNING carries only the PK, so a full @table projection is impossible.)
     createFilmPayload(in: FilmCreateInput!): FilmPayload @mutation(typeName: INSERT)
     updateFilmPayload(in: FilmUpdateInput!): FilmPayload @mutation(typeName: UPDATE)
+    # Non-null payload carrier with no errors field: an over-long title fails the column-length
+    # check as a top-level error, which on a non-null root field nulls data.
+    createFilmPayloadRequired(in: FilmCreateInput!): FilmPayload! @mutation(typeName: INSERT)
     # upsertFilmPayload retired under R144 (UPSERT lifts via R145).
 
     # R186: nested non-@table grouping inputs on @mutation fields, one per classifying verb plus

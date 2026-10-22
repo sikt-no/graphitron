@@ -154,9 +154,6 @@ public final class MappingsConstantNameDedup {
      */
     private static GraphitronField withResolvedChannel(GraphitronField field, String newName) {
         return switch (field) {
-            case MutationField.DmlTableField f -> new MutationField.DmlTableField(
-                f.parentTypeName(), f.name(), f.location(), f.returnExpression(),
-                f.write(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationServiceTableField f -> new MutationField.MutationServiceTableField(
                 f.parentTypeName(), f.name(), f.location(), f.returnType(), f.serviceMethodCall(), f.errorChannel().map(c -> renameMapped(c, newName)));
             case MutationField.MutationServiceRecordField f -> new MutationField.MutationServiceRecordField(
