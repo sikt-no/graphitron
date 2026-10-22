@@ -1,0 +1,32 @@
+# A walk that stops short of a field's last written place lands nowhere. film reaches language by two
+# keys, so a table-named element offers two steps and the walk declines to pick; films_for_actor's
+# result exposes no actor_id, so an element naming actor offers none. Each is a stop, and neither
+# field has a landing for a reader to mistake for where its rows come from.
+
+type Film @table(name: "film") {
+  title: String
+  spokenIn: Language @reference(path: [{table: "language"}])
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+}
+
+extend type Query {
+  films: [Film]
+  castOf(actorId: Int!, minLength: Int!): [Actor!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "actor"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_field_path_stop", rows: """
+  type_name, field_name, start_table,     position, moves
+  Film,      spokenIn,   film,            0,        2
+  Query,     castOf,     films_for_actor, 1,        0
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_field_path_landing")

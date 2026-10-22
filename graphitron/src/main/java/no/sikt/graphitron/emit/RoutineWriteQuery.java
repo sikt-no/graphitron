@@ -17,15 +17,17 @@ import java.util.Objects;
 import java.util.Optional;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ARGMAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CARRIER_DATA_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
 import static no.sikt.graphitron.model.Tables.INTENT_CARRIER_ROUTINE_HOP;
-import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PATH_NODE;
 import static no.sikt.graphitron.model.Tables.INTENT_FIELD_ROUTINE_METHOD;
-import static no.sikt.graphitron.model.Tables.INTENT_FOREIGN_KEY_COLUMN_PAIR;
 import static no.sikt.graphitron.model.Tables.INTENT_MUTATION_ROUTINE_SEAT;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -34,10 +36,13 @@ import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.coalesce;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.select;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.when;
 
 /**
@@ -53,15 +58,13 @@ import static org.jooq.impl.DSL.when;
  * the emitter then renders each coordinate from its row.
  *
  * <p>Nothing here decides anything. Membership is the seat relation's verdict, the chain's shape is
- * the node relation's, a pairing is the pair relations'. Every catalog name is captured rather than
+ * the walk's, a pairing is the walk's column pairs. Every catalog name is captured rather than
  * derived ({@code sql_table.class_fqn}, {@code sql_schema.tables_class_fqn} and
  * {@code keys_class_fqn}, {@code sql_constraint.jooq_name}), so a row is built with no live catalog.
  *
- * <p><b>Cost.</b> The hop {@code MULTISET} correlates {@code intent_field_path_node}, a recursive
- * walk, once per admitted coordinate. That population is the graph's routine-writing mutation
- * fields, which is small by construction; read the derived-reads rule in
- * {@code docs/architecture/explanation/fact-model.adoc} before hanging a second correlation of that
- * relation off a wider driving row.
+ * <p><b>Cost.</b> The hop {@code MULTISET} correlates the walk's steps, stored rows read on their
+ * key, once per admitted coordinate. That population is the graph's routine-writing mutation
+ * fields, which is small by construction.
  */
 public final class RoutineWriteQuery {
 
@@ -277,13 +280,13 @@ public final class RoutineWriteQuery {
         }
 
         /**
-         * Total over the node relation's resolution vocabulary: a named key, or a table whose
-         * endpoints one foreign key connects, joins on that key; a hop departing a function result
-         * joins by name against the arriving primary key.
+         * Total over how a step of the walk joins: a step crossing a foreign key, named or found
+         * from a table, joins on that key; a step departing a function result joins by name against
+         * the arriving primary key.
          */
         private Keying keying(String typeName, String fieldName) {
             return switch (stepVia) {
-                case "KEY", "TABLE" -> {
+                case "KEY" -> {
                     if (keysClassName == null || keyConstantName == null) {
                         throw new IllegalStateException(
                             "hop " + seq + " of " + typeName + "." + fieldName + " joins on a"
@@ -294,7 +297,7 @@ public final class RoutineWriteQuery {
                 }
                 case "NAME_MATCH" -> new Keying.NameMatched();
                 default -> throw new IllegalStateException(
-                    "the chain node relation resolved hop " + seq + " of " + typeName + "."
+                    "the walk took hop " + seq + " of " + typeName + "."
                     + fieldName + " through '" + stepVia + "', which is outside the vocabulary a"
                     + " post-commit re-read can join on");
             };
@@ -406,57 +409,75 @@ public final class RoutineWriteQuery {
     }
 
     /**
-     * The chain's hops after its routine node, in chain order. Sequence one and up: re-invoking the
-     * routine node after the commit would re-execute the write, so it is no hop of the re-read.
+     * The chain's hops: the steps the walk from the routine's result took, in path order. The
+     * routine is the field's first written element, so the first step is at place one and the
+     * routine is no hop: re-invoking it after the commit would re-execute the write.
      *
-     * <p>The {@code Keys} class comes from whichever endpoint declares the foreign key, which is
-     * what {@code fk_on_from} says. A hop the generated model publishes no constant for arrives with
-     * nulls and is refused where the row is built.
+     * <p>A step crossing a key names its constraint, and the {@code Keys} class is the generated
+     * model's for the table that declares it. A step the generated model publishes no constant for
+     * arrives with nulls and is refused where the row is built.
      */
     private static Field<List<RawHop>> hops(IntentMutationRoutineSeat s) {
-        var n = INTENT_FIELD_PATH_NODE;
+        var p = GRAPHITRON_FIELD_PATH;
+        var sr = GRAPHITRON_FIELD_PATH_START_ROUTINE;
+        var pk = GRAPHITRON_FIELD_PATH_KEY;
+        var c = GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
+        var pc = GRAPHITRON_FIELD_PATH_COLUMN;
         var t = SQL_TABLE.as("hop_target");
         var ts = SQL_SCHEMA.as("hop_target_schema");
         var k = SQL_CONSTRAINT.as("hop_key");
         var ks = SQL_SCHEMA.as("hop_key_schema");
-        var st = GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
+        Field<String> via = when(pk.CONSTRAINT_NAME.isNotNull(), inline("KEY"))
+            .when(exists(selectOne().from(pc).where(onStep(pc.GRAPH_NAME, pc.TYPE_NAME,
+                pc.FIELD_NAME, pc.START_SOURCE_NAME, pc.START_SCHEMA, pc.START_TABLE,
+                pc.POSITION))), inline("NAME_MATCH"))
+            .otherwise(inline("CONDITION"));
         return multiset(
-            select(n.SEQ, n.STEP_VIA, t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, ts.TABLES_CLASS_FQN,
-                ks.KEYS_CLASS_FQN, k.JOOQ_NAME, st.CLASS_NAME, st.METHOD, n.FIELD_NAME)
-                .from(n)
-                .join(t).on(t.SOURCE_NAME.eq(n.TO_SOURCE_NAME), t.TABLE_SCHEMA.eq(n.TO_SCHEMA),
-                    t.TABLE_NAME.eq(n.TO_TABLE))
+            select(p.POSITION, via, t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN,
+                ts.TABLES_CLASS_FQN, ks.KEYS_CLASS_FQN, k.JOOQ_NAME, c.CLASS_NAME, c.METHOD,
+                p.FIELD_NAME)
+                .from(p)
+                .join(sr).on(sr.GRAPH_NAME.eq(p.GRAPH_NAME), sr.TYPE_NAME.eq(p.TYPE_NAME),
+                    sr.FIELD_NAME.eq(p.FIELD_NAME), sr.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
+                    sr.START_SCHEMA.eq(p.START_SCHEMA), sr.START_TABLE.eq(p.START_TABLE))
+                .join(t).on(t.SOURCE_NAME.eq(p.TO_SOURCE_NAME), t.TABLE_SCHEMA.eq(p.TO_SCHEMA),
+                    t.TABLE_NAME.eq(p.TO_TABLE))
                 .join(ts).on(ts.SOURCE_NAME.eq(t.SOURCE_NAME), ts.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
-                .leftJoin(k).on(
-                    k.SOURCE_NAME.eq(keySide(n.FK_ON_FROM, n.FROM_SOURCE_NAME, n.TO_SOURCE_NAME)),
-                    k.TABLE_SCHEMA.eq(keySide(n.FK_ON_FROM, n.FROM_SCHEMA, n.TO_SCHEMA)),
-                    k.TABLE_NAME.eq(keySide(n.FK_ON_FROM, n.FROM_TABLE, n.TO_TABLE)),
-                    k.CONSTRAINT_NAME.eq(n.CONSTRAINT_NAME))
+                .leftJoin(pk).on(onStep(pk.GRAPH_NAME, pk.TYPE_NAME, pk.FIELD_NAME,
+                    pk.START_SOURCE_NAME, pk.START_SCHEMA, pk.START_TABLE, pk.POSITION))
+                .leftJoin(k).on(k.SOURCE_NAME.eq(pk.CONSTRAINT_SOURCE_NAME),
+                    k.TABLE_SCHEMA.eq(pk.CONSTRAINT_SCHEMA), k.TABLE_NAME.eq(pk.CONSTRAINT_TABLE),
+                    k.CONSTRAINT_NAME.eq(pk.CONSTRAINT_NAME))
                 .leftJoin(ks).on(ks.SOURCE_NAME.eq(k.SOURCE_NAME),
                     ks.TABLE_SCHEMA.eq(k.TABLE_SCHEMA))
-                .leftJoin(st).on(st.GRAPH_NAME.eq(n.GRAPH_NAME), st.TYPE_NAME.eq(n.TYPE_NAME),
-                    st.FIELD_NAME.eq(n.FIELD_NAME), st.ORDINAL.eq(n.ORDINAL),
-                    st.POSITION.eq(n.POSITION))
-                .where(n.GRAPH_NAME.eq(s.GRAPH_NAME), n.TYPE_NAME.eq(s.TYPE_NAME),
-                    n.FIELD_NAME.eq(s.FIELD_NAME), n.SEQ.ge(1), n.CANDIDATES.eq(1))
-                .orderBy(n.SEQ))
+                .leftJoin(c).on(c.GRAPH_NAME.eq(p.GRAPH_NAME),
+                    c.SOURCE_NAME.eq(p.ELEMENT_SOURCE_NAME),
+                    c.SOURCE_LINE.eq(p.ELEMENT_SOURCE_LINE),
+                    c.SOURCE_COLUMN.eq(p.ELEMENT_SOURCE_COLUMN))
+                .where(p.GRAPH_NAME.eq(s.GRAPH_NAME), p.TYPE_NAME.eq(s.TYPE_NAME),
+                    p.FIELD_NAME.eq(s.FIELD_NAME))
+                .orderBy(p.POSITION))
             .convertFrom(r -> r.map(RoutineWriteQuery::rawHop));
     }
 
+    /** A child of the walk's step {@code GRAPHITRON_FIELD_PATH}, on the step's whole key. */
+    private static org.jooq.Condition onStep(Field<String> graph, Field<String> type, Field<String> field,
+                                    Field<String> startSource, Field<String> startSchema,
+                                    Field<String> startTable, Field<Integer> position) {
+        var p = GRAPHITRON_FIELD_PATH;
+        return graph.eq(p.GRAPH_NAME).and(type.eq(p.TYPE_NAME)).and(field.eq(p.FIELD_NAME))
+            .and(startSource.eq(p.START_SOURCE_NAME)).and(startSchema.eq(p.START_SCHEMA))
+            .and(startTable.eq(p.START_TABLE)).and(position.eq(p.POSITION));
+    }
+
     private static RawHop rawHop(Record row) {
-        int seq = row.get(INTENT_FIELD_PATH_NODE.SEQ);
-        return new RawHop(seq, row.get(INTENT_FIELD_PATH_NODE.STEP_VIA),
-            hopAlias(row.get(INTENT_FIELD_PATH_NODE.FIELD_NAME), seq),
+        int seq = row.get(0, Integer.class);
+        return new RawHop(seq, row.get(1, String.class),
+            hopAlias(row.get(10, String.class), seq),
             new Table(row.get(2, String.class), row.get(3, String.class),
                 row.get(4, String.class), row.get(5, String.class)),
             row.get(6, String.class), row.get(7, String.class),
             condition(row.get(8, String.class), row.get(9, String.class)));
-    }
-
-    /** The endpoint that declares the hop's foreign key: the departing table's triple, or the arriving one's. */
-    private static Field<String> keySide(Field<Boolean> fkOnFrom, Field<String> onFrom,
-                                         Field<String> onTo) {
-        return when(fkOnFrom.isTrue(), onFrom).otherwise(onTo);
     }
 
     // -------------------------------------------------------------------------------------
@@ -464,56 +485,33 @@ public final class RoutineWriteQuery {
     // -------------------------------------------------------------------------------------
 
     /**
-     * Every admitted chain hop's ordered column pairing. One statement over two keyings: a foreign
-     * key states the pairing positionally, a hop departing a function result by name against the
-     * arriving primary key. Source and target are the departing and arriving table's columns; which
-     * of a foreign key's two column lists is which follows {@code fk_on_from}.
+     * Every admitted chain hop's ordered column pairing, as the walk's step states it: the departing
+     * table's column and the arriving one's, whether a foreign key paired them or a function
+     * result's names matched the arriving key.
      */
     private static Map<HopKey, List<Pair>> hopPairs(StoreHandle store) {
-        var n = INTENT_FIELD_PATH_NODE;
-        var fk = INTENT_FOREIGN_KEY_COLUMN_PAIR;
-        var nm = SQL_NAME_MATCHED_KEY_COLUMN;
+        var pc = GRAPHITRON_FIELD_PATH_COLUMN;
+        var sr = GRAPHITRON_FIELD_PATH_START_ROUTINE;
         var src = SQL_COLUMN.as("source_column");
         var tgt = SQL_COLUMN.as("target_column");
         var byKey = new LinkedHashMap<HopKey, List<Pair>>();
         store.dsl()
-            .select(n.TYPE_NAME, n.FIELD_NAME, n.SEQ, fk.POSITION,
+            .select(pc.TYPE_NAME, pc.FIELD_NAME, pc.POSITION, pc.ORDINAL,
                 src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
                 tgt.COLUMN_NAME, tgt.JOOQ_NAME, tgt.BINDING_TYPE)
-            .from(n)
-            .join(fk).on(
-                fk.SOURCE_NAME.eq(keySide(n.FK_ON_FROM, n.FROM_SOURCE_NAME, n.TO_SOURCE_NAME)),
-                fk.TABLE_SCHEMA.eq(keySide(n.FK_ON_FROM, n.FROM_SCHEMA, n.TO_SCHEMA)),
-                fk.TABLE_NAME.eq(keySide(n.FK_ON_FROM, n.FROM_TABLE, n.TO_TABLE)),
-                fk.CONSTRAINT_NAME.eq(n.CONSTRAINT_NAME))
-            .join(src).on(src.SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
-                src.TABLE_SCHEMA.eq(n.FROM_SCHEMA), src.TABLE_NAME.eq(n.FROM_TABLE),
-                src.COLUMN_NAME.eq(keySide(n.FK_ON_FROM, fk.COLUMN_NAME, fk.REFERENCED_COLUMN_NAME)))
-            .join(tgt).on(tgt.SOURCE_NAME.eq(n.TO_SOURCE_NAME),
-                tgt.TABLE_SCHEMA.eq(n.TO_SCHEMA), tgt.TABLE_NAME.eq(n.TO_TABLE),
-                tgt.COLUMN_NAME.eq(keySide(n.FK_ON_FROM, fk.REFERENCED_COLUMN_NAME, fk.COLUMN_NAME)))
-            .where(n.GRAPH_NAME.eq(store.graphName()), n.SEQ.ge(1), n.CANDIDATES.eq(1),
-                n.STEP_VIA.in("KEY", "TABLE"),
-                row(n.TYPE_NAME, n.FIELD_NAME).in(admittedCoordinates(store)))
-            .unionAll(store.dsl()
-                .select(n.TYPE_NAME, n.FIELD_NAME, n.SEQ, nm.POSITION,
-                    src.COLUMN_NAME, src.JOOQ_NAME, src.BINDING_TYPE,
-                    tgt.COLUMN_NAME, tgt.JOOQ_NAME, tgt.BINDING_TYPE)
-                .from(n)
-                .join(nm).on(nm.SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
-                    nm.TABLE_SCHEMA.eq(n.FROM_SCHEMA), nm.TABLE_NAME.eq(n.FROM_TABLE),
-                    nm.TO_SOURCE_NAME.eq(n.TO_SOURCE_NAME), nm.TO_SCHEMA.eq(n.TO_SCHEMA),
-                    nm.TO_TABLE.eq(n.TO_TABLE))
-                .join(src).on(src.SOURCE_NAME.eq(n.FROM_SOURCE_NAME),
-                    src.TABLE_SCHEMA.eq(n.FROM_SCHEMA), src.TABLE_NAME.eq(n.FROM_TABLE),
-                    src.COLUMN_NAME.eq(nm.COLUMN_NAME))
-                .join(tgt).on(tgt.SOURCE_NAME.eq(n.TO_SOURCE_NAME),
-                    tgt.TABLE_SCHEMA.eq(n.TO_SCHEMA), tgt.TABLE_NAME.eq(n.TO_TABLE),
-                    tgt.COLUMN_NAME.eq(nm.TO_COLUMN))
-                .where(n.GRAPH_NAME.eq(store.graphName()), n.SEQ.ge(1), n.CANDIDATES.eq(1),
-                    n.STEP_VIA.eq("NAME_MATCH"),
-                    row(n.TYPE_NAME, n.FIELD_NAME).in(admittedCoordinates(store))))
-            .orderBy(1, 2, 3, 4)
+            .from(pc)
+            .join(sr).on(sr.GRAPH_NAME.eq(pc.GRAPH_NAME), sr.TYPE_NAME.eq(pc.TYPE_NAME),
+                sr.FIELD_NAME.eq(pc.FIELD_NAME), sr.START_SOURCE_NAME.eq(pc.START_SOURCE_NAME),
+                sr.START_SCHEMA.eq(pc.START_SCHEMA), sr.START_TABLE.eq(pc.START_TABLE))
+            .join(src).on(src.SOURCE_NAME.eq(pc.FROM_SOURCE_NAME),
+                src.TABLE_SCHEMA.eq(pc.FROM_SCHEMA), src.TABLE_NAME.eq(pc.FROM_TABLE),
+                src.COLUMN_NAME.eq(pc.FROM_COLUMN))
+            .join(tgt).on(tgt.SOURCE_NAME.eq(pc.TO_SOURCE_NAME),
+                tgt.TABLE_SCHEMA.eq(pc.TO_SCHEMA), tgt.TABLE_NAME.eq(pc.TO_TABLE),
+                tgt.COLUMN_NAME.eq(pc.TO_COLUMN))
+            .where(pc.GRAPH_NAME.eq(store.graphName()),
+                row(pc.TYPE_NAME, pc.FIELD_NAME).in(admittedCoordinates(store)))
+            .orderBy(pc.TYPE_NAME, pc.FIELD_NAME, pc.POSITION, pc.ORDINAL)
             .forEach(r -> byKey
                 .computeIfAbsent(new HopKey(r.value1(), r.value2(), r.value3()),
                     key -> new ArrayList<>())
