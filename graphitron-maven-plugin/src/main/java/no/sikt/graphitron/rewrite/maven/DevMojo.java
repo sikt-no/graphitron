@@ -467,7 +467,7 @@ public class DevMojo extends AbstractRewriteMojo {
                     getLog().info(banner("initial run"));
                     var started = LocalDateTime.now();
                     initialHolder.set(InitialOutput.of(runGeneratorPass(ctx, "initial run")));
-                    reportSlowestWrites(ctx.graphName(), started);
+                    reportSlowestStatements(ctx.graphName(), started);
                 }
             }));
         } catch (MojoExecutionException | RuntimeException e) {
@@ -961,11 +961,12 @@ public class DevMojo extends AbstractRewriteMojo {
     }
 
     /**
-     * Says which tables this round's capture took longest to write, a stage's rule being evaluated
-     * inside its write. Only where the capture finished since {@code roundStarted}: a round that
-     * skipped its capture would repeat the last one's times. Store trouble says nothing.
+     * Says which relations this round's capture spent longest on, written or read, a stage's rule
+     * being evaluated inside its write or, where the stage fetches it, inside its read. Only where
+     * the capture finished since {@code roundStarted}: a round that skipped its capture would repeat
+     * the last one's times. Store trouble says nothing.
      */
-    private void reportSlowestWrites(String graphName, LocalDateTime roundStarted) {
+    private void reportSlowestStatements(String graphName, LocalDateTime roundStarted) {
         if (sessionStore == null) {
             return;
         }
@@ -979,21 +980,22 @@ public class DevMojo extends AbstractRewriteMojo {
             if (finished == null || finished.isBefore(roundStarted)) {
                 return;
             }
-            var slowest = WriteTimes.slowest(dsl, graphName, SLOWEST_WRITES);
+            var slowest = WriteTimes.slowest(dsl, graphName, SLOWEST_STATEMENTS);
             if (!slowest.isEmpty()) {
-                getLog().info("graphitron:dev: slowest writes: " + slowest.stream()
-                    .map(write -> write.table().toLowerCase(Locale.ROOT) + " "
-                        + String.format(Locale.ROOT, "%.1f s", write.millis() / 1000.0)
-                        + " (" + write.gatherer() + ")")
+                getLog().info("graphitron:dev: slowest statements: " + slowest.stream()
+                    .map(statement -> statement.relation().toLowerCase(Locale.ROOT) + " "
+                        + String.format(Locale.ROOT, "%.1f s", statement.millis() / 1000.0)
+                        + " (" + statement.gatherer() + " "
+                        + statement.kind().name().toLowerCase(Locale.ROOT) + ")")
                     .collect(Collectors.joining(", ")));
             }
         } catch (org.jooq.exception.DataAccessException e) {
-            getLog().debug("graphitron:dev: write times not read: " + e.getMessage());
+            getLog().debug("graphitron:dev: statement times not read: " + e.getMessage());
         }
     }
 
-    /** How many of the slowest writes a round names. */
-    private static final int SLOWEST_WRITES = 3;
+    /** How many of the slowest statements a round names. */
+    private static final int SLOWEST_STATEMENTS = 3;
 
     /**
      * Says the workspace modules this graph's run read stale, through {@link #staleModules}:
@@ -1077,7 +1079,7 @@ public class DevMojo extends AbstractRewriteMojo {
         var started = LocalDateTime.now();
         announce(SDL_CORPUS);
         var round = runGeneratorPass(ctx, "regenerate");
-        reportSlowestWrites(ctx.graphName(), started);
+        reportSlowestStatements(ctx.graphName(), started);
         // A clean regen produces the writer's delta + this schema's compile graph; recompile
         // just the affected sub-closure into the exclusive dir. A failed regen leaves the last
         // good .class in place (nothing to recompile from), matching the generate-only path.
@@ -1126,7 +1128,7 @@ public class DevMojo extends AbstractRewriteMojo {
             withCodegenScope(ctx -> {
                 try {
                     var output = capturedGenerator(ctx).buildOutput();
-                    reportSlowestWrites(ctx.graphName(), started);
+                    reportSlowestStatements(ctx.graphName(), started);
                     writeReportFacts(output.walkErrors(), output.warnings());
                     workspace.markAllForRecalculation();
                     reportStaleModules(ctx.graphName());

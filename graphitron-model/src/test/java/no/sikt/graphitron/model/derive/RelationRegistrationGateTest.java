@@ -257,6 +257,7 @@ class RelationRegistrationGateTest {
         // How long the capture spent writing each table, the run's own record as well.
         // WriteTimesTest pins it, over a capture that finishes and a second that writes less.
         registrations.put("store_graph_write", Arm.UNSHADOWED);
+        registrations.put("store_graph_read", Arm.UNSHADOWED);
         // The classfile census: what the compiled classes on the classpath declare, read with no
         // vocabulary from any schema: what an author may name at one directive, admitted by that
         // arm's own rule rather than by a census's. GraphitronSchema has no counterpart because the

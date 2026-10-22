@@ -505,9 +505,14 @@ someone to profile.
 * **A stage's time does not grow with the other graphs in the store** `open`. The same schema
   captured into a store holding one graph and into one holding many fails a stage whose time grows
   with the number of other graphs, since a rule reading across graphs is a regression caught early.
-  `GraphCountGrowthGateTest` holds it as a backstop, one graph's write time per table alone and as
-  one of eight within a generous multiple, and `UpsertKeyGateTest` holds the upsert shape the slack
-  would miss; what is left is the tables both name as known.
+  `GraphCountGrowthGateTest` holds it as a backstop, one graph's write and read time per relation
+  alone and as one of eight within a generous multiple, and `UpsertKeyGateTest` holds the upsert
+  shape the slack would miss; what is left is the tables both name as known.
+  * **A stage's time includes its reads** `done`. A stage that fetches a rule into Java and inserts
+    the rows spent its time in the read, where no one looked: one such rule went from 7.7 to 37.9 s
+    on a large schema unseen. `store_graph_read` records, per capture, each relation a gatherer
+    read for a millisecond or more, beside `store_graph_write`, and MCP `status`, the `graphitron:dev`
+    line and the backstop rank both.
   * **The entry defect rule reads one graph's rows** `open`, unowned. After the chain-break fix the
     whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
     what still grows is its two column-match parts, 2 to 32 ms, which read
@@ -789,9 +794,10 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   `status` and diagnostics, and as an editor message.
 * **Added: each capture's time per stage is recorded and reported** ("every stage's time is
   recorded in the store"). `store_graph_write` holds, per capture, the statements, rows and
-  milliseconds each gatherer spent on each table. MCP `status` names the latest capture's five
-  slowest writes as `slowestWrites`, across the store with `allGraphs`, and a `graphitron:dev` round
-  that captured prints its three slowest.
+  milliseconds each gatherer spent on each table, and `store_graph_read` the same for each relation
+  it read for a millisecond or more. MCP `status` names the latest capture's five slowest
+  statements, writes and reads, as `slowestStatements`, across the store with `allGraphs`, and a
+  `graphitron:dev` round that captured prints its three slowest.
 * **Faster: the emitted schema's tag narrowing** ("the tag narrowing joins the coinage to its
   minted type before the fields"). The read took 9 to 12.5 s on a large schema and now takes
   under 50 ms.

@@ -350,23 +350,23 @@ class GraphitronMcpServerTest {
         }
     }
 
-    /** The tables a capture took longest to write are in the status, slowest first. */
+    /** The relations a capture spent longest on, written or read, are in the status, slowest first. */
     @Test
     void statusToolNamesTheSlowestWrites(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
             var writes = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle()))
-                .get("slowestWrites");
+                .get("slowestStatements");
             assertThat(writes).isNotEmpty().hasSizeLessThanOrEqualTo(5);
             var millis = writes.stream()
                 .map(w -> ((Number) ((Map<?, ?>) w).get("milliseconds")).longValue())
                 .toList();
             assertThat(millis).isSortedAccordingTo(java.util.Comparator.reverseOrder());
             assertThat(List.<Object>copyOf(((Map<?, ?>) writes.get(0)).keySet()))
-                .contains("graph", "table", "gatherer", "statements", "rows");
+                .contains("graph", "kind", "relation", "gatherer", "statements", "rows");
         }
     }
 
-    /** Asked across graphs, the status names every graph's slowest writes, each with its graph. */
+    /** Asked across graphs, the status names every graph's slowest statements, each with its graph. */
     @Test
     void statusToolNamesTheSlowestWritesAcrossGraphs(@TempDir Path tmp) {
         try (var fixture = StoreFixture.ofSchema(tmp, "type Query { film: String }\n")) {
@@ -382,13 +382,13 @@ class GraphitronMcpServerTest {
                 .execute();
 
             var own = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle()))
-                .get("slowestWrites");
+                .get("slowestStatements");
             assertThat(own.stream().map(write -> (Object) ((Map<?, ?>) write).get("graph")).toList())
                 .as("the session's graph alone by default")
                 .containsOnly(fixture.handle().graphName());
 
             var all = (List<?>) structured(GraphitronMcpServer.statusResult(fixture.handle(), true))
-                .get("slowestWrites");
+                .get("slowestStatements");
             assertThat(((Map<?, ?>) all.get(0)).get("graph")).isEqualTo("other");
         }
     }

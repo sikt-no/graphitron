@@ -369,7 +369,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         // empty object schema is the no-argument input the MCP spec requires every tool to carry.
         var tool = McpSchema.Tool.builder("status", Map.of("type", "object", "properties", Map.of(
                 "allGraphs", Map.of("type", "boolean",
-                    "description", "List slowestWrites across every graph the store holds rather "
+                    "description", "List slowestStatements across every graph the store holds rather "
                         + "than this session's graph alone, each naming its graph."))))
             .title("Dev-loop status")
             .description("Reports graphitron:dev MCP server liveness plus the state of this graph's "
@@ -381,10 +381,12 @@ public final class GraphitronMcpServer implements AutoCloseable {
                 + "than shown on lines the edit moved. Also lists, as staleModules, the workspace "
                 + "modules the run read stale: a module whose sources changed since it compiled, or "
                 + "one read from its installed copy for want of output, whose names then read as not "
-                + "found. And, as slowestWrites, the tables the last finished capture took longest to "
-                + "write, each with the gatherer writing it, its statements, rows and milliseconds: a "
-                + "stage's rule is evaluated inside its write, so this is where a slow capture's time "
-                + "went; allGraphs lists them across every graph the store holds.")
+                + "found. And, as slowestStatements, the relations the last finished capture spent "
+                + "longest on, each a WRITE of a table or a READ of a table or view, with the gatherer, "
+                + "its statements, rows and milliseconds: a stage's rule is evaluated inside the write "
+                + "that stores it, or inside the read where a stage fetches its rule and inserts the "
+                + "rows, so this is where a slow capture's time went; allGraphs lists them across "
+                + "every graph the store holds.")
             .build();
         return McpServerFeatures.SyncToolSpecification.builder()
             .tool(tool)
@@ -440,7 +442,7 @@ public final class GraphitronMcpServer implements AutoCloseable {
         }
         var stale = staleModules(storeHandle);
         fields.put("staleModules", stale);
-        fields.put("slowestWrites", slowestWrites(storeHandle, allGraphs));
+        fields.put("slowestStatements", slowestStatements(storeHandle, allGraphs));
         String summary = "graphitron:dev MCP server live; schema " + lifecycle.availability()
             + lifecycle.freshness().map(freshness -> "/" + freshness).orElse("") + gloss
             + (stale.isEmpty() ? "" : " " + stale.size() + " workspace module"
@@ -452,20 +454,22 @@ public final class GraphitronMcpServer implements AutoCloseable {
     }
 
     /**
-     * The tables the graph's last finished capture took longest to write, or across every graph's
-     * where {@code allGraphs}; see {@link WriteTimes}.
+     * The relations the graph's last finished capture spent longest on, written or read, or across
+     * every graph's where {@code allGraphs}; see {@link WriteTimes}.
      */
-    private static List<Map<String, Object>> slowestWrites(StoreHandle storeHandle, boolean allGraphs) {
+    private static List<Map<String, Object>> slowestStatements(StoreHandle storeHandle,
+                                                              boolean allGraphs) {
         return WriteTimes.slowest(storeHandle.dsl(), allGraphs ? null : storeHandle.graphName(),
-                SLOWEST_WRITES).stream()
-            .map(write -> Map.<String, Object>of("graph", write.graph(), "table", write.table(),
-                "gatherer", write.gatherer(), "statements", write.statements(), "rows", write.rows(),
-                "milliseconds", write.millis()))
+                SLOWEST_STATEMENTS).stream()
+            .map(statement -> Map.<String, Object>of("graph", statement.graph(),
+                "kind", statement.kind().name(), "relation", statement.relation(),
+                "gatherer", statement.gatherer(), "statements", statement.statements(),
+                "rows", statement.rows(), "milliseconds", statement.millis()))
             .toList();
     }
 
-    /** How many of the slowest writes {@code status} names. */
-    private static final int SLOWEST_WRITES = 5;
+    /** How many of the slowest statements {@code status} names. */
+    private static final int SLOWEST_STATEMENTS = 5;
 
     /**
      * The workspace modules the graph's run read stale, each with its reason and the one sentence

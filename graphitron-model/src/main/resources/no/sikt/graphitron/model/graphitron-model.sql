@@ -14710,6 +14710,30 @@ COMMENT ON COLUMN store_graph_write.statements IS 'how many insert, merge, updat
 COMMENT ON COLUMN store_graph_write.rows_written IS 'the rows those statements reported changing';
 COMMENT ON COLUMN store_graph_write.time_spent_ms IS 'the milliseconds those statements took between them, a stage''s rule being evaluated inside its write';
 
+CREATE TABLE store_graph_read (
+  graph_name    VARCHAR   NOT NULL,
+  captured_at   TIMESTAMP NOT NULL,
+  gatherer_name VARCHAR   NOT NULL,
+  relation_name VARCHAR   NOT NULL,
+  statements    INT       NOT NULL,
+  rows_read     BIGINT    NOT NULL,
+  time_spent_ms BIGINT    NOT NULL,
+  PRIMARY KEY (graph_name, captured_at, gatherer_name, relation_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (gatherer_name) REFERENCES meta_gatherer (gatherer_name) ON DELETE CASCADE,
+  CHECK (statements > 0),
+  CHECK (rows_read >= 0),
+  CHECK (time_spent_ms >= 1)
+);
+COMMENT ON TABLE store_graph_read IS 'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer read for a millisecond or more, every capture keeping its own. For example intent_authored_claim_conflict read by a stage that fetches it into Java and inserts the rows, the view evaluated in the read.';
+COMMENT ON COLUMN store_graph_read.graph_name IS 'the graph the capture read';
+COMMENT ON COLUMN store_graph_read.captured_at IS 'when the capture began, on store_graph_write''s terms, so a capture''s reads and writes are one capture';
+COMMENT ON COLUMN store_graph_read.gatherer_name IS 'the gatherer running when the relation was read, or capture for reads outside any; keyed into meta_gatherer';
+COMMENT ON COLUMN store_graph_read.relation_name IS 'the first relation the query reads from, a table or a view, in upper case; a rule a stage fetches is named by its view';
+COMMENT ON COLUMN store_graph_read.statements IS 'how many queries read it';
+COMMENT ON COLUMN store_graph_read.rows_read IS 'the rows those queries returned, where the result was fetched whole';
+COMMENT ON COLUMN store_graph_read.time_spent_ms IS 'the milliseconds those queries took between them, fetch included; a relation read for less than one in a capture is not recorded';
+
 CREATE TABLE meta_gatherer_corpus (
   gatherer_name VARCHAR NOT NULL,
   corpus_name   VARCHAR NOT NULL,
@@ -15198,6 +15222,9 @@ INSERT INTO meta_grain VALUES
   ('gatherer-table-write',
    'one table one gatherer wrote in one finished capture of a graph',
    'graph_name, captured_at, gatherer_name, table_name', 'configuration'),
+  ('gatherer-relation-read',
+   'one relation one gatherer read for a millisecond or more in one finished capture of a graph',
+   'graph_name, captured_at, gatherer_name, relation_name', 'configuration'),
   ('inherited-directive',
    'one federation directive one minted type inherits from its carriers, in one graph',
    'graph_name, type_name, directive_name, ordinal', 'sdl'),
@@ -15461,6 +15488,10 @@ INSERT INTO meta_relation VALUES
    'How long one finished capture of a graph spent writing one table: one row per table each gatherer wrote, every capture keeping its own.',
    'For example graphitron_field_source_table written by the graphitron gatherer in three statements, its rule evaluated inside the insert.',
    'Every capture-time regression has been one stage''s write, its rule evaluated inside the insert, and the per-gatherer times in store_graph_progress say which gatherer but not which table. Timed by the sink package''s WriteTimes, a listener on the writing connection that adds each insert, merge, update and delete to the table it names and the gatherer Progress last started, so no stage times itself. Written when the capture finishes, so a capture that stops partway writes nothing, its row in store_graph_progress saying where. No sweep: each capture keeps its rows beside the ones before it, so a slow round is read against the rounds before it, and a graph that goes takes its rows by cascade. Read by MCP status and the dev loop, which name the latest capture''s slowest.'),
+  ('store_graph_read', 'gatherer-relation-read', 'capture',
+   'How long one finished capture of a graph spent reading one relation: one row per relation each gatherer read for a millisecond or more, every capture keeping its own.',
+   'For example intent_authored_claim_conflict read by a stage that fetches it into Java and inserts the rows, the view evaluated in the read.',
+   'A stage that fetches its rule into Java and inserts the rows evaluates the rule in the read, which store_graph_write never sees: one such rule went from 7.7 s to 37.9 s on sis with nothing recording it. Timed by the same WriteTimes listener as the writes, through the fetch, under the gatherer Progress last started, named by the first relation the query reads from. A relation read for under a millisecond in a capture is not recorded, so the small lookups every capture makes do not multiply its rows. Written when the capture finishes, beside its writes and under the same instant; no sweep, every capture keeping its rows as store_graph_write does, and a graph that goes takes them by cascade. Read with the writes by MCP status and the dev loop.'),
   ('store_graph_dependency', 'graph-dependency', 'store',
    'One entry of the compile classpath the build handed this graph''s run, with what the build resolved it as.',
    'For example the consumer''s own target/classes is a DIRECTORY of origin PROJECT, and jooq-3.20.11.jar a RELEASE the pom declares.',
