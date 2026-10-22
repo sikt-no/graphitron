@@ -175,7 +175,14 @@ walk, starting from the source and reading each written element once, resolves e
 grain into rows that say where each step comes from, where it goes and how it joins; the readings,
 resolutions and links built beside it are gone.
 
-* **A path is resolved by a deterministic forward walk over what each element names** `open`. One
+* **Capture states each field's path in the order it was written** `open`. The graphitron AST
+  gatherer sees every directive on a field at once, so it writes `graphitron_ast_field_path_entry`:
+  one row per element of the field's `@routine` and `@reference` applications, at its place in
+  the composed path, keyed by the field declaration's position. No reader ranks applications back
+  into order. The column match, `INHERITED`, `SOURCE_ROW`, `CHAIN_WITHOUT_TARGET` and hover read
+  it by key. An author reordering a path rewrites all of that field's rows, so where each element
+  was written stays unique.
+* **A path is resolved by a deterministic forward walk over what each element names** `blocked`, on "Capture states each field's path in the order it was written". One
   step rule per element kind, a key, a table, a condition alone and a condition beside a key or
   table, joins from the table the walk stands at, starting at `graphitron_result_table` and
   `graphitron_producer_routine`; it writes `graphitron_field_path` and
@@ -206,6 +213,10 @@ resolutions and links built beside it are gone.
 
   It may be deferred to an item of its own. No schema outside the sakila fixtures uses a child
   `@routine`, and nothing else in this graph waits on it.
+* **A split child `@routine` is a path routine** `blocked`, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
+  `@splitQuery`, such as `Actor.filmsSplit`. That child has a source table like any other child:
+  the split re-query is its producer, and the routine is the walk's first step from the parent's
+  keys. Only a root field's `@routine` is a producer.
 * **A broken or refused path is a defect at its position** `blocked`, on "A path is resolved by a deterministic forward walk over what each element names". A walk that stops, ends at the wrong
   table or has no source, an element naming nothing, and `@reference` beside `@referenceFor` or
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
@@ -214,13 +225,21 @@ resolutions and links built beside it are gone.
 * **The field grain reads only the walk** `blocked`, on "A path is resolved by a deterministic forward walk over what each element names". `graphitron_field_path_reading`,
   `graphitron_field_path_resolution`, `graphitron_field_table_link` and the anchor's chain go, their
   readers moved to the path; the chain defects and the path fact documents keep their answers.
-* **The step targets' readers read the walk** `blocked`, on "A path is resolved by a deterministic forward walk over what each element names". The column scope rule, the node-id instruction rule,
+* **A key element states which name it matched by** `open`. `graphitron_path_element_key` records
+  whether the SQL name or the jOOQ `Keys` constant answered, which the step targets carry as
+  `key_matched_by` today and `SchemaQueries` shows.
+* **The step targets' readers read the walk** `blocked`, on "A path is resolved by a deterministic forward walk over what each element names" and "A key element states which name it matched by". The column scope rule, the node-id instruction rule,
   `SchemaQueries` and `ReferencePathFanout` with its view move, and the `intent_field_path_` views and
-  `graphitron_field_path_application` go.
+  `graphitron_field_path_application` go. Their routine-write readers, `intent_mutation_routine_seat`,
+  `intent_routine_return_binding` and `RoutineWriteQuery`, read `graphitron_routine_field_path`, its
+  children and its stops: a node's sequence is the path's position, its targets and candidates a
+  stop's moves. `FieldPathApplications` goes with the relation it writes.
 * **A scalar with a path has a target column where its path lands** `blocked`, on "The field grain reads only the walk". The `PATH_TERMINAL` rule of `COLUMN_UNRESOLVED` and the `@field` hint read
   it, and `graphitron_field_column_scope` goes.
 * **Arguments and input fields walk from their field's target** `blocked`, on "A path is resolved by a deterministic forward walk over what each element names". Path relations at both grains,
-  started from `graphitron_field_target_table` rather than `graphitron_field_scope_table`.
+  started from `graphitron_field_target_table` rather than `graphitron_field_scope_table`. Their
+  elements need the composed order the field's path entry states, so capture states it per
+  holder: an entry per holder, or the field's entry keyed by holder instead.
 * **Nothing resolves a path but the walk** `blocked`, on "The field grain reads only the walk", "The step targets' readers read the walk" and "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
 * **Every field has a path, the written one or the one discovery implies** `blocked`, on "The field grain reads only the walk". Where nothing is written the one key between source and target
