@@ -718,6 +718,11 @@ in capture, and a path is one forward walk from source to target.
 * **The data model is an architecture page beside the fact model** `open`. A page under
   `docs/architecture/explanation/` states the coordinate, its small facts and the emitter decision,
   rewritten from R333 rather than copied, landing with or after R983's vocabulary.
+* **A view's column prose lives where the store keeps it** `open`. H2 2.5 refuses `COMMENT ON
+  COLUMN` on a view, and 2.4 already dropped those comments when a file store was reopened, so the
+  1202 are SQL comments in `graphitron-model.sql` for now. They move to the view's own comment, to
+  a `meta_view_column` relation, or go for a rule view whose stored table states the same columns;
+  `FactSchemaGateTest`, `CommentRenderabilityGateTest` and the schema reference pages widen back.
 
 ### The build cannot hang or fail on its own fixtures `open`
 
@@ -727,8 +732,8 @@ real failure look like noise. The LSP test JVM crash seen once is in the two
 
 * **Class initialization cannot deadlock in javapoet** `open`. `TypeName`'s initializer builds no
   `ClassName`, and a test initializing the two from opposite ends on two threads pins it.
-* **A refused compaction does not depend on luck** `open`. The test JVM's store compaction cannot
-  meet H2's mid-copy commit race, by running H2 with assertions off or on an H2 that fixes it.
+* **A refused compaction does not depend on luck** `done`. H2 2.5.252 removes the assertion its
+  parallel compaction tripped (h2database#4286, fixed by PR #4288), and the store's retry is gone.
 
 ## Tests
 
@@ -786,6 +791,10 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   up"). `RulePlanGateTest` fails a derivation rule whose plan reads a whole partition per row, over
   a scaled fixture whose plans match a large consumer schema's. Its list of known exemptions only
   shrinks.
+* **Changed: the fact store runs on H2 2.5.252** ("the fact store runs on H2 2.5.252, which fixed
+  its compaction race"). The plugin and the model bring H2 2.5.252 in place of 2.4.240. A store an
+  earlier build wrote still opens, the file format being unchanged, and compacting it on close is
+  no longer refused intermittently in a JVM running with assertions on.
 
 ## Retired vocabulary
 

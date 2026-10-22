@@ -187,11 +187,18 @@ class FactSchemaGateTest {
                 .fetch(0, String.class);
             assertThat(tables).as("uncommented relations").isEmpty();
 
+            // A view's columns are left out: H2 2.5 refuses a comment on a view's column, and the
+            // graph node "A view's column prose lives where the store keeps it" widens this back.
             var columns = store.dsl()
                 .select(field(name("TABLE_NAME"), String.class)
                     .concat(".").concat(field(name("COLUMN_NAME"), String.class)))
                 .from(table(name("INFORMATION_SCHEMA", "COLUMNS")))
                 .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+                .and(field(name("TABLE_NAME"), String.class).notIn(
+                    select(field(name("TABLE_NAME"), String.class))
+                        .from(table(name("INFORMATION_SCHEMA", "TABLES")))
+                        .where(field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC"))
+                        .and(field(name("TABLE_TYPE"), String.class).eq("VIEW"))))
                 .and(field(name("REMARKS"), String.class).isNull())
                 .fetch(0, String.class);
             assertThat(columns).as("uncommented columns").isEmpty();

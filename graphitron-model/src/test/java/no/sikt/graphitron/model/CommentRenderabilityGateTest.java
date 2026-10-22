@@ -11,6 +11,9 @@ import java.util.regex.Pattern;
 
 import static no.sikt.graphitron.model.Tables.META_RELATION_FAMILY;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.jooq.impl.DSL.field;
+import static org.jooq.impl.DSL.name;
+import static org.jooq.impl.DSL.table;
 
 /**
  * The renderability gate beside the comment-coverage gate: every {@code COMMENT ON} body and
@@ -53,16 +56,23 @@ class CommentRenderabilityGateTest {
         try (var store = FactStores.inMemory()) {
             var prose = StoreProse.read(store.dsl());
             var relationComments = ofKind(prose, StoreProse.Kind.RELATION_COMMENT);
-            var columnComments = ofKind(prose, StoreProse.Kind.COLUMN_COMMENT);
+            // A view's columns carry no comment: H2 2.5 refuses one, and the graph node
+            // "A view's column prose lives where the store keeps it" widens this back to every relation.
+            var columnComments = ofKind(prose, StoreProse.Kind.COLUMN_COMMENT).stream()
+                .filter(entry -> entry.text() != null)
+                .toList();
+            int viewCount = store.dsl().fetchCount(table(name("INFORMATION_SCHEMA", "TABLES")),
+                field(name("TABLE_SCHEMA"), String.class).eq("PUBLIC")
+                    .and(field(name("TABLE_TYPE"), String.class).eq("VIEW")));
 
             // The floor against a vacuous pass, with no literal to fall behind: the sweep must
-            // have seen exactly the census's relations, and every one of them contributes columns.
+            // have seen exactly the census's relations, and every table contributes columns.
             int censusCount = store.dsl().fetchCount(META_RELATION_FAMILY);
             assertThat(relationComments).as("relation comments swept").hasSize(censusCount);
             assertThat(columnComments.stream()
                 .map(entry -> entry.context().split("\\.")[0]).distinct())
                 .as("relations contributing column comments")
-                .hasSize(censusCount);
+                .hasSize(censusCount - viewCount);
 
             var findings = new ArrayList<String>();
             relationComments.forEach(e -> findings.addAll(scan(e.context(), e.text())));

@@ -41,7 +41,7 @@
           and the run-time bootstrap boots it so a generator run has somewhere to capture into.
           Pure JVM, no native libraries, so it embeds in the Maven plugin and the LSP alike.
         -->
-        <version.com.h2database>2.4.240</version.com.h2database>
+        <version.com.h2database>2.5.252</version.com.h2database>
         <!--
           The one glob dialect behind <schemaInputs> patterns: SchemaRecipe.expand in graphitron
           owns the walk (plexus DirectoryScanner includes), so the build's own scan and the

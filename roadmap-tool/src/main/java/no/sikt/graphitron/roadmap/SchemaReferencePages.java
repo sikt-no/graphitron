@@ -74,7 +74,9 @@ final class SchemaReferencePages {
                 blankComments.add(relation.relationName());
             }
             for (var column : relation.columns()) {
-                if (isBlank(column.comment())) {
+                // A view's column carries no comment: H2 2.5 refuses one, and the graph node
+                // "A view's column prose lives where the store keeps it" brings the prose back.
+                if (!relation.view() && isBlank(column.comment())) {
                     blankComments.add(relation.relationName() + "." + column.columnName());
                 }
             }
@@ -383,7 +385,9 @@ final class SchemaReferencePages {
         for (var column : relation.columns()) {
             page.append(InertSpans.monospace(column.columnName())).append(" (")
                 .append(column.type()).append(column.nullable() ? ", nullable" : ", not null")
-                .append(")::\n").append(column.comment()).append("\n");
+                .append(")::\n")
+                .append(isBlank(column.comment()) ? VIEW_COLUMN_UNDESCRIBED : column.comment())
+                .append("\n");
         }
     }
 
@@ -399,6 +403,10 @@ final class SchemaReferencePages {
         String base = prefix.endsWith("_") ? prefix.substring(0, prefix.length() - 1) : prefix;
         return base + ".adoc";
     }
+
+    /** What a view's column says until its prose has a home H2 keeps. */
+    private static final String VIEW_COLUMN_UNDESCRIBED =
+        "Not described here yet: H2 keeps no comment on a view's column.";
 
     private static boolean isBlank(String text) {
         return text == null || text.isBlank();

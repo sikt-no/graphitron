@@ -215,11 +215,8 @@ public final class GraphitronModelStore implements AutoCloseable {
      * @param bytesAfter  the file's size after it, or {@code -1} where it could not be read
      * @param failure     what H2 said when it refused the compaction, or {@code null} where it
      *                    compacted; a refused compaction leaves the file as a plain close does
-     * @param retriedAfter what H2 said when it refused the first attempt, where a second was made,
-     *                    or {@code null} where the first compacted
      */
-    public record Compaction(long millis, long bytesBefore, long bytesAfter, String failure,
-                             String retriedAfter) {
+    public record Compaction(long millis, long bytesBefore, long bytesAfter, String failure) {
 
         /**
          * One line naming the store and what it cost, or why it was not compacted; empty where it
@@ -228,17 +225,13 @@ public final class GraphitronModelStore implements AutoCloseable {
          */
         public Optional<String> report(Path home) {
             if (failure != null) {
-                return Optional.of("Could not compact the fact store under " + home + ": " + failure
-                    + (retriedAfter == null ? "" : ", on a second attempt; the first was refused: "
-                        + retriedAfter));
+                return Optional.of("Could not compact the fact store under " + home + ": " + failure);
             }
             if (bytesBefore < 0 || bytesAfter < 0) {
                 return Optional.empty();
             }
             return Optional.of("Compacted the fact store under " + home + " in " + millis
-                + " ms: " + humanBytes(bytesBefore) + " -> " + humanBytes(bytesAfter)
-                + (retriedAfter == null ? "" : ", on a second attempt; the first was refused: "
-                    + retriedAfter));
+                + " ms: " + humanBytes(bytesBefore) + " -> " + humanBytes(bytesAfter));
         }
 
         private static String humanBytes(long bytes) {
@@ -616,12 +609,8 @@ public final class GraphitronModelStore implements AutoCloseable {
      * hundred times reclaims nothing, so the file grows without bound while the rows in it do not.
      * {@code SHUTDOWN COMPACT} rewrites the live pages and drops the rest.
      *
-     * <p>A refused compaction is tried once more, on the file reopened. H2 2.4's compaction copies
-     * the tables into a fresh store on several threads and commits partway once the copy outgrows
-     * its buffer, and a commit landing while another thread is still copying trips H2's own page
-     * bookkeeping, intermittently and more often under load. Neither the buffer nor the threads can
-     * be set from outside, and compacting in place reclaims a fraction of what the copy does, so
-     * the copy stays and the race is met by trying again. Both refusals are recorded.
+     * <p>A refused compaction is recorded, not retried: the file is left as a plain close leaves
+     * it, which costs space and nothing else.
      *
      * <p>It runs inside {@link Map#compute} deliberately: the lock that call holds for the key is
      * what stops an opener reserving this location while the database is being shut down. The cost
@@ -634,18 +623,9 @@ public final class GraphitronModelStore implements AutoCloseable {
             }
             long before = fileBytes();
             long startedAt = System.nanoTime();
-            String retriedAfter = shutdownCompact(connection);
-            String failure = null;
-            if (retriedAfter != null) {
-                try (Connection again = connect(url)) {
-                    failure = shutdownCompact(again);
-                } catch (SQLException | RuntimeException e) {
-                    failure = e.getMessage();
-                }
-            }
+            String failure = shutdownCompact(connection);
             compaction = new Compaction(
-                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes(), failure,
-                retriedAfter);
+                (System.nanoTime() - startedAt) / 1_000_000L, before, fileBytes(), failure);
             return null;
         });
     }
