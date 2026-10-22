@@ -58,12 +58,14 @@ class EntryDefectTest {
     private static final String SOURCE = "seed.graphqls";
 
     /**
-     * The mask every rule here stands on. A {@code @routine} on a query root heads no write, so the same
-     * arrangement of directives is a schema with nothing wrong with it. Seeding the identical
-     * fixture on {@code Query} is the only arrangement that tells the mask from an empty result.
+     * The mask every write rule here stands on. A {@code @routine} on a query root heads no write, so
+     * none of the write rules answers the arrangement, and seeding the identical fixture on
+     * {@code Query} is the only arrangement that tells the mask from an empty result. The one row is
+     * the path's: the {@code @reference} at line 2 is written before the {@code @routine} at line 5,
+     * so it has no table-bound producer to be part of and is refused there.
      */
     @Test
-    @DisplayName("the rules are about a write, so the same arrangement on a query root answers nothing")
+    @DisplayName("the write rules are about a write; a query root's only defect is its @reference before the @routine")
     void aRoutineOnAQueryRootHeadsNothing() {
         withSeededStore(GRAPH, dsl -> {
             seedRootOperation(dsl, GRAPH, "QUERY", "Query");
@@ -73,7 +75,7 @@ class EntryDefectTest {
             seedArgument(dsl, GRAPH, "Query", "film", "id", "ID");
             seedOrderBy(dsl, GRAPH, "Query", "film", "id", 4);
 
-            assertThat(defects(dsl)).isEmpty();
+            assertThat(defects(dsl)).containsExactly("2:3 ROOT_REFERENCE_WITHOUT_ROUTINE null");
         });
     }
 

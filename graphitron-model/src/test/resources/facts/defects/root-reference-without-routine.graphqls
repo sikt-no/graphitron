@@ -1,7 +1,8 @@
 # A @reference on a root field with no @routine written before it. A root field has no source row,
 # so the path departs from nothing, and the field is told that, at the @reference, rather than the
 # chain break its first element would otherwise draw. A @routine written first gives the path its
-# start, and the same @reference after it draws nothing.
+# start, and the same @reference after it draws nothing; a @routine written only after it does not,
+# a @reference having to be part of the table-bound producer a @routine establishes.
 
 type Film @table(name: "film") @node {
   title: String
@@ -19,18 +20,25 @@ extend type Query {
   hopped(actorId: Int!, minLength: Int!): [Film!]!
     @routine(name: "public.films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
     @reference(path: [{table: "film"}])
+  trailing(actorId: Int!, minLength: Int!): [Film!]!
+    @reference(path: [{table: "film"}])
+    @routine(name: "public.films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
 }
 
 extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
   code,                           coordinate
   ROOT_REFERENCE_WITHOUT_ROUTINE, Query.storeForFilm
+  ROOT_REFERENCE_WITHOUT_ROUTINE, Query.trailing
   """)
 
-# One defect for the field: none of the three chain breaks beside it.
+# One defect for each field: none of the three chain breaks beside it.
 extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   code,                           coordinate
   NO_ROUTE_FROM_DEPARTURE,        Query.storeForFilm
   ELEMENT_UNRESOLVED,             Query.storeForFilm
   NO_ROUTE_TO_TARGET,             Query.storeForFilm
+  NO_ROUTE_FROM_DEPARTURE,        Query.trailing
+  ELEMENT_UNRESOLVED,             Query.trailing
+  NO_ROUTE_TO_TARGET,             Query.trailing
   ROOT_REFERENCE_WITHOUT_ROUTINE, Query.hopped
   """)

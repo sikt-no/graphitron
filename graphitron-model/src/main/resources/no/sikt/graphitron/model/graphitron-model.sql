@@ -10068,10 +10068,11 @@ WITH head (graph_name, type_name, field_name, source_name, source_line, source_c
                        WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
                          AND r2.field_name = r.field_name)
 ),
--- A root field's first @reference on a field with no @routine. A root field has no source row, so a
--- path written there departs from nothing until a routine gives it one; its chain then breaks at the
--- first element whatever that element names, which is why such a field is told this and not one of
--- the three chain breaks.
+-- A root field's first @reference with no @routine written before it. A @routine establishes the
+-- table-bound producer a @reference must be part of, and a root field has no source row, so a path
+-- written there departs from nothing until a routine written ahead of it gives it one. A @routine
+-- written only after the @reference starts its query too late for it, so that @reference is refused
+-- as well.
 root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
   SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
     FROM graphitron_field_reference_entry fr
@@ -10084,7 +10085,10 @@ root_reference (graph_name, type_name, field_name, source_name, source_line, sou
                           AND f2.field_name = fr.field_name)
      AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
                       WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
-                        AND r.field_name = fr.field_name)
+                        AND r.field_name = fr.field_name AND r.source_name = fr.source_name
+                        AND (r.source_line < fr.source_line
+                             OR (r.source_line = fr.source_line
+                                 AND r.source_column < fr.source_column)))
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
