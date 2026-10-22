@@ -24,7 +24,7 @@ enum MutationType { UPDATE, DELETE, INSERT, UPSERT }
 | `typeName` | `MutationType!` | (required) | The SQL shape to emit. `INSERT` writes a row; `UPDATE` modifies the row identified by the input's primary-key-or-unique-key coverage; `DELETE` removes the row(s) identified the same way; `UPSERT` emits `INSERT … ON CONFLICT … DO UPDATE`.
 | `multiRow` | `Boolean` | `false` | On `DELETE`, opts into a broadcast delete when the input covers no primary key or unique key (the filter may match more than one row). Rejected on `INSERT` (no `WHERE` clause), `UPDATE` (no broadcast shape; cover a key), and `UPSERT`.
 | `table` | `String` | (none) | Names the SQL table to write to, on the consuming field. It gives a write that carries no table on its return side a field-relative write target: a bare `ID` / `Boolean` / count return names no table, so `@mutation(table: "film")` names it directly (the field-level analogue of xref:service.adoc[`@service(argMapping:)`]). A `DELETE` always names its table this way; on `INSERT` and `UPDATE` it is the fallback for a return that names no table, and a field whose return *does* name the table (a `@table` return, or a payload's `@table`-element data field) needs no `table:`. Wired for `DELETE`, `INSERT`, and `UPDATE`; supplying it on `UPSERT` is rejected.
-| `missingAsDeleted` | `Boolean` | `false` | On a payload-returning `DELETE`, an input key that matches no row counts as already deleted: the call deletes the rows that exist, commits, and the payload echoes every input key, in input order. Requires the input to identify rows by exactly the primary key. Rejected on `INSERT`, `UPDATE`, `UPSERT`, and on a `DELETE` that returns `ID` or `[ID!]` directly. See <<_when_a_key_matches_no_row>>.
+| `missingAsDeleted` | `Boolean` | `false` | On a payload-returning `DELETE`, an input key that matches no row counts as already deleted: the call deletes the rows that exist, commits, and the payload echoes every input key, in input order. Requires the input to identify rows by exactly the primary key. Rejected on `INSERT`, `UPDATE`, `UPSERT`, and on a `DELETE` that returns `ID` or `[ID!]` directly. See <<when-a-key-matches-no-row>>.
 |===
 
 == Input shape
@@ -172,6 +172,7 @@ The classifier inspects every field on the element type and rejects the carrier 
 
 Both shapes work with single and bulk DELETE; cardinality follows the carrier field's wrapper (`ID`/`Foo` for single, `[ID!]`/`[Foo!]` for bulk).
 
+[#when-a-key-matches-no-row]
 === When a key matches no row
 
 By default a bulk `DELETE` whose input names a key that matches no row fails the whole call: nothing is deleted, and the field reports an error (a typed one if a handler in the payload's errors field matches, otherwise a redacted one). A single-row `DELETE` renders the payload `null`.

@@ -4410,7 +4410,9 @@ public class TypeFetcherGenerator {
      *
      * <p>{@code keyValues} holds, per bound target column (keyed by its SQL name), the value the
      * WHERE compares as a Java value of the column's type: the decode local's {@code valueN()} for a
-     * node-id binding, {@code <column>.getDataType().convert(<wire value>)} for a plain one. It is
+     * node-id binding, {@code DSL.val(<wire value>, <column>.getDataType()).getValue()} for a plain
+     * one, which is the coercion the WHERE binds with, without the deprecated
+     * {@code DataType.convert(Object)}. It is
      * keyed by column rather than listed because the groups emit in first-occurrence order, which
      * is not the key's column order; a reader that needs key order walks its own column list and
      * looks each one up.
@@ -4536,8 +4538,8 @@ public class TypeFetcherGenerator {
         whereExpr.add("$T.val($L, $T.$L.$L.getDataType())",
             DSL, wireValue,
             tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
-        return CodeBlock.of("$T.$L.$L.getDataType().convert($L)",
-            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName(), wireValue);
+        return CodeBlock.of("$T.val($L, $T.$L.$L.getDataType()).getValue()",
+            DSL, wireValue, tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
     }
 
     /**
