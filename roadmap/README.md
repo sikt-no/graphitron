@@ -30,9 +30,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
-| `R1090` | A connection has no maximum page size, so first: 100000 reads 100000 rows | Ready | 2026-10-22 | [plan](connection-page-size-cap.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1087` | Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed | Ready | 2026-10-22 | [plan](unmatched-error-fallback-logged-and-computed.md) |
+| `R1090` | A connection has no maximum page size, so first: 100000 reads 100000 rows | In Progress | 2026-10-22 | [plan](connection-page-size-cap.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -585,7 +585,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R1090` [**A connection has no maximum page size, so first: 100000 reads 100000 rows**](connection-page-size-cap.md) — Ready, enhancement
+- `R1090` [**A connection has no maximum page size, so first: 100000 reads 100000 rows**](connection-page-size-cap.md) — In Progress, enhancement
 - `R1088` [**A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade**](decode-graphitron-9-cursors.md) — Spec, enhancement
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
