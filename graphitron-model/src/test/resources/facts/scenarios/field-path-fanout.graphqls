@@ -1,0 +1,94 @@
+# Where a field's path passes through an intermediate table, and whether that table can hold more
+# than one row per set of columns the step arriving there and the step leaving it bind. A PRIMARY
+# KEY or UNIQUE constraint whose every column the two steps bind pins one row: COVERED. Without one
+# the table may repeat a row per bound set: FANS_OUT. A step joined by a method, or matched to a
+# routine's result by name, binds columns no key states, so the question is declined by name. A
+# path's last step is no intermediate and draws no row.
+
+type Film @table(name: "film") {
+  title: String
+  # film_actor's key is exactly the pair the two steps bind.
+  actors: [Actor] @reference(path: [
+    {key: "film_actor_film_id_fkey"},
+    {key: "film_actor_actor_id_fkey"}
+  ])
+  # film_actor_credit carries lang_code in its key, which neither step binds.
+  credits: [Actor] @reference(path: [
+    {key: "film_actor_film_id_fkey"},
+    {key: "film_actor_credit_pair_fkey"},
+    {key: "film_actor_credit_actor_id_fkey"}
+  ])
+  # Ends on the many side, so film_actor is the last step and no intermediate.
+  castLinks: [Cast] @reference(path: [{key: "film_actor_film_id_fkey"}])
+  # The step out of film_actor joins by a method.
+  bridged: [Actor] @reference(path: [
+    {key: "film_actor_film_id_fkey"},
+    {condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+      method: "filmActorJunctionToActor"
+    }}
+  ])
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+}
+
+type Cast @table(name: "film_actor") {
+  actorId: Int @field(name: "actor_id")
+  # film_pkey is bound by the arriving key step alone, and the leaving step joins by a method, so
+  # the intermediate is declined and names no covering constraint.
+  players: [Cast] @reference(path: [
+    {key: "film_actor_film_id_fkey"},
+    {condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+      method: "filmToFilmActor"
+    }}
+  ])
+}
+
+type StintPerson @table(name: "stint_person") {
+  personId: Int @field(name: "person_id")
+  # stint's uniqueness is over the person and the date; the steps bind the person alone.
+  crews: [StintCrew] @reference(path: [{key: "stint_person_fkey"}, {key: "stint_crew_fkey"}])
+  # stint_single's is over the person.
+  singleCrews: [StintCrew] @reference(path: [
+    {key: "stint_single_person_fkey"},
+    {key: "stint_single_crew_fkey"}
+  ])
+}
+
+type StintCrew @table(name: "stint_crew") {
+  personId: Int @field(name: "person_id")
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+extend type Query {
+  films: [Film]
+  casts: [Cast]
+  stintPeople: [StintPerson]
+  # A routine's result reaches film by matching the key's columns by name, a step no key states.
+  searchLanguages(actorId: Int!, minLength: Int!): [Language]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}, {key: "film_language_id_fkey"}])
+  # The same name-matched arrival, left by a key that would cover film_pkey on its own.
+  searchCasts(actorId: Int!, minLength: Int!): [Cast]
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}, {key: "film_actor_film_id_fkey"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_field_path_fanout", rows: """
+  type_name,   field_name,      position, table_name,        verdict,                    covering_constraint_name
+  Film,        actors,          0,        film_actor,        COVERED,                    film_actor_pkey
+  Film,        credits,         0,        film_actor,        COVERED,                    film_actor_pkey
+  Film,        credits,         1,        film_actor_credit, FANS_OUT,
+  Film,        bridged,         0,        film_actor,        UNDECIDABLE_CONDITION_HOP,
+  Cast,        players,         0,        film,              UNDECIDABLE_CONDITION_HOP,
+  StintPerson, crews,           0,        stint,             FANS_OUT,
+  StintPerson, singleCrews,     0,        stint_single,      COVERED,                    stint_single_person_key
+  Query,       searchLanguages, 1,        film,              UNDECIDABLE_NAME_MATCH_HOP,
+  Query,       searchCasts,     1,        film,              UNDECIDABLE_NAME_MATCH_HOP,
+  """)

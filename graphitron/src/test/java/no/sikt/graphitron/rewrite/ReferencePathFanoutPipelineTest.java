@@ -95,6 +95,25 @@ class ReferencePathFanoutPipelineTest {
     }
 
     /**
+     * A field returning one value over the same fanning hops is not this rule's to word. It lowers
+     * to a capped correlated subselect, one row however many the hops reach, so fan-out there
+     * picks an arbitrary row rather than repeating one: a different defect with a different remedy.
+     */
+    @Test
+    void aSingleValuedFieldOverTheSameHopsIsNotThisRulesToWord(@TempDir Path tmp) throws IOException {
+        assertThat(fanoutFindings(report(tmp, """
+            type Store @table(name: "store") { storeId: Int @field(name: "store_id") }
+            type Film @table(name: "film") {
+              title: String
+              store: Store @reference(path: [
+                {key: "inventory_film_id_fkey"}, {key: "inventory_store_id_fkey"}])
+            }
+            type Query { film: Film }
+            """, LintConfig.empty())))
+            .isEmpty();
+    }
+
+    /**
      * The same fanning hops written as a filter produce nothing, and the reason is semantic rather
      * than a gap in the substrate. A filter path lowers to a correlated {@code EXISTS} semi-join,
      * so however many rows the path reaches, each parent row is matched once and there is no

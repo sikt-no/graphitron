@@ -318,6 +318,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_key", Arm.DERIVED);
         registrations.put("graphitron_field_path_method", Arm.DERIVED);
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
+        registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
         registrations.put("graphitron_field_participant_path", Arm.DERIVED);
         registrations.put("graphitron_element", Arm.DERIVED);
         registrations.put("graphitron_type", Arm.DERIVED);
