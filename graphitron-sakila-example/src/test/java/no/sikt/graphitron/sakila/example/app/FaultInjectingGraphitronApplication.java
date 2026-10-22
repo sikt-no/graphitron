@@ -28,7 +28,10 @@ import jakarta.ws.rs.core.HttpHeaders;
  * that means recording what {@code newExecutionInput()} observed in {@link CallingEnvironment} (the
  * ordering property {@link MountedEndpointTest} pins) and reading
  * {@link #builtInEndpointEnabled()} off a request header, so a test can turn the built-in endpoint
- * off without a second Quarkus boot.
+ * off without a second Quarkus boot. A request carrying {@link #TRACE_HEADER} gets the traced
+ * reference and text of {@link TracedErrorText} at both redaction sites: through the
+ * {@link #newReference} / {@link #redactedMessage} overrides here, and through the generated
+ * {@code FetcherErrorResponse} this seam puts into the request's context.
  */
 @Alternative
 @Priority(1)
@@ -37,6 +40,9 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
 
     /** Sentinel header the conformance suite sends to drive a server-side seam fault. */
     static final String FAULT_HEADER = "X-Graphitron-Fault";
+
+    /** Sentinel header carrying a trace id both redaction sites quote as the reference. */
+    static final String TRACE_HEADER = "X-Graphitron-Trace";
 
     /** Sentinel header turning the built-in {@code /graphql} endpoint off for one request. */
     static final String BUILT_IN_HEADER = "X-Graphitron-Built-In";
@@ -74,6 +80,25 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
             throw new IllegalStateException(
                 "could not open JDBC connection to db-fault-host:5432 in no.sikt.graphitron.internal");
         }
+        String traceId = headers.getHeaderString(TRACE_HEADER);
+        if (traceId != null) {
+            return super.newExecutionInput().graphQLContext(b -> b
+                .put(no.sikt.graphitron.generated.schema.FetcherErrorResponse.class, TracedErrorText.RESPONSE)
+                .put(TracedErrorText.TRACE_KEY, traceId));
+        }
         return super.newExecutionInput();
+    }
+
+    @Override
+    public String newReference(Throwable thrown) {
+        String traceId = headers.getHeaderString(TRACE_HEADER);
+        return traceId != null ? traceId : super.newReference(thrown);
+    }
+
+    @Override
+    public String redactedMessage(Throwable thrown, String reference) {
+        return headers.getHeaderString(TRACE_HEADER) != null
+            ? TracedErrorText.message(reference)
+            : super.redactedMessage(thrown, reference);
     }
 }

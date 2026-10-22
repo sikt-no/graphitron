@@ -50,11 +50,48 @@ public interface GraphitronApplication {
      * unredacted so the container maps the status the adapter chose. Every <em>other</em> exception
      * escaping this method is treated as an internal fault and redacted to a reference-only
      * {@code 500}, with the real cause logged under a correlation id, so no adapter internals reach
-     * the client.
+     * the client. {@link #newReference(Throwable)} and {@link #redactedMessage(Throwable, String)}
+     * choose that id and the text the client reads.
      *
      * @return a builder pre-wired with this request's per-request context
      */
     ExecutionInput.Builder newExecutionInput();
+
+    /**
+     * The reference the client is given for a fault the library redacts itself: one thrown while
+     * building the execution input (the database down when {@link #newExecutionInput()} opens a
+     * connection) never reaches a fetcher, so the generated {@code ErrorRouter} cannot answer it.
+     * The library logs the fault under this reference. The default is a random UUID.
+     *
+     * <p>Override it, together with {@link #redactedMessage(Throwable, String)}, to give such a
+     * fault the same reference and text as the generated {@code FetcherErrorResponse} gives a
+     * fetcher fault, for example the OpenTelemetry trace id. This module cannot see the generated
+     * interface, so have both overrides call the same helper of yours. If this method throws or
+     * returns {@code null}, the default reference is used and one ERROR line names your class and
+     * the class of what it threw.
+     *
+     * @param thrown the fault being redacted
+     * @return the reference, logged with the fault and handed to {@link #redactedMessage}
+     */
+    default String newReference(Throwable thrown) {
+        return RedactionDefaults.reference();
+    }
+
+    /**
+     * The message of the one error the client receives for a fault the library redacts itself (see
+     * {@link #newReference(Throwable)}). The default is
+     * {@code "An error occurred. Reference: <reference>."}, the text the generated
+     * {@code FetcherErrorResponse} defaults to. It is the client-facing text of a fault nobody
+     * planned for, so do not put the exception's message in it unless you know what it contains.
+     * If this method throws or returns {@code null}, the default text is used.
+     *
+     * @param thrown    the fault being redacted
+     * @param reference the reference {@link #newReference(Throwable)} minted for it
+     * @return the client's message
+     */
+    default String redactedMessage(Throwable thrown, String reference) {
+        return RedactionDefaults.message(reference);
+    }
 
     /**
      * Engine assembly via graphql-java's own builder seam. The library caches

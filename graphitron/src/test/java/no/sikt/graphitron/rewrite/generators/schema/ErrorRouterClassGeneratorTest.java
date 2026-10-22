@@ -54,7 +54,7 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void emits_twoConcreteMappingClassesAndThePrivateChainRootHolder() {
+    void emits_twoConcreteMappingClassesAndThePrivateClaimRecord() {
         // ValidationMapping retired with §5: validation runs as a wrapper pre-execution step,
         // not via the dispatcher, so its Mapping shape is no longer needed. Every DATABASE
         // discriminator is one DatabaseMapping.
@@ -64,8 +64,8 @@ class ErrorRouterClassGeneratorTest {
             "Mapping",
             "ExceptionMapping",
             "DatabaseMapping",
-            "ChainRoots");
-        assertThat(nested(router, "ChainRoots").modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
+            "Claims");
+        assertThat(nested(router, "Claims").modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
     }
 
     @Test
@@ -117,15 +117,45 @@ class ErrorRouterClassGeneratorTest {
     }
 
     @Test
-    void redact_logsCorrelationIdAndReturnsRedactedResult() {
-        var router = generate();
-        var redact = method(router, "redact");
-        String body = redact.code().toString();
-        assertThat(body)
-            .contains("UUID.randomUUID()")
-            .contains("LOGGER.error")
-            .contains("An error occurred. Reference: ")
-            .doesNotContain("thrown.getMessage()");
+    void redact_signature_isGenericOnTheFieldsDataType() {
+        var redact = method(generate(), "redact");
+        assertThat(redact.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(redact.typeVariables()).extracting(t -> t.name()).containsExactly("P");
+        assertThat(redact.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "java.lang.Throwable",
+            "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void newReference_signature_takesTheThrowAndTheEnvironment() {
+        var newReference = method(generate(), "newReference");
+        assertThat(newReference.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(newReference.returnType().toString()).isEqualTo("java.lang.String");
+        assertThat(newReference.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "java.lang.Throwable",
+            "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void clientMessage_signature_takesTheSourceTheDefaultAndTheEnvironment() {
+        var clientMessage = method(generate(), "clientMessage");
+        assertThat(clientMessage.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(clientMessage.returnType().toString()).isEqualTo("java.lang.String");
+        assertThat(clientMessage.parameters()).extracting(p -> p.type().toString()).containsExactly(
+            "java.lang.Throwable",
+            "java.lang.String",
+            "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void defaultResponse_isAPrivateStaticFetcherErrorResponse() {
+        // The generated defaults are spelled once, on the interface: the router answers through a
+        // default instance rather than restating them.
+        var field = generate().fieldSpecs().stream()
+            .filter(f -> f.name().equals("DEFAULT_RESPONSE"))
+            .findFirst().orElseThrow();
+        assertThat(field.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL);
+        assertThat(field.type().toString()).isEqualTo("com.example.schema.FetcherErrorResponse");
     }
 
     @Test

@@ -1558,7 +1558,22 @@ type FilmLookupClientFacing @error(handlers: [{
     message: String!
 }
 
-union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid | FilmLookupClientFacing
+# The catch-all member, last in the union, so its broad handlers only see what every earlier member
+# passed over: the shape a consumer keeping Graphitron 9's error responses declares. The
+# GraphqlErrorException handler stands in for GraphitronClientException (generated after the service
+# module compiles) and carries no description:, so a source that is also a GraphQLError reaches the
+# consumer's FetcherErrorResponse.matchedMessage through the message fetcher's one arm order. The
+# IllegalStateException handler's description: is the safe default a matchedMessage can replace.
+# See FilmLookupService and FetcherErrorResponseExecutionTest.
+type FilmLookupCatchAll @error(handlers: [
+    {handler: GENERIC, className: "graphql.GraphqlErrorException"},
+    {handler: GENERIC, className: "java.lang.IllegalStateException", description: "The film lookup failed."}
+]) {
+    path: [String!]!
+    message: String!
+}
+
+union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid | FilmLookupClientFacing | FilmLookupCatchAll
 
 type FilmLookupPayload {
     title: String

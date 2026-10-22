@@ -232,7 +232,7 @@ class ConnectionRuntimeClassGeneratorTest {
         assertThat(events).contains("disconnect:H1");
     }
 
-    // --- the unmatched-exception log ----------------------------------------------------------
+    // --- the fetcher-exception log and response -----------------------------------------------
 
     @Test
     void fetcherErrorLog_isAFunctionalInterfaceWithNoTenantArmInASingleTenantBuild() {
@@ -247,6 +247,33 @@ class ConnectionRuntimeClassGeneratorTest {
             .containsExactly("unmatched");
         assertThat(log.methodSpecs()).extracting(MethodSpec::name).doesNotContain("tenantFailed");
         assertThat(parameterTypes(method(log, "unmatched"))).containsExactly(
+            "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
+        MethodSpec matched = method(log, "matched");
+        assertThat(matched.modifiers()).contains(Modifier.DEFAULT);
+        assertThat(parameterTypes(matched)).containsExactly(
+            "java.lang.Throwable", "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
+    }
+
+    @Test
+    void fetcherErrorResponse_hasThreeDefaultMethodsAndNoAbstractOne() {
+        TypeSpec response = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),
+            ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
+
+        assertThat(response.kind()).isEqualTo(TypeSpec.Kind.INTERFACE);
+        assertThat(response.annotations()).as("not a functional interface: a consumer overrides what it needs")
+            .isEmpty();
+        assertThat(abstractMethodNames(response)).isEmpty();
+        assertThat(response.methodSpecs()).extracting(MethodSpec::name)
+            .containsExactly("reference", "matchedMessage", "unmatchedMessage");
+        assertThat(response.methodSpecs()).allSatisfy(m -> {
+            assertThat(m.modifiers()).contains(Modifier.DEFAULT);
+            assertThat(m.returnType().toString()).isEqualTo("java.lang.String");
+        });
+        assertThat(parameterTypes(method(response, "reference"))).containsExactly(
+            "java.lang.Throwable", "graphql.schema.DataFetchingEnvironment");
+        assertThat(parameterTypes(method(response, "matchedMessage"))).containsExactly(
+            "java.lang.Throwable", "java.lang.String", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
+        assertThat(parameterTypes(method(response, "unmatchedMessage"))).containsExactly(
             "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
     }
 
@@ -275,6 +302,41 @@ class ConnectionRuntimeClassGeneratorTest {
         assertThat(wither.parameters()).extracting(ParameterSpec::type).containsExactly(logType);
         assertThat(method(runtime, "fetcherErrorLog").returnType())
             .isEqualTo(ParameterizedTypeName.get(ClassName.get(Optional.class), logType));
+
+        var responseType = ClassName.get(SCHEMA_PACKAGE, ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
+        assertThat(method(runtime, "withFetcherErrorResponse").parameters()).extracting(ParameterSpec::type)
+            .containsExactly(responseType);
+        assertThat(method(runtime, "fetcherErrorResponse").returnType())
+            .isEqualTo(ParameterizedTypeName.get(ClassName.get(Optional.class), responseType));
+    }
+
+    @Test
+    void withFetcherErrorResponse_keepsTheLog_andWithFetcherErrorLogKeepsTheResponse() throws Throwable {
+        Class<?> logClass = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+        Class<?> responseClass = harness.load(
+            SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
+        Object log = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{logClass},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingLog"));
+        Object response = Proxy.newProxyInstance(harness.classLoader(), new Class<?>[]{responseClass},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "recordingResponse"));
+        Object original = runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
+            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+
+        Object logged = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(original, log);
+        Object both = runtimeClass.getMethod("withFetcherErrorResponse", responseClass).invoke(logged, response);
+        Object relogged = runtimeClass.getMethod("withFetcherErrorLog", logClass).invoke(both, log);
+
+        assertThat(runtimeClass.getMethod("fetcherErrorLog").invoke(both)).isEqualTo(Optional.of(log));
+        assertThat(runtimeClass.getMethod("fetcherErrorResponse").invoke(both)).isEqualTo(Optional.of(response));
+        assertThat(runtimeClass.getMethod("fetcherErrorResponse").invoke(relogged)).isEqualTo(Optional.of(response));
+        assertThat(runtimeClass.getMethod("fetcherErrorResponse").invoke(logged)).isEqualTo(Optional.empty());
+        assertThatThrownBy(() -> {
+            try {
+                runtimeClass.getMethod("withFetcherErrorResponse", responseClass).invoke(original, (Object) null);
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        }).isInstanceOf(NullPointerException.class);
     }
 
     @Test

@@ -304,10 +304,12 @@ public final class PlanCompileGraph {
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
                     var requestTenants = runtimeUnit("RequestTenants");
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
+                    var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
                         fetcherErrorLog.ifPresent(l -> declared(r, l));
+                        fetcherErrorResponse.ifPresent(l -> declared(r, l));
                         refOf(GlobalUnitKind.CONNECTION_INSTRUMENTATION).ifPresent(i -> declared(r, i));
                     });
                     tenantConnections.ifPresent(t -> {
@@ -334,6 +336,7 @@ public final class PlanCompileGraph {
                     runtimeUnit("TenantConnections").ifPresent(t -> declared(instrumentation, t));
                     runtimeUnit("RequestTenants").ifPresent(rt -> declared(instrumentation, rt));
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
+                    runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
                 }
                 case SCHEMA_CLASS -> {

@@ -244,6 +244,7 @@ class GraphQLOverHttpConformanceTest {
      * as a generic spec-compliant 500, never leaked as the container's raw error page.
      */
     private static final String FAULT_HEADER = FaultInjectingGraphitronApplication.FAULT_HEADER;
+    private static final String TRACE_HEADER = FaultInjectingGraphitronApplication.TRACE_HEADER;
 
     /** The reference-only body shape both redaction sites emit: id in the message, no extensions. */
     private static final String REFERENCE_MESSAGE = "An error occurred\\. Reference: [0-9a-fA-F-]{36}\\.";
@@ -344,5 +345,37 @@ class GraphQLOverHttpConformanceTest {
             .body("errors[0].extensions.classification", notNullValue())
             .body(not(containsString("durability-test fixture")))
             .body(not(containsString("RuntimeException")));
+    }
+
+    @Test
+    @DisplayName("Single redaction contract, computed: with the application's newReference/redactedMessage and the fetcher's FetcherErrorResponse calling one helper, both legs carry the same text and reference. -- " + SPEC_REVISION)
+    void computedRedactionMatchesFetcherPath() {
+        String traced = TracedErrorText.message("trace-conformance-1");
+
+        // Input-building throw: the application's override pair answers.
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .header(FAULT_HEADER, "internal")
+            .header(TRACE_HEADER, "trace-conformance-1")
+            .body("{\"query\":\"{ customers { firstName } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .body("errors[0].message", equalTo(traced))
+            .body(not(containsString("db-fault-host")));
+
+        // Fetcher throw: the generated ErrorRouter asks the request's FetcherErrorResponse.
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .header(TRACE_HEADER, "trace-conformance-1")
+            .body("{\"query\":\"{ films { durabilityError } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .statusCode(200)
+            .body("errors[0].message", equalTo(traced))
+            .body(not(containsString("durability-test fixture")));
     }
 }

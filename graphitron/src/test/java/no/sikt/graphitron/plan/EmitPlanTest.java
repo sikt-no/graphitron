@@ -71,7 +71,8 @@ class EmitPlanTest {
         // more, and nothing is emitted for the no-configuration case.
         var plan = producePlain();
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
-            .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections", "FetcherErrorLog");
+            .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections", "FetcherErrorLog",
+                "FetcherErrorResponse");
     }
 
     @Test
@@ -83,7 +84,7 @@ class EmitPlanTest {
             DEFAULT_OUTPUT_PACKAGE);
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
-                "FetcherErrorLog", "GraphitronSessionHook");
+                "FetcherErrorLog", "FetcherErrorResponse", "GraphitronSessionHook");
     }
 
     @Test

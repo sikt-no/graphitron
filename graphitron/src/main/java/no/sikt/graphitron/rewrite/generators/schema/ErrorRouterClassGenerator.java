@@ -13,18 +13,19 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
-import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.function.Function;
+import java.util.function.Supplier;
 
 
 /**
  * Generates the {@code ErrorRouter} class emitted at
  * {@code <outputPackage>.schema.ErrorRouter}, once per code-generation run: the runtime
  * entry points the per-fetcher try/catch wrappers call ({@code redact},
- * {@code surfaceClientErrorOrRedact}, {@code claim}), the {@code toConfiguredLog} guard
- * every unmatched-exception log site hands its throw through, plus the nested {@code Mapping}
- * taxonomy the dispatch arms match against. Per-method
+ * {@code surfaceClientErrorOrRedact}, {@code claim}), the consumer-hook calls every error path
+ * goes through ({@code toConfiguredLog} for {@code FetcherErrorLog}, {@code newReference} and
+ * {@code clientMessage} for {@code FetcherErrorResponse}, all contained by one private helper),
+ * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
  * <p>Dispatch is source-direct: the matched throwable itself goes into the errors list,
@@ -39,8 +40,14 @@ public final class ErrorRouterClassGenerator {
     public static final String EXCEPTION_MAPPING = "ExceptionMapping";
     public static final String DATABASE_MAPPING = "DatabaseMapping";
 
-    /** The private holder the chain roots of claimed sources live in, keyed in the request's {@code GraphQLContext}. */
-    private static final String CHAIN_ROOTS = "ChainRoots";
+    /**
+     * The private per-request claim record (each claimed source's chain roots and reference), kept
+     * in the request's {@code GraphQLContext} under its own class.
+     */
+    private static final String CLAIMS = "Claims";
+
+    /** The private static {@code FetcherErrorResponse} whose default methods answer when none is configured. */
+    private static final String DEFAULT_RESPONSE = "DEFAULT_RESPONSE";
 
     /** The private helper spelling {@code DatabaseMapping}'s message walk. */
     private static final String MESSAGE_ON_PATH = "messageOnPathContains";
@@ -50,7 +57,6 @@ public final class ErrorRouterClassGenerator {
     private static final ClassName DATA_FETCHING_ENVIRONMENT  = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName DATA_FETCHER_RESULT        = ClassName.get("graphql.execution", "DataFetcherResult");
     private static final ClassName GRAPHQL_ERROR_BUILDER      = ClassName.get("graphql", "GraphqlErrorBuilder");
-    private static final ClassName UUID_CN                    = ClassName.get(UUID.class);
     private static final ClassName LOGGER_CN                  = ClassName.get("org.slf4j", "Logger");
     private static final ClassName LOGGER_FACTORY_CN          = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName LIST_CN                    = ClassName.get(List.class);
@@ -58,6 +64,8 @@ public final class ErrorRouterClassGenerator {
     private static final ClassName OBJECT_CN                  = ClassName.get(Object.class);
     private static final ClassName GRAPHQL_CONTEXT            = ClassName.get("graphql", "GraphQLContext");
     private static final ClassName CONSUMER_CN                = ClassName.get(Consumer.class);
+    private static final ClassName FUNCTION_CN                = ClassName.get(Function.class);
+    private static final ClassName SUPPLIER_CN                = ClassName.get(Supplier.class);
 
     private ErrorRouterClassGenerator() {}
 
@@ -77,9 +85,23 @@ public final class ErrorRouterClassGenerator {
      * {@code toConfiguredLog} names; resolved through the plan's naming vocabulary like the router.
      */
     public static ClassName fetcherErrorLogClass(String outputPackage) {
+        return connectionRuntimeUnit(outputPackage,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+    }
+
+    /**
+     * The emitted {@code FetcherErrorResponse} interface, a {@code CONNECTION_RUNTIME} unit beside
+     * {@code FetcherErrorLog} that {@code newReference}, {@code redact} and {@code clientMessage}
+     * name; resolved through the plan's naming vocabulary like the router.
+     */
+    public static ClassName fetcherErrorResponseClass(String outputPackage) {
+        return connectionRuntimeUnit(outputPackage,
+            no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
+    }
+
+    private static ClassName connectionRuntimeUnit(String outputPackage, String simpleName) {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
-            .singleton(no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA,
-                no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+            .singleton(no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA, simpleName);
         return ClassName.get(unit.packageName(), unit.simpleName());
     }
 
@@ -103,10 +125,11 @@ public final class ErrorRouterClassGenerator {
             .returns(resultOfP)
             .addParameter(THROWABLE, "thrown")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addJavadoc("No-channel disposition: mints a fresh UUID correlation ID, hands the original\n"
+            .addJavadoc("No-channel disposition: mints a reference ({@link #newReference}), hands the original\n"
                 + "throw to the configured {@code FetcherErrorLog} (else logs it at ERROR), and returns\n"
-                + "a {@link $T} with {@code data=null} plus a single redacted error carrying only the\n"
-                + "correlation ID. Generic on {@code P},\n"
+                + "a {@link $T} with {@code data=null} plus a single redacted error whose message\n"
+                + "is {@code FetcherErrorResponse.unmatchedMessage}'s, by default one carrying only the\n"
+                + "reference. Generic on {@code P},\n"
                 + "the field's data type; the call site infers {@code P} from its target type so\n"
                 + "the catch arm fits the fetcher's declared return type without a witness.\n"
                 + "\n"
@@ -114,13 +137,21 @@ public final class ErrorRouterClassGenerator {
                 + "privacy property the rewrite preserves at the fetcher catch site (see\n"
                 + "{@code error-handling-parity.md} §3 \"No top-level handler\").\n",
                 DATA_FETCHER_RESULT)
-            .addCode(redactBody())
+            .addCode(redactBody(fetcherErrorResponseClass(outputPackage)))
             .build();
 
-        var toConfiguredLog = buildToConfiguredLogMethod(fetcherErrorLogClass(outputPackage));
+        var fetcherErrorLog = fetcherErrorLogClass(outputPackage);
+        var fetcherErrorResponse = fetcherErrorResponseClass(outputPackage);
+        var toConfiguredLog = buildToConfiguredLogMethod(fetcherErrorLog);
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
         var claim = buildClaimMethod();
+        var defaultResponse = FieldSpec.builder(fetcherErrorResponse, DEFAULT_RESPONSE,
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("Answers when no {@code FetcherErrorResponse} is configured, or when the configured one\n"
+                + "fails: the interface's default methods are the only spelling of the default text.\n")
+            .initializer("new $T() {}", fetcherErrorResponse)
+            .build();
         var matchesSource = buildMatchesSourceMethod();
 
         var spec = TypeSpec.classBuilder(CLASS_NAME)
@@ -136,20 +167,33 @@ public final class ErrorRouterClassGenerator {
                 + "redacted {@code DataFetcherResult} carrying only\n"
                 + "a correlation ID ({@code redact}).\n"
                 + "\n"
+                + "<p>The consumer's {@code FetcherErrorLog} and {@code FetcherErrorResponse} are read from\n"
+                + "the request's {@code GraphQLContext} under their classes, and every call into either is\n"
+                + "contained: a throw (or, from the response, a {@code null}) is one ERROR line naming the\n"
+                + "hook's class and the class of what it threw, and the default stands.\n"
+                + "\n"
                 + "<p>Generated alongside {@code ErrorMappings}; preserves the rewrite's\n"
                 + "no-runtime-jar invariant.\n")
             .addField(loggerField)
+            .addField(defaultResponse)
             .addMethod(MethodSpec.constructorBuilder().addModifiers(Modifier.PRIVATE).build())
             .addType(mappingInterface)
             .addType(exceptionMapping)
             .addType(databaseMapping)
-            .addType(buildChainRootsHolder())
+            .addType(buildClaimsHolder())
             .addMethod(redact)
             .addMethod(toConfiguredLog)
+            .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
+            .addMethod(buildClientMessageMethod(fetcherErrorResponse))
             .addMethod(surfaceClientErrorOrRedact)
             .addMethod(claim)
+            .addMethod(buildRecordClaimMethod(fetcherErrorLog, fetcherErrorResponse))
             .addMethod(matchesSource)
             .addMethod(buildMessageOnPathMethod())
+            .addMethod(buildConfiguredMethod())
+            .addMethod(buildContainedMethod())
+            .addMethod(buildAnswerMethod(fetcherErrorResponse))
+            .addMethod(buildPathOfMethod())
             .build();
 
         return List.of(spec);
@@ -342,26 +386,31 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
-     * The private chain-root holder: per claimed source, the outermost throws it was wrapped in
-     * when a fetcher claimed it. Lives in the request's {@code GraphQLContext} under its own
-     * class, the way {@code toConfiguredLog} finds {@code FetcherErrorLog}. Both the source key
-     * and the root set are identity-keyed, because an author's exception may override
-     * {@code equals}; recording is a set union under one lock, so the outcome does not depend on
-     * the order concurrent fetchers complete in.
+     * The private per-request claim record: per claimed source, the outermost throws it was
+     * wrapped in when a fetcher claimed it (its chain roots), and the reference minted for it. It
+     * is the one per-request holder keyed on throwable identity in the error channel. Lives in the
+     * request's {@code GraphQLContext} under its own class, the way {@code toConfiguredLog} finds
+     * {@code FetcherErrorLog}. Both maps and the root sets are identity-keyed, because an author's
+     * exception may override {@code equals}; each update holds one lock, and a reference is set
+     * once, so the outcome does not depend on the order concurrent fetchers complete in.
      */
-    private static TypeSpec buildChainRootsHolder() {
+    private static TypeSpec buildClaimsHolder() {
         var setOfThrowable = ParameterizedTypeName.get(ClassName.get(java.util.Set.class), THROWABLE);
         var listOfThrowable = ParameterizedTypeName.get(LIST_CN, THROWABLE);
-        var mapType = ParameterizedTypeName.get(ClassName.get(java.util.Map.class), THROWABLE, setOfThrowable);
-        return TypeSpec.classBuilder(CHAIN_ROOTS)
+        var rootsType = ParameterizedTypeName.get(ClassName.get(java.util.Map.class), THROWABLE, setOfThrowable);
+        var referencesType = ParameterizedTypeName.get(ClassName.get(java.util.Map.class), THROWABLE, STRING_CN);
+        return TypeSpec.classBuilder(CLAIMS)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
-            .addJavadoc("Per claimed source, the exceptions it was wrapped in when it was claimed (its\n"
-                + "chain roots). Stored in the request's {@code GraphQLContext} under this class.\n"
-                + "Identity-keyed throughout, and safe for concurrent fetchers.\n")
-            .addField(FieldSpec.builder(mapType, "roots", Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("Per claimed source, the exceptions it was wrapped in when it was claimed (its chain\n"
+                + "roots) and the reference minted for it. Stored in the request's {@code GraphQLContext}\n"
+                + "under this class. Identity-keyed throughout, and safe for concurrent fetchers.\n")
+            .addField(FieldSpec.builder(rootsType, "roots", Modifier.PRIVATE, Modifier.FINAL)
                 .initializer("new $T<>()", java.util.IdentityHashMap.class)
                 .build())
-            .addMethod(MethodSpec.methodBuilder("record")
+            .addField(FieldSpec.builder(referencesType, "references", Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", java.util.IdentityHashMap.class)
+                .build())
+            .addMethod(MethodSpec.methodBuilder("addRoot")
                 .addModifiers(Modifier.SYNCHRONIZED)
                 .addParameter(THROWABLE, "source")
                 .addParameter(THROWABLE, "root")
@@ -375,12 +424,25 @@ public final class ErrorRouterClassGenerator {
                 .addStatement("$T found = roots.get(source)", setOfThrowable)
                 .addStatement("return found == null ? $T.of() : new $T<>(found)", LIST_CN, java.util.ArrayList.class)
                 .build())
+            .addMethod(MethodSpec.methodBuilder("referenceOf")
+                .addModifiers(Modifier.SYNCHRONIZED)
+                .returns(STRING_CN)
+                .addParameter(THROWABLE, "source")
+                .addStatement("return references.get(source)")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("assignReference")
+                .addModifiers(Modifier.SYNCHRONIZED)
+                .returns(boolean.class)
+                .addJavadoc("Sets {@code source}'s reference unless it has one; whether this call set it.\n")
+                .addParameter(THROWABLE, "source")
+                .addParameter(STRING_CN, "reference")
+                .addStatement("return references.putIfAbsent(source, reference) == null")
+                .build())
             .build();
     }
 
     private static MethodSpec buildClaimMethod() {
         var mappingArray = ArrayTypeName.of(ClassName.get("", MAPPING_INTERFACE));
-        var chainRoots = ClassName.get("", CHAIN_ROOTS);
         return MethodSpec.methodBuilder("claim")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(THROWABLE)
@@ -392,13 +454,18 @@ public final class ErrorRouterClassGenerator {
                 + "{@link Mapping#match(Throwable, Throwable)}, and returns the first candidate claimed,\n"
                 + "or {@code null} when none is. The claimed candidate is the payload's source.\n"
                 + "\n"
-                + "<p>When the claimed candidate is not {@code thrown} itself, {@code thrown} is recorded\n"
-                + "in the request's {@code GraphQLContext} as a chain root of the candidate, so the\n"
-                + "read side ({@link #matchesSource}) can re-check a mapping against the same chain\n"
-                + "dispatch saw. The record is keyed on the source alone. If one source is claimed by\n"
-                + "two fetchers through wrappers carrying different text, both readers see the union\n"
-                + "of roots; in practice the wrappers are jOOQ's one {@code DataAccessException} and\n"
-                + "the roots agree. A null {@code env} or context records nothing.\n"
+                + "<p>A claim is recorded in the request's {@code GraphQLContext}. When the claimed\n"
+                + "candidate is not {@code thrown} itself, {@code thrown} is recorded as a chain root of\n"
+                + "the candidate, so the read side ({@link #matchesSource}) can re-check a mapping against\n"
+                + "the same chain dispatch saw. The record is keyed on the source alone. If one source is\n"
+                + "claimed by two fetchers through wrappers carrying different text, both readers see the\n"
+                + "union of roots; in practice the wrappers are jOOQ's one {@code DataAccessException} and\n"
+                + "the roots agree. When a {@code FetcherErrorLog} or a {@code FetcherErrorResponse} is\n"
+                + "configured, the source's first claim in the request also mints its reference\n"
+                + "({@link #newReference}, with this field's environment) for {@link #clientMessage} to\n"
+                + "read, and hands the source to {@code FetcherErrorLog.matched}; later claims of the same\n"
+                + "source do neither, so a batch failure that reaches many fields logs once. A null\n"
+                + "{@code env} or context records nothing.\n"
                 + "@param thrown the exception the fetcher caught\n"
                 + "@param mappings the channel's dispatch table\n"
                 + "@param env the failing field's environment, or {@code null}\n"
@@ -406,13 +473,7 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))
             .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
             .beginControlFlow("if (mapping.match(thrown, t))")
-            .beginControlFlow("if (t != thrown && env != null)")
-            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
-            .beginControlFlow("if (context != null)")
-            .addStatement("context.<$T>computeIfAbsent($T.class, k -> new $T()).record(t, thrown)",
-                chainRoots, chainRoots, chainRoots)
-            .endControlFlow()
-            .endControlFlow()
+            .addStatement("recordClaim(thrown, t, env)")
             .addStatement("return t")
             .endControlFlow()
             .endControlFlow()
@@ -421,9 +482,48 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
+    /**
+     * {@code recordClaim(thrown, source, env)}: {@code claim}'s write to the request's claim record,
+     * and the {@code matched} call on the source's first claim. Split out of the walk so its
+     * arguments are effectively final for the log lambda.
+     */
+    private static MethodSpec buildRecordClaimMethod(ClassName fetcherErrorLog, ClassName fetcherErrorResponse) {
+        var claims = ClassName.get("", CLAIMS);
+        return MethodSpec.methodBuilder("recordClaim")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(THROWABLE, "source")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("if (env == null)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .beginControlFlow("if (context == null)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("boolean hooked = context.hasKey($T.class) || context.hasKey($T.class)",
+                fetcherErrorLog, fetcherErrorResponse)
+            .beginControlFlow("if (source == thrown && !hooked)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T record = context.<$T>computeIfAbsent($T.class, k -> new $T())",
+                claims, claims, claims, claims)
+            .beginControlFlow("if (source != thrown)")
+            .addStatement("record.addRoot(source, thrown)")
+            .endControlFlow()
+            .beginControlFlow("if (!hooked || record.referenceOf(source) != null)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T reference = newReference(source, env)", STRING_CN)
+            .beginControlFlow("if (record.assignReference(source, reference))")
+            .addStatement("toConfiguredLog(env, reference, log -> log.matched(thrown, source, reference, env))")
+            .endControlFlow()
+            .build();
+    }
+
     private static MethodSpec buildMatchesSourceMethod() {
         var mapping = ClassName.get("", MAPPING_INTERFACE);
-        var chainRoots = ClassName.get("", CHAIN_ROOTS);
+        var claims = ClassName.get("", CLAIMS);
         return MethodSpec.methodBuilder("matchesSource")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(boolean.class)
@@ -446,11 +546,11 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("if (context == null)")
             .addStatement("return false")
             .endControlFlow()
-            .addStatement("$T roots = context.get($T.class)", chainRoots, chainRoots)
-            .beginControlFlow("if (roots == null)")
+            .addStatement("$T record = context.get($T.class)", claims, claims)
+            .beginControlFlow("if (record == null)")
             .addStatement("return false")
             .endControlFlow()
-            .beginControlFlow("for ($T root : roots.rootsOf(source))", THROWABLE)
+            .beginControlFlow("for ($T root : record.rootsOf(source))", THROWABLE)
             .beginControlFlow("if (mapping.match(root, source))")
             .addStatement("return true")
             .endControlFlow()
@@ -507,13 +607,12 @@ public final class ErrorRouterClassGenerator {
     }
 
     /**
-     * {@code static boolean toConfiguredLog(env, reference, call)}: the one spelling of the
-     * {@code FetcherErrorLog} contract (look the log up, call it, contain its failure), shared by
-     * {@code redact} and the tenant fan-out's failure logging. A {@code false} return means no
-     * log is configured and the caller writes its own default line. The failure line passes no
-     * throwable, so neither the log's exception nor the original reaches the log through it;
-     * only JVM-fatal errors escape, since anything else escaping {@code redact} would reach
-     * graphql-java's default handler, which puts its message in the response.
+     * {@code static boolean toConfiguredLog(env, reference, call)}: the {@code FetcherErrorLog}
+     * contract (look the log up, call it through {@code contained}), shared by {@code redact},
+     * {@code recordClaim} and the tenant fan-out's failure logging. A {@code false} return means
+     * no log is configured and the caller writes its own default line, if any. Only JVM-fatal
+     * errors escape, since anything else escaping {@code redact} would reach graphql-java's
+     * default handler, which puts its message in the response.
      */
     private static MethodSpec buildToConfiguredLogMethod(ClassName fetcherErrorLog) {
         return MethodSpec.methodBuilder("toConfiguredLog")
@@ -522,7 +621,7 @@ public final class ErrorRouterClassGenerator {
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addParameter(STRING_CN, "reference")
             .addParameter(ParameterizedTypeName.get(CONSUMER_CN, fetcherErrorLog), "call")
-            .addJavadoc("Hands an unmatched throw to the {@link $T} configured for this request (the\n"
+            .addJavadoc("Hands a fetcher exception to the {@link $T} configured for this request (the\n"
                 + "{@code GraphQLContext} entry under its class, which the owned-connection runtime\n"
                 + "publishes and an escape-hatch caller puts there); {@code false} when none is\n"
                 + "configured, and the caller then logs its own default line. If the log throws, one\n"
@@ -534,35 +633,187 @@ public final class ErrorRouterClassGenerator {
                 + "@param call the log method to invoke\n"
                 + "@return whether a configured log took the throw\n",
                 fetcherErrorLog)
-            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
-            .addStatement("$T log = context == null ? null : context.get($T.class)", fetcherErrorLog, fetcherErrorLog)
+            .addStatement("$T log = configured(env, $T.class)", fetcherErrorLog, fetcherErrorLog)
             .beginControlFlow("if (log == null)")
             .addStatement("return false")
             .endControlFlow()
-            .beginControlFlow("try")
-            .addStatement("call.accept(log)")
-            .nextControlFlow("catch ($T logFailure)", THROWABLE)
-            .beginControlFlow("if (logFailure instanceof $T fatal)", VirtualMachineError.class)
-            .addStatement("throw fatal")
-            .endControlFlow()
-            .addStatement("LOGGER.error($S, log.getClass().getName(), logFailure.getClass().getName(), reference)",
-                fetcherErrorLog.simpleName() + " {} threw {}; reference = {}")
-            .endControlFlow()
+            .addCode("contained($T.class, log, configuredLog -> {\n", fetcherErrorLog)
+            .addCode("    call.accept(configuredLog);\n")
+            .addCode("    return $T.TRUE;\n", Boolean.class)
+            .addCode("}, () -> $S + reference);\n", "reference = ")
             .addStatement("return true")
             .build();
     }
 
-    private static CodeBlock redactBody() {
-        return CodeBlock.builder()
-            .addStatement("$T correlationId = $T.randomUUID()", UUID_CN, UUID_CN)
-            .addStatement("$T reference = correlationId.toString()", STRING_CN)
-            .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
-            .addStatement("LOGGER.error(\"Unmatched exception in fetcher; correlation id = {}\", correlationId, thrown)")
+    private static MethodSpec buildNewReferenceMethod(ClassName fetcherErrorResponse) {
+        return MethodSpec.methodBuilder("newReference")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(STRING_CN)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The reference the client is given for {@code thrown}: the configured\n"
+                + "{@link $T#reference}'s, else its default (a random UUID). Every reference the\n"
+                + "client sees comes from here, and the same one reaches the {@code FetcherErrorLog}.\n"
+                + "A failure of the configured method is contained to one ERROR line naming the field's\n"
+                + "path, and the default stands.\n"
+                + "@param thrown the exception the reference is for\n"
+                + "@param env the failing field's environment, or {@code null}\n"
+                + "@return the reference, never {@code null}\n",
+                fetcherErrorResponse)
+            .addStatement("return answer(configured(env, $T.class), response -> response.reference(thrown, env),"
+                + " () -> $S + pathOf(env))", fetcherErrorResponse, "path = ")
+            .build();
+    }
+
+    private static MethodSpec buildClientMessageMethod(ClassName fetcherErrorResponse) {
+        var claims = ClassName.get("", CLAIMS);
+        return MethodSpec.methodBuilder("clientMessage")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(STRING_CN)
+            .addParameter(THROWABLE, "source")
+            .addParameter(STRING_CN, "defaultMessage")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("The {@code message:} of a payload error whose source is {@code source}: with no\n"
+                + "{@link $T} configured, {@code defaultMessage}; otherwise its\n"
+                + "{@code matchedMessage}, given the reference {@link #claim} minted for the source.\n"
+                + "Called by every {@code <ErrorType>Fetchers.message} for a {@code Throwable} source.\n"
+                + "A failure of the configured method is contained, and {@code defaultMessage} stands.\n"
+                + "@param source the payload's error source\n"
+                + "@param defaultMessage the handler's {@code description:}, else the source's own message\n"
+                + "@param env the {@code message} field's environment\n"
+                + "@return the client's message\n"
+                + "@throws IllegalStateException when the request recorded no claim of {@code source};\n"
+                + "every {@code Throwable} in an errors list is claimed first, so this is a defect\n",
+                fetcherErrorResponse)
+            .addStatement("$T response = configured(env, $T.class)", fetcherErrorResponse, fetcherErrorResponse)
+            .beginControlFlow("if (response == null)")
+            .addStatement("return defaultMessage")
             .endControlFlow()
+            .addStatement("$T record = env.getGraphQlContext().get($T.class)", claims, claims)
+            .addStatement("$T reference = record == null ? null : record.referenceOf(source)", STRING_CN)
+            .beginControlFlow("if (reference == null)")
+            .addStatement("throw new $T($S + source.getClass().getName() + $S)", IllegalStateException.class,
+                "A payload error's source (", ") was never claimed in this request; every Throwable in an"
+                    + " errors list goes through ErrorRouter.claim")
+            .endControlFlow()
+            .addStatement("return answer(response, hook -> hook.matchedMessage(source, defaultMessage,"
+                + " reference, env), () -> $S + reference)", "reference = ")
+            .build();
+    }
+
+    /** {@code configured(env, hookClass)}: the request's {@code GraphQLContext} entry under {@code hookClass}. */
+    private static MethodSpec buildConfiguredMethod() {
+        var typeH = TypeVariableName.get("H");
+        return MethodSpec.methodBuilder("configured")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(typeH)
+            .returns(typeH)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), typeH), "hookClass")
+            .addJavadoc("The consumer hook configured for this request under {@code hookClass}, or\n"
+                + "{@code null} when there is none, or no environment or context to read it from.\n")
+            .beginControlFlow("if (env == null)")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("$T context = env.getGraphQlContext()", GRAPHQL_CONTEXT)
+            .beginControlFlow("if (context == null)")
+            .addStatement("return null")
+            .endControlFlow()
+            .addStatement("return context.get(hookClass)")
+            .build();
+    }
+
+    /**
+     * {@code contained(hookClass, hook, call, subject)}: the one spelling of a call into a consumer
+     * hook. The failure line passes no throwable, so neither the hook's exception nor the original
+     * reaches the log through it.
+     */
+    private static MethodSpec buildContainedMethod() {
+        var typeH = TypeVariableName.get("H");
+        var typeR = TypeVariableName.get("R");
+        return MethodSpec.methodBuilder("contained")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(typeH)
+            .addTypeVariable(typeR)
+            .returns(typeR)
+            .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class), typeH), "hookClass")
+            .addParameter(typeH, "hook")
+            .addParameter(ParameterizedTypeName.get(FUNCTION_CN, typeH, typeR), "call")
+            .addParameter(ParameterizedTypeName.get(SUPPLIER_CN, STRING_CN), "subject")
+            .addJavadoc("Calls {@code call} on the consumer's {@code hook} and returns what it returned, or\n"
+                + "{@code null} when it threw. A throw, or a {@code null} return, is one ERROR line\n"
+                + "naming the hook interface, the hook's class, the class of what it threw and\n"
+                + "{@code subject} (the reference, or the field's path), without any exception's message\n"
+                + "or stack trace; only a {@link VirtualMachineError} propagates.\n")
+            .addStatement("$T answer", typeR)
+            .beginControlFlow("try")
+            .addStatement("answer = call.apply(hook)")
+            .nextControlFlow("catch ($T failure)", THROWABLE)
+            .beginControlFlow("if (failure instanceof $T fatal)", VirtualMachineError.class)
+            .addStatement("throw fatal")
+            .endControlFlow()
+            .addStatement("LOGGER.error($S, hookClass.getSimpleName(), hook.getClass().getName(),"
+                + " failure.getClass().getName(), subject.get())", "{} {} threw {}; {}")
+            .addStatement("return null")
+            .endControlFlow()
+            .beginControlFlow("if (answer == null)")
+            .addStatement("LOGGER.error($S, hookClass.getSimpleName(), hook.getClass().getName(), subject.get())",
+                "{} {} returned null; {}")
+            .endControlFlow()
+            .addStatement("return answer")
+            .build();
+    }
+
+    /**
+     * {@code answer(response, call, subject)}: a {@code FetcherErrorResponse} method's answer, the
+     * configured response's when it gives one and the default instance's otherwise.
+     */
+    private static MethodSpec buildAnswerMethod(ClassName fetcherErrorResponse) {
+        return MethodSpec.methodBuilder("answer")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(STRING_CN)
+            .addParameter(fetcherErrorResponse, "response")
+            .addParameter(ParameterizedTypeName.get(FUNCTION_CN, fetcherErrorResponse, STRING_CN), "call")
+            .addParameter(ParameterizedTypeName.get(SUPPLIER_CN, STRING_CN), "subject")
+            .addJavadoc("What {@code call} answers on the configured {@code response}, contained; when there\n"
+                + "is none, or it threw or answered {@code null}, what it answers on {@code $L}.\n",
+                DEFAULT_RESPONSE)
+            .beginControlFlow("if (response != null)")
+            .addStatement("$T answer = contained($T.class, response, call, subject)", STRING_CN, fetcherErrorResponse)
+            .beginControlFlow("if (answer != null)")
+            .addStatement("return answer")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return call.apply($L)", DEFAULT_RESPONSE)
+            .build();
+    }
+
+    /** {@code pathOf(env)}: the field's path for a failure line that has no reference to name yet. */
+    private static MethodSpec buildPathOfMethod() {
+        return MethodSpec.methodBuilder("pathOf")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(STRING_CN)
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .beginControlFlow("if (env == null || env.getExecutionStepInfo() == null)")
+            .addStatement("return $S", "unknown")
+            .endControlFlow()
+            .addStatement("return env.getExecutionStepInfo().getPath().toString()")
+            .build();
+    }
+
+    private static CodeBlock redactBody(ClassName fetcherErrorResponse) {
+        return CodeBlock.builder()
+            .addStatement("$T reference = newReference(thrown, env)", STRING_CN)
+            .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
+            .addStatement("LOGGER.error(\"Unmatched exception in fetcher; correlation id = {}\", reference, thrown)")
+            .endControlFlow()
+            .addStatement("$T message = answer(configured(env, $T.class),"
+                + " response -> response.unmatchedMessage(thrown, reference, env), () -> $S + reference)",
+                STRING_CN, fetcherErrorResponse, "reference = ")
             .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
             .add("    .data(null)\n")
             .add("    .error($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
-            .add("        .message(\"An error occurred. Reference: \" + correlationId + \".\")\n")
+            .add("        .message(message)\n")
             .add("        .build())\n")
             .addStatement("    .build()")
             .build();

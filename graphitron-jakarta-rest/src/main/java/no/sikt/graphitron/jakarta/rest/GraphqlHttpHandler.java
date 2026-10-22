@@ -22,7 +22,6 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 
 // The consumer example in the javadoc below writes its annotations as &#64; and sits in a bare <pre>
 // rather than a {@code} block: javadoc reads an @ in a line's first column as a block tag even
@@ -340,14 +339,65 @@ public class GraphqlHttpHandler {
             // runs before graphql-java execution begins, so neither ErrorRouter nor graphql-java's
             // own exception handling can ever see a fault thrown here. Redact to the same
             // reference-only wire shape ErrorRouter.redact emits, so both sites present one contract:
-            // log the real cause under a correlation id, return no exception message/class/stack.
-            UUID correlationId = UUID.randomUUID();
+            // log the real cause under a reference, return no exception message/class/stack. The
+            // application chooses the reference and the text, as FetcherErrorResponse does for a
+            // fetcher; a failure of either override falls back to the default.
+            String reference = newReference(thrown);
             LOGGER.error("Uncaught exception building/executing GraphQL request; correlation id = {}",
-                correlationId, thrown);
+                reference, thrown);
             return Response.status(legacy ? 200 : 500)
                 .type(responseType(legacy))
-                .entity(serialise(errorBody("An error occurred. Reference: " + correlationId + ".")))
+                .entity(serialise(errorBody(redactedMessage(thrown, reference))))
                 .build();
+        }
+    }
+
+    /** {@link GraphitronApplication#newReference(Throwable)}, contained: the default on failure. */
+    private String newReference(Throwable thrown) {
+        String reference;
+        try {
+            reference = application.newReference(thrown);
+        } catch (Throwable failure) {
+            logOverrideFailure("newReference", failure, "no reference yet");
+            return RedactionDefaults.reference();
+        }
+        if (reference == null) {
+            logOverrideFailure("newReference", null, "no reference yet");
+            return RedactionDefaults.reference();
+        }
+        return reference;
+    }
+
+    /** {@link GraphitronApplication#redactedMessage(Throwable, String)}, contained: the default on failure. */
+    private String redactedMessage(Throwable thrown, String reference) {
+        String message;
+        try {
+            message = application.redactedMessage(thrown, reference);
+        } catch (Throwable failure) {
+            logOverrideFailure("redactedMessage", failure, "reference = " + reference);
+            return RedactionDefaults.message(reference);
+        }
+        if (message == null) {
+            logOverrideFailure("redactedMessage", null, "reference = " + reference);
+            return RedactionDefaults.message(reference);
+        }
+        return message;
+    }
+
+    /**
+     * The one ERROR line for an override that threw ({@code failure}) or returned {@code null}
+     * ({@code failure == null}), naming the application's class and the class of what it threw,
+     * without either exception's message; only a {@link VirtualMachineError} propagates.
+     */
+    private void logOverrideFailure(String method, Throwable failure, String subject) {
+        if (failure instanceof VirtualMachineError) {
+            throw (VirtualMachineError) failure;
+        }
+        if (failure == null) {
+            LOGGER.error("{}.{} returned null; {}", application.getClass().getName(), method, subject);
+        } else {
+            LOGGER.error("{}.{} threw {}; {}", application.getClass().getName(), method,
+                failure.getClass().getName(), subject);
         }
     }
 

@@ -35,36 +35,36 @@ import java.util.List;
  * carrying {@code @nodeId} has to encode what that read yielded, and a bare
  * {@code PropertyDataFetcher} has nowhere to put the encode, so its read is reified here too.
  *
- * <p>{@code message} resolves in up to three steps, in this order:
+ * <p>{@code message} resolves in two arms, in this order:
  *
  * <ol>
- *   <li>A dispatch-table walk, guarded by {@code src instanceof Throwable}. Emitted only when
- *       some handler on this type declares a {@code description:}, since a type with no authored
- *       override has nothing to resolve. Each handler emits its own
- *       {@code if (ErrorRouter.matchesSource(ByType.<TYPE>[i], thr, context)) return ...;}
- *       against the type's own {@code Mapping[]} constant on {@code ErrorMappings}, so the returned expression is chosen
- *       at build time from that handler's {@link ClientMessage} arm rather than by a runtime test
- *       on the mapping: an override arm returns the mapping's own {@code description()}, and a
- *       source-message arm returns {@code thr.getMessage()}. Reading the authored string back off
- *       the mapping rather than inlining it keeps one spelling of that string in the emitted
- *       output, and is what makes {@code Mapping.description()} a read accessor. The guard is
- *       load-bearing: {@code matchesSource} takes a {@code Throwable}, and a
- *       {@code ConstraintViolations}-produced {@code GraphQLError} need not be one.</li>
- *   <li>The {@code GraphQLError} arm, {@code ge.getMessage()}. This is the validation path:
+ *   <li>The {@code Throwable} block, for every source that is a {@code Throwable}. It chooses
+ *       the default message and hands it to {@code ErrorRouter.clientMessage}, which returns it
+ *       unless the consumer's {@code FetcherErrorResponse} replaces it at runtime. Up to the
+ *       last handler on this type that declares a {@code description:}, each handler emits its
+ *       own {@code if (ErrorRouter.matchesSource(ByType.<TYPE>[i], thr, context)) return
+ *       ErrorRouter.clientMessage(thr, ..., env);} against the type's own {@code Mapping[]}
+ *       constant on {@code ErrorMappings}, so the default is chosen at build time from that
+ *       handler's {@link ClientMessage} arm rather than by a runtime test on the mapping: an
+ *       override arm passes the mapping's own {@code description()}, and a source-message arm
+ *       passes {@code thr.getMessage()}. Reading the authored string back off the mapping rather
+ *       than inlining it keeps one spelling of that string in the emitted output, and is what
+ *       makes {@code Mapping.description()} a read accessor. The block always ends in
+ *       {@code return ErrorRouter.clientMessage(thr, thr.getMessage(), env)}, so a type with no
+ *       {@code description:} at all is the same block with no per-handler statements.</li>
+ *   <li>The {@code GraphQLError} arm, {@code ge.getMessage()}, reached only by a source that is not
+ *       a {@code Throwable}. This is the validation path:
  *       {@code ConstraintViolations.toGraphQLError} puts {@code GraphQLError} instances in the
  *       errors slot, and graphql-java's {@code GraphQLError} is an interface its implementations
- *       need not implement on a {@code Throwable}.</li>
- *   <li>{@code thr.getMessage()} for a {@code Throwable} that matched no override, and
- *       {@code null} for a source that is neither shape.</li>
+ *       need not implement on a {@code Throwable}. Any other source reads {@code null}.</li>
  * </ol>
  *
- * <p>The walk goes ahead of the {@code GraphQLError} arm on purpose. A source can be both shapes
- * at once ({@code graphql.GraphQLError} is a plain interface, and the generated
- * {@code GraphitronClientException} extends {@code GraphqlErrorException}), so a
- * {@code {handler: GENERIC, className: ...}} entry carrying {@code description:} can name a class
- * that is also a {@code GraphQLError}. Resolving the {@code GraphQLError} arm first would drop the
- * authored override for exactly those classes. A validator-produced {@code GraphQLError} that is
- * not a {@code Throwable} skips the guarded block and reaches its own arm unchanged.
+ * <p>The {@code Throwable} block goes first whatever the handlers declare. A source can be both
+ * shapes at once ({@code graphql.GraphQLError} is a plain interface, and the generated
+ * {@code GraphitronClientException} extends {@code GraphqlErrorException}), so resolving the
+ * {@code GraphQLError} arm first would drop an authored {@code description:} for exactly those
+ * classes, and would keep them from the consumer's {@code matchedMessage} on some types and not
+ * others. The order changes no default: a class that is both shapes has one {@code getMessage()}.
  *
  * <p>The walk is per-{@code @error}-type rather than channel-wide: the union {@code TypeResolver}
  * runs the same mappings, through the same {@code matchesSource}, in the same order, and this
@@ -154,11 +154,11 @@ public final class ErrorTypeFetcherClassGenerator {
             .addParameter(ENV, "env")
             .addStatement("Object src = env.getSource()");
 
+        method.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
         int lastOverride = lastOverrideIndex(et);
         if (lastOverride >= 0) {
             var byType = errorMappings.nestedClass(ErrorMappingsClassGenerator.BY_TYPE_HOLDER);
             String constant = ErrorMappingsClassGenerator.byTypeConstantName(et.name());
-            method.beginControlFlow("if (src instanceof $T thr)", THROWABLE);
             int index = 0;
             for (var handler : et.handlers()) {
                 if (handler instanceof ValidationHandler) continue;
@@ -168,27 +168,23 @@ public final class ErrorTypeFetcherClassGenerator {
                 // source-message handler would let a later override fire in its place.
                 switch (clientMessageOf(handler)) {
                     case ClientMessage.Static ignored -> method.addStatement(
-                        "if ($T.matchesSource($T.$L[$L], thr, env.getGraphQlContext())) return $T.$L[$L].description()",
-                        errorRouter, byType, constant, index, byType, constant, index);
+                        "if ($T.matchesSource($T.$L[$L], thr, env.getGraphQlContext()))"
+                            + " return $T.clientMessage(thr, $T.$L[$L].description(), env)",
+                        errorRouter, byType, constant, index, errorRouter, byType, constant, index);
                     case ClientMessage.FromSource ignored -> method.addStatement(
-                        "if ($T.matchesSource($T.$L[$L], thr, env.getGraphQlContext())) return thr.getMessage()",
-                        errorRouter, byType, constant, index);
+                        "if ($T.matchesSource($T.$L[$L], thr, env.getGraphQlContext()))"
+                            + " return $T.clientMessage(thr, thr.getMessage(), env)",
+                        errorRouter, byType, constant, index, errorRouter);
                 }
                 index++;
             }
-            method.addStatement("return thr.getMessage()");
-            method.endControlFlow();
         }
+        method.addStatement("return $T.clientMessage(thr, thr.getMessage(), env)", errorRouter)
+            .endControlFlow();
 
         method.beginControlFlow("if (src instanceof $T ge)", GRAPHQL_ERROR)
             .addStatement("return ge.getMessage()")
             .endControlFlow();
-
-        if (lastOverride < 0) {
-            method.beginControlFlow("if (src instanceof $T thr)", THROWABLE)
-                .addStatement("return thr.getMessage()")
-                .endControlFlow();
-        }
 
         return method.addStatement("return null").build();
     }

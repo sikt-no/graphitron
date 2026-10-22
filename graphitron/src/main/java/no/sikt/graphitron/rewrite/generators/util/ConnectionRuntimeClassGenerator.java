@@ -10,6 +10,7 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.model.MethodRef;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 
@@ -130,10 +131,17 @@ public final class ConnectionRuntimeClassGenerator {
     /** The runtime's nested source triple ({@code DataSource}, dialect, jOOQ {@code Settings}). */
     public static final String SOURCE_CLASS_NAME = "Source";
     /**
-     * The consumer-implemented callback that decides how a fetcher exception no {@code @error}
-     * mapping claims is logged, held by the runtime and read by {@code ErrorRouter.toConfiguredLog}.
+     * The consumer-implemented callback that decides how a fetcher exception is logged, both one no
+     * {@code @error} mapping claims and one a handler caught; held by the runtime and read by
+     * {@code ErrorRouter.toConfiguredLog}.
      */
     public static final String FETCHER_ERROR_LOG_CLASS_NAME = "FetcherErrorLog";
+    /**
+     * The consumer-implemented callback that decides what the client reads for a fetcher
+     * exception: the reference, a caught error's {@code message:} and the redacted top-level text;
+     * held by the runtime beside {@link #FETCHER_ERROR_LOG_CLASS_NAME} and read by {@code ErrorRouter}.
+     */
+    public static final String FETCHER_ERROR_RESPONSE_CLASS_NAME = "FetcherErrorResponse";
 
     private static final ClassName CONNECTION = ClassName.get("java.sql", "Connection");
     private static final ClassName SQL_EXCEPTION = ClassName.get("java.sql", "SQLException");
@@ -241,9 +249,9 @@ public final class ConnectionRuntimeClassGenerator {
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, TENANT_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
-        var fetcherErrorLog = ClassName.get(schemaPackage, FETCHER_ERROR_LOG_CLASS_NAME);
-        var errorRouter = ClassName.get(schemaPackage,
-            no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.CLASS_NAME);
+        var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
+        var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
+        var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
         var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
@@ -253,14 +261,15 @@ public final class ConnectionRuntimeClassGenerator {
 
         var units = new ArrayList<TypeSpec>();
         units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, tenantKey, multiTenant));
-        units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, sessionHooks, tenantKey,
-            multiTenant, tenantConnections));
+        units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
+            sessionHooks, tenantKey, multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
             multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter, columnValues));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
+        units.add(fetcherErrorResponse(fetcherErrorResponse));
         if (sessionHooks.emitsHookImplementation()) {
             units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
         }
@@ -616,12 +625,14 @@ public final class ConnectionRuntimeClassGenerator {
      * delegating conveniences wrapping default settings, so no consumer call site breaks.
      * Multi-tenant builds additionally carry the fan-out execution configuration (the bounded
      * scatter executor and the scatter deadline); deployment-time values, so they never touch the
-     * Mojo. No hook state lives here: the mount/unmount choice is emitted, not held. The one held
-     * callback is the consumer's optional {@code FetcherErrorLog}, set through a wither rather than
-     * a constructor parameter so it composes with every constructor form instead of doubling them.
+     * Mojo. No hook state lives here: the mount/unmount choice is emitted, not held. The held
+     * callbacks are the consumer's optional {@code FetcherErrorLog} and {@code FetcherErrorResponse},
+     * each set through a wither rather than a constructor parameter so they compose with every
+     * constructor form instead of doubling them.
      */
     private static TypeSpec runtime(ClassName runtime, ClassName pinnedConnection, ClassName instrumentation,
-                                    ClassName fetcherErrorLog, SessionHooks sessionHooks, TypeName tenantKey,
+                                    ClassName fetcherErrorLog, ClassName fetcherErrorResponse,
+                                    SessionHooks sessionHooks, TypeName tenantKey,
                                     boolean multiTenant, ClassName tenantConnections) {
         var payload = payloadParams(sessionHooks);
         var source = runtime.nestedClass(SOURCE_CLASS_NAME);
@@ -663,8 +674,14 @@ public final class ConnectionRuntimeClassGenerator {
                 + "workers.\n")
             .build();
         var fetcherErrorLogField = FieldSpec.builder(fetcherErrorLog, "fetcherErrorLog", Modifier.PRIVATE, Modifier.FINAL)
-            .addJavadoc("The consumer's log for unmatched fetcher exceptions, or {@code null} for Graphitron's\n"
-                + "default line. Application-scoped like the sources; set by {@link #withFetcherErrorLog}.\n")
+            .addJavadoc("The consumer's log for fetcher exceptions, or {@code null} for Graphitron's default\n"
+                + "line. Application-scoped like the sources; set by {@link #withFetcherErrorLog}.\n")
+            .build();
+        var fetcherErrorResponseField = FieldSpec.builder(fetcherErrorResponse, "fetcherErrorResponse",
+                Modifier.PRIVATE, Modifier.FINAL)
+            .addJavadoc("The consumer's choice of what the client reads for a fetcher exception, or\n"
+                + "{@code null} for Graphitron's default text. Application-scoped like the sources; set by\n"
+                + "{@link #withFetcherErrorResponse}.\n")
             .build();
 
         var sourceMapParamType = ParameterizedTypeName.get(MAP, WildcardTypeName.subtypeOf(tenantKey), source);
@@ -717,7 +734,8 @@ public final class ConnectionRuntimeClassGenerator {
                     "fanOutTimeout must be positive, got: ")
                 .endControlFlow();
         }
-        canonicalBuilder.addStatement("this.fetcherErrorLog = null");
+        canonicalBuilder.addStatement("this.fetcherErrorLog = null")
+            .addStatement("this.fetcherErrorResponse = null");
 
         // The wither's copy constructor: every field as-is, so a multi-tenant runtime's fan-out
         // executor is shared rather than a second pool created, and the source map is not
@@ -732,6 +750,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addParameter(DURATION, "fanOutTimeout");
         }
         copyBuilder.addParameter(fetcherErrorLog, "fetcherErrorLog")
+            .addParameter(fetcherErrorResponse, "fetcherErrorResponse")
             .addStatement("this.defaultSource = defaultSource")
             .addStatement("this.sourcesByTenant = sourcesByTenant");
         if (multiTenant) {
@@ -741,27 +760,52 @@ public final class ConnectionRuntimeClassGenerator {
         }
         var copyConstructor = copyBuilder
             .addStatement("this.fetcherErrorLog = fetcherErrorLog")
+            .addStatement("this.fetcherErrorResponse = fetcherErrorResponse")
             .build();
 
         var withFetcherErrorLog = MethodSpec.methodBuilder("withFetcherErrorLog")
             .addModifiers(Modifier.PUBLIC)
             .returns(runtime)
             .addParameter(fetcherErrorLog, "log")
-            .addStatement("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S))",
+            .addStatement("return new $T(defaultSource, sourcesByTenant$L, $T.requireNonNull(log, $S),"
+                    + " fetcherErrorResponse)",
                 runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "log")
             .addJavadoc("A copy of this runtime that hands every fetcher exception no {@code @error} mapping\n"
-                + "claims to {@code log} instead of Graphitron's own ERROR line. The client's response does\n"
-                + "not change: it still carries only the redacted error and its reference. The copy shares\n"
-                + "this runtime's sources"
-                + (multiTenant ? " and fan-out executor" : "") + "; this runtime is unchanged.\n"
+                + "claims to {@code log} instead of Graphitron's own ERROR line, and every exception a\n"
+                + "handler caught to its {@code matched}. The client's response does not change. The copy\n"
+                + "shares this runtime's sources"
+                + (multiTenant ? " and fan-out executor" : "") + " and its {@code FetcherErrorResponse};\n"
+                + "this runtime is unchanged.\n"
                 + "@param log the consumer's log; must not be {@code null}\n"
                 + "@return a runtime carrying {@code log}\n")
+            .build();
+        var withFetcherErrorResponse = MethodSpec.methodBuilder("withFetcherErrorResponse")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(runtime)
+            .addParameter(fetcherErrorResponse, "response")
+            .addStatement("return new $T(defaultSource, sourcesByTenant$L, fetcherErrorLog,"
+                    + " $T.requireNonNull(response, $S))",
+                runtime, multiTenant ? ", fanOutExecutor, fanOutTimeout" : "", OBJECTS, "response")
+            .addJavadoc("A copy of this runtime that asks {@code response} for the reference of every fetcher\n"
+                + "exception, the {@code message:} of every error a handler caught and the top-level message\n"
+                + "of every error none caught. The copy shares this runtime's sources"
+                + (multiTenant ? " and fan-out executor" : "") + " and its\n"
+                + "{@code FetcherErrorLog}; this runtime is unchanged.\n"
+                + "@param response the consumer's response; must not be {@code null}\n"
+                + "@return a runtime carrying {@code response}\n")
             .build();
         var fetcherErrorLogAccessor = MethodSpec.methodBuilder("fetcherErrorLog")
             .addModifiers(Modifier.PUBLIC)
             .returns(ParameterizedTypeName.get(OPTIONAL, fetcherErrorLog))
             .addStatement("return $T.ofNullable(fetcherErrorLog)", OPTIONAL)
             .addJavadoc("The log set by {@link #withFetcherErrorLog}, or empty for Graphitron's default line.\n")
+            .build();
+        var fetcherErrorResponseAccessor = MethodSpec.methodBuilder("fetcherErrorResponse")
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(OPTIONAL, fetcherErrorResponse))
+            .addStatement("return $T.ofNullable(fetcherErrorResponse)", OPTIONAL)
+            .addJavadoc("The response set by {@link #withFetcherErrorResponse}, or empty for Graphitron's\n"
+                + "default text.\n")
             .build();
         var canonicalConstructor = canonicalBuilder
             .addJavadoc("Builds the runtime over a default source (untenanted / single-tenant SQL) and a\n"
@@ -1012,8 +1056,9 @@ public final class ConnectionRuntimeClassGenerator {
                 + "and unmounts per-request identity through the generated hook's static methods, and\n"
                 + "demarcates operation-typed transactions (via the instrumentation {@link #newGraphQL}\n"
                 + "attaches). Holds no per-request state and no hook state: the mount choice is emitted\n"
-                + "code, never a held value. The one callback it holds is the consumer's application-scoped\n"
-                + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}).\n");
+                + "code, never a held value. The callbacks it holds are the consumer's application-scoped\n"
+                + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}) and {@code FetcherErrorResponse}\n"
+                + "({@link #withFetcherErrorResponse}).\n");
         if (multiTenant) {
             builder.addField(defaultFanOutConcurrencyField)
                 .addField(defaultFanOutTimeoutField);
@@ -1025,7 +1070,8 @@ public final class ConnectionRuntimeClassGenerator {
             builder.addField(fanOutExecutorField)
                 .addField(fanOutTimeoutField);
         }
-        builder.addField(fetcherErrorLogField);
+        builder.addField(fetcherErrorLogField)
+            .addField(fetcherErrorResponseField);
         builder.addMethod(canonicalConstructor)
             .addMethod(copyConstructor);
         if (multiTenant) {
@@ -1043,6 +1089,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(newGraphQL)
             .addMethod(withFetcherErrorLog)
             .addMethod(fetcherErrorLogAccessor)
+            .addMethod(withFetcherErrorResponse)
+            .addMethod(fetcherErrorResponseAccessor)
             .addMethod(wrapSources);
         if (multiTenant) {
             builder.addMethod(fanOutExecutorAccessor)
@@ -1874,10 +1922,10 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * Logs one failure with a fresh correlation id and returns its in-band marker. A configured
-     * {@code FetcherErrorLog} takes the failure through its {@code tenantFailed} (a timeout as a
-     * synthesized {@code TimeoutException}, so the consumer's damping sees outages too); without
-     * one, the default line for the arm is written.
+     * Logs one failure under a reference from {@code ErrorRouter.newReference} and returns its
+     * in-band marker. A configured {@code FetcherErrorLog} takes the failure through its
+     * {@code tenantFailed} (a timeout as a synthesized {@code TimeoutException}, so the consumer's
+     * damping sees outages too); without one, the default line for the arm is written.
      */
     private static MethodSpec logFanOutFailure(ClassName self, ClassName errorRouter) {
         var outcome = self.nestedClass("Outcome");
@@ -1887,21 +1935,22 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(failureType)
             .addParameter(ParameterizedTypeName.get(outcome, WildcardTypeName.subtypeOf(Object.class)), "outcome")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .addStatement("$T correlationId = $T.randomUUID()", UUID_CLASS, UUID_CLASS)
-            .addStatement("String reference = correlationId.toString()")
             .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)")
+            .addStatement("String reference = $T.newReference(failed.cause(), env)", errorRouter)
             .beginControlFlow("if (!$T.toConfiguredLog(env, reference,"
                 + " log -> log.tenantFailed(failed.key(), failed.cause(), reference, env)))", errorRouter)
-            .addStatement("LOGGER.error($S, failed.key(), correlationId, failed.cause())",
+            .addStatement("LOGGER.error($S, failed.key(), reference, failed.cause())",
                 "Tenant fan-out failed for tenant {}; correlation id = {}")
             .endControlFlow()
             .addStatement("return new FanOutFailure(reference, FanOutFailure.FAILED)")
             .endControlFlow()
             .beginControlFlow("if (outcome instanceof Outcome.TimedOut)")
+            .addStatement("$T timeout = new $T($S)", TIMEOUT_EXCEPTION, TIMEOUT_EXCEPTION,
+                "tenant fan-out passed its deadline")
+            .addStatement("String reference = $T.newReference(timeout, env)", errorRouter)
             .beginControlFlow("if (!$T.toConfiguredLog(env, reference,"
-                + " log -> log.tenantFailed(outcome.key(), new $T($S), reference, env)))",
-                errorRouter, TIMEOUT_EXCEPTION, "tenant fan-out passed its deadline")
-            .addStatement("LOGGER.error($S, outcome.key(), correlationId)",
+                + " log -> log.tenantFailed(outcome.key(), timeout, reference, env)))", errorRouter)
+            .addStatement("LOGGER.error($S, outcome.key(), reference)",
                 "Tenant fan-out timed out for tenant {}; correlation id = {}")
             .endControlFlow()
             .addStatement("return new FanOutFailure(reference, FanOutFailure.TIMED_OUT)")
@@ -1918,10 +1967,10 @@ public final class ConnectionRuntimeClassGenerator {
 
     /**
      * The consumer-implemented {@code FetcherErrorLog}: one abstract method, so it stays a
-     * functional interface and a later hook point slots in as a further default method without
-     * breaking any implementor. {@code tenantFailed} exists only when {@code tenantKey} is
-     * non-null (a {@code <tenantColumn>} build), typed with that key, so a single-tenant build
-     * exposes no method that can never fire.
+     * functional interface and every later hook point ({@code matched}, {@code tenantFailed}) is a
+     * default method that breaks no implementor. {@code tenantFailed} exists only when
+     * {@code tenantKey} is non-null (a {@code <tenantColumn>} build), typed with that key, so a
+     * single-tenant build exposes no method that can never fire.
      */
     private static TypeSpec fetcherErrorLog(ClassName self, TypeName tenantKey) {
         var unmatched = MethodSpec.methodBuilder("unmatched")
@@ -1936,23 +1985,48 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param reference the text the client received after {@code \"Reference:\"}\n"
                 + "@param env the failing field's environment (its path, field definition and arguments)\n")
             .build();
+        var matched = MethodSpec.methodBuilder("matched")
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+            .addParameter(Throwable.class, "thrown")
+            .addParameter(Throwable.class, "claimed")
+            .addParameter(String.class, "reference")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addJavadoc("Called once for each exception an {@code @error} handler catches in a request, however\n"
+                + "many fields it failed. Graphitron logs nothing about a caught exception, which is right\n"
+                + "for a business error the client is meant to handle; override this to log what a broad\n"
+                + "handler last in a union (a catch-all) catches, so an outage does not reach only the\n"
+                + "client. Does nothing by default. {@code VALIDATION} errors and the column-length check\n"
+                + "are not exceptions and never reach it.\n"
+                + "@param thrown the exception the fetcher threw, message and cause chain intact\n"
+                + "@param claimed the exception the handler caught: {@code thrown} or a link of its cause\n"
+                + "chain, and the source of the payload's error entry\n"
+                + "@param reference the reference the client can be given for this error, the one\n"
+                + "{@code FetcherErrorResponse.matchedMessage} receives\n"
+                + "@param env the environment of the first field that failed with it\n")
+            .build();
         var builder = TypeSpec.interfaceBuilder(self)
             .addModifiers(Modifier.PUBLIC)
             .addAnnotation(FunctionalInterface.class)
-            .addJavadoc("Decides how a fetcher exception no {@code @error} mapping claims is logged. By default\n"
-                + "Graphitron logs such an exception at ERROR through the {@code ErrorRouter} logger,\n"
-                + "message and cause chain included; an exception message can carry row data. Give the\n"
-                + "runtime one of these ({@code GraphitronRuntime.withFetcherErrorLog}) to decide yourself\n"
-                + "what reaches your logs: levels, sanitising and rate limiting are yours to build here.\n"
-                + "The client's response does not change either way: it carries only the redacted error\n"
-                + "and its reference.\n"
+            .addJavadoc("Decides how a fetcher exception is logged. By default Graphitron logs an exception no\n"
+                + "{@code @error} mapping claims at ERROR through the {@code ErrorRouter} logger, message and\n"
+                + "cause chain included (an exception message can carry row data), and logs nothing about\n"
+                + "one a handler caught. Give the runtime one of these\n"
+                + "({@code GraphitronRuntime.withFetcherErrorLog}) to decide yourself what reaches your logs:\n"
+                + "levels, sanitising and rate limiting are yours to build here. {@link #unmatched} is the\n"
+                + "one abstract method, so a lambda is a complete log; {@link #matched} is called once per\n"
+                + "caught exception per request. The client's response does not change either way.\n"
+                + "\n"
+                + "<p>The reference each method receives is minted by\n"
+                + "{@code FetcherErrorResponse.reference}, so a runtime with a log and no response gets the\n"
+                + "default, a random UUID.\n"
                 + "\n"
                 + "<p>On the escape-hatch engine, which has no runtime, put the log into each request's\n"
                 + "{@code GraphQLContext} under this class. A request without that entry gets the default\n"
-                + "line. If the log throws, the client still gets the redacted error and Graphitron logs\n"
-                + "one ERROR line naming the log's class, the class of what it threw and the reference;\n"
-                + "only JVM-fatal errors propagate.\n")
-            .addMethod(unmatched);
+                + "line. If the log throws, the client still gets its response and Graphitron logs one\n"
+                + "ERROR line naming the log's class, the class of what it threw and the reference; only\n"
+                + "JVM-fatal errors propagate.\n")
+            .addMethod(unmatched)
+            .addMethod(matched);
         if (tenantKey != null) {
             builder.addMethod(MethodSpec.methodBuilder("tenantFailed")
                 .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
@@ -1972,6 +2046,81 @@ public final class ConnectionRuntimeClassGenerator {
                 .build());
         }
         return builder.build();
+    }
+
+    /**
+     * The consumer-implemented {@code FetcherErrorResponse}: three default methods and no abstract
+     * one, so it is deliberately not a functional interface and a consumer overrides only what it
+     * needs. The defaults are the only spelling of Graphitron's client-facing text for a fetcher
+     * exception: {@code ErrorRouter} calls a default instance when none is configured rather than
+     * restating them.
+     */
+    private static TypeSpec fetcherErrorResponse(ClassName self) {
+        var reference = MethodSpec.methodBuilder("reference")
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+            .returns(String.class)
+            .addParameter(Throwable.class, "thrown")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return $T.randomUUID().toString()", UUID_CLASS)
+            .addJavadoc("Mints the text that joins a client's report to your log line, once per exception and\n"
+                + "request. The same reference reaches the {@code FetcherErrorLog} and the two message\n"
+                + "methods. The default is a random UUID; a trace id lets an operator go straight from a\n"
+                + "support ticket to the trace. A fetcher may run on a thread that does not carry the\n"
+                + "request's tracing context, so read the trace id from the request's {@code GraphQLContext}.\n"
+                + "@param thrown the exception the reference is for: a caught error's source, or the\n"
+                + "exception no handler caught\n"
+                + "@param env the failing field's environment\n"
+                + "@return the reference; {@code null} falls back to the default\n")
+            .build();
+        var matchedMessage = MethodSpec.methodBuilder("matchedMessage")
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+            .returns(String.class)
+            .addParameter(Throwable.class, "source")
+            .addParameter(String.class, "defaultMessage")
+            .addParameter(String.class, "reference")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return defaultMessage")
+            .addJavadoc("The {@code message:} of an error a handler caught, called when the field is read. Return\n"
+                + "{@code defaultMessage} for the errors you leave alone.\n"
+                + "@param source the exception the handler caught, the error entry's source\n"
+                + "@param defaultMessage what Graphitron returns without this method: the handler's\n"
+                + "{@code description:}, else the exception's own message\n"
+                + "@param reference the reference minted for {@code source}, the one the log received\n"
+                + "@param env the {@code message} field's environment; {@code env.getParentType()} is the\n"
+                + "{@code @error} type\n"
+                + "@return the client's message; {@code null} falls back to {@code defaultMessage}\n")
+            .build();
+        var unmatchedMessage = MethodSpec.methodBuilder("unmatchedMessage")
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+            .returns(String.class)
+            .addParameter(Throwable.class, "thrown")
+            .addParameter(String.class, "reference")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return $S + reference + $S", "An error occurred. Reference: ", ".")
+            .addJavadoc("The top-level error's message when no handler caught the exception. It is the\n"
+                + "client-facing text of a fault nobody planned for, so do not put the exception's message\n"
+                + "in it unless you know what it contains.\n"
+                + "@param thrown the exception the fetcher threw\n"
+                + "@param reference the reference minted for {@code thrown}, the one the log received\n"
+                + "@param env the failing field's environment\n"
+                + "@return the client's message; {@code null} falls back to the default\n")
+            .build();
+        return TypeSpec.interfaceBuilder(self)
+            .addModifiers(Modifier.PUBLIC)
+            .addJavadoc("Decides what the client reads for a fetcher exception: its reference, the\n"
+                + "{@code message:} of an error a handler caught, and the top-level message of one none\n"
+                + "caught. Every method has a default reproducing what Graphitron does without one, so\n"
+                + "override only what you need. Give the runtime one of these\n"
+                + "({@code GraphitronRuntime.withFetcherErrorResponse}); on the escape-hatch engine, which\n"
+                + "has no runtime, put it into each request's {@code GraphQLContext} under this class.\n"
+                + "\n"
+                + "<p>If a method throws or returns {@code null}, the client gets the default text and\n"
+                + "Graphitron logs one ERROR line naming the response's class, the class of what it threw\n"
+                + "and the reference; only JVM-fatal errors propagate.\n")
+            .addMethod(reference)
+            .addMethod(matchedMessage)
+            .addMethod(unmatchedMessage)
+            .build();
     }
 
     /** The in-band per-tenant failure marker {@code collapseFanOut} turns into a null element + error. */

@@ -259,8 +259,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
     }
 
     /**
-     * The connection runtime's unit set: the three fixed units and the {@code FetcherErrorLog}
-     * interface (unconditional; only its surface varies with the tenant key), plus the generated hook class
+     * The connection runtime's unit set: the three fixed units and the {@code FetcherErrorLog} and
+     * {@code FetcherErrorResponse} interfaces (unconditional; only the log's surface varies with the
+     * tenant key), plus the generated hook class
      * exactly when the resolved session-hook carrier emits one
      * ({@link SessionHooks#emitsHookImplementation()}, the same fact the generator gates on),
      * plus the {@code RequestTenants} value exactly in a {@code <tenantColumn>} build
@@ -278,6 +279,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "RequestTenants"));
         }
         refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorLog"));
+        refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "FetcherErrorResponse"));
         if (sessionHooks.emitsHookImplementation()) {
             refs.add(units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronSessionHook"));
         }

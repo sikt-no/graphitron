@@ -6,6 +6,7 @@ import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 
 import javax.lang.model.element.Modifier;
@@ -30,8 +31,9 @@ import java.util.List;
  *   <li>Read each mount payload contextArgument off the {@code graphQLContext} (the name-keyed
  *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
  *       per-request extraction {@code @service} call sites use).</li>
- *   <li>Publish the runtime's {@code FetcherErrorLog}, when one is set, under its class key, where
- *       {@code ErrorRouter.toConfiguredLog} reads it for every unmatched fetcher exception.</li>
+ *   <li>Publish the runtime's {@code FetcherErrorLog} and {@code FetcherErrorResponse}, each when
+ *       one is set, under its class key, where {@code ErrorRouter} reads them for every fetcher
+ *       exception.</li>
  *   <li>Publish the per-operation {@code TenantConnections} carrier under its own class key, on
  *       both topologies. Acquisition is lazy on every path: fetchers resolve contexts through
  *       the carrier ({@code getDslContext(env)} / {@code dslFor} / {@code dslDefault} /
@@ -97,17 +99,19 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var runtime = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.RUNTIME_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.REQUEST_TENANTS_CLASS_NAME);
-        var fetcherErrorLog = ClassName.get(schemaPackage, ConnectionRuntimeClassGenerator.FETCHER_ERROR_LOG_CLASS_NAME);
+        var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
+        var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
         return List.of(instrumentation(self, runtime, tenantConnections, requestTenants, fetcherErrorLog,
-            commitPolicy, state, tenantKey, sessionHooks));
+            fetcherErrorResponse, commitPolicy, state, tenantKey, sessionHooks));
     }
 
     private static TypeSpec instrumentation(
             ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
-            ClassName fetcherErrorLog, ClassName commitPolicy, ClassName state, TypeName tenantKey, SessionHooks sessionHooks) {
+            ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName commitPolicy, ClassName state,
+            TypeName tenantKey, SessionHooks sessionHooks) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -211,10 +215,12 @@ public final class GraphitronConnectionInstrumentationGenerator {
             carrierArgs.append(", ").append(p.name());
         }
         var beginExecuteOperation = beginExecuteOperationBuilder
-            .addComment("The consumer's log for unmatched fetcher exceptions, application-scoped on the runtime;")
-            .addComment("ErrorRouter.toConfiguredLog reads it from here for every field of the operation.")
+            .addComment("The consumer's log and response for fetcher exceptions, application-scoped on the")
+            .addComment("runtime; ErrorRouter reads them from here for every field of the operation.")
             .addStatement("runtime.fetcherErrorLog().ifPresent(log -> graphQLContext.put($T.class, log))",
                 fetcherErrorLog)
+            .addStatement("runtime.fetcherErrorResponse().ifPresent(response -> graphQLContext.put($T.class, response))",
+                fetcherErrorResponse)
             .addCode("\n")
             .addComment("Publish the per-operation carrier; acquisition is lazy on every path. Fetchers")
             .addComment("resolve contexts through the carrier (getDslContext / dslFor / dslDefault), which")
