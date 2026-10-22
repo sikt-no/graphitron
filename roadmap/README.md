@@ -21,7 +21,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
-| `R1089` | A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest | Spec | 2026-10-22 | [plan](bulk-delete-missing-row-not-an-error.md) |
 | `R1088` | A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade | Spec | 2026-10-22 | [plan](decode-graphitron-9-cursors.md) |
 | `R1091` | A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer [] | Spec | 2026-10-22 | [plan](payload-list-field-empty-on-error-arm.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
@@ -30,6 +29,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1089` | A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest | Ready | 2026-10-22 | [plan](bulk-delete-missing-row-not-an-error.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1090` | A connection has no maximum page size, so first: 100000 reads 100000 rows | In Progress | 2026-10-22 | [plan](connection-page-size-cap.md) |
 | `R1087` | Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed | In Progress | 2026-10-22 | [plan](unmatched-error-fallback-logged-and-computed.md) |
@@ -549,7 +549,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### mutation-write
 
-- `R1089` [**A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest**](bulk-delete-missing-row-not-an-error.md) — Spec, enhancement
+- `R1089` [**A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest**](bulk-delete-missing-row-not-an-error.md) — Ready, enhancement
 - `R820` [**An authored index on the field census named-type coordinate**](graphql-field-named-type-index.md) — Backlog, store
 - `R829` [**The payload-returning UPDATE arms cross-partition agreement check has no compile or execution coverage**](payload-update-straddle-execution-coverage.md) — Backlog, bug
 - `R821` [**The payload-returning UPDATE arms emit no within-SET value-agreement check**](payload-update-within-set-agreement.md) — Backlog, bug

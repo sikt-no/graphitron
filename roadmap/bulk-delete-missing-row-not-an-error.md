@@ -1,7 +1,7 @@
 ---
 id: R1089
 title: "A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest"
-status: Spec
+status: Ready
 bucket: enhancement
 priority: 3
 theme: mutation-write
@@ -168,3 +168,11 @@ Question 1 passes. The goal reads cleanly without the phase list: a consumer can
    *Author response:* the Capture bullet now names `GraphitronAnchor.mutations` as what derives the column, in both its select list and its `onDuplicateKeyUpdate`, with `FactWrites.graphitronMutation` as the writer.
 
 Non-blocking: the Rejections and Tests sections are consistent with the plan; nothing else to add.
+
+### Round 2 (Spec → Ready): sign off
+
+Reviewer session_013Qj4MG74mmUTes7j1eF7bS, 2026-10-22.
+
+Both round 1 findings are resolved as the author responses say. Question 1 passes: a consumer can mark one payload-returning DELETE `missingAsDeleted: true`, so a batch with an id that is already gone deletes the rest, commits, and echoes every input id, where today it rolls back with a redacted error. Question 2 passes: a third `DeleteRows` arm refines `Identified`, and the gates reuse the `MutationTableArgError` and `DeleteRowsError` shapes.
+
+Non-blocking, for the implementer: the Capture bullet says adding the application to `corpus/mutation-roots.graphqls` makes `CaptureCorpusIsolationTest` cover a non-empty column. That test does not read the corpus file; its entry-half differential captures `EntryFamilyFixture` (`graphitron-model/src/test/java/no/sikt/graphitron/model/test/EntryFamilyFixture.java`), whose `deleteFilm` already writes `multiRow:` and `table:`. Add `missingAsDeleted: true` there as well, or the differential compares a column that is `NULL` on both arms. The corpus file is still the right home for the Capture test's `@expectEquals` over the two mutation-entry relations.
