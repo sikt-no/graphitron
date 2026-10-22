@@ -460,6 +460,16 @@ someone to profile.
 * **A stage's time does not grow with the other graphs in the store** `open`. The same schema
   captured into a store holding one graph and into one holding many fails a stage whose time grows
   with the number of other graphs, since a rule reading across graphs is a regression caught early.
+  * **An upsert finds the row it updates through one key** `done`. `UpsertKeyGateTest` reads every
+    `MERGE` a capture runs and fails on one whose `ON` matches either of two keys, which finds no
+    index and scans every graph's rows; the fetcher, producer and four capture upserts name their
+    primary key.
+  * **An upsert into a table with an independent unique key is decided per table** `open`.
+    `graphitron_federation_definition` is unique by local name, `graphitron_field_participant_path`
+    by where the element was written, and `graphitron_ast_reference_element_entry` and
+    `graphitron_ast_error_handler_entry` by the application's position and ordinal, none derived
+    from the primary key, so naming the primary key turns a clash on the unique key from an update
+    into a capture failure. `UpsertKeyGateTest` lists them.
 * **A stage's statement reads tables, not a chain of views** `open`. A gate holds the cost of
   preparing each stage's statement, since on a fresh store most of a capture's time goes to H2
   expanding views rather than executing them.
