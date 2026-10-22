@@ -44,12 +44,15 @@ extend type Query {
   named(id: ID! @nodeId(typeName: "Film")): Credit
   # A table-bound return answers before a path does, so @reference changes nothing here.
   referenced(id: ID! @nodeId @reference(path: [{table: "film"}])): Credit
+  inventories: [Inventory]
 }
 
 type Inventory implements Node @table(name: "inventory") @node {
   id: ID! @nodeId
   # Only Node.id binds to the type declaring it, so this field draws nothing though its type is a node.
   filmId: ID! @nodeId @reference(path: [{table: "film"}])
+  # A path landing on actor, a table one node type binds.
+  actorId: ID @nodeId @reference(path: [{table: "film"}, {table: "film_actor"}, {table: "actor"}])
 }
 
 extend schema @expectEquals(relation: "graphitron_node_id_candidate", rows: """
@@ -64,4 +67,17 @@ extend schema @expectEquals(relation: "graphitron_node_id_candidate", rows: """
   Query.referenced(id:), Film
   Query.referenced(id:), Actor
   Inventory.id,       Inventory
+  """)
+
+# What a bare @nodeId on a field carrying @reference becomes: the node type of the table its path
+# lands on, read off the walk from the parent's result at the path's last written place. filmId's
+# path lands on film, which two node types bind, so it becomes nothing.
+extend schema @assertContains(relation: "graphitron_node_id_instruction", rows: """
+  site,         use_site,         basis,                  resolved_type_name
+  OUTPUT_FIELD, Inventory.actorId, TARGET_TABLE_NODE_TYPE, Actor
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_node_id_instruction", rows: """
+  use_site
+  Inventory.filmId
   """)

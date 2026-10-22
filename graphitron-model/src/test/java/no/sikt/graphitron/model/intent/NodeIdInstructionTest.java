@@ -20,8 +20,6 @@ import static no.sikt.graphitron.model.test.SeededStore.seedArgumentReferenceSte
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldNodeId;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedImplements;
 import static no.sikt.graphitron.model.test.SeededStore.seedMutation;
@@ -120,28 +118,6 @@ class NodeIdInstructionTest {
     }
 
     // ===== TARGET_TABLE_NODE_TYPE =====
-
-    /**
-     * The manual's inference rule (b) at an output field: a bare directive on a
-     * {@code @reference}-carrying field takes its target from the table the path lands on. Rule (a)
-     * is deliberately not consulted here even though the containing type is a node, which is the
-     * predicate the two rules are disjoint on.
-     */
-    @Test
-    void aBareDirectiveOnAReferenceFieldTakesThePathsTerminalTable() {
-        withCatalog(dsl -> {
-            seedNodeType(dsl, "Actor", "actor");
-            seedNodeType(dsl, "Film", "film");
-            seedField(dsl, GRAPH, "Film", "actorNodeId", "ID", false);
-            seedFieldNodeId(dsl, GRAPH, "Film", "actorNodeId", null);
-            seedFieldReference(dsl, GRAPH, "Film", "actorNodeId", 0);
-            seedFieldReferenceStep(dsl, GRAPH, "Film", "actorNodeId", 0, 0, null,
-                "film_actor_id_fkey");
-
-            assertThat(rows(dsl).map(NodeIdInstructionTest::render))
-                .containsExactly("OUTPUT_FIELD Film.actorNodeId TARGET_TABLE_NODE_TYPE Actor");
-        });
-    }
 
     /**
      * Rule (b) at an argument, whose target table is the field's named type's binding: the same
