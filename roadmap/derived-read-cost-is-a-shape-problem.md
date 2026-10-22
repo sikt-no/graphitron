@@ -461,6 +461,17 @@ someone to profile.
 * **A stage's time does not grow with the other graphs in the store** `open`. The same schema
   captured into a store holding one graph and into one holding many fails a stage whose time grows
   with the number of other graphs, since a rule reading across graphs is a regression caught early.
+  `GraphCountGrowthGateTest` holds it as a backstop, one graph's write time per table alone and as
+  one of eight within a generous multiple, and `UpsertKeyGateTest` holds the upsert shape the slack
+  would miss; what is left is the tables both name as known.
+  * **The entry defect rule reads one graph's rows** `open`, unowned. After the chain-break fix the
+    whole rule filtered to one graph takes 54 ms with one graph in the store and 98 ms with eight;
+    what still grows is its two column-match parts, 2 to 32 ms, which read
+    `graphitron_field_target_column_match`. Inside the backstop's slack, so not on its known list.
+  * **The carrier data fields and the element declarations do not grow with the graphs in the
+    store** `open`, unowned. `graphitron_carrier_data_field` 10 to 59 ms and
+    `graphql_ast_element_declaration` 12 to 57 ms from one graph to eight at 20 units; both pass
+    the backstop's slack.
   * **An upsert finds the row it updates through one key** `done`. `UpsertKeyGateTest` reads every
     `MERGE` a capture runs and fails on one whose `ON` matches either of two keys, which finds no
     index and scans every graph's rows; the fetcher, producer and four capture upserts name their
