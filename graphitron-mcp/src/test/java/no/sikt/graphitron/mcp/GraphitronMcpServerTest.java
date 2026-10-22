@@ -1038,6 +1038,7 @@ class GraphitronMcpServerTest {
         type Film @table(name: "film") {
           title: String
           language: Language @reference(path: [{key: "film_language_id_fkey"}])
+          spokenIn: Language @reference(path: [{table: "language"}])
           summary: FilmSummary @service(service: {className: "%1$sCardService", method: "summary"})
           description: String @service(service: {className: "%1$sCardService", method: "describe"})
         }
@@ -1179,15 +1180,30 @@ class GraphitronMcpServerTest {
     @SuppressWarnings("unchecked")
     void schemaReportsAReferencingFieldsHopWithBothEndpointsQualified() {
         // The delta over the retired projection, which held a bare target table name and a key name:
-        // both endpoints come back schema-qualified, and the two arities say how certain the hop is.
+        // both endpoints come back schema-qualified, with the namespace that matched the key's name.
         var language = fieldNamed(onlyType(SCHEMA, "Film"), "Film.language");
 
         assertThat((List<Map<String, Object>>) language.get("joinPath")).containsExactly(Map.of(
-            "ordinal", 0, "position", 0,
+            "position", 0,
             "via", "KEY", "keyMatchedBy", "SQL_NAME",
             "fromTable", "public.film", "toTable", "public.language",
-            "constraint", "film_language_id_fkey", "fkOnFrom", true,
-            "targets", 1, "candidates", 1));
+            "constraint", "film_language_id_fkey", "fkOnFrom", true));
+        assertThat(language)
+            .as("the walk took every element, so there is no stop to report")
+            .doesNotContainKey("pathStops");
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void schemaReportsWhereAFieldsWalkStopsAndWhy() {
+        // film reaches language by two keys, language_id and original_language_id, so a table-named
+        // element offers two steps and the store declines to pick one. Nothing is walked, and the
+        // stop says which element, where the walk stood and how many steps it was offered.
+        var spokenIn = fieldNamed(onlyType(SCHEMA, "Film"), "Film.spokenIn");
+
+        assertThat(spokenIn).doesNotContainKey("joinPath");
+        assertThat((List<Map<String, Object>>) spokenIn.get("pathStops")).containsExactly(Map.of(
+            "position", 0, "fromTable", "public.film", "moves", 2));
     }
 
     @Test

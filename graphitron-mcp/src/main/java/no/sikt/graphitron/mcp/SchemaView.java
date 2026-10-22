@@ -198,6 +198,7 @@ final class SchemaView {
             entry.put("column", map);
         });
         putList(entry, "joinPath", field.joinPath(), SchemaView::mapHop);
+        putList(entry, "pathStops", field.pathStops(), SchemaView::mapPathStop);
         putList(entry, "methods", field.methods(), SchemaView::mapMethod);
         return entry;
     }
@@ -214,16 +215,21 @@ final class SchemaView {
 
     private static Map<String, Object> mapHop(SchemaQueries.Hop hop) {
         var map = new LinkedHashMap<String, Object>();
-        map.put("ordinal", hop.ordinal());
         map.put("position", hop.position());
         map.put("via", hop.via());
         McpWire.putIfNotNull(map, "keyMatchedBy", hop.keyMatchedBy());
         map.put("fromTable", hop.fromTable());
         map.put("toTable", hop.toTable());
-        map.put("constraint", hop.constraintName());
+        McpWire.putIfNotNull(map, "constraint", hop.constraintName());
         map.put("fkOnFrom", hop.fkOnFrom());
-        map.put("targets", hop.targets());
-        map.put("candidates", hop.candidates());
+        return map;
+    }
+
+    private static Map<String, Object> mapPathStop(SchemaQueries.PathStop stop) {
+        var map = new LinkedHashMap<String, Object>();
+        map.put("position", stop.position());
+        map.put("fromTable", stop.fromTable());
+        map.put("moves", stop.moves());
         return map;
     }
 
