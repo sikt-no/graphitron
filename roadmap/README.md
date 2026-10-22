@@ -22,13 +22,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1088` | A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade | Spec | 2026-10-22 | [plan](decode-graphitron-9-cursors.md) |
-| `R1091` | A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer [] | Spec | 2026-10-22 | [plan](payload-list-field-empty-on-error-arm.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1091` | A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer [] | Ready | 2026-10-22 | [plan](payload-list-field-empty-on-error-arm.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1089` | A bulk DELETE with an id that matches no row rolls back the whole call, where Graphitron 9 deleted the rest | In Progress | 2026-10-22 | [plan](bulk-delete-missing-row-not-an-error.md) |
 | `R1087` | Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed | In Progress | 2026-10-22 | [plan](unmatched-error-fallback-logged-and-computed.md) |
@@ -569,7 +569,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### error-channel
 
-- `R1091` [**A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer []**](payload-list-field-empty-on-error-arm.md) — Spec, enhancement
+- `R1091` [**A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer []**](payload-list-field-empty-on-error-arm.md) — Ready, enhancement
 - `R1087` [**Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed**](unmatched-error-fallback-logged-and-computed.md) — In Progress, enhancement
 - `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Backlog, bug
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement, blocked by [unmatched-error-fallback-logged-and-computed](unmatched-error-fallback-logged-and-computed.md)

@@ -1,7 +1,7 @@
 ---
 id: R1091
 title: "A list field on a payload with errors is null when the call fails, and cannot be declared non-null to answer []"
-status: Spec
+status: Ready
 bucket: enhancement
 priority: 3
 theme: error-channel
