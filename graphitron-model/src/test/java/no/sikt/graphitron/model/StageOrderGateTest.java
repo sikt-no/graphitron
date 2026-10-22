@@ -91,8 +91,6 @@ class StageOrderGateTest {
      * what says which of those each stage actually is.
      */
     private static final List<Step> STRATUM = List.of(
-        new Step("FieldColumnScopes", "graphitron_field_column_scope_rule",
-            Set.of("graphitron_field_column_scope")),
         new Step("ClassificationDomainCapture", null,
             Set.of("intent_type_domain")),
         new Step("InputOccurrencePaths", null,

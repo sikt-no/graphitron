@@ -21,11 +21,8 @@ import static no.sikt.graphitron.model.test.SeededStore.seedColumn;
 import static no.sikt.graphitron.model.test.SeededStore.seedConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedField;
 import static no.sikt.graphitron.model.test.SeededStore.seedFieldBinding;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReference;
-import static no.sikt.graphitron.model.test.SeededStore.seedFieldReferenceStep;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraphSource;
-import static no.sikt.graphitron.model.test.SeededStore.seedReferentialConstraint;
 import static no.sikt.graphitron.model.test.SeededStore.seedService;
 import static no.sikt.graphitron.model.test.SeededStore.seedSource;
 import static no.sikt.graphitron.model.test.SeededStore.seedTable;
@@ -273,31 +270,6 @@ class ColumnMatchClaimTest {
     }
 
     /**
-     * The match runs where the site navigates, so an authored path moves it to the path's terminal
-     * table. Nothing about the coordinate says "column on the parent" once the author has written
-     * where the value comes from, and resolving there is what makes the witness the table the value
-     * is actually read out of. The parent carries a column of the same name, so a view resolving
-     * against the parent would answer this case too, with the wrong table.
-     *
-     * <p>The sibling field with no path is here because the scope is read per coordinate: both
-     * tables carry both names, so a scope paired with the wrong field would move this one too.
-     */
-    @Test
-    void anAuthoredPathMovesTheMatchToItsTerminalTable() {
-        withFilm(dsl -> {
-            seedField(dsl, GRAPH, "Film", "name");
-            seedField(dsl, GRAPH, "Film", "title");
-            seedFieldReference(dsl, GRAPH, "Film", "name", 0);
-            seedFieldReferenceStep(dsl, GRAPH, "Film", "name", 0, 0, null, FILM_LANGUAGE_KEY);
-            assertThat(claims(dsl).map(r -> r.getFieldName() + " " + r.getTableName()
-                    + " " + r.getColumnName()))
-                .as("the path's terminal for the field that wrote one, the parent's own for the "
-                    + "field that did not")
-                .containsExactlyInAnyOrder("name language name", "title film title");
-        });
-    }
-
-    /**
      * The reduction's rule, both halves: the authored claim wins the coordinate, and the masked
      * structural reading survives in the classifier view as data, the row a hover reads to say
      * "would classify as a table column; {@code @service} overrides it".
@@ -423,17 +395,14 @@ class ColumnMatchClaimTest {
     private static final String PKG = "pkg.a";
     private static final String OTHER_PKG = "pkg.b";
     private static final String PUBLIC = "public";
-    private static final String FILM_LANGUAGE_KEY = "film_language_id_fkey";
 
     /**
-     * A one-source catalog holding {@code film} and {@code language}, with a key from the first to
-     * the second so a case can write a path.
+     * A one-source catalog holding {@code film} and {@code language}.
      *
      * <p>Both tables declare {@code title} and {@code name}, and the language copies sit at the
-     * lower ordinals. That is the arrangement that makes a site's scope observable: the match
-     * collapses to the first candidate in tier-then-ordinal order, so a rule pairing a field with
-     * the wrong site's scope answers with the wrong table here rather than falling silent, and
-     * silence is what a fixture with the column on one table only would have reported.
+     * lower ordinals, so a rule reading a field's column on the wrong table answers with that
+     * table here rather than falling silent. Where a written path moves the read is the fact
+     * document {@code defects/field-target-column.graphqls}'s.
      */
     private static void withCatalog(Consumer<DSLContext> body) {
         withSeededStore(GRAPH, dsl -> {
@@ -449,9 +418,6 @@ class ColumnMatchClaimTest {
             seedColumn(dsl, PKG, PUBLIC, "language", "title", 1, "TITLE");
             seedColumn(dsl, PKG, PUBLIC, "language", "name", 2, "NAME");
             seedConstraint(dsl, PKG, PUBLIC, "language", "language_pkey", "PRIMARY KEY", null);
-            seedConstraint(dsl, PKG, PUBLIC, "film", FILM_LANGUAGE_KEY, "FOREIGN KEY", null);
-            seedReferentialConstraint(dsl, PKG, PUBLIC, "film", FILM_LANGUAGE_KEY,
-                PKG, PUBLIC, "language", "language_pkey");
             body.accept(dsl);
         });
     }

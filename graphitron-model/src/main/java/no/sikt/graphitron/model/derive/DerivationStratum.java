@@ -75,7 +75,6 @@ public final class DerivationStratum {
      */
     public static List<Step> steps(GraphQLSchema schema) {
         return List.of(
-            step("FieldColumnScopes", "graphitron_field_column_scope", FieldColumnScopes::derive),
             new Step("ClassificationDomainCapture", Set.of("intent_type_domain"),
                 (dsl, graph) -> ClassificationDomainCapture.derive(dsl, graph, schema)),
             new Step("InputOccurrencePaths",

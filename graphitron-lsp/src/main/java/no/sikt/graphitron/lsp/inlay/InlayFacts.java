@@ -20,7 +20,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CODE_REFERENCE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_COLUMN_SCOPE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_TABLE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
@@ -35,7 +34,6 @@ import static org.jooq.impl.DSL.falseCondition;
 import static org.jooq.impl.DSL.multiset;
 import static org.jooq.impl.DSL.select;
 import static org.jooq.impl.DSL.selectDistinct;
-import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.selectOne;
 
 /**
@@ -108,9 +106,10 @@ final class InlayFacts {
 
         /**
          * A site where a {@code @field} overlay may render. A member name resolves against the column
-         * the field reads first, which the type-keyed column arm answers, and against the type's scope
-         * second, which is the type's bindings, its backing class and the tables that class is a
-         * record of, so asking about the site is asking about all of them.
+         * the field reads first, which the type-keyed column arm answers whether or not the field has
+         * a path, and against the type's scope second, which is the type's bindings, its backing class
+         * and the tables that class is a record of, so asking about the site is asking about all of
+         * them.
          */
         void memberSite(String typeName, String fieldName) {
             memberSites.add(new FieldCoord(typeName, fieldName));
@@ -134,11 +133,8 @@ final class InlayFacts {
     /** A class whose instances a type holds; several rows are producers returning different classes. */
     record ResultClassRow(String typeName, String className) {}
 
-    /** The column a scalar field with no path reads, on one table its read departs from. */
+    /** The column a scalar field reads, on the table holding it. */
     record TargetColumnRow(String typeName, String fieldName, String tableName, String columnName) {}
-
-    /** A column a scalar field with a path names on the table the path lands on. */
-    record PathColumnRow(String typeName, String fieldName, String columnName) {}
 
     /** A method a code reference written at a field resolves to. */
     record MethodRow(String typeName, String fieldName, String className, String methodName) {}
@@ -177,7 +173,6 @@ final class InlayFacts {
         List<ResultTableRow> resultTables,
         List<ResultClassRow> resultClasses,
         List<TargetColumnRow> targetColumns,
-        List<PathColumnRow> pathColumns,
         List<MethodRow> methods,
         List<TargetTableRow> targetTables,
         List<ProducerRow> producers,
@@ -252,9 +247,9 @@ final class InlayFacts {
 
         /**
          * The member a field's own name reaches, spelled as an author would write it into
-         * {@code @field(name:)}. Over rows already in hand: the column the field reads, or for a field
-         * with a path the one column of that name where the path lands, then the type's scope, which
-         * answers only where that scope is a class's.
+         * {@code @field(name:)}. Over rows already in hand: the column the field reads, on the table
+         * its read departs from or the one its path arrives at, then the type's scope, which answers
+         * only where that scope is a class's.
          */
         Optional<String> memberName(String typeName, String fieldName) {
             var column = targetColumns.stream()
@@ -263,11 +258,6 @@ final class InlayFacts {
                 .distinct()
                 .toList();
             if (column.size() == 1) return Optional.of(column.getFirst());
-            var pathColumn = pathColumns.stream()
-                .filter(row -> row.typeName().equals(typeName) && row.fieldName().equals(fieldName))
-                .map(PathColumnRow::columnName)
-                .toList();
-            if (pathColumn.size() == 1) return Optional.of(pathColumn.getFirst());
             var scope = TypeMemberScope.resolve(
                 boundTablesOf(typeName),
                 () -> backingClass(typeName),
@@ -316,7 +306,7 @@ final class InlayFacts {
      */
     static Answers none() {
         return new Answers(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(),
-            List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+            List.of(), List.of(), List.of(), List.of(), List.of());
     }
 
     /** Every question the region asked, answered in one statement. */
@@ -328,7 +318,6 @@ final class InlayFacts {
                 resultTableArm(store, questions.declaredTypeNames),
                 resultClassArm(store, questions.declaredTypeNames),
                 targetColumnArm(store, questions.declaredTypeNames),
-                pathColumnArm(store, questions.memberSites),
                 methodArm(store, questions.declaredTypeNames),
                 targetTableArm(store, questions.declaredTypeNames),
                 multiset(selectDistinct(GRAPHITRON_PRODUCER.TYPE_NAME, GRAPHITRON_PRODUCER.FIELD_NAME)
@@ -441,31 +430,13 @@ final class InlayFacts {
             .convertFrom(rows -> rows.map(Records.mapping(ResultClassRow::new)));
     }
 
-    /** The columns the region's scalar fields with no path read. */
+    /** The columns the region's scalar fields read, on the tables holding them. */
     private static Field<List<TargetColumnRow>> targetColumnArm(StoreHandle store, Collection<String> typeNames) {
         var c = GRAPHITRON_FIELD_TARGET_COLUMN;
-        return multiset(selectDistinct(c.TYPE_NAME, c.FIELD_NAME, c.FROM_TABLE, c.COLUMN_NAME).from(c)
+        return multiset(selectDistinct(c.TYPE_NAME, c.FIELD_NAME, c.TO_TABLE, c.COLUMN_NAME).from(c)
             .where(c.GRAPH_NAME.eq(store.graphName()), c.TYPE_NAME.in(typeNames))
-            .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.FROM_TABLE))
+            .orderBy(c.TYPE_NAME, c.FIELD_NAME, c.TO_TABLE))
             .convertFrom(rows -> rows.map(Records.mapping(TargetColumnRow::new)));
-    }
-
-    /**
-     * The column each member site with a path names where the path lands, by its own name, the SQL
-     * name before the generated one as the target column matches it. A field with a path has no
-     * target column yet, the landing being the forward walk's to state; the column scope's terminal
-     * table is where it reads until then.
-     */
-    private static Field<List<PathColumnRow>> pathColumnArm(StoreHandle store, Collection<FieldCoord> sites) {
-        var sc = GRAPHITRON_FIELD_COLUMN_SCOPE;
-        var c = SQL_COLUMN;
-        return multiset(selectDistinct(sc.TYPE_NAME, sc.FIELD_NAME, c.COLUMN_NAME).from(sc)
-            .join(c).on(c.SOURCE_NAME.eq(sc.TABLE_SOURCE_NAME), c.TABLE_SCHEMA.eq(sc.TABLE_SCHEMA),
-                c.TABLE_NAME.eq(sc.TABLE_NAME), c.COLUMN_NAME_UPPER.eq(upper(sc.FIELD_NAME)))
-            .where(sc.GRAPH_NAME.eq(store.graphName()), sc.BASIS.eq("PATH_TERMINAL"))
-            .and(coordinateIn(sc.TYPE_NAME, sc.FIELD_NAME, sites))
-            .orderBy(sc.TYPE_NAME, sc.FIELD_NAME, c.COLUMN_NAME))
-            .convertFrom(rows -> rows.map(Records.mapping(PathColumnRow::new)));
     }
 
     /**

@@ -200,8 +200,12 @@ resolutions and links built beside it are gone.
   `SchemaQueries`, `ReferencePathFanout` and the routine writes read `graphitron_field_path`, its
   children and its stops, and the `intent_field_path_` views, `graphitron_field_path_application`
   and `FieldPathApplications` go.
-* **A scalar with a path has a target column where its path lands** `open`. The `PATH_TERMINAL` rule of `COLUMN_UNRESOLVED` and the `@field` hint read
-  it, and `graphitron_field_column_scope` goes.
+* **A scalar with a path has a target column where its path lands** `done`. `graphitron_field_target_column`
+  states the table a read arrives at beside the one it departs from, read off `graphitron_field_path_landing`
+  where a path is written, so `COLUMN_UNRESOLVED` and the `@field` hint judge the arrival.
+  Applications compose in written order, a path the walk stops on has no column and only the path's
+  defect, and an object field's directives resolve against `graphitron_field_target_table`.
+  `graphitron_field_column_scope` is gone.
 * **Nothing resolves a path but the walk** `blocked`, on "The step targets' readers read the walk" and "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
 * **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target

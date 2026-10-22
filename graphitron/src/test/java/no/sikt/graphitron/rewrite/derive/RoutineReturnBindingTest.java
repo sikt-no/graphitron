@@ -19,7 +19,7 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_COLUMN_SCOPE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
@@ -240,11 +240,11 @@ class RoutineReturnBindingTest {
     @Test
     void aChildOfARoutineReturnTypeResolvesItsColumnsThere() {
         withCaptured(routineReturning("Row", ""), dsl -> {
-            var scopes = columnScope(dsl, "Row", "title");
-            assertThat(scopes).hasSize(1);
-            assertThat(scopes.getFirst().get(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS)).isEqualTo("PARENT_BINDING");
-            assertThat(lower(scopes.getFirst().get(GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME)))
+            var columns = targetColumn(dsl, "Row", "title");
+            assertThat(columns).hasSize(1);
+            assertThat(lower(columns.getFirst().get(GRAPHITRON_FIELD_TARGET_COLUMN.TO_TABLE)))
                 .isEqualTo("films_for_actor");
+            assertThat(columns.getFirst().get(GRAPHITRON_FIELD_TARGET_COLUMN.COLUMN_NAME)).isEqualTo("title");
         });
     }
 
@@ -330,13 +330,13 @@ class RoutineReturnBindingTest {
     }
 
     private static Result<Record2<String, String>>
-            columnScope(DSLContext dsl, String typeName, String fieldName) {
-        return dsl.select(GRAPHITRON_FIELD_COLUMN_SCOPE.BASIS,
-            GRAPHITRON_FIELD_COLUMN_SCOPE.TABLE_NAME)
-            .from(GRAPHITRON_FIELD_COLUMN_SCOPE)
-            .where(GRAPHITRON_FIELD_COLUMN_SCOPE.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(GRAPHITRON_FIELD_COLUMN_SCOPE.TYPE_NAME.eq(typeName))
-            .and(GRAPHITRON_FIELD_COLUMN_SCOPE.FIELD_NAME.eq(fieldName))
+            targetColumn(DSLContext dsl, String typeName, String fieldName) {
+        return dsl.select(GRAPHITRON_FIELD_TARGET_COLUMN.TO_TABLE,
+            GRAPHITRON_FIELD_TARGET_COLUMN.COLUMN_NAME)
+            .from(GRAPHITRON_FIELD_TARGET_COLUMN)
+            .where(GRAPHITRON_FIELD_TARGET_COLUMN.GRAPH_NAME.eq(CapturedStore.GRAPH))
+            .and(GRAPHITRON_FIELD_TARGET_COLUMN.TYPE_NAME.eq(typeName))
+            .and(GRAPHITRON_FIELD_TARGET_COLUMN.FIELD_NAME.eq(fieldName))
             .fetch();
     }
 

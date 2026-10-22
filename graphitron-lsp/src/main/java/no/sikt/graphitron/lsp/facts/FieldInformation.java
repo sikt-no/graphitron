@@ -50,7 +50,7 @@ public final class FieldInformation {
     /** The field as declared: its type expression and its description, null where none is written. */
     public record Signature(String typeSdl, String description) {}
 
-    /** The column a scalar reads on one table its read departs from. */
+    /** The column a scalar reads, on the table holding it. */
     public record Column(String table, String column, String sqlType, boolean nullable,
                          String matchedBy, String description) {}
 
@@ -138,13 +138,13 @@ public final class FieldInformation {
 
         var c = GRAPHITRON_FIELD_TARGET_COLUMN;
         var sc = SQL_COLUMN;
-        columns = multiset(select(c.FROM_TABLE, c.COLUMN_NAME, sc.SQL_TYPE, sc.NULLABLE, c.MATCHED_BY,
+        columns = multiset(selectDistinct(c.TO_TABLE, c.COLUMN_NAME, sc.SQL_TYPE, sc.NULLABLE, c.MATCHED_BY,
                 sc.DESCRIPTION)
             .from(c)
-            .join(sc).on(sc.SOURCE_NAME.eq(c.FROM_SOURCE_NAME), sc.TABLE_SCHEMA.eq(c.FROM_SCHEMA),
-                sc.TABLE_NAME.eq(c.FROM_TABLE), sc.COLUMN_NAME.eq(c.COLUMN_NAME))
+            .join(sc).on(sc.SOURCE_NAME.eq(c.TO_SOURCE_NAME), sc.TABLE_SCHEMA.eq(c.TO_SCHEMA),
+                sc.TABLE_NAME.eq(c.TO_TABLE), sc.COLUMN_NAME.eq(c.COLUMN_NAME))
             .where(c.GRAPH_NAME.eq(graph), c.TYPE_NAME.eq(typeName), c.FIELD_NAME.eq(fieldName))
-            .orderBy(c.FROM_SCHEMA, c.FROM_TABLE))
+            .orderBy(c.TO_TABLE, c.COLUMN_NAME))
             .convertFrom(rows -> rows.map(Records.mapping(Column::new)))
             .as("info_columns");
 

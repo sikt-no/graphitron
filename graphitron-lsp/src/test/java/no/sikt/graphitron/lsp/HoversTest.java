@@ -710,7 +710,7 @@ class HoversTest {
         // renders it on.
         String sdl = """
             type Film @table(name: "film") {
-                languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "last_update") @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { films: [Film] }
             """;
@@ -750,7 +750,7 @@ class HoversTest {
         // so the hover renders the column on "language".
         String sdl = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
-                languageName: String @field(name: "last_update") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "last_update") @reference(path: [{key: "film_language_id_fkey"}])
             }
             interface Melding @table(name: "film") { languageName: String }
             type Query { meldinger: [Melding] }

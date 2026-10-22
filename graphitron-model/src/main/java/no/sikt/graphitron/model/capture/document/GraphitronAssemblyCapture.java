@@ -86,14 +86,14 @@ public final class GraphitronAssemblyCapture {
         FieldTargetTables.derive(dsl, graph, readAt);
         // And the tables their reads depart from, off the same bindings and the targets.
         FieldSourceTables.derive(dsl, graph, readAt);
-        // The column each scalar with no path reads on those departing tables.
-        FieldTargetColumns.derive(dsl, graph, readAt);
         // Last, each output field's fetcher, off the targets, bindings and backings above.
         Fetchers.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.
         FieldPaths.derive(dsl, graph, readAt);
+        // The column each scalar reads: on a table its read departs from, or where its walk arrives.
+        FieldTargetColumns.derive(dsl, graph, readAt);
     }
 
     /**

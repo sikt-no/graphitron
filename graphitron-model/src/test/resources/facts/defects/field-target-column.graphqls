@@ -1,8 +1,10 @@
-# The column a scalar field with no path reads, on each table its read departs from. The spelling is
-# the @field(name:) where one is written and the field's own name otherwise, folded by case, and the
-# SQL name answers before the generated one. A spelling naming no column there, or several, has no
-# row and is a defect at the field. case_twins has "Code" and "code", which its codegen names
-# CAPITAL_CODE and CODE.
+# The column a scalar field reads, on each table its read departs from. With no path it is on that
+# table; with a @reference path it is on the table the path arrives at, the applications composed in
+# the order written. The spelling is the @field(name:) where one is written and the field's own name
+# otherwise, folded by case, and the SQL name answers before the generated one. A spelling naming no
+# column there, or several, has no row and is a defect at the field. A path that arrives nowhere has
+# no row either, and its defect is the path's alone: the column cannot be judged until the path is
+# fixed. case_twins has "Code" and "code", which its codegen names CAPITAL_CODE and CODE.
 
 type Film @table(name: "film") {
   # Its own name, and @field with the case changed.
@@ -12,6 +14,20 @@ type Film @table(name: "film") {
   titel: String
   renamed: String @field(name: "no_such_column")
   details: Details
+  # One key, two hops, and two applications composed: each arrives at the table that has the column.
+  plainKey: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+  twoHop: String @field(name: "first_name") @reference(path: [{table: "film_actor"}, {table: "actor"}])
+  twiceComposed: String @field(name: "first_name")
+    @reference(path: [{table: "film_actor"}]) @reference(path: [{table: "actor"}])
+  # film has two keys to language, so the path is not deterministic and arrives nowhere.
+  languageName: String @field(name: "name") @reference(path: [{table: "language"}])
+  # language has no key to film_actor, so the second application arrives nowhere.
+  twiceBroken: String @field(name: "name")
+    @reference(path: [{key: "film_language_id_fkey"}]) @reference(path: [{table: "film_actor"}])
+  # Names no table, and names a key that does not leave film.
+  nowhere: String @reference(path: [{table: "no_such_table"}])
+  wrongSide: String @field(name: "first_name") @reference(path: [{key: "film_actor_actor_id_fkey"}])
+  langDetails: LangDetails
   # Produces an object of its own, whose fields are read off it rather than off film.
   sharedTranslations: SharedTranslations @service(service: {
     className: "no.sikt.graphitron.rewrite.test.services.SharedValueTypeService",
@@ -76,6 +92,11 @@ type Details {
   title: String
 }
 
+# No table of its own: its path departs from film, whose rows it holds.
+type LangDetails {
+  langName: String @field(name: "name") @reference(path: [{key: "film_language_id_fkey"}])
+}
+
 type Twins @table(name: "case_twins") {
   # Only the generated name of "Code" answers.
   capital: String @field(name: "CAPITAL_CODE")
@@ -107,25 +128,41 @@ extend type Query {
 }
 
 extend schema @expectEquals(relation: "graphitron_field_target_column", rows: """
-  type_name,          field_name, from_table, column_name, matched_by
-  FactAnchor,         paymentId,  payment,    payment_id,  SQL_NAME
-  Details,            lastUpdate, film,       last_update, SQL_NAME
-  Details,            lastUpdate, language,   last_update, SQL_NAME
-  Details,            title,      film,       title,       SQL_NAME
-  Film,               name,       film,       title,       SQL_NAME
-  Film,               title,      film,       title,       SQL_NAME
-  FilmDetailsCarrier, filmId,     film,       film_id,     SQL_NAME
-  LangInfo,           name,       language,   name,        SQL_NAME
-  Twins,              capital,    case_twins, Code,        JOOQ_NAME
+  type_name,          field_name,    from_table, to_table,   column_name, matched_by
+  FactAnchor,         paymentId,     payment,    payment,    payment_id,  SQL_NAME
+  Details,            lastUpdate,    film,       film,       last_update, SQL_NAME
+  Details,            lastUpdate,    language,   language,   last_update, SQL_NAME
+  Details,            title,         film,       film,       title,       SQL_NAME
+  Film,               name,          film,       film,       title,       SQL_NAME
+  Film,               plainKey,      film,       language,   name,        SQL_NAME
+  Film,               title,         film,       film,       title,       SQL_NAME
+  Film,               twiceComposed, film,       actor,      first_name,  SQL_NAME
+  Film,               twoHop,        film,       actor,      first_name,  SQL_NAME
+  FilmDetailsCarrier, filmId,        film,       film,       film_id,     SQL_NAME
+  LangDetails,        langName,      film,       language,   name,        SQL_NAME
+  LangInfo,           name,          language,   language,   name,        SQL_NAME
+  Twins,              capital,       case_twins, case_twins, Code,        JOOQ_NAME
   """)
 
 extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
-  code,              type_name, field_name, detail
-  COLUMN_AMBIGUOUS,  Twins,     code,       code
-  COLUMN_UNRESOLVED, Details,   title,      title
-  COLUMN_UNRESOLVED, Film,      renamed,    no_such_column
-  COLUMN_UNRESOLVED, Film,      titel,      titel
-  COLUMN_UNRESOLVED, LangPlain, id,         id
+  code,                    type_name, field_name,   detail
+  COLUMN_AMBIGUOUS,        Twins,     code,         code
+  COLUMN_UNRESOLVED,       Details,   title,        title
+  COLUMN_UNRESOLVED,       Film,      renamed,      no_such_column
+  COLUMN_UNRESOLVED,       Film,      titel,        titel
+  COLUMN_UNRESOLVED,       LangPlain, id,           id
+  ELEMENT_UNRESOLVED,      Film,      nowhere,
+  NO_ROUTE_FROM_DEPARTURE, Film,      twiceBroken,
+  NO_ROUTE_FROM_DEPARTURE, Film,      wrongSide,
+  ROUTE_AMBIGUOUS,         Film,      languageName,
+  """)
+
+# A field's own name claims the column where its read arrives: the path's arrival for the field
+# that wrote one, the parent's own table for the field that did not.
+extend schema @assertContains(relation: "intent_column_match_claim", rows: """
+  type_name, field_name, table_name, column_name
+  Film,      plainKey,   language,   name
+  Film,      title,      film,       title
   """)
 
 # The columns an ambiguous spelling folds onto are the match's rows, one each.

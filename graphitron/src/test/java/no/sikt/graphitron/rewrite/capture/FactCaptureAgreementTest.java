@@ -174,8 +174,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       claims;
  *       the fact document {@code field-column-table.graphqls} binds
  *       {@code intent_field_column_table}, the override a column name's site resolves through, and
- *       {@code graphitron_field_column_scope}, the navigation it reads, over real SDL and the real
- *       catalog, the coordinates that produce no override row being as much its claim as the ones
+ *       {@code graphitron_field_target_column}, the column a scalar reads, over real SDL and the
+ *       real catalog, the coordinates that produce no override row being as much its claim as the ones
  *       that do;
  *       the member names a backing class offers are no longer a derivation at all, the reading
  *       writing them down as {@code code_read_slot}, so the rule is pinned once rather than twice

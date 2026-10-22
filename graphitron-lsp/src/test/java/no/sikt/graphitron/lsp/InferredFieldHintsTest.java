@@ -49,7 +49,7 @@ class InferredFieldHintsTest {
      */
     private static final String SDL = """
         type Query {
-            placeholder: Int
+            films: [Film]
             pojo: FilmPojoView @service(service: {className: "%1$s", method: "makeFilmPojo"})
             row: FilmRow @service(service: {className: "%1$s", method: "makeFilmRow"})
         }

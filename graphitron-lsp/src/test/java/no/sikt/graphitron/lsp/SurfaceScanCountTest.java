@@ -74,7 +74,7 @@ import static org.jooq.impl.DSL.select;
  * passes; it is finished when it has been seen to fail.
  *
  * <p>Re-measured whole, both shapes, with the two relations the inlay read depends on
- * ({@code graphitron_spelled_table} and {@code graphitron_field_column_scope}) removed for the guarded
+ * ({@code graphitron_spelled_table} and {@code graphitron_field_column_scope}, since removed) removed for the guarded
  * side. Both were registrations when the figures were taken and both are capture stages now, which
  * changes who writes their rows and not that the guarded side reads them off disk, so the pairs
  * below still say what they said. Every ceiling below is between its pair: goto-definition on a type at 122 against 288,

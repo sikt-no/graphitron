@@ -64,7 +64,6 @@ class StageAnswerAgreementTest {
         new Stage("graphitron_path_element_method", "graphitron_path_element_method_rule"),
         new Stage("graphitron_field_source_table", "graphitron_field_source_table_rule"),
         new Stage("graphitron_field_target_column", "graphitron_field_target_column_rule"),
-        new Stage("graphitron_field_column_scope", "graphitron_field_column_scope_rule"),
         new Stage("graphitron_carrier_data_field", "graphitron_carrier_data_field_rule"),
         new Stage("graphitron_field_scope_table", "graphitron_field_scope_table_rule"),
         new Stage("graphitron_argument_scope_table", "graphitron_argument_scope_table_rule"),
@@ -117,23 +116,6 @@ class StageAnswerAgreementTest {
         assertThat(STAGES.stream().map(Stage::target).filter(t -> !populated.contains(t)).toList())
             .as("stage-written tables no fixture populates; extend a fixture until one does")
             .isEmpty();
-    }
-
-    /**
-     * The fixture reaches every rule the column-scope stage states, so the agreement above is over
-     * a populated relation and over all three of its arms rather than whichever one a thin schema
-     * happened to hit.
-     */
-    @Test
-    @DisplayName("the fixture reaches all three bases of the field-site column scope")
-    void theFixtureReachesEveryArmOfTheRule() {
-        withCapturedStore(dsl -> assertThat(dsl
-                .selectDistinct(org.jooq.impl.DSL.field(name("BASIS"), String.class))
-                .from(table(name("GRAPHITRON_FIELD_COLUMN_SCOPE")))
-                .fetch(0, String.class))
-            .as("the bases the fixture reaches; an agreement over one arm asserts a third of the"
-                + " rule and passes all the same")
-            .containsExactlyInAnyOrder("PATH_TERMINAL", "NAMED_TYPE_TABLE", "PARENT_BINDING"));
     }
 
     /**

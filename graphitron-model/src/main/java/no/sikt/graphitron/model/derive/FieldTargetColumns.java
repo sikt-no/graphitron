@@ -11,12 +11,12 @@ import static org.jooq.impl.DSL.val;
 
 /**
  * The capture-cadence writer of {@code graphitron_field_target_column}: the column a scalar field
- * with no path reads on each table its read departs from. One statement over the rule view beside
- * the table it fills.
+ * reads, on each table its read departs from, matched where it arrives. One statement over the rule
+ * view beside the table it fills.
  *
- * <p>Called as a stage of the graphitron gatherer after {@link FieldSourceTables}, whose
- * departures it reads. Marked and swept: upserted on the reading's instant, then the rows this
- * reading did not name are deleted.
+ * <p>Called as a stage of the graphitron gatherer after {@link FieldSourceTables} and
+ * {@link FieldPaths}, whose departures and arrivals it reads. Marked and swept: upserted on the
+ * reading's instant, then the rows this reading did not name are deleted.
  */
 public final class FieldTargetColumns {
 
@@ -29,15 +29,18 @@ public final class FieldTargetColumns {
 
         dsl.insertInto(target)
             .columns(target.GRAPH_NAME, target.TYPE_NAME, target.FIELD_NAME, target.FROM_SOURCE_NAME,
-                target.FROM_SCHEMA, target.FROM_TABLE, target.COLUMN_NAME, target.MATCHED_BY,
-                target.TOUCHED_AT)
+                target.FROM_SCHEMA, target.FROM_TABLE, target.TO_SOURCE_NAME, target.TO_SCHEMA,
+                target.TO_TABLE, target.COLUMN_NAME, target.MATCHED_BY, target.TOUCHED_AT)
             .select(dsl
                 .select(rule.GRAPH_NAME, rule.TYPE_NAME, rule.FIELD_NAME, rule.FROM_SOURCE_NAME,
-                    rule.FROM_SCHEMA, rule.FROM_TABLE, rule.COLUMN_NAME, rule.MATCHED_BY,
-                    val(touchedAt, target.TOUCHED_AT))
+                    rule.FROM_SCHEMA, rule.FROM_TABLE, rule.TO_SOURCE_NAME, rule.TO_SCHEMA,
+                    rule.TO_TABLE, rule.COLUMN_NAME, rule.MATCHED_BY, val(touchedAt, target.TOUCHED_AT))
                 .from(rule)
                 .where(rule.GRAPH_NAME.eq(graphName)))
             .onDuplicateKeyUpdate()
+            .set(target.TO_SOURCE_NAME, excluded(target.TO_SOURCE_NAME))
+            .set(target.TO_SCHEMA, excluded(target.TO_SCHEMA))
+            .set(target.TO_TABLE, excluded(target.TO_TABLE))
             .set(target.COLUMN_NAME, excluded(target.COLUMN_NAME))
             .set(target.MATCHED_BY, excluded(target.MATCHED_BY))
             .set(target.TOUCHED_AT, excluded(target.TOUCHED_AT))

@@ -599,7 +599,7 @@ class DiagnosticsTest {
         // against the terminal table ("language"), never the participant's own @table ("film").
         String sdl = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
-                languageName: String @field(name: "NOPE") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "NOPE") @reference(path: [{key: "film_language_id_fkey"}])
             }
             interface Melding @table(name: "film") { languageName: String }
             type Query { meldinger: [Melding] }

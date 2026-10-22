@@ -13,7 +13,6 @@ import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.CarrierDataFields;
-import no.sikt.graphitron.model.derive.FieldColumnScopes;
 import no.sikt.graphitron.model.derive.FieldScopeTables;
 import no.sikt.graphitron.model.derive.FieldReferenceStepHops;
 import no.sikt.graphitron.model.derive.InputFieldReferenceStepTargets;
@@ -243,7 +242,6 @@ public final class SeededStore {
             // The derivation stratum's stages, after the gatherer's own above because that is
             // where each one's rule reads from, in the order DerivationStratum runs them. The
             // hand-written producers are not among them: a seeded case writes their tables itself.
-            FieldColumnScopes.derive(dsl, graph);
             CarrierDataFields.derive(dsl, graph);
             FieldScopeTables.derive(dsl, graph);
             ArgumentScopeTables.derive(dsl, graph);

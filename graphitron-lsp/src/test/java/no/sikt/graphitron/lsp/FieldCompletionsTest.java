@@ -330,7 +330,7 @@ class FieldCompletionsTest {
         // columns and not the enclosing @table's.
         String source = """
             type Film @table(name: "film") {
-                languageName: String @field(name: "") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "") @reference(path: [{key: "film_language_id_fkey"}])
             }
             type Query { films: [Film] }
             """;
@@ -375,7 +375,7 @@ class FieldCompletionsTest {
         // so the dropdown lists LANGUAGE's columns rather than FILM's.
         String source = """
             type DokumentMelding implements Melding @table(name: "film") @discriminator(value: "DOKUMENT") {
-                languageName: String @field(name: "") @reference(path: [{table: "language"}])
+                languageName: String @field(name: "") @reference(path: [{key: "film_language_id_fkey"}])
             }
             interface Melding @table(name: "film") { languageName: String }
             type Query { meldinger: [Melding] }
@@ -446,7 +446,7 @@ class FieldCompletionsTest {
         // directives must not derail the cursor walk to FieldSort.name.
         String source = """
             type Film @table(name: "film") {
-                languages: [Language!]! @reference(path: [{table: "language"}]) @splitQuery @defaultOrder(fields: [{name: ""}])
+                languages: [Language!]! @reference(path: [{key: "film_language_id_fkey"}]) @splitQuery @defaultOrder(fields: [{name: ""}])
             }
             type Language @table(name: "language") { name: String }
             type Query { films: [Film] }

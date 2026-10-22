@@ -23,11 +23,9 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_COLUMN_TABLE;
  * not: what a surface needs to know is where a name resolves, and the resolution has two rules and
  * two silences rather than a case per classification.
  *
- * <p>Named for the relation it reads, because a second relation now answers the same question
- * totally: {@code graphitron_field_column_scope} carries the parent's own binding as a third rule, which
- * the store derives once for the classifier that resolves names against it. A surface here wants the
- * override rather than the total answer, the conflict silence being the half only this relation
- * carries; a reader that eventually wants both reads the scope and this one together.
+ * <p>Named for the relation it reads. The relation answers from the field's target: an object
+ * field's target table, and where a scalar's path arrives; a field with no path and a scalar target
+ * resolves in its parent's own table, which is no override and so no row here.
  */
 public final class FieldColumnTable {
 

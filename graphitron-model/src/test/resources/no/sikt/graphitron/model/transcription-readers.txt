@@ -58,15 +58,13 @@ graphitron_connection_carrier graphql_field
 
 # Adjudicated and kept: an entry defect reported at what an author wrote.
 #
-# graphitron_entry_defect_rule's COLUMN_UNRESOLVED arm judges a scalar field against its parent's
-# table and reports at the field's own line, or at its @field. Both are the author's: a minted
-# field has no line to report at, and none of the macro's minted fields is a scalar read off a
-# parent column, so the expanded population would add rows the arm can only skip. The named type is
-# read from the transcription for the same reason, to ask whether the authored field returns a
-# scalar or an enum. CHAIN_WITHOUT_TARGET reaches a field's written path through the declaration
+# graphitron_entry_defect_rule's COLUMN_UNRESOLVED and COLUMN_AMBIGUOUS judge a scalar field against
+# the table its read arrives at and report at the field's own line, or at its @field. Both are the
+# author's: a minted field has no line to report at, and none of the macro's minted fields is a
+# scalar read off a column, so the expanded population would add rows they can only skip.
+# CHAIN_WITHOUT_TARGET reaches a field's written path through the declaration
 # graphql_field anchored, on the walk's terms below.
 graphitron_entry_defect_rule graphql_field
-graphitron_entry_defect_rule graphql_type
 
 # Adjudicated and kept: the tags the configuration applies.
 #

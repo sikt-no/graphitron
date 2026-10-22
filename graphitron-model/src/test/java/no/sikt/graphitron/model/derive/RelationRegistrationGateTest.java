@@ -417,7 +417,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_node_id_decode_hop_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_hop_column_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_decode_column_rule", Arm.DERIVED);
-        registrations.put("graphitron_field_column_scope_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction_rule", Arm.DERIVED);
         registrations.put("graphitron_argmapping_match", Arm.DERIVED);
         registrations.put("intent_argmapping_bound_parameter_type", Arm.DERIVED);
@@ -431,7 +430,6 @@ class RelationRegistrationGateTest {
         registrations.put("intent_carrier_routine_hop", Arm.DERIVED);
         registrations.put("intent_mutation_routine_seat", Arm.DERIVED);
         registrations.put("intent_column_match_claim", Arm.DERIVED);
-        registrations.put("graphitron_field_column_scope", Arm.DERIVED);
         registrations.put("graphitron_field_target_rule", Arm.DERIVED);
         registrations.put("graphitron_fetcher", Arm.DERIVED);
         registrations.put("graphitron_producer", Arm.DERIVED);
