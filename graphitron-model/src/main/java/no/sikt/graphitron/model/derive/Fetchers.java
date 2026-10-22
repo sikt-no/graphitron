@@ -77,7 +77,10 @@ public final class Fetchers {
                     inline(PRODUCER, fetcher.SIDE), val(touchedAt, fetcher.TOUCHED_AT))
                 .from(rule)
                 .where(rule.GRAPH_NAME.eq(graph)))
-            .onDuplicateKeyUpdate()
+            // The key named: left to find any key, the upsert matches the primary key or the unique
+            // one, and an OR finds no index, so every graph's fetchers were scanned per capture.
+            .onConflict(fetcher.GRAPH_NAME, fetcher.TYPE_NAME, fetcher.FIELD_NAME)
+            .doUpdate()
             .set(fetcher.SIDE, excluded(fetcher.SIDE))
             .set(fetcher.TOUCHED_AT, excluded(fetcher.TOUCHED_AT))
             .execute();
@@ -105,7 +108,8 @@ public final class Fetchers {
                     val(touchedAt, producer.TOUCHED_AT))
                 .from(rule)
                 .where(rule.GRAPH_NAME.eq(graph)))
-            .onDuplicateKeyUpdate()
+            .onConflict(producer.GRAPH_NAME, producer.TYPE_NAME, producer.FIELD_NAME)
+            .doUpdate()
             .set(producer.KIND, excluded(producer.KIND))
             .set(producer.TOUCHED_AT, excluded(producer.TOUCHED_AT))
             .execute();
@@ -138,7 +142,8 @@ public final class Fetchers {
                     inline(READER, fetcher.SIDE), val(touchedAt, fetcher.TOUCHED_AT))
                 .from(readerRule)
                 .where(readerRule.GRAPH_NAME.eq(graph)))
-            .onDuplicateKeyUpdate()
+            .onConflict(fetcher.GRAPH_NAME, fetcher.TYPE_NAME, fetcher.FIELD_NAME)
+            .doUpdate()
             .set(fetcher.SIDE, excluded(fetcher.SIDE))
             .set(fetcher.TOUCHED_AT, excluded(fetcher.TOUCHED_AT))
             .execute();

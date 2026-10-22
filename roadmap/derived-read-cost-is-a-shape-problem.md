@@ -79,6 +79,10 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `graphitron_path_element_*` beside the step hops, the reading, the resolution and
   `graphitron_field_table_link`. Ends at "Nothing resolves a path but the walk".
 * The read-time path views `intent_field_path_start`, `_node` and `_terminus`. Ends at "Nothing resolves a path but the walk".
+  `intent_field_path_node`'s recursive walk evaluates every graph's paths whatever the graph filter,
+  so `ResolvedTypeBindings`, reading it through `intent_routine_return_binding`, grows with the
+  graphs in a store until it goes: filtered to one graph at 20 units, `path_node` 4 to 137 ms and
+  `ResolvedTypeBindings` 4 to 195 ms from one graph to eight.
 * Argument and input-field walks from `graphitron_field_scope_table` beside the target. Ends at
   "Arguments and input fields walk from their field's target".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
