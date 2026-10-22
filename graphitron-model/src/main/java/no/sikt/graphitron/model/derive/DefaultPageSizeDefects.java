@@ -13,11 +13,10 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Set;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.INTENT_TYPE_DOMAIN;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
 import static org.jooq.impl.DSL.exists;
@@ -32,8 +31,9 @@ import static org.jooq.impl.DSL.selectOne;
  * population the build asks about and the message, which names the default and the maximum.
  *
  * <p>Every relation it names is a table, so it expands no rule on a read: the defect's position is
- * either an {@code @asConnection(defaultFirstValue:)} argument or an authored {@code first}
- * argument's default value, and each arm reads the entry it can sit at.
+ * either the {@code @asConnection} application whose {@code defaultFirstValue:} set the default, or
+ * the declaration of a {@code first} argument the carrier declares itself, and each arm reads the
+ * entry it can sit at.
  *
  * <p>The population is the classification domain, on {@link UnlowerableOrderings}'s terms.
  */
@@ -46,8 +46,7 @@ public final class DefaultPageSizeDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_CONNECTION_ENTRY, GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY,
-        GRAPHQL_AST_FIELD_ARGUMENT_ENTRY, GRAPHQL_AST_VALUE_ENTRY,
+        GRAPHITRON_CONNECTION_ENTRY, GRAPHQL_AST_ELEMENT_ENTRY, GRAPHITRON_ARGUMENT,
         STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE, INTENT_TYPE_DOMAIN);
 
     /** Where the oversized default was written. */
@@ -109,31 +108,25 @@ public final class DefaultPageSizeDefects {
         var out = new ArrayList<Oversized>();
 
         var c = GRAPHITRON_CONNECTION_ENTRY;
-        var aa = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
-        dsl.select(c.TYPE_NAME, c.FIELD_NAME, aa.VALUE_SDL, aa.SOURCE_NAME, aa.SOURCE_LINE,
-                aa.SOURCE_COLUMN)
+        dsl.select(c.TYPE_NAME, c.FIELD_NAME, c.DEFAULT_FIRST_VALUE, c.SOURCE_NAME, c.SOURCE_LINE,
+                c.SOURCE_COLUMN)
             .from(c)
-            .join(aa).on(aa.GRAPH_NAME.eq(c.GRAPH_NAME), aa.SOURCE_NAME.eq(c.SOURCE_NAME),
-                aa.PARENT_LINE.eq(c.SOURCE_LINE), aa.PARENT_COLUMN.eq(c.SOURCE_COLUMN),
-                aa.NAME.eq("defaultFirstValue"))
             .where(c.GRAPH_NAME.eq(graphName),
-                defectAt(aa.GRAPH_NAME, aa.SOURCE_NAME, aa.SOURCE_LINE, aa.SOURCE_COLUMN),
+                defectAt(c.GRAPH_NAME, c.SOURCE_NAME, c.SOURCE_LINE, c.SOURCE_COLUMN),
                 domain(graphName, c.TYPE_NAME, inDomain))
             .forEach(r -> out.add(new Oversized(r.value1(), r.value2(),
-                WrittenAt.DEFAULT_FIRST_VALUE, r.value3(), maximum,
+                WrittenAt.DEFAULT_FIRST_VALUE, String.valueOf(r.value3()), maximum,
                 location(r.value4(), r.value5(), r.value6()))));
 
-        var fa = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
-        var v = GRAPHQL_AST_VALUE_ENTRY;
-        dsl.select(fa.TYPE_NAME, fa.FIELD_NAME, fa.DEFAULT_VALUE_SDL, v.SOURCE_NAME, v.SOURCE_LINE,
-                v.SOURCE_COLUMN)
-            .from(fa)
-            .join(v).on(v.GRAPH_NAME.eq(fa.GRAPH_NAME), v.SOURCE_NAME.eq(fa.SOURCE_NAME),
-                v.HOLDER_LINE.eq(fa.SOURCE_LINE), v.HOLDER_COLUMN.eq(fa.SOURCE_COLUMN),
-                v.PARENT_LINE.isNull())
-            .where(fa.GRAPH_NAME.eq(graphName), fa.NAME.eq("first"),
-                defectAt(v.GRAPH_NAME, v.SOURCE_NAME, v.SOURCE_LINE, v.SOURCE_COLUMN),
-                domain(graphName, fa.TYPE_NAME, inDomain))
+        var el = GRAPHQL_AST_ELEMENT_ENTRY;
+        var a = GRAPHITRON_ARGUMENT;
+        dsl.select(a.TYPE_NAME, a.FIELD_NAME, a.DEFAULT_VALUE_SDL, el.SOURCE_NAME, el.SOURCE_LINE,
+                el.SOURCE_COLUMN)
+            .from(el)
+            .join(a).on(a.GRAPH_NAME.eq(el.GRAPH_NAME), a.COORDINATE.eq(el.COORDINATE))
+            .where(el.GRAPH_NAME.eq(graphName),
+                defectAt(el.GRAPH_NAME, el.SOURCE_NAME, el.SOURCE_LINE, el.SOURCE_COLUMN),
+                domain(graphName, a.TYPE_NAME, inDomain))
             .forEach(r -> out.add(new Oversized(r.value1(), r.value2(),
                 WrittenAt.FIRST_ARGUMENT, r.value3(), maximum,
                 location(r.value4(), r.value5(), r.value6()))));
@@ -143,7 +136,7 @@ public final class DefaultPageSizeDefects {
         return out;
     }
 
-    /** A defect of this code stands at the written default's position. */
+    /** A defect of this code stands at the position the default was written at. */
     private static Condition defectAt(Field<String> graph, Field<String> sourceName,
                                       Field<Integer> line, Field<Integer> column) {
         var e = GRAPHITRON_ENTRY_DEFECT;

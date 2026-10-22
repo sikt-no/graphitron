@@ -41,7 +41,7 @@ class DefaultPageSizeDefectsTest {
 
     /**
      * The directive's default above the maximum, named with both numbers and both remedies, at the
-     * defaultFirstValue argument the author wrote.
+     * {@code @asConnection} application that wrote it.
      */
     @Test
     void aDefaultFirstValueAboveTheMaximumIsRejected() {

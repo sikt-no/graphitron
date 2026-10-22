@@ -10455,36 +10455,27 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
 UNION ALL
 -- A connection carrier whose resolved first default is larger than the build's maximum page size,
 -- so the schema advertises a default no request can receive. Reported where the author wrote the
--- default: the authored first argument's default value where the carrier declares first itself,
--- and otherwise @asConnection's defaultFirstValue. The minted default never fires it, being lowered
--- to the maximum where it is minted. The detail says which of the two was written. A connection
--- type an author declared without @asConnection is no carrier and is not judged here; the runtime
--- serves its oversized default at the maximum like any value a client sends.
+-- default: at the first argument's declaration where the carrier declares first itself, and
+-- otherwise at the @asConnection application whose defaultFirstValue set it. The minted default
+-- never fires it, being lowered to the maximum where it is minted. The detail says which of the two
+-- was written. A connection type an author declared without @asConnection is no carrier and is not
+-- judged here; the runtime serves its oversized default at the maximum like any value a client
+-- sends.
 SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
        'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail
   FROM (SELECT c.graph_name,
-               COALESCE(v.source_name, aa.source_name) AS source_name,
-               COALESCE(v.source_line, aa.source_line) AS source_line,
-               COALESCE(v.source_column, aa.source_column) AS source_column,
-               CASE WHEN fa.source_line IS NOT NULL THEN 'first' ELSE 'defaultFirstValue' END
+               COALESCE(el.source_name, c.source_name) AS source_name,
+               COALESCE(el.source_line, c.source_line) AS source_line,
+               COALESCE(el.source_column, c.source_column) AS source_column,
+               CASE WHEN el.source_line IS NOT NULL THEN 'first' ELSE 'defaultFirstValue' END
                  AS detail
           FROM graphitron_connection_carrier c
           JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
           JOIN graphitron_argument ga
             ON ga.graph_name = c.graph_name AND ga.type_name = c.type_name
            AND ga.field_name = c.field_name AND ga.argument_name = 'first'
-          LEFT JOIN graphql_ast_field_argument_entry fa
-            ON fa.graph_name = c.graph_name AND fa.type_name = c.type_name
-           AND fa.field_name = c.field_name AND fa.name = 'first'
-          LEFT JOIN graphql_ast_value_entry v
-            ON v.graph_name = fa.graph_name AND v.source_name = fa.source_name
-           AND v.holder_line = fa.source_line AND v.holder_column = fa.source_column
-           AND v.parent_line IS NULL
-          LEFT JOIN graphql_ast_applied_argument_entry aa
-            ON fa.source_line IS NULL
-           AND aa.graph_name = c.graph_name AND aa.source_name = c.source_name
-           AND aa.parent_line = c.source_line AND aa.parent_column = c.source_column
-           AND aa.name = 'defaultFirstValue'
+          LEFT JOIN graphql_ast_element_entry el
+            ON el.graph_name = c.graph_name AND el.coordinate = c.coordinate || '(first:)'
          -- An integer literal short enough to cast; a longer one is no Int at all, which the
          -- schema build refuses on its own.
          WHERE REGEXP_LIKE(ga.default_value_sdl, '^[0-9]{1,18}$')

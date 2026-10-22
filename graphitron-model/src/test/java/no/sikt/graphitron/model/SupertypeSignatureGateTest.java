@@ -400,6 +400,12 @@ class SupertypeSignatureGateTest {
         // target's members bind tables, and whether a @mutation(table:) spelling roots the
         // statement instead.
         "graphitron_entry_defect_rule|graphitron_resolved_type_binding,graphitron_spelled_table",
+        // Two arms that never meet, which name matching over one view definition cannot tell from
+        // a union of twins. The ordering arm asks whether a field is list-shaped, of
+        // graphitron_field; the page-size arm reads one argument's default, a carrier's first, of
+        // graphitron_argument. No row of either arm says what the other's does about a different
+        // site, so there is no supertype here to owe.
+        "graphitron_entry_defect_rule|graphitron_argument,graphitron_field",
         // The condition membership fold, which reads both scope relations at the grain each is
         // keyed at: a @condition on a field with no arguments has a table to filter and no argument
         // to carry it, so the fold names the field-site relation, and one with arguments names the

@@ -1,7 +1,7 @@
 # A connection carrier whose default page size is larger than the build's maximum advertises a
 # default no request can receive, since every page is served at the maximum. The defect sits where
-# the default was written: @asConnection's defaultFirstValue, or the default of a first argument the
-# carrier declares itself. A default equal to the maximum is no defect, and neither is the minted
+# the default was written: the @asConnection application whose defaultFirstValue set it, or the
+# first argument the carrier declares itself. A default equal to the maximum is no defect, and neither is the minted
 # default, which is lowered to the maximum where it is minted.
 
 extend schema @withConfiguration(maxAllowedPageSize: 10)
