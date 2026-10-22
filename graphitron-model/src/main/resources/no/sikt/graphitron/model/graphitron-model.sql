@@ -9905,6 +9905,24 @@ broken (graph_name, type_name, field_name, arriving_type_name,
                       WHERE rt.graph_name = c.graph_name AND rt.type_name = c.type_name
                         AND rt.field_name = c.field_name
                         AND rt.arriving_type_name = c.arriving_type_name)
+),
+-- A root field's first @reference on a field with no @routine. A root field has no source row, so a
+-- path written there departs from nothing until a routine gives it one; its chain then breaks at the
+-- first element whatever that element names, which is why such a field is told this and not one of
+-- the three chain breaks.
+root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
+    FROM graphitron_field_reference_entry fr
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
+     AND ro.operation IN ('QUERY', 'MUTATION')
+   WHERE fr.source_name IS NOT NULL
+     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
+                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
+                          AND f2.field_name = fr.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
+                      WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
+                        AND r.field_name = fr.field_name)
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
@@ -10011,6 +10029,14 @@ SELECT DISTINCT cl.graph_name, cl.source_name, cl.element_line, cl.element_colum
     ON cl.graph_name = fd.graph_name AND cl.source_name = fd.source_name
    AND cl.field_line = fd.source_line AND cl.field_column = fd.source_column
    AND cl.position = b.break_position
+ WHERE NOT EXISTS (SELECT 1 FROM root_reference rr
+                    WHERE rr.graph_name = b.graph_name AND rr.type_name = b.type_name
+                      AND rr.field_name = b.field_name)
+UNION ALL
+-- A root field's path with nothing to depart from, at the @reference that starts it.
+SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
+       'ROOT_REFERENCE_WITHOUT_ROUTINE', CAST(NULL AS VARCHAR)
+  FROM root_reference rr
 UNION ALL
 -- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
 -- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
@@ -16206,6 +16232,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A chain link names something the catalog and the classpath do not have, a foreign key, a table or a condition method, so the chain stops here and the generator emits no join at all.'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
    'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.'),
+  ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',
+   'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.'),
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',

@@ -199,6 +199,11 @@ resolutions and links built beside it are gone.
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
   neither a result table nor a consumed key starts the walk, so `@sourceRow` fields and
   `FilmDetailsCarrier.language` have none until "A consumed key is a source".
+  * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`. The
+    has-no-source case on a root field: `ROOT_REFERENCE_WITHOUT_ROUTINE`, basis `UNSUPPORTED`, in
+    place of the chain break its first element drew, which is now kept from such a field.
+    `facts/defects/root-reference-without-routine.graphqls` pins it, and that a leading `@routine`
+    draws nothing.
 * **The field grain reads only the walk** `open`. `graphitron_field_path_reading`,
   `graphitron_field_path_resolution` and `graphitron_field_table_link` go, their readers moved to
   the path; the chain defects and the path fact documents keep their answers.

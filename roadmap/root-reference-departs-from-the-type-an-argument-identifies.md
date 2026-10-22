@@ -34,6 +34,10 @@ where the path departs. Without one the chain has no departure and the field is 
 Ruled out of scope for the current derived-read work on 2026-10-22, so this records the pattern for
 later rather than a defect: the refusal is correct for what is supported now.
 
+The refusal now names the shape: a root field with a `@reference` and no `@routine` draws
+`ROOT_REFERENCE_WITHOUT_ROUTINE` at the `@reference`, basis unsupported, saying a root field has no
+source row for the path to depart from, and no longer `NO_ROUTE_FROM_DEPARTURE`.
+
 ## Open questions
 
 * Which arguments may act as the departure: an `@nodeId` argument only, a `@lookupKey` set, or any
