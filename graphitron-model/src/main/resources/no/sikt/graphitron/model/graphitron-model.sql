@@ -12783,16 +12783,25 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
 ),
 slot_table (graph_name, site, type_name, field_name, argument_name, path,
             table_source_name, table_schema, table_name) AS (
+  -- Where the field's walk from its parent's result lands: the step at its last written place.
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
          tg.to_source_name, tg.to_schema, tg.to_table
     FROM instructed i
-    JOIN graphitron_field_reference_step_target tg
+    JOIN graphitron_field_path tg
       ON tg.graph_name = i.graph_name AND tg.type_name = i.type_name
      AND tg.field_name = i.field_name
-     AND tg.position = (SELECT MAX(s.position) FROM graphitron_field_reference_step_entry s
-                         WHERE s.graph_name = tg.graph_name AND s.type_name = tg.type_name
-                           AND s.field_name = tg.field_name AND s.ordinal = tg.ordinal)
+    JOIN graphitron_field_path_start_result sr
+      ON sr.graph_name = tg.graph_name AND sr.type_name = tg.type_name
+     AND sr.field_name = tg.field_name AND sr.start_source_name = tg.start_source_name
+     AND sr.start_schema = tg.start_schema AND sr.start_table = tg.start_table
+    JOIN graphitron_ast_field_path_entry e
+      ON e.graph_name = tg.graph_name AND e.source_name = tg.element_source_name
+     AND e.element_line = tg.element_source_line AND e.element_column = tg.element_source_column
    WHERE i.site = 'OUTPUT_FIELD' AND i.has_reference
+     AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry later
+                      WHERE later.graph_name = e.graph_name AND later.source_name = e.source_name
+                        AND later.field_line = e.field_line AND later.field_column = e.field_column
+                        AND later.position > e.position)
    UNION
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
          tg.to_source_name, tg.to_schema, tg.to_table
