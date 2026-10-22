@@ -1,0 +1,21 @@
+# The second reading turns the first application into a @referenceFor. Its element is still written
+# where it was, but a participant's path is no place in the field's, so the second application's
+# element moves to place 0 while the first still holds it: the path is rewritten whole, each
+# element still at one place.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  hopped: [Film!]!
+    @referenceFor(path: [{table: "film"}], type: "Film")
+    @reference(path: [{table: "film"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Query' AND name = 'hopped')
+  """, rows: """
+  position, element_column, touched_at
+  0,        23,             1000000060
+  """)

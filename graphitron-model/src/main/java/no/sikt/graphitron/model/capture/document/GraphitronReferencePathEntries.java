@@ -1,6 +1,8 @@
 package no.sikt.graphitron.model.capture.document;
 
 import graphql.language.Directive;
+import graphql.language.FieldDefinition;
+import graphql.language.Node;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
 import no.sikt.graphitron.model.sink.BindBatch;
 import org.jooq.DSLContext;
@@ -9,8 +11,11 @@ import org.jooq.Table;
 
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_PATH_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_ENTRY;
@@ -26,6 +31,7 @@ import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.str
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.tabled;
 import static no.sikt.graphitron.model.capture.document.GraphitronAstEntries.wrote;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.row;
 import static org.jooq.impl.DSL.val;
 
 /**
@@ -67,6 +73,7 @@ final class GraphitronReferencePathEntries {
         keySteps(dsl, graph, touchedAt, keyed(steps));
         conditionSteps(dsl, graph, touchedAt, conditioned(steps));
         referencesFor(dsl, graph, touchedAt, referenceFor);
+        fieldPaths(dsl, graph, source, touchedAt, composed(applications));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -75,6 +82,7 @@ final class GraphitronReferencePathEntries {
      * prefix: a relation added above and not here would keep its stale rows silently.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
+        GRAPHITRON_AST_FIELD_PATH_ENTRY,
         GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY,
         GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY,
         GRAPHITRON_AST_REFERENCE_CONDITION_STEP_ENTRY,
@@ -208,5 +216,78 @@ final class GraphitronReferencePathEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARTICIPANT_TYPE_REF, excluded(t.PARTICIPANT_TYPE_REF)));
+    }
+
+    /** One element of one field's path: the field declaration, its place, and what was written there. */
+    private record PathElement(FieldDefinition field, int position, Node<?> element) {}
+
+    /**
+     * Every field's path, composed across its applications in the order they were written: a
+     * {@code @routine} takes one place, a {@code @reference} one place per element of its path. A
+     * {@code @referenceFor} path is a participant's, so it takes none.
+     */
+    private static List<PathElement> composed(List<GraphQLAstEntries.Nested<Directive>> applications) {
+        // Keyed by the declaration node itself, in the order the declarations were met.
+        Map<FieldDefinition, List<Node<?>>> byField = new LinkedHashMap<>();
+        for (var application : applications) {
+            if (!(application.parent() instanceof FieldDefinition field)) {
+                continue;
+            }
+            var path = byField.computeIfAbsent(field, f -> new ArrayList<>());
+            switch (application.node().getName()) {
+                case "routine" -> path.add(application.node());
+                case "reference" -> listedIn(List.of(application.node()), "path")
+                    .forEach(element -> path.add(element.node()));
+                default -> { }
+            }
+        }
+        var composed = new ArrayList<PathElement>();
+        for (var entry : byField.entrySet()) {
+            var field = entry.getKey();
+            var path = entry.getValue();
+            for (int position = 0; position < path.size(); position++) {
+                composed.add(new PathElement(field, position, path.get(position)));
+            }
+        }
+        return composed;
+    }
+
+    /**
+     * Each element sits at one place in one field's path, so a path whose order changed is rewritten
+     * whole: the rows that no longer say what is written go first, so the upsert, matching the
+     * primary key alone, never meets an element still held at another place.
+     */
+    private static void fieldPaths(DSLContext dsl, String graph, String source, LocalDateTime touchedAt,
+                                   List<PathElement> elements) {
+        var t = GRAPHITRON_AST_FIELD_PATH_ENTRY;
+        var written = elements.stream()
+            .map(element -> row(element.field().getSourceLocation().getLine(),
+                element.field().getSourceLocation().getColumn(), element.position(),
+                element.element().getSourceLocation().getLine(),
+                element.element().getSourceLocation().getColumn()))
+            .toList();
+        dsl.deleteFrom(t)
+            .where(t.GRAPH_NAME.eq(graph), t.SOURCE_NAME.eq(source))
+            .and(row(t.FIELD_LINE, t.FIELD_COLUMN, t.POSITION, t.ELEMENT_LINE, t.ELEMENT_COLUMN)
+                .notIn(written))
+            .execute();
+        var rows = elements.stream().collect(Rows.toRowList(
+            element -> val(graph, t.GRAPH_NAME),
+            element -> GraphQLAstEntries.sourceName(element.field()),
+            element -> GraphQLAstEntries.sourceLine(element.field()),
+            element -> GraphQLAstEntries.sourceColumn(element.field()),
+            element -> val(element.position(), t.POSITION),
+            element -> GraphQLAstEntries.sourceLine(element.element()),
+            element -> GraphQLAstEntries.sourceColumn(element.element()),
+            element -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.FIELD_LINE, t.FIELD_COLUMN,
+                    t.POSITION, t.ELEMENT_LINE, t.ELEMENT_COLUMN, t.TOUCHED_AT)
+                .values(markers)
+                .onConflict(t.GRAPH_NAME, t.SOURCE_NAME, t.FIELD_LINE, t.FIELD_COLUMN, t.POSITION)
+                .doUpdate()
+                .set(t.ELEMENT_LINE, excluded(t.ELEMENT_LINE))
+                .set(t.ELEMENT_COLUMN, excluded(t.ELEMENT_COLUMN))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 }

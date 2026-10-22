@@ -188,6 +188,8 @@ class RelationRegistrationGateTest {
             "graphitron_ast_reference_table_step_entry",
             "graphitron_ast_reference_condition_step_entry",
             "graphitron_ast_reference_for_entry",
+            // The same paths composed per field in written order, which capture sees whole.
+            "graphitron_ast_field_path_entry",
             // Its columnMapping pairs, decoded where the string was written. The oracle it
             // would be compared against is the same one its parent has none of, and a pair
             // carries less besides: the walk that wrote the resolved relation is gone, so

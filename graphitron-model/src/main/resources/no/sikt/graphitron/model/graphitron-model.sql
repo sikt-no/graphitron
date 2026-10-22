@@ -2316,6 +2316,38 @@ COMMENT ON COLUMN graphitron_ast_reference_for_entry.source_column IS 'source co
 COMMENT ON COLUMN graphitron_ast_reference_for_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_reference_for_entry.participant_type_ref IS 'the type argument exactly as written, naming the participant this path applies to. Nullable although the definition marks it required, because a document that omits it still applied the directive. Two applications naming one participant are two rows here and the conflict is a detection over them, this relation refusing nothing';
 
+CREATE TABLE graphitron_ast_field_path_entry (
+  graph_name     VARCHAR NOT NULL,
+  source_name    VARCHAR NOT NULL,
+  field_line     INT     NOT NULL,
+  field_column   INT     NOT NULL,
+  position       INT     NOT NULL,
+  element_line   INT     NOT NULL,
+  element_column INT     NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, field_line, field_column, position),
+  -- Each element sits at one place in one field's path. A reader standing on an element asks for
+  -- the one after it by where the element was written, which this serves.
+  UNIQUE (graph_name, source_name, element_line, element_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, field_line, field_column)
+    REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, source_name, element_line, element_column)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE graphitron_ast_field_path_entry IS 'One element of the path a field declaration wrote, at its place in that path: one row per element of the field''s @routine and @reference applications, composed in the order they were written. For example hopped @routine(name: "films_for_actor") @reference(path: [{table: "film"}]) gives two rows, the routine at 0 and the element at 1.';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.source_name IS 'the file the field was declared in, which holds every directive applied to it';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.field_line IS 'the field declaration''s source line, 1-based';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.field_column IS 'the field declaration''s source column; with the two columns before it, the declaration in graphql_ast_field_definition_entry, which names the type and the field';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.position IS 'the element''s place in the field''s path, numbered from zero across its @routine and @reference applications in the order they were written, each @reference application''s elements in their own order. Capture composes it, reading every directive on the field together, where a reader would have to rank the applications back into order; a @referenceFor path is a participant''s and no element of this one';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.element_line IS 'the element''s source line: a @routine application''s own, or a path element''s value node''s';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.element_column IS 'the element''s source column; with the line, the written position every decode of the element is keyed by, graphitron_ast_routine_entry''s for a routine and graphitron_ast_reference_element_entry''s and its steps'' for a path element';
+COMMENT ON COLUMN graphitron_ast_field_path_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant';
+
 CREATE TABLE graphitron_ast_argmapping_pair_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -15369,6 +15401,9 @@ INSERT INTO meta_grain VALUES
   ('sdl-declaration-site',
    'one position in one SDL document, where that document declared or extended something',
    'graph_name, source_name, source_line, source_column', 'sdl'),
+  ('sdl-field-path-position',
+   'one position of the path one field declaration wrote, in one SDL document',
+   'graph_name, source_name, field_line, field_column, position', 'sdl'),
   ('sdl-written-value',
    'one value node written in one SDL document, at the position it was written',
    'graph_name, source_name, source_line, source_column', 'sdl'),
@@ -16060,6 +16095,10 @@ INSERT INTO meta_relation VALUES
    'One element of the path an application of @reference or @referenceFor wrote, at its index in the list, whatever it says.',
    'For example @reference(path: [{table: "film_actor"}, {}, {key: "film_actor_actor_id_fk"}]) gives three rows at positions 0, 1 and 2, the second naming nothing.',
    'Entries capture and do not validate, so an element exists whatever it names: one naming none of a table, a key and a condition, which the element type allows, is a row here and a defect for a detection to state, where before it was in no relation at all and a path read through the step relations had a hole at its index. A field the element type does not declare is not admitted by the definition, so assembly reports it and DirectiveLegality keeps the application out of the entries. The step relations are its subtypes, one per thing an element can name.'),
+  ('graphitron_ast_field_path_entry', 'sdl-field-path-position', 'graphitron',
+   'One element of the path a field declaration wrote, at its place in that path: one row per element of the field''s @routine and @reference applications, composed in the order they were written.',
+   'For example hopped @routine(name: "films_for_actor") @reference(path: [{table: "film"}]) gives two rows, the routine at 0 and the element at 1.',
+   'The path a field wrote, as a path rather than as the directive applications that spell it: capture sees every directive on the field at once, so it states the composed order once, and the walk and every reader asking what a field wrote read it by the field rather than climbing from each application to its declaration and ranking them.'),
   ('graphitron_ast_reference_for_entry', 'sdl-declaration-site', 'graphitron',
    'What a @referenceFor application says, at any site: the participant type whose join path this application replaces, as written.',
    'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book"}]) gives one row reading Book.',

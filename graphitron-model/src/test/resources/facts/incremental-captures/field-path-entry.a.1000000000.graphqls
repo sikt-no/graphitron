@@ -1,0 +1,21 @@
+# A field's path read in steps, over one file. The first reading writes two @reference
+# applications' elements, at places 0 and 1. The spaces before the first one's arguments put its
+# element where the second reading's @referenceFor writes one.
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  hopped: [Film!]!
+    @reference   (path: [{table: "film"}])
+    @reference(path: [{table: "film"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Query' AND name = 'hopped')
+  """, rows: """
+  position, element_column, touched_at
+  0,        26,             1000000000
+  1,        23,             1000000000
+  """)

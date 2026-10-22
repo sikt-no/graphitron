@@ -25,3 +25,15 @@ extend schema @assertAbsent(relation: "graphitron_field_path_reading", rows: """
   type_name, field_name
   Query,     films
   """)
+
+# Capture composes the field's path across its applications in the order they were written: the
+# routine at 0, applied at column 5, and its @reference's one element after it, written at column 23.
+extend schema @expectEquals(relation: "graphitron_ast_field_path_entry", where: """
+  (graph_name, source_name, field_line, field_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_field_definition_entry WHERE type_name = 'Query' AND name = 'hopped')
+  """, rows: """
+  position, element_column
+  0,        5
+  1,        23
+  """)
