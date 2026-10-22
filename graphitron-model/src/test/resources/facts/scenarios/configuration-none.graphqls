@@ -12,6 +12,8 @@ extend schema @assertEmpty(relation: "store_graph_output")
 
 extend schema @assertEmpty(relation: "store_graph_tenant_column")
 
+extend schema @assertEmpty(relation: "store_graph_max_allowed_page_size")
+
 extend schema @assertEmpty(relation: "store_graph_lint_disabled_rule")
 
 extend schema @assertEmpty(relation: "store_graph_session_mount")

@@ -1,6 +1,7 @@
-# The second reading, of the same build file with three elements taken out: the tenant column, the
-# unmount beside the mount, and one lint rule. Each is a different way of going away, and none of
-# them produces an incoming row for an upsert to land on, so only the sweep removes them.
+# The second reading, of the same build file with four elements taken out: the tenant column, the
+# maximum page size, the unmount beside the mount, and one lint rule. Each is a different way of
+# going away, and none of them produces an incoming row for an upsert to land on, so only the sweep
+# removes them.
 #
 # A single-valued parameter that went away is a graph with no row, the state a graph that never had
 # one is in. The unmount goes and the mount stays, which is the supported mount-only configuration.
@@ -12,6 +13,8 @@ extend schema @withConfiguration(
 )
 
 extend schema @assertEmpty(relation: "store_graph_tenant_column")
+
+extend schema @assertEmpty(relation: "store_graph_max_allowed_page_size")
 
 extend schema @assertEmpty(relation: "store_graph_session_unmount")
 

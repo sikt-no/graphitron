@@ -6,6 +6,8 @@ import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.PaginationSpec;
 import no.sikt.graphitron.model.grammar.ConnectionDefaults;
 
+import java.util.OptionalInt;
+
 /**
  * The pagination fact's resolved views. The populations (the authored name-keyed pagination
  * arguments, the inferred connection-directive default) are gathered once by
@@ -56,13 +58,16 @@ final class PaginationResolver {
 
     /**
      * The per-carrier-site default page size: the gathered {@code defaultFirstValue} when the
-     * author wrote one, {@link ConnectionDefaults#DEFAULT_PAGE_SIZE} otherwise. Both the wrapper
-     * classification and the connection carrier rewrite read this one view, so the two emitted
-     * materialisations of the default cannot drift.
+     * author wrote one, {@link ConnectionDefaults#defaultPageSize} under the build's maximum
+     * otherwise. Both the wrapper classification and the connection carrier rewrite read this one
+     * view, so the two emitted materialisations of the default cannot drift. An authored default
+     * above the maximum passes through; the build rejects it rather than this lowering it.
      */
-    static int defaultPageSize(PaginationFacts facts, GraphQLFieldDefinition fieldDef) {
+    static int defaultPageSize(PaginationFacts facts, GraphQLFieldDefinition fieldDef,
+                               OptionalInt maxAllowedPageSize) {
+        int unauthored = ConnectionDefaults.defaultPageSize(maxAllowedPageSize);
         return facts.rowFor(fieldDef)
-            .map(row -> row.authoredDefaultFirst().orElse(ConnectionDefaults.DEFAULT_PAGE_SIZE))
-            .orElse(ConnectionDefaults.DEFAULT_PAGE_SIZE);
+            .map(row -> row.authoredDefaultFirst().orElse(unauthored))
+            .orElse(unauthored);
     }
 }

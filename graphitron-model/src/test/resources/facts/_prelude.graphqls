@@ -53,7 +53,8 @@ directive @withConfiguration(
   lintDisabledRules: [String!],
   lintExcludedTypes: [String!],
   mount: String,
-  unmount: String
+  unmount: String,
+  maxAllowedPageSize: Int
 ) on SCHEMA
 
 # The root field runs something, as every output field must: a read of payment, a table no fact

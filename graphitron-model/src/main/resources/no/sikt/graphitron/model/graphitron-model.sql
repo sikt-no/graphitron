@@ -181,6 +181,21 @@ COMMENT ON COLUMN store_graph_tenant_column.graph_name IS 'the declaring graph''
 COMMENT ON COLUMN store_graph_tenant_column.column_name IS 'the column name as configured; matched against catalog columns the way column lookups match, Java name first then SQL name, both case-insensitively';
 COMMENT ON COLUMN store_graph_tenant_column.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
+CREATE TABLE store_graph_max_allowed_page_size (
+  graph_name    VARCHAR   NOT NULL,
+  max_page_size INT       NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  -- A maximum of 0 serves empty pages that always have a next one, and a negative one reaches a
+  -- negative LIMIT; the build refuses both before capture, and this is the same rule as a constraint.
+  CHECK (max_page_size > 0)
+);
+COMMENT ON TABLE store_graph_max_allowed_page_size IS 'The largest page any connection of one graph returns, as its build declared it in <maxAllowedPageSize>. For example a build setting the parameter to 1000 is one row reading 1000, and a build that sets none has no row.';
+COMMENT ON COLUMN store_graph_max_allowed_page_size.graph_name IS 'the declaring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_max_allowed_page_size.max_page_size IS 'the maximum as configured: a first or last above it is served at it, the built-in default page size is lowered to it, and an authored default above it is a defect';
+COMMENT ON COLUMN store_graph_max_allowed_page_size.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
+
 CREATE TABLE store_graph_lint_disabled_rule (
   graph_name VARCHAR NOT NULL,
   rule_id    VARCHAR NOT NULL,
@@ -5012,13 +5027,20 @@ SELECT DISTINCT m.graph_name, m.type_name, m.field_name, m.argument_name,
        m.default_value_sdl, m.description
   FROM (
         -- Pagination, on every carrier. The page size the application asked for, or the default
-        -- where it asked for none.
-        SELECT graph_name, type_name, field_name, 'first' AS argument_name,
-               argument_count AS ordinal, 'Int' AS type_sdl, 'Int' AS named_type,
+        -- where it asked for none, lowered to the build's maximum page size where that is smaller,
+        -- so the default a client is told never exceeds the page it can receive. The 100 is
+        -- ConnectionDefaults.DEFAULT_PAGE_SIZE, and the CASE its defaultPageSize (not LEAST, whose
+        -- stored form H2 writes with a RESPECT NULLS the definition walk cannot parse). An authored
+        -- default passes through as written; graphitron_entry_defect judges it.
+        SELECT c.graph_name, c.type_name, c.field_name, 'first' AS argument_name,
+               c.argument_count AS ordinal, 'Int' AS type_sdl, 'Int' AS named_type,
                FALSE AS non_null, FALSE AS is_list, CAST(NULL AS BOOLEAN) AS item_non_null,
-               CAST(COALESCE(default_first_value, 100) AS VARCHAR) AS default_value_sdl,
+               CAST(COALESCE(c.default_first_value,
+                             CASE WHEN mx.max_page_size < 100 THEN mx.max_page_size ELSE 100 END)
+                    AS VARCHAR) AS default_value_sdl,
                CAST(NULL AS VARCHAR) AS description
-          FROM graphitron_connection_carrier
+          FROM graphitron_connection_carrier c
+          LEFT JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
          UNION ALL
         SELECT graph_name, type_name, field_name, 'after',
                argument_count + 1, 'String', 'String',
@@ -10431,6 +10453,44 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column,
                              WHERE re.graph_name = o.graph_name AND re.type_name = o.type_name
                                AND re.field_name = o.field_name))
 UNION ALL
+-- A connection carrier whose resolved first default is larger than the build's maximum page size,
+-- so the schema advertises a default no request can receive. Reported where the author wrote the
+-- default: the authored first argument's default value where the carrier declares first itself,
+-- and otherwise @asConnection's defaultFirstValue. The minted default never fires it, being lowered
+-- to the maximum where it is minted. The detail says which of the two was written. A connection
+-- type an author declared without @asConnection is no carrier and is not judged here; the runtime
+-- serves its oversized default at the maximum like any value a client sends.
+SELECT p.graph_name, p.source_name, p.source_line, p.source_column,
+       'DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', p.detail
+  FROM (SELECT c.graph_name,
+               COALESCE(v.source_name, aa.source_name) AS source_name,
+               COALESCE(v.source_line, aa.source_line) AS source_line,
+               COALESCE(v.source_column, aa.source_column) AS source_column,
+               CASE WHEN fa.source_line IS NOT NULL THEN 'first' ELSE 'defaultFirstValue' END
+                 AS detail
+          FROM graphitron_connection_carrier c
+          JOIN store_graph_max_allowed_page_size mx ON mx.graph_name = c.graph_name
+          JOIN graphitron_argument ga
+            ON ga.graph_name = c.graph_name AND ga.type_name = c.type_name
+           AND ga.field_name = c.field_name AND ga.argument_name = 'first'
+          LEFT JOIN graphql_ast_field_argument_entry fa
+            ON fa.graph_name = c.graph_name AND fa.type_name = c.type_name
+           AND fa.field_name = c.field_name AND fa.name = 'first'
+          LEFT JOIN graphql_ast_value_entry v
+            ON v.graph_name = fa.graph_name AND v.source_name = fa.source_name
+           AND v.holder_line = fa.source_line AND v.holder_column = fa.source_column
+           AND v.parent_line IS NULL
+          LEFT JOIN graphql_ast_applied_argument_entry aa
+            ON fa.source_line IS NULL
+           AND aa.graph_name = c.graph_name AND aa.source_name = c.source_name
+           AND aa.parent_line = c.source_line AND aa.parent_column = c.source_column
+           AND aa.name = 'defaultFirstValue'
+         -- An integer literal short enough to cast; a longer one is no Int at all, which the
+         -- schema build refuses on its own.
+         WHERE REGEXP_LIKE(ga.default_value_sdl, '^[0-9]{1,18}$')
+           AND CAST(ga.default_value_sdl AS BIGINT) > mx.max_page_size) p
+ WHERE p.source_line IS NOT NULL
+UNION ALL
 -- A field whose written directives claim two kinds of producer, at the field's own declaration: a
 -- fetcher runs one thing. @lookupKey with @routine is deferred rather than refused.
 SELECT d.graph_name, d.source_name, d.source_line, d.source_column,
@@ -15817,6 +15877,9 @@ INSERT INTO meta_grain VALUES
   ('graph-dependency',
    'one entry of the compile classpath one graph''s build declares, as the build resolved it',
    'graph_name, source_name', 'configuration'),
+  ('graph-max-page-size',
+   'one graph whose build declares a largest page its connections return',
+   'graph_name', 'configuration'),
   ('facet-binding',
    'one @asFacet application, at the input field it sits on, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -16276,6 +16339,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A field reads a column by a name that several columns of its table fold onto, by SQL name or generated name regardless of case, so there is no one column to select.'),
   ('ORDERING_ACROSS_PARTICIPANTS', 'error', 'UNSUPPORTED', 'GRAPHITRON_ORDERING_ACROSS_PARTICIPANTS',
    'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
+  ('DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', 'error', 'GRAPHITRON', 'GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM',
+   'A connection''s default page size is larger than the build''s <maxAllowedPageSize>, so the schema advertises a default no request can receive, every page being served at the maximum: lower the default, or raise the maximum.'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.'),
   ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',
@@ -16394,6 +16459,10 @@ INSERT INTO meta_relation VALUES
    'One entry of the compile classpath the build handed this graph''s run, with what the build resolved it as.',
    'For example the consumer''s own target/classes is a DIRECTORY of origin PROJECT, and jooq-3.20.11.jar a RELEASE the pom declares.',
    'Configuration rather than a reading: what a module depends on is something its build declares, so the row is transcribed as the producer resolved it and nothing here is read off the entry. Per graph, because how an entry reached the classpath is a fact about one module''s build and not about the bytes: one jar is declared by one module and dragged in by another. Stored rather than held in the Java that wrote it because a graph''s claim on an entry can only reference a dependency that is a row, and that reference is what lets a dependency the build stops declaring release its claim by cascade.'),
+  ('store_graph_max_allowed_page_size', 'graph-max-page-size', 'store',
+   'The largest page any connection of one graph returns, as its build declared it in <maxAllowedPageSize>.',
+   'For example a build setting the parameter to 1000 is one row reading 1000, and a build that sets none has no row.',
+   'Configuration rather than a reading, and generation policy the store reads: the minted first argument''s default is lowered to it and an authored default above it is a defect, both of which are views, so the maximum is a row they can join rather than a value only the generator holds. Its own graph-keyed relation, on store_graph_tenant_column''s terms: single-valued, optional and run-owned, so row presence is the fact and a build with no maximum has no row.'),
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',

@@ -30,14 +30,15 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes what the run was configured with, as configured. Twelve relations and ten methods, one per
- * parameter or per group of parameters that arrive together, so a method is changed alone; the
- * mount and the unmount share theirs because one sealed value carries both.
+ * Writes what the run was configured with, as configured. Thirteen relations and eleven methods,
+ * one per parameter or per group of parameters that arrive together, so a method is changed alone;
+ * the mount and the unmount share theirs because one sealed value carries both.
  *
  * <p>Transcription and nothing else. The value types were validated by whoever built them, the
  * sealed ones already say which arm they are, and this class resolves nothing, compares nothing and
@@ -83,7 +84,7 @@ public final class StoreEntries {
     /**
      * Makes {@code graph}'s configuration rows be exactly what {@code config} declares.
      *
-     * <p>The instant is the caller's, the twelve relations having to agree on which reading is
+     * <p>The instant is the caller's, the thirteen relations having to agree on which reading is
      * current, and the graph is a parameter rather than read off the configuration: a run that
      * declared nothing at all still has rows to sweep and nothing left to say whose they were.
      *
@@ -109,6 +110,7 @@ public final class StoreEntries {
         config.supergraph().ifPresent(name -> supergraph(dsl, graph, name, touchedAt));
         config.output().ifPresent(output -> output(dsl, graph, output, touchedAt));
         config.tenantColumn().ifPresent(column -> tenantColumn(dsl, graph, column, touchedAt));
+        config.maxAllowedPageSize().ifPresent(max -> maxAllowedPageSize(dsl, graph, max, touchedAt));
         lintDisabledRules(dsl, graph, config.lint(), touchedAt);
         lintExcludedTypes(dsl, graph, config.lint(), touchedAt);
         sessionState(dsl, graph, config.sessionState(), touchedAt);
@@ -127,8 +129,8 @@ public final class StoreEntries {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
-        STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
-        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
+        STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
+        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
         STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
     /**
@@ -138,7 +140,7 @@ public final class StoreEntries {
      */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         // Table.field(Field) is a lookup by name returning the loop's own typed column, so one
-        // relation's two name them on all twelve.
+        // relation's two name them on all thirteen.
         var named = STORE_GRAPH_SCHEMA_INPUT;
         for (Table<?> table : TABLES_TO_SWEEP.reversed()) {
             dsl.deleteFrom(table)
@@ -269,6 +271,18 @@ public final class StoreEntries {
             .values(graph, column, touchedAt)
             .onDuplicateKeyUpdate()
             .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
+            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .execute();
+    }
+
+    /** The largest page a connection returns, where the build declared one. */
+    private static void maxAllowedPageSize(DSLContext dsl, String graph, int max,
+                                           LocalDateTime touchedAt) {
+        var t = STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
+        dsl.insertInto(t, t.GRAPH_NAME, t.MAX_PAGE_SIZE, t.TOUCHED_AT)
+            .values(graph, max, touchedAt)
+            .onDuplicateKeyUpdate()
+            .set(t.MAX_PAGE_SIZE, excluded(t.MAX_PAGE_SIZE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

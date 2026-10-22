@@ -4,6 +4,7 @@ import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ArrayTypeName;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
@@ -11,6 +12,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
+import java.util.OptionalInt;
 
 /**
  * Generates the {@code ConnectionHelper} utility class, emitted once per code-generation run.
@@ -51,17 +53,27 @@ public class ConnectionHelperClassGenerator {
     private static final ClassName BASE64           = ClassName.get("java.util", "Base64");
     private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
 
+    /** The name of the constant {@code pageRequest} lowers an oversized page size to. */
+    public static final String MAX_PAGE_SIZE = "MAX_PAGE_SIZE";
+
     public static List<TypeSpec> generate(String outputPackage) {
-        return generate(outputPackage, false);
+        return generate(outputPackage, false, OptionalInt.empty());
     }
 
     /**
-     * Canonical form carrying the tenancy bit. In a multi-tenant build the two lazy SQL
-     * resolvers ({@code totalCount}, {@code facets}) read the routed {@code DSLContext} off the
-     * {@code ConnectionResult} carrier, bound there by the owning fetcher per its classified
-     * tenant binding, so the aggregates run against the same source the page rows came from.
+     * Canonical form carrying the tenancy bit and the build's maximum page size. In a multi-tenant
+     * build the two lazy SQL resolvers ({@code totalCount}, {@code facets}) read the routed
+     * {@code DSLContext} off the {@code ConnectionResult} carrier, bound there by the owning
+     * fetcher per its classified tenant binding, so the aggregates run against the same source the
+     * page rows came from.
+     *
+     * <p>With a {@code maxAllowedPageSize} the class carries a {@value #MAX_PAGE_SIZE} constant and
+     * {@code pageRequest} serves a larger page size at it. Nothing downstream changes: the query
+     * still fetches {@code pageSize + 1} rows, so the page flags report the remainder truthfully
+     * and the client pages on. Without one the class is what it always was.
      */
-    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant) {
+    public static List<TypeSpec> generate(String outputPackage, boolean multiTenant,
+                                          OptionalInt maxAllowedPageSize) {
         var connectionResultClass = ClassName.get(
             outputPackage + ".util", ConnectionResultClassGenerator.CLASS_NAME);
         // Client-error marker: pageRequest's client-mistake guards throw it so the
@@ -142,7 +154,7 @@ public class ConnectionHelperClassGenerator {
         // matching the purity contract on the entity-scoped *Conditions classes.
         var integer = ClassName.get(Integer.class);
         var pageRequestRef = ClassName.get("", "PageRequest");
-        var pageRequest = MethodSpec.methodBuilder("pageRequest")
+        var pageRequestBuilder = MethodSpec.methodBuilder("pageRequest")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(pageRequestRef)
             .addParameter(integer, "first")
@@ -165,7 +177,15 @@ public class ConnectionHelperClassGenerator {
             .addCode("    throw new $T($S + last + $S);\n",
                 clientException, "last must not be negative (was: ", ")")
             .addStatement("boolean backward = last != null")
-            .addStatement("int pageSize = backward ? last : (first != null ? first : defaultPageSize)")
+            .addStatement("int pageSize = backward ? last : (first != null ? first : defaultPageSize)");
+        // The build's maximum, ahead of the overflow guard so a maximum turns first: MAX_VALUE
+        // into a full page rather than an error. Every value is clamped alike, a client's first
+        // or last and a default no client sent.
+        if (maxAllowedPageSize.isPresent()) {
+            pageRequestBuilder.addCode("if (pageSize > $L) pageSize = $L;\n",
+                MAX_PAGE_SIZE, MAX_PAGE_SIZE);
+        }
+        var pageRequest = pageRequestBuilder
             // Guard the derived value PostgreSQL actually enforces: limit = pageSize + 1 >= 0.
             // At MAX_VALUE the + 1 wraps to Integer.MIN_VALUE and reaches SQL as a negative
             // LIMIT; guarding here (not per input) also covers a pathological defaultPageSize.
@@ -510,6 +530,10 @@ public class ConnectionHelperClassGenerator {
             .addMethod(graphitronContextShim)
             .addMethod(edgeNodeMethod)
             .addMethod(edgeCursorMethod);
+        maxAllowedPageSize.ifPresent(max -> builder.addField(FieldSpec
+            .builder(int.class, MAX_PAGE_SIZE, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$L", max)
+            .build()));
         return List.of(builder.build());
     }
 

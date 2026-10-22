@@ -127,7 +127,7 @@ public final class BuiltStore implements AutoCloseable {
                 Thread.currentThread().getContextClassLoader(), List.of(),
                 lintConfig, null, null, null, storeHome,
                 SchemaRecipe.literalOver(inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
-                null);
+                null, null);
             // The fixture opens the store and captures into it, which is what a goal does and
             // what a test is allowed to do. The generator is handed a reader over it and captures
             // nothing: a pass that could open a store would make "reads facts, writes none" a

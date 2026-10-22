@@ -126,6 +126,11 @@ The following parameters apply to every goal:
 | `String` (database column name)
 | (none)
 | Name of the database column that carries the tenant id in a database-per-tenant deployment, matched against catalog columns the way column lookups already match (Java name first, then SQL name, both case-insensitive). Configuring it classifies every catalog table as tenant-scoped (carries the column) or global (does not); the tenant Java type is read off the jOOQ catalog's column type, and all carrying tables must agree on that type or the build fails. A configured column no table carries also fails the build, because silently classifying every table as global would route tenant data through the default connection. Omit for single-tenant builds; none of the tenant machinery exists then.
+
+| `maxAllowedPageSize`
+| `Integer`
+| (none)
+| Largest page any connection field returns. A request whose `first:` or `last:` exceeds it gets this many rows, with `hasNextPage` (or `hasPreviousPage`) `true` so the client can keep paging; nothing is rejected. Applies to every connection field, `@asConnection` or a connection type you declared yourself. Graphitron's built-in default page size of 100 is lowered to it when it is smaller; a `defaultFirstValue:` you wrote above it fails the build. Must be at least 1. Omit for no maximum. See xref:../how-to/connections.adoc[How-to: Connections].
 |===
 
 [#dev-goal-parameters]

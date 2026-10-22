@@ -1,8 +1,8 @@
 = How-to: Cursor-paginated connections
-:description: Wrap a list as a Relay connection, name the synthesised types, account for totalCount cost, and understand what the rewrite does (and does not) cap.
+:description: Wrap a list as a Relay connection, name the synthesised types, account for totalCount cost, and cap the page size.
 :!toc:
 
-xref:../reference/directives/asConnection.adoc[`@asConnection`] turns a list field into a Relay connection: the schema-transform stage rewrites `[T!]!` to a synthesised `TConnection`, the generator emits keyset SQL, and the runtime returns `edges`, `nodes`, `pageInfo`, and (when asked for) `totalCount`. The reference page covers signature, examples, and constraints. This recipe addresses three operational questions that bite teams in review: why each connection field should own its own Connection type, what `totalCount` actually costs (and how it batches under nested connections), and what the rewrite does about page-size caps.
+xref:../reference/directives/asConnection.adoc[`@asConnection`] turns a list field into a Relay connection: the schema-transform stage rewrites `[T!]!` to a synthesised `TConnection`, the generator emits keyset SQL, and the runtime returns `edges`, `nodes`, `pageInfo`, and (when asked for) `totalCount`. The reference page covers signature, examples, and constraints. This recipe addresses three operational questions that bite teams in review: why each connection field should own its own Connection type, what `totalCount` actually costs (and how it batches under nested connections), and how the default and the maximum page size are decided.
 
 For the cursor-stability and tie-breaker side of pagination, see xref:sort-results.adoc[How-to: Sort results]. The sort spec and the connection are separate concerns: the order is what the cursor encodes, and the connection is what the cursor traverses.
 
@@ -40,23 +40,18 @@ The deprecated `connectionName:` override coalesces multiple carriers onto one t
 
 The performance consequence: keep `totalCount` available in the schema for clients that need it, but do not assume it costs nothing per query. A client that always asks for `totalCount` doubles the round trip count; for high-RPS reads, prefer not selecting it.
 
-== Page size: `defaultFirstValue` and the missing cap
+== Page size: the default and the maximum
 
 Page size resolves at request time:
 
-* *Client supplies `first: N`.* Use `N`. No cap.
-* *Client omits `first:`.* Use the directive's `defaultFirstValue:` (the `@asConnection(defaultFirstValue: 5)` argument), or the generator's `DEFAULT_PAGE_SIZE = 100` when `defaultFirstValue:` is also omitted.
-* *Backward pagination (`last: N`).* Same shape, `last` substitutes for `first` in the resolution.
+* *Client supplies `first: N` or `last: N`.* Use `N`.
+* *Client supplies neither.* Use the directive's `defaultFirstValue:`, or 100 when `defaultFirstValue:` is also omitted. The default appears in your published schema as the `first` argument's default value.
 
-There is *no server-side cap on `first:` or `last:`* in the rewrite. The legacy generator's `<maxAllowedPageSize>` Maven-plugin setting was deliberately excised from the rewrite plugin (the rewrite Mojo's four core `@Parameter` fields are `schemaInputs`, `outputDirectory`, `outputPackage`, `jooqPackage`; no page-size cap). A client passing `first: 100000` will produce that many rows, modulo database memory and network limits.
+Then, if the build sets xref:../reference/mojo-configuration.adoc[`<maxAllowedPageSize>`], a page size above it is lowered to it. The client is not told with an error; it sees a full page and `hasNextPage: true` (or `hasPreviousPage: true` for `last:`), and follows the cursor as usual. With `<maxAllowedPageSize>1000</maxAllowedPageSize>`, `first: 5000` returns 1000 rows. Without the parameter there is no maximum, and a client passing `first: 100000` gets that many rows.
 
-If you need a request-rate or page-size cap, enforce it outside the generator:
+`defaultFirstValue:` is a default, not a maximum. With `<maxAllowedPageSize>` set, the built-in default of 100 becomes the maximum when the maximum is smaller (`<maxAllowedPageSize>50</maxAllowedPageSize>` publishes `first: Int = 50`), and a `defaultFirstValue:` you wrote that is larger than the maximum fails the build, since no request could receive it.
 
-* *Apollo persisted queries* or another query-allowlist that constrains accepted shapes.
-* *Servlet-layer limits* (request size, response size, query timeout) configured on the host application.
-* *graphql-java instrumentation* that rejects queries whose `first:`/`last:` exceed a threshold before the field resolves.
-
-The `defaultFirstValue:` argument is purely a default for the omitted-`first:` case, not a cap. Setting `@asConnection(defaultFirstValue: 5)` on `Query.searchConnection` (as the example schema does) means clients that don't ask for a specific page size get five rows; clients that ask for `first: 1000` still get up to 1000.
+The maximum covers connections only. A plain list field with a `first:` argument is not a connection and is not limited by it.
 
 == Cursor encoding is part of the public contract
 
@@ -95,7 +90,7 @@ The `totalCount` consequence cited above applies here: a split connection counts
 * `connectionName:` is deprecated. Each connection field should own its own Connection type; the override exists as a transition mechanism for legacy schemas. When set, the dedup is silent — two carriers with the same name and different element types reuse the first registration and only the first carrier's element type appears under that connection's `edges.node`.
 * `totalCount` on a nested connection costs one grouped statement per batch of parents, not one per parent.
 * `totalCount` is lazy on selection but a separate SQL pass when selected. Treat it as observable extra cost; don't assume it's free.
-* No server-side page-size cap. `defaultFirstValue:` is the omitted-`first:` default, not a maximum. Enforce caps at the API layer if needed.
+* `defaultFirstValue:` is the omitted-`first:` default, not a maximum. Set `<maxAllowedPageSize>` to cap every connection's page size; without it a client gets as many rows as it asks for.
 * Cursor wire format embeds the active order's columns. Sort-spec changes invalidate outstanding cursors; treat the column list as part of the public contract.
 * `@asConnection` + `@splitQuery` is the right shape for per-parent paginated children. `@asConnection` alone on a child list paginates across all parents.
 

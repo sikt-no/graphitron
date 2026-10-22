@@ -158,7 +158,8 @@ final class ConnectionPromoter {
             String currentBaseName = baseTypeName(fieldDef.getType());
             row = new ConnectionSynthesis.DirectiveDriven(
                 parent.getName(), fieldDef.getName(), promotion.connectionName(),
-                PaginationResolver.defaultPageSize(ctx.facts.pagination(), fieldDef),
+                PaginationResolver.defaultPageSize(ctx.facts.pagination(), fieldDef,
+                    ctx.ctx().maxAllowedPageSize()),
                 fieldDef.getType() instanceof GraphQLNonNull,
                 !promotion.connectionName().equals(currentBaseName),
                 rowMinted);

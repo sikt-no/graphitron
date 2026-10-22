@@ -54,6 +54,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -191,6 +192,17 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     @Parameter
     String tenantColumn;
 
+    /**
+     * Largest page any connection field returns. A request whose {@code first:} or {@code last:}
+     * exceeds it is served at this size, with {@code hasNextPage} (or {@code hasPreviousPage})
+     * {@code true} so the client keeps paging; nothing is rejected. Applies to every connection
+     * field, {@code @asConnection} or a connection type the author declared. The built-in default
+     * page size is lowered to it when it is smaller, and an authored default above it fails the
+     * build. Must be at least 1. Omit for no maximum.
+     */
+    @Parameter
+    Integer maxAllowedPageSize;
+
     @FunctionalInterface
     protected interface GeneratorCall {
         void invoke(GraphQLRewriteGenerator gen);
@@ -259,8 +271,25 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resolveDependencyVersions(),
             resolveStoreDirectory(basedir),
             recipe,
-            supergraph
+            supergraph,
+            effectiveMaxAllowedPageSize()
         );
+    }
+
+    /**
+     * {@code <maxAllowedPageSize>} as the context carries it, refusing a value below 1 here so the
+     * author meets the parameter's name rather than the context's invariant: a maximum of 0 would
+     * serve empty pages that always have a next one, and a negative one a negative {@code LIMIT}.
+     */
+    OptionalInt effectiveMaxAllowedPageSize() throws MojoExecutionException {
+        if (maxAllowedPageSize == null) {
+            return OptionalInt.empty();
+        }
+        if (maxAllowedPageSize < 1) {
+            throw new MojoExecutionException(
+                "<maxAllowedPageSize> must be at least 1 (was: " + maxAllowedPageSize + ")");
+        }
+        return OptionalInt.of(maxAllowedPageSize);
     }
 
     /**

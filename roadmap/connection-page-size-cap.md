@@ -116,6 +116,14 @@ The setting enters as configuration, is transcribed into the fact store (the SQL
 
   The maximum sits on its own execution because the main schema's tests read pages up to `first: 100` and pin the uncapped overflow error (`GraphQLQueryTest.filmsConnection_firstMaxInt_surfacesClientError`), and `film` holds exactly 1000 rows, so a cap above every existing request could not show a clamp on it.
 
+## Implementation notes
+
+Where the delivery departs from the plan above, and why:
+
+- **The execution fixture uses a maximum of 2, not 5, and its split connection is `Store.customers`.** The plan assumed `film` holds 1000 rows; the test database seeded from `init.sql` holds five films, at most two actors per film, three customers in store 1 and two in store 2. A maximum of 5 would clamp nothing. Under 2, every connection in `pagecap.graphqls` has more rows than the maximum, `first: 1` shows a smaller request passing through, and store 1 (three customers) and store 2 (exactly two) give the split connection one clamped parent and one that is not. The cursor walk with `first: 100` visits the five films in three pages. `PageSizeMaximumQueryTest` carries the rest of the listed assertions unchanged.
+- **The minted default spells `min(100, maximum)` as a `CASE`, not `LEAST`.** H2 stores `LEAST` with a `RESPECT NULLS` clause that the definition walk behind `MetaDeclarationGateTest` cannot parse.
+- **The detection family is `DefaultPageSizeDefects`.** Its reader names only tables (the connection entry, the AST entries a default can be written at, the stored defect and the maximum), so it adds nothing to `DetectionReadReachGateTest`'s read-cadence reach. The store-tier cases are fact documents (`scenarios/connection-page-size-maximum-*`, `defects/default-page-size-above-maximum`, and the configuration and configuration-sweep documents) beside the `StoreEntriesTest` round trip.
+
 ## Out of scope
 
 - A page-size limit on plain list fields that take a `first:` argument (`ProjectionUnitRenderer`'s `limitByFirstArgument` arm). They are not connections, 9's setting did not cover them, and a silent clamp there would have no `hasNextPage` to tell the client.

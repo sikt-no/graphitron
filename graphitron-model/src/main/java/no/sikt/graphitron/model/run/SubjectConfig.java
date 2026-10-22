@@ -10,6 +10,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.OptionalInt;
 
 /**
  * The configuration capture transcribes <em>about</em> its subject graph, one typed value rather
@@ -45,11 +46,13 @@ import java.util.Optional;
  * @param sessionState the {@code <sessionState>} form. Sealed, and
  *                   {@link SessionStateConfig#none()} is the no-configuration arm, so this
  *                   component is never absent and the arm carries what absence would have
+ * @param maxAllowedPageSize the largest page any connection returns, from
+ *                   {@code <maxAllowedPageSize>}; empty on a build with no maximum
  */
 public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooqPackage,
                             Optional<String> supergraph, Optional<OutputCoordinates> output,
                             Optional<String> tenantColumn, LintConfig lint,
-                            SessionStateConfig sessionState) {
+                            SessionStateConfig sessionState, OptionalInt maxAllowedPageSize) {
     public SubjectConfig {
         Objects.requireNonNull(recipe, "recipe");
         Objects.requireNonNull(jooqPackage, "jooqPackage");
@@ -58,6 +61,7 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
         Objects.requireNonNull(tenantColumn, "tenantColumn");
         Objects.requireNonNull(lint, "lint");
         Objects.requireNonNull(sessionState, "sessionState");
+        Objects.requireNonNull(maxAllowedPageSize, "maxAllowedPageSize");
     }
 
     /**
@@ -75,13 +79,15 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
             ctx.declaredOutputCoordinates(),
             Optional.ofNullable(ctx.tenantColumn()),
             ctx.lintConfig(),
-            ctx.sessionStateConfig());
+            ctx.sessionStateConfig(),
+            ctx.maxAllowedPageSize());
     }
 
     /** A subject that declared nothing at all. */
     public static SubjectConfig none() {
         return new SubjectConfig(Optional.empty(), Optional.empty(), Optional.empty(),
-            Optional.empty(), Optional.empty(), LintConfig.empty(), SessionStateConfig.none());
+            Optional.empty(), Optional.empty(), LintConfig.empty(), SessionStateConfig.none(),
+            OptionalInt.empty());
     }
 
     /** A subject whose only declaration is its recipe. */
@@ -93,7 +99,7 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
     public static SubjectConfig of(SchemaRecipe recipe, String jooqPackage) {
         return new SubjectConfig(Optional.ofNullable(recipe), Optional.ofNullable(jooqPackage),
             Optional.empty(), Optional.empty(), Optional.empty(), LintConfig.empty(),
-            SessionStateConfig.none());
+            SessionStateConfig.none(), OptionalInt.empty());
     }
 
     /**

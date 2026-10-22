@@ -56,6 +56,10 @@ import java.util.Set;
  * separate from every family above because it judges no author spelling at all; the declaration is
  * well formed, and what fails is that nothing lowers it.
  *
+ * <p>{@link #defaultPageSizes} judges the schema against the build's configuration rather than
+ * against itself: a connection's default page size is well formed on its own and fails only beside
+ * a {@code <maxAllowedPageSize>} smaller than it, which no other family reads.
+ *
  * <p>{@link #nodeIdDecodeCoverage} is the second member that is not a detection, and it is not one
  * for a different reason than {@link #keyProjections}: it is half of a rule whose other half the
  * store does not hold at all. What the generator did about each decoding {@code @nodeId} coordinate
@@ -76,6 +80,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               NodeIdLandingDefects.Detection nodeIdLandings,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
+                              DefaultPageSizeDefects.Detection defaultPageSizes,
                               ResolvedKeyProjections.Projections keyProjections,
                               NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage) {
 
@@ -102,6 +107,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("NodeIdLandingDefects", NodeIdLandingDefects.READS);
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
         roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
+        roster.put("DefaultPageSizeDefects", DefaultPageSizeDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
         return Collections.unmodifiableMap(roster);
@@ -125,6 +131,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                     NodeIdLandingDefects.detect(dsl, graphName),
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     UnlowerableOrderings.detect(dsl, graphName),
+                    DefaultPageSizeDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
                     NodeIdDecodeCoverageFacts.read(dsl, graphName));
             }
@@ -140,6 +147,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             NodeIdLandingDefects.Detection.empty(),
             ReferenceForParticipantDefects.Detection.empty(),
             UnlowerableOrderings.Detection.empty(),
+            DefaultPageSizeDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
             NodeIdDecodeCoverageFacts.Facts.empty());
     }
@@ -153,6 +161,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(nodeIdLandings.violations());
         out.addAll(referenceForParticipants.violations());
         out.addAll(unlowerableOrderings.violations());
+        out.addAll(defaultPageSizes.violations());
         return List.copyOf(out);
     }
 

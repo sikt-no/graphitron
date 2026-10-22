@@ -645,7 +645,8 @@ public final class CapturedStore implements AutoCloseable {
         var corpus = corpusOf(files, directory);
         var subject = new SubjectConfig(corpus.recipe(), configuration.jooqPackage(),
             configuration.supergraph(), configuration.output(), configuration.tenantColumn(),
-            configuration.lint(), configuration.sessionState());
+            configuration.lint(), configuration.sessionState(),
+            configuration.maxAllowedPageSize());
         return ModelCapture.capture(dsl, new GraphIdentity(graphName, directory),
             withCatalog(subject, jooq), classpath, loaderOf(jooq), readAt);
     }
@@ -702,7 +703,7 @@ public final class CapturedStore implements AutoCloseable {
         }
         return new SubjectConfig(corpus.recipe(), java.util.Optional.of(catalog.jooqPackage()),
             corpus.supergraph(), corpus.output(), corpus.tenantColumn(), corpus.lint(),
-            corpus.sessionState());
+            corpus.sessionState(), corpus.maxAllowedPageSize());
     }
 
     /** The loader the capture runs code through: the catalog's, or the thread's where none is given. */

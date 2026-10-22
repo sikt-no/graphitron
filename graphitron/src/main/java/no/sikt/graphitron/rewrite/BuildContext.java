@@ -703,7 +703,8 @@ class BuildContext {
         GraphQLType unwrappedOnce = GraphQLTypeUtil.unwrapNonNull(fieldType);
 
         if (fieldDef.hasAppliedDirective(DIR_AS_CONNECTION) && unwrappedOnce instanceof GraphQLList) {
-            return new FieldWrapper.Connection(outerNullable, PaginationResolver.defaultPageSize(facts.pagination(), fieldDef));
+            return new FieldWrapper.Connection(outerNullable, PaginationResolver.defaultPageSize(
+                facts.pagination(), fieldDef, ctx.maxAllowedPageSize()));
         }
 
         if (unwrappedOnce instanceof GraphQLList listType) {
@@ -713,7 +714,8 @@ class BuildContext {
 
         // Structural detection: pre-expanded Connection type with edges.node pattern.
         if (isConnectionType(baseTypeName(fieldDef))) {
-            return new FieldWrapper.Connection(outerNullable, ConnectionDefaults.DEFAULT_PAGE_SIZE);
+            return new FieldWrapper.Connection(outerNullable,
+                ConnectionDefaults.defaultPageSize(ctx.maxAllowedPageSize()));
         }
 
         return new FieldWrapper.Single(outerNullable);

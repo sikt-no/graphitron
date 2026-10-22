@@ -1,0 +1,14 @@
+# A build whose maximum page size is larger than the built-in default leaves the default alone: the
+# maximum only ever lowers it.
+
+extend schema @withConfiguration(maxAllowedPageSize: 500)
+
+type Film @table(name: "film") { title: String }
+
+extend type Query { films: [Film!]! @asConnection }
+
+extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
+  type_name, field_name, argument_name, default_value_sdl
+  Query,     films,      first,         100
+  Query,     films,      after,
+  """)

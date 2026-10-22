@@ -1,0 +1,22 @@
+# A build whose maximum page size is smaller than the built-in default lowers the default a carrier
+# mints to the maximum, so the first argument a client is told about never promises a page it cannot
+# receive. A defaultFirstValue within the maximum passes through as written.
+
+extend schema @withConfiguration(maxAllowedPageSize: 50)
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  films: [Film!]! @asConnection
+  fewFilms: [Film!]! @asConnection(defaultFirstValue: 20)
+}
+
+extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
+  type_name, field_name, argument_name, default_value_sdl
+  Query,     films,      first,         50
+  Query,     films,      after,
+  Query,     fewFilms,   first,         20
+  Query,     fewFilms,   after,
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect")

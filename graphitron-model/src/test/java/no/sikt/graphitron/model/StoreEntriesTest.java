@@ -21,6 +21,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_DEPENDENCY;
@@ -34,6 +35,7 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
 import static no.sikt.graphitron.model.test.SeededStore.seedGraph;
 import static no.sikt.graphitron.model.test.SeededStore.withSeededStore;
@@ -151,6 +153,29 @@ class StoreEntriesTest {
                 .fetch(0, String.class))
                 .as("and the module only it provided")
                 .containsExactly("com.example:own");
+        });
+    }
+
+    @Test
+    @DisplayName("the maximum page size round-trips, and goes when the build stops declaring it")
+    void transcribesAndSweepsTheMaximumPageSize() {
+        withSeededStore(dsl -> {
+            seedGraph(dsl, GRAPH);
+            var t = STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
+            StoreEntries.write(dsl, GRAPH, everything(), classpath(), FIRST);
+
+            assertThat(dsl.select(t.MAX_PAGE_SIZE).from(t).where(t.GRAPH_NAME.eq(GRAPH))
+                .fetch(t.MAX_PAGE_SIZE))
+                .as("the maximum as the build declared it")
+                .containsExactly(1000);
+
+            // The same build with the parameter taken out, which produces no incoming row for an
+            // upsert to land on.
+            StoreEntries.write(dsl, GRAPH, SubjectConfig.none(), classpath(), SECOND);
+
+            assertThat(dsl.fetchCount(t, t.GRAPH_NAME.eq(GRAPH)))
+                .as("a build with no maximum has no row")
+                .isZero();
         });
     }
 
@@ -284,7 +309,8 @@ class StoreEntriesTest {
                 List.of("Legacy*", "*Internal")),
             new SessionStateConfig.MethodHooks(
                 new SessionStateConfig.HookRef("com.example.Identity", "mount"),
-                Optional.of(new SessionStateConfig.HookRef("com.example.Identity", "unmount"))));
+                Optional.of(new SessionStateConfig.HookRef("com.example.Identity", "unmount"))),
+            OptionalInt.of(1000));
     }
 
     /** One entry of each kind, so the taxonomy column has all three of its values to carry. */
@@ -328,9 +354,10 @@ class StoreEntriesTest {
      */
     private static final List<Table<?>> FAMILY = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
-        STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_LINT_DISABLED_RULE,
-        STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
-        STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
+        STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
+        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT,
+        STORE_GRAPH_SESSION_UNMOUNT, STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE,
+        STORE_GRAPH_MODULE_ENTRY);
 
     /** How many rows each of {@code relations} holds for one graph. */
     private static Map<String, Integer> census(DSLContext dsl, String graph, List<Table<?>> relations) {

@@ -10,6 +10,7 @@ import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Objects;
+import java.util.OptionalInt;
 import java.util.Set;
 
 /**
@@ -87,6 +88,11 @@ import java.util.Set;
  *                       it does not make a graph federated and is not policed against the SDL's
  *                       opt-in. {@code null} is standalone, which is the default rather than a state
  *                       an author spells
+ * @param maxAllowedPageSize the largest page any connection field returns, from the
+ *                       {@code <maxAllowedPageSize>} parameter: a larger {@code first:} or
+ *                       {@code last:} is served at this size, and the built-in default page size is
+ *                       lowered to it. Empty (the default, and what a {@code null} becomes) means no
+ *                       maximum; a present value is at least 1
  */
 public record RunContext(
     List<SchemaInput> schemaInputs,
@@ -105,7 +111,8 @@ public record RunContext(
     DependencyVersions dependencyVersions,
     Path storeDirectory,
     SchemaRecipe schemaRecipe,
-    String supergraph
+    String supergraph,
+    OptionalInt maxAllowedPageSize
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -138,17 +145,23 @@ public record RunContext(
         }
         schemaInputs = List.copyOf(schemaInputs);
         classpathRoots = List.copyOf(classpathRoots);
-        // The six null-tolerant components: only the build mojos populate them (from
+        // The null-tolerant components: only the build mojos populate them (from
         // <sessionState>, <lint>, <tenantColumn>, the Maven project's source roots, the resolved
-        // dependency graphs, the resolved store home, and <supergraph>); every other caller passes
-        // null and gets the single-tenant, no-suppression, no-hook, UNKNOWN-positions,
-        // no-version-facts, store-dies-with-the-run, standalone defaults.
+        // dependency graphs, the resolved store home, <supergraph> and <maxAllowedPageSize>); every
+        // other caller passes null and gets the single-tenant, no-suppression, no-hook,
+        // UNKNOWN-positions, no-version-facts, store-dies-with-the-run, standalone, no-maximum
+        // defaults.
         compileSourceRoots = compileSourceRoots == null ? List.of() : List.copyOf(compileSourceRoots);
         lintConfig = lintConfig == null ? LintConfig.empty() : lintConfig;
         sessionStateConfig = sessionStateConfig == null ? SessionStateConfig.none() : sessionStateConfig;
         tenantColumn = tenantColumn == null || tenantColumn.isBlank() ? null : tenantColumn.trim();
         dependencyVersions = dependencyVersions == null ? DependencyVersions.empty() : dependencyVersions;
         supergraph = supergraph == null || supergraph.isBlank() ? null : supergraph.trim();
+        maxAllowedPageSize = maxAllowedPageSize == null ? OptionalInt.empty() : maxAllowedPageSize;
+        if (maxAllowedPageSize.isPresent() && maxAllowedPageSize.getAsInt() < 1) {
+            throw new IllegalArgumentException(
+                "maxAllowedPageSize must be at least 1 (was: " + maxAllowedPageSize.getAsInt() + ")");
+        }
     }
 
     /**
@@ -199,7 +212,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
     }
 
     /**
@@ -212,7 +225,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
     }
 
     /**
@@ -223,7 +236,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
     }
 
     /**
@@ -234,7 +247,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
     }
 
     /**
@@ -245,7 +258,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
     }
 
     /**
@@ -256,7 +269,18 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+    }
+
+    /**
+     * Returns a copy with {@code maxAllowedPageSize} replaced, so a caller can layer the
+     * {@code <maxAllowedPageSize>} declaration on afterwards.
+     */
+    public RunContext withMaxAllowedPageSize(OptionalInt maxAllowedPageSize) {
+        return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
     }
 
     /**
@@ -285,7 +309,7 @@ public record RunContext(
         this(schemaInputs, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, ClasspathEntry.projectRoots(classpathRoots), codegenLoader,
             compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn, dependencyVersions,
-            null, literalRecipe(schemaInputs, schemaFileExtensions), null);
+            null, literalRecipe(schemaInputs, schemaFileExtensions), null, OptionalInt.empty());
     }
 
     /**

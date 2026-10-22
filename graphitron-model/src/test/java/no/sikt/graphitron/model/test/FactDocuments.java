@@ -2,6 +2,7 @@ package no.sikt.graphitron.model.test;
 
 import graphql.language.ArrayValue;
 import graphql.language.Directive;
+import graphql.language.IntValue;
 import graphql.language.NullValue;
 import graphql.language.SchemaDefinition;
 import graphql.language.StringValue;
@@ -19,6 +20,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.regex.Pattern;
 
 /**
@@ -222,7 +224,18 @@ public final class FactDocuments {
                 : SessionStateConfig.from(mount.orElse(null), unmount.orElse(null));
             return new SubjectConfig(Optional.empty(), Optional.empty(),
                 string(directive, "supergraph"), output, string(directive, "tenantColumn"), lint,
-                session);
+                session, integer(directive, "maxAllowedPageSize"));
+        }
+
+        private static OptionalInt integer(Directive directive, String name) {
+            var argument = directive.getArgument(name);
+            if (argument == null) {
+                return OptionalInt.empty();
+            }
+            if (!(argument.getValue() instanceof IntValue value)) {
+                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) takes an integer");
+            }
+            return OptionalInt.of(value.getValue().intValueExact());
         }
 
         private static Optional<String> string(Directive directive, String name) {

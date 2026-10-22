@@ -990,7 +990,8 @@ class FactSchemaGateTest {
         var config = new SubjectConfig(java.util.Optional.empty(), java.util.Optional.empty(),
             java.util.Optional.ofNullable(supergraph), java.util.Optional.empty(),
             java.util.Optional.empty(), no.sikt.graphitron.model.lint.LintConfig.empty(),
-            no.sikt.graphitron.model.config.SessionStateConfig.none());
+            no.sikt.graphitron.model.config.SessionStateConfig.none(),
+            java.util.OptionalInt.empty());
         CapturedStore.writeSource(dir, FIXTURE);
         CapturedStore.capture(store.dsl(), new GraphIdentity(graphName, dir), config, null);
     }

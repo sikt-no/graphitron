@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.grammar;
 
+import java.util.OptionalInt;
+
 /**
  * The values {@code @asConnection} falls back to where an author states none.
  *
@@ -21,6 +23,16 @@ public final class ConnectionDefaults {
      * capture, and read by the generator when it resolves a carrier's page size.
      */
     public static final int DEFAULT_PAGE_SIZE = 100;
+
+    /**
+     * The page size a connection gets where nobody stated one, under the build's
+     * {@code <maxAllowedPageSize>}: {@link #DEFAULT_PAGE_SIZE}, lowered to the maximum when the
+     * maximum is smaller, so a default never advertises a page no request can receive. The minted
+     * {@code first} argument's SQL default spells the same rule.
+     */
+    public static int defaultPageSize(OptionalInt maxAllowedPageSize) {
+        return Math.min(DEFAULT_PAGE_SIZE, maxAllowedPageSize.orElse(DEFAULT_PAGE_SIZE));
+    }
 
     private ConnectionDefaults() {
     }

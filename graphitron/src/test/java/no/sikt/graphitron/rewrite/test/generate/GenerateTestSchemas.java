@@ -96,6 +96,7 @@ public final class GenerateTestSchemas {
             DependencyVersions.empty(),
             null,
             SchemaRecipe.literalOver(inputs, RunContext.DEFAULT_SCHEMA_FILE_EXTENSIONS),
+            null,
             null);
         try (var captured = GraphitronStore.captured(ctx)) {
             new GraphQLRewriteGenerator(ctx, captured).generate();

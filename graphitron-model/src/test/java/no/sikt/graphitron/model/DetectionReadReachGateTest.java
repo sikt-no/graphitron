@@ -153,6 +153,10 @@ class DetectionReadReachGateTest {
         REACH.put("UnlowerableOrderings", Set.of(
             "graphql_poly_member"));
 
+        // Every relation it names is a table: the carrier's own entry, the AST entries the default
+        // can be written at, and the configured maximum.
+        REACH.put("DefaultPageSizeDefects", Set.of());
+
         // The decode-coverage rule's store operand. Its census side costs nothing here: every
         // relation it reads there is a stored table (the instruction census, the
         // classification domain, and the occurrence-path pair), so those expand no rule at read

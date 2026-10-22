@@ -14,7 +14,8 @@ extend schema @withConfiguration(
   lintDisabledRules: ["no-typename-prefix", "field-names-camel-case"],
   lintExcludedTypes: ["Legacy*", "*Internal"],
   mount: "com.example.Identity#mount",
-  unmount: "com.example.Identity#unmount"
+  unmount: "com.example.Identity#unmount",
+  maxAllowedPageSize: 1000
 )
 
 extend schema @expectEquals(relation: "store_graph_supergraph", rows: """
@@ -30,6 +31,11 @@ extend schema @expectEquals(relation: "store_graph_output", rows: """
 extend schema @expectEquals(relation: "store_graph_tenant_column", rows: """
   column_name
   tenant_id
+  """)
+
+extend schema @expectEquals(relation: "store_graph_max_allowed_page_size", rows: """
+  max_page_size
+  1000
   """)
 
 extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """

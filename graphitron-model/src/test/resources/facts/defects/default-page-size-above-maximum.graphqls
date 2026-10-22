@@ -1,0 +1,33 @@
+# A connection carrier whose default page size is larger than the build's maximum advertises a
+# default no request can receive, since every page is served at the maximum. The defect sits where
+# the default was written: @asConnection's defaultFirstValue, or the default of a first argument the
+# carrier declares itself. A default equal to the maximum is no defect, and neither is the minted
+# default, which is lowered to the maximum where it is minted.
+
+extend schema @withConfiguration(maxAllowedPageSize: 10)
+
+type Film @table(name: "film") { title: String }
+
+extend type Query {
+  directive: [Film!]! @asConnection(defaultFirstValue: 50)
+  authored(first: Int = 50): [Film!]! @asConnection
+  atMaximum: [Film!]! @asConnection(defaultFirstValue: 10)
+  bare: [Film!]! @asConnection
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                            coordinate,              detail
+  DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM, Query.directive,         defaultFirstValue
+  DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM, Query.authored(first:),  first
+  """)
+
+extend schema @expectEquals(relation: "graphitron_argument_minted", rows: """
+  type_name, field_name, argument_name, default_value_sdl
+  Query,     directive,  first,         50
+  Query,     directive,  after,
+  Query,     authored,   after,
+  Query,     atMaximum,  first,         10
+  Query,     atMaximum,  after,
+  Query,     bare,       first,         10
+  Query,     bare,       after,
+  """)
