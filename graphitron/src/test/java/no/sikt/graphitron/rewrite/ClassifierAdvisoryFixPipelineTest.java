@@ -12,7 +12,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import no.sikt.graphitron.model.diagnostics.BuildWarning;
 
 /**
- * Lint-engine fix slice, classifier arm: the two classifier-owned advisories whose ignored directive can be
+ * Lint-engine fix slice, classifier arm: the classifier-owned advisories whose ignored directive can be
  * safely deleted carry a {@link LintFix} directly at their emit site (the classifier stays their sole
  * producer; the lint engine does not re-derive them). Pins the produced deletion edit and the
  * bare-only guard: graphql-java records a node's start location but no end, so only the argument-less
@@ -139,5 +139,81 @@ class ClassifierAdvisoryFixPipelineTest {
                     .as("the deleted span is exactly '@splitQuery'").isEqualTo(11);
             });
         }
+    }
+
+    private static final String FILM_SERVICE = "no.sikt.graphitron.rewrite.generators.TestFilmService";
+
+    /**
+     * The service child's sibling advisory, on a {@code @table} parent: a child {@code @service}
+     * is always called once per batch of parents, so {@code @splitQuery} beside it is inert, and
+     * it is reported with the same computable deletion fix. The field still classifies to its
+     * service variant; the directive changes nothing about it.
+     */
+    @Test
+    void splitQueryBesideServiceOnTableParent_carriesDeletionFix() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") {
+              rating: String @splitQuery
+                  @service(service: {className: "%s", method: "getRatingByFilmRecord"})
+            }
+            type Query { films: [Film!]! }
+            """.formatted(FILM_SERVICE));
+
+        assertThat(schema.warnings())
+            .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD
+                && lf.message().contains("Film.rating"))
+            .as("one redundancy finding at the coordinate")
+            .hasSize(1);
+        var fix = fixFor(schema, LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD, "Film.rating");
+        assertThat(fix).as("redundant @splitQuery carries a deletion fix").isPresent();
+        assertThat(fix.get().edits()).singleElement().satisfies(e -> {
+            assertThat(e.replacement()).isEmpty();
+            assertThat(e.end().getLine()).isEqualTo(e.start().getLine());
+            assertThat(e.end().getColumn() - e.start().getColumn())
+                .as("the deleted span is exactly '@splitQuery'").isEqualTo(11);
+        });
+        assertThat(schema.field("Film", "rating"))
+            .as("the field still classifies to its service variant")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField.class);
+    }
+
+    /**
+     * The warning is emitted ahead of the service resolver, so a method the resolver rejects (here
+     * one with no {@code Sources} parameter) still draws it beside the rejection.
+     */
+    @Test
+    void splitQueryBesideRejectedServiceOnTableParent_stillWarns() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") {
+              rank(filter: String): Int @splitQuery
+                  @service(service: {className: "%s", method: "getConstantRank"})
+            }
+            type Query { films: [Film!]! }
+            """.formatted(FILM_SERVICE));
+
+        assertThat(schema.field("Film", "rank"))
+            .as("the Sources-less method is rejected whatever @splitQuery says")
+            .isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
+        assertThat(fixFor(schema, LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD, "Film.rank"))
+            .as("the rejection does not suppress the redundancy finding")
+            .isPresent();
+    }
+
+    /** The negative: a child {@code @service} without {@code @splitQuery} draws no redundancy finding. */
+    @Test
+    void serviceChildWithoutSplitQuery_drawsNoRedundancyFinding() {
+        var schema = TestSchemaHelper.buildSchema("""
+            type Film @table(name: "film") {
+              rating: String @service(service: {className: "%s", method: "getRatingByFilmRecord"})
+            }
+            type Query { films: [Film!]! }
+            """.formatted(FILM_SERVICE));
+
+        assertThat(schema.warnings())
+            .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
+                && (lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD
+                    || lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT))
+            .isEmpty();
     }
 }

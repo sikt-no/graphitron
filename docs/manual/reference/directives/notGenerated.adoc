@@ -23,7 +23,7 @@ Replace each application with the directive that describes the field's actual da
 | `field: T @notGenerated` on `Query` / `Mutation` | xref:service.adoc[`@service`] | Wire the resolver as a service method, the rewrite generates the data fetcher and dispatches to your code.
 | `field: T @notGenerated` on a child of a `@table` parent | xref:externalField.adoc[`@externalField`] (column-shaped) or xref:reference.adoc[`@reference`] (FK-driven) | Either return the value as a `Field<T>` from a static method, or join through the catalog.
 | `field: T @notGenerated` on a class-backed parent | A typed Java accessor | A class-backed parent (Java record / POJO) must expose the data through a typed Java-record accessor.
-| `field: T @splitQuery @notGenerated` (custom batch fetcher) | xref:service.adoc[`@service`] (with xref:splitQuery.adoc[`@splitQuery`] for non-root batching) | Service methods can be batched with xref:splitQuery.adoc[`@splitQuery`] at non-root sites; the developer-supplied method runs once per parent batch.
+| `field: T @splitQuery @notGenerated` (custom batch fetcher) | xref:service.adoc[`@service`] | A child `@service` is the batched custom fetcher: the method runs once per batch of parents, taking `Set<Key>` and returning `Map<Key, Value>`. Drop `@splitQuery`; it is not needed beside `@service`, and the build warns about it.
 | `interface T @notGenerated` / `union U @notGenerated` | (no replacement needed) | The legacy "skip interface/union wiring" axis was always tied to `RuntimeWiring`-side type resolvers, the rewrite always generates these from xref:discriminate.adoc[`@discriminate`] / xref:discriminator.adoc[`@discriminator`]. Remove the directive.
 |===
 

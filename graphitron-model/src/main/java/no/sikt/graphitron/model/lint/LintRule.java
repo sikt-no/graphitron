@@ -41,6 +41,7 @@ public enum LintRule {
     SPLITQUERY_REDUNDANT_ON_RECORD_PARENT("splitquery-redundant-on-record-parent", Source.CLASSIFIER),
     SPLITQUERY_REDUNDANT_ON_DISCRIMINATED_INTERFACE_CHILD(
         "splitquery-redundant-on-discriminated-interface-child", Source.CLASSIFIER),
+    SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD("splitquery-redundant-on-service-child", Source.CLASSIFIER),
     REDUNDANT_RECORD_DIRECTIVE("redundant-record-directive", Source.CLASSIFIER),
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
     DML_WRITE_LENGTH_UNROUTED("dml-write-length-unrouted", Source.CLASSIFIER),

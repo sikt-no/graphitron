@@ -29,10 +29,11 @@ The Sakila example schema shows both shapes at the same logical position. `Film.
 
 == When the classifier *requires* split
 
-`@splitQuery` is required (not optional) in two operational cases:
+`@splitQuery` is required (not optional) in one operational case:
 
-* *Non-root `@service`.* A child field with `@service` does not derive its data from the parent SELECT (the service runs independently). Without `@splitQuery`, there's no way to dispatch the service per parent. The reference page documents this as a structural requirement; in practice the example schema's `City.filmsFromCity: [Film!]! @splitQuery @service(...)` shows the canonical shape.
 * *`@asConnection` on a child of a `@table` parent.* Inline correlated subqueries can't carry per-parent pagination (the `multiset` cell would have to encode the entire connection state, including a cursor that isn't known until parents are resolved). The classifier rejects `@asConnection` on a non-split TableField with a directive-conflict diagnostic; combining `@asConnection + @splitQuery` is the supported shape (covered in xref:connections.adoc[connections]).
+
+A child xref:../reference/directives/service.adoc[`@service`] is split without the directive: the method is always called once per batch of parents through a DataLoader, so `@splitQuery` beside it is redundant and draws a lint warning. xref:handle-services.adoc[How-to: Handle services] covers the batched contract the method signs up to.
 
 Self-referencing FKs (e.g. `Category.parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])`) work *inline* in the rewrite. The `InlineTableFieldEmitter` prefixes alias names with the parent alias's runtime name so recursive subselects don't collide (line 75-88), and the live `Category.parent` / `Category.children` fixtures cover this in `GraphQLQueryTest` (the "self-referential recursion" suite). Reach for `@splitQuery` on a self-FK only when the same fan-out arguments above apply; the directive is not structurally required for self-joins.
 

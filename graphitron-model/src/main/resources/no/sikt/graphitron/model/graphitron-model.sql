@@ -14417,6 +14417,7 @@ INSERT INTO lint_rule VALUES
   ('no-typename-prefix', 'ENGINE', 'WARNING'),
   ('splitquery-redundant-on-record-parent', 'CLASSIFIER', 'WARNING'),
   ('splitquery-redundant-on-discriminated-interface-child', 'CLASSIFIER', 'WARNING'),
+  ('splitquery-redundant-on-service-child', 'CLASSIFIER', 'WARNING'),
   ('redundant-record-directive', 'CLASSIFIER', 'WARNING'),
   ('asconnection-same-table-pk-in', 'CLASSIFIER', 'WARNING'),
   ('dml-write-length-unrouted', 'CLASSIFIER', 'WARNING'),

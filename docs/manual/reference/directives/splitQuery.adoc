@@ -6,7 +6,7 @@ Splits the annotated field's resolution out of the surrounding parent SELECT int
 
 include::../../_generator-internals-note.adoc[]
 
-`@splitQuery` is the directive that decouples query depth from query *breadth*. Without it, child references inline into the parent SELECT (one round-trip, joined SQL). With it, each `@splitQuery` boundary becomes a deferred `DataLoader` call (more round-trips, narrower SQL, batched across parents). It composes with xref:reference.adoc[`@reference`], xref:lookupKey.adoc[`@lookupKey`], xref:asConnection.adoc[`@asConnection`], and xref:service.adoc[`@service`].
+`@splitQuery` is the directive that decouples query depth from query *breadth*. Without it, child references inline into the parent SELECT (one round-trip, joined SQL). With it, each `@splitQuery` boundary becomes a deferred `DataLoader` call (more round-trips, narrower SQL, batched across parents). It composes with xref:reference.adoc[`@reference`], xref:lookupKey.adoc[`@lookupKey`], and xref:asConnection.adoc[`@asConnection`].
 
 == SDL signature
 
@@ -64,15 +64,6 @@ type Film @table(name: "film") {
 }
 ----
 
-Non-root xref:service.adoc[`@service`] (resolver-style fields without an FK chain back to the parent's table need an explicit split):
-
-[source,graphql]
-----
-type City @table(name: "city") {
-    filmsFromCity: [Film!]! @splitQuery @service(service: {className: "com.example.MockService"})
-}
-----
-
 Combined with xref:asConnection.adoc[`@asConnection`] (per-parent paginated child connection: `ROW_NUMBER() OVER (PARTITION BY parentInput.idx)` envelope gives each parent its own slice):
 
 [source,graphql]
@@ -100,7 +91,7 @@ type Film @table(name: "film") {
 ** To read rows of that table independent of the parent, narrowed by the field's xref:condition.adoc[`@condition`] or xref:lookupKey.adoc[`@lookupKey`] arguments, drop `@splitQuery`. Without the directive the field is an inline read of the table that does not correlate to the parent.
 * Redundant but not rejected on a field returning a xref:table.adoc[`@table`] +xref:discriminate.adoc[`@discriminate`] interface (a single-table discriminated interface). This sits on the *redundant and at most warned about* side of the line the nesting bullet above draws, and for the stronger of the two reasons: the discriminated re-projection is always its own statement, so the directive's own meaning (stop projecting this child into its parent's SELECT) is satisfied before it is applied, and the delivery an author reaching for it actually wants is already the default. List and connection cardinality batch the re-projection through a DataLoader on their own, one statement for the whole batch of parents (the connection form windows that statement into per-parent pages); single cardinality fetches per parent, which no directive changes. Writing `@splitQuery` here yields a lint warning (`splitquery-redundant-on-discriminated-interface-child`) offering to delete it, and the directive is ignored.
 * Self-referencing FKs work *inline* in the rewrite. the inline projection arm prefixes alias names with the parent alias's runtime name so recursive subselects don't collide; `Category.parent` and `Category.children` in the example schema cover this end-to-end. `@splitQuery` is available on self-FKs for the same fan-out-reduction reasons as any other reference, but is not required.
-* Required when xref:service.adoc[`@service`] is used on a non-root field (the service fetches the row independently of the parent's SELECT; the split is the contract).
+* Redundant but not rejected beside xref:service.adoc[`@service`] on a non-root field. A child service is always called once per batch of parents, so the split the directive asks for is already the delivery. Writing `@splitQuery` there yields a lint warning (`splitquery-redundant-on-service-child`) offering to delete it, and the directive is ignored.
 * Composes with xref:asConnection.adoc[`@asConnection`]: the per-parent partition envelope is added to the connection's pagination shape.
 * Composes with xref:lookupKey.adoc[`@lookupKey`]: the lookup key narrows the per-parent batch (each parent's child list filtered by the caller-provided keys).
 * On root (`Query`/`Mutation`) fields and on fields with arguments, `@splitQuery` is irrelevant; those always have explicit data fetchers. The directive is silently ignored there.

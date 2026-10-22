@@ -414,7 +414,10 @@ class ServiceRecordParentBatchKeyTest {
         assertThat(srf.keySource()).isInstanceOf(ServiceKeySource.FromLifter.class);
     }
 
-    /** The advisory follows the field onto its new branch: the keyed DataLoader still opens a scope. */
+    /**
+     * The advisory follows the field onto its new branch: the child service call is already batched,
+     * so the author sees it once, under the service rule, and not again under the record-parent one.
+     */
     @Test
     void splitQueryBesideADeclaredProducer_stillGetsTheRedundancyAdvisory() {
         var schema = TestSchemaHelper.buildSchema(classBackedParent("makeNoRecordAccessor", """
@@ -425,10 +428,35 @@ class ServiceRecordParentBatchKeyTest {
 
         assertThat(schema.warnings())
             .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
-                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT
+                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD
                 && lf.message().contains("Parent.rank"))
             .as("an author who wrote both directives sees both diagnostics")
             .hasSize(1);
+        assertThat(schema.warnings())
+            .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT
+                && lf.message().contains("Parent.rank"))
+            .as("the record-parent rule does not also fire at the same coordinate")
+            .isEmpty();
+    }
+
+    /** Without {@code @sourceRow} the class-backed parent's service child warns the same way. */
+    @Test
+    void splitQueryBesideServiceOnClassBackedParent_getsTheRedundancyAdvisory() {
+        var schema = TestSchemaHelper.buildSchema(classBackedParent("makeLanguageKeyed", """
+                rank: Int @splitQuery
+                    @service(service: {className: "%s", method: "getRankMappedByRecord"})
+            """.formatted(SVC)));
+
+        assertThat(schema.field("Parent", "rank")).isInstanceOf(ChildField.ServiceRecordField.class);
+        assertThat(schema.warnings())
+            .filteredOn(w -> w instanceof BuildWarning.LintFinding lf
+                && (lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD
+                    || lf.rule() == LintRule.SPLITQUERY_REDUNDANT_ON_RECORD_PARENT)
+                && lf.message().contains("Parent.rank"))
+            .singleElement()
+            .satisfies(w -> assertThat(((BuildWarning.LintFinding) w).rule())
+                .isEqualTo(LintRule.SPLITQUERY_REDUNDANT_ON_SERVICE_CHILD));
     }
 
     // ===== The declared producer's rejections =====
