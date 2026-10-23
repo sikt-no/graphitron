@@ -7953,8 +7953,33 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childRoutineTerminusMismatchRejectsAsStructural() {
-        // Hops-then-routine whose field @table type is not the routine's result table.
+    void childRoutineEndingThePathInfersTheHopToTheReturnTable() {
+        // The routine ends the path and the field returns a @table type other than its result: the
+        // step to that table is inferred, keyed by name, as a written {table:} element out of a
+        // routine result is.
+        var schema = build("""
+            type Film @table(name: "film") { title: String }
+            type Actor @table(name: "actor") {
+              recentFilms(minLength: Int!): [Film!]
+                @routine(name: "films_for_actor",
+                         argMapping: "pMinLength: minLength",
+                         columnMapping: "pActorId: actor_id")
+                @defaultOrder(primaryKey: true)
+            }
+            type Query { actor: Actor }
+            """);
+        var f = (ChildField.TableField) schema.field("Actor", "recentFilms");
+        assertThat(f.joinPath()).hasSize(2);
+        assertThat(((JoinStep.Hop) f.joinPath().get(0)).on()).isInstanceOf(On.Lateral.class);
+        var inferred = (JoinStep.Hop) f.joinPath().get(1);
+        assertThat(inferred.targetTable().tableName()).isEqualTo("film");
+        assertThat(((On.ColumnPairs) inferred.on()).keying()).isInstanceOf(On.Keying.NameMatchedKey.class);
+    }
+
+    @Test
+    void childRoutineEndingThePathRejectsWhereTheReturnTableCannotBeReachedByName() {
+        // The inferred step needs the return table's key among the routine result's columns:
+        // films_for_actor exposes film_id, not actor_id, so it cannot reach actor.
         var schema = build("""
             type Actor @table(name: "actor") { firstName: String }
             type Film @table(name: "film") {
@@ -7968,7 +7993,7 @@ class GraphitronSchemaBuilderTest {
             """);
         var f = (UnclassifiedField) schema.field("Film", "castFilms");
         assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(f.reason()).contains("does not match the routine's result table");
+        assertThat(f.reason()).contains("is not exposed by name on 'films_for_actor'");
     }
 
     @Test

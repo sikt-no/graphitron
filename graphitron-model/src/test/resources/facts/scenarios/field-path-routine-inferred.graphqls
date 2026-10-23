@@ -1,0 +1,41 @@
+# A path ending on a @routine whose field returns a @table type takes one more step no element
+# writes: from the function's result to that table, keyed by its key's columns matched by name, as a
+# written {table:} element out of a function result is. It ends the walk, so it is where the field
+# lands, at a child position and at a root alike.
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+  recentFilms(minLength: Int!): [Film!]
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+    @defaultOrder(primaryKey: true)
+}
+
+extend type Query {
+  actors: [Actor]
+  recentFilmsForActor(actorId: Int!, minLength: Int!): [Film!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+}
+
+extend schema @expectEquals(relation: "graphitron_field_path", rows: """
+  type_name, field_name,          position, element_source_column, from_table,      to_table
+  Actor,     recentFilms,         0,        5,                     actor,           films_for_actor
+  Actor,     recentFilms,         1,        ,                      films_for_actor, film
+  Query,     recentFilmsForActor, 1,        ,                      films_for_actor, film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_landing", rows: """
+  type_name, field_name,          kind,    position, table_name
+  Actor,     recentFilms,         RESULT,  1,        film
+  Query,     recentFilmsForActor, ROUTINE, 1,        film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_column", rows: """
+  type_name, field_name,          position, from_table,      from_column, to_table, to_column
+  Actor,     recentFilms,         1,        films_for_actor, film_id,     film,     film_id
+  Query,     recentFilmsForActor, 1,        films_for_actor, film_id,     film,     film_id
+  """)

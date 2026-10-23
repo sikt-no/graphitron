@@ -4738,6 +4738,20 @@ class FieldBuilder {
                 runningSource = ((JoinStep.HasTargetTable) segment.hops().getLast()).targetTable();
             }
         }
+        // A read whose chain ends on its routine and returns a @table type other than the routine's
+        // result takes one more step, inferred: the return type names the table, so the author
+        // writes nothing for it.
+        boolean endsOnRoutine = !applications.isEmpty()
+            && DIR_ROUTINE.equals(applications.getLast().getName());
+        if (seat == RoutineDirectiveResolver.Seat.READ && endsOnRoutine
+                && !tb.returnType().table().denotesSameTableAs(tb.resultTable())) {
+            var inferred = ctx.inferRoutineResultHop(tb.returnType().table().tableName(),
+                tb.resultTable().tableName(), name, stepIndex);
+            if (inferred.hasError()) {
+                return new ChainWalk.Rejected(Rejection.structural(inferred.errorMessage()));
+            }
+            steps.addAll(inferred.hops());
+        }
         return new ChainWalk.Ok(List.copyOf(steps), tb);
     }
 

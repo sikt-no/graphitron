@@ -366,6 +366,14 @@ type Query {
             argMapping: "pActorId: actorId, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
+    # The same chain with the hop left unwritten: the routine ends the path and Film is a @table
+    # type, so the step from the routine's result to film is inferred, keyed by name as the written
+    # {table: "film"} is.
+    recentFilmsForActorInferred(actorId: Int!, minLength: Int!): [Film!]!
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pActorId: actorId, pMinLength: minLength"
+        )
     # An omitted @nodeId in a key projection reaches the routine as null, and the NULL-tolerant
     # function decides what absence means. Three coordinates, one rule, differing only in where the
     # optionality sits and which consumer reads the projected value.
@@ -3056,6 +3064,15 @@ type Actor implements Searchable @table(name: "actor") {
             columnMapping: "pActorId: actor_id"
         )
         @reference(path: [{table: "film"}])
+        @defaultOrder(primaryKey: true)
+    # The child form of the same inference: no @reference, the step to film inferred from Film's
+    # @table.
+    recentFilmsInferred(minLength: Int!): [Film!]
+        @routine(
+            name: "films_for_actor"
+            argMapping: "pMinLength: minLength"
+            columnMapping: "pActorId: actor_id"
+        )
         @defaultOrder(primaryKey: true)
     # R435 execution fixture: the batched keyed re-query form (@splitQuery) of the correlated
     # single-node chain. The batch key IS the routine's column-bound input (actor_id): the

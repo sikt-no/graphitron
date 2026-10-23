@@ -306,8 +306,10 @@ final class SchemaQueries {
      * the first step of each departing its start.
      *
      * @param position the element's 0-based place in the field's path
-     * @param via {@code ROUTINE} where the element calls a routine, {@code KEY} where it named a
-     *     constraint, {@code CONDITION} where it names a method the join is, {@code TABLE} otherwise
+     * @param via {@code INFERRED} on the step no element wrote, from a routine's result to the
+     *     {@code @table} the field returns; {@code ROUTINE} where the element calls a routine,
+     *     {@code KEY} where it named a constraint, {@code CONDITION} where it names a method the join
+     *     is, {@code TABLE} otherwise
      * @param keyMatchedBy which namespace answered a {@code KEY} element, {@code null} on any other
      * @param constraintName the constraint a {@code KEY} step crosses, {@code null} on any other
      * @param fkOnFrom whether that constraint is declared on the table the step departs
@@ -830,7 +832,8 @@ final class SchemaQueries {
         var rt = GRAPHITRON_FIELD_PATH_ROUTINE;
         return multiset(
             select(p.POSITION,
-                when(exists(selectOne().from(rt).where(
+                when(p.ELEMENT_SOURCE_NAME.isNull(), inline("INFERRED"))
+                    .when(exists(selectOne().from(rt).where(
                         rt.GRAPH_NAME.eq(p.GRAPH_NAME), rt.TYPE_NAME.eq(p.TYPE_NAME),
                         rt.FIELD_NAME.eq(p.FIELD_NAME), rt.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
                         rt.START_SCHEMA.eq(p.START_SCHEMA), rt.START_TABLE.eq(p.START_TABLE),

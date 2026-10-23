@@ -1,0 +1,24 @@
+# A path ending on a @routine whose field returns a @table type steps on to that table only where
+# the function's result exposes the table's key by name. films_for_actor's result has film_id and no
+# actor_id, so Film.castFilms' walk ends on the function, which is not where an Actor is read.
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+}
+
+type Film @table(name: "film") {
+  title: String
+  castFilms(minLength: Int!): [Actor!]
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+}
+
+extend type Query {
+  films: [Film]
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  NO_ROUTE_TO_TARGET, Film.castFilms
+  """)

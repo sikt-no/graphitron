@@ -1813,6 +1813,24 @@ class BuildContext {
     }
 
     /**
+     * The step a routine chain takes after its routine where nothing is written after it and the
+     * field returns a {@code @table} type: from the function's result to that table, keyed by the
+     * table's primary-key columns matched by name among the result's columns, as a {@code {table:}}
+     * element out of a function result is. The author writes nothing for it because the return type
+     * already names the table; a result exposing no such columns is the same error the written
+     * element gets.
+     */
+    ChainSegment inferRoutineResultHop(String targetSqlTableName, String functionSqlName,
+            String fieldName, int stepIndex) {
+        var hops = new ArrayList<JoinStep>();
+        var errors = new ArrayList<String>();
+        synthesizeNameMatchedJoin(targetSqlTableName, functionSqlName, fieldName, stepIndex,
+            /*whereFilter=*/null, hops, errors);
+        return errors.isEmpty() ? new ChainSegment(List.copyOf(hops), null)
+            : new ChainSegment(List.of(), String.join("; ", errors));
+    }
+
+    /**
      * Computes the Check 1 verdict: does the {@code @reference} path's terminal hop land on
      * the field return type's {@code @table}? Reads the already-resolved terminal
      * {@link JoinStep.HasTargetTable#targetTable()} rather than re-deriving the hop kind from the

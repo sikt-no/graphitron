@@ -198,11 +198,13 @@ public final class FieldPaths {
                 n.TABLE_NAME.eq(str(c, "FROM_TABLE")), n.TO_SOURCE_NAME.eq(str(c, "TO_SOURCE_NAME")),
                 n.TO_SCHEMA.eq(str(c, "TO_SCHEMA")), n.TO_TABLE.eq(str(c, "TO_TABLE")))
             .where(f(c, "MOVES").eq(1)).and(f(c, "CONSTRAINT_NAME").isNull())
-            // A table element is what reaches a table by name; a condition alone joins by its method.
-            .and(exists(selectOne().from(ts).where(ts.GRAPH_NAME.eq(graph),
-                ts.SOURCE_NAME.eq(str(c, "ELEMENT_SOURCE_NAME")),
-                ts.SOURCE_LINE.eq(f(c, "ELEMENT_SOURCE_LINE", Integer.class)),
-                ts.SOURCE_COLUMN.eq(f(c, "ELEMENT_SOURCE_COLUMN", Integer.class)))));
+            // A table element is what reaches a table by name, and so is the step no element wrote
+            // after a routine; a condition alone joins by its method.
+            .and(f(c, "ELEMENT_SOURCE_NAME").isNull()
+                .or(exists(selectOne().from(ts).where(ts.GRAPH_NAME.eq(graph),
+                    ts.SOURCE_NAME.eq(str(c, "ELEMENT_SOURCE_NAME")),
+                    ts.SOURCE_LINE.eq(f(c, "ELEMENT_SOURCE_LINE", Integer.class)),
+                    ts.SOURCE_COLUMN.eq(f(c, "ELEMENT_SOURCE_COLUMN", Integer.class))))));
         var pairs = byKey.unionAll(byName).asTable("p");
         merge(dsl, GRAPHITRON_FIELD_PATH_COLUMN, pairs, concat(keys, List.of("ORDINAL")),
             concat(List.of("FROM_SOURCE_NAME", "FROM_SCHEMA", "FROM_TABLE", "FROM_COLUMN"),

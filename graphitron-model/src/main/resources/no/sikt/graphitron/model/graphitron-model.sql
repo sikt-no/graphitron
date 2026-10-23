@@ -8722,9 +8722,9 @@ CREATE TABLE graphitron_field_path (
   start_schema           VARCHAR NOT NULL,
   start_table            VARCHAR NOT NULL,
   position               INT     NOT NULL,
-  element_source_name    VARCHAR NOT NULL,
-  element_source_line    INT     NOT NULL,
-  element_source_column  INT     NOT NULL,
+  element_source_name    VARCHAR,
+  element_source_line    INT,
+  element_source_column  INT,
   from_source_name       VARCHAR NOT NULL,
   from_schema            VARCHAR NOT NULL,
   from_table             VARCHAR NOT NULL,
@@ -8737,7 +8737,9 @@ CREATE TABLE graphitron_field_path (
   FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table)
     REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
                                             start_schema, start_table) ON DELETE CASCADE,
-  -- A step is of an element the field's path was written with, each element at one place.
+  -- A step is of an element the field's path was written with, each element at one place, except
+  -- the one step no element wrote: a path ending on a @routine whose field returns a @table type
+  -- steps on from the function's result to that table.
   FOREIGN KEY (graph_name, element_source_name, element_source_line, element_source_column)
     REFERENCES graphitron_ast_field_path_entry (graph_name, source_name, element_line,
                                                 element_column) ON DELETE CASCADE,
@@ -8745,9 +8747,11 @@ CREATE TABLE graphitron_field_path (
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
   FOREIGN KEY (to_source_name, to_schema, to_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK ((element_source_name IS NULL) = (element_source_line IS NULL)
+         AND (element_source_line IS NULL) = (element_source_column IS NULL)),
   CHECK (position >= 0)
 );
-COMMENT ON TABLE graphitron_field_path IS 'A step a field''s path takes from where its rows start: one row per field, start table and written element the walk stepped through. For example Film.language over @reference(path: [{key: "film_language_id_fkey"}]) is one step from film to language, and a field of a type nested under two tables is walked once from each.';
+COMMENT ON TABLE graphitron_field_path IS 'A step a field''s path takes from where its rows start: one row per field, start table and place the walk stepped through, a written element or the step a path ending on a @routine takes to the @table its field returns. For example Film.language over @reference(path: [{key: "film_language_id_fkey"}]) is one step from film to language, and a field of a type nested under two tables is walked once from each.';
 COMMENT ON COLUMN graphitron_field_path.graph_name IS 'the owning graph''s partition, carried from the start';
 COMMENT ON COLUMN graphitron_field_path.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_path.field_name IS 'the field whose path this is a step of';
@@ -8755,7 +8759,7 @@ COMMENT ON COLUMN graphitron_field_path.start_source_name IS 'the catalog partit
 COMMENT ON COLUMN graphitron_field_path.start_schema IS 'the SQL schema of the table the walk started from';
 COMMENT ON COLUMN graphitron_field_path.start_table IS 'the table the walk started from; with the field and the two columns before it, a reference into graphitron_field_path_start, so a path goes with the start it was walked from';
 COMMENT ON COLUMN graphitron_field_path.position IS 'the element''s place in the field''s path, as graphitron_ast_field_path_entry states it. A walk from a parent''s result starts at place 0 and one from a routine at the place after it. A step is a row only where the walk took it, so the first place with no row is where the path broke';
-COMMENT ON COLUMN graphitron_field_path.element_source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_field_path.element_source_name IS 'the file the element was written in; NULL, with the two columns after it, on the step no element wrote, which a path ending on a @routine takes to the @table its field returns';
 COMMENT ON COLUMN graphitron_field_path.element_source_line IS 'the element''s source line, 1-based';
 COMMENT ON COLUMN graphitron_field_path.element_source_column IS 'the element''s source column. With the two columns before it, the element''s place in graphitron_ast_field_path_entry, and through its position what the element names';
 COMMENT ON COLUMN graphitron_field_path.from_source_name IS 'the catalog partition of the table the step leaves';
@@ -9051,7 +9055,8 @@ COMMENT ON COLUMN graphitron_field_path_stop.touched_at IS 'when the walk that l
 CREATE VIEW graphitron_field_path_landing
   (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind, position,
    table_source_name, table_schema, table_name) AS
--- The step at the field's last written place: nothing is written after the element it took.
+-- The step at the field's last written place, where no step follows it: nothing is written after
+-- the element it took.
 SELECT p.graph_name, p.type_name, p.field_name,
        p.start_source_name, p.start_schema, p.start_table, s.kind, p.position,
        p.to_source_name, p.to_schema, p.to_table
@@ -9067,8 +9072,24 @@ SELECT p.graph_name, p.type_name, p.field_name,
                     WHERE later.graph_name = e.graph_name AND later.source_name = e.source_name
                       AND later.field_line = e.field_line AND later.field_column = e.field_column
                       AND later.position > e.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_field_path nx
+                    WHERE nx.graph_name = p.graph_name AND nx.type_name = p.type_name
+                      AND nx.field_name = p.field_name AND nx.start_source_name = p.start_source_name
+                      AND nx.start_schema = p.start_schema AND nx.start_table = p.start_table
+                      AND nx.position = p.position + 1)
 UNION ALL
--- A start with nothing written to walk lands where it starts: a routine nothing follows.
+-- The step no element wrote, after a path ending on a @routine, which is always where its walk ends.
+SELECT p.graph_name, p.type_name, p.field_name,
+       p.start_source_name, p.start_schema, p.start_table, s.kind, p.position,
+       p.to_source_name, p.to_schema, p.to_table
+  FROM graphitron_field_path p
+  JOIN graphitron_field_path_start s
+    ON s.graph_name = p.graph_name AND s.type_name = p.type_name AND s.field_name = p.field_name
+   AND s.start_source_name = p.start_source_name AND s.start_schema = p.start_schema
+   AND s.start_table = p.start_table
+ WHERE p.element_source_name IS NULL
+UNION ALL
+-- A start with nothing to walk lands where it starts: a routine nothing follows, written or inferred.
 SELECT s.graph_name, s.type_name, s.field_name,
        s.start_source_name, s.start_schema, s.start_table, s.kind, NULL,
        s.start_source_name, s.start_schema, s.start_table
@@ -9934,6 +9955,37 @@ move (graph_name, type_name, field_name, start_source_name, start_schema, start_
       ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
      AND fn.table_name = er.routine_name
    WHERE s.has_routine
+  UNION ALL
+  -- The step no element writes: where a read's written path has ended on a function's result and
+  -- the field returns a @table type other than that function, from the result to that table by its
+  -- key's columns matched by name. A result exposing none of them leaves the walk on the function.
+  SELECT DISTINCT fr.graph_name, fr.type_name, fr.field_name, fr.start_source_name, fr.start_schema,
+         fr.start_table, fr.position,
+         CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT),
+         fr.from_source_name, fr.from_schema, fr.from_table,
+         b.table_source_name, b.table_schema, b.table_name,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BOOLEAN)
+    FROM frontier fr
+    JOIN sql_table fn
+      ON fn.source_name = fr.from_source_name AND fn.table_schema = fr.from_schema
+     AND fn.table_name = fr.from_table AND fn.table_type = 'FUNCTION'
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = fr.graph_name AND ft.type_name = fr.type_name AND ft.field_name = fr.field_name
+    JOIN graphitron_resolved_type_binding b
+      ON b.graph_name = ft.graph_name AND b.type_name = ft.target_type_name AND b.candidates = 1
+    JOIN sql_name_matched_key_column n
+      ON n.source_name = fr.from_source_name AND n.table_schema = fr.from_schema
+     AND n.table_name = fr.from_table
+     AND n.to_source_name = b.table_source_name AND n.to_schema = b.table_schema
+     AND n.to_table = b.table_name
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry w
+                      WHERE w.graph_name = fr.graph_name AND w.source_name = fr.field_source_name
+                        AND w.field_line = fr.field_line AND w.field_column = fr.field_column
+                        AND w.position = fr.position)
+     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                      WHERE ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
+                        AND ro.operation = 'MUTATION')
   UNION ALL
   -- A condition alone: its method's second parameter names where it lands, and its first, where it
   -- names a table, has to be the one the walk stands at.
@@ -13025,31 +13077,20 @@ WITH instructed (graph_name, site, type_name, field_name, argument_name, path, u
 ),
 slot_table (graph_name, site, type_name, field_name, argument_name, path,
             table_source_name, table_schema, table_name) AS (
-  -- Where the field's walk from its parent's result lands: the step at its last written place.
+  -- Where the field's walk from its parent's result lands.
   -- Driven from the output field's own entry rather than instructed, which H2 would evaluate
   -- again for every step it pairs with.
   SELECT n.graph_name, 'OUTPUT_FIELD', n.type_name, n.field_name, CAST(NULL AS VARCHAR),
-         CAST(NULL AS VARCHAR), tg.to_source_name, tg.to_schema, tg.to_table
+         CAST(NULL AS VARCHAR), l.table_source_name, l.table_schema, l.table_name
     FROM graphitron_field_node_id_entry n
     JOIN graphql_type t ON t.graph_name = n.graph_name AND t.type_name = n.type_name
      AND t.kind = 'OBJECT'
-    JOIN graphitron_field_path tg
-      ON tg.graph_name = n.graph_name AND tg.type_name = n.type_name
-     AND tg.field_name = n.field_name
-    JOIN graphitron_field_path_start_result sr
-      ON sr.graph_name = tg.graph_name AND sr.type_name = tg.type_name
-     AND sr.field_name = tg.field_name AND sr.start_source_name = tg.start_source_name
-     AND sr.start_schema = tg.start_schema AND sr.start_table = tg.start_table
-    JOIN graphitron_ast_field_path_entry e
-      ON e.graph_name = tg.graph_name AND e.source_name = tg.element_source_name
-     AND e.element_line = tg.element_source_line AND e.element_column = tg.element_source_column
+    JOIN graphitron_field_path_landing l
+      ON l.graph_name = n.graph_name AND l.type_name = n.type_name
+     AND l.field_name = n.field_name AND l.kind = 'RESULT'
    WHERE EXISTS (SELECT 1 FROM graphitron_field_reference_step_entry s
                   WHERE s.graph_name = n.graph_name AND s.type_name = n.type_name
                     AND s.field_name = n.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry later
-                      WHERE later.graph_name = e.graph_name AND later.source_name = e.source_name
-                        AND later.field_line = e.field_line AND later.field_column = e.field_column
-                        AND later.position > e.position)
    UNION
   SELECT i.graph_name, i.site, i.type_name, i.field_name, i.argument_name, i.path,
          tg.to_source_name, tg.to_schema, tg.to_table
@@ -15694,7 +15735,7 @@ INSERT INTO meta_relation VALUES
    'For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'Kept in the catalog rather than in the stage that writes it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_field_path', 'field-path', 'graphitron',
-   'A step a field''s path takes from where its rows start: one row per field, start table and written element the walk stepped through.',
+   'A step a field''s path takes from where its rows start: one row per field, start table and place the walk stepped through, a written element or the step a path ending on a @routine takes to the @table its field returns.',
    'For example Film.language over @reference(path: [{key: "film_language_id_fkey"}]) is one step from film to language, and a field of a type nested under two tables is walked once from each.',
    'The walk''s answer: a row is a step the walk took, so from_table and to_table are never null and a broken path is the first written element with no row. Keyed by the start as well as the field, because a field on a type nested under several tables is walked once from each, and the start is graphitron_field_path_start''s, so a path goes with the start it was walked from. Each step is of an element graphitron_ast_field_path_entry holds. How the step joins is its children''s.'),
   ('graphitron_field_path_column', 'field-path-column', 'graphitron',

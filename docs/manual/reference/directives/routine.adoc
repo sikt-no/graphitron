@@ -137,7 +137,7 @@ The `@defaultOrder` here is not a child-position speciality; see <<read-surface,
 [[chain]]
 == Composing with @reference: the table chain
 
-A field's table chain is the concatenation, in written order, of the implicit head (the enclosing type's table, at child positions) and each directive application's contribution: `@routine` contributes its result table as a node, `@reference` contributes hops. The last node must be the field's `@table` type (or the routine's result table when the routine is last). Order is load-bearing; see the order contract on the xref:reference.adoc[`@reference`] page.
+A field's table chain is the concatenation, in written order, of the implicit head (the enclosing type's table, at child positions) and each directive application's contribution: `@routine` contributes its result table as a node, `@reference` contributes hops. The last node must be the field's `@table` type, or the routine's result where the routine is last and the field's type has no `@table`. Where the routine is last and the field's type does carry `@table`, the path takes one more step that you do not write: from the routine's result to that table, keyed by name as a written `{table:}` hop out of a routine result is (see below). Order is load-bearing; see the order contract on the xref:reference.adoc[`@reference`] page.
 
 Every position falls out of that one rule. In these examples (from the sakila example schema) `recentFilms` sits on `Actor` and the other two fields sit on `Film`:
 
@@ -169,7 +169,17 @@ castRecentFilms(minLength: Int!): [Film!]
 
 A hop *out of* a routine result has no foreign key to ride (a function result carries no FK metadata), so a `{table:}` element there keys by name matching: the target table's primary-key columns must be exposed, by SQL name, among the routine's result columns. `films_for_actor` exposes `film_id`, film's PK, so the hop above resolves; a `condition:` element is the escape hatch when names do not line up.
 
-The single name-matched hop is also *implicit*. A `@table`-bound child of a routine-result parent needs no `@reference` at all, because the only thing the directive would supply is the target table name, and the child's own return type already carries it:
+The single name-matched hop is also *implicit*, in two places, because in both the only thing a `@reference` would supply is the target table name and a return type already carries it. The first is the routine's own field: where the routine ends the path and the field returns a `@table` type, the hop from the result to that table is inferred.
+
+[source,graphql]
+----
+type Query {
+    recentFilmsForActor(actorId: Int!, minLength: Int!): [Film!]!   # Film is @table(name: "film")
+        @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+}
+----
+
+reads exactly as the same field with `@reference(path: [{table: "film"}])` written after the routine. The second is a `@table`-bound child of a routine-result parent, which needs no `@reference` at all:
 
 [source,graphql]
 ----
@@ -350,7 +360,7 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 
 == Constraints
 
-* Where the path ends on the routine, the return type needs no `@table`: its rows are the routine's result, which is no table binding (see <<result,The type's rows are the routine's result>>). That covers a bare `@routine` field and a path whose `@reference` applications all come *before* the routine, since hops written before it move where the path starts and never where it ends. `@table` naming the function fails the build as `GRAPHITRON_TABLE_NAMES_ROUTINE`. A return type that cannot hold a row (a scalar, an interface, a union) is rejected with `@routine could not bind the return type ... to its result table`.
+* Where the path ends on the routine, the return type needs no `@table`: its rows are the routine's result, which is no table binding (see <<result,The type's rows are the routine's result>>). Where it does carry `@table`, the hop from the routine's result to that table is inferred, keyed by the table's primary-key columns matched by name among the routine's result columns, exactly as `@reference(path: [{table: ...}])` written after the routine would be; a result exposing no such columns is the same build error the written hop gets, and the editor reports it at the `@routine` as `GRAPHITRON_NO_ROUTE_TO_TARGET`. This holds at root and child positions, on reads; a `Mutation` field's routine is a write, whose return is re-read as described under <<write,Writes on Mutation>>. That covers a bare `@routine` field and a path whose `@reference` applications all come *before* the routine, since hops written before it move where the path starts and never where it ends. `@table` naming the function fails the build as `GRAPHITRON_TABLE_NAMES_ROUTINE`. A return type that cannot hold a row (a scalar, an interface, a union) is rejected with `@routine could not bind the return type ... to its result table`.
 * Where the chain hops *after* the routine, the return type must be `@table`-bound and the chain's last node must be that table. The landing there is a catalog table, which is a table type in the schema in its own right, so its `@table` is that type's own binding rather than a second spelling of the routine's name. A non-`@table` return is rejected with `@routine with @reference requires a @table-annotated return type`, and the editor reports it at the `@reference` as `GRAPHITRON_CHAIN_WITHOUT_TARGET`: a `@reference` arrives only at a `@table`, a `@routine` before it included; a mismatch between the return and the landing is rejected with `@routine could not be resolved — the field's @table type ... does not match the routine's result table ...`.
 * Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field). A carrier's rows are not the routine's result: they are what the data field re-reads post-commit, not what the field returns. The carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
 * `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`, and at a child position, where the routine is a step of the field's path, the editor reports it at the `@routine` as `GRAPHITRON_ELEMENT_UNRESOLVED`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.

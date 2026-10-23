@@ -354,6 +354,29 @@ class RoutineFieldExecutionTest {
     }
 
     @Test
+    void anInferredHopOutOfTheRoutineResultReadsAsTheWrittenOne() {
+        // The routine ends the path and Film is a @table type, so the step from the routine's
+        // result to film is inferred, keyed by name as the written {table: "film"} is: the same
+        // rows as recentFilmsForActor and recentFilms, description included, which only film has.
+        var data = execute("""
+            { recentFilmsForActorInferred(actorId: 1, minLength: 50) { filmId description }
+              allActors { firstName recentFilmsInferred(minLength: 50) { filmId description } } }
+            """);
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> films =
+            (List<Map<String, Object>>) data.get("recentFilmsForActorInferred");
+        assertThat(films).extracting(f -> f.get("filmId")).containsExactly(1, 3);
+        assertThat(films).extracting(f -> f.get("description"))
+            .containsExactly("A Epic Drama", "A Quirky Comedy");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> actors = (List<Map<String, Object>>) data.get("allActors");
+        assertThat(fieldOf(actors, "PENELOPE", "recentFilmsInferred", "filmId")).containsExactly(1, 3);
+        assertThat(fieldOf(actors, "PENELOPE", "recentFilmsInferred", "description"))
+            .containsExactly("A Epic Drama", "A Quirky Comedy");
+        assertThat(fieldOf(actors, "ED", "recentFilmsInferred", "filmId")).containsExactly(5);
+    }
+
+    @Test
     void childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode() {
         // Hops-then-routine: the FK hop reaches the film_actor junction first, so
         // pActorId is fed from film_actor.actor_id (the previous node), NOT the implicit head.
