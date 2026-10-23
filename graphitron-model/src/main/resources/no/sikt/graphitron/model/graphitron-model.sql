@@ -2502,6 +2502,9 @@ CREATE TABLE graphitron_argmapping_site (
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
+-- A @routine's mapping is found from the application it is written on.
+CREATE INDEX graphitron_argmapping_site_application_ix
+  ON graphitron_argmapping_site (graph_name, coordinate, directive_name, ordinal);
 COMMENT ON TABLE graphitron_argmapping_site IS 'Where one written argMapping sits: the directive and its repeat, the element it is written on, the code reference it is a field of and the path element that reference sits in. For example @reference(path: [{table: "film", condition: {className: "no.example.Conditions", method: "byActor", argMapping: "actorId: id"}}]) on Actor.films sits under reference at ordinal 0, on Actor.films, in the condition''s reference, at step 0.';
 COMMENT ON COLUMN graphitron_argmapping_site.graph_name IS 'the owning graph''s partition, carried from the written mapping';
 COMMENT ON COLUMN graphitron_argmapping_site.source_name IS 'the file the mapping was written in, the first of the four columns that are the mapping string''s key, which graphitron_ast_argmapping_pair_entry''s rows hang on';
@@ -8886,6 +8889,128 @@ COMMENT ON COLUMN graphitron_field_path_method.method_name IS 'the method';
 COMMENT ON COLUMN graphitron_field_path_method.method_descriptor IS 'the method''s descriptor; with the three columns before it, code_condition_method''s key';
 COMMENT ON COLUMN graphitron_field_path_method.touched_at IS 'when the walk that last took the step ran, as on the step';
 
+CREATE TABLE graphitron_field_path_routine (
+  graph_name          VARCHAR NOT NULL,
+  type_name           VARCHAR NOT NULL,
+  field_name          VARCHAR NOT NULL,
+  start_source_name   VARCHAR NOT NULL,
+  start_schema        VARCHAR NOT NULL,
+  start_table         VARCHAR NOT NULL,
+  position            INT     NOT NULL,
+  routine_source_name VARCHAR NOT NULL,
+  table_schema        VARCHAR NOT NULL,
+  routine_name        VARCHAR NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position)
+    REFERENCES graphitron_field_path (graph_name, type_name, field_name, start_source_name,
+                                      start_schema, start_table, position) ON DELETE CASCADE,
+  FOREIGN KEY (routine_source_name, table_schema, routine_name)
+    REFERENCES sql_routine (source_name, table_schema, routine_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_field_path_routine IS 'The routine a step of a field''s path calls: one row per step a @routine element took. For example Actor.films over @routine(name: "films_for_actor") is one step from actor to films_for_actor, calling public.films_for_actor.';
+COMMENT ON COLUMN graphitron_field_path_routine.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_field_path_routine.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_routine.field_name IS 'the field whose path the step is of';
+COMMENT ON COLUMN graphitron_field_path_routine.start_source_name IS 'the catalog partition of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_routine.start_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_field_path_routine.start_table IS 'the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_routine.position IS 'the step''s place in the field''s path. With the six columns before it, the step''s key';
+COMMENT ON COLUMN graphitron_field_path_routine.routine_source_name IS 'the routine''s catalog partition';
+COMMENT ON COLUMN graphitron_field_path_routine.table_schema IS 'the routine''s SQL schema';
+COMMENT ON COLUMN graphitron_field_path_routine.routine_name IS 'the routine''s SQL name, with the two columns before it sql_routine''s key; its result is the table the step lands on';
+COMMENT ON COLUMN graphitron_field_path_routine.touched_at IS 'when the walk that last took the step ran, as on the step';
+
+CREATE TABLE graphitron_field_path_parameter (
+  graph_name         VARCHAR NOT NULL,
+  type_name          VARCHAR NOT NULL,
+  field_name         VARCHAR NOT NULL,
+  start_source_name  VARCHAR NOT NULL,
+  start_schema       VARCHAR NOT NULL,
+  start_table        VARCHAR NOT NULL,
+  position           INT     NOT NULL,
+  parameter_position INT     NOT NULL,
+  parameter_name     VARCHAR NOT NULL,
+  from_source_name   VARCHAR,
+  from_schema        VARCHAR,
+  from_table         VARCHAR,
+  from_column        VARCHAR,
+  argument           VARCHAR,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position, parameter_position),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
+               position)
+    REFERENCES graphitron_field_path_routine (graph_name, type_name, field_name, start_source_name,
+                                              start_schema, start_table, position) ON DELETE CASCADE,
+  FOREIGN KEY (from_source_name, from_schema, from_table, from_column)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  -- A parameter is bound from one place: a column of the table the step departs, or an argument.
+  CHECK ((from_column IS NULL) <> (argument IS NULL)),
+  CHECK (parameter_position >= 0)
+);
+COMMENT ON TABLE graphitron_field_path_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pMinLength: minLength", columnMapping: "pActorId: actor_id") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
+COMMENT ON COLUMN graphitron_field_path_parameter.graph_name IS 'the owning graph''s partition, carried from the step';
+COMMENT ON COLUMN graphitron_field_path_parameter.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_parameter.field_name IS 'the field whose path the step is of';
+COMMENT ON COLUMN graphitron_field_path_parameter.start_source_name IS 'the catalog partition of the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_parameter.start_schema IS 'the SQL schema of that table';
+COMMENT ON COLUMN graphitron_field_path_parameter.start_table IS 'the table the walk starts on';
+COMMENT ON COLUMN graphitron_field_path_parameter.position IS 'the routine step''s place in the field''s path. With the six columns before it, the step''s key';
+COMMENT ON COLUMN graphitron_field_path_parameter.parameter_position IS 'the parameter''s position in the routine''s call, as sql_routine_parameter numbers it';
+COMMENT ON COLUMN graphitron_field_path_parameter.parameter_name IS 'the parameter''s name in the generated call, the name a mapping writes';
+COMMENT ON COLUMN graphitron_field_path_parameter.from_source_name IS 'where the parameter is a column: the catalog partition of the table the step departs';
+COMMENT ON COLUMN graphitron_field_path_parameter.from_schema IS 'where the parameter is a column: that table''s SQL schema';
+COMMENT ON COLUMN graphitron_field_path_parameter.from_table IS 'where the parameter is a column: the table the step departs, the one the walk stands at';
+COMMENT ON COLUMN graphitron_field_path_parameter.from_column IS 'where the parameter is a column: the column, so the call is made once per row of that table; NULL where it is an argument';
+COMMENT ON COLUMN graphitron_field_path_parameter.argument IS 'where the parameter is an argument: the argument path written for it, an argument''s name or a dot path into an input, or the parameter''s own name where nothing was written; NULL where it is a column';
+COMMENT ON COLUMN graphitron_field_path_parameter.touched_at IS 'when the walk that last took the step ran, as on the step';
+
+CREATE VIEW graphitron_field_path_parameter_rule
+  (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+   parameter_position, parameter_name, from_source_name, from_schema, from_table, from_column,
+   argument) AS
+-- Each parameter of the routine a step calls, bound by the pair its @routine wrote for it: a
+-- columnMapping pair to a column of the table the step departs, an argMapping pair to an argument
+-- path, and a parameter neither names to the argument of its own name. A columnMapping pair naming
+-- no column of that table binds nothing, which the parameter's missing row says.
+SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
+       p.position, sp.position, sp.jooq_name,
+       c.source_name, c.table_schema, c.table_name, c.column_name,
+       CASE WHEN cm.param_name IS NULL THEN COALESCE(am.bound_to, sp.jooq_name) END
+  FROM graphitron_field_path p
+  JOIN graphitron_field_path_routine rr
+    ON rr.graph_name = p.graph_name AND rr.type_name = p.type_name AND rr.field_name = p.field_name
+   AND rr.start_source_name = p.start_source_name AND rr.start_schema = p.start_schema
+   AND rr.start_table = p.start_table AND rr.position = p.position
+  JOIN sql_routine_parameter sp
+    ON sp.source_name = rr.routine_source_name AND sp.table_schema = rr.table_schema
+   AND sp.routine_name = rr.routine_name
+  LEFT JOIN graphitron_ast_routine_column_mapping_pair_entry cm
+    ON cm.graph_name = p.graph_name AND cm.source_name = p.element_source_name
+   AND cm.source_line = p.element_source_line AND cm.source_column = p.element_source_column
+   AND cm.param_name = sp.jooq_name
+  LEFT JOIN sql_column c
+    ON c.source_name = p.from_source_name AND c.table_schema = p.from_schema
+   AND c.table_name = p.from_table AND c.column_name_upper = UPPER(cm.column_ref)
+  LEFT JOIN graphql_directive_application da
+    ON da.graph_name = p.graph_name AND da.source_name = p.element_source_name
+   AND da.source_line = p.element_source_line AND da.source_column = p.element_source_column
+   AND da.directive_name = 'routine'
+  LEFT JOIN graphitron_argmapping_site ams
+    ON ams.graph_name = da.graph_name AND ams.coordinate = da.coordinate
+   AND ams.directive_name = 'routine' AND ams.ordinal = da.ordinal
+  LEFT JOIN graphitron_ast_argmapping_pair_entry am
+    ON am.graph_name = ams.graph_name AND am.source_name = ams.source_name
+   AND am.source_line = ams.source_line AND am.source_column = ams.source_column
+   AND am.param_name = sp.jooq_name
+ WHERE cm.param_name IS NULL OR c.column_name IS NOT NULL;
+COMMENT ON VIEW graphitron_field_path_parameter_rule IS 'One row the routine parameter rule computes, in the shape graphitron_field_path_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_path_parameter, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+-- COMMENT ON COLUMN graphitron_field_path_parameter_rule.graph_name IS 'as graphitron_field_path_parameter.graph_name';
+-- COMMENT ON COLUMN graphitron_field_path_parameter_rule.argument IS 'as graphitron_field_path_parameter.argument';
+
 CREATE TABLE graphitron_field_path_stop (
   graph_name             VARCHAR NOT NULL,
   type_name              VARCHAR NOT NULL,
@@ -9701,7 +9826,7 @@ WITH frontier (graph_name, type_name, field_name, start_source_name, start_schem
 -- predicate onto a view's boolean column and writes one over a bare EXISTS it cannot parse back.
 step (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
       source_name, source_line, source_column, from_source_name, from_schema, from_table,
-      single_valued, has_key, has_table, has_condition) AS (
+      single_valued, has_key, has_table, has_condition, has_routine) AS (
   SELECT fr.graph_name, fr.type_name, fr.field_name,
          fr.start_source_name, fr.start_schema, fr.start_table, fr.position,
          w.source_name, w.element_line, w.element_column,
@@ -9715,7 +9840,10 @@ step (graph_name, type_name, field_name, start_source_name, start_schema, start_
                     AND t.source_line = w.element_line AND t.source_column = w.element_column) THEN TRUE ELSE FALSE END,
          CASE WHEN EXISTS (SELECT 1 FROM graphitron_ast_reference_condition_step_entry c
                   WHERE c.graph_name = w.graph_name AND c.source_name = w.source_name
-                    AND c.source_line = w.element_line AND c.source_column = w.element_column) THEN TRUE ELSE FALSE END
+                    AND c.source_line = w.element_line AND c.source_column = w.element_column) THEN TRUE ELSE FALSE END,
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
+                  WHERE r.graph_name = w.graph_name AND r.source_name = w.source_name
+                    AND r.source_line = w.element_line AND r.source_column = w.element_column) THEN TRUE ELSE FALSE END
     FROM frontier fr
     JOIN graphitron_ast_field_path_entry w
       ON w.graph_name = fr.graph_name AND w.source_name = fr.field_source_name
@@ -9727,9 +9855,7 @@ step (graph_name, type_name, field_name, start_source_name, start_schema, start_
       ON nv.graph_name = fr.graph_name AND nv.type_name = fr.type_name AND nv.field_name = fr.field_name
     JOIN graphitron_type nt ON nt.graph_name = f.graph_name AND nt.type_name = f.named_type
 ),
--- Every move the next element allows from where the walk stands, one row per way of taking it. A
--- @routine written after where the walk starts is a path routine, a step no arm takes yet, so it is
--- a step with no move.
+-- Every move the next element allows from where the walk stands, one row per way of taking it.
 move (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
       source_name, source_line, source_column, from_source_name, from_schema, from_table,
       to_source_name, to_schema, to_table,
@@ -9790,6 +9916,24 @@ move (graph_name, type_name, field_name, start_source_name, start_schema, start_
      AND n.to_source_name = t.table_source_name AND n.to_schema = t.table_schema
      AND n.to_table = t.table_name
    WHERE s.has_table AND NOT s.has_key
+  UNION ALL
+  -- A @routine after where the walk starts: a call made from the table the walk stands at, landing on
+  -- the function's result, one move per routine the element names. Its parameters are bound from that
+  -- table's columns and the field's arguments, which are the step's parameter rows.
+  SELECT s.graph_name, s.type_name, s.field_name, s.start_source_name, s.start_schema, s.start_table,
+         s.position, s.source_name, s.source_line, s.source_column,
+         s.from_source_name, s.from_schema, s.from_table,
+         fn.source_name, fn.table_schema, fn.table_name,
+         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CAST(NULL AS BOOLEAN)
+    FROM step s
+    JOIN graphitron_path_element_routine er
+      ON er.graph_name = s.graph_name AND er.source_name = s.source_name
+     AND er.source_line = s.source_line AND er.source_column = s.source_column
+    JOIN sql_table fn
+      ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
+     AND fn.table_name = er.routine_name
+   WHERE s.has_routine
   UNION ALL
   -- A condition alone: its method's second parameter names where it lands, and its first, where it
   -- names a table, has to be the one the walk stands at.
@@ -9864,14 +10008,20 @@ CREATE VIEW graphitron_field_path_fanout
    table_source_name, table_schema, table_name, covering_constraint_name,
    source_name, source_line, source_column) AS
 -- Each intermediate of a walk, whichever way it started: the table one step arrives at and the next
--- leaves, with how each of the two steps joins. A step with a key row rode a key; one with column
--- pairs and no key matched a function's result by name; one with neither joins by its method alone.
+-- leaves, with how each of the two steps joins. A step with a routine row calls one; one with a key
+-- row rode a key; one with column pairs and no key matched a function's result by name; one with
+-- none of those joins by its method alone.
 WITH pair (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
            position, enter_via, leave_via, table_source_name, table_schema, table_name,
            element_source_name, element_source_line, element_source_column) AS (
   SELECT e.graph_name, e.type_name, e.field_name,
          e.start_source_name, e.start_schema, e.start_table, e.position,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_path_key k
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_path_routine r
+                            WHERE r.graph_name = e.graph_name AND r.type_name = e.type_name
+                              AND r.field_name = e.field_name AND r.start_source_name = e.start_source_name
+                              AND r.start_schema = e.start_schema AND r.start_table = e.start_table
+                              AND r.position = e.position) THEN 'ROUTINE'
+              WHEN EXISTS (SELECT 1 FROM graphitron_field_path_key k
                             WHERE k.graph_name = e.graph_name AND k.type_name = e.type_name
                               AND k.field_name = e.field_name AND k.start_source_name = e.start_source_name
                               AND k.start_schema = e.start_schema AND k.start_table = e.start_table
@@ -9882,7 +10032,12 @@ WITH pair (graph_name, type_name, field_name, start_source_name, start_schema, s
                               AND c.start_schema = e.start_schema AND c.start_table = e.start_table
                               AND c.position = e.position) THEN 'NAME_MATCH'
               ELSE 'CONDITION' END,
-         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_path_key k
+         CASE WHEN EXISTS (SELECT 1 FROM graphitron_field_path_routine r
+                            WHERE r.graph_name = l.graph_name AND r.type_name = l.type_name
+                              AND r.field_name = l.field_name AND r.start_source_name = l.start_source_name
+                              AND r.start_schema = l.start_schema AND r.start_table = l.start_table
+                              AND r.position = l.position) THEN 'ROUTINE'
+              WHEN EXISTS (SELECT 1 FROM graphitron_field_path_key k
                             WHERE k.graph_name = l.graph_name AND k.type_name = l.type_name
                               AND k.field_name = l.field_name AND k.start_source_name = l.start_source_name
                               AND k.start_schema = l.start_schema AND k.start_table = l.start_table
@@ -9902,8 +10057,8 @@ WITH pair (graph_name, type_name, field_name, start_source_name, start_schema, s
      AND l.start_schema = e.start_schema AND l.start_table = e.start_table
      AND l.position = e.position + 1
 ),
--- The intermediate's columns the two steps bind: where the entering step arrives and where the
--- leaving step departs.
+-- The intermediate's columns the two steps bind: where the entering step arrives, where the leaving
+-- step departs, and the columns a leaving routine's parameters are bound from.
 bound (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
        column_name) AS (
   SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
@@ -9921,6 +10076,15 @@ bound (graph_name, type_name, field_name, start_source_name, start_schema, start
       ON c.graph_name = p.graph_name AND c.type_name = p.type_name AND c.field_name = p.field_name
      AND c.start_source_name = p.start_source_name AND c.start_schema = p.start_schema
      AND c.start_table = p.start_table AND c.position = p.position + 1
+  UNION
+  SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
+         p.position, pp.from_column
+    FROM pair p
+    JOIN graphitron_field_path_parameter pp
+      ON pp.graph_name = p.graph_name AND pp.type_name = p.type_name AND pp.field_name = p.field_name
+     AND pp.start_source_name = p.start_source_name AND pp.start_schema = p.start_schema
+     AND pp.start_table = p.start_table AND pp.position = p.position + 1
+   WHERE pp.from_column IS NOT NULL
 ),
 -- The lowest-named PRIMARY KEY or UNIQUE constraint on the intermediate whose every column is bound.
 covering (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
@@ -9963,7 +10127,8 @@ SELECT DISTINCT p.graph_name, p.type_name, p.field_name, p.position,
        CASE WHEN p.enter_via <> 'CONDITION' AND p.leave_via <> 'CONDITION'
              AND p.enter_via <> 'NAME_MATCH' AND p.leave_via <> 'NAME_MATCH'
             THEN cov.constraint_name END,
-       re.source_name, re.application_line, re.application_column
+       COALESCE(re.source_name, ra.source_name), COALESCE(re.application_line, ra.source_line),
+       COALESCE(re.application_column, ra.source_column)
   FROM pair p
   LEFT JOIN covering cov
     ON cov.graph_name = p.graph_name AND cov.type_name = p.type_name
@@ -9972,7 +10137,11 @@ SELECT DISTINCT p.graph_name, p.type_name, p.field_name, p.position,
    AND cov.position = p.position
   LEFT JOIN graphitron_ast_reference_element_entry re
     ON re.graph_name = p.graph_name AND re.source_name = p.element_source_name
-   AND re.source_line = p.element_source_line AND re.source_column = p.element_source_column;
+   AND re.source_line = p.element_source_line AND re.source_column = p.element_source_column
+  -- an entering @routine is its own application
+  LEFT JOIN graphitron_ast_routine_entry ra
+    ON ra.graph_name = p.graph_name AND ra.source_name = p.element_source_name
+   AND ra.source_line = p.element_source_line AND ra.source_column = p.element_source_column;
 COMMENT ON VIEW graphitron_field_path_fanout IS 'Where a field''s path passes through an intermediate table, and whether that table can hold more than one row per set of columns the entering and leaving steps bind: one row per field and intermediate, in a closed verdict vocabulary of four. For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two steps bind, while a junction carrying a key column neither step binds reads FANS_OUT there instead.';
 -- COMMENT ON COLUMN graphitron_field_path_fanout.graph_name IS 'the owning graph''s partition, carried from the walk';
 -- COMMENT ON COLUMN graphitron_field_path_fanout.type_name IS 'the type owning the field';
@@ -10187,8 +10356,8 @@ SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
  WHERE st.moves > 1
 UNION ALL
 -- Where a walk broke: an element it could not step through, with no move from where it stood. The
--- element names nothing, or it names something and none of it leaves from there. A @routine after
--- the walk's start is a path routine, a step the walk does not take yet, and draws nothing here.
+-- element names nothing, or it names something and none of it leaves from there. A @routine moves
+-- from wherever the walk stands, so one with no move names no routine with a generated call.
 SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
        st.element_source_column,
        CASE WHEN EXISTS (SELECT 1 FROM graphitron_path_element_key k
@@ -10206,10 +10375,6 @@ SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
             THEN 'NO_ROUTE_FROM_DEPARTURE' ELSE 'ELEMENT_UNRESOLVED' END, CAST(NULL AS VARCHAR)
   FROM graphitron_field_path_stop st
  WHERE st.moves = 0
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
-                    WHERE r.graph_name = st.graph_name AND r.source_name = st.element_source_name
-                      AND r.source_line = st.element_source_line
-                      AND r.source_column = st.element_source_column)
 UNION ALL
 -- Where a walk took every written step and ended somewhere other than its target, at the last step,
 -- whose element is the one that lands there: a walk with no stop, read at its last step. A target
@@ -14982,6 +15147,12 @@ INSERT INTO meta_grain VALUES
   ('field-path-method',
    'one condition method one step of a field''s path joins or filters by, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position, method_source_name, method_class_name, method_name, method_descriptor', 'sdl'),
+  ('field-path-routine',
+   'the routine one step of a field''s path calls, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position', 'sdl'),
+  ('field-path-parameter',
+   'one parameter of the routine one step of a field''s path calls, in one graph',
+   'graph_name, type_name, field_name, start_source_name, start_schema, start_table, position, parameter_position', 'sdl'),
   ('field-path-stop',
    'where one walk of one field''s path stopped, in one graph',
    'graph_name, type_name, field_name, start_source_name, start_schema, start_table', 'sdl'),
@@ -15423,7 +15594,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('ROUTE_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTE_AMBIGUOUS',
    'A chain link reaches its destination by more than one route, so the generator has a join to emit and nothing to pick it by; naming the foreign key rather than the table settles it.'),
   ('ELEMENT_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_ELEMENT_UNRESOLVED',
-   'A chain link names something the catalog and the classpath do not have, a foreign key, a table or a condition method, so the chain stops here and the generator emits no join at all.'),
+   'A chain link names something the catalog and the classpath do not have, a foreign key, a table, a condition method or a routine with a generated call, so the chain stops here and the generator emits no join at all.'),
   ('NO_ROUTE_FROM_DEPARTURE', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_FROM_DEPARTURE',
    'A chain link resolves to a route and none of its routes departs the table the chain is standing on, so the link cannot follow the one before it.'),
   ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'error', 'UNSUPPORTED', 'GRAPHITRON_ROOT_REFERENCE_WITHOUT_ROUTINE',
@@ -15538,6 +15709,18 @@ INSERT INTO meta_relation VALUES
    'The condition method a step of a field''s path joins or filters by: one row per step and overload.',
    'For example {condition: {className: "…Conditions", method: "filmActors"}} alone is the step''s join; beside a key or a table it filters the step its columns join.',
    'A method alone is the step''s join and beside a key or a table a filter on it, read from whether the step has column rows rather than stated twice; one row per overload, the generator choosing by the arguments it maps.'),
+  ('graphitron_field_path_routine', 'field-path-routine', 'graphitron',
+   'The routine a step of a field''s path calls: one row per step a @routine element took.',
+   'For example Actor.films over @routine(name: "films_for_actor") is one step from actor to films_for_actor, calling public.films_for_actor.',
+   'A child @routine is a step of the path like any other: from the table the walk stands at to its function''s result. What the step calls is this row, and how it is called is its parameter rows.'),
+  ('graphitron_field_path_parameter', 'field-path-parameter', 'graphitron',
+   'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field.',
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pMinLength: minLength", columnMapping: "pActorId: actor_id") binds pActorId from actor.actor_id and pMinLength from the argument minLength.',
+   'The routine step''s join, as a key step''s is its column pairs: a parameter bound from a column correlates the call with the row the walk stands at, one from an argument does not, and a reader that needs either, the fan-out advisory among them, reads the row rather than the mapping strings.'),
+  ('graphitron_field_path_parameter_rule', 'field-path-parameter', 'graphitron',
+   'One row the routine parameter rule computes, in the shape graphitron_field_path_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_field_path_parameter, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_field_path_stop', 'field-path-stop', 'graphitron',
    'Where a field''s path stopped short of its written elements: one row per field and start whose walk met an element it could not step through.',
    'For example {key: "film_actor_actor_id_fkey"} on a Film field stops the walk from film at position 0, no move leaving film, and {table: "film"} from a table two keys join to it stops with two.',

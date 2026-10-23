@@ -37,6 +37,7 @@ import static no.sikt.graphitron.model.Tables.INTENT_FIELD_PRODUCER_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_KEY;
 import static no.sikt.graphitron.model.Tables.INTENT_RESOLVED_FIELD_CLAIM;
@@ -305,8 +306,8 @@ final class SchemaQueries {
      * the first step of each departing its start.
      *
      * @param position the element's 0-based place in the field's path
-     * @param via {@code KEY} where the element named a constraint, {@code CONDITION} where it names a
-     *     method the join is, {@code TABLE} otherwise
+     * @param via {@code ROUTINE} where the element calls a routine, {@code KEY} where it named a
+     *     constraint, {@code CONDITION} where it names a method the join is, {@code TABLE} otherwise
      * @param keyMatchedBy which namespace answered a {@code KEY} element, {@code null} on any other
      * @param constraintName the constraint a {@code KEY} step crosses, {@code null} on any other
      * @param fkOnFrom whether that constraint is declared on the table the step departs
@@ -826,9 +827,15 @@ final class SchemaQueries {
         var k = GRAPHITRON_FIELD_PATH_KEY;
         var e = GRAPHITRON_PATH_ELEMENT_KEY;
         var m = GRAPHITRON_FIELD_PATH_METHOD;
+        var rt = GRAPHITRON_FIELD_PATH_ROUTINE;
         return multiset(
             select(p.POSITION,
-                when(k.CONSTRAINT_NAME.isNotNull(), inline("KEY"))
+                when(exists(selectOne().from(rt).where(
+                        rt.GRAPH_NAME.eq(p.GRAPH_NAME), rt.TYPE_NAME.eq(p.TYPE_NAME),
+                        rt.FIELD_NAME.eq(p.FIELD_NAME), rt.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),
+                        rt.START_SCHEMA.eq(p.START_SCHEMA), rt.START_TABLE.eq(p.START_TABLE),
+                        rt.POSITION.eq(p.POSITION))), inline("ROUTINE"))
+                    .when(k.CONSTRAINT_NAME.isNotNull(), inline("KEY"))
                     .when(exists(selectOne().from(m).where(
                         m.GRAPH_NAME.eq(p.GRAPH_NAME), m.TYPE_NAME.eq(p.TYPE_NAME),
                         m.FIELD_NAME.eq(p.FIELD_NAME), m.START_SOURCE_NAME.eq(p.START_SOURCE_NAME),

@@ -1,0 +1,22 @@
+# A child @routine naming no routine with a generated call is where its walk breaks: the step has no
+# move from where the walk stands, and the element draws ELEMENT_UNRESOLVED.
+
+type ActorFilm {
+  filmId: Int @field(name: "FILM_ID")
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+  missing(minLength: Int!): [ActorFilm!]
+    @routine(name: "no_such_function", argMapping: "pMinLength: minLength")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend type Query {
+  actors: [Actor]
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,               coordinate
+  ELEMENT_UNRESOLVED, Actor.missing
+  """)

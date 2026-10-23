@@ -1,0 +1,62 @@
+# A child @routine is a step of the path like any other: from the table the walk stands at to the
+# function's result. What it calls is the step's routine row, and how each parameter is bound, from a
+# column of that table or from an argument, is its parameter rows.
+
+type ActorFilm {
+  filmId: Int @field(name: "FILM_ID")
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+  # The routine ends the path, called once per actor row.
+  films(minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+type Film @table(name: "film") {
+  title: String
+  # In through film_actor, the routine called per junction row, and back out to film by name.
+  castRecentFilms(minLength: Int!): [Film!]
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+    @reference(path: [{table: "film"}])
+    @defaultOrder(primaryKey: true)
+}
+
+extend type Query {
+  actors: [Actor]
+  films: [Film]
+}
+
+extend schema @expectEquals(relation: "graphitron_field_path", rows: """
+  type_name, field_name,      start_table, position, from_table,      to_table
+  Actor,     films,           actor,       0,        actor,           films_for_actor
+  Film,      castRecentFilms, film,        0,        film,            film_actor
+  Film,      castRecentFilms, film,        1,        film_actor,      films_for_actor
+  Film,      castRecentFilms, film,        2,        films_for_actor, film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_routine", rows: """
+  type_name, field_name,      position, routine_name
+  Actor,     films,           0,        films_for_actor
+  Film,      castRecentFilms, 1,        films_for_actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_parameter", rows: """
+  type_name, field_name,      position, parameter_name, from_table, from_column, argument
+  Actor,     films,           0,        pActorId,       actor,      actor_id,
+  Actor,     films,           0,        pMinLength,     ,           ,            minLength
+  Film,      castRecentFilms, 1,        pActorId,       film_actor, actor_id,
+  Film,      castRecentFilms, 1,        pMinLength,     ,           ,            minLength
+  """)
+
+# film_actor is entered by its key to film and left by a call bound from its actor_id, so both of its
+# key's columns are bound; films_for_actor's result is left by name and declared undecidable.
+extend schema @expectEquals(relation: "graphitron_field_path_fanout", rows: """
+  type_name, field_name,      position, table_name,      verdict,                    covering_constraint_name
+  Film,      castRecentFilms, 0,        film_actor,      COVERED,                    film_actor_pkey
+  Film,      castRecentFilms, 1,        films_for_actor, UNDECIDABLE_NAME_MATCH_HOP,
+  """)

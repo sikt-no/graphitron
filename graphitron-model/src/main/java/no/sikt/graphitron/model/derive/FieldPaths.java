@@ -16,6 +16,9 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_COLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PARAMETER;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_PARAMETER_RULE;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_BINDING;
@@ -24,6 +27,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_ROUTIN
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
@@ -74,6 +78,10 @@ public final class FieldPaths {
         "CONSTRAINT_SCHEMA", "CONSTRAINT_TABLE", "CONSTRAINT_NAME");
     private static final List<String> METHOD = List.of("METHOD_SOURCE_NAME", "METHOD_CLASS_NAME",
         "METHOD_NAME", "METHOD_DESCRIPTOR");
+    private static final List<String> ROUTINE = List.of("ROUTINE_SOURCE_NAME", "TABLE_SCHEMA",
+        "ROUTINE_NAME");
+    private static final List<String> PARAMETER = List.of("PARAMETER_NAME", "FROM_SOURCE_NAME",
+        "FROM_SCHEMA", "FROM_TABLE", "FROM_COLUMN", "ARGUMENT");
 
     /** Starts the walks, walks them for one graph, then sweeps what this reading no longer reached. */
     public static void derive(DSLContext dsl, String graph, LocalDateTime touchedAt) {
@@ -88,6 +96,8 @@ public final class FieldPaths {
         keys(dsl, counted, touchedAt);
         columns(dsl, counted, graph, touchedAt);
         methods(dsl, graph, touchedAt);
+        routines(dsl, graph, touchedAt);
+        parameters(dsl, graph, touchedAt);
         stops(dsl, counted, touchedAt);
         sweep(dsl, graph, touchedAt);
     }
@@ -215,6 +225,32 @@ public final class FieldPaths {
         merge(dsl, GRAPHITRON_FIELD_PATH_METHOD, source, concat(keys, METHOD), List.of(), touchedAt);
     }
 
+    /** The routine each step a {@code @routine} element took calls: the one its element names. */
+    private static void routines(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var keys = STEP;
+        var p = GRAPHITRON_FIELD_PATH;
+        var r = GRAPHITRON_PATH_ELEMENT_ROUTINE;
+        var source = dsl.select(cols(p, keys)).select(r.ROUTINE_SOURCE_NAME, r.TABLE_SCHEMA,
+                r.ROUTINE_NAME)
+            .from(p)
+            .join(r).on(r.GRAPH_NAME.eq(str(p, "GRAPH_NAME")), r.SOURCE_NAME.eq(str(p, "ELEMENT_SOURCE_NAME")),
+                r.SOURCE_LINE.eq(f(p, "ELEMENT_SOURCE_LINE", Integer.class)),
+                r.SOURCE_COLUMN.eq(f(p, "ELEMENT_SOURCE_COLUMN", Integer.class)))
+            .where(f(p, "GRAPH_NAME").eq(graph)).and(f(p, "TOUCHED_AT", LocalDateTime.class).eq(touchedAt))
+            .asTable("r");
+        merge(dsl, GRAPHITRON_FIELD_PATH_ROUTINE, source, keys, ROUTINE, touchedAt);
+    }
+
+    /** Where each routine step's parameters take their values, off the routine rows just written. */
+    private static void parameters(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+        var r = GRAPHITRON_FIELD_PATH_PARAMETER_RULE;
+        var keys = concat(STEP, List.of("PARAMETER_POSITION"));
+        merge(dsl, GRAPHITRON_FIELD_PATH_PARAMETER,
+            dsl.select(cols(r, concat(keys, PARAMETER))).from(r).where(r.GRAPH_NAME.eq(graph))
+                .asTable("pr"),
+            keys, PARAMETER, touchedAt);
+    }
+
     /** Where each walk stopped: a step that allows no move or several, one per walk. */
     private static void stops(DSLContext dsl, Table<Record> c, LocalDateTime touchedAt) {
         var source = dsl.selectDistinct(cols(c, STEP))
@@ -227,7 +263,8 @@ public final class FieldPaths {
     /** What this reading did not mark, children before the steps and starts they hang on. */
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_FIELD_PATH_COLUMN, GRAPHITRON_FIELD_PATH_KEY,
-                GRAPHITRON_FIELD_PATH_METHOD, GRAPHITRON_FIELD_PATH_STOP, GRAPHITRON_FIELD_PATH,
+                GRAPHITRON_FIELD_PATH_METHOD, GRAPHITRON_FIELD_PATH_PARAMETER,
+                GRAPHITRON_FIELD_PATH_ROUTINE, GRAPHITRON_FIELD_PATH_STOP, GRAPHITRON_FIELD_PATH,
                 GRAPHITRON_FIELD_PATH_START_RESULT, GRAPHITRON_FIELD_PATH_START_BINDING,
                 GRAPHITRON_FIELD_PATH_START_ROUTINE, GRAPHITRON_FIELD_PATH_START)) {
             dsl.deleteFrom(t).where(f(t, "GRAPH_NAME").eq(graph))
