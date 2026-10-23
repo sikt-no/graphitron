@@ -1573,22 +1573,32 @@ type FilmLookupClientFacing @error(handlers: [{
     message: String!
 }
 
-# The catch-all member, last in the union, so its broad handlers only see what every earlier member
-# passed over: the shape a consumer keeping Graphitron 9's error responses declares. The
-# GraphqlErrorException handler stands in for GraphitronClientException (generated after the service
-# module compiles) and carries no description:, so a source that is also a GraphQLError reaches the
-# consumer's FetcherErrorResponse.matchedMessage through the message fetcher's one arm order. The
-# IllegalStateException handler's description: is the safe default a matchedMessage can replace.
+# A member whose handlers declare no description: at all, catching a source that is a Throwable and a
+# GraphQLError at once. GraphqlErrorException stands in for GraphitronClientException, which is
+# generated after the service module compiles. The message fetcher used to resolve such a type's
+# GraphQLError arm first, keeping the source from the consumer's
+# FetcherErrorResponse.matchedMessage; the type has to stay free of description: on every handler,
+# since one would put the Throwable block first under the old order too and hide a regression.
 # See FilmLookupService and FetcherErrorResponseExecutionTest.
+type FilmLookupGraphQLErrorSource @error(handlers: [
+    {handler: GENERIC, className: "graphql.GraphqlErrorException"}
+]) {
+    path: [String!]!
+    message: String!
+}
+
+# The catch-all member, last in the union, so its broad handler only sees what every earlier member
+# passed over: the shape a consumer keeping Graphitron 9's error responses declares. Its
+# description: is the safe default a matchedMessage can replace. See FilmLookupService and
+# FetcherErrorResponseExecutionTest.
 type FilmLookupCatchAll @error(handlers: [
-    {handler: GENERIC, className: "graphql.GraphqlErrorException"},
     {handler: GENERIC, className: "java.lang.IllegalStateException", description: "The film lookup failed."}
 ]) {
     path: [String!]!
     message: String!
 }
 
-union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid | FilmLookupClientFacing | FilmLookupCatchAll
+union FilmLookupError = FilmLookupNotFound | FilmLookupInvalid | FilmLookupClientFacing | FilmLookupGraphQLErrorSource | FilmLookupCatchAll
 
 type FilmLookupPayload {
     title: String

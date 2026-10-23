@@ -25,9 +25,8 @@ package no.sikt.graphitron.rewrite.test.services;
  *       {@code FilmLookupClientFacing} {@code @error} type, whose handler also carries a
  *       {@code description:}, so which of the emitted {@code message} arms wins is observable.</li>
  *   <li>{@code id == 778} — throws a plain {@code GraphqlErrorException}, a {@code Throwable}
- *       and a {@code GraphQLError} at once, which only the union's catch-all
- *       {@code FilmLookupCatchAll} member claims, through a handler carrying no
- *       {@code description:}.</li>
+ *       and a {@code GraphQLError} at once, which only the {@code FilmLookupGraphQLErrorSource}
+ *       member claims, a type none of whose handlers carries a {@code description:}.</li>
  *   <li>{@code id == 779} — throws {@link #SHARED_FAILURE}, one {@link IllegalStateException}
  *       instance for every call, so two fields of one request fail with the same exception, as a
  *       batch failure does; the catch-all member claims it through a handler carrying a
@@ -61,7 +60,7 @@ public final class FilmLookupService {
         }
         if (id == 778) {
             throw graphql.GraphqlErrorException.newErrorException()
-                .message("raw getMessage from the catch-all's GraphQLError source")
+                .message("raw getMessage from a GraphQLError source")
                 .build();
         }
         if (id == 779) {

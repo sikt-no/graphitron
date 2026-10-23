@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code FetcherErrorLog.matched}, which logs an exception an {@code @error} handler caught, and
  * {@code FetcherErrorResponse}, which chooses the reference and the client's text. Driven against
  * {@code Query.filmLookup}, whose errors union ends in the catch-all {@code FilmLookupCatchAll}
- * member, through the managed runtime (the hooks set by its withers and published by its
+ * member after {@code FilmLookupGraphQLErrorSource}, a member with no {@code description:}, through the managed runtime (the hooks set by its withers and published by its
  * instrumentation), with one case on the escape-hatch engine. The unmatched cases fail
  * {@code Film.durabilityError}, a batched child service that always throws, on one film.
  *
@@ -112,7 +112,8 @@ class FetcherErrorResponseExecutionTest {
 
     /**
      * The sis shape: the reference is the request's trace id when it has one; the catch-all
-     * member's message quotes it; the top-level text is Graphitron 9's.
+     * member's message quotes it, as does {@code FilmLookupGraphQLErrorSource}'s; the top-level text
+     * is Graphitron 9's.
      */
     static class TracingResponse implements FetcherErrorResponse {
         @Override
@@ -124,7 +125,8 @@ class FetcherErrorResponseExecutionTest {
         @Override
         public String matchedMessage(Throwable source, String defaultMessage, String reference,
                                      DataFetchingEnvironment env) {
-            if (!"FilmLookupCatchAll".equals(((GraphQLNamedType) env.getParentType()).getName())) {
+            String type = ((GraphQLNamedType) env.getParentType()).getName();
+            if (!"FilmLookupCatchAll".equals(type) && !"FilmLookupGraphQLErrorSource".equals(type)) {
                 return defaultMessage;
             }
             return defaultMessage + " Referanse: " + reference;
@@ -141,6 +143,7 @@ class FetcherErrorResponseExecutionTest {
             __typename
             ... on FilmLookupNotFound { message }
             ... on FilmLookupInvalid { message }
+            ... on FilmLookupGraphQLErrorSource { message }
             ... on FilmLookupCatchAll { message }
         }
         """;
@@ -212,15 +215,15 @@ class FetcherErrorResponseExecutionTest {
 
     @Test
     void matchedMessage_reachesASourceThatIsAlsoAGraphQLError_onATypeWithoutDescription() {
-        // The catch-all's GraphqlErrorException handler carries no description:, the type where the
-        // message fetcher's GraphQLError arm used to run first and bypass the Throwable block.
+        // No handler on FilmLookupGraphQLErrorSource carries a description:, the one layout in which
+        // the message fetcher used to run its GraphQLError arm first and bypass the Throwable block.
         var result = run(runtime().withFetcherErrorResponse(new TracingResponse()),
             "{ filmLookup(id: 778) { " + LOOKUP_ERRORS + " } }", "trace-778");
 
         assertThat(result.getErrors()).isEmpty();
         assertThat(errorEntry(result, "filmLookup"))
-            .containsEntry("__typename", "FilmLookupCatchAll")
-            .containsEntry("message", "raw getMessage from the catch-all's GraphQLError source Referanse: trace-778");
+            .containsEntry("__typename", "FilmLookupGraphQLErrorSource")
+            .containsEntry("message", "raw getMessage from a GraphQLError source Referanse: trace-778");
     }
 
     @Test
