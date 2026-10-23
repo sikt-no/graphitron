@@ -254,8 +254,8 @@ A directive naming Java code or a routine is resolved once, by the graphitron an
 classpath and catalog, and every reader reads that resolution rather than a view of its own.
 
 * **A condition reference names an overload set** `open`. `graphitron_code_reference` holds every
-  matching overload, and needing exactly one is the rule of `@service`, `@externalField` and
-  `@sourceRow` alone.
+  matching overload, and needing exactly one is the rule of `@externalField` and `@sourceRow` alone;
+  a service picks among its overloads by what binds.
 * **Every producer reader reads `graphitron_code_reference`** `open`. `SchemaQueries`,
   `DeclarationFacts` and the other readers of `intent_field_producer_method` are rewritten against
   the resolution, each with an SDL test passing before and after, and the view goes.
@@ -286,6 +286,49 @@ classpath and catalog, and every reader reads that resolution rather than a view
     deprecated later as an alias.
   * **A table-valued function returned as a scalar is a defect** `blocked`, on "A routine is enriched by the database construct behind it". It can land before the reads. Today
     `Query.titleFor`, a scalar over `films_for_actor`, draws nothing.
+
+### A service call is resolved in the store and emitted from it `open`
+
+A `@service` field's call is the store's answer: which method, on which holder, with what filling
+each parameter, so the generator reads it and `ServiceCatalog` resolves nothing. A service class is
+one whose instances graphitron can build; its public methods are service methods, and a public
+static method needs no holder.
+
+* **The generated jOOQ classes are read with their members** `blocked`, on "A rebuild that changes
+  no class reads none". The census's header-only package goes, so tables, records, `Routines`,
+  package classes and DAOs are read like any other class, with a sis capture timed before and after.
+* **Every public constructor is a method row** `open`. `code_method` holds each as `<init>` with its
+  parameters, which the census already reads and the capture drops; `code_service_method` leaves
+  them out.
+* **A parameter states its type's first argument** `open`. `code_method_parameter` carries the class
+  the census reads at type-argument path `0`, so `Set<FilmRecord>` is told from
+  `Set<List<FilmRecord>>` without parsing a spelling.
+* **A `Configuration` parameter is the jOOQ context** `open`. `code_method_parameter.role` gains
+  `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
+* **A service's holder is its one widest buildable constructor** `blocked`, on "Every public
+  constructor is a method row" and "A `Configuration` parameter is the jOOQ context". Every
+  parameter is jOOQ context or a context key; two of the widest is a defect.
+* **Every service parameter states what fills it** `blocked`, on "A parameter states its type's
+  first argument", "A `Configuration` parameter is the jOOQ context" and "A condition reference
+  names an overload set". One row per
+  producer, overload and position: jOOQ context, `$session`, an argument path, a context key or the
+  parent's keys, claimed by argMapping, by name, by type or as the one unclaimed pair.
+* **A service call is the one overload every parameter of which is filled** `blocked`, on "Every
+  service parameter states what fills it". Every argMapping left side names one of its parameters;
+  none is an unclaimed parameter and several an ambiguous call, defects beside facts in the corpus.
+* **`$tenant` in argMapping routes a service call** `open`. The sigil on a pair's left side names
+  the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
+  * **`@tenant` is gone** `blocked`, on "`$tenant` in argMapping routes a service call" and sis
+    moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
+* **A service call is emitted from the store** `blocked`, on "A service call is the one overload
+  every parameter of which is filled" and "A service's holder is its one widest buildable
+  constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
+  `ServiceCatalog`'s decode, claim and bind phases go.
+* **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read
+  with their members". The code family keeps each generated table's public column fields, which
+  the census reads and the capture drops.
+* **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
+  flag and where it is computed, so a client-side computed column is told from a stored one.
 
 ### The graphitron family completes its flip and subtract `open`
 
@@ -606,10 +649,9 @@ The call order already follows it; what is left is a gate that holds it and the 
 * **The pipeline overview states the order and what holds it** `blocked`, on "A gate holds the call order to the roster". `pipeline-overview.adoc` § Capture names the order and the gate.
 * **The pipeline overview describes a dependency's row** `open`. The `store_` bookkeeping sentence
   names `store_graph_dependency` and what each kind of entry lets a capture skip.
-* **A service beside the generated classes is read** `open`. A service class in a package under
-  the jOOQ package has its methods read, or the layout is refused with a message; a case first.
-* **The manual says the jOOQ package is read without its members** `open`. The `jooqPackage` row of
-  `mojo-configuration.adoc` says the classpath reading takes its classes but not their members.
+* **The manual says what the jOOQ package is read for** `blocked`, on "The generated jOOQ classes
+  are read with their members". The `jooqPackage` row of `mojo-configuration.adoc` no longer implies
+  the package is read differently from any other.
 
 ### The store knows whether an artifact can go stale `open`
 
@@ -627,6 +669,9 @@ treating each kind by what it can do, and catching a stale catalog.
   `build_warning_stale_module`.
 * **A directory's stamp covers what the reading reads** `open`. Regenerating jOOQ into a module that
   also holds services no longer makes every service class read again.
+* **A rebuild that changes no class reads none** `open`. A directory's stamp is its class files'
+  content rather than their sizes and modification times, so jOOQ regenerating the same classes
+  leaves the module unopened; measured on a sis round first.
 
 ### Which types are nodes, with which id and key, is stated once and every reader reads it `open`
 
