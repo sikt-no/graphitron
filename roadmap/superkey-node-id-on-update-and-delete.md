@@ -123,6 +123,16 @@ Two paths deliberately get no guard:
 
 `idempotentByPrimaryKey` then admits a superkey id unchanged, because the size check sees four WHERE columns. `missingAsDeleted_pkPlusExtraFilterColumn_rejects` keeps passing, because a plain `@field` extra is not dropped.
 
+### Tenant routing reads the dropped columns
+
+A dropped column leaves the WHERE but is still a decoded value the statement can route on. Under database-per-tenant (one database per tenant, the statement sent to the database its tenant column names), `TenantBindingIndex.collectFromWhereKeys` finds a DML statement's tenant by reading `OperationMember.Write.Dml.whereKeyColumns()` for the tenant column. If it stays the only read, dropping a tenant column turns a DELETE that routes today into a `noTenantBinding` rejection.
+
+The case is not exotic. On a tenant-scoped table the tenancy rule requires the tenant column in the node key: `nodeIdKeyMissingTenantColumnOnTenantScopedTableRejects` pins the rejection, whose remedy reads "Add tenant column 'film_id' to @node(keyColumns:)". When the tenant column is outside the primary key, the node that remedy produces is itself a superkey. An example is `inventory`, with primary key `inventory_id` and tenant column `film_id`, giving `@node(keyColumns: ["inventory_id", "film_id"])`.
+
+* **Model.** `UpdateRows` and `DeleteRows` each gain `droppedColumns()` at the interface (empty on `Broadcast`), and `Dml` gains a sibling default `droppedKeyColumns()` that switches over the verbs like `whereKeyColumns()`. `whereKeyColumns()` keeps answering what the statement filters on.
+* **Routing.** `collectFromWhereKeys` reads `whereKeyColumns()` and then `droppedKeyColumns()`. WHERE goes first, so a WHERE slot stays the binding's primary. Both go through the same `accessOf(extraction, …, decodeSlot)`, so the dropped column projects as a `DecodedKeySlot` like any decoded key column.
+* **Why routing on it is sound.** Under database-per-tenant a row cannot change tenant; the SET-side decline in the same method states why. So the tenant an id carries is the tenant holding the row, even when another extra column in the same id has gone stale.
+
 ### DELETE payload: `RETURNING` the node key
 
 The record-carrier DELETE fetchers return `buildPkFieldList(tableRef.primaryKeyColumns())`, and the payload's `ChildField.SingleRecordIdFieldFromReturning` encodes from the encoder's `paramSignature()` by SQL name. For a superkey node the extra column is not in the record, so the encode throws after the transaction has committed. This holds whatever the input looks like, so it is a live defect for any superkey DELETE payload, not only one keyed by a superkey id. Nothing at build time catches it.
@@ -146,8 +156,8 @@ An echoed row has no stored row, so the only source for the extra column is the 
 
 ### Rejection and docs plumbing
 
-* **New permit.** `MissingAsDeletedEchoUnencodable` lands with a paragraph in `docs/architecture/explanation/typed-rejection.adoc` (`SealedHierarchyDocCoverageTest`), its row in `RejectionSeverityCoverageTest`, and the LSP projector mapping its sibling arms use.
-* **Narrowed arm.** In `typed-rejection.adoc`, the `MixedCarrierKeyMembership` paragraph narrows to partial coverage. The `DeleteRowsError` paragraph's "every admitted input column is a WHERE filter" gains the whole-key exception.
+* **New permit.** `MissingAsDeletedEchoUnencodable` lands in `DeleteRowsError` (in `graphitron-model`) with its own `lspCode()` override, since the LSP projector reads the code off the record. It also needs a paragraph in `docs/architecture/explanation/typed-rejection.adoc` (`SealedHierarchyDocCoverageTest`), its sample in `RejectionSeverityCoverageTest`, and its leaf name in `RejectionResidueDrainageTest.RESIDUE_LEAVES`. That set is the full reflective leaf walk, so it fails until the leaf is declared.
+* **Narrowed arm.** In `typed-rejection.adoc`, the `MixedCarrierKeyMembership` paragraph narrows to partial coverage. The `DeleteRowsError` paragraph's "every admitted input column is a WHERE filter" gains the whole-key exception. So does `MissingAsDeletedNeedsPrimaryKey.message()`, which tells the author to bind "each primary-key column once and no other column"; a superkey id binds other columns and is admitted.
 * **User docs.** The manual changes are drafted below.
 
 ## User documentation (first-client draft)
@@ -190,6 +200,8 @@ No DML fixture has a superkey node today. `FilmActorNote` in the multitenant sch
 * a superkey DELETE payload's `returning()` has the extras as its tail;
 * a non-superkey payload's tail and every Insert and Update tail are empty;
 * a plain-field primary-key input under a superkey `missingAsDeleted` payload is `MissingAsDeletedEchoUnencodable`.
+
+`TenantBindingClassificationTest`, beside `deleteKeyedByCompositeNodeIdDivinesTheDecodedSlot`, pins the routing read. It uses `Inventory @node(keyColumns: ["inventory_id", "film_id"])` on the tenant-scoped `inventory`. A DELETE keyed by that id, and an UPDATE keyed by it beside a `storeId: Int @field(name: "store_id")` writer, are each `ArgumentBound` on the `id` slot, projected as `DecodedKeySlot` 1, with no rejections. The DELETE is the regression guard: it binds today, through the WHERE.
 
 **Execution tier** (`graphitron-sakila-example`, `DmlBulkMutationsExecutionTest` or a sibling class, schema near the `missingAsDeleted` block of `schema.graphqls`). Two new node types over tables no other node type claims, so implicit encoder resolution stays unambiguous:
 
