@@ -6,7 +6,6 @@ import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.jooq.DSLContext;
 import org.jooq.Record;
-import org.jooq.Record2;
 import org.jooq.Record3;
 import org.jooq.Result;
 import org.junit.jupiter.api.Test;
@@ -19,27 +18,20 @@ import java.util.function.Consumer;
 
 import static no.sikt.graphitron.common.configuration.TestConfiguration.testContext;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_TARGET_COLUMN;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_TARGET;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_RETURN_BINDING;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * The anchor for {@code intent_routine_return_binding} and the reduction over it,
- * {@code graphitron_resolved_type_binding}: which catalog table stands for a type when the author never
- * wrote {@code @table} on it, and what happens where both populations answer.
+ * The anchor for {@code intent_routine_return_binding}: where a {@code @routine} chain lands, keyed
+ * by the type it returns. No binding reads it, a {@code @routine} binding no table; the type a path
+ * ending on one returns has the function's result as its rows instead.
  *
  * <p>Every case captures real SDL against the test catalog, on {@code PathTerminusTest}'s reason:
  * the binding is a resolution against a real catalog reached through a chain walk, and a hand-seeded
  * row would describe a landing the catalog cannot make. The fixtures use {@code films_for_actor},
  * whose result exposes {@code film_id} and {@code title}, so its rows name-match {@code film} and
  * carry a column a child field can resolve.
- *
- * <p>The last two cases are the point of the reduction rather than of either arm: a type bound only
- * by its routine return has to answer for its own children's columns and be a departure a path can
- * leave from, which is what the readers repointed at the reduction now do.
  */
 @PipelineTier
 class RoutineReturnBindingTest {
@@ -215,75 +207,6 @@ class RoutineReturnBindingTest {
         });
     }
 
-    /**
-     * The two arms disagreeing is the ambiguity a reader must not have decided for it: the author's
-     * {@code @table} names one table and the chain lands on another, and both rows survive.
-     */
-    @Test
-    void theTwoArmsDisagreeingAreTwoRows() {
-        withCaptured(routineReturning("Row @table(name: \"film\")", ""), dsl -> {
-            var resolved = resolvedFor(dsl, "Row");
-            assertThat(resolved.map(r -> lower(r.get(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME))))
-                .containsExactlyInAnyOrder("film", "films_for_actor");
-            assertThat(resolved.map(r -> r.get(GRAPHITRON_RESOLVED_TYPE_BINDING.CANDIDATES)))
-                .containsOnly(2);
-        });
-    }
-
-    // ===== What the reduction is for =====
-
-    /**
-     * The child column read: a scalar field of a type bound only by its routine return resolves in
-     * that binding, which before the reduction needed the author to restate the routine as a
-     * {@code @table} on the type.
-     */
-    @Test
-    void aChildOfARoutineReturnTypeResolvesItsColumnsThere() {
-        withCaptured(routineReturning("Row", ""), dsl -> {
-            var columns = targetColumn(dsl, "Row", "title");
-            assertThat(columns).hasSize(1);
-            assertThat(lower(columns.getFirst().get(GRAPHITRON_FIELD_TARGET_COLUMN.TO_TABLE)))
-                .isEqualTo("films_for_actor");
-            assertThat(columns.getFirst().get(GRAPHITRON_FIELD_TARGET_COLUMN.COLUMN_NAME)).isEqualTo("title");
-        });
-    }
-
-    /**
-     * The departure: a {@code @reference} on a child of a routine-return type walks from that
-     * binding, so the path leaves the function result by the name-matched arm. Seeding from the
-     * {@code @table} population alone would leave this field reaching nothing for precisely the
-     * schemas that stop writing the redundant directive.
-     */
-    @Test
-    void aPathDepartsARoutineReturnTypeWithoutTheDirective() {
-        withCaptured("""
-            type Film @table(name: "film") { title: String }
-            type Row {
-              title: String
-              film: Film @reference(path: [{table: "film"}])
-            }
-            type Query {
-              rows(actorId: Int!, minLength: Int!): [Row!]!
-                @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actorId, pMinLength: minLength")
-            }
-            """, dsl -> {
-            var targets = dsl.select(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE,
-                GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)
-                .from(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET)
-                .where(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.GRAPH_NAME.eq(CapturedStore.GRAPH))
-                .fetch();
-            assertThat(targets).hasSize(1);
-            assertThat(targets.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.VIA))
-                .isEqualTo("NAME_MATCH");
-            assertThat(lower(targets.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.FROM_TABLE)))
-                .isEqualTo("films_for_actor");
-            assertThat(lower(targets.getFirst().get(GRAPHITRON_FIELD_REFERENCE_STEP_TARGET.TO_TABLE)))
-                .isEqualTo("film");
-        });
-    }
-
     // ===== Helpers =====
 
     /**
@@ -312,31 +235,6 @@ class RoutineReturnBindingTest {
             .from(INTENT_ROUTINE_RETURN_BINDING)
             .where(INTENT_ROUTINE_RETURN_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
             .orderBy(INTENT_ROUTINE_RETURN_BINDING.TYPE_NAME, INTENT_ROUTINE_RETURN_BINDING.TABLE_NAME)
-            .fetch();
-    }
-
-    /**
-     * The reduction's rows for one type. Scoped, because the fixtures carry {@code @table} types the
-     * cases are not about and the reduction holds every binding in the graph.
-     */
-    private static Result<Record2<String, Integer>> resolvedFor(DSLContext dsl, String typeName) {
-        return dsl.select(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME,
-            GRAPHITRON_RESOLVED_TYPE_BINDING.CANDIDATES)
-            .from(GRAPHITRON_RESOLVED_TYPE_BINDING)
-            .where(GRAPHITRON_RESOLVED_TYPE_BINDING.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(GRAPHITRON_RESOLVED_TYPE_BINDING.TYPE_NAME.eq(typeName))
-            .orderBy(GRAPHITRON_RESOLVED_TYPE_BINDING.TABLE_NAME)
-            .fetch();
-    }
-
-    private static Result<Record2<String, String>>
-            targetColumn(DSLContext dsl, String typeName, String fieldName) {
-        return dsl.select(GRAPHITRON_FIELD_TARGET_COLUMN.TO_TABLE,
-            GRAPHITRON_FIELD_TARGET_COLUMN.COLUMN_NAME)
-            .from(GRAPHITRON_FIELD_TARGET_COLUMN)
-            .where(GRAPHITRON_FIELD_TARGET_COLUMN.GRAPH_NAME.eq(CapturedStore.GRAPH))
-            .and(GRAPHITRON_FIELD_TARGET_COLUMN.TYPE_NAME.eq(typeName))
-            .and(GRAPHITRON_FIELD_TARGET_COLUMN.FIELD_NAME.eq(fieldName))
             .fetch();
     }
 

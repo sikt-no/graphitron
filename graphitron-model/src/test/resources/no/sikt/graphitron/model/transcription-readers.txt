@@ -94,8 +94,8 @@ graphitron_field_minted graphql_field
 # and the element it takes next through the declaration graphql_field anchored, by its source
 # position, so a field declared twice is walked once. Which declaration was anchored is a
 # declaration site, which only the transcription states, and a field the macro minted wrote no path.
-# graphitron_result_rule reads where a field's path ends the same way, to hand the row of the
-# function a path ending on a @routine names.
+# graphitron_routine_result_rule reads where a field's path ends the same way, to name the function whose
+# result the rows of the type it returns are.
 graphitron_field_path_rule graphql_field
 graphitron_field_path_start_rule graphql_field
-graphitron_result_rule graphql_field
+graphitron_routine_result_rule graphql_field

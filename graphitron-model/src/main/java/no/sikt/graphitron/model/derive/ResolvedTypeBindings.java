@@ -4,29 +4,23 @@ import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_RESOLVED_TYPE_BINDING;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
-import static no.sikt.graphitron.model.Tables.INTENT_ROUTINE_RETURN_BINDING;
 import static org.jooq.impl.DSL.count;
-import static org.jooq.impl.DSL.field;
-import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.SQLDataType.INTEGER;
 
 /**
  * The capture-cadence writer of {@code graphitron_resolved_type_binding}: which catalog table
- * stands for a graph's type, from either population that can answer.
+ * stands for a graph's type.
  *
- * <p>Two arms and one relation, because what a reader of a binding asks is which table stands for
- * the type and never which rule found it: the author's {@code @table} binding, and the binding a
- * {@code @routine} chain's return derives from where the chain lands. The two populations stay
- * separate relations of their own, each deriving by its own rule from its own facts, and this is
- * where they meet.
+ * <p>The author's {@code @table} is the one source. A {@code @routine} binds nothing: a field whose
+ * path ends on one hands its type rows of the function's result, which is {@code graphitron_result}'s
+ * to say, and a {@code @reference} whose return type has no {@code @table} has nowhere to arrive,
+ * which is a defect at the {@code @reference}.
  *
- * <p>The union dedupes, which is what makes the type and the table triple a key: a type both arms
- * answer for with the same table is one row, and the count beside it is the arity over the
- * partition rather than a fact about either arm.
+ * <p>The count beside each row is the arity over the type, a type two {@code @table} spellings
+ * resolve differently for being ambiguous rather than decided here.
  *
- * <p>Runs as a stage of the graphitron gatherer after the hops the routine arm's chain walks and
- * before the walk that seeds from these rows.
+ * <p>Runs as a stage of the graphitron gatherer before the walk that seeds from these rows.
  */
 public final class ResolvedTypeBindings {
 
@@ -36,20 +30,15 @@ public final class ResolvedTypeBindings {
     public static void derive(DSLContext dsl, String graphName) {
         var t = GRAPHITRON_RESOLVED_TYPE_BINDING;
         var authored = INTENT_BOUND_TABLE;
-        var returned = INTENT_ROUTINE_RETURN_BINDING;
 
         dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graphName)).execute();
 
+        // Distinct first and counted after, so a table spelled twice for one type is one row.
         var bound = dsl
-            .select(authored.GRAPH_NAME, authored.TYPE_NAME, authored.TABLE_SOURCE_NAME,
+            .selectDistinct(authored.GRAPH_NAME, authored.TYPE_NAME, authored.TABLE_SOURCE_NAME,
                 authored.TABLE_SCHEMA, authored.TABLE_NAME)
             .from(authored)
             .where(authored.GRAPH_NAME.eq(graphName))
-            .union(dsl
-                .select(returned.GRAPH_NAME, returned.TYPE_NAME, returned.TABLE_SOURCE_NAME,
-                    returned.TABLE_SCHEMA, returned.TABLE_NAME)
-                .from(returned)
-                .where(returned.GRAPH_NAME.eq(graphName)))
             .asTable("bound");
 
         dsl.insertInto(t, t.GRAPH_NAME, t.TYPE_NAME, t.TABLE_SOURCE_NAME, t.TABLE_SCHEMA,

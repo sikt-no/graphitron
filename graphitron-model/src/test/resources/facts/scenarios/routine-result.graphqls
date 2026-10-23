@@ -9,13 +9,25 @@ type Tilgang {
 
 type ActorFilm {
   filmId: Int @field(name: "FILM_ID")
+  # Reads the title column of films_for_actor's result, ActorFilm's rows being that result.
   title: String
+  # Departs films_for_actor's result, matching film's key by column name.
+  film: Film @reference(path: [{table: "film"}])
+}
+
+type Film @table(name: "film") {
+  description: String
 }
 
 type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
   # A child @routine ends the path, its actor_id parameter bound from the parent's row.
   films(minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+    @defaultOrder(fields: [{name: "film_id"}])
+  # A second field returning ActorFilm from the same function: still one place ActorFilm is read.
+  longFilms(minLength: Int!): [ActorFilm!]
     @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
              columnMapping: "pActorId: actor_id")
     @defaultOrder(fields: [{name: "film_id"}])
@@ -40,4 +52,35 @@ extend schema @assertContains(relation: "graphitron_result_table", rows: """
   type_name, shape, table_name
   Tilgang,   ROW,   tilganger_for_feidebruker_med_fs_fiktivt_fnr
   ActorFilm, ROW,   films_for_actor
+  """)
+
+# A type whose rows are a function's result is bound to no table.
+extend schema @assertAbsent(relation: "graphitron_resolved_type_binding", rows: """
+  type_name
+  Tilgang
+  ActorFilm
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_target_column", rows: """
+  type_name, field_name, from_table,                                    column_name
+  ActorFilm, title,      films_for_actor,                               title
+  Tilgang,   rollekode,  tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
+  """)
+
+extend schema @assertContains(relation: "intent_column_match_claim", rows: """
+  type_name, field_name, table_name,                                    column_name
+  ActorFilm, title,      films_for_actor,                               title
+  Tilgang,   rollekode,  tilganger_for_feidebruker_med_fs_fiktivt_fnr, rollekode
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_path", rows: """
+  type_name, field_name, start_table,     position, from_table,      to_table
+  ActorFilm, film,       films_for_actor, 0,        films_for_actor, film
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_source_table", where: "type_name = 'ActorFilm'", rows: """
+  field_name, from_table,      basis
+  filmId,     films_for_actor, SOURCE_TYPE
+  title,      films_for_actor, SOURCE_TYPE
+  film,       films_for_actor, SOURCE_TYPE
   """)

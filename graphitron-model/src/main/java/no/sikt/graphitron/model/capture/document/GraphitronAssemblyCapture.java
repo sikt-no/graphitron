@@ -11,6 +11,7 @@ import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.PathElements;
+import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
 import no.sikt.graphitron.model.derive.TypeBackings;
@@ -72,6 +73,8 @@ public final class GraphitronAssemblyCapture {
         // What each path element names, its spelling resolved against the catalog and classpath
         // once, keyed by the element.
         PathElements.derive(dsl, graph, readAt);
+        // Where a field's path ends on a @routine, off the targets and the elements just resolved.
+        RoutineResults.derive(dsl, graph, readAt);
         FieldReferenceStepHops.deriveKeyed(dsl, graph);
         FieldReferenceStepHops.deriveKeyless(dsl, graph);
         // Then the bindings, which the routine arm reaches through the hops just written, and then

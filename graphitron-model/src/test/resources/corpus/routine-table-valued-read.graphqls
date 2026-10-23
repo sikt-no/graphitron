@@ -29,10 +29,10 @@ extend schema @expectEquals(relation: "intent_bound_table", rows: """
   CorpusAnchor, category
   """)
 
+# Tilgang's rows are the routine's result, which binds no table.
 extend schema @expectEquals(relation: "graphitron_resolved_type_binding", rows: """
   type_name,    table_name
   CorpusAnchor, category
-  Tilgang,      tilganger_for_feidebruker_med_fs_fiktivt_fnr
   """)
 
 extend schema @expectEquals(relation: "plan_launcher_command", rows: """

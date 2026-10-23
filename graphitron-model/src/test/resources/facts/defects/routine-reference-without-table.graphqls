@@ -1,0 +1,39 @@
+# A @reference takes its target from the return type's @table, a @routine before it included, so a
+# path ending on a @reference whose return type has no @table has nowhere to arrive. A path ending on
+# the @routine does: its type's rows are the function's result, which needs no table.
+
+type FilmRow {
+  title: String
+}
+
+type ActorFilm {
+  filmId: Int @field(name: "FILM_ID")
+}
+
+type Film @table(name: "film") {
+  title: String
+  # The path ends on the routine, so ActorFilm's rows are films_for_actor's result.
+  castFilms(minLength: Int!): [ActorFilm!]
+    @reference(path: [{table: "film_actor"}])
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend type Query {
+  films: [Film]
+  # The path ends on a @reference into film, and FilmRow names no table to arrive at.
+  recentFilmRows(actorId: Int!, minLength: Int!): [FilmRow!]!
+    @routine(name: "films_for_actor", argMapping: "pActorId: actorId, pMinLength: minLength")
+    @reference(path: [{table: "film"}])
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                 coordinate
+  CHAIN_WITHOUT_TARGET, Query.recentFilmRows
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
+  code,                 coordinate
+  CHAIN_WITHOUT_TARGET, Film.castFilms
+  """)

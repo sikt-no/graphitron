@@ -5949,7 +5949,7 @@ COMMENT ON COLUMN graphitron_field_source_table.field_name IS 'the field; with t
 COMMENT ON COLUMN graphitron_field_source_table.from_source_name IS 'the departing table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN graphitron_field_source_table.from_schema IS 'the departing table''s SQL schema';
 COMMENT ON COLUMN graphitron_field_source_table.from_table IS 'the departing table''s SQL name; in the key, so a type reached from parents on two tables departs from both';
-COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of four. SOURCE_TYPE: the parent type binds the table. INHERITED: the parent type binds none, so the field departs from wherever each field returning it does, through any number of such types, a field that wrote a path or produces its own object with @service or @externalField handing down no row. RECORD_CLASS: the parent type binds none and is backed by the table''s own record class. SOURCE_ROW: the field carries @sourceRow, whose lifter returns the source-side columns of its path''s first key, so it departs from the table declaring that key. A root field has no row, a field whose path begins with a @routine departing from its result';
+COMMENT ON COLUMN graphitron_field_source_table.basis IS 'which rule named the table, a closed vocabulary of four. SOURCE_TYPE: the parent type''s own rows are read on the table, the one bound to it or, where a field''s path ending on a @routine returns it, that function''s result. INHERITED: the parent type has no rows of its own, so the field departs from wherever each field returning it does, through any number of such types, a field that wrote a path or produces its own object with @service or @externalField handing down no row. RECORD_CLASS: the parent type has no rows of its own and is backed by the table''s own record class. SOURCE_ROW: the field carries @sourceRow, whose lifter returns the source-side columns of its path''s first key, so it departs from the table declaring that key. A root field has no row, a field whose path begins with a @routine departing from its result';
 COMMENT ON COLUMN graphitron_field_source_table.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphitron_field_target_column (
@@ -6985,6 +6985,77 @@ COMMENT ON VIEW graphitron_path_element_routine_rule IS 'One row the path elemen
 -- COMMENT ON COLUMN graphitron_path_element_routine_rule.routine_source_name IS 'the candidate routine''s catalog partition';
 -- COMMENT ON COLUMN graphitron_path_element_routine_rule.table_schema IS 'the candidate routine''s SQL schema';
 -- COMMENT ON COLUMN graphitron_path_element_routine_rule.routine_name IS 'the candidate routine''s SQL name';
+
+CREATE TABLE graphitron_routine_result (
+  graph_name        VARCHAR NOT NULL,
+  type_name         VARCHAR NOT NULL,
+  field_name        VARCHAR NOT NULL,
+  target_type_name  VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE
+);
+-- Readers ask by the type a field returns: is it one whose rows are a function's result.
+CREATE INDEX graphitron_routine_result_target_ix ON graphitron_routine_result (graph_name, target_type_name);
+COMMENT ON TABLE graphitron_routine_result IS 'Where a field''s path ends on a @routine: one row per field whose last written element is a @routine naming one routine, with the function whose result the rows of the type it returns are. For example Actor.films over @routine(name: "films_for_actor") returns ActorFilm, whose rows are films_for_actor''s result; a mutation''s @routine is a write and draws no row.';
+COMMENT ON COLUMN graphitron_routine_result.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_routine_result.type_name IS 'the type declaring the field';
+COMMENT ON COLUMN graphitron_routine_result.field_name IS 'the field whose path ends on the @routine';
+COMMENT ON COLUMN graphitron_routine_result.target_type_name IS 'the type the field returns, a connection''s element where the field returns one: the type whose rows are the function''s result';
+COMMENT ON COLUMN graphitron_routine_result.table_source_name IS 'the function''s catalog partition';
+COMMENT ON COLUMN graphitron_routine_result.table_schema IS 'the function''s SQL schema';
+COMMENT ON COLUMN graphitron_routine_result.table_name IS 'the function''s name: with the two columns before it, the key of its FUNCTION row in sql_table, which no type is bound to';
+COMMENT ON COLUMN graphitron_routine_result.touched_at IS 'when the reading that last found this row ran: the mark the sweep reads, so a field whose path no longer ends on a @routine goes';
+
+CREATE VIEW graphitron_routine_result_rule
+  (graph_name, type_name, field_name, target_type_name,
+   table_source_name, table_schema, table_name) AS
+-- The function a field's path ends on, where its last written element is a @routine naming one
+-- routine: the rows of the type it returns are that function's result. A write's routine is not one,
+-- its payload holding an object as any write's does. The declaration read is the one graphql_field
+-- anchored, so a field declared twice is read once.
+SELECT gf.graph_name, gf.type_name, gf.field_name, ft.target_type_name,
+       fn.source_name, fn.table_schema, fn.table_name
+  FROM graphql_field gf
+  JOIN graphitron_field_target ft
+    ON ft.graph_name = gf.graph_name AND ft.type_name = gf.type_name AND ft.field_name = gf.field_name
+  JOIN graphitron_ast_field_path_entry e
+    ON e.graph_name = gf.graph_name AND e.source_name = gf.source_name
+   AND e.field_line = gf.source_line AND e.field_column = gf.source_column
+  JOIN graphitron_path_element_routine er
+    ON er.graph_name = e.graph_name AND er.source_name = e.source_name
+   AND er.source_line = e.element_line AND er.source_column = e.element_column
+  JOIN sql_table fn
+    ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
+   AND fn.table_name = er.routine_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry later
+                    WHERE later.graph_name = e.graph_name AND later.source_name = e.source_name
+                      AND later.field_line = e.field_line AND later.field_column = e.field_column
+                      AND later.position > e.position)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_routine other
+                    WHERE other.graph_name = er.graph_name AND other.source_name = er.source_name
+                      AND other.source_line = er.source_line
+                      AND other.source_column = er.source_column
+                      AND NOT (other.routine_source_name = er.routine_source_name
+                               AND other.table_schema = er.table_schema
+                               AND other.routine_name = er.routine_name))
+   AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                    WHERE ro.graph_name = gf.graph_name AND ro.type_name = gf.type_name
+                      AND ro.operation = 'MUTATION');
+COMMENT ON VIEW graphitron_routine_result_rule IS 'One row the routine result rule computes, in the shape graphitron_routine_result stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_routine_result, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.graph_name IS 'the owning graph''s partition';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.type_name IS 'the type declaring the field';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.field_name IS 'the field whose path ends on the @routine';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.target_type_name IS 'the type the field returns';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.table_source_name IS 'the function''s catalog partition';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.table_schema IS 'the function''s SQL schema';
+-- COMMENT ON COLUMN graphitron_routine_result_rule.table_name IS 'the function''s name';
 
 CREATE VIEW intent_bound_table
   (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
@@ -9234,6 +9305,21 @@ SELECT graph_name, type_name, field_name, 'TABLE_COLUMN', matched_name, matched_
                          AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
                        WHERE fe.graph_name = g.graph_name AND fe.coordinate = g.type_name || '.' || g.field_name)
                 UNION ALL
+                -- A type whose rows are a function's result, a field's path ending on its @routine,
+                -- reads its columns there: that result binds no table, so the arm above has none.
+                SELECT rr.graph_name, g.type_name, g.field_name, rr.table_source_name,
+                       rr.table_schema, rr.table_name
+                  FROM graphitron_field g
+                  JOIN graphitron_routine_result rr
+                    ON rr.graph_name = g.graph_name AND rr.target_type_name = g.type_name
+                 WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                                    WHERE b.graph_name = g.graph_name AND b.type_name = g.type_name)
+                   AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
+                        JOIN graphitron_ast_field_path_entry pe
+                          ON pe.graph_name = fe.graph_name AND pe.source_name = fe.source_name
+                         AND pe.field_line = fe.source_line AND pe.field_column = fe.source_column
+                       WHERE fe.graph_name = g.graph_name AND fe.coordinate = g.type_name || '.' || g.field_name)
+                UNION ALL
                 SELECT l.graph_name, l.type_name, l.field_name, l.table_source_name, l.table_schema,
                        l.table_name
                   FROM graphitron_field_path_landing l
@@ -10437,15 +10523,12 @@ SELECT rr.graph_name, rr.source_name, rr.source_line, rr.source_column,
 UNION ALL
 -- A chain written at a field whose rows come from nowhere. Not a hole in a chain but the absence
 -- of one to have a hole in: nothing says where the rows arrive, so there is no target to walk
--- toward and no element can be read against one. Reported at the first element, the whole chain
--- being the one thing wrong.
+-- toward and no element can be read against one. Reported at the first @reference element, the
+-- whole chain being the one thing wrong.
 --
--- @reference-only chains, which is what makes this a fact about the schema rather than about the
--- catalog. Such a chain takes its target from the return type's binding and from nowhere else, so
--- an unbound return is an error no catalog could repair. A chain carrying a @routine takes its
--- target from the function result instead, and the same silence there means the routine name
--- resolved to nothing, which is a resolution failing rather than a schema saying nothing. That
--- fault is real and is not this one; it is owed its own arm at the routine's own position.
+-- A @reference takes its target from the return type's @table and from nowhere else, a @routine
+-- before it included, so an unbound return is an error no catalog could repair. A chain ending on
+-- a @routine is not one: what it returns is the function's result, a row of no table.
 --
 -- Judged only where the target could bind a table: a scalar or an enum read through a path takes
 -- its column from wherever the path arrives, and a @pivot reads its projection from the path's
@@ -10466,7 +10549,32 @@ SELECT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
    AND ft.field_name = gf.field_name
   JOIN graphitron_type t
     ON t.graph_name = ft.graph_name AND t.type_name = ft.target_type_name
- WHERE cl.position = 0
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
+                    WHERE r.graph_name = cl.graph_name AND r.source_name = cl.source_name
+                      AND r.source_line = cl.element_line AND r.source_column = cl.element_column)
+   -- the first @reference element: every element before it is a @routine
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry er
+                    WHERE er.graph_name = cl.graph_name AND er.source_name = cl.source_name
+                      AND er.field_line = cl.field_line AND er.field_column = cl.field_column
+                      AND er.position < cl.position
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_ast_routine_entry r
+                                       WHERE r.graph_name = er.graph_name
+                                         AND r.source_name = er.source_name
+                                         AND r.source_line = er.element_line
+                                         AND r.source_column = er.element_column))
+   -- a path ending on a @routine lands on its function's row, which needs no table
+   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry lp
+                     JOIN graphitron_ast_routine_entry r
+                       ON r.graph_name = lp.graph_name AND r.source_name = lp.source_name
+                      AND r.source_line = lp.element_line AND r.source_column = lp.element_column
+                    WHERE lp.graph_name = cl.graph_name AND lp.source_name = cl.source_name
+                      AND lp.field_line = cl.field_line AND lp.field_column = cl.field_column
+                      AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry nx
+                                       WHERE nx.graph_name = lp.graph_name
+                                         AND nx.source_name = lp.source_name
+                                         AND nx.field_line = lp.field_line
+                                         AND nx.field_column = lp.field_column
+                                         AND nx.position > lp.position))
    AND t.kind IN ('OBJECT', 'INTERFACE', 'UNION')
    AND NOT EXISTS (SELECT 1 FROM graphitron_field_target_table tt
                     WHERE tt.graph_name = cl.graph_name AND tt.type_name = gf.type_name
@@ -10476,13 +10584,6 @@ SELECT cl.graph_name, cl.source_name, cl.element_line, cl.element_column,
                        ON ef.graph_name = da.graph_name AND ef.coordinate = da.coordinate
                     WHERE ef.graph_name = cl.graph_name AND ef.type_name = gf.type_name
                       AND ef.field_name = gf.field_name AND da.directive_name = 'pivot')
-   -- a @routine anywhere in the path takes its target from the function result instead
-   AND NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry rp
-                     JOIN graphitron_ast_routine_entry r
-                       ON r.graph_name = rp.graph_name AND r.source_name = rp.source_name
-                      AND r.source_line = rp.element_line AND r.source_column = rp.element_column
-                    WHERE rp.graph_name = cl.graph_name AND rp.source_name = cl.source_name
-                      AND rp.field_line = cl.field_line AND rp.field_column = cl.field_column)
 UNION ALL
 -- A code reference that resolves to no one method, at the position it was written: exactly the
 -- references naming a method that graphitron_code_reference lacks, told apart by what the graph's
@@ -11229,29 +11330,6 @@ parent (graph_name, type_name, shape, table_source_name, table_schema, table_nam
     JOIN store_graph g ON g.graph_name = x.graph_name AND g.last_captured = x.touched_at
    WHERE x.shape = 'OBJECT'
 ),
--- The function a field's path ends on, where its last written element is a @routine: the row it
--- hands is one of the function's result, which binds no table. A write's routine is not one, its
--- payload holding an object as any write's does.
-routine_end (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
-  SELECT gf.graph_name, gf.type_name, gf.field_name, fn.source_name, fn.table_schema, fn.table_name
-    FROM graphql_field gf
-    JOIN graphitron_ast_field_path_entry e
-      ON e.graph_name = gf.graph_name AND e.source_name = gf.source_name
-     AND e.field_line = gf.source_line AND e.field_column = gf.source_column
-    JOIN graphitron_path_element_routine er
-      ON er.graph_name = e.graph_name AND er.source_name = e.source_name
-     AND er.source_line = e.element_line AND er.source_column = e.element_column
-    JOIN sql_table fn
-      ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
-     AND fn.table_name = er.routine_name
-   WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry later
-                      WHERE later.graph_name = e.graph_name AND later.source_name = e.source_name
-                        AND later.field_line = e.field_line AND later.field_column = e.field_column
-                        AND later.position > e.position)
-     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
-                      WHERE ro.graph_name = gf.graph_name AND ro.type_name = gf.type_name
-                        AND ro.operation = 'MUTATION')
-),
 -- What a field hands the type it returns: a producer its result, a reader what its parent holds,
 -- and either the row of the function its path ends on.
 edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
@@ -11267,7 +11345,7 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
     JOIN graphitron_field_target ft
       ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-    LEFT JOIN routine_end re
+    LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
   UNION ALL
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
@@ -11285,7 +11363,7 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
     LEFT JOIN graphitron_producer p
       ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
-    LEFT JOIN routine_end re
+    LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
    WHERE p.field_name IS NULL
 ),
@@ -11411,7 +11489,7 @@ COMMENT ON VIEW graphitron_reader_rule IS 'One row the reader rule computes, in 
 
 CREATE VIEW graphitron_field_source_table_rule
   (graph_name, type_name, field_name, from_source_name, from_schema, from_table, basis) AS
--- An object type with no table of its own is read on the table the field reaching it departs from,
+-- An object type with no rows of its own is read on the table the field reaching it departs from,
 -- through any number of such types. Only where that field wrote no path: one that did arrives
 -- somewhere else, which is the forward walk's to state. And only where that field hands down its
 -- row: a @service or an @externalField produces an object of its own, whose fields are read off it. Walked at the type grain, carrying the
@@ -11420,12 +11498,25 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
   SELECT p.graph_name, p.target_type_name,
          b.table_source_name, b.table_schema, b.table_name, ',' || p.target_type_name || ','
     FROM graphitron_field_target p
-    JOIN graphitron_resolved_type_binding b
-      ON b.graph_name = p.graph_name AND b.type_name = p.type_name AND b.candidates = 1
+    -- The parent's own rows: the table bound to it, or, a @routine binding no table, the function
+    -- whose result a field's path ending on one returns it from.
+    JOIN (SELECT graph_name, type_name, table_source_name, table_schema, table_name
+            FROM graphitron_resolved_type_binding
+           WHERE candidates = 1
+          UNION ALL
+          SELECT rr.graph_name, rr.target_type_name, rr.table_source_name, rr.table_schema,
+                 rr.table_name
+            FROM graphitron_routine_result rr
+           WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding rb
+                              WHERE rb.graph_name = rr.graph_name
+                                AND rb.type_name = rr.target_type_name)) b
+      ON b.graph_name = p.graph_name AND b.type_name = p.type_name
     JOIN graphitron_type t
       ON t.graph_name = p.graph_name AND t.type_name = p.target_type_name AND t.kind = 'OBJECT'
    WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
                       WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_result nr
+                      WHERE nr.graph_name = p.graph_name AND nr.target_type_name = p.target_type_name)
      -- The field wrote no path: no place in the path capture composed for its definition, read as
      -- the column match reads it.
      AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
@@ -11449,6 +11540,8 @@ WITH RECURSIVE inherited (graph_name, type_name, from_source_name, from_schema, 
    WHERE POSITION(',' || p.target_type_name || ',' IN i.visited) = 0
      AND NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
                       WHERE nb.graph_name = p.graph_name AND nb.type_name = p.target_type_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_result nr
+                      WHERE nr.graph_name = p.graph_name AND nr.target_type_name = p.target_type_name)
      -- The field wrote no path: no place in the path capture composed for its definition, read as
      -- the column match reads it.
      AND NOT EXISTS (SELECT 1 FROM graphql_ast_element_entry fe
@@ -11468,6 +11561,16 @@ SELECT f.graph_name, f.type_name, f.field_name,
   JOIN graphitron_resolved_type_binding b
     ON b.graph_name = f.graph_name AND b.type_name = f.type_name AND b.candidates = 1
 UNION ALL
+-- A type whose rows are a function's result is read on that function, once however many fields
+-- return it from there.
+SELECT DISTINCT f.graph_name, f.type_name, f.field_name,
+       rr.table_source_name, rr.table_schema, rr.table_name, 'SOURCE_TYPE'
+  FROM graphitron_field f
+  JOIN graphitron_routine_result rr
+    ON rr.graph_name = f.graph_name AND rr.target_type_name = f.type_name
+ WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding b
+                    WHERE b.graph_name = f.graph_name AND b.type_name = f.type_name)
+UNION ALL
 SELECT f.graph_name, f.type_name, f.field_name,
        i.from_source_name, i.from_schema, i.from_table, 'INHERITED'
   FROM (SELECT DISTINCT graph_name, type_name, from_source_name, from_schema, from_table
@@ -11475,7 +11578,7 @@ SELECT f.graph_name, f.type_name, f.field_name,
   JOIN graphitron_field f
     ON f.graph_name = i.graph_name AND f.type_name = i.type_name
 UNION ALL
--- A type with no table of its own backed by a table's own record class is read on that table.
+-- A type with no rows of its own backed by a table's own record class is read on that table.
 SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema, st.table_name,
        'RECORD_CLASS'
   FROM graphitron_field f
@@ -11486,6 +11589,8 @@ SELECT f.graph_name, f.type_name, f.field_name, st.source_name, st.table_schema,
     ON st.source_name = gs.source_name AND st.record_class_fqn = tb.class_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_resolved_type_binding nb
                     WHERE nb.graph_name = f.graph_name AND nb.type_name = f.type_name)
+   AND NOT EXISTS (SELECT 1 FROM graphitron_routine_result nr
+                    WHERE nr.graph_name = f.graph_name AND nr.target_type_name = f.type_name)
 UNION ALL
 -- A field carrying @sourceRow departs from the table declaring its path's first key: the lifter
 -- returns that key's source-side columns, which is the generator's contract for it. The first
@@ -15617,7 +15722,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
    'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.'),
   ('CHAIN_WITHOUT_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_CHAIN_WITHOUT_TARGET',
-   'A field whose chain is @reference alone returns a type bound to no table, so the path has nowhere to arrive and no catalog could make it resolve.'),
+   'A field whose path ends on a @reference returns a type with no @table, so the path has nowhere to arrive and no catalog could make it resolve; a @routine before the @reference does not change that.'),
   ('CODE_REFERENCE_CLASS_NOT_READ', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_CLASS_NOT_READ',
    'A code reference names a class the classpath reading did not read, so no method of it can be called: the name is misspelt, or the class sits in an entry the build does not hand the generator.'),
   ('CODE_REFERENCE_METHOD_NOT_FOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_CODE_REFERENCE_METHOD_NOT_FOUND',
@@ -16444,6 +16549,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_path_element_table_rule', 'path-element-table-candidate', 'graphitron',
    'One row the path element table rule computes, in the shape graphitron_path_element_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_path_element_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_routine_result', 'graph-field', 'graphitron',
+   'Where a field''s path ends on a @routine: one row per field whose last written element is a @routine naming one routine, with the function whose result the rows of the type it returns are.',
+   'For example Actor.films over @routine(name: "films_for_actor") returns ActorFilm, whose rows are films_for_actor''s result; a mutation''s @routine is a write and draws no row.',
+   'A @routine binds no table, so what such a type''s rows are is a fact about the field that calls the routine, stated once here from the written path for every reader that asks where the type is read: the result rule, the source table, the column claims. It needs no walk, the function being where any path ending on it lands. Stored, because those readers ask it as a probe per type, which a view answers by evaluating its whole rule again.'),
+  ('graphitron_routine_result_rule', 'graph-field', 'graphitron',
+   'One row the routine result rule computes, in the shape graphitron_routine_result stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_routine_result, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_path_element_routine', 'path-element-routine-candidate', 'graphitron',
    'A routine a path element names: one row per @routine element and candidate routine with a generated call.',
