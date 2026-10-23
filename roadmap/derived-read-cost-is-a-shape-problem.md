@@ -166,6 +166,10 @@ shown an error on a schema that generates, and validate can then fail on them.
 * **The sakila example draws no error-severity entry defect** `blocked`, on "A condition method over untyped tables resolves" and "A condition reference names an overload set". A build check
   over the reactor's own example holds it.
 * **Entry defects fail validate** `blocked`, on "The sakila example draws no error-severity entry defect". Every error code in `graphitron_entry_defect` stops a build, not only the editor.
+* **The column defects read the match once** `open`. `COLUMN_UNRESOLVED` and `COLUMN_AMBIGUOUS`
+  are one read of `graphitron_field_target_column_match`, not one each through
+  `graphitron_field_path_landing`. On sis, 2026-10-23, the two cost 1.2 s against 0.57 s before
+  the match read the landing, and `graphitron_entry_defect` went from 3.2 to 4.0 s.
 
 ### The path replaces the walk it was built to retire `open`
 
@@ -351,6 +355,10 @@ classified records have no reader left and can go with the walk.
 * **Go-to-definition reads the resolved binding** `open`. `DeclarationFacts`, `BoundTables` and
   `TypeMemberScope` read `graphitron_resolved_type_binding` or `graphitron_result_table` instead of
   `intent_bound_table`, and `EditorReadsNoViewTest` takes another control.
+* **The directive-argument hover reads a stored relation** `open`. `FieldColumnTable`, behind the
+  completion, hover and member diagnostic at a `@field(name:)` or `@defaultOrder` site, reads a
+  relation a capture writes, and `intent_field_column_table` dissolves. Evaluated on demand it
+  takes about 60 s per graph on sis, 2026-10-23, on trunk and after the column scope went alike.
 
 ### Validate is a query over the store, and runs against the model alone `open`
 
