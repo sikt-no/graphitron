@@ -187,11 +187,11 @@ resolutions and links built beside it are gone.
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
   added, and writes their keys, columns and stops as it goes, reads each step once.
-* **A child `@routine` is a lateral step of the path** `open`. Only a root's first `@routine` is
+* **A child `@routine` is a lateral step of the path** `open`, E's. Only a root's first `@routine` is
   a producer; any other is a step called with the columns of the table the walk stands on, the
   store says which, so the editor and the MCP server answer each differently, and `columnMapping`
   dissolves into the step's column pairs, `argMapping` naming an argument or a column and a name
-  that is both being a defect. It may move to an item of its own, only the sakila fixtures using it.
+  that is both being a defect.
 * **A split child `@routine` is a path routine** `blocked`, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
   `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
   the walk's first step from the parent's keys.
@@ -203,7 +203,7 @@ resolutions and links built beside it are gone.
   * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
 * **The field grain reads only the walk** `done`.
 * **A key element states which name it matched by** `done`.
-* **The step targets' readers read the walk** `open`. The column scope rule, the node-id instruction rule,
+* **The step targets' readers read the walk** `blocked`, on "A child `@routine` is a lateral step of the path". The column scope rule, the node-id instruction rule,
   `SchemaQueries`, `ReferencePathFanout` and the routine writes read `graphitron_field_path`, its
   children and its stops, and the `intent_field_path_` views, `graphitron_field_path_application`
   and `FieldPathApplications` go.
