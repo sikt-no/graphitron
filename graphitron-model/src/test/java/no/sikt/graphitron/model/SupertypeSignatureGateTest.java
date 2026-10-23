@@ -325,15 +325,6 @@ class SupertypeSignatureGateTest {
         // where the entry carries that by being keyed at the position, so the two share no payload
         // and this tranche has one row for @node rather than two.
         Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_node_keycolumn_entry"),
-        // @routine's columnMapping pairs, which pair on both payload columns because a pair is its
-        // two names and nothing else. The keys differ the way this whole tranche's do: the entry is
-        // keyed at the position the application was written at plus the index the grammar gave the
-        // pair, the anchor at the coordinate the application resolves to plus its ordinal there.
-        // Both indexes are the same number, the anchor carrying the entry's across rather than
-        // ranking again, which is what makes this a derivation of the row beside it instead of a
-        // second reading of the string.
-        Set.of("graphitron_ast_routine_column_mapping_pair_entry",
-               "graphitron_routine_column_mapping_pair_entry"),
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and

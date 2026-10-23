@@ -15,7 +15,6 @@ import java.util.List;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_REFERENCE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -162,30 +161,6 @@ class QualifiedReferenceDecodeTest {
                         GRAPHITRON_MUTATION_ENTRY.TABLE_REF_NAME_PART)
                 .from(GRAPHITRON_MUTATION_ENTRY).fetchOne()))
                 .containsExactly("public", "film");
-        }
-    }
-
-    /**
-     * The excluded reference stays whole. A dotted {@code columnMapping} right side is an author
-     * error the store holds so a detection can report it, so splitting it would delete the case it
-     * exists for; this pins that the partition did not spread there.
-     */
-    @Test
-    @DisplayName("a dotted columnMapping right side is still stored whole")
-    void aDottedColumnMappingRightSideIsStoredWhole(@TempDir Path tmp) {
-        String dotted = """
-            type Query {
-              films: [Film!]! @routine(name: "films_for_actor",
-                                       columnMapping: "title: film.title")
-            }
-            type Film @table(name: "film") { title: String }
-            """;
-        try (var store = CapturedStore.of(tmp, dotted)) {
-            assertThat(store.dsl()
-                .select(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY.COLUMN_REF)
-                .from(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY)
-                .fetch(GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY.COLUMN_REF))
-                .containsExactly("film.title");
         }
     }
 

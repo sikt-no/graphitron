@@ -23,7 +23,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
  *       root {@code @routine} fetcher). A root chain's bindings are all {@link ParamSource.Arg}
  *       (pinned by {@code RoutineChain}'s compact constructor, which requires
  *       every start binding be {@code ParamSource.Arg} — {@code RoutineDirectiveResolver} rejects
- *       {@code columnMapping} at root), so a {@link ParamSource.SourceColumn} binding never reaches
+ *       a column binding at root, where no table stands), so a {@link ParamSource.SourceColumn} binding never reaches
  *       {@code emitCall} with this arm; the emitter throws classifier-unreachable if one does.</li>
  * </ul>
  */

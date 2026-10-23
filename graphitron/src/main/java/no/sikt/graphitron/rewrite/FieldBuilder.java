@@ -4316,7 +4316,7 @@ class FieldBuilder {
      * bindings, which is the only place the question can be answered: telling
      * {@code filter.actorId} from {@code filter.actorId.actor_id} needs the argument's input
      * types, and the binding carries the coordinate the resolver walked them to. A
-     * {@code columnMapping}-bound parameter reads a column of the previous chain node and claims
+     * column-bound parameter reads a column of the table the path stands on and claims
      * no input element, so it carries none and contributes none.
      */
     private static Set<NodeIdDecodeCoordinate> routineSpentInputs(RoutineRef routine) {
@@ -4559,7 +4559,7 @@ class FieldBuilder {
      * Classifies a child-positioned table chain containing exactly one routine node: the
      * ordered applications compose the chain over one running source starting at the implicit
      * head (the parent's table). The routine node may sit at the head (routine-then-hops), the
-     * terminus (hops-then-routine, where {@code columnMapping} binds against the previous hop's
+     * terminus (hops-then-routine, where a column-bound parameter reads the previous hop's
      * node rather than the implicit head), or strictly between hops (the sandwich); in every
      * position it joins as CROSS JOIN LATERAL, correlated through its call arguments. Lands
      * {@link ChildField.TableField} riding the inline correlated-multiset machinery, or
@@ -4626,9 +4626,9 @@ class FieldBuilder {
                     yield new UnclassifiedField(parentTypeName, name, location,
                         Rejection.directiveConflict(List.of(DIR_SPLIT_QUERY, DIR_ROUTINE),
                             "@splitQuery on an uncorrelated routine-backed field has nothing to "
-                            + "key the batch on (no columnMapping binds a parent column); every "
+                            + "key the batch on (no parameter binds a parent column); every "
                             + "parent would receive identical rows — drop @splitQuery or bind a "
-                            + "parent column via columnMapping"));
+                            + "parent column via argMapping"));
                 }
                 // Read surface: filters and ordering resolve against the chain's terminus, the
                 // same call the ordinary child table arm makes, with the input elements the
@@ -4688,7 +4688,7 @@ class FieldBuilder {
      * {@code @routine} application). {@code @reference} applications parse through
      * {@link BuildContext#parseChainSegment} with chain-wide {@code fieldName + "_" + N}
      * aliasing; the {@code @routine} application resolves with the running source as its
-     * previous node ({@code columnMapping} binds against it) and contributes the lateral
+     * standing table (a parameter may bind one of its columns) and contributes the lateral
      * routine hop. Exactly one {@code @routine} application is the caller's guarantee
      * (multi-routine chains land typed {@code Deferred} upstream).
      */

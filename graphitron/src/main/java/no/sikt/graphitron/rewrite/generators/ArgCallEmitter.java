@@ -117,7 +117,7 @@ public final class ArgCallEmitter {
             case ParamSource.SourceColumn ignored ->
                 throw new IllegalStateException(
                     "ParamSource.SourceColumn reached buildMethodBackedCallArgs — SourceColumn is a "
-                    + "routine-binding concept (@routine columnMapping), never a MethodRef param source: param '"
+                    + "routine-binding concept (a @routine parameter bound to a column), never a MethodRef param source: param '"
                     + param.name() + "'");
             case ParamSource.SessionSeam ignored ->
                 throw new IllegalStateException(

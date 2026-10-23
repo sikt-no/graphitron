@@ -138,7 +138,6 @@ class BuildContext {
     static final String ARG_EXTERNAL_FIELD_REF = "reference";
     static final String ARG_METHOD             = "method";
     static final String ARG_ARGMAPPING        = "argMapping";
-    static final String ARG_COLUMN_MAPPING     = "columnMapping";
     static final String ARG_VALUE              = "value";
     static final String ARG_NAME               = NodeDeclaration.ARG_NAME;
     static final String ARG_ON                 = "on";

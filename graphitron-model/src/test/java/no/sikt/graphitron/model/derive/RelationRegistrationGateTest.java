@@ -88,7 +88,7 @@ class RelationRegistrationGateTest {
             "graphitron_error_entry", "graphitron_error_handler_entry", "graphitron_node_entry", "graphitron_node_keycolumn_entry",
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry", "graphitron_argument_lookup_key_entry",
             "graphitron_field_lookup_key_entry", "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
-            "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_routine_column_mapping_pair_entry",
+            "graphitron_pivot_entry", "graphitron_routine_entry",
             "graphitron_multitable_reference_entry",
             "graphitron_undecoded_argument_entry",
             // The two supertypes ride the arm of the sites that spell them. Both are written in the
@@ -191,15 +191,6 @@ class RelationRegistrationGateTest {
             "graphitron_ast_reference_for_entry",
             // The same paths composed per field in written order, which capture sees whole.
             "graphitron_ast_field_path_entry",
-            // Its columnMapping pairs, decoded where the string was written. The oracle it
-            // would be compared against is the same one its parent has none of, and a pair
-            // carries less besides: the walk that wrote the resolved relation is gone, so
-            // there is no second reading of the string left to differ from this one. What
-            // pins it is GraphitronSiteAnchorAgreementTest, over a corpus writing a
-            // two-pair mapping on one of a field's two routines: both strata are asserted
-            // there, because the grammar's index is the number a derivation could get wrong
-            // while still producing the right rows.
-            "graphitron_ast_routine_column_mapping_pair_entry",
             // Deprecation, which the walk this replaces never captured at all: it recognised the
             // two markers on a parsed registry at the moment a reader asked. GraphitronSchema has
             // no counterpart because there was nothing to shadow, and the docstring convention is
@@ -322,6 +313,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_field_path_routine", Arm.DERIVED);
         registrations.put("graphitron_field_path_parameter", Arm.DERIVED);
         registrations.put("graphitron_field_path_parameter_rule", Arm.DERIVED);
+        registrations.put("graphitron_field_path_parameter_binding", Arm.DERIVED);
         registrations.put("graphitron_field_path_stop", Arm.DERIVED);
         registrations.put("graphitron_field_path_fanout", Arm.DERIVED);
         registrations.put("graphitron_field_path_landing", Arm.DERIVED);

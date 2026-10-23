@@ -21,8 +21,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTR
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
@@ -139,7 +137,6 @@ public final class GraphitronAnchor {
         nodes(dsl, graph, touchedAt);
         nodeKeyColumns(dsl, graph, touchedAt);
         routines(dsl, graph, touchedAt);
-        routineColumnMappingPairs(dsl, graph, touchedAt);
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
         defaultOrderFields(dsl, graph, touchedAt);
@@ -303,7 +300,7 @@ public final class GraphitronAnchor {
             GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_EXTERNAL_FIELD_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
             GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
-            GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY, GRAPHITRON_ROUTINE_ENTRY,
+            GRAPHITRON_ROUTINE_ENTRY,
             GRAPHITRON_FIELD_PARTICIPANT_PATH,
             GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
 
@@ -695,40 +692,6 @@ public final class GraphitronAnchor {
     }
 
     /**
-     * The pairs of one application's {@code columnMapping}, carried onto the coordinate the routine
-     * anchor keys at.
-     *
-     * <p>The index is the entry's own, read off the decode rather than ranked again here: a pair has
-     * no written position of its own, being written inside a string, so the entry stratum already
-     * assigned it the index the grammar gave it and this relation states the same one.
-     *
-     * <p>After {@link #routines}, which every row here holds a foreign key into.
-     */
-    private static void routineColumnMappingPairs(DSLContext dsl, String graph,
-                                                  LocalDateTime touchedAt) {
-        var applications = routineApplications(dsl, graph);
-        var e = GRAPHITRON_AST_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
-        var t = GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.POSITION,
-                t.PARAM_NAME, t.COLUMN_REF, t.TOUCHED_AT)
-            .select(dsl
-                .select(val(graph, t.GRAPH_NAME), applications.field(TYPE_NAME),
-                    applications.field(FIELD_NAME), applications.field(WRITTEN_AT),
-                    e.POSITION, e.PARAM_NAME, e.COLUMN_REF, val(touchedAt, t.TOUCHED_AT))
-                .from(applications)
-                .join(e).on(e.GRAPH_NAME.eq(graph),
-                    e.SOURCE_NAME.eq(applications.field(SITE_NAME)),
-                    e.SOURCE_LINE.eq(applications.field(SITE_LINE)),
-                    e.SOURCE_COLUMN.eq(applications.field(SITE_COLUMN))))
-            .onDuplicateKeyUpdate()
-            .set(t.PARAM_NAME, excluded(t.PARAM_NAME))
-            .set(t.COLUMN_REF, excluded(t.COLUMN_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-            .execute();
-    }
-
-    /**
      * Every {@code @routine} a field carries, numbered in the order they were written.
      *
      * <p>Not {@link #claimedOnField}, and the difference is the point rather than a preference. That
@@ -756,14 +719,14 @@ public final class GraphitronAnchor {
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.SOURCE_NAME,
                 t.SOURCE_LINE, t.SOURCE_COLUMN, t.ROUTINE_REF, t.ROUTINE_REF_NAMESPACE_PART,
-                t.ROUTINE_REF_NAME_PART, t.ARGMAPPING, t.COLUMN_MAPPING, t.TOUCHED_AT)
+                t.ROUTINE_REF_NAME_PART, t.ARGMAPPING, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), applications.field(TYPE_NAME),
                     applications.field(FIELD_NAME), applications.field(WRITTEN_AT),
                     applications.field(SITE_NAME), applications.field(SITE_LINE),
                     applications.field(SITE_COLUMN), e.ROUTINE_REF,
                     e.ROUTINE_REF_NAMESPACE_PART, e.ROUTINE_REF_NAME_PART, e.ARGMAPPING,
-                    e.COLUMN_MAPPING, val(touchedAt, t.TOUCHED_AT))
+                    val(touchedAt, t.TOUCHED_AT))
                 .from(applications)
                 .join(e).on(e.GRAPH_NAME.eq(graph),
                     e.SOURCE_NAME.eq(applications.field(SITE_NAME)),
@@ -777,7 +740,6 @@ public final class GraphitronAnchor {
             .set(t.ROUTINE_REF_NAMESPACE_PART, excluded(t.ROUTINE_REF_NAMESPACE_PART))
             .set(t.ROUTINE_REF_NAME_PART, excluded(t.ROUTINE_REF_NAME_PART))
             .set(t.ARGMAPPING, excluded(t.ARGMAPPING))
-            .set(t.COLUMN_MAPPING, excluded(t.COLUMN_MAPPING))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
     }

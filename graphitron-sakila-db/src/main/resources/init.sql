@@ -923,8 +923,8 @@ $$;
 
 -- R435 routine fixture: the correlated table-valued read function backing a child-positioned
 -- @routine (the films_for_actor(actor_id) shape named in the spec). p_actor_id is fed from the
--- parent row's actor_id column (columnMapping), p_min_length from a GraphQL argument
--- (argMapping) — the mixed call exercises the generated Field-overload surface. Reads the real
+-- parent row's actor_id column, p_min_length from a GraphQL argument, both named in argMapping;
+-- the mixed call exercises the generated Field-overload surface. Reads the real
 -- film / film_actor seed rows so the execution test asserts per-parent correlation under the
 -- inline multiset emit.
 CREATE OR REPLACE FUNCTION public.films_for_actor(

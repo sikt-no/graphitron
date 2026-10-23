@@ -7456,8 +7456,8 @@ class GraphitronSchemaBuilderTest {
 
     // ===== Order-significant @routine / @reference composition =====
     // The classifier reads the ordered field-level directive applications once, enforces the
-    // root-head rule, and validates the single-node chain (including columnMapping against the
-    // implicit head at child positions). Chain shapes beyond the shipped root single-node
+    // root-head rule, and validates the single-node chain (including a parameter bound to a
+    // column of the implicit head at child positions). Chain shapes beyond the shipped root single-node
     // classify as typed Deferred until the chain build + emitters land.
 
     private static final String TILGANG_TYPE = """
@@ -7669,7 +7669,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") {
               rows(minLength: Int!): [ActorFilmRow!]
                 @reference(path: [{key: "film_actor_film_id_fkey"}])
-                @routine(name: "films_for_actor", argMapping: "pMinLength: minLength", columnMapping: "pActorId: actor_id")
+                @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
@@ -7870,8 +7870,7 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") {
               recentFilms(minLength: Int!): [Film!]
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @reference(path: [{table: "film"}])
                 @defaultOrder(primaryKey: true)
             }
@@ -7892,9 +7891,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childHopsThenRoutineChainBindsColumnMappingAgainstPreviousNode() {
-        // The hops-then-routine chain: the FK hop precedes the routine, so columnMapping binds
-        // against the previous hop's node (film_actor), not the implicit head (film); this is the
+    void childHopsThenRoutineChainBindsAColumnOfThePreviousNode() {
+        // The hops-then-routine chain: the FK hop precedes the routine, so actor_id is a column
+        // of the previous hop's node (film_actor), not of the implicit head (film); this is the
         // order-significance under test. The routine result is the terminus.
         var schema = build("""
             type ActorFilm {
@@ -7904,8 +7903,7 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [ActorFilm!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
@@ -7936,8 +7934,7 @@ class GraphitronSchemaBuilderTest {
               castRecentFilms(minLength: Int!): [Film!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @reference(path: [{table: "film"}])
                 @defaultOrder(primaryKey: true)
             }
@@ -7962,8 +7959,7 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") {
               recentFilms(minLength: Int!): [Film!]
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @defaultOrder(primaryKey: true)
             }
             type Query { actor: Actor }
@@ -7986,8 +7982,7 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [Actor!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
             }
             type Query { film: Film }
             """);
@@ -7997,10 +7992,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childChainColumnMappingUnknownColumnListsPreviousNodeCandidates() {
-        // columnMapping resolves against the running source at the routine's position: here
-        // the previous node is film_actor, so the candidate hint lists ITS columns, not the
-        // implicit head's.
+    void childChainParameterNamingNothingListsThePreviousNodesColumns() {
+        // A name resolves against the running source at the routine's position: here the
+        // previous node is film_actor, so the message lists ITS columns, not the implicit head's.
         var schema = build("""
             type ActorFilm {
               filmId: Int @field(name: "FILM_ID")
@@ -8009,23 +8003,22 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [ActorFilm!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: title")
+                         argMapping: "pActorId: title, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
             """);
         var f = (UnclassifiedField) schema.field("Film", "castFilms");
-        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(f.reason())
-            .contains("not a column of the previous node ('film_actor')")
-            .contains("actor_id"); // candidate hint lists the previous node's columns
+            .contains("'title' is neither an argument of this field nor a column of 'film_actor'")
+            .contains("actor_id"); // the previous node's columns are listed
     }
 
     @Test
-    void childRoutineWithValidColumnMappingClassifiesAsLateralTableField() {
+    void childRoutineWithAColumnBoundParameterClassifiesAsLateralTableField() {
         // The correlated single-node chain: pEnv binds to the parent's `title` column
-        // (columnMapping), the remaining params to field arguments. Classifies onto the inline
+        // (named in argMapping), the remaining params to field arguments. Classifies onto the inline
         // TableField leaf carrying the routine-node chain: one Hop whose target is
         // TableExpr.RoutineCall, joined On.Lateral, correlated via OnLateralArgs.
         var schema = build(TILGANG_TYPE + """
@@ -8033,8 +8026,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: title")
+                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
@@ -8059,7 +8051,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childRoutineWithoutColumnMappingAlsoClassifiesAsLateralTableField() {
+    void childRoutineWithoutAColumnBoundParameterAlsoClassifiesAsLateralTableField() {
         // The uncorrelated child single-node chain: every param binds from field arguments.
         // Same leaf and chain shape as the correlated case — the routine call is the row
         // source either way; the emitters fork on the presence of SourceColumn bindings.
@@ -8222,8 +8214,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!] @splitQuery
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: title")
+                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
@@ -8267,8 +8258,7 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [ActorFilm!] @splitQuery
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
@@ -8287,8 +8277,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: [String!]! @lookupKey): [Tilgang!] @splitQuery
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: title")
+                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
@@ -8298,55 +8287,60 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childRoutineColumnMappingUnknownColumnRejectsWithCandidates() {
+    void childRoutineParameterNamingNothingRejectsWithCandidates() {
         var schema = build(TILGANG_TYPE + """
             type Film @table(name: "film") {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: no_such_column")
+                         argMapping: "pEnv: no_such_column, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
         var f = (UnclassifiedField) schema.field("Film", "tilganger");
-        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
         assertThat(f.reason())
-            .contains("not a column of the previous node")
-            .contains("title"); // candidate hint lists the parent table's columns
+            .contains("@routine parameter 'pEnv' has no binding")
+            .contains("'no_such_column' is neither an argument of this field nor a column of 'film'")
+            .contains("title"); // the parent table's columns are listed
         assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
     }
 
     @Test
-    void rootRoutineWithColumnMappingRejectsAsStructural() {
+    void rootRoutineParameterNamingAColumnHasNoBinding() {
+        // No table stands at a root, so a name binds an argument or nothing: title, a column of
+        // film elsewhere, is not looked for here.
         var schema = build(TILGANG_TYPE + """
             type Query {
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]!
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: title")
+                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
             }
             """);
         var f = (UnclassifiedField) schema.field("Query", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(f.reason()).contains("a root chain's head has none");
+        assertThat(f.reason())
+            .contains("'title' is not an argument of this field;")
+            .doesNotContain("column");
     }
 
     @Test
-    void routineParamInBothMappingsRejectsAsStructural() {
+    void routineParameterNamingAnArgumentAndAColumnRejectsAsAmbiguous() {
+        // title is an argument of the field and a column of film, the table the path stands on.
+        // Neither wins: a precedence would let a new column change the call silently.
         var schema = build(TILGANG_TYPE + """
             type Film @table(name: "film") {
               title: String
-              tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]
+              tilganger(title: String!, serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: title")
+                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
         var f = (UnclassifiedField) schema.field("Film", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(f.reason()).contains("exactly one source");
+        assertThat(f.reason()).contains(
+            "@routine parameter 'pEnv' reads 'title', which is both an argument of this field and a column of 'film'");
     }
 
     @Test
@@ -8476,8 +8470,7 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") {
               films(minLength: Int!): [ActorFilm!]
                 @asConnection
-                @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { actors: [Actor!]! }
@@ -8546,7 +8539,7 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void columnMappingTypeMismatchRejectsAsStructural() {
+    void columnBoundParameterTypeMismatchRejectsAsStructural() {
         // pEnv is TEXT (java.lang.String); film_id is an Integer column. The emitted call
         // passes the column's Field to the routine's Field overload, so the boxed Java types
         // must match — this would otherwise be a javac error in the generated source.
@@ -8555,8 +8548,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pServiceId: serviceId, pFeideId: feideId",
-                         columnMapping: "pEnv: film_id")
+                         argMapping: "pEnv: film_id, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);

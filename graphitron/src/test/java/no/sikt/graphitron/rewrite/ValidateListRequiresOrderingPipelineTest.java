@@ -118,8 +118,8 @@ class ValidateListRequiresOrderingPipelineTest {
             type ActorFilm { filmId: Int @field(name: "film_id") }
             type Actor @table(name: "actor") {
               films(minLength: Int!): [ActorFilm!]
-                @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-                         columnMapping: "pActorId: actor_id")
+                @routine(name: "films_for_actor",
+                         argMapping: "pActorId: actor_id, pMinLength: minLength")
             }
             type Query { actors: [Actor!]! }
             """);

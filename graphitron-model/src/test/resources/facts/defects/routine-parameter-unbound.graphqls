@@ -1,0 +1,41 @@
+# A child @routine's parameter reads a name that is neither an argument of the field nor a column of
+# the table the path stands on. Actor.filmsMisnamed maps pActorId to actorid, which actor does not
+# have. Actor.filmsUnmapped leaves pMinLength unmapped, so it reads its own name, and the field has
+# no argument by that name. Each @routine draws the defect; the binding view says which parameter.
+
+type ActorFilm {
+  filmId: Int @field(name: "film_id")
+}
+
+type Actor @table(name: "actor") {
+  filmsMisnamed(minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actorid, pMinLength: minLength")
+  filmsUnmapped(shortest: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id")
+}
+
+extend type Query {
+  actors: [Actor]
+}
+
+extend schema @assertContains(relation: "graphitron_entry_defect_site", rows: """
+  code,                      coordinate
+  ROUTINE_PARAMETER_UNBOUND, Actor.filmsMisnamed
+  ROUTINE_PARAMETER_UNBOUND, Actor.filmsUnmapped
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_parameter", rows: """
+  type_name, field_name,    position, parameter_name, from_table, from_column, argument
+  Actor,     filmsMisnamed, 0,        pMinLength,     ,           ,            minLength
+  Actor,     filmsUnmapped, 0,        pActorId,       actor,      actor_id,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_parameter_binding", rows: """
+  type_name, field_name,    parameter_name, bound_to,   argument_name, from_column
+  Actor,     filmsMisnamed, pActorId,       actorid,    ,              
+  Actor,     filmsMisnamed, pMinLength,     minLength,  minLength,     
+  Actor,     filmsUnmapped, pActorId,       actor_id,   ,              actor_id
+  Actor,     filmsUnmapped, pMinLength,     pMinLength, ,              
+  """)

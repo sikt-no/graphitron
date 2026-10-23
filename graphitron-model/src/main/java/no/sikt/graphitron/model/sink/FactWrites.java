@@ -291,9 +291,8 @@ final class FactWrites {
                          t.ROUTINE_REF_NAMESPACE_PART,
                          t.ROUTINE_REF_NAME_PART,
                          t.ARGMAPPING,
-                         t.COLUMN_MAPPING,
                          t.TOUCHED_AT)
-                .values(markers(13)));
+                .values(markers(12)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -306,7 +305,6 @@ final class FactWrites {
                                row.get(t.ROUTINE_REF_NAMESPACE_PART),
                                row.get(t.ROUTINE_REF_NAME_PART),
                                row.get(t.ARGMAPPING),
-                               row.get(t.COLUMN_MAPPING),
                                row.get(t.TOUCHED_AT));
         }
         batch.execute();

@@ -15,8 +15,8 @@ type Film @table(name: "film") {
   # The path ends on the routine, so ActorFilm's rows are films_for_actor's result.
   castFilms(minLength: Int!): [ActorFilm!]
     @reference(path: [{table: "film_actor"}])
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
 }
 

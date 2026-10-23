@@ -35,8 +35,8 @@ public record RoutineChain(TableExpr.RoutineCall start, List<JoinStep> hops) {
                     + binding.routineParamName() + "' carries "
                     + binding.source().getClass().getSimpleName()
                     + "; a root routine chain's head has no previous node, so every start "
-                    + "binding must be ParamSource.Arg (RoutineDirectiveResolver rejects "
-                    + "columnMapping at root before construction)");
+                    + "binding must be ParamSource.Arg (RoutineDirectiveResolver binds only "
+                    + "arguments at root)");
             }
         }
         hops = List.copyOf(hops);

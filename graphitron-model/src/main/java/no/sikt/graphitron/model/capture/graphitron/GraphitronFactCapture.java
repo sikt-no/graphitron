@@ -22,9 +22,6 @@ import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.catalog.SchemaCoordinateSyntax;
 import no.sikt.graphitron.model.schema.SiteRef;
 import no.sikt.graphitron.model.grammar.QualifiedNameGrammar;
-import no.sikt.graphitron.model.selection.GraphQLSelectionParseException;
-import no.sikt.graphitron.model.selection.GraphQLSelectionParser;
-import no.sikt.graphitron.model.selection.ParsedEntry;
 import no.sikt.graphitron.model.sink.FactSink;
 import org.jooq.DSLContext;
 import org.jooq.Table;
@@ -55,7 +52,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_MUTATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ORDER_BY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_COLUMN_MAPPING_PAIR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPLIT_QUERY_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
@@ -310,19 +306,14 @@ public final class GraphitronFactCapture {
                 spelling(string(directive, "table"));
             }
             case "routine" -> {
-                // Both relations are derived now, by GraphitronAnchor over the entry stratum: the
-                // application at its coordinate, and the columnMapping pairs the entry stratum
-                // decodes at the position the application was written at. The claim stays, reading
-                // each application once, and the spelling stays for @table's reason, its relation
-                // being keyed by the value across the sites that write one.
+                // The relation is derived now, by GraphitronAnchor over the entry stratum: the
+                // application at its coordinate. The claim stays, reading each application once,
+                // and the spelling stays for @table's reason, its relation being keyed by the value
+                // across the sites that write one.
                 if (!sink.claim(GRAPHITRON_ROUTINE_ENTRY, type, field, ordinal)) return;
                 String name = string(directive, "name");
                 if (name == null) return;
                 spelling(name);
-                // Read for its quarantine alone: a columnMapping the grammar rejects is reported
-                // from here, the entry stratum stating what a definition admits and nothing about
-                // what it refused.
-                pairs(string(directive, "columnMapping"), directive, "columnMapping");
             }
             default -> { /* no decoded relation */ }
         }
@@ -504,22 +495,6 @@ public final class GraphitronFactCapture {
             stringOf(field(object, "table"), directive, "path"),
             stringOf(field(object, "key"), directive, "path"),
             className, method, argMapping);
-    }
-
-    /**
-     * Decodes a {@code columnMapping} string through the one shared pair decoder; a value the
-     * grammar rejects quarantines whole and yields no pairs.
-     */
-    private List<ParsedEntry> pairs(String raw, Directive directive, String argumentName) {
-        if (raw == null || raw.isBlank()) {
-            return List.of();
-        }
-        try {
-            return GraphQLSelectionParser.parseEntries(raw);
-        } catch (GraphQLSelectionParseException e) {
-            undecoded(directive, argumentName, StringValue.newStringValue(raw).build());
-            return List.of();
-        }
     }
 
     private static Value<?> argument(Directive directive, String name) {

@@ -2824,14 +2824,13 @@ CREATE TABLE graphitron_ast_routine_entry (
   routine_ref_namespace_part VARCHAR,
   routine_ref_name_part      VARCHAR,
   argmapping    VARCHAR,
-  column_mapping VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphitron_ast_routine_entry IS 'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written. For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.';
+COMMENT ON TABLE graphitron_ast_routine_entry IS 'What a @routine application says: the database routine backing the field and the mapping binding its parameters, as written. For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.';
 COMMENT ON COLUMN graphitron_ast_routine_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphitron_ast_routine_entry.source_name IS 'the file the application was written in';
 COMMENT ON COLUMN graphitron_ast_routine_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
@@ -2841,32 +2840,6 @@ COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref IS 'the name argument
 COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_namespace_part IS 'the schema half of the written name, or NULL where none was written; split by QualifiedNameGrammar, which only cuts the string';
 COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_name_part IS 'the routine half of the same';
 COMMENT ON COLUMN graphitron_ast_routine_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
-COMMENT ON COLUMN graphitron_ast_routine_entry.column_mapping IS 'the columnMapping argument, kept the same way. It shares argMapping''s grammar and not its subject, binding a routine parameter to a column of the previous chain node rather than to an input path, which is why the two are columns beside each other rather than one';
-
-CREATE TABLE graphitron_ast_routine_column_mapping_pair_entry (
-  graph_name    VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  position      INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  param_name    VARCHAR NOT NULL,
-  column_ref    VARCHAR NOT NULL,
-  PRIMARY KEY (graph_name, source_name, source_line, source_column, position),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphitron_ast_routine_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_ast_routine_column_mapping_pair_entry IS 'One pair the columnMapping string parsed into, at its index in that parse. For example columnMapping: "p_id: film_id, p_year: release_year" gives two rows, the first naming p_id and film_id.';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.source_name IS 'the file the application was written in';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.source_column IS 'source column of the same. With the line and the file, the application whose string this pair came out of';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.position IS 'the pair''s 0-based index in the string the grammar read. A pair is written inside a string rather than as a node, so it has no position of its own to be identified by and takes its index instead; that is the whole of what this column is';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting the rows of this file carrying an older instant, which are the pairs an author removed from a string that still stands; an application the author moved is swept with the routine row it hangs on';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.param_name IS 'the routine parameter the pair binds, as written and resolved against nothing';
-COMMENT ON COLUMN graphitron_ast_routine_column_mapping_pair_entry.column_ref IS 'the column the pair binds it to, as written. A dotted spelling is kept whole here and rejected by detection rather than split, the grammar admitting what the author typed and the verdict belonging to a reader of these rows';
 
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
@@ -4103,7 +4076,6 @@ CREATE TABLE graphitron_routine_entry (
   routine_ref_namespace_part VARCHAR,
   routine_ref_name_part      VARCHAR,
   argmapping    VARCHAR,
-  column_mapping VARCHAR,
   touched_at    TIMESTAMP NOT NULL,
   routine_ref_namespace_part_upper VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_namespace_part)),
   routine_ref_name_part_upper      VARCHAR GENERATED ALWAYS AS (UPPER(routine_ref_name_part)),
@@ -4125,32 +4097,7 @@ COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part IS 'right of ro
 COMMENT ON COLUMN graphitron_routine_entry.routine_ref_namespace_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name, a routine result being a catalog table. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name, a routine result being a catalog table. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_routine_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
-COMMENT ON COLUMN graphitron_routine_entry.column_mapping IS 'the columnMapping string as written; the pair child is its decode';
 COMMENT ON COLUMN graphitron_routine_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
-
-CREATE TABLE graphitron_routine_column_mapping_pair_entry (
-  graph_name VARCHAR NOT NULL,
-  type_name  VARCHAR NOT NULL,
-  field_name VARCHAR NOT NULL,
-  ordinal    INT     NOT NULL,
-  position   INT     NOT NULL,
-  param_name VARCHAR NOT NULL,
-  column_ref VARCHAR NOT NULL,
-  touched_at TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, ordinal, position),
-  FOREIGN KEY (graph_name, type_name, field_name, ordinal)
-    REFERENCES graphitron_routine_entry (graph_name, type_name, field_name, ordinal)
-    ON DELETE CASCADE
-);
-COMMENT ON TABLE graphitron_routine_column_mapping_pair_entry IS 'columnMapping pairs bind routine parameters to previous-node columns; a dotted right side is captured as written and rejected by detection.';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.type_name IS 'the GraphQL type this row is about';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.field_name IS 'the field name within the owning type';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.ordinal IS 'the owning @routine application''s ordinal';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.param_name IS 'the Java or routine parameter (left side of the pair)';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.column_ref IS 'the previous-node column as written; a dotted right side is captured and rejected by detection';
-COMMENT ON COLUMN graphitron_routine_column_mapping_pair_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the pairs an author removed from a mapping string that still stands; an application the author removed takes its pairs with it through the reference above';
 
 -- @experimental_constructType has no relation, and unlike every other name in this stratum it
 -- is not a graphitron directive: its declaration in directives.graphqls is a bug (the census
@@ -8955,7 +8902,7 @@ CREATE TABLE graphitron_field_path_parameter (
   CHECK ((from_column IS NULL) <> (argument IS NULL)),
   CHECK (parameter_position >= 0)
 );
-COMMENT ON TABLE graphitron_field_path_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pMinLength: minLength", columnMapping: "pActorId: actor_id") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
+COMMENT ON TABLE graphitron_field_path_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
 COMMENT ON COLUMN graphitron_field_path_parameter.graph_name IS 'the owning graph''s partition, carried from the step';
 COMMENT ON COLUMN graphitron_field_path_parameter.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_path_parameter.field_name IS 'the field whose path the step is of';
@@ -8969,21 +8916,23 @@ COMMENT ON COLUMN graphitron_field_path_parameter.from_source_name IS 'where the
 COMMENT ON COLUMN graphitron_field_path_parameter.from_schema IS 'where the parameter is a column: that table''s SQL schema';
 COMMENT ON COLUMN graphitron_field_path_parameter.from_table IS 'where the parameter is a column: the table the step departs, the one the walk stands at';
 COMMENT ON COLUMN graphitron_field_path_parameter.from_column IS 'where the parameter is a column: the column, so the call is made once per row of that table; NULL where it is an argument';
-COMMENT ON COLUMN graphitron_field_path_parameter.argument IS 'where the parameter is an argument: the argument path written for it, an argument''s name or a dot path into an input, or the parameter''s own name where nothing was written; NULL where it is a column';
+COMMENT ON COLUMN graphitron_field_path_parameter.argument IS 'where the parameter is an argument: the argument path its name reads, an argument''s name or a dot path into an input, the parameter''s own name where nothing was written for it; NULL where it is a column';
 COMMENT ON COLUMN graphitron_field_path_parameter.touched_at IS 'when the walk that last took the step ran, as on the step';
 
-CREATE VIEW graphitron_field_path_parameter_rule
+CREATE VIEW graphitron_field_path_parameter_binding
   (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
-   parameter_position, parameter_name, from_source_name, from_schema, from_table, from_column,
-   argument) AS
--- Each parameter of the routine a step calls, bound by the pair its @routine wrote for it: a
--- columnMapping pair to a column of the table the step departs, an argMapping pair to an argument
--- path, and a parameter neither names to the argument of its own name. A columnMapping pair naming
--- no column of that table binds nothing, which the parameter's missing row says.
+   element_source_name, element_source_line, element_source_column,
+   parameter_position, parameter_name, bound_to, argument_name,
+   from_source_name, from_schema, from_table, from_column) AS
+-- Each parameter of the routine a step calls, with the name it reads and what that name is. The
+-- name is the one the parameter's argMapping entry writes, or the parameter's own where no entry
+-- names it. It can head a path into the field's arguments, and it can name a column of the table
+-- the step departs, matched as a column spelling is anywhere, without regard to case; a dotted
+-- path names no column. Either side, both or neither may hold, and this view says which.
 SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
-       p.position, sp.position, sp.jooq_name,
-       c.source_name, c.table_schema, c.table_name, c.column_name,
-       CASE WHEN cm.param_name IS NULL THEN COALESCE(am.bound_to, sp.jooq_name) END
+       p.position, p.element_source_name, p.element_source_line, p.element_source_column,
+       sp.position, sp.jooq_name, COALESCE(am.bound_to, sp.jooq_name), a.argument_name,
+       c.source_name, c.table_schema, c.table_name, c.column_name
   FROM graphitron_field_path p
   JOIN graphitron_field_path_routine rr
     ON rr.graph_name = p.graph_name AND rr.type_name = p.type_name AND rr.field_name = p.field_name
@@ -8992,13 +8941,6 @@ SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_sch
   JOIN sql_routine_parameter sp
     ON sp.source_name = rr.routine_source_name AND sp.table_schema = rr.table_schema
    AND sp.routine_name = rr.routine_name
-  LEFT JOIN graphitron_ast_routine_column_mapping_pair_entry cm
-    ON cm.graph_name = p.graph_name AND cm.source_name = p.element_source_name
-   AND cm.source_line = p.element_source_line AND cm.source_column = p.element_source_column
-   AND cm.param_name = sp.jooq_name
-  LEFT JOIN sql_column c
-    ON c.source_name = p.from_source_name AND c.table_schema = p.from_schema
-   AND c.table_name = p.from_table AND c.column_name_upper = UPPER(cm.column_ref)
   LEFT JOIN graphql_directive_application da
     ON da.graph_name = p.graph_name AND da.source_name = p.element_source_name
    AND da.source_line = p.element_source_line AND da.source_column = p.element_source_column
@@ -9010,7 +8952,30 @@ SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_sch
     ON am.graph_name = ams.graph_name AND am.source_name = ams.source_name
    AND am.source_line = ams.source_line AND am.source_column = ams.source_column
    AND am.param_name = sp.jooq_name
- WHERE cm.param_name IS NULL OR c.column_name IS NOT NULL;
+  LEFT JOIN graphql_argument a
+    ON a.graph_name = p.graph_name AND a.type_name = p.type_name AND a.field_name = p.field_name
+   AND a.argument_name = COALESCE(am.root_name, sp.jooq_name)
+  LEFT JOIN sql_column c
+    ON c.source_name = p.from_source_name AND c.table_schema = p.from_schema
+   AND c.table_name = p.from_table
+   AND c.column_name_upper = UPPER(COALESCE(am.bound_to, sp.jooq_name));
+COMMENT ON VIEW graphitron_field_path_parameter_binding IS 'What each parameter of a routine step reads: one row per step and parameter, the name written for it and the argument and the column that name could be. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") gives pActorId reading actor_id, a column of actor and no argument, and pMinLength reading minLength, an argument and no column.';
+-- COMMENT ON COLUMN graphitron_field_path_parameter_binding.bound_to IS 'the name the parameter reads: its argMapping entry''s right side as written, or the parameter''s own name where no entry names it';
+-- COMMENT ON COLUMN graphitron_field_path_parameter_binding.argument_name IS 'the field''s argument the name heads, or NULL where it heads none';
+-- COMMENT ON COLUMN graphitron_field_path_parameter_binding.from_column IS 'the column of the table the step departs that the name spells, or NULL where it spells none';
+
+CREATE VIEW graphitron_field_path_parameter_rule
+  (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+   parameter_position, parameter_name, from_source_name, from_schema, from_table, from_column,
+   argument) AS
+-- Each parameter of the routine a step calls, bound from the one place its name reads: a column of
+-- the table the step departs, or an argument path. A name that is both, or neither, binds nothing,
+-- which the parameter's missing row says and the defect rule reports.
+SELECT graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
+       parameter_position, parameter_name, from_source_name, from_schema, from_table, from_column,
+       CASE WHEN from_column IS NULL THEN bound_to END
+  FROM graphitron_field_path_parameter_binding
+ WHERE (argument_name IS NULL) <> (from_column IS NULL);
 COMMENT ON VIEW graphitron_field_path_parameter_rule IS 'One row the routine parameter rule computes, in the shape graphitron_field_path_parameter stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_field_path_parameter, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_field_path_parameter_rule.graph_name IS 'as graphitron_field_path_parameter.graph_name';
 -- COMMENT ON COLUMN graphitron_field_path_parameter_rule.argument IS 'as graphitron_field_path_parameter.argument';
@@ -10427,6 +10392,23 @@ SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
             THEN 'NO_ROUTE_FROM_DEPARTURE' ELSE 'ELEMENT_UNRESOLVED' END, CAST(NULL AS VARCHAR)
   FROM graphitron_field_path_stop st
  WHERE st.moves = 0
+UNION ALL
+-- A routine step's parameter whose name is both an argument of the field and a column of the table
+-- the step departs, at the @routine: no precedence picks one, since a table gaining a column would
+-- then change what a call reads without a word written. One row per @routine however many of its
+-- parameters do; which ones is graphitron_field_path_parameter_binding's to say.
+SELECT DISTINCT b.graph_name, b.element_source_name, b.element_source_line, b.element_source_column,
+       'ROUTINE_PARAMETER_AMBIGUOUS', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_path_parameter_binding b
+ WHERE b.argument_name IS NOT NULL AND b.from_column IS NOT NULL
+UNION ALL
+-- A routine step's parameter whose name is neither, at the @routine: an argMapping entry naming no
+-- argument and no column of the table the step departs, or a parameter no entry names whose own name
+-- is neither. The call has no value for it. One row per @routine, as above.
+SELECT DISTINCT b.graph_name, b.element_source_name, b.element_source_line, b.element_source_column,
+       'ROUTINE_PARAMETER_UNBOUND', CAST(NULL AS VARCHAR)
+  FROM graphitron_field_path_parameter_binding b
+ WHERE b.argument_name IS NULL AND b.from_column IS NULL
 UNION ALL
 -- Where a walk took every written step and ended somewhere other than its target, at the last step,
 -- whose element is the one that lands there: a walk with no stop, read at its last step. A target
@@ -15352,9 +15334,6 @@ INSERT INTO meta_grain VALUES
   ('lint-violation',
    'one rule broken at one written position, in one graph',
    'graph_name, lint_rule, source_name, source_line, source_column', 'sdl'),
-  ('sdl-parsed-pair',
-   'one pair of one mapping string, at its index in the list the grammar reads it as, under the application that wrote it',
-   'graph_name, source_name, source_line, source_column, position', 'sdl'),
   ('sdl-parsed-selection',
    'one leaf selection of one field set, at its index in the list the grammar reads it as, under the application that wrote it',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
@@ -15642,6 +15621,10 @@ INSERT INTO graphitron_defect_type VALUES
    'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.'),
+  ('ROUTINE_PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_AMBIGUOUS',
+   'A @routine parameter reads a name that is both an argument of the field and a column of the table the path stands on, and the call takes one value; renaming the argument settles which.'),
+  ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
+   'A @routine parameter reads a name that is neither an argument of the field nor a column of the table the path stands on, so the call has no value for it.'),
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
    'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.'),
   ('CHAIN_WITHOUT_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_CHAIN_WITHOUT_TARGET',
@@ -15756,12 +15739,16 @@ INSERT INTO meta_relation VALUES
    'A child @routine is a step of the path like any other: from the table the walk stands at to its function''s result. What the step calls is this row, and how it is called is its parameter rows.'),
   ('graphitron_field_path_parameter', 'field-path-parameter', 'graphitron',
    'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field.',
-   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pMinLength: minLength", columnMapping: "pActorId: actor_id") binds pActorId from actor.actor_id and pMinLength from the argument minLength.',
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.',
    'The routine step''s join, as a key step''s is its column pairs: a parameter bound from a column correlates the call with the row the walk stands at, one from an argument does not, and a reader that needs either, the fan-out advisory among them, reads the row rather than the mapping strings.'),
   ('graphitron_field_path_parameter_rule', 'field-path-parameter', 'graphitron',
    'One row the routine parameter rule computes, in the shape graphitron_field_path_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_field_path_parameter, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_field_path_parameter_binding', 'field-path-parameter', 'graphitron',
+   'What each parameter of a routine step reads: one row per step and parameter, the name written for it and the argument and the column that name could be.',
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") gives pActorId reading actor_id, a column of actor and no argument, and pMinLength reading minLength, an argument and no column.',
+   'One name, two places it can bind, and a parameter takes its value from exactly one: the rule keeps the parameters whose name is one of the two and the defect rule reports the others at the @routine, both reading this view so the two cannot disagree on what a name is.'),
   ('graphitron_field_path_stop', 'field-path-stop', 'graphitron',
    'Where a field''s path stopped short of its written elements: one row per field and start whose walk met an element it could not step through.',
    'For example {key: "film_actor_actor_id_fkey"} on a Film field stops the walk from film at position 0, no move leaving film, and {table: "film"} from a table two keys join to it stops with two.',
@@ -16140,17 +16127,13 @@ INSERT INTO meta_relation VALUES
    'For example fields: [{name: "title", collate: "xdanish_ai", direction: DESC}] gives one row at position 0.',
    'A list argument becomes rows rather than a column, and here the order is the answer: the position an element was written at is the sort order the author asked for, so a reader takes it from the key rather than from parsing a literal. Each element''s three fields become columns, the direction nullable because a NULL is what says the element takes the directive-level direction and filling one in would lose which of the two the author wrote. The collation is a database-specific name and resolves against nothing here.'),
   ('graphitron_ast_routine_entry', 'sdl-declaration-site', 'graphitron',
-   'What a @routine application says: the database routine backing the field and the two mappings binding its parameters, as written.',
+   'What a @routine application says: the database routine backing the field and the mapping binding its parameters, as written.',
    'For example reportedFilms: [Film!] @routine(name: "public.reported_films", argMapping: "pEnv: env") gives one row.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one field apart: the directive repeats and no ordinal is assigned here, numbering the applications being the anchors'' work over rows that carry the position the numbering sorts by. The routine name is split by the grammar that cuts a qualified name and nothing more. Both mappings are kept as the strings the author typed: they share a grammar and not a subject, one binding a parameter to an input path and the other to a column of the previous chain node, which is why they are columns beside each other rather than one, and cutting either into segments is the argument-mapping derivation''s work.'),
   ('graphitron_ast_federation_key_entry', 'sdl-declaration-site', 'graphitron',
    'What a federation @key application says: the field set naming the entity''s key, and whether the subgraph resolves it, as written.',
    'For example type Film @key(fields: "id reviews { id }") gives one row carrying that field set verbatim.',
    'A decode of one directive application, keyed by the application''s own position, which is also what tells two applications on one type apart: the directive repeats and no ordinal is assigned here. The field set is kept whole in a column and parsed into the two relations below it, which is this family''s only grammar whose output is rows. The string stays because the parse is a reading of it and a re-emitter wants what was read. The rows exist because the anchors this derives into have held selections and segments since before the entry stratum did: the shape is transcribed rather than chosen here, and a decode that rendered the parse back into a dotted name would hand that derivation a string to take apart again. No reader outside those anchors consumes a key today, so what the rows are worth is a question the first one will settle.'),
-  ('graphitron_ast_routine_column_mapping_pair_entry', 'sdl-parsed-pair', 'graphitron',
-   'One pair the columnMapping string parsed into, at its index in that parse.',
-   'For example columnMapping: "p_id: film_id, p_year: release_year" gives two rows, the first naming p_id and film_id.',
-   'A grammar yields a list and a relation holds a set, so the order is a column, which is the same reading the parsed field set beside it takes. The pairs are decoded here rather than where the routine resolves because the grammar is a parse-boundary fact SQL cannot express, and stating them at the written position is what lets the resolved relation be derived rather than written twice. The string itself stays on the routine entry: this is its decode and not its replacement, so an author''s exact spelling survives a grammar that later reads it differently. A string the grammar rejects yields no rows here at all, which is the entry stratum''s rule that an application states what the definition admits and nothing else; the quarantine of that raw text belongs to the reader that reports it.'),
   ('graphitron_ast_federation_key_selection_entry', 'sdl-parsed-selection', 'graphitron',
    'One leaf selection the field set parsed into, at its index in that parse.',
    'For example "id reviews { id }" gives two rows, one for id and one for the id inside reviews.',

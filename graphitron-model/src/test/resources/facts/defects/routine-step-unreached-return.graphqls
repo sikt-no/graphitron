@@ -10,8 +10,8 @@ type Film @table(name: "film") {
   title: String
   castFilms(minLength: Int!): [Actor!]
     @reference(path: [{table: "film_actor"}])
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
 }
 
 extend type Query {

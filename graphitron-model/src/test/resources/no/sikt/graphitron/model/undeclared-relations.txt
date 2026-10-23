@@ -23,7 +23,6 @@ graphitron_node_keycolumn_entry
 graphitron_node_type
 graphitron_order_by_entry
 graphitron_reference_for_entry
-graphitron_routine_column_mapping_pair_entry
 graphitron_routine_entry
 graphitron_service_entry
 graphitron_spelled_reference_entry

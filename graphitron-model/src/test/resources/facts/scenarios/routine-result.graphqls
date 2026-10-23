@@ -23,13 +23,13 @@ type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
   # A child @routine ends the path, its actor_id parameter bound from the parent's row.
   films(minLength: Int!): [ActorFilm!]
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
   # A second field returning ActorFilm from the same function: still one place ActorFilm is read.
   longFilms(minLength: Int!): [ActorFilm!]
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
 }
 

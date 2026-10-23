@@ -150,7 +150,7 @@ public final class RoutineCallEmitter {
                 // Classifier-unreachable: a SourceColumn binding reads the previous
                 // chain node's column, but a None head has no previous node. The root chain pins
                 // every start binding to ParamSource.Arg (RoutineChain's compact
-                // constructor; RoutineDirectiveResolver rejects columnMapping at root), so this
+                // constructor; RoutineDirectiveResolver binds only arguments at root), so this
                 // combination cannot be produced.
                 case PreviousNodeRef.None ignored -> throw new IllegalStateException(
                     "correlated column binding for parameter '" + b.routineParamName()

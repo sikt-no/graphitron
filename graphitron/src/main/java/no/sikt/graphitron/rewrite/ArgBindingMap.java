@@ -282,8 +282,7 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName, java.util.Set<String> aut
      * {@link ArgMappingSigil#scan} before delegating the residual to
      * {@code GraphQLSelectionParser.parseEntries} (whose lexer rejects {@code $}-prefixed
      * values, so the scan runs on the raw string; {@code parseEntries} itself is untouched).
-     * Every argMapping site routes through here with its {@link ArgMappingSigil.Site};
-     * columnMapping sites stay on the single-arg overload, since no sigil is admitted there.
+     * Every argMapping site routes through here with its {@link ArgMappingSigil.Site}.
      * A recognized sigil at the admitted site lands in {@link ParsedArgMapping.Ok#sigilBindings};
      * a duplicate Java parameter across the sigil and override maps is the same duplicate-entry
      * rejection either way.

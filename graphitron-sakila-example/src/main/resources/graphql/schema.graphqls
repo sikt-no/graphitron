@@ -2934,16 +2934,15 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # film record.
     detailsForMethod: FilmDetailsForMethod
     # R435 execution fixture: the child hops-then-routine chain. The FK hop lands on the
-    # film_actor junction first, so columnMapping binds pActorId against the PREVIOUS node
-    # (film_actor.actor_id), not the implicit head — the order-significance the item exists
+    # film_actor junction first, so pActorId's actor_id is a column of the table the path stands
+    # on there (film_actor.actor_id), not of the implicit head — the order-significance the item exists
     # for. The routine result is the terminus, so @defaultOrder over its columns is required
     # (a TVF result carries no PK).
     castFilms(minLength: Int!): [ActorFilm!]
         @reference(path: [{table: "film_actor"}])
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the sandwich chain — hops in, lateral routine, name-matched hop
@@ -2953,8 +2952,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
         @reference(path: [{table: "film_actor"}])
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)
@@ -3031,26 +3029,24 @@ type Actor implements Searchable @table(name: "actor") {
     firstName: String! @field(name: "FIRST_NAME")
     lastName:  String! @field(name: "LAST_NAME")
     # R435: correlated child-positioned @routine — the single-node chain whose implicit head is
-    # the parent's table. pActorId binds to the parent row's actor_id column (columnMapping),
-    # pMinLength to a GraphQL argument (argMapping); the mixed call emits the routine's
+    # the parent's table. pActorId binds to the parent row's actor_id column, pMinLength to a
+    # GraphQL argument, both named in argMapping; the mixed call emits the routine's
     # Field-overload surface inside the inline correlated multiset. @defaultOrder is the one
     # order surface a routine list child has: the result table carries no PK, so the
     # deterministic-order rule requires an explicit fixed order over its result columns.
     films(minLength: Int!): [ActorFilm!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # The dot-path form at a correlated child position: pMinLength reads through the wrapper
     # input, so the descent runs off the field's own SelectedField rather than the ancestor
-    # fetcher's env. The column-bound parameter is unaffected; columnMapping has no path form.
+    # fetcher's env. The column-bound parameter is unaffected; a column has no path form.
     filmsNested(filter: ActorFilmFilter!): [ActorFilm!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: filter.minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: filter.minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the child routine-then-hops chain — the lateral routine node
@@ -3060,8 +3056,7 @@ type Actor implements Searchable @table(name: "actor") {
     recentFilms(minLength: Int!): [Film!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)
@@ -3070,8 +3065,7 @@ type Actor implements Searchable @table(name: "actor") {
     recentFilmsInferred(minLength: Int!): [Film!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @defaultOrder(primaryKey: true)
     # R435 execution fixture: the batched keyed re-query form (@splitQuery) of the correlated
@@ -3081,8 +3075,7 @@ type Actor implements Searchable @table(name: "actor") {
     filmsSplit(minLength: Int!): [ActorFilm!] @splitQuery
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the batched routine-then-hops chain — same batch anchor, with the
@@ -3091,8 +3084,7 @@ type Actor implements Searchable @table(name: "actor") {
     recentFilmsSplit(minLength: Int!): [Film!] @splitQuery
         @routine(
             name: "films_for_actor"
-            argMapping: "pMinLength: minLength"
-            columnMapping: "pActorId: actor_id"
+            argMapping: "pActorId: actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)

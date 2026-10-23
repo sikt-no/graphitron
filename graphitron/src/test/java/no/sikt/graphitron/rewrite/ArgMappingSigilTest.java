@@ -18,8 +18,8 @@ import no.sikt.graphitron.model.grammar.ArgMappingSigil;
  * residual verbatim), the per-site admission predicate, and the canonical rejections. Both
  * routings into the owner are pinned here too: {@code ArgBindingMap.parseArgMapping}'s
  * sigil-aware overload carries the bindings alongside the parsed overrides, and its
- * sigil-unaware single-arg overload (the columnMapping route) keeps the parser's ordinary
- * {@code $}-rejection, so no sigil leaks into sites that admit none.
+ * sigil-unaware single-arg overload, which parses what the scan leaves, keeps the parser's
+ * ordinary {@code $}-rejection, so no sigil leaks past the scan.
  */
 @UnitTier
 class ArgMappingSigilTest {
@@ -128,9 +128,9 @@ class ArgMappingSigilTest {
 
     @Test
     void parseArgMapping_singleArgOverload_keepsTheParsersDollarRejection() {
-        // The columnMapping route: sigil-unaware by design. A $-prefixed value keeps the
-        // shared parser's ordinary rejection (its lexer refuses VARIABLE tokens as values),
-        // so no sigil is quietly admitted at a site that admits none.
+        // The residual parse: sigil-unaware by design. A $-prefixed value keeps the shared
+        // parser's ordinary rejection (its lexer refuses VARIABLE tokens as values), so a sigil
+        // the scan did not lift is never quietly admitted.
         var result = ArgBindingMap.parseArgMapping("identity: $session");
         assertThat(result).isInstanceOf(ArgBindingMap.ParsedArgMapping.ParseError.class);
     }

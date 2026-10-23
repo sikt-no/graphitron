@@ -36,8 +36,7 @@ public final class ArgMappingSigil {
     /**
      * The argMapping sites, for the per-site admission rule: {@code $session} is admitted at the
      * {@code @service} argMapping in v1; every other site rejects it naming the admitted one
-     * (the {@code $source} precedent exactly). {@code columnMapping} never routes through this
-     * owner at all: no sigil is admitted there, and a {@code $} there keeps its parse rejection.
+     * (the {@code $source} precedent exactly).
      */
     public enum Site {
         SERVICE("@service argMapping"),

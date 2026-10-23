@@ -573,33 +573,32 @@ Backs the field with a jOOQ database routine (a stored function or procedure).
 
 Day-one supports a table-valued read function (PostgreSQL `RETURNS TABLE` / `SETOF`): the field's
 `@table`-bound element type must point at the jOOQ-generated table-valued-function table, and the
-routine's IN parameters are bound from GraphQL field arguments. The read shape is read off the
-routine's jOOQ kind, not declared. Scalar-read and procedure-write routines are deferred and fail
-at validate time.
+routine's IN parameters are bound from GraphQL field arguments and, on a child field, from columns
+of the table the path stands on. The read shape is read off the routine's jOOQ kind, not declared.
+Scalar-read and procedure-write routines are deferred and fail at validate time.
 """
 directive @routine(
   """The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog."""
   name: String!
   """
-  Maps routine IN parameters to GraphQL arguments. Each entry is
-  `routineParam: path`; multiple entries are comma-separated. The routine parameter name is
-  the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. Unmentioned parameters
-  bind to a GraphQL argument of the same name (identity).
+  Binds routine IN parameters. Each entry is `routineParam: name`; multiple entries are
+  comma-separated. The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv`
+  for a `p_env` parameter. An unmentioned parameter binds as if mapped to its own name.
 
-  The right-hand side may also walk into nested input fields with dot-separated
-  segments (`argMapping: "pCustomerId: input.customerId"`), the same form at
-  every directive that accepts an argMapping. Documented in full under
-  "Binding a parameter to a nested input field" on the @service reference page.
-  The path must land on a scalar or enum leaf: a routine IN parameter takes one value.
+  The name is a GraphQL argument of the field, or, where the routine is a step of a child field's
+  path, a column of the table the path stands on there (the enclosing type's table when the
+  routine comes first). A column-bound parameter makes the call correlated (LATERAL). A name that
+  is both an argument and a column is an error rather than a choice: rename the argument. A name
+  that is neither leaves the parameter unbound, which is an error too. At a root field no table
+  stands, so only arguments bind.
+
+  An argument name may walk into nested input fields with dot-separated segments
+  (`argMapping: "pCustomerId: input.customerId"`), the same form at every directive that accepts
+  an argMapping. Documented in full under "Binding a parameter to a nested input field" on the
+  @service reference page. The path must land on a scalar or enum leaf: a routine IN parameter
+  takes one value.
   """
   argMapping: String
-  """
-  Maps routine IN parameters to columns of the previous table node in the field's chain (the
-  enclosing type's table for a child field). Each entry is `routineParam: column_name`; multiple
-  entries are comma-separated. A column-bound parameter makes the call correlated (LATERAL).
-  Legal only where a previous node exists; a root chain's head has none.
-  """
-  columnMapping: String
 ) repeatable on FIELD_DEFINITION
 
 """

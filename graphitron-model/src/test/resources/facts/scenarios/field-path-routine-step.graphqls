@@ -10,8 +10,8 @@ type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
   # The routine ends the path, called once per actor row.
   films(minLength: Int!): [ActorFilm!]
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
 }
 
@@ -20,8 +20,8 @@ type Film @table(name: "film") {
   # In through film_actor, the routine called per junction row, and back out to film by name.
   castRecentFilms(minLength: Int!): [Film!]
     @reference(path: [{table: "film_actor"}])
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
     @reference(path: [{table: "film"}])
     @defaultOrder(primaryKey: true)
 }

@@ -10,8 +10,8 @@ type Film @table(name: "film") {
 type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
   recentFilms(minLength: Int!): [Film!]
-    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
-             columnMapping: "pActorId: actor_id")
+    @routine(name: "films_for_actor",
+             argMapping: "pActorId: actor_id, pMinLength: minLength")
     @defaultOrder(primaryKey: true)
 }
 

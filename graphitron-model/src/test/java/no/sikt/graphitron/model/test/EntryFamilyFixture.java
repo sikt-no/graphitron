@@ -58,10 +58,11 @@ import java.util.Locale;
  * and a fixture whose elements each stated one thing would never exercise it.
  *
  * <p>Two applications are deliberately malformed. {@code Mutation.brokenMapping} carries an
- * {@code argMapping} the grammar rejects, which writes no pair. {@code Mutation.brokenColumnMapping}
- * carries a {@code columnMapping} the grammar rejects, because quarantining a value it cannot decode
- * is one of the things the decode does: a fixture that only ever hands it decodable values leaves
- * {@code graphitron_undecoded_argument_entry} empty and says nothing about the path that writes it.
+ * {@code argMapping} the grammar rejects, which writes no pair. {@code Mutation.brokenRoutineName}
+ * names its routine with a number where the definition takes a string, because quarantining a
+ * value it cannot decode is one of the things the decode does: a fixture that only ever hands it
+ * decodable values leaves {@code graphitron_undecoded_argument_entry} empty and says nothing about
+ * the path that writes it.
  */
 public final class EntryFamilyFixture {
 
@@ -109,7 +110,7 @@ public final class EntryFamilyFixture {
           film(id: ID! @nodeId(typeName: "Film") @lookupKey): Film
 
           reportedFilms: [Film!]
-            @routine(name: "public.reported_films", argMapping: "pEnv: env", columnMapping: "pFilmId: film_id")
+            @routine(name: "public.reported_films", argMapping: "pEnv: env, pFilmId: film_id")
 
           media: [Media!] @referenceFor(type: "Book", path: [
               {table: "book", key: "book_media_fk",
@@ -246,8 +247,8 @@ public final class EntryFamilyFixture {
             )
           brokenMapping(payload: ImportInput!): Boolean
             @service(service: {className: "no.example.FilmService", method: "broken", argMapping: "this is ] not [ a mapping"})
-          brokenColumnMapping: Boolean
-            @routine(name: "broken", columnMapping: "this is ] not [ a mapping")
+          brokenRoutineName: Boolean
+            @routine(name: 42)
         }
 
         input DeleteFilmInput {

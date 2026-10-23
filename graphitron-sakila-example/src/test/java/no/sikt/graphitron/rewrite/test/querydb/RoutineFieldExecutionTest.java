@@ -31,7 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *   <li>{@code Actor.films}: correlated single-node child (inline multiset, mixed column/argument binding)</li>
  *   <li>{@code Query.recentFilmsForActor}: root routine-then-hops</li>
  *   <li>{@code Actor.recentFilms}: child routine-then-hops (lateral head, name-matched hop out)</li>
- *   <li>{@code Film.castFilms}: hops-then-routine ({@code columnMapping} binds against the previous node)</li>
+ *   <li>{@code Film.castFilms}: hops-then-routine (actor_id is a column of the junction the path stands on)</li>
  *   <li>{@code Film.castRecentFilms}: the sandwich (hops in, CROSS JOIN LATERAL, name-matched hop back out)</li>
  *   <li>{@code Actor.filmsSplit} / {@code Actor.recentFilmsSplit}: batched keyed re-query ({@code @splitQuery})</li>
  * </ul>
@@ -102,8 +102,8 @@ class RoutineFieldExecutionTest {
     @Test
     void correlatedChildRoutineReturnsPerParentRows() {
         // The child-positioned @routine (single-node chain, implicit head). pActorId is fed
-        // from each parent Actor row's actor_id (columnMapping), pMinLength from the GraphQL
-        // argument (argMapping). Seeded casts: PENELOPE(1) -> films 1,2,3; NICK(2) -> 1,4;
+        // from each parent Actor row's actor_id column, pMinLength from the GraphQL
+        // argument, both named in argMapping. Seeded casts: PENELOPE(1) -> films 1,2,3; NICK(2) -> 1,4;
         // ED(3) -> 2,5; JOAN(4) is cast in nothing, so her correlated child is empty rather
         // than absent. With minLength: 0 every cast film comes back, correlated per parent.
         var data = execute("""
