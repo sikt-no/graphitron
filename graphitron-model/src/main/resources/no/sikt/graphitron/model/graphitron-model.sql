@@ -6936,6 +6936,56 @@ COMMENT ON VIEW graphitron_path_element_method_rule IS 'One row the path element
 -- COMMENT ON COLUMN graphitron_path_element_method_rule.method_name IS 'the candidate method';
 -- COMMENT ON COLUMN graphitron_path_element_method_rule.method_descriptor IS 'the candidate method''s descriptor';
 
+CREATE TABLE graphitron_path_element_routine (
+  graph_name          VARCHAR NOT NULL,
+  source_name         VARCHAR NOT NULL,
+  source_line         INT     NOT NULL,
+  source_column       INT     NOT NULL,
+  routine_source_name VARCHAR NOT NULL,
+  table_schema        VARCHAR NOT NULL,
+  routine_name        VARCHAR NOT NULL,
+  touched_at          TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column,
+               routine_source_name, table_schema, routine_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphitron_ast_routine_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  FOREIGN KEY (routine_source_name, table_schema, routine_name)
+    REFERENCES sql_routine (source_name, table_schema, routine_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_path_element_routine IS 'A routine a path element names: one row per @routine element and candidate routine with a generated call. For example @routine(name: "films_for_actor") names public.films_for_actor, whose call is the Routines method filmsForActor.';
+COMMENT ON COLUMN graphitron_path_element_routine.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+COMMENT ON COLUMN graphitron_path_element_routine.source_name IS 'the file the element was written in';
+COMMENT ON COLUMN graphitron_path_element_routine.source_line IS 'the element''s source line, 1-based';
+COMMENT ON COLUMN graphitron_path_element_routine.source_column IS 'the element''s source column. With the three columns before it, the element''s key in graphitron_ast_routine_entry, which holds the spelling this row resolves';
+COMMENT ON COLUMN graphitron_path_element_routine.routine_source_name IS 'the named routine''s catalog partition';
+COMMENT ON COLUMN graphitron_path_element_routine.table_schema IS 'the named routine''s SQL schema';
+COMMENT ON COLUMN graphitron_path_element_routine.routine_name IS 'the named routine''s SQL name. With the two columns before it, sql_routine''s key, which the function''s row in sql_table shares';
+COMMENT ON COLUMN graphitron_path_element_routine.touched_at IS 'when the reading that last found this candidate ran: the mark the sweep reads, so a candidate no longer found goes';
+
+CREATE VIEW graphitron_path_element_routine_rule
+  (graph_name, source_name, source_line, source_column,
+   routine_source_name, table_schema, routine_name) AS
+-- The routine name meets the graph's catalogs as a written table name does, a routine with no
+-- generated call naming nothing the generator could call.
+SELECT r.graph_name, r.source_name, r.source_line, r.source_column,
+       sr.source_name, sr.table_schema, sr.routine_name
+  FROM graphitron_ast_routine_entry r
+  JOIN graphitron_spelled_table s
+    ON s.graph_name = r.graph_name AND s.spelling = r.routine_ref
+  JOIN sql_routine sr
+    ON sr.source_name = s.table_source_name AND sr.table_schema = s.table_schema
+   AND sr.routine_name = s.table_name
+ WHERE sr.routines_class_fqn IS NOT NULL;
+COMMENT ON VIEW graphitron_path_element_routine_rule IS 'One row the path element routine rule computes, in the shape graphitron_path_element_routine stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_path_element_routine, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.graph_name IS 'the owning graph''s partition, carried from the element''s entry';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.source_name IS 'the file the element was written in';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.source_line IS 'the element''s source line';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.source_column IS 'the element''s source column';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.routine_source_name IS 'the candidate routine''s catalog partition';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.table_schema IS 'the candidate routine''s SQL schema';
+-- COMMENT ON COLUMN graphitron_path_element_routine_rule.routine_name IS 'the candidate routine''s SQL name';
+
 CREATE VIEW intent_bound_table
   (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
 SELECT t.graph_name, t.type_name,
@@ -11043,8 +11093,8 @@ CREATE VIEW graphitron_producer_routine_rule
   (graph_name, type_name, field_name, kind, source_name, source_line, source_column,
    routine_source_name, table_schema, routine_name) AS
 SELECT p.graph_name, p.type_name, p.field_name, p.kind,
-       r.source_name, r.source_line, r.source_column,
-       sr.source_name, sr.table_schema, sr.routine_name
+       er.source_name, er.source_line, er.source_column,
+       er.routine_source_name, er.table_schema, er.routine_name
   FROM graphitron_producer p
   JOIN graphitron_field f
     ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
@@ -11054,20 +11104,18 @@ SELECT p.graph_name, p.type_name, p.field_name, p.kind,
    AND da.ordinal = (SELECT MIN(d2.ordinal) FROM graphitron_directive_application d2
                       WHERE d2.graph_name = da.graph_name AND d2.coordinate = da.coordinate
                         AND d2.directive_name = 'routine')
-  JOIN graphitron_ast_routine_entry r
-    ON r.graph_name = da.graph_name AND r.source_name = da.source_name
-   AND r.source_line = da.source_line AND r.source_column = da.source_column
-  JOIN graphitron_spelled_table s
-    ON s.graph_name = r.graph_name AND s.spelling = r.routine_ref
-  JOIN sql_routine sr
-    ON sr.source_name = s.table_source_name AND sr.table_schema = s.table_schema
-   AND sr.routine_name = s.table_name AND sr.routines_class_fqn IS NOT NULL
+  JOIN graphitron_path_element_routine er
+    ON er.graph_name = da.graph_name AND er.source_name = da.source_name
+   AND er.source_line = da.source_line AND er.source_column = da.source_column
  WHERE p.kind = 'ROUTINE'
-   AND (SELECT COUNT(*) FROM graphitron_spelled_table s2
-          JOIN sql_routine sr2
-            ON sr2.source_name = s2.table_source_name AND sr2.table_schema = s2.table_schema
-           AND sr2.routine_name = s2.table_name AND sr2.routines_class_fqn IS NOT NULL
-         WHERE s2.graph_name = r.graph_name AND s2.spelling = r.routine_ref) = 1;
+   -- the one routine the element names; none or several is a defect at the element
+   AND NOT EXISTS (SELECT 1 FROM graphitron_path_element_routine other
+                    WHERE other.graph_name = er.graph_name AND other.source_name = er.source_name
+                      AND other.source_line = er.source_line
+                      AND other.source_column = er.source_column
+                      AND NOT (other.routine_source_name = er.routine_source_name
+                               AND other.table_schema = er.table_schema
+                               AND other.routine_name = er.routine_name));
 COMMENT ON VIEW graphitron_producer_routine_rule IS 'One row the routine rule computes, in the shape graphitron_producer_routine stores: the rule itself, evaluated on demand rather than read off disk. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_producer_routine, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_producer_routine_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_producer_routine_rule.type_name IS 'the type declaring the field';
@@ -11181,38 +11229,55 @@ parent (graph_name, type_name, shape, table_source_name, table_schema, table_nam
     JOIN store_graph g ON g.graph_name = x.graph_name AND g.last_captured = x.touched_at
    WHERE x.shape = 'OBJECT'
 ),
--- What a field hands the type it returns: a producer its result, a reader what its parent holds.
--- A routine read with nothing written after it hands a row of its function's result, which binds
--- no table: the type it returns is that result's, not a table's. A routine write hands its payload
--- an object, as any write does.
+-- The function a field's path ends on, where its last written element is a @routine: the row it
+-- hands is one of the function's result, which binds no table. A write's routine is not one, its
+-- payload holding an object as any write's does.
+routine_end (graph_name, type_name, field_name, table_source_name, table_schema, table_name) AS (
+  SELECT gf.graph_name, gf.type_name, gf.field_name, fn.source_name, fn.table_schema, fn.table_name
+    FROM graphql_field gf
+    JOIN graphitron_ast_field_path_entry e
+      ON e.graph_name = gf.graph_name AND e.source_name = gf.source_name
+     AND e.field_line = gf.source_line AND e.field_column = gf.source_column
+    JOIN graphitron_path_element_routine er
+      ON er.graph_name = e.graph_name AND er.source_name = e.source_name
+     AND er.source_line = e.element_line AND er.source_column = e.element_column
+    JOIN sql_table fn
+      ON fn.source_name = er.routine_source_name AND fn.table_schema = er.table_schema
+     AND fn.table_name = er.routine_name
+   WHERE NOT EXISTS (SELECT 1 FROM graphitron_ast_field_path_entry later
+                      WHERE later.graph_name = e.graph_name AND later.source_name = e.source_name
+                        AND later.field_line = e.field_line AND later.field_column = e.field_column
+                        AND later.position > e.position)
+     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                      WHERE ro.graph_name = gf.graph_name AND ro.type_name = gf.type_name
+                        AND ro.operation = 'MUTATION')
+),
+-- What a field hands the type it returns: a producer its result, a reader what its parent holds,
+-- and either the row of the function its path ends on.
 edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       table_source_name, table_schema, table_name, pivot_type_name, pivot_field_name,
       producer_kind) AS (
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate,
          COALESCE(ft.wrapper_type_name, ft.target_type_name), ft.wrapper_type_name IS NOT NULL,
-         CASE WHEN fn.table_name IS NOT NULL THEN 'ROW' END,
-         fn.source_name, fn.table_schema, fn.table_name,
+         CASE WHEN re.table_name IS NOT NULL THEN 'ROW' END,
+         re.table_source_name, re.table_schema, re.table_name,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), p.kind
     FROM graphitron_producer p
     JOIN graphitron_field f
       ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
     JOIN graphitron_field_target ft
       ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
-    LEFT JOIN graphitron_producer_routine pr
-      ON pr.graph_name = p.graph_name AND pr.type_name = p.type_name AND pr.field_name = p.field_name
-     AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_entry fr
-                      WHERE fr.graph_name = pr.graph_name AND fr.type_name = pr.type_name
-                        AND fr.field_name = pr.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
-                      WHERE ro.graph_name = pr.graph_name AND ro.type_name = pr.type_name
-                        AND ro.operation = 'MUTATION')
-    LEFT JOIN sql_table fn
-      ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
-     AND fn.table_name = pr.routine_name
+    LEFT JOIN routine_end re
+      ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
   UNION ALL
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
-         pa.shape, pa.table_source_name, pa.table_schema, pa.table_name,
-         pa.pivot_type_name, pa.pivot_field_name, CAST(NULL AS VARCHAR)
+         CASE WHEN re.table_name IS NOT NULL THEN 'ROW' ELSE pa.shape END,
+         CASE WHEN re.table_name IS NOT NULL THEN re.table_source_name ELSE pa.table_source_name END,
+         CASE WHEN re.table_name IS NOT NULL THEN re.table_schema ELSE pa.table_schema END,
+         CASE WHEN re.table_name IS NOT NULL THEN re.table_name ELSE pa.table_name END,
+         CASE WHEN re.table_name IS NOT NULL THEN NULL ELSE pa.pivot_type_name END,
+         CASE WHEN re.table_name IS NOT NULL THEN NULL ELSE pa.pivot_field_name END,
+         CAST(NULL AS VARCHAR)
     FROM parent pa
     JOIN graphitron_field f
       ON f.graph_name = pa.graph_name AND f.type_name = pa.type_name
@@ -11220,6 +11285,8 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
     LEFT JOIN graphitron_producer p
       ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
+    LEFT JOIN routine_end re
+      ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
    WHERE p.field_name IS NULL
 ),
 -- Each field hands an object type itself, or each object member of a union or interface, and a
@@ -11256,9 +11323,10 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
 -- What each handed row becomes. A pivot field's type is the row its aggregate makes; a connection's
 -- wrapper holds the page as an object its fields read; an @error type holds the exception a producer
 -- caught; a table-bound type is a row of its table, whoever hands it, since moving from a result back
--- into the tables always refetches; otherwise a reader hands on what its parent holds, a routine read
--- the row of its function's result, and a producer that hands back a value holds an object: a
--- service's, a write's or a routine write's result, and a connection's facets. A table's own record
+-- into the tables always refetches; otherwise a field whose path ends on a @routine hands the row of
+-- its function's result, a reader hands on what its parent holds, and a producer that hands back a
+-- value holds an object: a service's, a write's or a routine write's result, and a connection's
+-- facets. A table's own record
 -- handed back is such a value, read through the Record API and never as a row: nothing selected it.
 SELECT h.graph_name, h.member,
        CASE WHEN dp.coordinate IS NOT NULL THEN 'ROW'
@@ -14759,6 +14827,8 @@ COMMENT ON VIEW meta_family_headline IS 'The headline roster: the relations a re
 CREATE VIEW meta_family_bridge (relation_name, spelled_prefix, census_prefix, rule) AS VALUES
   ('graphitron_path_element_key_rule', 'graphitron_', 'sql_',
    'A written key meets the foreign keys of the graph''s catalogs case-insensitively, the SQL name answering first and the generated Keys constant only where no SQL name does, a written schema binding the schema of the table holding the key.'),
+  ('graphitron_path_element_routine_rule', 'graphitron_', 'sql_',
+   'A written routine name meets the graph''s catalogs as a written table name does, through graphitron_spelled_table, and names a routine only where the catalog generated a call for it.'),
   ('graphitron_path_element_table_rule', 'graphitron_', 'sql_',
    'A written table name meets the graph''s catalogs case-insensitively, a written schema binding the schema and an unqualified name matching in any.'),
   ('graphitron_spelled_table', 'graphitron_', 'sql_',
@@ -15335,6 +15405,9 @@ INSERT INTO meta_grain VALUES
   ('path-element-table-candidate',
    'one table a path element names, in one graph',
    'graph_name, source_name, source_line, source_column, table_source_name, table_schema, table_name', 'catalog'),
+  ('path-element-routine-candidate',
+   'one routine a path element names, in one graph',
+   'graph_name, source_name, source_line, source_column, routine_source_name, table_schema, routine_name', 'catalog'),
   ('path-element-method-candidate',
    'one condition method a path element names, in one graph',
    'graph_name, source_name, source_line, source_column, method_source_name, method_class_name, method_name, method_descriptor', 'classpath'),
@@ -16371,6 +16444,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_path_element_table_rule', 'path-element-table-candidate', 'graphitron',
    'One row the path element table rule computes, in the shape graphitron_path_element_table stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_path_element_table, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
+  ('graphitron_path_element_routine', 'path-element-routine-candidate', 'graphitron',
+   'A routine a path element names: one row per @routine element and candidate routine with a generated call.',
+   'For example @routine(name: "films_for_actor") names public.films_for_actor, whose call is the Routines method filmsForActor.',
+   'What a @routine element names, resolved from its spelling once and keyed by the element, as a table element is in graphitron_path_element_table, so every reader of a path starts from the element it holds. One row per candidate; none or several is a defect at the element.'),
+  ('graphitron_path_element_routine_rule', 'path-element-routine-candidate', 'graphitron',
+   'One row the path element routine rule computes, in the shape graphitron_path_element_routine stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_path_element_routine, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_path_element_method', 'path-element-method-candidate', 'graphitron',
    'A condition method a path element names: one row per element and candidate method.',

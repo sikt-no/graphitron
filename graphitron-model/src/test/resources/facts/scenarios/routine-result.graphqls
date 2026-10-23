@@ -1,0 +1,43 @@
+# What a field whose path ends on a @routine hands the type it returns: a row of the function's
+# result, root or child alike. The type carries no @table, and none binds it: the row is the
+# function's, which the field calls.
+
+type Tilgang {
+  organisasjonskode: Int
+  rollekode: String
+}
+
+type ActorFilm {
+  filmId: Int @field(name: "FILM_ID")
+  title: String
+}
+
+type Actor @table(name: "actor") {
+  firstName: String @field(name: "first_name")
+  # A child @routine ends the path, its actor_id parameter bound from the parent's row.
+  films(minLength: Int!): [ActorFilm!]
+    @routine(name: "films_for_actor", argMapping: "pMinLength: minLength",
+             columnMapping: "pActorId: actor_id")
+    @defaultOrder(fields: [{name: "film_id"}])
+}
+
+extend type Query {
+  actors: [Actor]
+  # A root @routine with nothing written after it.
+  tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+    @defaultOrder(fields: [{name: "organisasjonskode"}, {name: "rollekode"}])
+}
+
+extend schema @expectEquals(relation: "graphitron_path_element_routine", rows: """
+  table_schema, routine_name
+  public,       films_for_actor
+  public,       tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  """)
+
+extend schema @assertContains(relation: "graphitron_result_table", rows: """
+  type_name, shape, table_name
+  Tilgang,   ROW,   tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  ActorFilm, ROW,   films_for_actor
+  """)
