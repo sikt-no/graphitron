@@ -1,7 +1,7 @@
 ---
 id: R1093
 title: "UPDATE and DELETE accept a node id that encodes the primary key plus extra columns"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: nodeid
@@ -215,6 +215,15 @@ No DML fixture has a superkey node today. `FilmActorNote` in the multitenant sch
   * A bulk DELETE without `missingAsDeleted` by an id whose primary key matches no row still fails as "matched zero rows".
 
 Reads are pinned unchanged: `node` on a stale `InventoryUnit` id resolves to null.
+
+## Implementation notes
+
+What landed differs from the plan above in two small ways, neither changing the design:
+
+* **The walker's echo parameter is a record, not a bare column list.** `DeleteRowsWalker.walk` takes `EchoColumns(nodeTypeName, columns)` (with `EchoColumns.NONE` on the direct-return path), because the new rejection names the payload's node type and the walker has no other way to learn it.
+* **`MissingAsDeletedEchoUnencodable` carries no field name.** Its components are the table, the payload's node type, the input's columns and the unsupplied columns. The mutation field is already on the `UnclassifiedField` that wraps every walker rejection, which is also how `MissingAsDeletedNeedsPrimaryKey` gets its coordinate.
+
+Where the plan's tests landed: the membership helper in `KeyMembershipTest`; the walker cases in `UpdateRowsWalkerTest` and `DeleteRowsWalkerTest`; the model facts in `SuperkeyNodeIdDmlClassificationTest` (a sibling of `MutationDmlNodeIdClassificationTest`, on the execution fixture's SDL); the routing read in `TenantBindingClassificationTest`; and the execution cases in `DmlBulkMutationsExecutionTest` under "Superkey node ids", over the new `InventoryUnit` and `FilmCategoryNode` fixtures. The execution `inventory` rows take explicit ids, since the table's serial lags the seed's explicit ids.
 
 ## Other solutions we've considered
 

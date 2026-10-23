@@ -9,6 +9,7 @@ import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
 import no.sikt.graphitron.rewrite.model.DmlReturnExpression;
+import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputArgRef;
 import no.sikt.graphitron.rewrite.model.KeyColumn;
 import no.sikt.graphitron.rewrite.model.MutationField;
@@ -49,7 +50,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * admitted column is a WHERE filter ({@link DeleteRows#whereColumns()}), a PK-only input admits
  * (no {@code NoSetFields}), a composite carrier never straddles (no {@code MixedCarrierKeyMembership}),
  * and {@code multiRow} turns an under-keyed input into a {@link DeleteRows.Broadcast} instead of a
- * rejection.
+ * rejection. The one column not filtered on is a node id's beyond a whole matched key, which is
+ * dropped ({@link DeleteRows#droppedColumns()}).
  */
 @UnitTier
 class DeleteRowsWalkerTest {
@@ -64,7 +66,7 @@ class DeleteRowsWalkerTest {
             columnField("filmId", col(PUBLIC, "film", "film_id")),
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC, false, false, "input");
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -81,7 +83,7 @@ class DeleteRowsWalkerTest {
         // NoSetFields, but DELETE has no SET clause so it admits with the PK as the only filter.
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id"))
-        ), PUBLIC, false, false, "input");
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -92,7 +94,7 @@ class DeleteRowsWalkerTest {
     void ukMatch_pkNotCovered_succeedsWithUniqueKey() {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key"))
-        ), NODE_FIXTURE_CATALOG, false, false, "input");
+        ), NODE_FIXTURE_CATALOG, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.UniqueKey.class);
@@ -105,7 +107,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("pkId", col(NODE_FIXTURE_CATALOG, "parent_node", "pk_id")),
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key"))
-        ), NODE_FIXTURE_CATALOG, false, false, "input");
+        ), NODE_FIXTURE_CATALOG, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -121,7 +123,7 @@ class DeleteRowsWalkerTest {
             compositeColumnField("ref", List.of(
                 col(NODE_FIXTURE_CATALOG, "bar", "id_1"),
                 col(NODE_FIXTURE_CATALOG, "bar", "id_2")))
-        ), NODE_FIXTURE_CATALOG, false, false, "input");
+        ), NODE_FIXTURE_CATALOG, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.Identified) ok(result);
         assertThat(carrier.matchedKey()).isInstanceOf(MatchedKey.PrimaryKey.class);
@@ -136,7 +138,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             columnField("title", col(PUBLIC, "film", "title")),
             columnField("description", col(PUBLIC, "film", "description"))
-        ), PUBLIC, false, false, "input");
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var err = only(result);
         assertThat(err).isInstanceOf(DeleteRowsError.NoUniqueKeyCoverage.class);
@@ -150,7 +152,7 @@ class DeleteRowsWalkerTest {
     void noKeyCovered_multiRow_succeedsWithBroadcast() {
         var result = walker.walk(null, table("film"), List.of(
             columnField("releaseYear", col(PUBLIC, "film", "release_year"))
-        ), PUBLIC, true, false, "input");
+        ), PUBLIC, true, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = ok(result);
         assertThat(carrier).isInstanceOf(DeleteRows.Broadcast.class);
@@ -163,7 +165,7 @@ class DeleteRowsWalkerTest {
         // walker prefers Identified regardless of the flag.
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id"))
-        ), PUBLIC, true, false, "input");
+        ), PUBLIC, true, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         assertThat(ok(result)).isInstanceOf(DeleteRows.Identified.class);
     }
@@ -173,7 +175,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title")),
             columnField("category", col(PUBLIC, "film_list", "category"))
-        ), PUBLIC, false, false, "input");
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var err = only(result);
         assertThat(err).isInstanceOf(DeleteRowsError.NoUniqueKeyCoverage.class);
@@ -184,7 +186,7 @@ class DeleteRowsWalkerTest {
     void tableWithNoKeys_multiRow_succeedsWithBroadcast() {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title"))
-        ), PUBLIC, true, false, "input");
+        ), PUBLIC, true, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         assertThat(ok(result)).isInstanceOf(DeleteRows.Broadcast.class);
     }
@@ -194,7 +196,7 @@ class DeleteRowsWalkerTest {
         var loc = new SourceLocation(7, 3);
         var result = walker.walk(null, table("film"), List.of(
             conditionOwnedFieldAt("syntheticName", loc)
-        ), PUBLIC, false, false, "input");
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var err = only(result);
         assertThat(err).isInstanceOf(DeleteRowsError.OverrideConditionNotSupported.class);
@@ -208,7 +210,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             listNestingField("nested"),
             unboundField("orphan")
-        ), PUBLIC, false, false, "input");
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var errors = errors(result);
         assertThat(errors).hasSize(2);
@@ -234,7 +236,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film_actor"), List.of(
             columnField("filmId", col(PUBLIC, "film_actor", "film_id")),
             columnField("actorId", col(PUBLIC, "film_actor", "actor_id"))
-        ), PUBLIC, false, true, "input");
+        ), PUBLIC, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.IdempotentByPrimaryKey) ok(result);
         assertThat(sqlNames(carrier.key().columns())).containsExactly("actor_id", "film_id");
@@ -248,7 +250,7 @@ class DeleteRowsWalkerTest {
             compositeColumnField("ref", List.of(
                 col(NODE_FIXTURE_CATALOG, "bar", "id_1"),
                 col(NODE_FIXTURE_CATALOG, "bar", "id_2")))
-        ), NODE_FIXTURE_CATALOG, false, true, "input");
+        ), NODE_FIXTURE_CATALOG, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.IdempotentByPrimaryKey) ok(result);
         assertThat(carrier.keyBinding()).extracting(KeyColumn::decodeSlot).containsExactly(0, 1);
@@ -263,7 +265,7 @@ class DeleteRowsWalkerTest {
                 col(PUBLIC, "split_key_child", "a"),
                 col(PUBLIC, "split_key_child", "c"))),
             columnField("b", col(PUBLIC, "split_key_child", "b"))
-        ), PUBLIC, false, true, "input");
+        ), PUBLIC, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var carrier = (DeleteRows.IdempotentByPrimaryKey) ok(result);
         assertThat(carrier.keyBinding()).extracting(k -> k.targetColumn().sqlName()).containsExactly("a", "b", "c");
@@ -275,7 +277,7 @@ class DeleteRowsWalkerTest {
     void missingAsDeleted_uniqueKeyOnly_rejects() {
         var result = walker.walk(null, table("parent_node"), List.of(
             columnField("altKey", col(NODE_FIXTURE_CATALOG, "parent_node", "alt_key"))
-        ), NODE_FIXTURE_CATALOG, false, true, "input");
+        ), NODE_FIXTURE_CATALOG, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var err = (DeleteRowsError.MissingAsDeletedNeedsPrimaryKey) only(result);
         assertThat(err.table()).isEqualTo("parent_node");
@@ -289,7 +291,7 @@ class DeleteRowsWalkerTest {
         var result = walker.walk(null, table("film"), List.of(
             columnField("filmId", col(PUBLIC, "film", "film_id")),
             columnField("title", col(PUBLIC, "film", "title"))
-        ), PUBLIC, false, true, "input");
+        ), PUBLIC, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         assertThat(only(result)).isInstanceOf(DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class);
     }
@@ -302,7 +304,7 @@ class DeleteRowsWalkerTest {
                 col(PUBLIC, "film_actor", "actor_id"),
                 col(PUBLIC, "film_actor", "film_id"))),
             columnField("actorId", col(PUBLIC, "film_actor", "actor_id"))
-        ), PUBLIC, false, true, "input");
+        ), PUBLIC, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         assertThat(only(result)).isInstanceOf(DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class);
     }
@@ -311,7 +313,7 @@ class DeleteRowsWalkerTest {
     void missingAsDeleted_broadcast_rejects() {
         var result = walker.walk(null, table("film"), List.of(
             columnField("releaseYear", col(PUBLIC, "film", "release_year"))
-        ), PUBLIC, true, true, "input");
+        ), PUBLIC, true, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         assertThat(only(result)).isInstanceOf(DeleteRowsError.MissingAsDeletedNeedsPrimaryKey.class);
     }
@@ -320,7 +322,7 @@ class DeleteRowsWalkerTest {
     void missingAsDeleted_keylessTable_rejectsNamingNoPrimaryKey() {
         var result = walker.walk(null, table("film_list"), List.of(
             columnField("title", col(PUBLIC, "film_list", "title"))
-        ), PUBLIC, false, true, "input");
+        ), PUBLIC, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
 
         var err = (DeleteRowsError.MissingAsDeletedNeedsPrimaryKey) only(result);
         assertThat(err.primaryKeyColumns()).isEmpty();
@@ -334,11 +336,11 @@ class DeleteRowsWalkerTest {
         var key = new MatchedKey.PrimaryKey(List.of(actorId, filmId), "film_actor_pkey");
         assertThatThrownBy(() -> new DeleteRows.IdempotentByPrimaryKey(key, List.of(
             new KeyColumn("filmId", filmId, new CallSiteExtraction.Direct(), 0),
-            new KeyColumn("actorId", actorId, new CallSiteExtraction.Direct(), 0))))
+            new KeyColumn("actorId", actorId, new CallSiteExtraction.Direct(), 0)), List.of(), List.of()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("binds 'film_id'");
         assertThatThrownBy(() -> new DeleteRows.IdempotentByPrimaryKey(key, List.of(
-            new KeyColumn("actorId", actorId, new CallSiteExtraction.Direct(), 0))))
+            new KeyColumn("actorId", actorId, new CallSiteExtraction.Direct(), 0)), List.of(), List.of()))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("exactly once");
     }
@@ -348,7 +350,7 @@ class DeleteRowsWalkerTest {
         var filmId = col(PUBLIC, "film", "film_id");
         var carrier = new DeleteRows.IdempotentByPrimaryKey(
             new MatchedKey.PrimaryKey(List.of(filmId), "film_pkey"),
-            List.of(new KeyColumn("filmId", filmId, new CallSiteExtraction.Direct(), 0)));
+            List.of(new KeyColumn("filmId", filmId, new CallSiteExtraction.Direct(), 0)), List.of(), List.of());
         assertThatThrownBy(() -> new MutationField.DmlTableField(
             "Mutation", "deleteFilm", null,
             new DmlReturnExpression.EncodedSingle(new HelperRef.Encode(
@@ -356,6 +358,111 @@ class DeleteRowsWalkerTest {
             new OperationMember.Write.Delete(new InputArgRef("in", "FilmKey", table("film"), false), carrier)))
             .isInstanceOf(IllegalArgumentException.class)
             .hasMessageContaining("payload-returning DELETE");
+    }
+
+    // --- a node id covering the matched key plus more: the superkey case ---
+
+    @Test
+    void superkeyNodeId_dropsItsOutOfKeyColumnFromTheWhere() {
+        // film_actor's key is (actor_id, film_id); the id also encodes last_update at slot 2.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeColumnField("id", superkeyColumns())
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
+
+        var carrier = (DeleteRows.Identified) ok(result);
+        assertThat(carrier.whereColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactly("actor_id", "film_id");
+        assertThat(carrier.whereColumns()).extracting(KeyColumn::decodeSlot).containsExactly(0, 1);
+        assertThat(carrier.droppedColumns()).singleElement().satisfies(kc -> {
+            assertThat(kc.targetColumn().sqlName()).isEqualTo("last_update");
+            assertThat(kc.decodeSlot()).isEqualTo(2);
+            assertThat(kc.sdlFieldName()).isEqualTo("id");
+        });
+    }
+
+    @Test
+    void missingAsDeleted_superkeyNodeId_bindsTheEchoColumnToItsDroppedSlot() {
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeColumnField("id", superkeyColumns())
+        ), PUBLIC, false, true, "input",
+            new DeleteRowsWalker.EchoColumns("FilmActorNode", List.of(col(PUBLIC, "film_actor", "last_update"))));
+
+        var carrier = (DeleteRows.IdempotentByPrimaryKey) ok(result);
+        assertThat(carrier.keyBinding()).extracting(k -> k.targetColumn().sqlName()).containsExactly("actor_id", "film_id");
+        assertThat(carrier.echoBinding()).singleElement().satisfies(kc -> {
+            assertThat(kc.targetColumn().sqlName()).isEqualTo("last_update");
+            assertThat(kc.decodeSlot()).isEqualTo(2);
+        });
+        assertThat(carrier.droppedColumns()).isEqualTo(carrier.echoBinding());
+    }
+
+    @Test
+    void missingAsDeleted_superkeyNodeId_withoutEchoColumns_bindsNoEcho() {
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeColumnField("id", superkeyColumns())
+        ), PUBLIC, false, true, "input", DeleteRowsWalker.EchoColumns.NONE);
+
+        var carrier = (DeleteRows.IdempotentByPrimaryKey) ok(result);
+        assertThat(carrier.echoBinding()).isEmpty();
+        assertThat(carrier.droppedColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("last_update");
+    }
+
+    @Test
+    void missingAsDeleted_plainPkInputUnderASuperkeyPayload_rejectsAsEchoUnencodable() {
+        var result = walker.walk(null, table("film_actor"), List.of(
+            columnField("actorId", col(PUBLIC, "film_actor", "actor_id")),
+            columnField("filmId", col(PUBLIC, "film_actor", "film_id"))
+        ), PUBLIC, false, true, "input",
+            new DeleteRowsWalker.EchoColumns("FilmActorNode", List.of(col(PUBLIC, "film_actor", "last_update"))));
+
+        var err = (DeleteRowsError.MissingAsDeletedEchoUnencodable) only(result);
+        assertThat(err.table()).isEqualTo("film_actor");
+        assertThat(err.nodeTypeName()).isEqualTo("FilmActorNode");
+        assertThat(sqlNames(err.unsuppliedColumns())).containsExactly("last_update");
+        assertThat(err.lspCode()).isEqualTo("graphitron.delete-rows.missing-as-deleted-echo-unencodable");
+        assertThat(err.message()).contains("{last_update}", "FilmActorNode", "node id");
+    }
+
+    @Test
+    void crossTableReferenceCoveringTheKeyPlusMore_keepsEveryColumnAsAFilter() {
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeReferenceField("ref", superkeyColumns())
+        ), PUBLIC, false, false, "input", DeleteRowsWalker.EchoColumns.NONE);
+
+        var carrier = (DeleteRows.Identified) ok(result);
+        assertThat(carrier.whereColumns()).extracting(k -> k.targetColumn().sqlName())
+            .containsExactly("actor_id", "film_id", "last_update");
+        assertThat(carrier.droppedColumns()).isEmpty();
+    }
+
+    @Test
+    void idempotentByPrimaryKey_echoBindingOutsideTheDroppedColumns_rejectedByCompactConstructor() {
+        var actorId = col(PUBLIC, "film_actor", "actor_id");
+        var filmId = col(PUBLIC, "film_actor", "film_id");
+        var lastUpdate = col(PUBLIC, "film_actor", "last_update");
+        var key = new MatchedKey.PrimaryKey(List.of(actorId, filmId), "film_actor_pkey");
+        var idDecode = dummyDecode(List.of(actorId, filmId, lastUpdate));
+        var binding = List.of(new KeyColumn("id", actorId, idDecode, 0), new KeyColumn("id", filmId, idDecode, 1));
+        var dropped = new KeyColumn("id", lastUpdate, idDecode, 2);
+        assertThatThrownBy(() -> new DeleteRows.IdempotentByPrimaryKey(key, binding, List.of(), List.of(dropped)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("not among the dropped columns");
+
+        var otherDecode = dummyDecode(List.of(lastUpdate));
+        var foreign = new KeyColumn("other", lastUpdate, otherDecode, 0);
+        assertThatThrownBy(() -> new DeleteRows.IdempotentByPrimaryKey(key, binding, List.of(foreign), List.of(foreign)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("supplies no primary-key column");
+
+        assertThat(new DeleteRows.IdempotentByPrimaryKey(key, binding, List.of(dropped), List.of(dropped)).echoBinding())
+            .containsExactly(dropped);
+    }
+
+    private List<ColumnRef> superkeyColumns() {
+        return List.of(
+            col(PUBLIC, "film_actor", "actor_id"),
+            col(PUBLIC, "film_actor", "film_id"),
+            col(PUBLIC, "film_actor", "last_update"));
     }
 
     // --- result helpers ---
@@ -401,6 +508,11 @@ class DeleteRowsWalkerTest {
     private static InputField.ColumnBackedField compositeColumnField(String name, List<ColumnRef> columns) {
         return new InputField.ColumnBackedField("In", name, loc(), "ID", true, false,
             columns, Optional.empty(), dummyDecode(columns), ColumnWriteBound.Unbounded.INSTANCE);
+    }
+
+    private static InputField.ColumnBackedReferenceField compositeReferenceField(String name, List<ColumnRef> lifted) {
+        return new InputField.ColumnBackedReferenceField("In", name, loc(), "ID", true, false,
+            lifted, List.of(), new FilterBinding.Local(lifted), false, Optional.empty(), dummyDecode(lifted), ColumnWriteBound.Unbounded.INSTANCE);
     }
 
     // A plain (non-list) NestingField is admitted by flattening it; a list-typed nesting stays

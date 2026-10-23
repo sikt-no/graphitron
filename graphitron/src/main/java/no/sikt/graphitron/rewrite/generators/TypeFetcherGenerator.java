@@ -4147,16 +4147,26 @@ public class TypeFetcherGenerator {
         // not expressions.
         postInGuard.addStatement("$T<$T> vRows = new $T<>()",
             ClassName.get(List.class), rowClass, arrayList);
+        // Duplicate-lookup-key guard: one statement can join each target row to at most one input
+        // row, so two rows naming the same key would race for it and one would be silently lost.
+        // The tuple is built from the very values the WHERE joins on (the lookup-key cells below),
+        // not from the raw wire value: a node id covering the key plus more columns that the WHERE
+        // drops would otherwise let two ids differing only in a dropped column pass as distinct.
+        postInGuard.addStatement("$T<$T<Object>> seenKeys = new $T<>()",
+            hashSet, ClassName.get(List.class), hashSet);
         postInGuard.beginControlFlow("for ($T<?, ?> row : in)", MAP);
         postInGuard.addStatement("$T<$T<?>> cells = new $T<>()",
             ClassName.get(List.class), fieldClass, arrayList);
         // Per-row decode locals for any NodeId-decoded groups (composite-PK or arity-1 NodeId
         // ColumnField), shared by all positional bindings of the same source field.
         emitLookupKeyDecodeLocals(postInGuard, groups, "row");
+        var lookupKeyTuple = new ArrayList<CodeBlock>();
         for (int gi = 0; gi < groups.size(); gi++) {
             var g = groups.get(gi);
-            emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef);
+            lookupKeyTuple.addAll(emitLookupKeyCellAdds(postInGuard, g, gi, "row", tablesOnly, tableRef));
         }
+        postInGuard.addStatement("seenKeys.add($T.of($L))", ClassName.get(List.class),
+            CodeBlock.join(lookupKeyTuple, ", "));
         emitSetBulkCellAdds(postInGuard, setGroups, setNullRules, lookupSqlNames, "bulkSetKey", tablesOnly, tableRef);
         // WHERE∩SET per-row value agreement (self-FK shared column), reusing the bulkKey / bulkSetKey
         // decode locals declared above this in the loop body. No-op when there is no cross-partition overlap.
@@ -4174,36 +4184,7 @@ public class TypeFetcherGenerator {
         postInGuard.addStatement("$T<$T<?>, Object> sets = new $T<>()", MAP, fieldClass, linkedHashMap);
         emitSetVFieldPuts(postInGuard, setGroups, tablesOnly, tableRef);
 
-        // Duplicate-lookup-key guard: build a HashSet<List<Object>> over the per-row lookup-key
-        // tuples; throw when set size differs from row count. The tuple identity comes from the
-        // wire-format source-field values (MapBinding.fieldName per binding; DecodedRecordGroup
-        // uses its sourceFieldName once for the whole group — the encoded NodeId string is a
-        // stable identity for the decoded tuple).
-        var lookupKeyTuple = CodeBlock.builder().add("$T.of(", ClassName.get(List.class));
-        boolean firstTupleSlot = true;
-        for (var g : groups) {
-            switch (g) {
-                case InputColumnBindingGroup.MapGroup mg -> {
-                    for (var binding : mg.bindings()) {
-                        if (!firstTupleSlot) lookupKeyTuple.add(", ");
-                        firstTupleSlot = false;
-                        lookupKeyTuple.add("$L", ArgCallEmitter.nestedMapValueExpr(
-                            "row", accessPathOf(binding.fieldName(), binding.extraction())));
-                    }
-                }
-                case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                    if (!firstTupleSlot) lookupKeyTuple.add(", ");
-                    firstTupleSlot = false;
-                    lookupKeyTuple.add("$L", ArgCallEmitter.nestedMapValueExpr("row", drg.accessPath()));
-                }
-            }
-        }
-        lookupKeyTuple.add(")");
-        postInGuard.addStatement("$T<$T<Object>> seenKeys = new $T<>()",
-            hashSet, ClassName.get(List.class), hashSet);
-        postInGuard.beginControlFlow("for ($T<?, ?> row : in)", MAP)
-            .addStatement("seenKeys.add($L)", lookupKeyTuple.build())
-            .endControlFlow();
+        // The duplicate-lookup-key guard's verdict, over the tuples the cell loop above collected.
         postInGuard.beginControlFlow("if (seenKeys.size() != in.size())")
             .addStatement("throw new $T($S)", IllegalArgumentException.class,
                 "@mutation(typeName: UPDATE) bulk input contains rows with duplicate "
@@ -4423,9 +4404,15 @@ public class TypeFetcherGenerator {
      * keyed by column rather than listed because the groups emit in first-occurrence order, which
      * is not the key's column order; a reader that needs key order walks its own column list and
      * looks each one up.
+     *
+     * <p>{@code decodeLocalByPath} names, per node-id carrier's input access path, the decode local
+     * {@link #decodeLocals()} declares for it, so a reader needing another slot of the same decode
+     * (a {@code missingAsDeleted} echo of a dropped node-key column) reads the record the WHERE
+     * already decoded rather than decoding it a second time.
      */
     private record LookupWhereChunk(CodeBlock decodeLocals, CodeBlock whereExpr,
-                                    Map<String, CodeBlock> keyValues) {}
+                                    Map<String, CodeBlock> keyValues,
+                                    Map<List<String>, String> decodeLocalByPath) {}
 
     /**
      * Builds the single-row lookup-WHERE chunk: decode locals lifted to {@code postInGuard}, plus
@@ -4477,6 +4464,7 @@ public class TypeFetcherGenerator {
         var locals = CodeBlock.builder();
         var whereExpr = CodeBlock.builder();
         var keyValues = new java.util.LinkedHashMap<String, CodeBlock>();
+        var decodeLocalByPath = new java.util.LinkedHashMap<List<String>, String>();
         int slotIndex = 0;
         for (int gi = 0; gi < groups.size(); gi++) {
             var g = groups.get(gi);
@@ -4489,6 +4477,10 @@ public class TypeFetcherGenerator {
                         keyValues.putIfAbsent(binding.targetColumn().sqlName(),
                             appendMapBindingValueExpr(whereExpr, locals, binding, mapLocal,
                                 tablesOnly, tableRef, gi));
+                        if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
+                            decodeLocalByPath.putIfAbsent(
+                                accessPathOf(binding.fieldName(), binding.extraction()), "lookupKey" + gi);
+                        }
                         whereExpr.add(")");
                         if (slotIndex > 0) whereExpr.add(")");
                         slotIndex++;
@@ -4498,6 +4490,7 @@ public class TypeFetcherGenerator {
                     String recLocal = "lookupKey" + gi;
                     appendDecodeLocal(locals, recLocal, drg.extraction(),
                         ArgCallEmitter.nestedMapValueExpr(mapLocal, drg.accessPath()), drg.sourceFieldName());
+                    decodeLocalByPath.putIfAbsent(drg.accessPath(), recLocal);
                     for (var binding : drg.bindings()) {
                         if (slotIndex > 0) whereExpr.add(".and(");
                         whereExpr.add("$T.$L.$L.eq($L.value$L())",
@@ -4511,7 +4504,8 @@ public class TypeFetcherGenerator {
                 }
             }
         }
-        return new LookupWhereChunk(locals.build(), whereExpr.build(), Map.copyOf(keyValues));
+        return new LookupWhereChunk(locals.build(), whereExpr.build(), Map.copyOf(keyValues),
+            Map.copyOf(decodeLocalByPath));
     }
 
     /**
@@ -4624,44 +4618,49 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits per-row {@code cells.add($T.val(...))} statements for one lookup-key group.
+     * Emits per-row {@code cells.add($T.val(...))} statements for one lookup-key group, and returns
+     * the per-binding value expressions it wrapped, in cell order, so a second consumer (the
+     * duplicate-lookup-key guard) reads the same values the cells do rather than re-deriving them.
      * MapBinding entries with NodeIdDecodeKeys read from the matching {@code bulkKey<gi>_<bi>}
      * local declared by {@link #emitLookupKeyDecodeLocals}; DecodedRecordGroup entries read
      * {@code bulkKey<gi>.value<k+1>()} per slot. Direct-extracted MapBindings read raw
      * {@code mapLocal.get(name)} verbatim.
      */
-    private static void emitLookupKeyCellAdds(
+    private static List<CodeBlock> emitLookupKeyCellAdds(
             CodeBlock.Builder block,
             InputColumnBindingGroup g,
             int groupIndex,
             String mapLocal,
             GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var values = new ArrayList<CodeBlock>();
+        var columns = new ArrayList<no.sikt.graphitron.model.jooq.ColumnRef>();
         switch (g) {
             case InputColumnBindingGroup.MapGroup mg -> {
                 for (int bi = 0; bi < mg.bindings().size(); bi++) {
                     var binding = mg.bindings().get(bi);
                     if (leafExtractionOf(binding.extraction()) instanceof CallSiteExtraction.NodeIdDecodeKeys) {
-                        String recLocal = "bulkKey" + groupIndex + "_" + bi;
-                        block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
-                            DSL, recLocal, binding.decodeSlot() + 1,
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                        values.add(CodeBlock.of("$L.value$L()", "bulkKey" + groupIndex + "_" + bi,
+                            binding.decodeSlot() + 1));
                     } else {
-                        var path = accessPathOf(binding.fieldName(), binding.extraction());
-                        block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
-                            DSL, ArgCallEmitter.nestedMapValueExpr(mapLocal, path),
-                            tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                        values.add(CodeBlock.of("$L", ArgCallEmitter.nestedMapValueExpr(mapLocal,
+                            accessPathOf(binding.fieldName(), binding.extraction()))));
                     }
+                    columns.add(binding.targetColumn());
                 }
             }
             case InputColumnBindingGroup.DecodedRecordGroup drg -> {
-                String recLocal = "bulkKey" + groupIndex;
                 for (var binding : drg.bindings()) {
-                    block.addStatement("cells.add($T.val($L.value$L(), $T.$L.$L.getDataType()))",
-                        DSL, recLocal, binding.index() + 1,
-                        tablesOnly.tablesClass(), tableRef.javaFieldName(), binding.targetColumn().javaName());
+                    values.add(CodeBlock.of("$L.value$L()", "bulkKey" + groupIndex, binding.index() + 1));
+                    columns.add(binding.targetColumn());
                 }
             }
         }
+        for (int i = 0; i < values.size(); i++) {
+            block.addStatement("cells.add($T.val($L, $T.$L.$L.getDataType()))",
+                DSL, values.get(i),
+                tablesOnly.tablesClass(), tableRef.javaFieldName(), columns.get(i).javaName());
+        }
+        return List.copyOf(values);
     }
 
     /**
@@ -5421,7 +5420,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Insert _, OperationMember.Write.Upsert _ -> {
                 var input = recordCarrierInput(f.write());
                 yield buildSingleRecordTwoStepFetcher(
-                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    ctx, f, input.name(), input.inputTable(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildDmlChainForRecord(f.write(), input.inputTable(), tablesOnly, tableLocal),
                     outputPackage);
             }
@@ -5432,7 +5431,7 @@ public class TypeFetcherGenerator {
                 var obligations = w.updateRows().agreementObligations();
                 var setNullRules = nullRulesByPath(w.updateRows().nullRules());
                 yield buildSingleRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildCarrierUpdateChainSingle(
                         setGroups, keyGroups, keySetGroups, setNullRules, obligations,
                         w.inputArg().table(), tablesOnly, tableLocal),
@@ -5441,7 +5440,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Delete w -> {
                 var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
                 yield buildSingleRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal) -> buildRecordDeleteChain(
                         w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal),
                     outputPackage);
@@ -5471,8 +5470,10 @@ public class TypeFetcherGenerator {
      * {@link #buildMutationDmlRecordFetcher} (record-carrier INSERT/UPSERT/DELETE, SET/WHERE off the
      * {@code TableInputArg}) and {@link #buildMutationUpdatePayloadFetcher} (payload-returning
      * UPDATE, SET/WHERE off the {@link UpdateRows} carrier). The shape is invariant across both: a
-     * PK-only {@code .returningResult(pkCols).fetchOne()} inside {@code dsl.transactionResult(...)},
-     * a success return, and a catch arm. Only the DML chain (and its pre-DML guards) varies;
+     * {@code .returningResult(<returning>).fetchOne()} inside {@code dsl.transactionResult(...)},
+     * a success return, and a catch arm. The captured columns are the leaf's
+     * {@link no.sikt.graphitron.rewrite.model.Returning}: the primary key, widened to the node key
+     * on a DELETE whose payload ids need it. Only the DML chain (and its pre-DML guards) varies;
      * {@code chainFn} is the seam, parameterised on the resolved table names rather than threading
      * a {@code DmlKind} that re-switches internally.
      *
@@ -5486,18 +5487,19 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel,
+            TableRef tableRef, no.sikt.graphitron.rewrite.model.Returning returning,
+            Optional<ErrorChannel.Mapped> errorChannel,
             no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
             java.util.function.BiFunction<GeneratorUtils.ResolvedTableNames, String, DmlChainAndGuards> chainFn,
             String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
-        var pkCols = tableRef.primaryKeyColumns();
-        if (pkCols.isEmpty()) {
+        if (returning.primaryKey().isEmpty()) {
             throw new IllegalStateException(
                 "Payload-returning DML fetcher '" + qualifiedName + "' references table '"
                 + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
         }
+        var pkCols = returning.columns();
         TypeName payloadType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
         boolean wrap = errorChannel.isPresent();
@@ -5790,10 +5792,11 @@ public class TypeFetcherGenerator {
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows} carrier's
      * {@code whereColumns()} (projected to {@link InputColumnBindingGroup}s via {@link #keyGroupsOf}),
      * not {@code tia.fieldBindings()}, so the payload DELETE does not depend on a {@code TableInputArg}.
-     * The enclosing {@link #buildMutationDeletePayloadFetcher} adds {@code .returningResult(pkCols)} so
-     * the fetcher's value (consumed by the per-field
+     * The enclosing skeleton adds {@code .returningResult(<returning>)} so the fetcher's value
+     * (consumed by the per-field
      * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}
-     * carrier) is a PK-only RETURNING Record. On
+     * carrier) is a RETURNING Record of the primary key, widened to the node key where the
+     * payload ids need it. On
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} the chain also
      * carries the echo record the fetcher answers when no row matched.
      */
@@ -5911,7 +5914,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Insert _ -> {
                 var input = recordCarrierInput(f.write());
                 yield buildBulkRecordTwoStepFetcher(
-                    ctx, f, input.name(), input.inputTable(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    ctx, f, input.name(), input.inputTable(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) ->
                         buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
@@ -5920,7 +5923,7 @@ public class TypeFetcherGenerator {
                 var setGroups = setGroupsOf(w.updateRows().setColumns());
                 var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
                 yield buildBulkRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
                         setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
                         nullRulesByPath(w.updateRows().nullRules()),
@@ -5931,7 +5934,7 @@ public class TypeFetcherGenerator {
             case OperationMember.Write.Delete w -> {
                 var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
                 yield buildBulkRecordTwoStepFetcher(
-                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
                         w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols,
                         recordRowType, f.qualifiedName()),
@@ -5953,7 +5956,9 @@ public class TypeFetcherGenerator {
  * The bulk two-step DML emit skeleton shared by {@link #buildMutationBulkDmlRecordFetcher}
      * (record-carrier INSERT/DELETE) and {@link #buildMutationBulkUpdatePayloadFetcher}
      * (payload-returning bulk UPDATE). The shape is invariant: an empty-list short-circuit, then a
-     * per-row N+1 accumulator collecting PK echoes into a {@code Result<RecordN<PK>>} in input order
+     * per-row N+1 accumulator collecting the leaf's {@link no.sikt.graphitron.rewrite.model.Returning}
+     * columns (the primary key, widened to the node key on a DELETE whose payload ids need it) into
+     * a {@code Result<RecordN>} in input order
      * inside one {@code dsl.transactionResult(...)}, then the success return and catch arm, both
      * {@code Outcome}-wrapped when the payload declares an errors field (the empty-list
      * short-circuit included). Only the per-row body varies; {@code perRowBodyFn} is the seam, parameterised
@@ -5964,17 +5969,18 @@ public class TypeFetcherGenerator {
      */
     private static MethodSpec buildBulkRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
-            TableRef tableRef, Optional<ErrorChannel.Mapped> errorChannel,
+            TableRef tableRef, no.sikt.graphitron.rewrite.model.Returning returning,
+            Optional<ErrorChannel.Mapped> errorChannel,
             no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
             BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
-        var pkCols = tableRef.primaryKeyColumns();
-        if (pkCols.isEmpty()) {
+        if (returning.primaryKey().isEmpty()) {
             throw new IllegalStateException(
                 "Payload-returning bulk DML fetcher '" + qualifiedName + "' references table '"
                 + tableRef.tableName() + "' that has no primary key; admission requires PK columns");
         }
+        var pkCols = returning.columns();
         TypeName recordRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
         var resultClass = ClassName.get("org.jooq", "Result");
@@ -6116,8 +6122,8 @@ public class TypeFetcherGenerator {
     /**
      * Per-row DELETE body for the payload-returning Delete write arm on the bulk carrier
      * (driven from {@link #buildMutationBulkDeletePayloadFetcher}). Each input row builds a
-     * {@code deleteFrom(table).where(<lookup>).returningResult(PK).fetchOne()} statement; the
-     * returned PK-only {@code RecordN} is appended to the bulk accumulator in input order. A row that
+     * {@code deleteFrom(table).where(<lookup>).returningResult(<returning>).fetchOne()} statement;
+     * the returned {@code RecordN} is appended to the bulk accumulator in input order. A row that
      * matches no target raises {@link IllegalStateException} with the same shape as the UPDATE
      * no-match path — input-order preservation is a contract of the bulk-DML emit, and silent
      * skipping would break it. The per-row WHERE columns are sourced from the
@@ -6177,12 +6183,16 @@ public class TypeFetcherGenerator {
 
     /**
      * The key record a {@code missingAsDeleted: true} DELETE answers for an input key that matched
-     * no row: {@code <dsl>.newRecord(<pk fields>).values(<key values>)}, the primary key the client
+     * no row: {@code <dsl>.newRecord(<returning fields>).values(<key values>)}, the key the client
      * sent, built the way a deleted row's {@code RETURNING} record is. Walks
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey#keyBinding()}, which
      * is in primary-key order, and looks each column's value up in the chunk's
      * {@link LookupWhereChunk#keyValues()}, so the echo encodes exactly the values the WHERE
-     * compared whatever order the WHERE compared them in.
+     * compared whatever order the WHERE compared them in. Then walks
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey#echoBinding()}, the
+     * node-key columns beyond the primary key that the leaf's {@code RETURNING} also captures, in
+     * the same order, reading each from the slot of the decode local the WHERE declared for its
+     * carrier: the client's value, so an echoed id is the id the client sent.
      */
     private static CodeBlock missingRowEcho(
             no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem,
@@ -6203,6 +6213,16 @@ public class TypeFetcherGenerator {
             }
             fields.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), column.javaName());
             values.add(value);
+        }
+        for (var echo : idem.echoBinding()) {
+            var decodeLocal = whereChunk.decodeLocalByPath().get(accessPathOf(echo.sdlFieldName(), echo.extraction()));
+            if (decodeLocal == null) {
+                throw new IllegalStateException("missingAsDeleted echo: node-key column '"
+                    + echo.targetColumn().sqlName() + "' reads input field '" + echo.sdlFieldName()
+                    + "', whose decode the DELETE's WHERE does not declare");
+            }
+            fields.add(", $T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), echo.targetColumn().javaName());
+            values.add(", $L.value$L()", decodeLocal, echo.decodeSlot() + 1);
         }
         return CodeBlock.of("$L.newRecord($L).values($L)", dslLocal, fields.build(), values.build());
     }

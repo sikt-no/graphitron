@@ -4892,6 +4892,54 @@ type DeletedSplitKeyChildrenPayload {
     deletedIds: [ID!]
 }
 
+# Superkey node-id fixtures (DmlBulkMutationsExecutionTest): a node key that is the primary key plus
+# more columns. An UPDATE or DELETE taking such an id filters on the primary key it carries and
+# ignores the rest, so an id whose extra column has since changed still names its row. Both tables
+# are claimed by no other node type, so the implicit payload encoder resolves to these.
+#
+# InventoryUnit's id also encodes store_id, which storeId writes: changing the store does not
+# invalidate an id minted before the change, and the payload's ids encode the new store.
+type InventoryUnit implements Node @table(name: "inventory") @node(keyColumns: ["inventory_id", "store_id"]) {
+    id: ID! @nodeId
+    storeId: Int! @field(name: "store_id")
+}
+
+input InventoryUnitUpdateInput {
+    id: ID! @nodeId(typeName: "InventoryUnit")
+    storeId: Int @field(name: "store_id")
+}
+
+input InventoryUnitDeleteInput {
+    id: ID! @nodeId(typeName: "InventoryUnit")
+}
+
+type InventoryUnitPayload {
+    inventoryUnit: InventoryUnit
+}
+
+type InventoryUnitsPayload {
+    inventoryUnits: [InventoryUnit!]
+}
+
+type DeletedInventoryUnitPayload {
+    deletedId: ID
+}
+
+# FilmCategoryNode's id also encodes last_update, a temporal column beside a two-column key. A
+# deleted row's payload id carries the stored last_update, read back through RETURNING; a
+# missingAsDeleted echo carries the one the client sent.
+type FilmCategoryNode implements Node @table(name: "film_category") @node(keyColumns: ["film_id", "category_id", "last_update"]) {
+    id: ID! @nodeId
+}
+
+input FilmCategoryNodeDeleteInput {
+    id: ID! @nodeId(typeName: "FilmCategoryNode")
+}
+
+type DeletedFilmCategoryNodesPayload {
+    deletedIds: [ID!]
+}
+
 # R514 execution-tier fixture: a payload-returning single-row DELETE whose write target is named on
 # the consuming field with @mutation(table: "storage_bin"). Before the
 # DmlEmitted @mutation(table:) grounding, the binding grounder had no field-relative write-target
@@ -5263,6 +5311,20 @@ type Mutation {
         @mutation(typeName: DELETE, table: "film_actor", missingAsDeleted: true)
     deleteSplitKeyChildrenMissingAsDeleted(in: [SplitKeyChildDeleteInput!]!): DeletedSplitKeyChildrenPayload
         @mutation(typeName: DELETE, table: "split_key_child", missingAsDeleted: true)
+
+    # Superkey node ids (InventoryUnit, FilmCategoryNode above): each filters on the primary key the
+    # id carries and ignores its other columns. Pinned by DmlBulkMutationsExecutionTest's superkey
+    # cases. updateInventoryUnitsDirect is the VALUES-join bulk UPDATE, whose duplicate-key guard
+    # compares the key the WHERE joins on, so two ids differing only in store_id are duplicates.
+    updateInventoryUnit(in: InventoryUnitUpdateInput!): InventoryUnitPayload @mutation(typeName: UPDATE)
+    updateInventoryUnits(in: [InventoryUnitUpdateInput!]!): InventoryUnitsPayload @mutation(typeName: UPDATE)
+    updateInventoryUnitsDirect(in: [InventoryUnitUpdateInput!]!): [InventoryUnit!] @mutation(typeName: UPDATE)
+    deleteInventoryUnit(in: InventoryUnitDeleteInput!): DeletedInventoryUnitPayload
+        @mutation(typeName: DELETE, table: "inventory")
+    deleteFilmCategoryNodes(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
+        @mutation(typeName: DELETE, table: "film_category")
+    deleteFilmCategoryNodesMissingAsDeleted(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
+        @mutation(typeName: DELETE, table: "film_category", missingAsDeleted: true)
 
     # The bulk DELETE id carrier with an errors field and a non-null [ID!]!: deleting a referenced
     # film violates a foreign key, the batch rolls back, and deletedIds renders []. Pinned by

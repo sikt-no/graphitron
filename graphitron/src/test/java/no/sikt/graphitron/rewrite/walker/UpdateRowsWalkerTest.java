@@ -11,6 +11,8 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.rewrite.model.FilterBinding;
 import no.sikt.graphitron.rewrite.model.InputField;
+import no.sikt.graphitron.rewrite.model.KeyColumn;
+import no.sikt.graphitron.rewrite.model.SetColumn;
 import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 import no.sikt.graphitron.model.jooq.TableRef;
@@ -334,6 +336,44 @@ class UpdateRowsWalkerTest {
         assertThat(mixed.fieldName()).isEqualTo("straddle");
         assertThat(sqlNames(mixed.columnsInKey())).containsExactly("actor_id");
         assertThat(sqlNames(mixed.columnsOutsideKey())).containsExactly("last_update");
+    }
+
+    @Test
+    void superkeyNodeId_routesTheKeyToWhereAndDropsTheRest() {
+        // A node id over film_actor's key (actor_id, film_id) plus last_update at slot 2, beside a
+        // plain field that writes last_update. The id names the row by the key alone: its
+        // last_update is neither a WHERE filter nor a SET value, so the plain field is the only
+        // writer and nothing collides or needs an agreement check.
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeColumnField("id", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "film_id"),
+                col(PUBLIC, "film_actor", "last_update"))),
+            columnField("lastUpdate", col(PUBLIC, "film_actor", "last_update"))
+        ), PUBLIC, "input");
+
+        var carrier = ok(result);
+        assertThat(carrier.keyColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("actor_id", "film_id");
+        assertThat(carrier.keyColumns()).extracting(KeyColumn::decodeSlot).containsExactly(0, 1);
+        assertThat(carrier.droppedColumns()).singleElement().satisfies(kc -> {
+            assertThat(kc.sdlFieldName()).isEqualTo("id");
+            assertThat(kc.targetColumn().sqlName()).isEqualTo("last_update");
+            assertThat(kc.decodeSlot()).isEqualTo(2);
+        });
+        assertThat(carrier.setColumns()).extracting(SetColumn::sdlFieldName).containsExactly("lastUpdate");
+        assertThat(carrier.agreementObligations()).isEmpty();
+    }
+
+    @Test
+    void superkeyNodeIdAlone_hasNothingToSet() {
+        var result = walker.walk(null, table("film_actor"), List.of(
+            compositeColumnField("id", List.of(
+                col(PUBLIC, "film_actor", "actor_id"),
+                col(PUBLIC, "film_actor", "film_id"),
+                col(PUBLIC, "film_actor", "last_update")))
+        ), PUBLIC, "input");
+
+        assertThat(only(result)).isInstanceOf(UpdateRowsError.NoSetFields.class);
     }
 
     @Test

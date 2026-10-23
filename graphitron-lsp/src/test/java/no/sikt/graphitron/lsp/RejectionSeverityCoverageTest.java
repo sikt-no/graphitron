@@ -460,6 +460,13 @@ class RejectionSeverityCoverageTest {
                 List.of(new no.sikt.graphitron.model.jooq.ColumnRef("title", "TITLE", "java.lang.String")),
                 List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer")));
         }
+        if (permit == no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedEchoUnencodable.class) {
+            return new no.sikt.graphitron.model.diagnostics.DeleteRowsError.MissingAsDeletedEchoUnencodable(
+                "film_category", "FilmCategoryNode",
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
+                    new no.sikt.graphitron.model.jooq.ColumnRef("category_id", "CATEGORY_ID", "java.lang.Integer")),
+                List.of(new no.sikt.graphitron.model.jooq.ColumnRef("last_update", "LAST_UPDATE", "java.time.LocalDateTime")));
+        }
         // MissingAsDeletedError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity), and
         // lspCodeOf forwards each arm's stable graphitron.missing-as-deleted.* code.

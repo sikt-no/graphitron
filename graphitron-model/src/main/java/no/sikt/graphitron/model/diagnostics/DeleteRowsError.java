@@ -17,7 +17,9 @@ import java.util.stream.Collectors;
  * <p>The arm set is {@link UpdateRowsError}'s minus the two arms DELETE's shape makes meaningless:
  * there is <b>no {@code NoSetFields}</b> (DELETE has no SET clause to be empty) and <b>no
  * {@code MixedCarrierKeyMembership}</b> (DELETE has no SET boundary for a composite carrier to
- * straddle — every admitted column is a WHERE filter). The three remaining arms map verbatim.
+ * straddle: every admitted column is a WHERE filter, or dropped where a node id covers the whole
+ * matched key plus more). The three remaining arms map verbatim; the {@code missingAsDeleted} arms
+ * are DELETE's own.
  *
  * <p>The arm-to-code mapping is exposed via {@link #lspCode()} under the
  * {@code graphitron.delete-rows.} namespace so the LSP {@code Diagnostic} projector can read the
@@ -27,7 +29,8 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
     DeleteRowsError.NoUniqueKeyCoverage,
     DeleteRowsError.UnsupportedInputFieldShape,
     DeleteRowsError.OverrideConditionNotSupported,
-    DeleteRowsError.MissingAsDeletedNeedsPrimaryKey
+    DeleteRowsError.MissingAsDeletedNeedsPrimaryKey,
+    DeleteRowsError.MissingAsDeletedEchoUnencodable
 {
     /** LSP wire code under the {@code graphitron.delete-rows.} namespace. */
     String lspCode();
@@ -122,7 +125,9 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
      * primary key: it covers only a unique key, contributes a column beyond the primary key, binds
      * a primary-key column twice, or covers no key at all. The echo for a missing row is the
      * primary key, which only an input supplying the whole primary key can build, and an extra
-     * filter column would let the echo claim a deletion that did not happen. Names the table's
+     * filter column would let the echo claim a deletion that did not happen. A node id covering
+     * the primary key plus more is admitted, since its other columns are dropped rather than
+     * filtered on. Names the table's
      * primary key (empty for a table without one) and the input's columns.
      */
     record MissingAsDeletedNeedsPrimaryKey(
@@ -146,8 +151,41 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
             }
             return sb.append("A key that matches no row is echoed as deleted, and only the primary "
                 + "key supplied by the input can be echoed. Change the input to bind exactly the "
-                + "primary key, or remove missingAsDeleted: true.").toString();
+                + "primary key, or remove missingAsDeleted: true. A node id whose key columns are "
+                + "the whole primary key plus more also qualifies: it filters on the primary key "
+                + "alone.").toString();
         }
         @Override public String lspCode() { return "graphitron.delete-rows.missing-as-deleted-needs-primary-key"; }
+    }
+
+    /**
+     * {@code missingAsDeleted: true} on a DELETE whose payload ids encode a node key reaching
+     * beyond the primary key, while the input supplies no value for some of those extra columns.
+     * The input identifies rows by exactly the primary key, so a key that matches a row deletes it
+     * and the payload id is read back from the deleted row; but a key that matches no row is
+     * echoed from the input, and there is nothing to encode its extra columns from. Separate from
+     * {@link MissingAsDeletedNeedsPrimaryKey} because the fix differs: key the input by the node
+     * id rather than narrow it to the primary key. Names the table, the payload's node type, the
+     * input's columns and the node-key columns no input field supplies.
+     */
+    record MissingAsDeletedEchoUnencodable(
+        String table,
+        String nodeTypeName,
+        List<ColumnRef> inputColumns,
+        List<ColumnRef> unsuppliedColumns
+    ) implements DeleteRowsError {
+        public MissingAsDeletedEchoUnencodable {
+            inputColumns = List.copyOf(inputColumns);
+            unsuppliedColumns = List.copyOf(unsuppliedColumns);
+        }
+        @Override public String message() {
+            return "@mutation(typeName: DELETE, missingAsDeleted: true) on table '" + table
+                + "' echoes a key that matches no row as a '" + nodeTypeName + "' id, whose node key "
+                + "also encodes " + sqlNames(unsuppliedColumns) + ", but the input contributes only "
+                + sqlNames(inputColumns) + ", so a missing row's id has nothing to encode those "
+                + "columns from. Key the input by the '" + nodeTypeName + "' node id instead, or "
+                + "remove missingAsDeleted: true.";
+        }
+        @Override public String lspCode() { return "graphitron.delete-rows.missing-as-deleted-echo-unencodable"; }
     }
 }

@@ -83,9 +83,9 @@ Most input fields fall wholly on one side of that boundary, but a xref:nodeId.ad
 
 A reference in that shape may be nullable (`ID`). Its in-key half is row identity and is therefore never written, so an explicit `null` clears only its out-of-key half: those columns are written `NULL`, and the in-key columns stay as the rest of the input pins them. A half-null foreign key imposes no referential obligation under PostgreSQL's default `MATCH SIMPLE`, so a cleared reference is an absent one rather than a dangling one. A cleared reference supplies no value, so it takes no part in the comparison above. The build rejects the nullable spelling in one shape only: when the reference is the sole supplier of one of the matched key's columns, since an omitted or cleared value would leave nothing to find the row by. Give that column another contributor, or spell the reference `ID!`.
 
-A field carrying the row's *own* columns is still rejected when it straddles, because writing only some of a row's key columns would move the row rather than update it.
+A field carrying the row's *own* columns is still rejected when it straddles part of the matched key, because writing only some of a row's key columns would move the row rather than update it. The exception is a node id whose key columns are the whole matched key plus more, for example a type declared `@node(keyColumns: ["inventory_id", "store_id"])` over a table whose primary key is `inventory_id`. Such an id identifies the row by the matched key alone: its other columns are neither filtered on nor written. Another field may write them; a `storeId: Int @field(name: "store_id")` beside the id moves the item to another store, and the payload's ids encode the new value. An id minted before that change still updates the row.
 
-`DELETE` identifies rows the same way (primary-key-or-unique-key coverage), but has no `SET` clause: *every* admitted input column is a `WHERE` filter, and the deleted row's primary key is returned through `RETURNING`. Extra input columns beyond the matched key add further `AND`ed predicates (they narrow the match, they don't move to a `SET` side). When the input covers no primary key or unique key, the DELETE is rejected at build time so a non-unique filter cannot silently broadcast; set `multiRow: true` on the `@mutation` directive to opt into a deliberate broadcast (non-key) delete that may remove more than one row.
+`DELETE` identifies rows the same way (primary-key-or-unique-key coverage), but has no `SET` clause: *every* admitted input column is a `WHERE` filter, and the deleted row's primary key is returned through `RETURNING`. Extra input columns beyond the matched key add further `AND`ed predicates (they narrow the match, they don't move to a `SET` side). A node id whose key columns are the whole matched key plus more is the exception: it filters on the matched key only, so an id whose extra columns have since changed still deletes its row. When the input covers no primary key or unique key, the DELETE is rejected at build time so a non-unique filter cannot silently broadcast; set `multiRow: true` on the `@mutation` directive to opt into a deliberate broadcast (non-key) delete that may remove more than one row.
 
 [[_naming_the_insert_and_update_write_target]]
 == Naming the INSERT and UPDATE write target
@@ -149,7 +149,7 @@ extend type Mutation {
 
 The carrier field's element type must be `ID` (single DELETE) or `[ID!]` (bulk DELETE). The list wrapper must be list-of-non-null; `[ID]` (list-of-nullable) is rejected, because every element of a successful DELETE response is the encoded PK of an actually-deleted row, the slot cannot be null. The encoder is recognised implicitly when the mutation's write-target table backs a `@node` type. If the write-target table is not `@node`-backed, the carrier is rejected with the same diagnostic as the bare-`ID` DELETE path; register the table's SDL type as `@node` first. To pin the encoder explicitly (recommended when grep-ability matters), attach `@nodeId(typeName: "...")` to the carrier field; the directive's encoder must resolve to the same table as the mutation's write target. An `@nodeId` whose encoder resolves to a different table is rejected: you would be returning IDs of a different entity than the one the DML acted on.
 
-The response contains exactly the IDs of rows the DML actually removed, unless the field sets `missingAsDeleted: true`.
+The response contains exactly the IDs of rows the DML actually removed, unless the field sets `missingAsDeleted: true`. When the node type's key columns go beyond the primary key, the extra columns are read back from the deleted row, so each id encodes the row as it was stored rather than as the input id described it.
 
 === Projecting the deleted row's primary key onto an SDL type
 
@@ -185,11 +185,11 @@ deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
     @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
 ----
 
-The input must identify rows by exactly the table's primary key, directly or through a node id. A unique key is not enough, because the response echoes the primary key and only the input can supply it for a row that is not there; an extra filter column is refused, because a key whose row survives the filter would be echoed as deleted.
+The input must identify rows by exactly the table's primary key, directly or through a node id. A unique key is not enough, because the response echoes the primary key and only the input can supply it for a row that is not there; an extra filter column is refused, because a key whose row survives the filter would be echoed as deleted. A node id whose key columns go beyond the primary key qualifies; a key that matches no row is echoed as the id the client sent. If the payload's ids need such columns and the input supplies only the primary key, the build fails, because there is nothing to encode a missing row's id from. Key the input by the node id instead.
 
 === What you can't return
 
-* Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
+* Arbitrary non-PK columns of the deleted row. The row is gone; `RETURNING` is narrowed to primary-key columns, plus the node key's other columns where the payload's ids encode them. If you need the full pre-delete state, snapshot it in your application code before issuing the mutation.
 * A bare class-backed payload type. Use a NodeId echo or a `@table` projection.
 
 [#payload-with-an-errors-field]

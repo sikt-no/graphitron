@@ -5,6 +5,7 @@ import graphql.schema.GraphQLFieldDefinition;
 import no.sikt.graphitron.rewrite.ArgConditionRef;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
+import no.sikt.graphitron.rewrite.model.ColumnOverlap;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.DeleteRows;
 import no.sikt.graphitron.model.diagnostics.DeleteRowsError;
@@ -20,13 +21,17 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 
 /**
  * Produces the {@link DeleteRows} carrier for an {@code @mutation(typeName: DELETE)} field.
  * The DELETE analogue of {@link UpdateRowsWalker}, but where that walker partitions the input
  * into a matched-key WHERE half and an everything-else SET half, this walker has no SET destination:
- * <em>every</em> admitted input column is a WHERE filter ({@link DeleteRows#whereColumns()}), and the
- * matched key is a single-row <em>guard</em> rather than a column subset.
+ * every admitted input column is a WHERE filter ({@link DeleteRows#whereColumns()}) or dropped, and
+ * the matched key is a single-row <em>guard</em> rather than a column subset. A column is dropped
+ * only where an own-columns carrier covers the whole matched key plus more (the node id of a type
+ * whose node key is a strict superset of the key, {@link KeyMembership.CoversKeyPlus}): the key
+ * alone names the row, so an id whose extra columns have since changed still deletes it.
  *
  * <p>PK-or-UK identification is the shared {@link MatchedKeys#firstCovered} matcher both walkers
  * call: a covered key yields {@link DeleteRows.Identified} (single-row; {@code multiRow} is moot
@@ -35,10 +40,12 @@ import java.util.Optional;
  * {@link DeleteRowsError.NoUniqueKeyCoverage} otherwise.
  *
  * <p>With {@code missingAsDeleted: true} the walker admits only an input that identifies rows by
- * exactly the primary key: the matched key is the primary key and the contributions bind each of
- * its columns once and nothing else. That yields {@link DeleteRows.IdempotentByPrimaryKey}, with
- * the supplying {@link KeyColumn} picked for each primary-key slot in key order; anything else is
- * {@link DeleteRowsError.MissingAsDeletedNeedsPrimaryKey}.
+ * exactly the primary key: the matched key is the primary key and the WHERE binds each of its
+ * columns once and nothing else. That yields {@link DeleteRows.IdempotentByPrimaryKey}, with the
+ * supplying {@link KeyColumn} picked for each primary-key slot in key order; anything else is
+ * {@link DeleteRowsError.MissingAsDeletedNeedsPrimaryKey}. Where the payload's ids encode columns
+ * beyond the primary key ({@link EchoColumns}), each must be one a carrier drops, so the echo has
+ * the client's value to encode; otherwise {@link DeleteRowsError.MissingAsDeletedEchoUnencodable}.
  *
  * <p><b>Substrate concession (mirrors {@link UpdateRowsWalker}).</b> Re-deriving the column
  * classification from raw SDL would duplicate the upstream input-field classifier, so this walker
@@ -50,8 +57,24 @@ import java.util.Optional;
 public final class DeleteRowsWalker {
 
     /** A reshaped, column-bearing input field: the SDL field name, its target columns on the
-     * input's own table, and the extraction shape the emitter reuses. */
-    private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction) {}
+     * input's own table (positionally its decode slots), the extraction shape the emitter reuses,
+     * and what the carrier points at. */
+    private record Contribution(String sdlFieldName, List<ColumnRef> columns, CallSiteExtraction extraction,
+                                CarrierRole role) {}
+
+    /**
+     * What a {@code missingAsDeleted} echo of a missing row must supply beyond the primary key: the
+     * payload's node type and its node-key columns outside the primary key, in node-key order.
+     * {@link #NONE} where the payload's ids need nothing beyond the primary key, and on the
+     * direct-return path, where {@code missingAsDeleted} is refused before the walk.
+     */
+    public record EchoColumns(String nodeTypeName, List<ColumnRef> columns) {
+        public static final EchoColumns NONE = new EchoColumns("", List.of());
+
+        public EchoColumns {
+            columns = List.copyOf(columns);
+        }
+    }
 
     public WalkerResult<DeleteRows> walk(
         GraphQLFieldDefinition field,
@@ -60,7 +83,8 @@ public final class DeleteRowsWalker {
         JooqCatalog catalog,
         boolean multiRow,
         boolean missingAsDeleted,
-        String outerArgName
+        String outerArgName,
+        EchoColumns echoColumns
     ) {
         var errors = new ArrayList<Rejection.AuthorError>();
 
@@ -72,31 +96,48 @@ public final class DeleteRowsWalker {
             return new WalkerResult.Err<>(errors);
         }
 
-        // Union of every admitted field's target columns; every admitted column is a WHERE
-        // filter (DELETE has no SET partition).
+        // Union of every admitted field's target columns, over which the matched key is found.
         var inputColumns = new ArrayList<ColumnRef>();
         var inputColumnSqlNames = new LinkedHashSet<String>();
-        var whereColumns = new ArrayList<KeyColumn>();
-        // DELETE never splits a carrier: every column of every contribution is a WHERE filter, so a
-        // column's index in its contribution is also its decode slot, and the rows are contiguous.
         for (var c : contributions) {
-            for (int slot = 0; slot < c.columns().size(); slot++) {
-                var col = c.columns().get(slot);
+            for (var col : c.columns()) {
                 if (inputColumnSqlNames.add(col.sqlName())) {
                     inputColumns.add(col);
                 }
-                whereColumns.add(new KeyColumn(c.sdlFieldName(), col, c.extraction(), slot));
             }
         }
 
         // A covered key proves single-row; the matched key is a cardinality guard, not a column
-        // subset, so whereColumns is unaffected.
+        // subset. It is found before the WHERE is built: a column a carrier drops is by definition
+        // outside the key, so the match is the same with or without it.
         MatchedKey matchedKey = MatchedKeys.firstCovered(catalog, table, inputColumnSqlNames).orElse(null);
+        var keySqlNames = matchedKey == null ? Set.<String>of() : sqlNameSet(matchedKey.columns());
+
+        // Every column of every contribution is a WHERE filter at its decode slot, a straddle
+        // included, since DELETE has no row-move hazard. The one exception is an own-columns carrier
+        // covering the whole matched key plus more (a superkey node id): the key alone names the
+        // row, so its other columns are dropped. That leaves the carrier's WHERE rows a
+        // non-contiguous slice of its decode record, which is why each row states its slot.
+        var whereColumns = new ArrayList<KeyColumn>();
+        var droppedColumns = new ArrayList<KeyColumn>();
+        for (var c : contributions) {
+            var membership = matchedKey == null || c.role() instanceof CarrierRole.SelfFk
+                ? null
+                : KeyMembership.of(c.role(), c.columns(), keySqlNames);
+            if (membership instanceof KeyMembership.CoversKeyPlus plus) {
+                addColumns(whereColumns, c, plus.inKey());
+                addColumns(droppedColumns, c, plus.dropped());
+            } else {
+                addColumns(whereColumns, c, ColumnOverlap.SlotColumn.contiguous(c.columns()));
+            }
+        }
+
         if (missingAsDeleted) {
-            return idempotentByPrimaryKey(catalog, table, matchedKey, whereColumns, inputColumns);
+            return idempotentByPrimaryKey(catalog, table, matchedKey, whereColumns, droppedColumns,
+                inputColumns, echoColumns);
         }
         if (matchedKey != null) {
-            return new WalkerResult.Ok<>(new DeleteRows.Identified(matchedKey, whereColumns));
+            return new WalkerResult.Ok<>(new DeleteRows.Identified(matchedKey, whereColumns, droppedColumns));
         }
 
         // No key covered. multiRow: true opts into a broadcast (non-key) delete; otherwise the
@@ -115,11 +156,18 @@ public final class DeleteRowsWalker {
      * exactly once with nothing beside it. A unique-key match, an extra filter column, a column
      * bound twice (a node id and a plain field both filling it) and no covered key at all are each
      * the one typed rejection. The binding is re-ordered into the key's column order here, since
-     * the contribution order is the WHERE's and need not be the key's.
+     * the contribution order is the WHERE's and need not be the key's. A superkey node id's dropped
+     * columns do not count against "nothing beside it", since they are not filtered on.
+     *
+     * <p>Each of {@code echoColumns} is then bound to the dropped column that decodes it, in
+     * {@code echoColumns} order, so a missing row's echo can encode the payload's id from the
+     * client's value. An echo column no carrier decodes is
+     * {@link DeleteRowsError.MissingAsDeletedEchoUnencodable}.
      */
     private static WalkerResult<DeleteRows> idempotentByPrimaryKey(
         JooqCatalog catalog, TableRef table, MatchedKey matchedKey,
-        List<KeyColumn> whereColumns, List<ColumnRef> inputColumns
+        List<KeyColumn> whereColumns, List<KeyColumn> droppedColumns, List<ColumnRef> inputColumns,
+        EchoColumns echoColumns
     ) {
         if (matchedKey instanceof MatchedKey.PrimaryKey pk && whereColumns.size() == pk.columns().size()) {
             var bySqlName = new java.util.HashMap<String, KeyColumn>();
@@ -134,7 +182,21 @@ public final class DeleteRowsWalker {
                 }
             }
             if (binding.size() == pk.columns().size()) {
-                return new WalkerResult.Ok<>(new DeleteRows.IdempotentByPrimaryKey(pk, binding));
+                var echoBinding = new ArrayList<KeyColumn>();
+                var unsupplied = new ArrayList<ColumnRef>();
+                for (var col : echoColumns.columns()) {
+                    droppedColumns.stream()
+                        .filter(kc -> kc.targetColumn().sqlName().equals(col.sqlName()))
+                        .findFirst()
+                        .ifPresentOrElse(echoBinding::add, () -> unsupplied.add(col));
+                }
+                if (!unsupplied.isEmpty()) {
+                    return new WalkerResult.Err<>(List.of(
+                        new DeleteRowsError.MissingAsDeletedEchoUnencodable(
+                            table.tableName(), echoColumns.nodeTypeName(), inputColumns, unsupplied)));
+                }
+                return new WalkerResult.Ok<>(
+                    new DeleteRows.IdempotentByPrimaryKey(pk, binding, droppedColumns, echoBinding));
             }
         }
         var primaryKeyColumns = MatchedKeys.candidates(catalog, table).stream()
@@ -162,14 +224,17 @@ public final class DeleteRowsWalker {
         for (var f : fields) {
             switch (f) {
                 case InputField.ColumnBackedField c -> classifyColumnCarrier(
-                    c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                    c.name(), c.list(), c.columns(), wrap(c.extraction(), prefix, c.name(), outerArgName),
+                    new CarrierRole.OwnColumns(), c.condition(), c.location(), errors, contributions);
                 // Same binding gate as UpdateRowsWalker: a Remote-bound reference carrier has no
                 // column on this table for the DELETE's WHERE to key on, so it needs the same
                 // key-to-FK-column subquery and reports the same shared cause.
                 case InputField.ColumnBackedReferenceField c -> {
                     switch (c.binding()) {
                         case FilterBinding.Local(var ownTableColumns) -> classifyColumnCarrier(
-                            c.name(), c.list(), ownTableColumns, wrap(c.extraction(), prefix, c.name(), outerArgName), c.condition(), c.location(), errors, contributions);
+                            c.name(), c.list(), ownTableColumns, wrap(c.extraction(), prefix, c.name(), outerArgName),
+                            c.selfReference() ? new CarrierRole.SelfFk() : new CarrierRole.CrossTableFk(),
+                            c.condition(), c.location(), errors, contributions);
                         case FilterBinding.Remote ignored ->
                             errors.add(new DeleteRowsError.UnsupportedInputFieldShape(
                                 c.name(), "translated FK-target @nodeId reference",
@@ -233,7 +298,7 @@ public final class DeleteRowsWalker {
      */
     private void classifyColumnCarrier(
         String name, boolean list, List<ColumnRef> columns, CallSiteExtraction extraction,
-        Optional<ArgConditionRef> condition, SourceLocation location,
+        CarrierRole role, Optional<ArgConditionRef> condition, SourceLocation location,
         List<Rejection.AuthorError> errors, List<Contribution> contributions
     ) {
         if (list) {
@@ -254,6 +319,19 @@ public final class DeleteRowsWalker {
             }
             return;
         }
-        contributions.add(new Contribution(name, columns, extraction));
+        contributions.add(new Contribution(name, columns, extraction, role));
+    }
+
+    /** Append the given columns of {@code c} to {@code out}, each at its stated decode slot. */
+    private static void addColumns(List<KeyColumn> out, Contribution c, List<ColumnOverlap.SlotColumn> columns) {
+        for (var sc : columns) {
+            out.add(new KeyColumn(c.sdlFieldName(), sc.column(), c.extraction(), sc.slot()));
+        }
+    }
+
+    private static Set<String> sqlNameSet(List<ColumnRef> columns) {
+        var out = new LinkedHashSet<String>();
+        for (var c : columns) out.add(c.sqlName());
+        return out;
     }
 }

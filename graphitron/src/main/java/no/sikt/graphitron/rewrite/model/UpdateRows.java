@@ -26,6 +26,15 @@ public sealed interface UpdateRows permits UpdateRows.Identified {
     List<KeyColumn> keyColumns();
 
     /**
+     * The columns an identifying carrier decodes but neither filters on nor writes: the
+     * out-of-key columns of a node id whose node key covers the whole matched key plus more. The
+     * matched key alone names the row, so these leave both partitions. Each keeps its decode slot.
+     * Empty unless such a carrier is present. Every column a carrier decodes is in exactly one of
+     * {@link #keyColumns()}, {@link #setColumns()} and this list.
+     */
+    List<KeyColumn> droppedColumns();
+
+    /**
      * The columns two input fields both decode a value for, each to be checked equal before the DML
      * runs. Empty for the common shape, where no reference carrier lands on a matched-key column.
      * See {@link AgreementObligation} for which carriers produce a row.
@@ -56,6 +65,7 @@ public sealed interface UpdateRows permits UpdateRows.Identified {
         MatchedKey matchedKey,
         List<SetColumn> setColumns,
         List<KeyColumn> keyColumns,
+        List<KeyColumn> droppedColumns,
         List<AgreementObligation> agreementObligations,
         List<CarrierNullRule> nullRules
     ) implements UpdateRows {
@@ -65,6 +75,7 @@ public sealed interface UpdateRows permits UpdateRows.Identified {
             }
             setColumns = List.copyOf(setColumns);
             keyColumns = List.copyOf(keyColumns);
+            droppedColumns = List.copyOf(droppedColumns);
             agreementObligations = List.copyOf(agreementObligations);
             nullRules = List.copyOf(nullRules);
             if (setColumns.isEmpty()) {

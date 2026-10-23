@@ -65,6 +65,7 @@ class RejectionResidueDrainageTest {
         "UpdateRowsError.OverrideConditionNotSupported", "UpdateRowsError.PlainColumnCollision",
         "DeleteRowsError.NoUniqueKeyCoverage", "DeleteRowsError.UnsupportedInputFieldShape",
         "DeleteRowsError.OverrideConditionNotSupported", "DeleteRowsError.MissingAsDeletedNeedsPrimaryKey",
+        "DeleteRowsError.MissingAsDeletedEchoUnencodable",
         "MutationTableArgError.UnsupportedVerb",
         "MissingAsDeletedError.UnsupportedVerb", "MissingAsDeletedError.UnsupportedReturnShape",
         "ErrorChannelWalkerError.MultipleErrorsFields",

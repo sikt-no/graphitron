@@ -17,6 +17,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.testcontainers.postgresql.PostgreSQLContainer;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -1390,6 +1391,231 @@ class DmlBulkMutationsExecutionTest {
             assertThat(NodeIdEncoder.decodeValues("SplitKeyChild", ids.get(0))).containsExactly("1", "2", "3");
             assertThat(NodeIdEncoder.decodeValues("SplitKeyChild", ids.get(1))).containsExactly("7", "8", "9");
             assertThat(tx.fetchCount(DSL.selectOne().from(DSL.table("split_key_child")))).isZero();
+        });
+    }
+
+    // ===== Superkey node ids: the primary key plus more columns =====
+    //
+    // InventoryUnit's node key is (inventory_id, store_id) over inventory's primary key
+    // inventory_id; FilmCategoryNode's is (film_id, category_id, last_update) over film_category's
+    // (film_id, category_id). An UPDATE or DELETE taking such an id filters on the primary key the
+    // id carries and ignores the rest, so an id minted before the extra column changed still names
+    // its row. Reads keep filtering on every column.
+
+    private static final LocalDateTime MINTED_AT = LocalDateTime.of(2020, 1, 1, 12, 0);
+    private static final LocalDateTime STORED_AT = LocalDateTime.of(2021, 6, 15, 8, 30);
+
+    // inventory's serial lags the seed's explicit ids, so these rows take ids of their own.
+    private static final AtomicInteger NEXT_INVENTORY_ID = new AtomicInteger(1_900_000_000);
+
+    private static int insertInventory(DSLContext tx, int filmId, int storeId) {
+        return tx.insertInto(DSL.table("inventory"))
+            .set(DSL.field("inventory_id"), NEXT_INVENTORY_ID.incrementAndGet())
+            .set(DSL.field("film_id"), filmId)
+            .set(DSL.field("store_id"), storeId)
+            .returningResult(DSL.field("inventory_id", Integer.class))
+            .fetchOne().value1();
+    }
+
+    private static Integer storeOf(DSLContext tx, int inventoryId) {
+        return tx.select(DSL.field("store_id", Integer.class)).from(DSL.table("inventory"))
+            .where(DSL.field("inventory_id", Integer.class).eq(inventoryId))
+            .fetchOne(0, Integer.class);
+    }
+
+    private static void moveInventory(DSLContext tx, int inventoryId, int storeId) {
+        tx.update(DSL.table("inventory")).set(DSL.field("store_id"), storeId)
+            .where(DSL.field("inventory_id", Integer.class).eq(inventoryId)).execute();
+    }
+
+    private static String inventoryUnitId(int inventoryId, int storeId) {
+        return NodeIdEncoder.encodeInventoryUnit(inventoryId, storeId);
+    }
+
+    @Test
+    void updateInventoryUnit_byAnIdMintedBeforeAStoreChange_updatesTheRowAndReturnsTheNewStore() {
+        inRolledBackTransaction(tx -> {
+            int inventoryId = insertInventory(tx, insertFilm(tx, randomMarker("superkey")), 1);
+            String minted = inventoryUnitId(inventoryId, 1);
+
+            Map<String, Object> moved = execute(tx, """
+                mutation { updateInventoryUnit(in: { id: "%s", storeId: 2 }) { inventoryUnit { id storeId } } }
+                """.formatted(minted));
+            var unit = (Map<String, Object>) ((Map<String, Object>) moved.get("updateInventoryUnit")).get("inventoryUnit");
+            assertThat(unit.get("id")).isEqualTo(inventoryUnitId(inventoryId, 2));
+            assertThat(unit.get("storeId")).isEqualTo(2);
+
+            // The minted id now encodes a store the row is no longer in; it still names the row.
+            Map<String, Object> back = execute(tx, """
+                mutation { updateInventoryUnit(in: { id: "%s", storeId: 1 }) { inventoryUnit { id } } }
+                """.formatted(minted));
+            var backUnit = (Map<String, Object>) ((Map<String, Object>) back.get("updateInventoryUnit")).get("inventoryUnit");
+            assertThat(backUnit.get("id")).isEqualTo(minted);
+            assertThat(storeOf(tx, inventoryId)).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void updateInventoryUnits_bulkByStaleIds_updatesEveryRowAndReturnsTheNewStores() {
+        inRolledBackTransaction(tx -> {
+            int filmId = insertFilm(tx, randomMarker("superkey"));
+            int first = insertInventory(tx, filmId, 1);
+            int second = insertInventory(tx, filmId, 1);
+            String firstMinted = inventoryUnitId(first, 1);
+            String secondMinted = inventoryUnitId(second, 1);
+            moveInventory(tx, first, 2);
+            moveInventory(tx, second, 2);
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    updateInventoryUnits(in: [{ id: "%s", storeId: 1 }, { id: "%s", storeId: 2 }]) {
+                        inventoryUnits { id }
+                    }
+                }
+                """.formatted(secondMinted, firstMinted));
+
+            var units = (List<Map<String, Object>>) ((Map<String, Object>) data.get("updateInventoryUnits")).get("inventoryUnits");
+            assertThat(units).extracting(u -> u.get("id"))
+                .containsExactly(inventoryUnitId(second, 1), inventoryUnitId(first, 2));
+            assertThat(storeOf(tx, second)).isEqualTo(1);
+            assertThat(storeOf(tx, first)).isEqualTo(2);
+        });
+    }
+
+    @Test
+    void updateInventoryUnitsDirect_twoIdsDifferingOnlyInStore_failOnTheDuplicateKeyGuardAndWriteNothing() {
+        // Both ids name one row by its primary key. The VALUES join would hand that row two input
+        // rows and silently lose one, so the guard compares the key the WHERE joins on.
+        inRolledBackTransaction(tx -> {
+            int inventoryId = insertInventory(tx, insertFilm(tx, randomMarker("superkey")), 1);
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    updateInventoryUnitsDirect(in: [{ id: "%s", storeId: 2 }, { id: "%s", storeId: 2 }]) { id }
+                }
+                """.formatted(inventoryUnitId(inventoryId, 1), inventoryUnitId(inventoryId, 2)),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            assertThat(result.getErrors()).isNotEmpty();
+            assertThat(logged).singleElement()
+                .satisfies(l -> assertThat(l.thrown().getMessage()).contains("duplicate"));
+            assertThat(storeOf(tx, inventoryId)).isEqualTo(1);
+        });
+    }
+
+    @Test
+    void deleteInventoryUnit_byAStaleId_deletesTheRowAndAnswersTheStoredStore() {
+        inRolledBackTransaction(tx -> {
+            int inventoryId = insertInventory(tx, insertFilm(tx, randomMarker("superkey")), 1);
+            String minted = inventoryUnitId(inventoryId, 1);
+            moveInventory(tx, inventoryId, 2);
+
+            Map<String, Object> data = execute(tx, """
+                mutation { deleteInventoryUnit(in: { id: "%s" }) { deletedId } }
+                """.formatted(minted));
+
+            var payload = (Map<String, Object>) data.get("deleteInventoryUnit");
+            assertThat(payload.get("deletedId")).isEqualTo(inventoryUnitId(inventoryId, 2));
+            assertThat(storeOf(tx, inventoryId)).isNull();
+        });
+    }
+
+    @Test
+    void node_byAStaleInventoryUnitId_resolvesToNull() {
+        inRolledBackTransaction(tx -> {
+            int inventoryId = insertInventory(tx, insertFilm(tx, randomMarker("superkey")), 1);
+            String minted = inventoryUnitId(inventoryId, 1);
+            moveInventory(tx, inventoryId, 2);
+
+            Map<String, Object> stale = execute(tx, """
+                { node(id: "%s") { id } }
+                """.formatted(minted));
+            assertThat(stale.get("node")).isNull();
+
+            Map<String, Object> current = execute(tx, """
+                { node(id: "%s") { id } }
+                """.formatted(inventoryUnitId(inventoryId, 2)));
+            assertThat(((Map<String, Object>) current.get("node")).get("id")).isEqualTo(inventoryUnitId(inventoryId, 2));
+        });
+    }
+
+    private static void insertFilmCategory(DSLContext tx, int filmId, int categoryId, LocalDateTime lastUpdate) {
+        tx.insertInto(DSL.table("film_category"))
+            .set(DSL.field("film_id"), filmId)
+            .set(DSL.field("category_id"), categoryId)
+            .set(DSL.field("last_update"), lastUpdate)
+            .execute();
+    }
+
+    private static void touchFilmCategories(DSLContext tx, int filmId, LocalDateTime lastUpdate) {
+        tx.update(DSL.table("film_category")).set(DSL.field("last_update"), lastUpdate)
+            .where(DSL.field("film_id", Integer.class).eq(filmId)).execute();
+    }
+
+    private static int countFilmCategories(DSLContext tx, int filmId) {
+        return tx.fetchCount(DSL.selectOne().from(DSL.table("film_category"))
+            .where(DSL.field("film_id", Integer.class).eq(filmId)));
+    }
+
+    private static String filmCategoryNodeId(int filmId, int categoryId, LocalDateTime lastUpdate) {
+        return NodeIdEncoder.encodeFilmCategoryNode(filmId, categoryId, lastUpdate);
+    }
+
+    @Test
+    void deleteFilmCategoryNodes_byStaleIds_deletesTheRowsAndAnswersTheStoredLastUpdate() {
+        inRolledBackTransaction(tx -> {
+            int filmId = insertFilm(tx, randomMarker("superkey"));
+            insertFilmCategory(tx, filmId, 1, MINTED_AT);
+            insertFilmCategory(tx, filmId, 2, MINTED_AT);
+            touchFilmCategories(tx, filmId, STORED_AT);
+
+            Map<String, Object> data = execute(tx, """
+                mutation { deleteFilmCategoryNodes(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds } }
+                """.formatted(filmCategoryNodeId(filmId, 2, MINTED_AT), filmCategoryNodeId(filmId, 1, MINTED_AT)));
+
+            assertThat(deletedIds(data, "deleteFilmCategoryNodes")).containsExactly(
+                filmCategoryNodeId(filmId, 2, STORED_AT), filmCategoryNodeId(filmId, 1, STORED_AT));
+            assertThat(countFilmCategories(tx, filmId)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmCategoryNodesMissingAsDeleted_missingThenStale_echoesTheInputIdAndKeepsInputOrder() {
+        inRolledBackTransaction(tx -> {
+            int filmId = insertFilm(tx, randomMarker("superkey"));
+            insertFilmCategory(tx, filmId, 1, MINTED_AT);
+            touchFilmCategories(tx, filmId, STORED_AT);
+            String missing = filmCategoryNodeId(filmId, 3, MINTED_AT);
+
+            Map<String, Object> data = execute(tx, """
+                mutation {
+                    deleteFilmCategoryNodesMissingAsDeleted(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds }
+                }
+                """.formatted(missing, filmCategoryNodeId(filmId, 1, MINTED_AT)));
+
+            assertThat(deletedIds(data, "deleteFilmCategoryNodesMissingAsDeleted"))
+                .containsExactly(missing, filmCategoryNodeId(filmId, 1, STORED_AT));
+            assertThat(countFilmCategories(tx, filmId)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmCategoryNodes_aPrimaryKeyMatchingNoRow_stillFailsTheBatch() {
+        inRolledBackTransaction(tx -> {
+            int filmId = insertFilm(tx, randomMarker("superkey"));
+            insertFilmCategory(tx, filmId, 1, MINTED_AT);
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation { deleteFilmCategoryNodes(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds } }
+                """.formatted(filmCategoryNodeId(filmId, 1, MINTED_AT), filmCategoryNodeId(filmId, 3, MINTED_AT)),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            assertThat(result.getErrors()).isNotEmpty();
+            assertThat(logged).singleElement()
+                .satisfies(l -> assertThat(l.thrown().getMessage()).contains("matched zero rows").contains("at index 1"));
+            assertThat(countFilmCategories(tx, filmId)).isEqualTo(1);
         });
     }
 

@@ -6536,14 +6536,15 @@ class FieldBuilder {
         var channel = dmlChannel;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.UpdateRows> ok -> {
+                var returning = no.sikt.graphitron.rewrite.model.Returning.primaryKeyOf(writeTarget);
                 if (inputArg.list()) {
                     yield advisedOnLength(new MutationField.MutationBulkDmlRecordField(
                         parentTypeName, name, location, returnType,
-                        new OperationMember.Write.Update(inputArg, ok.carrier()), channel));
+                        new OperationMember.Write.Update(inputArg, ok.carrier()), returning, channel));
                 }
                 yield advisedOnLength(new MutationField.MutationDmlRecordField(
                     parentTypeName, name, location, returnType,
-                    new OperationMember.Write.Update(inputArg, ok.carrier()), channel));
+                    new OperationMember.Write.Update(inputArg, ok.carrier()), returning, channel));
             }
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.UpdateRows> err ->
                 new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -6695,7 +6696,8 @@ class FieldBuilder {
         // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, false, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, false, inputArg.name(),
+                no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE);
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
@@ -6751,6 +6753,23 @@ class FieldBuilder {
         var wrapper = ctx.buildWrapper(dataField);
         var dataFieldLocation = locationOf(dataField);
 
+        // The payload ids' encoder, resolved ahead of the walker because what RETURNING captures and
+        // what a missingAsDeleted echo must supply both follow from it: the node-key columns
+        // outside the primary key, read back from a deleted row and echoed from a missing one's
+        // input id. An unresolved encoder captures the primary key alone; its error is reported
+        // below, after the walker's, in the order the two were always checked.
+        IdEncoderResolution encoderResolution = element instanceof BuildContext.DmlElementKind.IdElement
+            ? resolveCarrierIdEncoder(ctx, dataField, inputArg.table())
+            : null;
+        var returning = encoderResolution instanceof IdEncoderResolution.Resolved resolved
+            ? no.sikt.graphitron.rewrite.model.Returning.widenedToNodeKey(
+                writeTarget, resolved.nodeType().encodeMethod().paramSignature())
+            : no.sikt.graphitron.rewrite.model.Returning.primaryKeyOf(writeTarget);
+        var echoColumns = encoderResolution instanceof IdEncoderResolution.Resolved resolved
+            ? new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns(
+                resolved.nodeType().name(), returning.nodeKeyTail())
+            : no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
+
         // DeleteRows walker: PK-or-UK identification over the already-classified input fields,
         // multiRow opting into the Broadcast arm and missingAsDeleted into the
         // IdempotentByPrimaryKey arm. Run it before the per-field reclassify so an under-keyed
@@ -6758,7 +6777,8 @@ class FieldBuilder {
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
         boolean missingAsDeleted = MutationInputResolver.parseMissingAsDeleted(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, missingAsDeleted, inputArg.name());
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, missingAsDeleted, inputArg.name(),
+                echoColumns);
         if (walkerResult instanceof no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err) {
             return new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
         }
@@ -6766,7 +6786,6 @@ class FieldBuilder {
 
         switch (element) {
             case BuildContext.DmlElementKind.IdElement ignored -> {
-                var encoderResolution = resolveCarrierIdEncoder(ctx, dataField, inputArg.table());
                 String encoderError = deleteIdEncoderError(encoderResolution, inputArg.table(), name);
                 if (encoderError != null) {
                     return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(encoderError));
@@ -6814,11 +6833,11 @@ class FieldBuilder {
         if (inputArg.list()) {
             return new MutationField.MutationBulkDmlRecordField(
                 parentTypeName, name, location, returnType,
-                new OperationMember.Write.Delete(inputArg, deleteRows), dmlChannel);
+                new OperationMember.Write.Delete(inputArg, deleteRows), returning, dmlChannel);
         }
         return new MutationField.MutationDmlRecordField(
             parentTypeName, name, location, returnType,
-            new OperationMember.Write.Delete(inputArg, deleteRows), dmlChannel);
+            new OperationMember.Write.Delete(inputArg, deleteRows), returning, dmlChannel);
     }
 
     /**
@@ -7161,14 +7180,15 @@ class FieldBuilder {
         Optional<ErrorChannel.Mapped> dmlChannel = (dmlChannelResult instanceof StructuralDmlErrorChannel.Present p)
             ? Optional.of(p.channel()) : Optional.empty();
 
+        var returning = no.sikt.graphitron.rewrite.model.Returning.primaryKeyOf(tia.inputTable());
         if (tia.list()) {
             return advisedOnLength(new MutationField.MutationBulkDmlRecordField(
                 parentTypeName, name, location, returnType,
-                new OperationMember.Write.Insert(tia), dmlChannel));
+                new OperationMember.Write.Insert(tia), returning, dmlChannel));
         }
         return advisedOnLength(new MutationField.MutationDmlRecordField(
             parentTypeName, name, location, returnType,
-            new OperationMember.Write.Insert(tia), dmlChannel));
+            new OperationMember.Write.Insert(tia), returning, dmlChannel));
     }
 
     /**

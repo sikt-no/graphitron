@@ -1899,14 +1899,24 @@ public record TenantBindingIndex(
          * to a WHERE column ({@link UpdateRows#isAgreementChecked}), so a value naming another
          * tenant is refused by the fold before any connection; every other SET-side tenant column
          * declines. The WHERE slots are added first so one of them is the binding's primary.
+         *
+         * <p>A dropped key column ({@link OperationMember.Write.Dml#droppedKeyColumns()}, an
+         * out-of-key column of a node id covering the whole matched key plus more) is read after
+         * the WHERE: the statement does not filter on it, but it is still a value the id decodes.
+         * Routing on it is sound because a row cannot change tenant under database-per-tenant, so
+         * the tenant an id carries is the tenant holding the row, even where another extra column
+         * of the same id has gone stale. A tenant-scoped table whose tenant column is outside the
+         * primary key needs exactly such a node to carry its tenant in the id at all.
          */
         private void collectFromWhereKeys(OperationMember.Write.Dml dml, SlotCollector collector) {
-            for (var key : dml.whereKeyColumns()) {
-                if (!matchesTenantColumn(key.targetColumn())) continue;
-                collector.add(key.sdlFieldName(), accessOf(key.extraction(),
-                    new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
-                        List.of(key.sdlFieldName())),
-                    key.decodeSlot()));
+            for (var keys : List.of(dml.whereKeyColumns(), dml.droppedKeyColumns())) {
+                for (var key : keys) {
+                    if (!matchesTenantColumn(key.targetColumn())) continue;
+                    collector.add(key.sdlFieldName(), accessOf(key.extraction(),
+                        new TenantBinding.SlotRead.NestedInput(dml.outerArgName(),
+                            List.of(key.sdlFieldName())),
+                        key.decodeSlot()));
+                }
             }
             if (dml instanceof OperationMember.Write.Update update) {
                 for (var set : update.updateRows().setColumns()) {

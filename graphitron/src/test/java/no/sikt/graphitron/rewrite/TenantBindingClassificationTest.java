@@ -1030,6 +1030,63 @@ class TenantBindingClassificationTest {
     }
 
     @Test
+    void deleteKeyedByASuperkeyNodeIdRoutesOnTheDroppedTenantColumn() {
+        // inventory's primary key is inventory_id and its tenant column film_id lies outside it, so
+        // the node carrying the tenant in its id is a superkey. The DELETE filters on inventory_id
+        // alone and drops film_id from the WHERE, but the tenant is still a value the id decodes.
+        var schema = build("""
+            type Inventory implements Node @table(name: "inventory")
+                    @node(keyColumns: ["inventory_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                deleteInventory(in: DeleteInventoryInput!): ID
+                    @mutation(typeName: DELETE, table: "inventory")
+            }
+            input DeleteInventoryInput { id: ID! @nodeId(typeName: "Inventory") }
+            """);
+
+        assertRoutesOnTheDecodedTenantSlot(schema, "deleteInventory");
+    }
+
+    @Test
+    void updateKeyedByASuperkeyNodeIdRoutesOnTheDroppedTenantColumn() {
+        // The same id keying an UPDATE that moves the row to another store: the id's film_id is
+        // neither filtered on nor written, and the statement still routes on it.
+        var schema = build("""
+            type Inventory implements Node @table(name: "inventory")
+                    @node(keyColumns: ["inventory_id", "film_id"]) {
+                id: ID! @nodeId
+            }
+            type Language @table(name: "language") { name: String }
+            type Query { languages: [Language!]! }
+            type Mutation {
+                moveInventory(in: MoveInventoryInput!): ID
+                    @mutation(typeName: UPDATE, table: "inventory")
+            }
+            input MoveInventoryInput {
+                id: ID! @nodeId(typeName: "Inventory")
+                storeId: Int @field(name: "store_id")
+            }
+            """);
+
+        assertRoutesOnTheDecodedTenantSlot(schema, "moveInventory");
+    }
+
+    private static void assertRoutesOnTheDecodedTenantSlot(GraphitronSchema schema, String mutation) {
+        var bound = (TenantBinding.ArgumentBound) schema.tenantBindingOf("Mutation", mutation);
+        assertThat(bound.primary().slotName()).isEqualTo("id");
+        assertThat(bound.primary().read())
+            .isEqualTo(new TenantBinding.SlotRead.NestedInput("in", List.of("id")));
+        assertThat(bound.primary().projection())
+            .isInstanceOfSatisfying(TenantBinding.SlotProjection.DecodedKeySlot.class,
+                decoded -> assertThat(decoded.slot()).isEqualTo(1));
+        assertThat(schema.tenantBindings().rejections()).isEmpty();
+    }
+
+    @Test
     void bulkDeleteKeyedByNodeIdDivinesTheSameSlot() {
         // The batch form: one slot read over a list of inputs, whose values the generated
         // agreement fold flattens and requires to agree before any SQL runs.

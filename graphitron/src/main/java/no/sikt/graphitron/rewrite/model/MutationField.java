@@ -29,6 +29,25 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             MutationField.MutationDmlRecordField,
             MutationField.MutationBulkDmlRecordField {
 
+    /**
+     * The record-carrier leaves' shared invariant: a {@code missingAsDeleted} DELETE's echo
+     * supplies exactly the columns the {@code RETURNING} captures beyond the primary key, in the
+     * same order, so an echoed row and a deleted row are records of one shape.
+     */
+    private static void requireEchoMatchesReturning(OperationMember.Write.Dml write, Returning returning) {
+        Objects.requireNonNull(returning, "returning");
+        if (write instanceof OperationMember.Write.Delete d
+                && d.deleteRows() instanceof DeleteRows.IdempotentByPrimaryKey idem) {
+            var echoed = idem.echoBinding().stream().map(kc -> kc.targetColumn().sqlName()).toList();
+            var tail = returning.nodeKeyTail().stream().map(ColumnRef::sqlName).toList();
+            if (!echoed.equals(tail)) {
+                throw new IllegalArgumentException(
+                    "missingAsDeleted echo binds " + echoed + " but RETURNING captures " + tail
+                    + " beyond the primary key; an echoed row must have the deleted row's shape");
+            }
+        }
+    }
+
     /** The root is the empty product; {@code parentArrival} is ignored. */
     @Override default Source source(Arrival parentArrival) { return new Source.Root.Mutation(); }
 
@@ -489,10 +508,10 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * the arm. The Insert and Upsert arms drive the statement off the {@code @table}
      * {@link ArgumentRef.InputTypeArg.TableInputArg}; the Update and Delete arms source their
      * SET/WHERE partition from the walker carrier ({@link UpdateRows} / {@link DeleteRows})
-     * riding the arm, never from a {@code TableInputArg}. Every arm reads
-     * {@code write.table().primaryKeyColumns()} for the PK-only {@code RETURNING} clause of
-     * the two-step DML (DELETE's PK echo is the whole post-image; the others follow up with
-     * the data field's response SELECT).
+     * riding the arm, never from a {@code TableInputArg}. Every arm reads {@link #returning()} for
+     * the {@code RETURNING} clause of the two-step DML: the primary key, widened to the node key on
+     * a DELETE whose payload ids need it (DELETE's echo is the whole post-image; the others follow
+     * up with the data field's response SELECT).
      *
      * <p>{@link #returnType()} is the carrier's {@link ReturnTypeRef.ResultReturnType} with no
      * unwrap: the SDL's structural truth.
@@ -503,11 +522,13 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
         OperationMember.Write.Dml write,
+        Returning returning,
         Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, DmlWriteField {
 
         public MutationDmlRecordField {
             Objects.requireNonNull(write, "write");
+            requireEchoMatchesReturning(write, returning);
         }
         @Override public DomainReturnType domainReturnType() {
             return new DomainReturnType.Record(write.table());
@@ -559,11 +580,13 @@ public sealed interface MutationField extends RootField, WithErrorChannel
         SourceLocation location,
         ReturnTypeRef.ResultReturnType returnType,
         OperationMember.Write.Dml write,
+        Returning returning,
         Optional<ErrorChannel.Mapped> errorChannel
     ) implements MutationField, DmlWriteField {
 
         public MutationBulkDmlRecordField {
             Objects.requireNonNull(write, "write");
+            requireEchoMatchesReturning(write, returning);
             if (write instanceof OperationMember.Write.Upsert) {
                 throw new IllegalArgumentException(
                     "MutationBulkDmlRecordField cannot carry an Upsert write arm under the "

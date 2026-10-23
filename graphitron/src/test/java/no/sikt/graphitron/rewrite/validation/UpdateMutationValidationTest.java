@@ -48,6 +48,7 @@ class UpdateMutationValidationTest {
                         new no.sikt.graphitron.model.jooq.ColumnRef("film_id", "FILM_ID", "java.lang.Integer"),
                         new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(), 0)),
                     List.of(),
+                    List.of(),
                     List.of(new no.sikt.graphitron.rewrite.model.CarrierNullRule(
                         "title", new no.sikt.graphitron.rewrite.model.CallSiteExtraction.Direct(),
                         new no.sikt.graphitron.rewrite.model.CarrierNullRule.OnExplicitNull.Clears()))))),

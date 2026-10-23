@@ -336,6 +336,24 @@ public sealed interface OperationMember {
             }
 
             /**
+             * The columns an identifying carrier decodes but the statement neither filters on nor
+             * writes, the sibling of {@link #whereKeyColumns()}: the out-of-key columns of a node id
+             * whose node key covers the whole matched key plus more, which
+             * {@link UpdateRows#droppedColumns()} and {@link DeleteRows#droppedColumns()} each
+             * record. Still decoded values the statement can read, for instance to route it to its
+             * tenant's database. INSERT and UPSERT have no WHERE clause and state that as the empty
+             * list.
+             */
+            default List<KeyColumn> droppedKeyColumns() {
+                return switch (this) {
+                    case Insert ignored -> List.of();
+                    case Upsert ignored -> List.of();
+                    case Update u -> u.updateRows().droppedColumns();
+                    case Delete d -> d.deleteRows().droppedColumns();
+                };
+            }
+
+            /**
              * The value cells the statement writes, one per input path, the sibling of
              * {@link #whereKeyColumns()}. Reads the partition the write plan already made rather
              * than re-deciding it: INSERT and UPSERT write the {@link InputField.SetField} leaves of

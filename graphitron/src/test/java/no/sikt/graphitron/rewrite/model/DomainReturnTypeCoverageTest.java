@@ -178,7 +178,8 @@ class DomainReturnTypeCoverageTest {
         return new MutationField.MutationDmlRecordField(
             "Mutation", "createFilm", null,
             new ReturnTypeRef.ResultReturnType("FilmPayload", new FieldWrapper.Single(true), null, null),
-            new OperationMember.Write.Insert(tableInputArg), java.util.Optional.empty());
+            new OperationMember.Write.Insert(tableInputArg),
+            no.sikt.graphitron.rewrite.model.Returning.primaryKeyOf(tableRef), java.util.Optional.empty());
     }
 
     private static List<Class<?>> collectLeaves(Class<?> sealed) {
