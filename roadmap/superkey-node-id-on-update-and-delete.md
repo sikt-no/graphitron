@@ -1,7 +1,7 @@
 ---
 id: R1093
 title: "UPDATE and DELETE accept a node id that encodes the primary key plus extra columns"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
