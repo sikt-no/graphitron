@@ -18,6 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_KEY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_BINDING;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_RULE;
@@ -42,9 +43,10 @@ import static org.jooq.impl.DSL.when;
  * methods each step joins or filters by, and where each walk stopped short of its written elements,
  * from the starts it writes first.
  *
- * <p>A walk starts on a table the parent type's result is a row of, or on the table of the routine a
- * root field's query starts with; {@code graphitron_field_path_start} holds both, each kind in its
- * subtype, and the steps from there are one relation whichever way the walk started.
+ * <p>A walk starts on a table the parent type's result is a row of, on the table bound to a parent
+ * type no field returns, or on the table of the routine a root field's query starts with;
+ * {@code graphitron_field_path_start} holds all three, each kind in its subtype, and the steps from
+ * there are one relation whichever way the walk started.
  *
  * <p>The rule is one round of the walk, every move the next written element allows from where each
  * walk stands; this merges the steps with exactly one move until a round changes nothing, as
@@ -100,6 +102,10 @@ public final class FieldPaths {
         merge(dsl, GRAPHITRON_FIELD_PATH_START_RESULT,
             dsl.select(cols(r, kinded)).from(r).where(r.GRAPH_NAME.eq(graph))
                 .and(r.KIND.eq("RESULT")).asTable("s"),
+            WALK, List.of("KIND"), touchedAt);
+        merge(dsl, GRAPHITRON_FIELD_PATH_START_BINDING,
+            dsl.select(cols(r, kinded)).from(r).where(r.GRAPH_NAME.eq(graph))
+                .and(r.KIND.eq("BINDING")).asTable("s"),
             WALK, List.of("KIND"), touchedAt);
         merge(dsl, GRAPHITRON_FIELD_PATH_START_ROUTINE,
             dsl.select(cols(r, kinded)).from(r).where(r.GRAPH_NAME.eq(graph))
@@ -222,8 +228,8 @@ public final class FieldPaths {
     private static void sweep(DSLContext dsl, String graph, LocalDateTime touchedAt) {
         for (Table<?> t : List.of(GRAPHITRON_FIELD_PATH_COLUMN, GRAPHITRON_FIELD_PATH_KEY,
                 GRAPHITRON_FIELD_PATH_METHOD, GRAPHITRON_FIELD_PATH_STOP, GRAPHITRON_FIELD_PATH,
-                GRAPHITRON_FIELD_PATH_START_RESULT, GRAPHITRON_FIELD_PATH_START_ROUTINE,
-                GRAPHITRON_FIELD_PATH_START)) {
+                GRAPHITRON_FIELD_PATH_START_RESULT, GRAPHITRON_FIELD_PATH_START_BINDING,
+                GRAPHITRON_FIELD_PATH_START_ROUTINE, GRAPHITRON_FIELD_PATH_START)) {
             dsl.deleteFrom(t).where(f(t, "GRAPH_NAME").eq(graph))
                 .and(f(t, "TOUCHED_AT", LocalDateTime.class).ne(touchedAt)).execute();
         }

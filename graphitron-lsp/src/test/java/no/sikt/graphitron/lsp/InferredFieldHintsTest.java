@@ -45,11 +45,13 @@ class InferredFieldHintsTest {
      * One schema covering every shape the pass answers: a table-bound parent with a matching field, a
      * non-matching one and one an authored claim masks; a field whose authored path moves its
      * resolution to another table; a parent backed by a POJO; and a parent backed by a generated row
-     * type, which is the population no relation reaches.
+     * type, which is the population no relation reaches. No field returns {@code Film}: its fields'
+     * paths are walked from its binding, so the editor answers on a type the schema does not reach
+     * yet, which is where an author starts writing one.
      */
     private static final String SDL = """
         type Query {
-            films: [Film]
+            placeholder: Int
             pojo: FilmPojoView @service(service: {className: "%1$s", method: "makeFilmPojo"})
             row: FilmRow @service(service: {className: "%1$s", method: "makeFilmRow"})
         }

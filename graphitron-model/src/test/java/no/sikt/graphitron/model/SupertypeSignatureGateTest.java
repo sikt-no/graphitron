@@ -205,11 +205,13 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_argument_reference_step_target_keyless",
                "graphitron_field_reference_step_target_keyless",
                "graphitron_input_field_reference_step_target_keyless"),
-        // A path's start and the start a parent's result gives. The subtype adds no payload, only the
-        // reference into graphitron_result_table that says why the walk starts there, so its columns
-        // are its supertype's; that is the supertype and subtype shape, not two relations holding one
-        // fact. The routine start is not here only because it is keyed by its producer alone.
-        Set.of("graphitron_field_path_start", "graphitron_field_path_start_result"),
+        // A path's start and the starts a parent's result and a parent's binding give. Each subtype
+        // adds no payload, only the reference that says why the walk starts there, into
+        // graphitron_result_table or graphitron_resolved_type_binding, so its columns are its
+        // supertype's; that is the supertype and subtype shape, not relations holding one fact. The
+        // routine start is not here only because it is keyed by its producer alone.
+        Set.of("graphitron_field_path_start", "graphitron_field_path_start_binding",
+               "graphitron_field_path_start_result"),
         // The five application sites, which keep their own signature now that a supertype carries
         // the name they share: each still holds the parent hop as a foreign key into the relation
         // its own site declares, and that is the payload grouping them here. The row stays because

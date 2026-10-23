@@ -71,7 +71,7 @@ Renders as markdown when the cursor is on a field-declaration or type-declaratio
 * The qualified coordinate (`ParentType.fieldName` for fields; the type name for types).
 * One line per fact behind each claim, each read from the relation that owns it: the column and table a `TABLE_COLUMN` match resolved to plus which naming tier matched, the class and method behind a `SERVICE` or `EXTERNAL_FIELD`, the target type of a `NODE_ID`, the routines of a chained `ROUTINE` in application order, the verb and table of a `MUTATION`, the bound table of a `TABLE`, the handlers of an `ERROR`.
 * `Matched name`, on a field whose `@field(name:)` binding matched under a name other than the field's own. This is what tells "graphitron read my binding" from "graphitron ignored it".
-* The join path, where an authored `@reference` resolves to one: each element as the foreign key it joins on and the table it lands in.
+* The join path, where an authored `@reference` resolves to one: each element as the foreign key it joins on and the table it lands in. This holds on a `@table` type no field returns yet as well: its fields' paths are walked from the table it is bound to, so the editor answers while you write the type and before anything reaches it.
 * `Fetched separately`, described below.
 
 * `Backed by`, on a type no directive claims that a Java class stands for: the qualified class a producer's return grounds it on, or that a member of another backed class delivers.

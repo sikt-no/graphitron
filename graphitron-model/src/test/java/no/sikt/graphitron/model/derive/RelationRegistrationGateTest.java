@@ -311,6 +311,7 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_code_reference", Arm.DERIVED);
         registrations.put("graphitron_field_path_start", Arm.DERIVED);
         registrations.put("graphitron_field_path_start_result", Arm.DERIVED);
+        registrations.put("graphitron_field_path_start_binding", Arm.DERIVED);
         registrations.put("graphitron_field_path_start_routine", Arm.DERIVED);
         registrations.put("graphitron_field_path_start_rule", Arm.DERIVED);
         registrations.put("graphitron_field_path", Arm.DERIVED);

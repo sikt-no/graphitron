@@ -1,0 +1,38 @@
+# A table-bound type no field returns still has its fields' paths walked, from the table bound to it:
+# it has no result to start from, and the editor answers on it all the same. A type some field does
+# return starts from its result instead.
+
+# No field returns Film.
+type Film @table(name: "film") {
+  title: String
+  language: Language @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+type Language @table(name: "language") {
+  name: String
+}
+
+type Store @table(name: "store") {
+  storeId: Int @field(name: "store_id")
+  address: Address @reference(path: [{table: "address"}])
+}
+
+type Address @table(name: "address") {
+  district: String
+}
+
+extend type Query {
+  stores: [Store]
+}
+
+extend schema @expectEquals(relation: "graphitron_field_path_start", rows: """
+  type_name, field_name, start_table, kind
+  Film,      language,   film,        BINDING
+  Store,     address,    store,       RESULT
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_path_landing", rows: """
+  type_name, field_name, kind,    position, table_name
+  Film,      language,   BINDING, 0,        language
+  Store,     address,    RESULT,  0,        address
+  """)

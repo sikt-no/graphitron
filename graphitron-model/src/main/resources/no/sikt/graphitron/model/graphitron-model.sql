@@ -5165,8 +5165,8 @@ CREATE TABLE graphitron_resolved_type_binding (
   PRIMARY KEY (graph_name, type_name, table_source_name, table_schema, table_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE graphitron_resolved_type_binding IS 'Which catalog table stands for a graph''s type, from either population that can answer: one row per candidate table. For example a type carrying @table(name: "film") is one row naming film, and a type standing for a @routine chain''s result is one row naming the table that chain lands on.';
-COMMENT ON COLUMN graphitron_resolved_type_binding.graph_name IS 'the owning graph''s partition, carried from whichever arm produced the row';
+COMMENT ON TABLE graphitron_resolved_type_binding IS 'Which catalog table a graph''s type is bound to by its @table: one row per candidate table. For example a type carrying @table(name: "film") is one row naming film; a type whose rows are a @routine''s result has none, a @routine binding no table.';
+COMMENT ON COLUMN graphitron_resolved_type_binding.graph_name IS 'the owning graph''s partition, carried from the @table binding';
 COMMENT ON COLUMN graphitron_resolved_type_binding.type_name IS 'the type the table stands for';
 COMMENT ON COLUMN graphitron_resolved_type_binding.table_source_name IS 'the resolved table''s catalog partition, the first column of the sql_table key this row names';
 COMMENT ON COLUMN graphitron_resolved_type_binding.table_schema IS 'the resolved table''s SQL schema; what tells two candidates of one name apart';
@@ -8616,16 +8616,16 @@ CREATE TABLE graphitron_field_path_start (
     REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   FOREIGN KEY (start_source_name, start_schema, start_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (kind IN ('RESULT', 'ROUTINE'))
+  CHECK (kind IN ('RESULT', 'BINDING', 'ROUTINE'))
 );
-COMMENT ON TABLE graphitron_field_path_start IS 'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table or a root''s routine. For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.';
+COMMENT ON TABLE graphitron_field_path_start IS 'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, or a root''s routine. For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.';
 COMMENT ON COLUMN graphitron_field_path_start.graph_name IS 'the owning graph''s partition, carried from the field';
 COMMENT ON COLUMN graphitron_field_path_start.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_path_start.field_name IS 'the field whose path starts here';
 COMMENT ON COLUMN graphitron_field_path_start.start_source_name IS 'the catalog partition of the table the walk starts on';
 COMMENT ON COLUMN graphitron_field_path_start.start_schema IS 'the SQL schema of the table the walk starts on';
 COMMENT ON COLUMN graphitron_field_path_start.start_table IS 'the table the walk starts on. A field under a parent whose result is a row of several tables is walked once from each';
-COMMENT ON COLUMN graphitron_field_path_start.kind IS 'what the start is: RESULT, a table the parent type''s result is a row of, or ROUTINE, the table of the routine a root field''s query starts with. Each has its subtype, which says why the walk starts there';
+COMMENT ON COLUMN graphitron_field_path_start.kind IS 'what the start is: RESULT, a table the parent type''s result is a row of; BINDING, the table bound to a parent type no field returns, so its fields'' paths are walked for the editor as they would be were it returned; or ROUTINE, the table of the routine a root field''s query starts with. Each has its subtype, which says why the walk starts there';
 COMMENT ON COLUMN graphitron_field_path_start.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads, so a start a reading no longer finds goes with its path';
 
 CREATE TABLE graphitron_field_path_start_result (
@@ -8655,6 +8655,34 @@ COMMENT ON COLUMN graphitron_field_path_start_result.start_schema IS 'the SQL sc
 COMMENT ON COLUMN graphitron_field_path_start_result.start_table IS 'the table the walk starts on; with the type and the two columns before it, a reference into graphitron_result_table, so the start goes when the parent''s result stops being a row of it';
 COMMENT ON COLUMN graphitron_field_path_start_result.kind IS 'RESULT, the start''s kind, carried so the reference into the start names it';
 COMMENT ON COLUMN graphitron_field_path_start_result.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
+
+CREATE TABLE graphitron_field_path_start_binding (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  start_source_name VARCHAR   NOT NULL,
+  start_schema      VARCHAR   NOT NULL,
+  start_table       VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
+    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
+                                            start_schema, start_table, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, start_source_name, start_schema, start_table)
+    REFERENCES graphitron_resolved_type_binding (graph_name, type_name, table_source_name,
+                                                 table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind = 'BINDING')
+);
+COMMENT ON TABLE graphitron_field_path_start_binding IS 'A field''s path walked from its parent''s binding: one row per field of a table-bound type no field returns, on the table bound to it. For example Film.language starts on film where no field in the schema returns Film, so the editor shows the path it would take all the same.';
+COMMENT ON COLUMN graphitron_field_path_start_binding.graph_name IS 'the owning graph''s partition, carried from the field';
+COMMENT ON COLUMN graphitron_field_path_start_binding.type_name IS 'the table-bound type owning the field, which no field returns';
+COMMENT ON COLUMN graphitron_field_path_start_binding.field_name IS 'the field whose path starts here';
+COMMENT ON COLUMN graphitron_field_path_start_binding.start_source_name IS 'the catalog partition of the table bound to the type';
+COMMENT ON COLUMN graphitron_field_path_start_binding.start_schema IS 'the SQL schema of the table bound to the type';
+COMMENT ON COLUMN graphitron_field_path_start_binding.start_table IS 'the table bound to the type: with the type and the two columns before it, a reference into graphitron_resolved_type_binding';
+COMMENT ON COLUMN graphitron_field_path_start_binding.kind IS 'always BINDING, the supertype''s kind for this subtype';
+COMMENT ON COLUMN graphitron_field_path_start_binding.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
 
 CREATE TABLE graphitron_field_path_start_routine (
   graph_name        VARCHAR   NOT NULL,
@@ -9565,7 +9593,7 @@ COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last
 CREATE VIEW graphitron_field_path_start_rule
   (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind) AS
 -- A field that wrote a path is walked from each table its parent's result is a row of, unless its
--- query starts on a routine. The path read is the one the declaration graphql_field anchored.
+-- query starts on a routine, or from the table bound to its parent where nothing returns it. The path read is the one the declaration graphql_field anchored.
 SELECT p.graph_name, gf.type_name, gf.field_name,
        rt.table_source_name, rt.table_schema, rt.table_name, 'RESULT'
   FROM graphitron_ast_field_path_entry p
@@ -9580,6 +9608,27 @@ SELECT p.graph_name, gf.type_name, gf.field_name,
     ON rt.graph_name = gf.graph_name AND rt.type_name = gf.type_name
   JOIN store_graph g ON g.graph_name = rt.graph_name AND g.last_captured = rt.touched_at
  WHERE p.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_routine pr
+                    WHERE pr.graph_name = gf.graph_name AND pr.type_name = gf.type_name
+                      AND pr.field_name = gf.field_name)
+UNION ALL
+-- A field of a table-bound type no field returns is walked from the table bound to it, so its path
+-- answers in the editor as it would were the type returned: it has no result to start from.
+SELECT p.graph_name, gf.type_name, gf.field_name,
+       b.table_source_name, b.table_schema, b.table_name, 'BINDING'
+  FROM graphitron_ast_field_path_entry p
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = p.graph_name AND fd.source_name = p.source_name
+   AND fd.source_line = p.field_line AND fd.source_column = p.field_column
+  JOIN graphql_field gf
+    ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
+   AND gf.field_name = fd.name AND gf.source_name = fd.source_name
+   AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
+  JOIN graphitron_resolved_type_binding b
+    ON b.graph_name = gf.graph_name AND b.type_name = gf.type_name AND b.candidates = 1
+ WHERE p.position = 0
+   AND NOT EXISTS (SELECT 1 FROM graphitron_result r
+                    WHERE r.graph_name = gf.graph_name AND r.type_name = gf.type_name)
    AND NOT EXISTS (SELECT 1 FROM graphitron_producer_routine pr
                     WHERE pr.graph_name = gf.graph_name AND pr.type_name = gf.type_name
                       AND pr.field_name = gf.field_name)
@@ -9606,8 +9655,8 @@ CREATE VIEW graphitron_field_path_rule
    element_source_name, element_source_line, element_source_column,
    from_source_name, from_schema, from_table, to_source_name, to_schema, to_table,
    constraint_source_name, constraint_schema, constraint_table, constraint_name, fk_on_from) AS
--- Where each walk stands: at its start, from place 0 on a parent's result table and from the place
--- after the routine on a routine's; and after each step this reading took.
+-- Where each walk stands: at its start, from place 0 on a parent's result or bound table and from
+-- the place after the routine on a routine's; and after each step this reading took.
 WITH frontier (graph_name, type_name, field_name, start_source_name, start_schema, start_table,
                position, from_source_name, from_schema, from_table,
                field_source_name, field_line, field_column) AS (
@@ -9620,7 +9669,7 @@ WITH frontier (graph_name, type_name, field_name, start_source_name, start_schem
     JOIN graphql_field gf
       ON gf.graph_name = s.graph_name AND gf.type_name = s.type_name
      AND gf.field_name = s.field_name
-   WHERE s.kind = 'RESULT'
+   WHERE s.kind IN ('RESULT', 'BINDING')
   UNION ALL
   SELECT s.graph_name, s.type_name, s.field_name,
          s.start_source_name, s.start_schema, s.start_table, w.position + 1,
@@ -15454,9 +15503,13 @@ INSERT INTO meta_relation VALUES
    'For example Film.language lands on language at place 0, and Query.tilganger over a @routine nothing follows lands on the function''s own table with no place; a walk that stopped short, an element reaching nothing or offering several steps, lands nowhere and has no row.',
    'The question a chain''s readers ask of the walk, where its rows come from at the end, stated once rather than as a last-place probe in each. A step the walk took is never ambiguous, so a landing is one table per start with no count beside it.'),
   ('graphitron_field_path_start', 'field-path-start', 'graphitron',
-   'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table or a root''s routine.',
+   'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, or a root''s routine.',
    'For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.',
    'The two ways a walk starts take the same steps from there, so the start is the supertype and the path one relation under it rather than two mirrored ones; each subtype says why the walk starts where it does and goes when that stops being so.'),
+  ('graphitron_field_path_start_binding', 'field-path-start', 'graphitron',
+   'A field''s path walked from its parent''s binding: one row per field of a table-bound type no field returns, on the table bound to it.',
+   'For example Film.language starts on film where no field in the schema returns Film, so the editor shows the path it would take all the same.',
+   'The start a type''s @table gives where no result does, referencing graphitron_resolved_type_binding so the walk goes when the binding does. Without it a type no field returns had no walk, so the editor, which reads where a path lands, offered nothing on its fields. A type that some field returns has a RESULT start instead.'),
   ('graphitron_field_path_start_result', 'field-path-start', 'graphitron',
    'A field''s path walked from its parent''s result: one row per field and table the parent type''s result is a row of.',
    'For example Film.language starts on film, and a field of a type nested under customer and store starts on each.',
@@ -16469,9 +16522,9 @@ INSERT INTO meta_relation VALUES
    'For example a capture inserts this view''s rows for one graph into graphitron_type_backing, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.',
    'The rule, kept in the catalog rather than in the step that runs it, on graphitron_field_scope_table_rule''s terms. Recursive over a cyclic graph, which H2 cannot detect a cycle in: the path of type and class pairs a step has visited rides along as an array, and a step never lands on a pair already on it. On a consumer schema of 2345 types the closure walks 136 paths, at most four deep, to 130 backings. Stored by its step because H2 evaluates a recursive view again for every row joined to it.'),
   ('graphitron_resolved_type_binding', 'resolved-type-binding', 'graphitron',
-   'Which catalog table stands for a graph''s type, from either population that can answer: one row per candidate table.',
-   'For example a type carrying @table(name: "film") is one row naming film, and a type standing for a @routine chain''s result is one row naming the table that chain lands on.',
-   'What a reader of a binding asks is which table stands for the type and never which rule found it, so the two populations that can answer meet here: the author''s @table binding, and the binding a @routine chain''s return derives from the table its chain lands on. Each stays a relation of its own deriving by its own rule from its own facts, and this is the reduction every reader points at. The union dedupes, which is what makes the type and the table triple a key rather than a shape that needed remodelling: a type both arms answer for with the same table is one row. Ambiguity is rows and never a decline, the count beside each row being the arity over the type''s whole partition rather than a fact about either arm, so a reader that needs certainty demands one candidate and a reader that offers alternatives reads them all. Written once per capture by a stage of the graphitron gatherer, after the hops the routine arm''s chain walks and before the reference walk that seeds from these rows. It was a registered rule until then, refilled by the register on the same cadence for the same reason: fifteen namings across thirteen view bodies each paid a whole evaluation of a rule carrying a window function no outer predicate prunes. ix_resolved_type_binding_type serves the type probe every one of those readers makes, which the key''s own leading columns do not, the key leading with the graph and the type but continuing into the table triple a probe does not hold.'),
+   'Which catalog table a graph''s type is bound to by its @table: one row per candidate table.',
+   'For example a type carrying @table(name: "film") is one row naming film; a type whose rows are a @routine''s result has none, a @routine binding no table.',
+   'What a reader of a binding asks is which table stands for the type, and only the author''s @table answers it: a @routine binds no table, the type a path ending on one returns having the function''s result as its rows, which graphitron_routine_result states. Ambiguity is rows and never a decline, the count beside each row being the arity over the type''s whole partition, so a reader that needs certainty demands one candidate and a reader that offers alternatives reads them all. Written once per capture by a stage of the graphitron gatherer, before the reference walk that seeds from these rows. It was a registered rule until then, refilled by the register on the same cadence for the same reason: fifteen namings across thirteen view bodies each paid a whole evaluation of a rule carrying a window function no outer predicate prunes. ix_resolved_type_binding_type serves the type probe every one of those readers makes, which the key''s own leading columns do not, the key leading with the graph and the type but continuing into the table triple a probe does not hold.'),
   ('graphitron_field_reference_step_target_keyed', 'reference-step-keyed-target', 'graphitron',
    'One foreign-key route one field-site @reference path element reaches, in one orientation: the element the chain walked to, with the key it joins through.',
    'For example Actor.films over @reference(path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}]) draws one row per position, each departing where the one before it arrived.',
