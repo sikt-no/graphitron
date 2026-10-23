@@ -780,7 +780,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
 
 * **Breaking: `@table` cannot name a table-valued function** ("a type is not bound to a function"). A schema binding a type to
   a function's result with `@table` stops building, with a message saying to remove the directive.
-  The field carrying `@routine` binds the type, which is what the directive used to repeat.
+  The field's `@routine` gives the type its rows, the routine's result, which binds no table.
+* **Breaking: `@routine` loses `columnMapping`** ("breaking: @routine loses columnMapping, unused in
+  FS-plattform; argMapping names an argument or a column"). A schema writing `columnMapping` stops
+  building; `argMapping` names a routine parameter's source, an argument or a column of the table
+  the path stands on. A name that is both draws `ROUTINE_PARAMETER_AMBIGUOUS`, and one that is
+  neither draws `ROUTINE_PARAMETER_UNBOUND`.
 * **Removed: the MCP schema tool's `demand` slot** ("the demand relations go"). A tool reading it gets no slot; it
   restated directives the same entry shows.
 * **Changed: `graphitron:capture` never fails over a schema that parses** ("capture captures, and
