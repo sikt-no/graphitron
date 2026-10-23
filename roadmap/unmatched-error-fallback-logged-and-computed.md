@@ -1,7 +1,7 @@
 ---
 id: R1087
 title: "Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: error-channel
