@@ -57,9 +57,6 @@ intent_bound_table
 intent_carrier_routine_hop
 intent_column_match_claim
 intent_delivery_container
-intent_field_path_node
-intent_field_path_start
-intent_field_path_terminus
 intent_field_column_table
 intent_field_navigated_type
 intent_field_payload_producer
@@ -79,7 +76,6 @@ intent_record_slot_assignable
 intent_resolved_field_claim
 intent_resolved_node_key_projection
 intent_resolved_node_key_shape
-intent_routine_return_binding
 intent_type_backing_conflict
 lint_finding
 lint_finding_fix

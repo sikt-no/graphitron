@@ -50,8 +50,6 @@ class GraphCountGrowthGateTest {
      * growing comes off by hand.
      */
     private static final Map<String, String> KNOWN = Map.of(
-        "WRITE GRAPHITRON_RESOLVED_TYPE_BINDING", "reads intent_field_path_node, whose recursive walk "
-            + "evaluates every graph's paths; goes when \"Nothing resolves a path but the walk\" lands",
         "WRITE GRAPHITRON_CARRIER_DATA_FIELD", "grows with the graphs and sits near the bound, so "
             + "load tips it over; ends when \"The carrier data fields and the element declarations "
             + "do not grow with the graphs in the store\" lands",

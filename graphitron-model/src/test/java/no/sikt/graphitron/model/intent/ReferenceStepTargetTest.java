@@ -159,9 +159,7 @@ class ReferenceStepTargetTest {
      * on whether a foreign key identifies the row, and one element can be reached on both: a table
      * element departing an ambiguously bound type finds its foreign key from the bound table and a
      * name match from the bound function result, so the coordinate holds one keyed row and one
-     * keyless one. Two routes reach it, and each arm saying one is the reading
-     * {@code intent_field_reference_step_fanout} acts on when it declines an element the walk
-     * reached by several candidate routes.
+     * keyless one. Two routes reach it, and each arm says so.
      *
      * <p>The case exists because the split made this losable in a way the answer oracle cannot
      * see: both counts are window functions, a {@code WHERE} is evaluated before the window

@@ -31,7 +31,6 @@ graphitron_facet_binding graphql_type
 intent_mutation_routine_seat graphql_field
 graphitron_node_id_instruction_rule graphql_field
 graphitron_node_id_instruction_rule graphql_type
-intent_routine_return_binding graphql_type
 
 # Adjudicated and kept: the authored arms of the emitted population.
 #

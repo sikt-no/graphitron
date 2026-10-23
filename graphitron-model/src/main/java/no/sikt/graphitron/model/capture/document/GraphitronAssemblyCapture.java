@@ -1,6 +1,5 @@
 package no.sikt.graphitron.model.capture.document;
 
-import no.sikt.graphitron.model.derive.FieldPathApplications;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetColumns;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
@@ -58,9 +57,6 @@ public final class GraphitronAssemblyCapture {
      * sweep tell this reading's rows from the last one's by it.
      */
     public static void resolve(DSLContext dsl, String graph, LocalDateTime readAt) {
-        // First of the stages: it reads the transcription alone, and the written order of a field's
-        // applications is what everything below that walks a chain wants.
-        FieldPathApplications.derive(dsl, graph);
         // Over the nodes the anchor settled.
         NodeKeyColumns.derive(dsl, graph);
         NodeIdCandidates.derive(dsl, graph);

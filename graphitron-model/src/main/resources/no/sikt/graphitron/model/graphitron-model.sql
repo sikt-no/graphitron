@@ -3450,31 +3450,6 @@ COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_class_part IS 'the cla
 COMMENT ON COLUMN graphitron_scalar_type_entry.scalar_ref_field_part IS 'the field half beside it, on the same split and null in the same case; the pair is stored rather than computed so a reader joining the census probes its key instead of comparing against a concatenation';
 COMMENT ON COLUMN graphitron_scalar_type_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';
 
-CREATE TABLE graphitron_field_path_application (
-  graph_name     VARCHAR NOT NULL,
-  type_name      VARCHAR NOT NULL,
-  field_name     VARCHAR NOT NULL,
-  chain_position INT     NOT NULL,
-  coordinate     VARCHAR NOT NULL,
-  directive_name VARCHAR NOT NULL,
-  ordinal        INT     NOT NULL,
-  PRIMARY KEY (graph_name, type_name, field_name, chain_position),
-  UNIQUE (graph_name, coordinate, directive_name, ordinal),
-  FOREIGN KEY (graph_name, coordinate, directive_name, ordinal)
-    REFERENCES graphql_directive_application (graph_name, coordinate, directive_name, ordinal)
-    ON DELETE CASCADE,
-  CHECK (chain_position >= 0),
-  CHECK (directive_name IN ('reference', 'routine'))
-);
-COMMENT ON TABLE graphitron_field_path_application IS 'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0. For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.';
-COMMENT ON COLUMN graphitron_field_path_application.graph_name IS 'the owning graph''s partition; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphitron_field_path_application.type_name IS 'the type owning the field the application sits on';
-COMMENT ON COLUMN graphitron_field_path_application.field_name IS 'the field the application sits on; with the two columns above, the coordinate whose chain this row is a step of';
-COMMENT ON COLUMN graphitron_field_path_application.chain_position IS 'the application''s place in the written order, dense from 0 across every directive that contributes to the chain. The manual states the order is load-bearing and the decode relations cannot carry it: each numbers its own applications, so @reference#0, @routine#0 and @reference#1 are three ordinals in two relations with no relation between them. In the key, so two applications at one position are unwritable rather than merely unexpected';
-COMMENT ON COLUMN graphitron_field_path_application.coordinate IS 'the coordinate the application was written on, which with the two columns after it is the reference into graphql_directive_application. Carried beside the type and field above rather than instead of them: those are this relation''s own grain, which its chain siblings key by, and this is how the application it points at is named. The cascade on that reference is this relation''s sweep, there being no instant here to mark';
-COMMENT ON COLUMN graphitron_field_path_application.directive_name IS 'which directive this application is of, in graphql_directive''s spelling. Two contribute: @reference adds hops and @routine adds its result table as a node. @referenceFor does not, being one participant''s own path rather than the field''s chain, which is why it is a route of its own and not a step of this one';
-COMMENT ON COLUMN graphitron_field_path_application.ordinal IS 'that directive''s own ordinal at this coordinate, which is the join down to the decode relation carrying what the application says. Unique with the coordinate and the directive name, so one application cannot occupy two positions, and a foreign key into graphql_directive_application, so a position cannot be minted for an application nobody wrote';
-
 CREATE TABLE graphitron_field_reference_entry (
   graph_name    VARCHAR NOT NULL,
   type_name     VARCHAR NOT NULL,
@@ -6499,16 +6474,10 @@ COMMENT ON COLUMN javac_diagnostic.message IS 'javac''s own rendered text (root 
 -- keying over it rather than a second copy of it; graphitron_field_reference_step_hop and
 -- graphitron_field_reference_step_target then split a @reference path into its local element
 -- resolutions and the chain that walks them, because only the chain needs recursion and mixing the
--- two would put a copy of every element arm inside the recursive term. intent_field_path_terminus
--- sits one layer above those: a @routine chain starts at a function result rather than at a type's
--- binding, so it walks the same hops from its own seed and answers where the chain lands and what
--- kind of table that is, which is the question every read-surface axis on a routine-backed field
--- turns out to be asking. That terminus is also a binding: the type such a field returns is bound
--- to the table the chain lands on, and only that way, a @table naming a function being refused, so
--- intent_routine_return_binding derives it and graphitron_resolved_type_binding is where it meets the
--- @table population. The reduction is where the readers point, because what a reader
--- of a binding asks is which table stands for the type and never which rule found it; the two
--- populations stay separate relations because each derives by its own rule from its own facts.
+-- two would put a copy of every element arm inside the recursive term. A @routine binds no table:
+-- graphitron_resolved_type_binding is the @table population alone, and the type a field whose path
+-- ends on a @routine returns has the function's result as its rows, which graphitron_routine_result
+-- states for every reader that asks where such a type is read.
 --
 -- Each claiming relation contributes a decoded arm, and each claiming directive additionally
 -- contributes an undecoded presence arm: the site-family application rows anti-joined against
@@ -8032,7 +8001,7 @@ COMMENT ON VIEW graphitron_field_reference_step_hop IS 'One @reference path elem
 -- COMMENT ON COLUMN graphitron_field_reference_step_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the hop''s direction, and what completes the constraint''s key from the two endpoint triples. NULL on a NAME_MATCH hop, where there is no foreign key to sit on either side and the direction is fixed by the arms themselves, a function result being always the departure, and on a CONDITION hop, whose direction is the method''s parameter order rather than a key''s orientation';
 
 CREATE INDEX ix_spelled_table_spelling ON graphitron_spelled_table (graph_name, spelling);
-COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: seven namings across six view bodies (intent_bound_table, intent_argument_reference_step_hop, intent_field_path_start, graphitron_argument_scope_table_rule, intent_field_routine_method, intent_carrier_routine_hop) and the two stages that write this graph''s hops all join on the graph and the spelling and nothing else, one of them adding candidates = 1. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, intent_bound_table 357 against 198, intent_node_id_decode_defect 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
+COMMENT ON INDEX ix_spelled_table_spelling IS 'Serves the resolution key itself, which is the only way any reader reaches this relation: six namings across five view bodies (intent_bound_table, intent_argument_reference_step_hop, graphitron_argument_scope_table_rule, intent_field_routine_method, intent_carrier_routine_hop) and the two stages that write this graph''s hops all join on the graph and the spelling and nothing else, one of them adding candidates = 1. The index this relation''s own declaration already anticipates in arguing that both sides of both comparisons are stored folded columns, so the match is an equality an index can serve. Measured on the read-cost gate''s twelve-unit fixture with statistics current, the five indexes this file declares against none of them: the separate-fetch view since replaced by graphitron_producer cost 11957 scans without them and 669 with them, intent_bound_table 357 against 198, intent_node_id_decode_defect 1901 against 1419. This index is the one that moves all three; it is the widest-reaching of the five by reader count, every relation reaching a spelling reaching it through one of the bodies above. Not UNIQUE, and the one target here where that is a statement about the answer rather than about the key: a spelling two schemas both declare is several rows and candidates says so, ambiguity being rows and never a decline.';
 
 CREATE VIEW intent_argument_reference_step_hop
   (graph_name, type_name, field_name, argument_name, ordinal, position, via, key_matched_by,
@@ -8137,154 +8106,6 @@ COMMENT ON VIEW intent_argument_reference_step_hop IS 'Deprecated with the whole
 -- COMMENT ON COLUMN intent_argument_reference_step_hop.to_table IS 'the arriving table''s SQL name';
 -- COMMENT ON COLUMN intent_argument_reference_step_hop.constraint_name IS 'the foreign key the hop joins on, named or discovered; NULL on a NAME_MATCH or CONDITION hop, as on the field-site sibling';
 -- COMMENT ON COLUMN intent_argument_reference_step_hop.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; NULL on a NAME_MATCH or CONDITION hop, as on the field-site sibling';
-
-CREATE VIEW intent_field_path_start
-  (graph_name, type_name, field_name, ordinal,
-   source_name, source_line, source_column,
-   table_source_name, table_schema, table_name) AS
-SELECT r.graph_name, r.type_name, r.field_name, r.ordinal,
-       r.source_name, r.source_line, r.source_column,
-       sp.table_source_name, sp.table_schema, sp.table_name
-  FROM graphitron_routine_entry r
-  JOIN graphitron_spelled_table sp
-    ON sp.graph_name = r.graph_name AND sp.spelling = r.routine_ref
-  JOIN sql_table ft
-    ON ft.source_name = sp.table_source_name AND ft.table_schema = sp.table_schema
-   AND ft.table_name = sp.table_name AND ft.table_type = 'FUNCTION'
- WHERE r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
-                     WHERE r2.graph_name = r.graph_name
-                       AND r2.type_name = r.type_name
-                       AND r2.field_name = r.field_name);
-COMMENT ON VIEW intent_field_path_start IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a field''s @routine chain begins: the last @routine application written on the field, resolved to the table-valued function result it names. The last and not the first, because a second @routine application restarts the chain rather than extending it, so the chain a reader cares about departs from the last one; applications before it move where the chain starts and never where it ends. Two conditions, and both are the resolution rather than the rule: the spelling resolves through graphitron_spelled_table as any written table name does, and the result is then required to be FUNCTION-typed, which is the only kind @routine accepts. A routine name resolving to no FUNCTION-typed table yields no row, and the chain over it therefore has no start, no nodes and no terminus, which is the silence intent_field_path_node states the general form of. Its own relation because two things need it and each needs a different part: intent_field_path_node seeds its walk from the landing, and a rejection about an unresolvable @routine names this coordinate, which is what the source position on the row is for. That view''s tail used to need the position too, to find the elements written after this application, because @routine and @reference number their ordinals separately and no relation related them; it reads graphitron_field_path_application now, which states the written order across directive names as rows. No arity column: two schemas declaring the routine''s name is genuinely two rows here, and the count a reader wants is over the chain''s landings rather than its departures, which is intent_field_path_terminus.candidates. Adding one would put a second window function under a relation the node walk inlines, and buy a number nothing asks this relation for.';
--- COMMENT ON COLUMN intent_field_path_start.graph_name IS 'the owning graph''s partition, carried from graphitron_routine_entry';
--- COMMENT ON COLUMN intent_field_path_start.type_name IS 'the type owning the field the chain is written on';
--- COMMENT ON COLUMN intent_field_path_start.field_name IS 'the field the chain is written on';
--- COMMENT ON COLUMN intent_field_path_start.ordinal IS 'the @routine application''s own ordinal, which is the greatest on the field; joins back to graphitron_routine_entry on it, and is the coordinate a rejection about the routine names';
--- COMMENT ON COLUMN intent_field_path_start.source_name IS 'the schema document the application is written in, carried from graphitron_routine_entry; the tail is measured within this document and not across documents';
--- COMMENT ON COLUMN intent_field_path_start.source_line IS 'the application''s line in that document';
--- COMMENT ON COLUMN intent_field_path_start.source_column IS 'the application''s column on that line. With the line and the document name, what an @reference application is compared against to decide whether it extends this chain or precedes it';
--- COMMENT ON COLUMN intent_field_path_start.table_source_name IS 'the function result''s catalog partition, the first column of the sql_table key this row names';
--- COMMENT ON COLUMN intent_field_path_start.table_schema IS 'the function result''s SQL schema';
--- COMMENT ON COLUMN intent_field_path_start.table_name IS 'the function result''s SQL name. With the two columns above this is sql_table''s full key, so the result''s columns and its generated classes are each one join away. Its table_type is FUNCTION by construction and is therefore not carried; the node relation states the kind of every landing including this one, so a reader asks one column whichever node it holds';
-
-CREATE VIEW intent_field_path_node
-  (graph_name, type_name, field_name, seq, last_seq, ordinal, position, via, step_via,
-   key_matched_by, from_source_name, from_schema, from_table,
-   to_source_name, to_schema, to_table, table_type, constraint_name, fk_on_from,
-   targets, candidates) AS
-WITH RECURSIVE
-tail (graph_name, type_name, field_name, ordinal, position, seq, last_seq) AS (
-  SELECT st.graph_name, st.type_name, st.field_name, st.ordinal, st.position,
-         CAST(ROW_NUMBER() OVER (PARTITION BY st.graph_name, st.type_name, st.field_name
-                                 ORDER BY ca.chain_position, st.position) AS INT),
-         CAST(COUNT(*) OVER (PARTITION BY st.graph_name, st.type_name, st.field_name) AS INT)
-    FROM graphitron_field_reference_step_entry st
-    -- The application this step belongs to, at its place in the field's written order.
-    JOIN graphitron_field_path_application ca
-      ON ca.graph_name = st.graph_name AND ca.type_name = st.type_name
-     AND ca.field_name = st.field_name AND ca.directive_name = 'reference'
-     AND ca.ordinal = st.ordinal
-    -- The routine the chain starts at, which is the last one written, on
-    -- intent_field_path_start's terms and now by the same measure it uses to say "last".
-    JOIN (SELECT graph_name, type_name, field_name, MAX(chain_position) AS routine_at
-            FROM graphitron_field_path_application
-           WHERE directive_name = 'routine'
-           GROUP BY graph_name, type_name, field_name) rt
-      ON rt.graph_name = st.graph_name AND rt.type_name = st.type_name
-     AND rt.field_name = st.field_name
-   WHERE ca.chain_position > rt.routine_at
-),
-node (graph_name, type_name, field_name, seq, last_seq, ordinal, position, via, step_via,
-      key_matched_by, from_source_name, from_schema, from_table,
-      to_source_name, to_schema, to_table, constraint_name, fk_on_from) AS (
-  SELECT s.graph_name, s.type_name, s.field_name, CAST(0 AS INT),
-         CAST(COALESCE(t.last_seq, 0) AS INT),
-         s.ordinal, CAST(NULL AS INT), CAST('ROUTINE' AS VARCHAR), CAST(NULL AS VARCHAR),
-         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
-         CAST(NULL AS VARCHAR),
-         s.table_source_name, s.table_schema, s.table_name,
-         CAST(NULL AS VARCHAR), CAST(NULL AS BOOLEAN)
-    FROM intent_field_path_start s
-    LEFT JOIN tail t
-      ON t.graph_name = s.graph_name AND t.type_name = s.type_name
-     AND t.field_name = s.field_name AND t.seq = 1
-  UNION
-  SELECT t.graph_name, t.type_name, t.field_name, t.seq, t.last_seq,
-         t.ordinal, t.position, CAST('REFERENCE' AS VARCHAR), h.via,
-         h.key_matched_by, h.from_source_name, h.from_schema, h.from_table,
-         h.to_source_name, h.to_schema, h.to_table, h.constraint_name, h.fk_on_from
-    FROM node p
-    JOIN tail t
-      ON t.graph_name = p.graph_name AND t.type_name = p.type_name
-     AND t.field_name = p.field_name AND t.seq = p.seq + 1
-    JOIN graphitron_field_reference_step_hop h
-      ON h.graph_name = t.graph_name AND h.type_name = t.type_name
-     AND h.field_name = t.field_name AND h.ordinal = t.ordinal AND h.position = t.position
-     AND h.from_source_name = p.to_source_name AND h.from_schema = p.to_schema
-     AND h.from_table = p.to_table
-)
-SELECT n.graph_name, n.type_name, n.field_name, n.seq, n.last_seq, n.ordinal, n.position,
-       n.via, n.step_via, n.key_matched_by,
-       n.from_source_name, n.from_schema, n.from_table,
-       n.to_source_name, n.to_schema, n.to_table, tt.table_type,
-       n.constraint_name, n.fk_on_from,
-       CAST(MAX(n.target_rank) OVER (
-         PARTITION BY n.graph_name, n.type_name, n.field_name, n.seq) AS INT),
-       CAST(COUNT(*) OVER (
-         PARTITION BY n.graph_name, n.type_name, n.field_name, n.seq) AS INT)
-  FROM (SELECT c.*, DENSE_RANK() OVER (
-                 PARTITION BY c.graph_name, c.type_name, c.field_name, c.seq
-                 ORDER BY c.to_source_name, c.to_schema, c.to_table) AS target_rank
-          FROM node c) n
-  JOIN sql_table tt
-    ON tt.source_name = n.to_source_name AND tt.table_schema = n.to_schema
-   AND tt.table_name = n.to_table;
-COMMENT ON VIEW intent_field_path_node IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a field''s @routine chain stands after each step, and how it got there. The chain is the field''s @routine and @reference applications walked as one running source; this relation is every place along it, and the one recursion in the family. A node at seq 0 is the routine''s own result, which intent_field_path_start resolved; a node at seq k is where the k-th @reference path element written after that application lands, each departing from the previous node''s arrival through graphitron_field_reference_step_hop, exactly as graphitron_field_reference_step_target walks a path from a type''s binding. No foreign key can carry the first element out of the function result, a function result declaring none, so the two arms that reach one are the hop relation''s name-matched arm and its condition arm, which route by column name and by the condition method''s signature respectively. Which elements are the chain''s is a comparison of source positions and not of ordinals, because @routine and @reference number their ordinals separately; the start carries the position that comparison is made against, so the rule that picks the last routine application is stated once, there. An element written before the routine is not in the tail at all, moving where the chain starts and never where it ends. Absence means "not reached", as on the target view: an element resolving to nothing ends the walk, so a chain whose second element is fine but whose first names an unknown key contributes only its seq 0 node, never a node standing where the walk did not arrive. last_seq is what makes that legible without a second relation, being the tail''s own extent rather than the walk''s: a walk that stalled has no row at last_seq and therefore no terminus, and a reader wanting to say where it stalled compares the two. The route into each node travels with it, which is the difference between this relation and the landing relation over it. A reader that has to render the chain''s joins needs the constraint and its orientation at every step, and before this relation those columns were computed inside a walk and then dropped, so a reader needing them had no choice but to write the walk again. Two vocabularies, kept apart on purpose: via says which directive put the chain here, in intent_field_path_terminus''s own words, and step_via says which arm of the element''s resolution moved it, in graphitron_field_reference_step_hop''s. One relation carrying both under one name would make every reader say which it meant.';
--- COMMENT ON COLUMN intent_field_path_node.graph_name IS 'the owning graph''s partition, carried from the chain''s start';
--- COMMENT ON COLUMN intent_field_path_node.type_name IS 'the type owning the field the chain is written on';
--- COMMENT ON COLUMN intent_field_path_node.field_name IS 'the field the chain is written on';
--- COMMENT ON COLUMN intent_field_path_node.seq IS 'the node''s 0-based position along the chain: 0 is the routine''s own result, k is where the k-th path element after it lands. Dense from 0 up to wherever the walk reached, which is not necessarily last_seq';
--- COMMENT ON COLUMN intent_field_path_node.last_seq IS 'the greatest seq the chain''s written elements would reach, carried on every node so the last one is identified without naming the tail again. The tail''s extent and not the walk''s, which is the whole of its use: seq = last_seq is the terminus, and seq < last_seq on every node of a chain whose walk stopped early says both that it stopped and where';
--- COMMENT ON COLUMN intent_field_path_node.ordinal IS 'the application''s ordinal within its own directive name: the @routine''s at seq 0, the owning @reference''s after that. A seq 0 node joins back to graphitron_routine_entry on it and a later one to graphitron_field_reference_entry';
--- COMMENT ON COLUMN intent_field_path_node.position IS 'the path element''s 0-based position within its own @reference application; NULL at seq 0, a routine application having no elements. Distinct from seq, which runs across applications';
--- COMMENT ON COLUMN intent_field_path_node.via IS 'which directive put the chain at this node: ROUTINE at seq 0, REFERENCE after it. The vocabulary intent_field_path_terminus publishes, projected from here unchanged';
--- COMMENT ON COLUMN intent_field_path_node.step_via IS 'which arm of the element''s resolution moved the chain into this node: KEY, TABLE, NAME_MATCH or CONDITION, carried from graphitron_field_reference_step_hop where each is argued. NULL at seq 0, where no element moved it';
--- COMMENT ON COLUMN intent_field_path_node.key_matched_by IS 'for a KEY step, which namespace answered: SQL_NAME or JOOQ_NAME. NULL on a TABLE, NAME_MATCH or CONDITION step and at seq 0, as on the hop relation';
--- COMMENT ON COLUMN intent_field_path_node.from_source_name IS 'the departing table''s catalog partition: the previous node''s arrival. NULL at seq 0, which the chain departs nothing to reach';
--- COMMENT ON COLUMN intent_field_path_node.from_schema IS 'the departing table''s SQL schema; NULL at seq 0';
--- COMMENT ON COLUMN intent_field_path_node.from_table IS 'the departing table''s SQL name; NULL at seq 0';
--- COMMENT ON COLUMN intent_field_path_node.to_source_name IS 'the arriving table''s catalog partition, first column of its sql_table key; the function result itself at seq 0';
--- COMMENT ON COLUMN intent_field_path_node.to_schema IS 'the arriving table''s SQL schema';
--- COMMENT ON COLUMN intent_field_path_node.to_table IS 'the arriving table''s SQL name. With the two columns above this is sql_table''s full key, so the node''s columns, its primary key and its generated classes are each one join away';
--- COMMENT ON COLUMN intent_field_path_node.table_type IS 'the arriving table''s kind, carried from sql_table: FUNCTION at seq 0 by construction, and whatever the hopped-to table declares after that. The column the read-surface axes over a chain turn on, because a function result has no primary key and no foreign keys, so an ordering there cannot fall back on a key and must be authored';
--- COMMENT ON COLUMN intent_field_path_node.constraint_name IS 'the foreign key the step joins on, named or discovered; NULL on a NAME_MATCH or CONDITION step and at seq 0. As on the hop relation, its own sql_referential_constraint key is this name under whichever endpoint declares it, which fk_on_from says';
--- COMMENT ON COLUMN intent_field_path_node.fk_on_from IS 'TRUE when the departing table declares the foreign key, FALSE when the arriving one does; the step''s direction. NULL on a NAME_MATCH or CONDITION step and at seq 0, as on the hop relation';
--- COMMENT ON COLUMN intent_field_path_node.targets IS 'how many distinct tables the chain reaches at this seq, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates for graphitron_field_reference_step_target.targets'' reason: a step with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
--- COMMENT ON COLUMN intent_field_path_node.candidates IS 'how many rows the chain resolved to at this seq, counting routes and not just destinations; 1 is the walk''s requirement for an expressible step, and a larger number is what the "which foreign key did you mean" rejection counts. At seq 0 it counts landings of the routine''s own name, two schemas declaring it being genuinely two';
-
-CREATE VIEW intent_field_path_terminus
-  (graph_name, type_name, field_name, via, ordinal, position,
-   table_source_name, table_schema, table_name, table_type, candidates) AS
-SELECT graph_name, type_name, field_name, via, ordinal, position,
-       table_source_name, table_schema, table_name, table_type,
-       CAST(COUNT(*) OVER (PARTITION BY graph_name, type_name, field_name) AS INT)
-  FROM (SELECT DISTINCT n.graph_name, n.type_name, n.field_name, n.via, n.ordinal, n.position,
-               n.to_source_name AS table_source_name, n.to_schema AS table_schema,
-               n.to_table AS table_name, n.table_type
-          FROM intent_field_path_node n
-         WHERE n.seq = n.last_seq) terminus;
-COMMENT ON VIEW intent_field_path_terminus IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Where a field''s @routine chain lands, and what kind of table it lands on. The chain is the field''s @routine and @reference applications walked as one running source, and its terminus is the last node; every read-surface axis on a routine-backed field is a question about that node. Which table an ordering or a filter resolves its column names against is the terminus, and whether the terminus is a table-valued function''s result decides whether an ordering can fall back on a primary key at all, a function result having none. Both were answered per axis before this relation, each from the directives directly, which is how one property of one catalog object came to be restated as several unrelated refusals. Population: fields carrying at least one @routine. A field whose navigation is @reference alone has a terminus too and it is not this relation''s: it is where graphitron_field_path arrives. A selection and not a walk: intent_field_path_node carries every place the chain stands, and the terminus is its rows at seq = last_seq. That extent is the written tail''s and not the walk''s, so a chain whose walk stopped short has no row here at all, which is the same silence this relation always kept and the reason absence means "not reached", never "resolves to nothing in particular"; where such a walk stopped is now answerable on the node relation, by comparing the two. Ambiguity is rows, and they are landings rather than routes: an element reaching one table by three foreign keys is one row here where the node relation has three, a terminus being a place and not a join, and a reader that has to render the join reads the node relation where the routes are. Two schemas declaring the routine''s name is genuinely two landings, and candidates says so.';
--- COMMENT ON COLUMN intent_field_path_terminus.graph_name IS 'the owning graph''s partition, carried from graphitron_routine_entry';
--- COMMENT ON COLUMN intent_field_path_terminus.type_name IS 'the type owning the field the chain is written on';
--- COMMENT ON COLUMN intent_field_path_terminus.field_name IS 'the field the chain is written on';
--- COMMENT ON COLUMN intent_field_path_terminus.via IS 'which node ends the chain: ROUTINE where the @routine application is the last one written, REFERENCE where a path element after it is. A property of the chain rather than of the landing, and what tells a reader whether the terminus is the function result itself or a table hopped to out of it; what kind of table it is is table_type beside it';
--- COMMENT ON COLUMN intent_field_path_terminus.ordinal IS 'the terminating application''s ordinal within its own directive name, so a ROUTINE row joins back to graphitron_routine_entry on it and a REFERENCE row to graphitron_field_reference_entry. The coordinate a rejection about the terminus names';
--- COMMENT ON COLUMN intent_field_path_terminus.position IS 'the terminating path element''s 0-based position within its application; NULL on a ROUTINE terminus, a routine application having no elements';
--- COMMENT ON COLUMN intent_field_path_terminus.table_source_name IS 'the landing table''s catalog partition, the first column of the sql_table key this row names';
--- COMMENT ON COLUMN intent_field_path_terminus.table_schema IS 'the landing table''s SQL schema';
--- COMMENT ON COLUMN intent_field_path_terminus.table_name IS 'the landing table''s SQL name. With the two columns above this is sql_table''s full key, so the terminus''s columns, its primary key and its generated classes are each one join away';
--- COMMENT ON COLUMN intent_field_path_terminus.table_type IS 'the landing''s kind, carried from sql_table: FUNCTION where the chain ends on the routine''s own result, whatever the hopped-to table declares otherwise. The column every axis over this relation actually turns on, because a function result has no primary key and no foreign keys, so an ordering there cannot fall back on a key and must be authored. Always FUNCTION on a ROUTINE row, which is worth carrying rather than leaving to the via column: a reader asks one column whichever arm answered, and the day a non-function callable reaches a chain the answer changes here instead of at every reader';
--- COMMENT ON COLUMN intent_field_path_terminus.candidates IS 'how many distinct tables this field''s chain lands on, this row''s landing being one of them; 1 where the terminus is certain. Distinct landings and not routes, which is the arity a reader of a terminus needs and the reason this relation counts differently from the hop and target views; stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms';
 
 CREATE VIEW graphitron_connection_element_type
   (graph_name, type_name, element_type_name) AS
@@ -8405,42 +8226,12 @@ SELECT graph_name, type_name, field_name,
        CASE WHEN wrapper_type_name IS NULL THEN 'NAMED_TYPE' ELSE 'CONNECTION_ELEMENT' END,
        target_type_name
   FROM graphitron_field_target;
-COMMENT ON VIEW intent_field_navigated_type IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Total over graphql_field: every field navigates as something, so a consumer joins this rather than left-joining it, and the fallback rung is what makes that true. Two rungs, and the relation is a projection of graphitron_field_target, which is where they are computed and where the rules are stated, the rung read off whether a connection was unwrapped. The connection''s element where the field''s named type is a connection, and the named type itself otherwise. A third rung is retired and worth naming because its absence is a result rather than a simplification: it read the expression the author wrote wherever a macro had rewritten the field, and measured over a consumer-size schema every row it answered is the row the two rungs below it answer, a synthesised connection''s edges.node being the element the authored expression named. It was also the only rung needing something no relation held, and therefore the only reason this rule had to be computed where the parse was. This relation is the correction of a resolution that had five spellings. The COALESCE over the synthesis record was written out at five sites, and all five read the same way: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it. The second half of that sentence is a silence and not a rule. A field returning an author-declared connection type resolved to a type binding no table, so it had no scope table, so its arguments had no scope, so a filter argument on it resolved no column and the condition membership fold could not see it, all from a rule that claims to navigate connections and only navigated the ones with a synthesis row. All the sites read this relation now and are correct at both halves: graphitron_field_scope_table and its participant rows, intent_routine_return_binding and intent_mutation_routine_seat. The rule to hold this relation to is not a count, which has been wrong twice by construction and is what an unguarded inventory does: every site that needs a field''s navigated type reads this relation, and the next spelling it exists to prevent is the one nobody has written yet. One thing a new reader owes itself, learned at the last site to arrive: join what this relation projects, and join it directly. A reader that takes the navigated type from here and then joins a binding onto some other relation''s echo of that name hands the planner a cheaper driver than this one, and a view is seekable on the coordinate it is keyed by rather than on a name it projects, so the relation lands on the probed side and is evaluated once per driving row. That is a property of every projection in this store and not of this arm, which is why it is stated here rather than only there. The basis column says which rung answered, so a test can pin the rule rather than only the answer. What this relation does not do is resolve anything: it names a type, and whether that type binds a table, holds polymorphic members or declares columns is each consumer''s own join. Nor does it look through a polymorphic container; a field returning a union navigates as the union, and the members are intent_poly_member''s answer read from that name. Declared before intent_routine_return_binding because that is the first of its readers, and the ordering here is a dependency rather than a reading order.';
+COMMENT ON VIEW intent_field_navigated_type IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which type a field''s own generated SQL navigates as: the type whose binding, whose members and whose columns a rule at this coordinate should read, as against the type the field''s signature happens to name. The two differ wherever a wrapper stands between the field and what it delivers, and a rule that reads the signature at such a coordinate reads the wrapper''s facts, which are none. Total over graphql_field: every field navigates as something, so a consumer joins this rather than left-joining it, and the fallback rung is what makes that true. Two rungs, and the relation is a projection of graphitron_field_target, which is where they are computed and where the rules are stated, the rung read off whether a connection was unwrapped. The connection''s element where the field''s named type is a connection, and the named type itself otherwise. A third rung is retired and worth naming because its absence is a result rather than a simplification: it read the expression the author wrote wherever a macro had rewritten the field, and measured over a consumer-size schema every row it answered is the row the two rungs below it answer, a synthesised connection''s edges.node being the element the authored expression named. It was also the only rung needing something no relation held, and therefore the only reason this rule had to be computed where the parse was. This relation is the correction of a resolution that had five spellings. The COALESCE over the synthesis record was written out at five sites, and all five read the same way: a connection navigates as its element when the generator built the connection, and as the wrapper when the author wrote it. The second half of that sentence is a silence and not a rule. A field returning an author-declared connection type resolved to a type binding no table, so it had no scope table, so its arguments had no scope, so a filter argument on it resolved no column and the condition membership fold could not see it, all from a rule that claims to navigate connections and only navigated the ones with a synthesis row. All the sites read this relation now and are correct at both halves: graphitron_field_scope_table and its participant rows, and intent_mutation_routine_seat. The rule to hold this relation to is not a count, which has been wrong twice by construction and is what an unguarded inventory does: every site that needs a field''s navigated type reads this relation, and the next spelling it exists to prevent is the one nobody has written yet. One thing a new reader owes itself, learned at the last site to arrive: join what this relation projects, and join it directly. A reader that takes the navigated type from here and then joins a binding onto some other relation''s echo of that name hands the planner a cheaper driver than this one, and a view is seekable on the coordinate it is keyed by rather than on a name it projects, so the relation lands on the probed side and is evaluated once per driving row. That is a property of every projection in this store and not of this arm, which is why it is stated here rather than only there. The basis column says which rung answered, so a test can pin the rule rather than only the answer. What this relation does not do is resolve anything: it names a type, and whether that type binds a table, holds polymorphic members or declares columns is each consumer''s own join. Nor does it look through a polymorphic container; a field returning a union navigates as the union, and the members are intent_poly_member''s answer read from that name.';
 -- COMMENT ON COLUMN intent_field_navigated_type.graph_name IS 'the owning graph''s partition, carried from graphql_field; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN intent_field_navigated_type.type_name IS 'the type owning the field';
 -- COMMENT ON COLUMN intent_field_navigated_type.field_name IS 'the field whose navigation this row states; with the two columns above, the grain, and one row per field of the graph';
 -- COMMENT ON COLUMN intent_field_navigated_type.basis IS 'which rung answered, in a closed vocabulary of two: CONNECTION_ELEMENT from the structural edges.node shape of a connection type, NAMED_TYPE from the field''s own named type. A third rung read the pre-expansion type expression a macro had rewritten, and went when the expansion stopped overwriting it: the field''s own row carries what the author wrote, so the expression is a column rather than a rung. Provenance and a pinnable rule both; a reader that means one of them filters on it and owns having chosen';
 -- COMMENT ON COLUMN intent_field_navigated_type.navigated_type_name IS 'the type name the field navigates as, wrappers already stripped. A name and never a binding, so a consumer joins graphitron_resolved_type_binding, intent_poly_member or graphql_type on it according to what it actually needs to know';
-
-CREATE VIEW intent_routine_return_binding
-  (graph_name, type_name, table_source_name, table_schema, table_name, candidates) AS
-SELECT graph_name, type_name, table_source_name, table_schema, table_name,
-       CAST(COUNT(*) OVER (PARTITION BY graph_name, type_name) AS INT)
-  FROM (SELECT DISTINCT nt.graph_name, nt.type_name,
-               ct.table_source_name, ct.table_schema, ct.table_name
-          FROM intent_field_path_terminus ct
-          JOIN intent_field_navigated_type nv
-            ON nv.graph_name = ct.graph_name AND nv.type_name = ct.type_name
-           AND nv.field_name = ct.field_name
-          JOIN graphql_type nt
-            ON nt.graph_name = nv.graph_name
-           AND nt.type_name = nv.navigated_type_name
-           AND nt.kind = 'OBJECT'
-         WHERE NOT (EXISTS (SELECT 1 FROM graphql_root_operation r
-                             WHERE r.graph_name = nv.graph_name
-                               AND r.type_name = nv.type_name
-                               AND r.operation = 'MUTATION')
-                AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_entry fr
-                                 WHERE fr.graph_name = nv.graph_name
-                                   AND fr.type_name = nv.type_name
-                                   AND fr.field_name = nv.field_name))) landing;
-COMMENT ON VIEW intent_routine_return_binding IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which catalog table a type is bound to by being what a @routine chain field returns: intent_field_path_terminus keyed by the returned type rather than by the field. This is the binding a @routine author writes @table for today, derived instead, so the routine name is written once and the two spellings can no longer disagree. The type read is intent_field_navigated_type''s, so a connection-returning routine field binds its element type and not the wrapper, whether the generator synthesised that connection or the author declared it; that navigation is stated once in that relation and read here rather than spelled again. OBJECT only, a landing being a row and a row standing for an object type. The population is the chain read seats, and one seat is excluded: the payload carrier, a mutation root''s @routine field carrying no @reference, whose chain rows are not what the field returns but what its data field re-reads post-commit, so a binding there would name a table for a type no table stands for. The exclusion names that seat rather than the carrier because the store holds no carrier fact yet; the seat is the classifier''s own fork, which reaches the carrier resolution exactly when the parent is the mutation root and the chain has a single node, and it narrows to the carrier itself the day a carrier relation lands. That day has come and the narrowing is deliberately not taken here: intent_mutation_routine_seat states the same fork as its seat column, so the exclusion could read seat = CARRIER and mean exactly what it means today, but narrowing to the carrier itself means excluding only the seats that hold, which hands a binding to every mutation-root @routine this relation currently keeps out and changes the arity every reader of the reduction sees. That is a change to make on its own evidence, not in passing. The seat exclusion costs the routine write chain nothing, that shape carrying @reference by construction. Keyed on the root operation binding and not on the literal name Mutation, the same intended-rule form graphitron_producer_rule''s root test states. Ambiguity is rows, never a decline, on intent_bound_table''s terms: two fields returning one type off different routines are two rows and candidates says so. Nothing here is masked by an author''s @table, a type carrying both being a fact about the schema and not a conflict for this relation to settle; where the two populations meet is graphitron_resolved_type_binding.';
--- COMMENT ON COLUMN intent_routine_return_binding.graph_name IS 'the owning graph''s partition, carried from the chain terminus';
--- COMMENT ON COLUMN intent_routine_return_binding.type_name IS 'the type this row binds: the named type of the expression the returning field was written with, its list and non-null wrappers stripped';
--- COMMENT ON COLUMN intent_routine_return_binding.table_source_name IS 'the landing table''s catalog partition, the first column of the sql_table key this row names';
--- COMMENT ON COLUMN intent_routine_return_binding.table_schema IS 'the landing table''s SQL schema; what tells two candidates of one name apart';
--- COMMENT ON COLUMN intent_routine_return_binding.table_name IS 'the landing table''s SQL name. With the two columns above this is sql_table''s full key, so the table''s kind, its columns and its generated record are each one join away';
--- COMMENT ON COLUMN intent_routine_return_binding.candidates IS 'how many distinct tables this type''s routine-returning fields land on, this row''s table being one of them; 1 on an unambiguous binding. Counted over this relation''s own rows rather than carried from the terminus, because a type two fields return is ambiguous here even where each field''s own chain lands certainly; stated as a column rather than left to each reader''s own count, on intent_bound_table.candidates'' terms';
 
 CREATE VIEW graphitron_field_target_table_rule
   (graph_name, type_name, field_name, arriving_type_name, basis) AS
@@ -8622,129 +8413,6 @@ COMMENT ON VIEW graphitron_field_reference_step_target IS 'Where each element of
 -- COMMENT ON COLUMN graphitron_field_reference_step_target.fk_on_from IS 'TRUE when the departing table declares the foreign key; the element''s direction. NULL on a NAME_MATCH or CONDITION element, as on the hop view';
 -- COMMENT ON COLUMN graphitron_field_reference_step_target.targets IS 'how many distinct tables this element reaches, this row''s arrival being one of them; 1 where the destination is certain. Separate from candidates because the two arities answer different questions and genuinely differ: a table element with three foreign keys connecting the two tables reaches one table by three routes, so a reader that only needs the destination can trust it while a reader that has to render the join cannot';
 -- COMMENT ON COLUMN graphitron_field_reference_step_target.candidates IS 'how many rows this element resolved to, counting routes and not just destinations; 1 is the walk''s requirement for an expressible hop, and a larger number is what its own "which foreign key did you mean" rejection counts';
-
-CREATE VIEW intent_field_reference_step_fanout
-  (graph_name, type_name, field_name, ordinal, position, verdict,
-   table_source_name, table_schema, table_name, covering_constraint_name,
-   source_name, source_line, source_column) AS
-WITH pair (graph_name, type_name, field_name, ordinal, position,
-           enter_via, enter_constraint_name, enter_fk_on_from,
-           enter_from_source_name, enter_from_schema, enter_from_table,
-           leave_via, leave_constraint_name, leave_fk_on_from,
-           leave_to_source_name, leave_to_schema, leave_to_table,
-           table_source_name, table_schema, table_name) AS (
-  SELECT e.graph_name, e.type_name, e.field_name, e.ordinal, e.position,
-         e.via, e.constraint_name, e.fk_on_from,
-         e.from_source_name, e.from_schema, e.from_table,
-         l.via, l.constraint_name, l.fk_on_from,
-         l.to_source_name, l.to_schema, l.to_table,
-         e.to_source_name, e.to_schema, e.to_table
-    FROM graphitron_field_reference_step_target e
-    JOIN graphitron_field_reference_step_target l
-      ON l.graph_name = e.graph_name AND l.type_name = e.type_name
-     AND l.field_name = e.field_name AND l.ordinal = e.ordinal
-     AND l.position = e.position + 1
-     AND l.from_source_name = e.to_source_name AND l.from_schema = e.to_schema
-     AND l.from_table = e.to_table
-    -- Both elements resolved to exactly one route. An element the walk reached by several
-    -- candidate routes draws no row: the grain is one row per intermediate and the routes
-    -- would bind different columns, crossing into contradictory verdicts at one key. That
-    -- ambiguity is the walk's own "which foreign key did you mean" rejection to report, and
-    -- it is the same silence an unreached element leaves, which the verdict column says.
-   WHERE e.candidates = 1 AND l.candidates = 1
-),
-bound (graph_name, type_name, field_name, ordinal, position, column_name) AS (
-  SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
-         CASE WHEN p.enter_fk_on_from THEN fk.referenced_column_name ELSE fk.column_name END
-    FROM pair p
-    JOIN intent_foreign_key_column_pair fk
-      ON fk.constraint_name = p.enter_constraint_name
-     AND fk.source_name = CASE WHEN p.enter_fk_on_from
-                               THEN p.enter_from_source_name ELSE p.table_source_name END
-     AND fk.table_schema = CASE WHEN p.enter_fk_on_from
-                                THEN p.enter_from_schema ELSE p.table_schema END
-     AND fk.table_name = CASE WHEN p.enter_fk_on_from
-                              THEN p.enter_from_table ELSE p.table_name END
-  UNION
-  SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
-         CASE WHEN p.leave_fk_on_from THEN fk.column_name ELSE fk.referenced_column_name END
-    FROM pair p
-    JOIN intent_foreign_key_column_pair fk
-      ON fk.constraint_name = p.leave_constraint_name
-     AND fk.source_name = CASE WHEN p.leave_fk_on_from
-                               THEN p.table_source_name ELSE p.leave_to_source_name END
-     AND fk.table_schema = CASE WHEN p.leave_fk_on_from
-                                THEN p.table_schema ELSE p.leave_to_schema END
-     AND fk.table_name = CASE WHEN p.leave_fk_on_from
-                              THEN p.table_name ELSE p.leave_to_table END
-),
-covering (graph_name, type_name, field_name, ordinal, position, constraint_name) AS (
-  SELECT graph_name, type_name, field_name, ordinal, position, MIN(constraint_name)
-    FROM (SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
-                 k.constraint_name,
-                 COUNT(*) AS key_columns, COUNT(b.column_name) AS bound_columns
-            FROM pair p
-            JOIN sql_constraint k
-              ON k.source_name = p.table_source_name AND k.table_schema = p.table_schema
-             AND k.table_name = p.table_name
-             AND k.constraint_type IN ('PRIMARY KEY', 'UNIQUE')
-            JOIN sql_constraint_column kc
-              ON kc.source_name = k.source_name AND kc.table_schema = k.table_schema
-             AND kc.table_name = k.table_name AND kc.constraint_name = k.constraint_name
-            LEFT JOIN bound b
-              ON b.graph_name = p.graph_name AND b.type_name = p.type_name
-             AND b.field_name = p.field_name AND b.ordinal = p.ordinal
-             AND b.position = p.position AND b.column_name = kc.column_name
-           GROUP BY p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
-                    k.constraint_name) counted
-   WHERE counted.key_columns = counted.bound_columns
-   GROUP BY graph_name, type_name, field_name, ordinal, position
-),
-judged (graph_name, type_name, field_name, ordinal, position, verdict,
-        table_source_name, table_schema, table_name, covering_constraint_name,
-        source_name, source_line, source_column) AS (
-  SELECT p.graph_name, p.type_name, p.field_name, p.ordinal, p.position,
-         CASE WHEN p.enter_via = 'CONDITION' OR p.leave_via = 'CONDITION'
-                THEN 'UNDECIDABLE_CONDITION_HOP'
-              WHEN p.enter_via = 'NAME_MATCH' OR p.leave_via = 'NAME_MATCH'
-                THEN 'UNDECIDABLE_NAME_MATCH_HOP'
-              WHEN cov.constraint_name IS NOT NULL THEN 'COVERED'
-              ELSE 'FANS_OUT' END,
-         p.table_source_name, p.table_schema, p.table_name, cov.constraint_name,
-         r.source_name, r.source_line, r.source_column
-    FROM pair p
-    LEFT JOIN graphitron_field_reference_entry r
-      ON r.graph_name = p.graph_name AND r.type_name = p.type_name
-     AND r.field_name = p.field_name AND r.ordinal = p.ordinal
-    LEFT JOIN covering cov
-      ON cov.graph_name = p.graph_name AND cov.type_name = p.type_name
-     AND cov.field_name = p.field_name AND cov.ordinal = p.ordinal
-     AND cov.position = p.position
-)
--- The covering name is gated on the verdict rather than carried out of the join, because the
--- two are computed from different amounts of evidence: covering reads whatever columns the
--- readable hops bind, and a declined intermediate has one readable hop, which can cover a
--- constraint on its own. Publishing that name beside a verdict that declined to judge would
--- read as a cleared hop, which is the false negative this relation exists to not produce.
-SELECT graph_name, type_name, field_name, ordinal, position, verdict,
-       table_source_name, table_schema, table_name,
-       CASE WHEN verdict = 'COVERED' THEN covering_constraint_name END,
-       source_name, source_line, source_column
-  FROM judged;
-COMMENT ON VIEW intent_field_reference_step_fanout IS 'Where a field-site @reference path passes through an intermediate table, and whether that table can hold more than one row per pair of columns the entering and leaving hops bind: one row per intermediate, in a closed verdict vocabulary of four. For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two hops bind, while a junction carrying a key column neither hop binds reads FANS_OUT there instead.';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.graph_name IS 'the owning graph''s partition, carried from the walk the two elements come off';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.type_name IS 'the type owning the field the @reference is applied to';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.field_name IS 'the field the @reference is applied to';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.ordinal IS 'the owning @reference application''s ordinal, since the directive is repeatable';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.position IS 'the entering element''s 0-based position within its application''s path, completing the grain. The intermediate is the table that element arrives at and the element after it departs from, so a path''s last element is no intermediate and yields no row: that is the terminal-hop exemption falling out of the shape rather than being written as a case';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.verdict IS 'what the pair-coverage question answered at this intermediate, a closed vocabulary of four. FANS_OUT where no PRIMARY KEY or UNIQUE constraint on the intermediate has every one of its columns among the ones the two hops bind, so the table may hold several rows per bound pair and a list over the path repeats rows. COVERED where one does, named beside it; the hop is then one row in and one row out. UNDECIDABLE_CONDITION_HOP where the entering or the leaving element joins on an authored Java predicate, whose columns no catalog row names, so one side of the bound set is unreadable. UNDECIDABLE_NAME_MATCH_HOP where one of them departs a table-valued function''s result, which declares no constraint to read. The two undecidable arms are rows rather than silence, so absence on this relation means only that the walk did not resolve the element to one hop: either it reached nothing there, or it reached several candidate routes, which is the ambiguity the walk itself rejects and not a verdict this relation owes; a condition arm on either side wins over a name-match arm on the other, the two being equally declined and the reader needing one value';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.table_source_name IS 'the intermediate table''s catalog partition, first column of its sql_table key';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.table_schema IS 'the intermediate table''s SQL schema';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.table_name IS 'the intermediate table''s SQL name: the table the entering element arrives at and the leaving element departs from';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.covering_constraint_name IS 'the PRIMARY KEY or UNIQUE constraint on the intermediate whose every column the two hops bind, which is what makes the hop 1:1 on that pair; the lowest such name where several answer, and NULL under every verdict but COVERED. The subset runs this way round and not the other: a constraint pins a row only when the join knows a value for each of its columns, so an FK on one column inside a two-column UNIQUE clears nothing';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.source_name IS 'the document the @reference application is written in, so a message underlines what the author wrote rather than the field';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.source_line IS 'source line of the @reference application, 1-based per the graphql-java convention';
--- COMMENT ON COLUMN intent_field_reference_step_fanout.source_column IS 'source column of the @reference application, 1-based per the graphql-java convention';
 
 
 -- Which result a type holds and what it is a result of. A producer produces a result and a reader
@@ -11787,7 +11455,7 @@ SELECT DISTINCT f.graph_name, f.type_name, f.field_name, 'ROUTINE', f.named_type
   LEFT JOIN (SELECT graph_name, type_name, MIN(operation) AS operation
                FROM graphql_root_operation GROUP BY graph_name, type_name) ro
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name;
-COMMENT ON VIEW intent_field_payload_producer IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which coordinate produces a value and what type it returns: one row per field carrying a producing directive, with the directive''s family and the unwrapped SDL type the field''s value arrives as. The grain is the coordinate, which is what separates this from graphitron_carrier_data_field''s producer reading: that view asks which payload types a mutation root returns and folds the coordinates away, so a payload two fields return is one row there and two here. Both readings are wanted and only this one can key a fact to the field an author is looking at, so the fold is the reader''s and this relation does not perform it. A @routine field is DISTINCT because a chain applies the directive once per hop and the coordinate produces one value however many hops reached it, the hops being intent_field_path_node''s rows. Where the coordinate sits is a column rather than a filter, for the same reason the family is: a root write and a child @service field are the same fact under different readings, and the two policies that turn on the position (the carrier scan wants root mutations, the error channel''s transport wants root @service) each name what they mean. One column carries it and not two, the operation being the discriminator and its absence the predicate, so a reader asking only whether the field sits at a root writes that as a null test rather than reading a boolean that would have to agree with it. A type serving as two root operations at once reports the alphabetically first, which keeps the grain at the coordinate; nothing in the schema forbids the shape and nothing in the generator has met it. @externalField is deliberately absent: it names a class member that answers an already-produced value rather than a directive that produces one, and intent_field_producer_reference is where the two meet as method references. Absence here means the field carries none of the three directives, not that it has no value.';
+COMMENT ON VIEW intent_field_payload_producer IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which coordinate produces a value and what type it returns: one row per field carrying a producing directive, with the directive''s family and the unwrapped SDL type the field''s value arrives as. The grain is the coordinate, which is what separates this from graphitron_carrier_data_field''s producer reading: that view asks which payload types a mutation root returns and folds the coordinates away, so a payload two fields return is one row there and two here. Both readings are wanted and only this one can key a fact to the field an author is looking at, so the fold is the reader''s and this relation does not perform it. A @routine field is DISTINCT because a chain applies the directive once per hop and the coordinate produces one value however many hops reached it, the hops being the walk''s steps. Where the coordinate sits is a column rather than a filter, for the same reason the family is: a root write and a child @service field are the same fact under different readings, and the two policies that turn on the position (the carrier scan wants root mutations, the error channel''s transport wants root @service) each name what they mean. One column carries it and not two, the operation being the discriminator and its absence the predicate, so a reader asking only whether the field sits at a root writes that as a null test rather than reading a boolean that would have to agree with it. A type serving as two root operations at once reports the alphabetically first, which keeps the grain at the coordinate; nothing in the schema forbids the shape and nothing in the generator has met it. @externalField is deliberately absent: it names a class member that answers an already-produced value rather than a directive that produces one, and intent_field_producer_reference is where the two meet as method references. Absence here means the field carries none of the three directives, not that it has no value.';
 -- COMMENT ON COLUMN intent_field_payload_producer.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN intent_field_payload_producer.type_name IS 'the type declaring the producing field';
 -- COMMENT ON COLUMN intent_field_payload_producer.field_name IS 'the producing field''s name; with the type, the coordinate this row is about';
@@ -12449,14 +12117,14 @@ SELECT s.graph_name, s.type_name, s.field_name, s.ordinal, s.seat,
        END,
        s.return_type_name, s.source_name, s.source_line, s.source_column
   FROM site s;
-COMMENT ON VIEW intent_mutation_routine_seat IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which seat a mutation root''s @routine occupies, and where it occupies none, which precondition stopped it. A @routine on a mutation root is a write, and there are exactly two shapes the write can take: the chain seat, where @reference elements after the routine say where the committed row is re-read from, and the carrier seat, where the field returns a payload whose one data field re-reads it by the routine result''s name-matched keys. Which of the two the author wrote for is the seat, and whether that seat holds is the verdict, and they are separate columns because a refused coordinate still has a seat and a diagnostic about it has to name the shape the author was aiming at. Population: every mutation-root field carrying @routine, at the application that defines the chain. Total over that population and exactly one row per coordinate, which is the property the whole relation is for: there is no default arm and no coordinate with no row, so a shape this vocabulary cannot name is a build failure here rather than a silent non-member somewhere downstream. A reduction over sibling relations rather than a rule of its own: every fact it turns on is already a relation, graphitron_field_path_landing and the walk from the routine''s start for where the chain goes, graphitron_carrier_data_field and intent_carrier_routine_hop for what the payload is and where its re-read departs from, intent_bound_table for what the author wrote @table for, and the captured directive rows for what was written. What this relation adds is the seat fork and the precedence, and nothing else; a verdict that needed a fact no relation states would be a rule wearing a reduction''s name, and the two the walk distinguishes that no relation states are disclosed below rather than fabricated here. One pass with the verdict picked by a CASE rather than one UNION ALL arm per verdict, which is intent_node_id_decode_defect''s rule for the same reason and additionally for this one: exactly-one-verdict-per-coordinate is what a reader trusts, and one driving row gives it by construction where a union would have to rank arms to get it back. The nesting is the seat fork, so the two seats'' arms cannot reach each other. Precedence is this relation''s own and not a transcription of any evaluation order: a coordinate with two defects gets the more fundamental one, the count of routine nodes before the chain''s head, the head before the surface written on it, the surface before anything about the return, and the return''s shape before where the chain lands. There is no message column, on intent_node_id_decode_defect''s settled terms: the closed vocabulary plus the coordinate and the return type are the fact base, and the prose that renders a verdict as a sentence an author can act on belongs with the consumer that composes it. Nor a severity column, which would be a function of the verdict and nothing else; which verdicts are the author''s to fix and which are shapes the generator owes an emitter is stated per value below. The terminus rule reads intent_bound_table and not graphitron_resolved_type_binding, and the choice is load-bearing rather than inherited: the reduction''s other arm is intent_routine_return_binding, which binds a chain field''s return type to that same chain''s terminus, so comparing the terminus against the reduction would be comparing a value with itself. What the rule is actually about is whether the table the author wrote @table for is where the chain lands, which is the @table population''s question alone; this is graphitron_node''s reason for standing on that arm too. A return type carrying no @table therefore draws no disagreement, the derived binding governing there, which is the shipped behaviour and not an omission. One silence is disclosed rather than closed, and one that was is now shut. A first hop that joins by an authored condition alone is a step the walk takes, so the chain reaches it and this relation reads the shape as UNANCHORED_FIRST_HOP, which is the verdict this relation''s own precedence already assigns that shape: the walk''s first step out of the routine''s result written with a condition. It read as CHAIN_UNRESOLVED for as long as such a hop resolved to no hop row at all, which conflated a refusal with a shape the classification walk calls owed an emitter. The one that stays disclosed: a payload whose data field is the ID scalar draws no graphitron_carrier_data_field row at all, that relation refusing an ID element for the ROUTINE family outright, so it reads as NO_CARRIER and CARRIER_ELEMENT_NOT_TABLE names the record element alone.';
+COMMENT ON VIEW intent_mutation_routine_seat IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. Which seat a mutation root''s @routine occupies, and where it occupies none, which precondition stopped it. A @routine on a mutation root is a write, and there are exactly two shapes the write can take: the chain seat, where @reference elements after the routine say where the committed row is re-read from, and the carrier seat, where the field returns a payload whose one data field re-reads it by the routine result''s name-matched keys. Which of the two the author wrote for is the seat, and whether that seat holds is the verdict, and they are separate columns because a refused coordinate still has a seat and a diagnostic about it has to name the shape the author was aiming at. Population: every mutation-root field carrying @routine, at the application that defines the chain. Total over that population and exactly one row per coordinate, which is the property the whole relation is for: there is no default arm and no coordinate with no row, so a shape this vocabulary cannot name is a build failure here rather than a silent non-member somewhere downstream. A reduction over sibling relations rather than a rule of its own: every fact it turns on is already a relation, graphitron_field_path_landing and the walk from the routine''s start for where the chain goes, graphitron_carrier_data_field and intent_carrier_routine_hop for what the payload is and where its re-read departs from, intent_bound_table for what the author wrote @table for, and the captured directive rows for what was written. What this relation adds is the seat fork and the precedence, and nothing else; a verdict that needed a fact no relation states would be a rule wearing a reduction''s name, and the two the walk distinguishes that no relation states are disclosed below rather than fabricated here. One pass with the verdict picked by a CASE rather than one UNION ALL arm per verdict, which is intent_node_id_decode_defect''s rule for the same reason and additionally for this one: exactly-one-verdict-per-coordinate is what a reader trusts, and one driving row gives it by construction where a union would have to rank arms to get it back. The nesting is the seat fork, so the two seats'' arms cannot reach each other. Precedence is this relation''s own and not a transcription of any evaluation order: a coordinate with two defects gets the more fundamental one, the count of routine nodes before the chain''s head, the head before the surface written on it, the surface before anything about the return, and the return''s shape before where the chain lands. There is no message column, on intent_node_id_decode_defect''s settled terms: the closed vocabulary plus the coordinate and the return type are the fact base, and the prose that renders a verdict as a sentence an author can act on belongs with the consumer that composes it. Nor a severity column, which would be a function of the verdict and nothing else; which verdicts are the author''s to fix and which are shapes the generator owes an emitter is stated per value below. The terminus rule reads intent_bound_table, the @table population, which is what the rule is about. What the rule is actually about is whether the table the author wrote @table for is where the chain lands, which is the @table population''s question alone; this is graphitron_node''s reason for standing on that arm too. A return type carrying no @table therefore draws no disagreement, the derived binding governing there, which is the shipped behaviour and not an omission. One silence is disclosed rather than closed, and one that was is now shut. A first hop that joins by an authored condition alone is a step the walk takes, so the chain reaches it and this relation reads the shape as UNANCHORED_FIRST_HOP, which is the verdict this relation''s own precedence already assigns that shape: the walk''s first step out of the routine''s result written with a condition. It read as CHAIN_UNRESOLVED for as long as such a hop resolved to no hop row at all, which conflated a refusal with a shape the classification walk calls owed an emitter. The one that stays disclosed: a payload whose data field is the ID scalar draws no graphitron_carrier_data_field row at all, that relation refusing an ID element for the ROUTINE family outright, so it reads as NO_CARRIER and CARRIER_ELEMENT_NOT_TABLE names the record element alone.';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.graph_name IS 'the owning graph''s partition, carried from the @routine application';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.type_name IS 'the mutation root type the field sits on, bound by graphql_root_operation at MUTATION rather than by the literal name Mutation, on the demand rules'' terms';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.field_name IS 'the mutation field the @routine is written on; with the type above, the coordinate the write runs at and a located refusal attaches to';
--- COMMENT ON COLUMN intent_mutation_routine_seat.ordinal IS 'the chain-defining @routine application''s own ordinal, which is the greatest on the field; joins back to graphitron_routine_entry on it. The selection is intent_field_path_start''s rule reached without its resolution, spelled again here for a reason that relation cannot serve: this population must hold a row where a routine name resolves to nothing, and there it has none';
+-- COMMENT ON COLUMN intent_mutation_routine_seat.ordinal IS 'the chain-defining @routine application''s own ordinal, which is the greatest on the field; joins back to graphitron_routine_entry on it. The selection is stated here rather than read off graphitron_producer_routine because this population must hold a row where a routine name resolves to nothing, and there that relation has none';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.seat IS 'which shape the field''s applications were written for, a closed two-value domain. CHAIN: the field carries at least one @reference, so the routine call is the write and the chain''s terminus is where the post-commit re-read runs. CARRIER: it carries none, so the return is a payload type whose data field owns the re-read and the hop out of the routine result is inferred rather than written. Decided by the presence of an @reference application and by nothing else, which is why it is a fact about the coordinate rather than a verdict: a refused coordinate has a seat too, and the two seats'' verdicts are disjoint vocabularies below the three shared ones';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.verdict IS 'whether the seat holds, and where it does not, which precondition stopped it, in a closed vocabulary of fourteen. ADMITTED is the one emitting value and means the seat''s whole predicate holds; what such a coordinate emits is the seat column''s to say. Three refusals are shared by both seats. MULTIPLE_ROUTINE_NODES: more than one @routine is written on the field, which is a shape owed the multi-lateral emit; it precedes every other verdict because the rules below are stated about the chain''s one routine and there is no one routine here. CHAIN_HEAD_NOT_ROUTINE: an @reference is written before the routine, so the chain would depart from something other than the function result, which at a root there is nothing to be. READ_SURFACE_ON_WRITE: the field or one of its arguments carries @condition or @orderBy, and neither write seat has a filter or an ordering to resolve them against, so admitting the coordinate would classify the directives clean and then silently do nothing. Five are the chain seat''s. REFERENCE_ON_CARRIER_RETURN: the return carries no @table and is a routine payload carrier, so the path is the right fact at the wrong grain and its seat is the payload''s data field. CONNECTION_RETURN: @asConnection rewrote the field''s type expression, and the write''s re-read is keyed by the captured routine columns rather than paginated. CHAIN_UNRESOLVED: the chain does not land on exactly one table, which covers a routine name resolving to no function result, a walk that stopped short of the written tail, and a step reaching its destination by more than one route; which of the three it is is readable on the walk at this row''s own coordinate, as no routine start, or a graphitron_field_path_stop and its moves. UNANCHORED_FIRST_HOP: the first hop out of the routine result carries an authored condition, whose predicate names the routine alias and so cannot appear in the follow-up query, leaving the re-read no anchor. TERMINUS_NOT_RETURN_TABLE: the return type''s @table names a table the chain does not land on, or names one ambiguously. Five are the carrier seat''s. TABLE_BOUND_RETURN: the return is @table-bound with no @reference to walk, which is the chain shape minus its chain and has no re-read anchor either. NO_CARRIER: the return is neither table-bound nor a payload declaring exactly one data channel of the routine family, which is graphitron_carrier_data_field''s arity and its whole set of refusals reported as one. CARRIER_ELEMENT_NOT_TABLE: the one data channel is a record element, and a routine write re-reads its committed row from a catalog table. CARRIER_DATA_FIELD_NON_NULL: the data channel is a non-null single, so a re-read a read policy legitimately returns no row for would null the whole payload through non-null propagation and destroy the errors list beside it. CARRIER_HOP_UNRESOLVED: no hop runs from this field''s own routine result to the data field''s table, or one does and the pairing it would key on comes up short of the arrival''s key, which is sql_name_matched_key_column''s shortfall stated as rows and demanded here as the reader''s own gate, intent_carrier_routine_hop naming the two ends and never claiming they can be keyed. Of the fourteen, the ones an author fixes in their own schema are CHAIN_HEAD_NOT_ROUTINE, REFERENCE_ON_CARRIER_RETURN, TERMINUS_NOT_RETURN_TABLE, CARRIER_ELEMENT_NOT_TABLE, CARRIER_DATA_FIELD_NON_NULL and CARRIER_HOP_UNRESOLVED; MULTIPLE_ROUTINE_NODES, READ_SURFACE_ON_WRITE, CONNECTION_RETURN, UNANCHORED_FIRST_HOP and TABLE_BOUND_RETURN are shapes the generator owes an emitter; CHAIN_UNRESOLVED and NO_CARRIER are each of both kinds and the witness relation tells them apart';
--- COMMENT ON COLUMN intent_mutation_routine_seat.return_type_name IS 'the type the field returns, read off intent_field_navigated_type, so a connection-returning field names its element whether the generator synthesised that connection or the author declared it. On a CHAIN row this is the type the chain''s terminus stands for; on a CARRIER row it is the payload, and the key into graphitron_carrier_data_field for the data channel this seat''s re-read runs at. Never the table: what table stands for the type is intent_bound_table''s and intent_field_path_terminus''s to say, and repeating it here would be a denormalisation of facts this row''s own columns already reach';
+-- COMMENT ON COLUMN intent_mutation_routine_seat.return_type_name IS 'the type the field returns, read off intent_field_navigated_type, so a connection-returning field names its element whether the generator synthesised that connection or the author declared it. On a CHAIN row this is the type the chain''s terminus stands for; on a CARRIER row it is the payload, and the key into graphitron_carrier_data_field for the data channel this seat''s re-read runs at. Never the table: what table stands for the type is intent_bound_table''s and graphitron_field_path_landing''s to say, and repeating it here would be a denormalisation of facts this row''s own columns already reach';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.source_name IS 'the schema document the @routine application is written in, carried from graphitron_routine_entry so a located refusal needs no join back to the population';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.source_line IS 'source line, 1-based per the graphql-java convention';
 -- COMMENT ON COLUMN intent_mutation_routine_seat.source_column IS 'source column, 1-based per the graphql-java convention. With the line and the document name, the site a refusal points an author at, which is the directive and not the field, every verdict here being about what the @routine composes with';
@@ -15456,9 +15124,6 @@ INSERT INTO meta_grain VALUES
   ('nodeid-landing-defect',
    'one refused key landing of one @nodeId decode, at one use site and one branch of it, in one graph',
    'graph_name, site, use_site, origin_source_name, origin_schema, origin_table, verdict, position', 'sdl'),
-  ('reference-path-intermediate',
-   'one intermediate table one field-site @reference path passes through, at the position of the element that enters it, in one graph',
-   'graph_name, type_name, field_name, ordinal, position', 'catalog'),
   ('reference-step-keyed-hop',
    'one candidate foreign-key route one field-site @reference path element could take, in one orientation, in one graph',
    'graph_name, type_name, field_name, ordinal, position, from_source_name, from_schema, from_table, to_source_name, to_schema, to_table, constraint_name, fk_on_from', 'catalog'),
@@ -15567,9 +15232,6 @@ INSERT INTO meta_grain VALUES
   ('minted-conflict',
    'one coordinate several macro applications would mint and disagree about, in one graph',
    'graph_name, coordinate', 'sdl'),
-  ('field-path-application',
-   'one directive application composing one field''s table chain, at its place in the written order',
-   'graph_name, type_name, field_name, chain_position', 'sdl'),
   ('expanded-element',
    'one schema element the generator emits in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
@@ -16285,10 +15947,6 @@ INSERT INTO meta_relation VALUES
    'What a @nodeId application on an input value says: the type the identifier belongs to, as written.',
    'For example actorId: ID @nodeId(typeName: "Actor") gives one row naming Actor.',
    'A decode of one directive application, keyed by the application''s own position, so which input value it was written on and in which file are one join away rather than columns here. The argument is optional in the definition and NULL here says the author omitted it, which is a different fact from any name: what an omitted typeName deduces to is a resolution over the catalog and the node declarations, and supplying it here would put a resolution in a relation whose whole claim is that it performs none. Whether the named type carries @node is a question for the anchors on the same terms.'),
-  ('graphitron_field_path_application', 'field-path-application', 'graphitron',
-   'One directive application composing a field''s table chain, at its place in the written order: one row per contributing application, numbered from 0.',
-   'For example a field carrying @reference then @routine then @reference draws three rows at positions 0, 1 and 2, where the two decode relations under them number their own applications 0, 0 and 1 and no relation says which came first.',
-   'The written order across directive names, which the manual states is load-bearing and which no relation carried. The decode relations each number their own applications, so the order between them was recoverable only by comparing source positions, and the one reader that recovers it gets it wrong: intent_field_path_node anchors on the routine and admits only applications following it, so on the manual''s own sandwich example it reports two nodes where the manual describes four, the hop written before the routine being excluded by the predicate. The order was captured all along, in graphql_directive_application, which holds every application with its position; what was missing is a relation that states it, so a reader joins the answer instead of re-ranking by position, on the terms graphitron_field_target''s comment sets out. The population is the two directives that contribute a node, and @referenceFor is deliberately not among them: it is one participant''s own path rather than the field''s chain, so it is a route of its own.'),
   ('graphitron_minted_conflict', 'minted-conflict', 'graphitron',
    'A coordinate several macro applications would mint and disagree about: one row per contested coordinate in the graph.',
    'For example two carriers naming one connection through connectionName over different element types disagree about that connection''s own nodes field, which draws a row here and no row at all in graphitron_field.',
@@ -17002,10 +16660,6 @@ INSERT INTO meta_relation VALUES
    'One candidate table pair one field-site @reference path element joins without a foreign key: the hop a table element''s spelling reaches from a function result by column-name match, or the route a condition element''s method signature declares.',
    'For example an element naming film on a field whose enclosing type is bound to the table-valued function film_in_stock draws one row departing film_in_stock and arriving film, reading NAME_MATCH.',
    'The keyless half of a split the hop''s two key shapes force. Where no foreign key identifies the hop there is none to enumerate, so the element coordinate with the departing and arriving table triples is already total and the constraint columns are absent rather than null. Where one does identify it those columns are identity, which is graphitron_field_reference_step_hop_keyed. Two arms and one relation rather than one relation each: a function-result departure matched by column name and a route read off a condition method''s signature are the same shape of fact, a table pair with no constraint behind it, and they share one key shape, which is the axis the split is on. One relation over all four arms carried fifteen nullable columns, no primary key and nothing that refused a duplicate row, with a legality rule stated in three column comments instead of a constraint. The union view under the canonical name graphitron_field_reference_step_hop presents this half with key_matched_by, constraint_name and fk_on_from cast to NULL, so no reader is edited and the padding lives at the one surface that has to present fifteen columns.'),
-  ('intent_field_reference_step_fanout', 'reference-path-intermediate', 'graphitron',
-   'Where a field-site @reference path passes through an intermediate table, and whether that table can hold more than one row per pair of columns the entering and leaving hops bind: one row per intermediate, in a closed verdict vocabulary of four.',
-   'For example film to film_actor to actor draws one row at position 0 reading COVERED, film_actor_pkey being exactly the pair the two hops bind, while a junction carrying a key column neither hop binds reads FANS_OUT there instead.',
-   'A @reference path is mechanical foreign-key traversal and a SQL join yields a bag, so a list field over a path that fans out returns the same child row several times. That is the declared path''s correct result, and nothing said so: the generator emitted the multiset silently and a field reading as a set was indistinguishable from one that is. The decidable property is not the one the obvious formulation reaches for. A hop into the child side of a foreign key that the path does not terminate on fires on film to film_actor to actor, the most canonical shape there is, and film_actor returns each actor once; what separates it from a junction carrying its own payload is not the direction of one hop but whether the intermediate can hold more than one row per bound pair. So the grain is the intermediate rather than the path, which is what lets a five-hop path be five independent questions and a finding name the hop that multiplies. The subset runs as columns(constraint) inside bound and never the reverse, a constraint pinning a row only where the join knows every column of it; the inverted reading clears any composite key the path only partly binds, a silence teaching an author the path is a set. The undecidable arms are values for that same reason: an absence meaning no path here, not reached, undecidable and covered at once would hide that false negative inside it.'),
   ('intent_node_id_decode_landing_defect', 'nodeid-landing-defect', 'graphitron',
    'One @nodeId decode whose key landing the store can show is wrong: one row per refused instruction, use site and branch, in a closed verdict vocabulary of two.',
    'For example a path stopping on film_category where the node type is bound to category draws PATH_STOPS_SHORT naming both tables, and a key column jOOQ binds as String landing on one it binds as Long draws LANDING_TYPE_DISAGREEMENT naming both.',

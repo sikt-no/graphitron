@@ -356,7 +356,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_carrier_directive_rule", Arm.DERIVED);
         registrations.put("graphitron_inherited_directive", Arm.DERIVED);
         registrations.put("graphitron_minted_conflict", Arm.DERIVED);
-        registrations.put("graphitron_field_path_application", Arm.DERIVED);
         registrations.put("intent_authored_field_claim", Arm.DERIVED);
         registrations.put("intent_authored_type_claim", Arm.DERIVED);
         registrations.put("intent_bound_table", Arm.DERIVED);
@@ -376,16 +375,11 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_argument_reference_step_target_keyless", Arm.DERIVED);
         registrations.put("graphitron_input_field_reference_step_target_keyed", Arm.DERIVED);
         registrations.put("graphitron_input_field_reference_step_target_keyless", Arm.DERIVED);
-        registrations.put("intent_field_reference_step_fanout", Arm.DERIVED);
         registrations.put("intent_argument_reference_step_hop", Arm.DERIVED);
         registrations.put("graphitron_argument_reference_step_target", Arm.DERIVED);
-        registrations.put("intent_field_path_start", Arm.DERIVED);
-        registrations.put("intent_field_path_node", Arm.DERIVED);
-        registrations.put("intent_field_path_terminus", Arm.DERIVED);
         registrations.put("intent_field_reference_discovery", Arm.DERIVED);
         registrations.put("graphitron_connection_element_type", Arm.DERIVED);
         registrations.put("intent_field_navigated_type", Arm.DERIVED);
-        registrations.put("intent_routine_return_binding", Arm.DERIVED);
         registrations.put("graphitron_resolved_type_binding", Arm.DERIVED);
         registrations.put("graphitron_type_backing", Arm.DERIVED);
         registrations.put("graphitron_type_backing_rule", Arm.DERIVED);

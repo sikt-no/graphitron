@@ -145,21 +145,14 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       ({@code graphitron_node_id_decode_hop_column}) that the lift walks over), one case per shape
  *       the lift either carries or drops, the absent local column being the claim rather than the
  *       present one;
- *       {@code no.sikt.graphitron.rewrite.derive.PathTerminusTest} binds
- *       {@code intent_field_path_terminus}, where a {@code @routine} chain lands and what kind of
- *       table that is, and with it the hop view's name-matched arm, which only a chain departing a
- *       function result reaches;
+ *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedStepHopTest} binds the hop view's
+ *       name-matched arm, which only a chain departing a function result reaches;
  *       {@code no.sikt.graphitron.rewrite.derive.ReferenceDiscoveryTest} binds
  *       {@code intent_field_reference_discovery}, what an omitted path finds between a field's two
  *       endpoints, over captured SDL against that same catalog for the same reason and because each
  *       shape it has to answer for is a shape the catalog already declares, half its cases pinning
  *       the coordinates that discover nothing because the boundary of a discovery is what the
  *       relation claims;
- *       {@code no.sikt.graphitron.rewrite.derive.RoutineReturnBindingTest} binds
- *       {@code intent_routine_return_binding}, the table a type is bound to by being what a chain
- *       returns, and {@code graphitron_resolved_type_binding}, where that population meets the
- *       {@code @table} one, including the seat the derivation excludes and the arity the
- *       coalescing recount produces;
  *       {@code no.sikt.graphitron.rewrite.derive.NameMatchedKeyPairTest} binds the pair behind a hop
  *       out of a table-valued function's result, {@code sql_name_matched_key_column} stating how
  *       such a hop is keyed and {@code intent_carrier_routine_hop} the population that reaches that

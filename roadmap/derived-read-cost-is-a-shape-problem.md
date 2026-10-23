@@ -77,11 +77,6 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
   "`graphitron_routine_entry` is gone".
 * `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
-* The read-time path views `intent_field_path_start`, `_node` and `_terminus`. Ends at "Nothing resolves a path but the walk".
-  `intent_field_path_node`'s recursive walk evaluates every graph's paths whatever the graph filter,
-  so `ResolvedTypeBindings`, reading it through `intent_routine_return_binding`, grows with the
-  graphs in a store until it goes: filtered to one graph at 20 units, `path_node` 4 to 137 ms and
-  `ResolvedTypeBindings` 4 to 195 ms from one graph to eight.
 * Argument and input-field walks from `graphitron_field_scope_table` beside the target. Ends at
   "The argument readers read the target and its walk".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
@@ -188,10 +183,15 @@ resolutions and links built beside it are gone.
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
   added, and writes their keys, columns and stops as it goes, reads each step once.
 * **A child `@routine` is a lateral step of the path** `open`, E's. Only a root's first `@routine` is
-  a producer; any other is a step called with the columns of the table the walk stands on, the
-  store says which, so the editor and the MCP server answer each differently, and `columnMapping`
-  dissolves into the step's column pairs, `argMapping` naming an argument or a column and a name
-  that is both being a defect.
+  a producer; any other is a step from the table the walk stands on to its function, called with
+  that table's columns and the field's arguments. Each parameter's source is a row of the step, so
+  the editor and the MCP server answer each differently, and `columnMapping` and `argMapping`
+  dissolve into those rows, a name that is both an argument and a column being a defect. A path
+  ending on a `@routine` whose field returns a table-bound type takes one more step, from the
+  function's result to that table by name: a walk step at the next place with no written element.
+  `graphitron_path_element_routine`, what a `@routine` element names, sits on the walk's side of
+  "`graphitron_path_element_*` beside the step hops", which stays as it is; it retired
+  `graphitron_producer_routine`'s own spelling of the same lookup.
 * **A split child `@routine` is a path routine** `blocked`, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
   `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
   the walk's first step from the parent's keys.
@@ -203,17 +203,14 @@ resolutions and links built beside it are gone.
   * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
 * **The field grain reads only the walk** `done`.
 * **A key element states which name it matched by** `done`.
-* **The step targets' readers read the walk** `blocked`, on "A child `@routine` is a lateral step of the path". The column scope rule, the node-id instruction rule,
-  `SchemaQueries`, `ReferencePathFanout` and the routine writes read `graphitron_field_path`, its
-  children and its stops, and the `intent_field_path_` views, `graphitron_field_path_application`
-  and `FieldPathApplications` go.
+* **The step targets' readers read the walk** `done`.
 * **A scalar with a path has a target column where its path lands** `done`. `graphitron_field_target_column`
   states the table a read arrives at beside the one it departs from, read off `graphitron_field_path_landing`
   where a path is written, so `COLUMN_UNRESOLVED` and the `@field` hint judge the arrival.
   Applications compose in written order, a path the walk stops on has no column and only the path's
   defect, and an object field's directives resolve against `graphitron_field_target_table`.
   `graphitron_field_column_scope` is gone.
-* **Nothing resolves a path but the walk** `blocked`, on "The step targets' readers read the walk" and "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
+* **Nothing resolves a path but the walk** `blocked`, on "Arguments and input fields walk from their field's target". The step hops and `graphitron_condition_method_route` go last, and the `@reference`
   page says a path is read from source to target only.
 * **Every field has a path, the written one or the one discovery implies** `open`. Where nothing is written the one key between source and target
   is stated as path rows, so no reader falls back to discovery for itself, and the editor's
