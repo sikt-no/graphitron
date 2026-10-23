@@ -49,7 +49,7 @@ Source: a feature request from the Sikt team, relayed by the user.
 
 - A missing or wrong-typed value is a compile error in the consumer's call to the factory, and an empty list is a legal "no preference" value that selects the default language. Nothing in the generator touches HTTP.
 - Non-HTTP callers and tests set the value directly.
-- Parsing `Accept-Language` is the transport layer's job. For graphitron-jakarta-rest, R1097 supplies the request headers at the `newExecutionInput` seam and an `AcceptLanguage.parse` helper that produces this list.
+- Parsing `Accept-Language` is the transport layer's job. For graphitron-jakarta-rest, R1098 supplies the request headers at the `newExecutionInput` seam and an `AcceptLanguage.parse` helper that produces this list.
 
 **Resolution.** For one row, build one ordered candidate list and take the first candidate whose column value is non-null:
 
@@ -95,7 +95,7 @@ public ExecutionInput.Builder newExecutionInput(HttpHeaders headers) {
 }
 ```
 
-If that does not read in two lines, the design is wrong. This depends on R1097 only for the jakarta-rest convenience; the directive itself works for any caller that fills the context argument.
+If that does not read in two lines, the design is wrong. This depends on R1098 only for the jakarta-rest convenience; the directive itself works for any caller that fills the context argument.
 
 ## Other solutions we've considered
 
