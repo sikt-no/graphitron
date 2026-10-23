@@ -11182,18 +11182,33 @@ parent (graph_name, type_name, shape, table_source_name, table_schema, table_nam
    WHERE x.shape = 'OBJECT'
 ),
 -- What a field hands the type it returns: a producer its result, a reader what its parent holds.
+-- A routine read with nothing written after it hands a row of its function's result, which binds
+-- no table: the type it returns is that result's, not a table's. A routine write hands its payload
+-- an object, as any write does.
 edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       table_source_name, table_schema, table_name, pivot_type_name, pivot_field_name,
       producer_kind) AS (
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate,
          COALESCE(ft.wrapper_type_name, ft.target_type_name), ft.wrapper_type_name IS NOT NULL,
-         CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR),
+         CASE WHEN fn.table_name IS NOT NULL THEN 'ROW' END,
+         fn.source_name, fn.table_schema, fn.table_name,
          CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), p.kind
     FROM graphitron_producer p
     JOIN graphitron_field f
       ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
     JOIN graphitron_field_target ft
       ON ft.graph_name = f.graph_name AND ft.type_name = f.type_name AND ft.field_name = f.field_name
+    LEFT JOIN graphitron_producer_routine pr
+      ON pr.graph_name = p.graph_name AND pr.type_name = p.type_name AND pr.field_name = p.field_name
+     AND NOT EXISTS (SELECT 1 FROM graphitron_field_reference_entry fr
+                      WHERE fr.graph_name = pr.graph_name AND fr.type_name = pr.type_name
+                        AND fr.field_name = pr.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphql_root_operation ro
+                      WHERE ro.graph_name = pr.graph_name AND ro.type_name = pr.type_name
+                        AND ro.operation = 'MUTATION')
+    LEFT JOIN sql_table fn
+      ON fn.source_name = pr.routine_source_name AND fn.table_schema = pr.table_schema
+     AND fn.table_name = pr.routine_name
   UNION ALL
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
          pa.shape, pa.table_source_name, pa.table_schema, pa.table_name,
@@ -11241,10 +11256,10 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
 -- What each handed row becomes. A pivot field's type is the row its aggregate makes; a connection's
 -- wrapper holds the page as an object its fields read; an @error type holds the exception a producer
 -- caught; a table-bound type is a row of its table, whoever hands it, since moving from a result back
--- into the tables always refetches; otherwise a reader hands on what its parent holds, and a producer
--- that hands back a value holds an object: a service's, a write's or a routine's result, and a
--- connection's facets. A table's own record handed back is such a value, read through the Record API
--- and never as a row: nothing selected it.
+-- into the tables always refetches; otherwise a reader hands on what its parent holds, a routine read
+-- the row of its function's result, and a producer that hands back a value holds an object: a
+-- service's, a write's or a routine write's result, and a connection's facets. A table's own record
+-- handed back is such a value, read through the Record API and never as a row: nothing selected it.
 SELECT h.graph_name, h.member,
        CASE WHEN dp.coordinate IS NOT NULL THEN 'ROW'
             WHEN h.wrapped OR de.coordinate IS NOT NULL THEN 'OBJECT'
