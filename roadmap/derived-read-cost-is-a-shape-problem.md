@@ -180,7 +180,7 @@ resolutions and links built beside it are gone.
 
 * **Capture states each field's path in the order it was written** `done`.
 * **A path is resolved by a deterministic forward walk over what each element names** `done`.
-* **A table-bound type no field returns is walked from its binding** `open`. The walk starts only
+* **A table-bound type no field returns is walked from its binding** `open`, E's, after the subtract. The walk starts only
   from a result, so since the column scope went the editor offers no path hint on such a type's
   fields, where it did before; a regression, ahead of the planned work.
 * **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
