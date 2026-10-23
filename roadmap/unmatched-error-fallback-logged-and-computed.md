@@ -1,13 +1,13 @@
 ---
 id: R1087
 title: "Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed"
-status: In Review
+status: Ready
 bucket: enhancement
 priority: 3
 theme: error-channel
 depends-on: []
 created: 2026-10-22
-last-updated: 2026-10-22
+last-updated: 2026-10-23
 ---
 
 # Graphitron 9 error fallback cannot be reproduced: a catch-all handler is never logged and its message cannot be computed
@@ -166,6 +166,18 @@ Landed as planned, in one commit (`R1087: a catch-all handler is logged and its 
 - **Fixture:** `FilmLookupError` gained a catch-all `FilmLookupCatchAll` member last in the union (`GraphqlErrorException` with no `description:`, standing in for `GraphitronClientException`; `IllegalStateException` with one), and `FilmLookupService` gained `id == 778` (a both-shapes source) and `id == 779` (one shared `IllegalStateException`, `SHARED_FAILURE`). The unmatched cases fail `Film.durabilityError` on `filmById(film_id: ["1"])`.
 - **Acceptance evidence:** `FetcherErrorResponseExecutionTest` (eight cases, one per bullet of the plan's Tests section: logged match, shared exception logged once with one reference, lambda log, computed message by parent type, `GraphQLError` source on a no-description type, unmatched message with the log's reference, containment, escape hatch); `GraphQLOverHttpConformanceTest.computedRedactionMatchesFetcherPath` beside the unchanged `redactionShapeMatchesFetcherPath`; structural pins in `ConnectionRuntimeClassGeneratorTest` (`matched` is a default, `FetcherErrorResponse` has three defaults and no abstract method, the withers keep each other's hook) and `ErrorRouterClassGeneratorTest` (`newReference`, `clientMessage`, `DEFAULT_RESPONSE`, `Claims`).
 - **Verification-build notes.** Four things outside this diff stopped runs on this 4-core sandbox: a rebase that brought `presence_*` DDL (re-seeded per `.claude/web-environment.md`); `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered` reading films another class wrote (the shared-database cross-talk item); an mvnd daemon running a pre-R1090 copy of the snapshot plugin, so `PageSizeMaximumQueryTest` saw no cap (green under plain `mvn`); and `GraphCountGrowthGateTest` exceeding its ratio while other modules' test JVMs ran (green alone, and green single-threaded). The covering build ran the reactor to `graphitron-model` in parallel and resumed from there with `-T 1` on the same tree.
+
+## Reviewer findings
+
+### In Review → Done, round 1: rework (question 2, completeness evidence)
+
+Reviewed on trunk `f6d8331` against the delivery in `71bf1b1`. The verification build (`mvn install -Plocal-db`) is green, and the implementation is the change this spec approved: `FetcherErrorLog.matched`, `FetcherErrorResponse` with three defaults, the `Claims` record, `newReference` at every reference site including the tenant fan-out, `clientMessage` failing loudly on a missing claim (the producer audit holds: `ChannelEarlyReturnEmitter` only puts non-`Throwable` `GraphQLError`s in an `ErrorList`), the jakarta-rest pair, the manual text and the R423/R920 cross-references. No question-1 finding.
+
+**The arm-order change has no test that would fail without it.** The plan's Tests section names its evidence: "A claimed `GraphitronClientException` (a `GraphQLError` as well) on a type whose handlers carry no `description:` has its message computed by `matchedMessage`. This pins the single arm order." The delivered case, `FetcherErrorResponseExecutionTest.matchedMessage_reachesASourceThatIsAlsoAGraphQLError_onATypeWithoutDescription`, runs on `FilmLookupCatchAll`, and that type's second handler (`IllegalStateException`) carries `description: "The film lookup failed."`. So `lastOverrideIndex` is 1 for the type, and the pre-change generator already emitted the `Throwable` block first for it; the generated `FilmLookupCatchAllFetchers.message` has per-handler statements, the same layout the old code produced. Reverting `ErrorTypeFetcherClassGenerator.messageMethod` to the conditional order (with the `clientMessage` calls kept) leaves that type's emitted method unchanged, so the case passes either way. No other test overrides `matchedMessage`, which is the only way the order is observable: without it both arms return the same `getMessage()`. The fixture comment in `schema.graphqls` and the test's own comment describe the handler ("carries no `description:`") where the old rule keyed on the type, which is how the gap slipped through.
+
+What would satisfy it: run that case on an `@error` type none of whose handlers declares `description:`, with a source that is both a `Throwable` and a `GraphQLError`. For example, split the `GraphqlErrorException` handler into its own union member with no `description:` anywhere on it (keeping `FilmLookupCatchAll`'s `IllegalStateException` handler for the shared-failure, containment and parent-type cases), point `id == 778` at it, have `TracingResponse.matchedMessage` compute for that member too, and correct both comments. Then check that the case fails against the old ordering before restoring the fix.
+
+Non-blocking: `ErrorRouterClassGeneratorTest.surfaceClientErrorOrRedact_surfacesClientErrorElseFallsThroughToRedact` still asserts on `surface.code().toString()`. That predates this item (`7e16d9b`), and this delivery removed the one body-string assertion it touched (`redact_logsCorrelationIdAndReturnsRedactedResult`).
 
 ## Roadmap entries
 
