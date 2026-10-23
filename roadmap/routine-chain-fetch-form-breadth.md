@@ -24,9 +24,9 @@ column-bound inputs). Four fetch-form extensions were left as typed `Deferred` l
 * **`@lookupKey` composition** on routine-backed children (the `SplitLookupTableField`
   landing).
 * **Record-backed parents** (`RecordTableField` seam): a routine child under a `@record` /
-  service-produced parent, where `columnMapping` binds against the record's accessors rather
-  than a catalog table (`RoutineDirectiveResolver`'s null-previous-node `Deferred` covers this
-  today).
+  service-produced parent, where an `argMapping` name would bind one of the record's accessors
+  rather than a column of a catalog table (`RoutineDirectiveResolver`'s no-standing-table
+  `Deferred` covers this today).
 * **`TableInterfaceType` parents** (the `InterfaceField` seam).
 
 Also parked here: Connection pagination over a *catalog-terminus* chain containing a routine

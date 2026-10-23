@@ -182,14 +182,18 @@ resolutions and links built beside it are gone.
   added, and writes their keys, columns and stops as it goes, reads each step once.
 * **A child `@routine` is a lateral step of the path** `open`, E's. Only a root's first `@routine` is
   a producer; any other is a step from the table the walk stands on to its function, called with
-  that table's columns and the field's arguments. Each parameter's source is a row of the step, so
-  the editor and the MCP server answer each differently, and `columnMapping` and `argMapping`
-  dissolve into those rows, a name that is both an argument and a column being a defect. A path
-  ending on a `@routine` whose field returns a table-bound type takes one more step, from the
-  function's result to that table by name: a walk step at the next place with no written element.
-  `graphitron_path_element_routine`, what a `@routine` element names, sits on the walk's side of
-  "`graphitron_path_element_*` beside the step hops", which stays as it is; it retired
-  `graphitron_producer_routine`'s own spelling of the same lookup.
+  that table's columns and the field's arguments. Each parameter's source is a row of the step,
+  `graphitron_field_path_parameter`, read off `graphitron_field_path_parameter_binding`.
+  `columnMapping` is gone: `argMapping` names an argument or a column of the standing table, a
+  name that is both is `ROUTINE_PARAMETER_AMBIGUOUS` and one that is neither
+  `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
+  takes one more step, from the function's result to that table by name: a walk step at the next
+  place with no written element. The MCP server shows the routine step and the inferred one; what
+  is left is the editor, whose `argMapping` completion at a path routine offers the field's
+  arguments and not yet the standing table's columns. `graphitron_path_element_routine`, what a
+  `@routine` element names, sits on the walk's side of "`graphitron_path_element_*` beside the
+  step hops", which stays as it is; it retired `graphitron_producer_routine`'s own spelling of the
+  same lookup.
 * **A split child `@routine` is a path routine** `blocked`, on "A child `@routine` is a lateral step of the path". `graphitron_producer_claim` claims `ROUTINE` for a child `@routine` under
   `@splitQuery`, such as `Actor.filmsSplit`; its producer is the split re-query, and the routine is
   the walk's first step from the parent's keys.
