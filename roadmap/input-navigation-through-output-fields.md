@@ -189,3 +189,23 @@ revision.
 5. **`$source.` on an input is specified but unbuilt, with no stated behaviour meanwhile.** Say what
    a schema writing it gets until then: a defect at the writing site (an `UNSUPPORTED` basis, as
    `ROOT_REFERENCE_WITHOUT_ROUTINE` uses) rather than a silent pass.
+6. **Reused input types are where the design pays most, and the plan does not say so or build
+   for it.** Added in the same pass, before the author's response. Today an input field's `@reference`
+   path is written from one starting table, so an input type fits the targets that start there and
+   is otherwise copied. On sis (capture of 2026-10-22), 19 of 595 input types are used by more than
+   one field and 10 across different target types (`PersonrolleLegacyIdInput` across 8), while 236
+   input types fall into 47 groups with identical field names and types (the largest 36, a group of
+   29 filter inputs); the comparison leaves directives out, so some of that is naming, not forced
+   copying. Navigation by output field names fits every target type offering those names. The plan
+   says navigation is checked per using field; three consequences belong in it:
+   * the grain of finding 1's stored relation is the input occurrence, one row per using field and
+     path of input fields beneath its argument, which is the grain of `intent_input_occurrence_path`
+     and `intent_input_occurrence_path_step` (the latter about 16 s of a sis capture); say whether
+     this item replaces them;
+   * a nested input field that navigates (`cast: ActorFilter @field(name: "$target.actors")`) could
+     set `$target` for the input beneath it, so `ActorFilter` serves wherever the target is `Actor`,
+     at the top level or nested; that per-occurrence target is the target model finding 2 asks
+     about. Say whether navigation retargets the nested input, and on which field shapes;
+   * a reused input can resolve at one use and not another, so its defect is per occurrence: at the
+     writing site, naming the using field. Say so, and say whether a navigation on an interface or
+     union target resolves on that type's own fields or per member.
