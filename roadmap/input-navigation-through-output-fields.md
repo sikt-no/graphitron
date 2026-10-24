@@ -147,3 +147,45 @@ For `field.adoc`, "Filtering through the output types":
 - **A bare name that may be an argument or a column, with a defect when it is both:** the rule that landed with the `columnMapping` removal; a new column could make a working mapping ambiguous.
 - **Named path steps as a vocabulary:** reaches tables no output field exposes, but sis needs it for 5 of 260 paths, which keep `@reference`.
 - **Out of scope, found in the same survey:** filter operators beyond equality with a null policy, JSON members as catalog keys and columns, and write support (fixed and default values, UPSERT, node-id key unification). Each is its own item.
+
+## Reviewer findings
+
+### Round 1: Spec → Ready, findings (session_01GTcAKUooH5fFN1jLWYMGph, 2026-10-24)
+
+The goal stands on its own and the outcome is reachable: a consumer writes an input's route once, on
+the output type, and every `argMapping` name has one meaning. Every symbol the plan names exists
+under that name. Findings 1 and 2 bear on the second gate question, whether the solution fits the
+architecture we have, and hold the sign-off; 3 to 5 are smaller and can be answered in the same
+revision.
+
+1. **The resolutions are views, where the store anchors derived facts into tables.** The ledger says
+   the item "adds the walk views and the defects, and no stored relation", with `argMapping` names
+   resolved by a recursive CTE and `$target` navigation chained over `graphitron_field_path` at read
+   time. The modelling discipline anchors a derived fact into a table in the gatherer's anchoring
+   phase, with an owner, a grain and a mark and sweep, and R876 has measured why: the recursive
+   `intent_field_path_node` view could not be pruned by the graph filter and grew with the graphs in
+   a store, and on 2026-10-23 a view probed inside a rule's recursion took one rule from 46 ms to
+   31.6 s on sis. Say which relations hold the resolved mapping and the resolved navigation (per
+   using field, since an input type is checked per field), their grains, and the stage that writes
+   them; and add a sis timing before and after to `## Tests`.
+2. **The item overlaps R876's deferred branch on the same relations, and neither says which owns
+   them.** R876's "Arguments and input fields are resolved as fields are, from a target model"
+   dissolves the input and argument step targets, `graphitron_field_scope_table` and the
+   `intent_argmapping_` relations, starting with "An argument's and an input field's target is
+   modelled first, as tables"; R876's "Nothing resolves a path but the walk" waits on that branch.
+   This item's step 3 dissolves the same step targets and its step 2 the same `intent_` chain, with
+   the two anchors as an unstored target model. State the division: whether this item is that
+   branch's realisation (the target model as tables being its first step), or depends on it, or
+   takes only `argMapping` and `$target` navigation and leaves the rest to R876; `depends-on:` and
+   R876's graph then follow.
+3. **The single-argument shorthand can make one name mean two things.** At a field whose one
+   argument `input` has an input type with a field also named `input`, or whose argument name equals
+   a field of its own input type, a bare name resolves both ways. Say which wins, or that it is a
+   defect, so "a name never means two things" holds.
+4. **Step 1 replaces a rule R876 shipped a day earlier.** R876's changelog line for the
+   `columnMapping` break says a bare `argMapping` name may be an argument or a column, with
+   `ROUTINE_PARAMETER_AMBIGUOUS` where it is both. If step 1 lands before R876 is Done, its commit
+   should amend that line rather than add a second break beside it, so a consumer reads one change.
+5. **`$source.` on an input is specified but unbuilt, with no stated behaviour meanwhile.** Say what
+   a schema writing it gets until then: a defect at the writing site (an `UNSUPPORTED` basis, as
+   `ROOT_REFERENCE_WITHOUT_ROUTINE` uses) rather than a silent pass.
