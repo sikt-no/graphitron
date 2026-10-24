@@ -222,20 +222,31 @@ resolutions and links built beside it are gone.
 An argument or input field binds the way a field does: to a target table, the column or key it
 names there, and the path from its holder's target to it. Today `graphitron_field_scope_table`,
 `intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
-`intent_argument_reference_step_hop` and the `intent_argmapping_` relations derive that at read
-time. This branch replaces argument handling whole, as the path branch replaced reference handling,
-and those relations dissolve. Deferred on 2026-10-22: it starts after the work in hand, with the model.
+`intent_argument_reference_step_hop`, the argument and input-field step targets and the
+`intent_argmapping_` relations derive that at read time. The target model is the path model fields
+already have: every path is a row of one supertype, an output field's path is its one named subtype,
+and an input field's or argument's path is anonymous, walked by the same rules from the target of
+each field that uses it. R1099, the author-facing navigation over output fields, builds on this
+branch rather than modelling inputs again. Deferred on 2026-10-22: it starts after the work in hand.
 
-* **An argument's and an input field's target is modelled first, as tables** `open`. The target
-  relations are declared with keys, foreign keys and grain sentences before anything writes them,
-  an argument at its field and an input field at the use site of its input type.
-* **The corpus is written against the target model** `blocked`, on "An argument's and an input field's target is modelled first, as tables". Fact documents state the target each argument
-  and input field gets, for every written and inferred form, defects beside facts.
-* **Arguments and input fields walk from their field's target** `blocked`, on "The corpus is written against the target model". Path relations at both grains, started from
-  `graphitron_field_target_table` rather than `graphitron_field_scope_table`, with the composed
-  order capture states per holder, as it does for a field.
+* **An argument's and an input field's target is modelled first, as tables** `open`.
+  `graphitron_path`, one row per path keyed by its holder's definition site with a kind (field,
+  input field, argument), and one subtype naming a path by the output field it is rooted in, the
+  only way a path is reused or addressed by name; declared with keys and grains before anything
+  writes them. Retires, through the nodes below, the argument and input-field walks from
+  `graphitron_field_scope_table`.
+* **The walk is keyed by the path** `blocked`, on "An argument's and an input field's target is modelled first, as tables". Start, steps, keys, columns, methods, routines, parameters and
+  stops move from (type, field) to the path, their readers with them, with a sis timing before and
+  after.
+* **The corpus is written against the target model** `blocked`, on "The walk is keyed by the path". Fact documents state each occurrence's walk:
+  an input type reused across fields and targets, nested inputs, interface and union targets, and
+  defects at the writing site naming the using field.
+* **Arguments and input fields walk from their field's target** `blocked`, on "The corpus is written against the target model". An input field's or argument's `@reference` is
+  captured as an anonymous path and started at the target table of each field that uses it, one
+  walk per occurrence, with no step relations of its own.
 * **The argument readers read the target and its walk** `blocked`, on "Arguments and input fields walk from their field's target". The condition, lookup-key, node-id and `argMapping`
-  readers move, and `graphitron_field_scope_table` and the `intent_` relations above go.
+  readers move, and `graphitron_field_scope_table`, the argument and input-field step targets and
+  the `intent_` relations above go.
 
 ### A reference resolves where its directive is decoded `open`
 
