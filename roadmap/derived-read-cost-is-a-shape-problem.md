@@ -340,16 +340,14 @@ static method needs no holder.
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
 * **A service's holder is its one widest buildable constructor** `blocked`, on "Every public constructor is a method row" and "A `Configuration` parameter is the jOOQ context". Every
   parameter is jOOQ context or a context key; two of the widest is a defect.
-* **An argument path through input types is stored** `open`. One row per argMapping entry or
-  unmapped parameter at its call site, naming the argument, the input fields it walks and the node
-  type's key column where it ends; `graphitron_argmapping_candidate`, `graphitron_argmapping_match`
-  and the `intent_argmapping_` and `intent_resolved_node_key_` views go with it.
+* **An argument path through input types is stored** `open`. This is R1099's step 2,
+  `graphitron_argmapping_binding`, and is done when that step lands; R1099 owns what it retires.
 * **A parameter's fill states how its value is built** `blocked`, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
   bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
 * **`$context` names a context value** `open`. A context argument is an argMapping source as
   `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
-* **Every call's parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context", "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "A consumed key is a source" and "`$context` names a context value". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+* **Every call's parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context", "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "A consumed key is a source", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
