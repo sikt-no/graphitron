@@ -82,13 +82,12 @@ A service call is emitted from the store
 │       ├── An argument path through input types is stored
 │       ├── A parameter's fill states how its value is built
 │       │   └── The generated jOOQ classes are read with their members
-│       │       └── A rebuild that changes no class reads none
 │       ├── A consumed key is a source
 │       │   └── A producer's consumed keys are stated
 │       ├── `$context` names a context value
 │       └── `$tenant` in argMapping routes a service call
 ├── A service's holder is its one widest buildable constructor
-│   └── Every public constructor is a method row
+│   └── A service class's construction is stated
 └── A producer's carrier is its one data channel
     └── A field's source is its parent's result
 ```
@@ -330,16 +329,17 @@ static method needs no holder.
 * **The generated jOOQ classes are read with their members** `open`. The census's header-only
   package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
   class, with a sis capture timed before and after.
-* **Every public constructor is a method row** `open`. `code_method` holds each as `<init>` with its
-  parameters, which the census already reads and the capture drops; `code_service_method` leaves
-  them out.
+* **A service class's construction is stated** `open`. `code_construction` reaches the declaring
+  class of every non-static `code_service_method` row, the code gatherer's own candidate set, and
+  states its public constructors as candidates of a `CONTEXT` shape with each parameter's role, kept
+  apart from the methods as the census keeps them.
 * **A parameter states its type's first argument** `open`. `code_method_parameter` carries the class
   the census reads at type-argument path `0`, so `Set<FilmRecord>` is told from
   `Set<List<FilmRecord>>` without parsing a spelling.
 * **A `Configuration` parameter is the jOOQ context** `open`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **A service's holder is its one widest buildable constructor** `blocked`, on "Every public constructor is a method row" and "A `Configuration` parameter is the jOOQ context". Every
-  parameter is jOOQ context or a context key; two of the widest is a defect.
+* **A service's holder is its one widest buildable constructor** `blocked`, on "A service class's construction is stated" and "A `Configuration` parameter is the jOOQ context". Every
+  parameter is jOOQ context or a context key; two of the widest, or none buildable, is a defect.
 * **An argument path through input types is stored** `open`. This is R1099's step 2,
   `graphitron_argmapping_binding`, and is done when that step lands; R1099 owns what it retires.
 * **A parameter's fill states how its value is built** `blocked`, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
