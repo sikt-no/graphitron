@@ -75,6 +75,11 @@ public final class GraphQLSourceCapture {
         /** The source this is about, named as the store names it. */
         String sourceName();
 
+        /** Whether this reading wrote or emptied the document's entries, which is what moves a derivation. */
+        default boolean transcribed() {
+            return !(this instanceof Unchanged || this instanceof UnchangedSpecification);
+        }
+
         /**
          * A source that states something: it parsed, and {@link #registry()} is what it said.
          *
@@ -167,6 +172,15 @@ public final class GraphQLSourceCapture {
             inputs = List.copyOf(inputs);
             failures = List.copyOf(failures);
             refusals = List.copyOf(refusals);
+        }
+
+        /**
+         * Whether anything a derivation over the documents alone reads has moved since the last
+         * reading: a document transcribed or dropped, or the files standing in another order. Where
+         * it has not, such a derivation would write exactly what the store holds.
+         */
+        public boolean moved() {
+            return reordered || documents.stream().anyMatch(SourceDocument::transcribed);
         }
     }
 

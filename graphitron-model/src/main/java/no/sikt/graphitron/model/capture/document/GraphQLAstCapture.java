@@ -167,20 +167,10 @@ public final class GraphQLAstCapture {
                                List<GraphQLSourceCapture.SourceDocument> documents,
                                boolean reordered, LocalDateTime readAt) {
         captureEntries(dsl, graph, documents, readAt);
-        if (reordered || documents.stream().anyMatch(GraphQLAstCapture::transcribed)) {
+        if (reordered
+                || documents.stream().anyMatch(GraphQLSourceCapture.SourceDocument::transcribed)) {
             anchor(dsl, graph.name(), readAt);
         }
-    }
-
-    /** Whether this reading wrote or emptied the document's entries, which is what moves an anchor. */
-    static boolean transcribed(GraphQLSourceCapture.SourceDocument document) {
-        return switch (document) {
-            case GraphQLSourceCapture.SourceDocument.Changed _,
-                 GraphQLSourceCapture.SourceDocument.Specification _,
-                 GraphQLSourceCapture.SourceDocument.Dropped _ -> true;
-            case GraphQLSourceCapture.SourceDocument.Unchanged _,
-                 GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> false;
-        };
     }
 
     /**

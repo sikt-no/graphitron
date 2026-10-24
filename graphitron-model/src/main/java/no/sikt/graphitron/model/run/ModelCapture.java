@@ -102,7 +102,7 @@ public final class ModelCapture {
         FederationCapture.capture(dsl, graph.name(), readAt);
 
         // The decode reads only the corpus as written, so it runs ahead of the anchor.
-        SdlFactCapture.decode(dsl, graph.name(), GraphQLAssemblyCapture.corpus(documents), readAt);
+        SdlFactCapture.decode(dsl, graph.name(), reading, readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         // The composition hands federation-jvm the link the anchor just settled.
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);
