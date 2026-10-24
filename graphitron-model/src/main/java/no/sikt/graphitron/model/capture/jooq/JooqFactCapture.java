@@ -75,22 +75,66 @@ public final class JooqFactCapture {
      */
     public static void capture(DSLContext dsl, String graphName, String jooqPackage,
                                ClassLoader loader, LocalDateTime touchedAt) {
+        capture(dsl, graphName, jooqPackage, loader, touchedAt, null);
+    }
+
+    /**
+     * {@link #capture(DSLContext, String, String, ClassLoader, LocalDateTime)} given the stamp of
+     * the classpath entry the package's classes were read from, which is what the catalog is: a
+     * graph whose every package source under {@code jooqPackage} was read from an entry stamped
+     * {@code artifactStamp} holds the catalog these bytes describe, so nothing is loaded and nothing
+     * is written. Each package source records the stamp it was read under, which is what lets the
+     * next capture ask.
+     *
+     * @param artifactStamp the holding entry's stamp, or null where none is known, which reads the
+     *                      catalog every time
+     */
+    public static void capture(DSLContext dsl, String graphName, String jooqPackage,
+                               ClassLoader loader, LocalDateTime touchedAt, String artifactStamp) {
+        if (jooqPackage != null && artifactStamp != null
+                && current(dsl, graphName, jooqPackage, artifactStamp)) {
+            Progress.started(dsl, graphName, GATHERER);
+            Progress.completed(dsl, graphName, GATHERER);
+            return;
+        }
         capture(dsl, graphName, jooqPackage == null ? null : new JooqCatalog(jooqPackage, loader),
-            touchedAt);
+            touchedAt, artifactStamp);
     }
 
     private static void capture(DSLContext dsl, String graphName, JooqCatalog jooq,
-                                LocalDateTime touchedAt) {
+                                LocalDateTime touchedAt, String artifactStamp) {
         Progress.started(dsl, graphName, GATHERER);
         dsl.transaction(tx -> {
-            gather(tx.dsl(), graphName, jooq, touchedAt);
+            gather(tx.dsl(), graphName, jooq, touchedAt, artifactStamp);
             NameMatchedKeys.derive(tx.dsl());
         });
         Progress.completed(dsl, graphName, GATHERER);
     }
 
+    /**
+     * Whether {@code graphName} already holds the catalog {@code jooqPackage} describes as the entry
+     * stamped {@code artifactStamp} holds it: the graph claims at least one package source under it,
+     * and every one it claims was read under that stamp.
+     */
+    private static boolean current(DSLContext dsl, String graphName, String jooqPackage,
+                                   String artifactStamp) {
+        if (graphName == null) {
+            return false;
+        }
+        var s = STORE_SOURCE;
+        var m = no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+        var stamps = dsl.select(s.STAMP)
+            .from(s)
+            .join(m).on(m.SOURCE_NAME.eq(s.SOURCE_NAME))
+            .where(m.GRAPH_NAME.eq(graphName))
+            .and(s.SOURCE_KIND.eq(JOOQ_SCHEMA))
+            .and(s.SOURCE_NAME.eq(jooqPackage).or(s.SOURCE_NAME.startsWith(jooqPackage + ".")))
+            .fetch(s.STAMP);
+        return !stamps.isEmpty() && stamps.stream().allMatch(artifactStamp::equals);
+    }
+
     private static void gather(DSLContext dsl, String graphName, JooqCatalog jooq,
-                               LocalDateTime touchedAt) {
+                               LocalDateTime touchedAt, String artifactStamp) {
         if (jooq == null) {
             return;
         }
@@ -98,9 +142,9 @@ public final class JooqFactCapture {
         if (tables.isEmpty()) {
             return;
         }
-        graphSources(dsl, graphName, tables, touchedAt);
+        graphSources(dsl, graphName, tables, touchedAt, artifactStamp);
         // Parents before children, which the sweep then takes in reverse.
-        sources(dsl, tables, touchedAt);
+        sources(dsl, tables, touchedAt, artifactStamp);
         schemas(dsl, jooq, tables, touchedAt);
         tables(dsl, tables, touchedAt);
         columns(dsl, jooq, tables, touchedAt);
@@ -148,17 +192,20 @@ public final class JooqFactCapture {
      * The registry rows every {@code sql_} row hangs its source on. A jOOQ package is a source the
      * store read, on the same terms as a schema file.
      */
-    private static void sources(DSLContext dsl, List<TableAt> tables, LocalDateTime touchedAt) {
+    private static void sources(DSLContext dsl, List<TableAt> tables, LocalDateTime touchedAt,
+                                String artifactStamp) {
         var t = STORE_SOURCE;
         var rows = sourceNames(tables).stream().collect(Rows.toRowList(
             source -> val(source, t.SOURCE_NAME),
             source -> val("JOOQ_SCHEMA", t.SOURCE_KIND),
+            source -> val(artifactStamp, t.STAMP),
             source -> val(touchedAt, t.LAST_SEEN),
             source -> val(touchedAt, t.READ_AT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.LAST_SEEN, t.READ_AT)
+            dsl.insertInto(t, t.SOURCE_NAME, t.SOURCE_KIND, t.STAMP, t.LAST_SEEN, t.READ_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
+                .set(t.STAMP, excluded(t.STAMP))
                 .set(t.LAST_SEEN, excluded(t.LAST_SEEN))
                 .set(t.READ_AT, excluded(t.READ_AT)));
     }
@@ -689,20 +736,22 @@ public final class JooqFactCapture {
      * returns nothing, which reads as a capture that did not run.
      */
     private static void graphSources(DSLContext dsl, String graphName, List<TableAt> tables,
-                                     LocalDateTime touchedAt) {
+                                     LocalDateTime touchedAt, String artifactStamp) {
         List<String> sources = tables.stream().map(TableAt::source).distinct().toList();
 
         var s = STORE_SOURCE;
         var registry = sources.stream().collect(Rows.toRowList(
             source -> val(source, s.SOURCE_NAME),
             source -> val(JOOQ_SCHEMA, s.SOURCE_KIND),
+            source -> val(artifactStamp, s.STAMP),
             source -> val(touchedAt, s.LAST_SEEN),
             source -> val(touchedAt, s.READ_AT)));
         BindBatch.execute(dsl, registry, markers ->
-            dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.LAST_SEEN, s.READ_AT)
+            dsl.insertInto(s, s.SOURCE_NAME, s.SOURCE_KIND, s.STAMP, s.LAST_SEEN, s.READ_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(s.SOURCE_KIND, excluded(s.SOURCE_KIND))
+                .set(s.STAMP, excluded(s.STAMP))
                 .set(s.LAST_SEEN, excluded(s.LAST_SEEN))
                 .set(s.READ_AT, excluded(s.READ_AT)));
 

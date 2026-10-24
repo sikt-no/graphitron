@@ -5,6 +5,7 @@ import no.sikt.graphitron.model.classpath.ClassfileCensus;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.sink.BindBatch;
+import no.sikt.graphitron.model.sources.Observation;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Rows;
@@ -15,7 +16,6 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.LinkedHashSet;
-import java.util.stream.Stream;
 import java.util.Collection;
 import java.util.List;
 
@@ -102,9 +102,23 @@ public final class ClasspathSourceCapture {
      */
     public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
                                   String headerOnlyPackage, LocalDateTime readAt) {
+        return capture(dsl, graph, classpath, headerOnlyPackage, readAt, null);
+    }
+
+    /**
+     * {@link #capture(DSLContext, String, List, String, LocalDateTime)} under a dev session's
+     * observation, which can say which entries have not moved since this store read them; such an
+     * entry is left alone on the stamp the store holds, without a walk.
+     *
+     * @param observation what the session watches and has seen move, or null for a run watching
+     *                    nothing, which decides every entry from the filesystem
+     */
+    public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
+                                  String headerOnlyPackage, LocalDateTime readAt,
+                                  Observation observation) {
         Progress.started(dsl, graph, GATHERER);
         var read = dsl.transactionResult(
-            tx -> gather(tx.dsl(), graph, classpath, headerOnlyPackage, readAt));
+            tx -> gather(tx.dsl(), graph, classpath, headerOnlyPackage, readAt, observation));
         Progress.completed(dsl, graph, GATHERER);
         return read;
     }
@@ -112,8 +126,12 @@ public final class ClasspathSourceCapture {
     /** This gatherer's row in {@code store_graph_progress}. */
     private static final String GATHERER = "classpath-source";
 
+    /** The corpus this gatherer crawls, as {@code meta_gatherer_corpus} declares it. */
+    private static final String CORPUS = "classpath";
+
     private static Reading gather(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
-                                  String headerOnlyPackage, LocalDateTime readAt) {
+                                  String headerOnlyPackage, LocalDateTime readAt,
+                                  Observation observation) {
         var declared = declared(classpath);
         if (declared.isEmpty()) {
             // A run handed no classpath has nothing to say about one. Claiming nothing and
@@ -121,20 +139,34 @@ public final class ClasspathSourceCapture {
             // as "every entry has left" would reclaim another reading's corpus.
             return new Reading(new ClassfileCensus.Census(List.of(), List.of()), List.of(), graph);
         }
-        // What this graph's rows of each entry were read from, before anything is written over it.
-        var held = heldStamps(dsl, graph);
+        // What the store's rows of each entry were read from, before anything is written over it.
+        var held = held(dsl);
+        // Each entry's stamp, computed at most once and only where nothing vouches for the held one.
+        var stamps = new java.util.HashMap<String, String>();
         var changed = new java.util.ArrayList<ClasspathEntry>();
         var unchanged = new java.util.ArrayList<String>();
+        var verified = new java.util.ArrayList<String>();
         for (ClasspathEntry entry : declared) {
             String name = entry.path().toString();
-            String stamp = stampOf(name);
-            if (stamp != null && stamp.equals(held.get(name))) {
+            Held known = held.get(name);
+            if (known != null && known.stamp() != null && vouchedFor(entry, known, observation)) {
+                stamps.put(name, known.stamp());
                 unchanged.add(name);
+                continue;
+            }
+            String stamp = stampOf(entry);
+            stamps.put(name, stamp);
+            if (stamp != null && known != null && stamp.equals(known.stamp())) {
+                unchanged.add(name);
+                verified.add(name);
             } else {
                 changed.add(entry);
             }
         }
-        var reading = read(dsl, changed, headerOnlyPackage, readAt);
+        // A stamp computed and found equal is a read of the entry as surely as one that differed, so
+        // it is dated like one: a session's observation trusts what was verified after its floor.
+        date(dsl, verified, readAt);
+        var reading = read(dsl, changed, headerOnlyPackage, readAt, stamps);
         var claimed = new LinkedHashSet<String>();
         declared.forEach(entry -> claimed.add(entry.path().toString()));
 
@@ -156,7 +188,7 @@ public final class ClasspathSourceCapture {
         var read = new LinkedHashSet<String>();
         reading.census().entries().forEach(at -> read.add(at.source()));
         read.addAll(unchanged);
-        claim(dsl, graph, List.copyOf(read), readAt);
+        claim(dsl, graph, List.copyOf(read), stamps, readAt);
         // After the claims this graph has let go, and never before them: the claim is what refuses
         // the delete, so an entry still claimed here is one this reading would fail on rather than
         // one it would keep. Every entry the configuration named counts as read, an entry left
@@ -170,6 +202,38 @@ public final class ClasspathSourceCapture {
         sources.sort(java.util.Comparator.comparingInt(
             source -> order.getOrDefault(source.sourceName(), Integer.MAX_VALUE)));
         return new Reading(reading.census(), List.copyOf(sources), graph);
+    }
+
+    /**
+     * The stamp of the one entry of {@code classpath} that holds {@code javaPackage}'s classes, as
+     * this gatherer last recorded it; empty where no entry holds the package or more than one does.
+     *
+     * <p>What a reader of a package lets decide whether the package's bytes have moved, which for
+     * the generated jOOQ classes is whether the catalog needs reading again: the entry's stamp moves
+     * whenever a class under it does. Asked after a {@link #capture}, so the stamp is the current
+     * one whether the entry was read or left alone.
+     */
+    public static java.util.Optional<String> stampOfEntryHolding(DSLContext dsl,
+                                                                 List<ClasspathEntry> classpath,
+                                                                 String javaPackage) {
+        if (javaPackage == null || javaPackage.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        var names = declared(classpath).stream().map(entry -> entry.path().toString()).toList();
+        if (names.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        var f = STORE_CLASS_FILE;
+        var s = STORE_SOURCE;
+        var holding = dsl.selectDistinct(s.SOURCE_NAME, s.STAMP)
+            .from(f)
+            .join(s).on(s.SOURCE_NAME.eq(f.SOURCE_NAME))
+            .where(f.SOURCE_NAME.in(names))
+            .and(f.FILE_PATH.startsWith(javaPackage.replace('.', '/') + "/"))
+            .fetch();
+        return holding.size() == 1
+            ? java.util.Optional.ofNullable(holding.get(0).value2())
+            : java.util.Optional.empty();
     }
 
     /** The entries this run may read at all, which is every one it did not inherit. */
@@ -194,13 +258,51 @@ public final class ClasspathSourceCapture {
      * entry, because that membership is how a graph-scoped view reaches a source-keyed fact; the
      * skip above leaves that write alone and declines only the reading behind it.
      */
-    private static java.util.Map<String, String> heldStamps(DSLContext dsl, String graph) {
+    private static java.util.Map<String, Held> held(DSLContext dsl) {
         var t = STORE_SOURCE;
-        return dsl.select(t.SOURCE_NAME, t.STAMP)
+        var held = new java.util.HashMap<String, Held>();
+        dsl.select(t.SOURCE_NAME, t.STAMP, t.READ_AT)
             .from(t)
             .where(t.SOURCE_KIND.in("JAR", "DIRECTORY"))
             .and(t.STAMP.isNotNull())
-            .fetchMap(t.SOURCE_NAME, t.STAMP);
+            .forEach(row -> held.put(row.value1(), new Held(row.value2(), row.value3())));
+        return held;
+    }
+
+    /** What the store holds about one entry: what it was stamped as, and when that read began. */
+    private record Held(String stamp, LocalDateTime readAt) {}
+
+    /**
+     * Whether the held stamp can be believed without computing one. A release jar in a repository
+     * cannot change under its coordinate, so the stamp it was first read under is its stamp for
+     * good. Anything else is believed only where a dev session's watcher has seen nothing move
+     * under it since the store read it; the observation keys an entry by its absolute, normalised
+     * path, which is what the session's fold names a root by.
+     */
+    private static boolean vouchedFor(ClasspathEntry entry, Held known, Observation observation) {
+        if (entry.kind() == ClasspathEntry.Kind.RELEASE && !builtByWorkspace(entry)) {
+            return true;
+        }
+        if (observation == null) {
+            return false;
+        }
+        String key = entry.path().toAbsolutePath().normalize().toString();
+        return observation.trusts(CORPUS, key, known.readAt());
+    }
+
+    /** Whether the entry is a workspace module's own output, under that module's own tree. */
+    private static boolean builtByWorkspace(ClasspathEntry entry) {
+        return entry.module() != null && entry.path().toAbsolutePath().normalize()
+            .startsWith(entry.module().baseDirectory().toAbsolutePath().normalize());
+    }
+
+    /** Dates the entries whose stamp was computed and found equal to the one the store held. */
+    private static void date(DSLContext dsl, List<String> verified, LocalDateTime readAt) {
+        if (verified.isEmpty()) {
+            return;
+        }
+        var t = STORE_SOURCE;
+        dsl.update(t).set(t.READ_AT, readAt).where(t.SOURCE_NAME.in(verified)).execute();
     }
 
     /**
@@ -232,10 +334,18 @@ public final class ClasspathSourceCapture {
      */
     public static Reading read(DSLContext dsl, List<ClasspathEntry> classpath,
                                String headerOnlyPackage, LocalDateTime readAt) {
+        var stamps = new java.util.HashMap<String, String>();
+        declared(classpath).forEach(entry -> stamps.put(entry.path().toString(), stampOf(entry)));
+        return read(dsl, classpath, headerOnlyPackage, readAt, stamps);
+    }
+
+    private static Reading read(DSLContext dsl, List<ClasspathEntry> classpath,
+                                String headerOnlyPackage, LocalDateTime readAt,
+                                java.util.Map<String, String> stamps) {
         var census = ClassfileCensus.read(declared(classpath), headerOnlyPackage);
         var read = new LinkedHashSet<String>();
         census.entries().forEach(at -> read.add(at.source()));
-        writeSources(dsl, census.entries(), readAt);
+        writeSources(dsl, census.entries(), stamps, readAt);
         // The files under those entries, which is the grain the families below key themselves by
         // and therefore the grain a deletion has to be noticed at. Marked here and swept below, so
         // a class a compile removed takes its rows with it rather than outliving them.
@@ -279,7 +389,7 @@ public final class ClasspathSourceCapture {
 
     /** The registry row every classpath row hangs its source on, one per entry read. */
     private static void writeSources(DSLContext dsl, List<ClassfileCensus.EntryAt> entries,
-                                     LocalDateTime readAt) {
+                                     java.util.Map<String, String> stamps, LocalDateTime readAt) {
         if (entries.isEmpty()) {
             return;
         }
@@ -287,7 +397,7 @@ public final class ClasspathSourceCapture {
         var rows = entries.stream().collect(Rows.toRowList(
             at -> val(at.source(), t.SOURCE_NAME),
             at -> val(at.kind(), t.SOURCE_KIND),
-            at -> val(stampOf(at.source()), t.STAMP),
+            at -> val(stamps.get(at.source()), t.STAMP),
             at -> val(modifiedAt(at.source()), t.MTIME),
             at -> val(readAt, t.LAST_SEEN),
             at -> val(readAt, t.READ_AT)));
@@ -310,7 +420,7 @@ public final class ClasspathSourceCapture {
      * date itself would license a skip against an answer of unknown age.
      */
     private static void claim(DSLContext dsl, String graph, List<String> entries,
-                              LocalDateTime readAt) {
+                              java.util.Map<String, String> stamps, LocalDateTime readAt) {
         if (entries.isEmpty()) {
             return;
         }
@@ -318,7 +428,7 @@ public final class ClasspathSourceCapture {
         var rows = entries.stream().collect(Rows.toRowList(
             source -> val(graph, m.GRAPH_NAME),
             source -> val(source, m.SOURCE_NAME),
-            source -> val(stampOf(source), m.STAMP),
+            source -> val(stamps.get(source), m.STAMP),
             source -> val(readAt, m.READ_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(m, m.GRAPH_NAME, m.SOURCE_NAME, m.STAMP, m.READ_AT)
@@ -351,45 +461,69 @@ public final class ClasspathSourceCapture {
     }
 
     /**
-     * What the entry is, as something a later reading can compare: a jar by its bytes, a directory
-     * by a walk of what it holds.
+     * What the entry is, as something a later reading can compare. Computed only where nothing
+     * already vouches for the stamp the store holds, a dev session's watcher being what can.
      *
-     * <p>A directory used to be left unstamped, on the reasoning that it changes on every compile
-     * and so would buy an invalidation that always fires while paying a full walk to decide it. The
-     * first half is true and the second does not survive measurement. Over this module's own output,
-     * 1904 files, the walk costs 66 to 82 milliseconds warm, against the roughly nine seconds the
-     * read it can skip costs. That is under one percent to decide, which is worth paying on the
-     * compile where it fires and worth a great deal on the readings where it does not: a store
-     * capturing several graphs reads one classpath once rather than once each.
-     *
-     * <p>Size and modification time rather than content, and only for the directory. A jar is one
-     * file, so hashing it is exact and costs one read; a directory is many, and reading all of them
-     * to decide whether to read all of them answers the question by doing the work. What the stat
-     * pair misses is a rewrite that keeps both, which for build output means a compiler writing
-     * identical length at the same millisecond. The path is in the digest too, so a file added or
-     * removed moves it even where every surviving file is untouched.
+     * <p>What the workspace builds is stamped by size and modification time, and what a Maven
+     * repository holds by its identity. Build output is rewritten by every compile, and a stat pair
+     * misses only a rewrite of identical length at the same millisecond, so reading the bytes would
+     * buy nothing; a directory is a walk of every file under it by path, length and modification
+     * time, so a file added or removed moves it too. A repository jar is the identity the producer
+     * read off Maven's checksum sidecar where it could vouch for one, which is a release resolved
+     * from a repository, and its bytes hashed otherwise, which is a locally installed jar that can
+     * be replaced under its coordinate.
      */
-    private static String stampOf(String sourceName) {
-        Path path = Path.of(sourceName);
-        return Files.isDirectory(path) ? directoryStamp(path) : SourceStamp.ofFile(path);
+    private static String stampOf(ClasspathEntry entry) {
+        Path path = entry.path();
+        if (Files.isDirectory(path)) {
+            return directoryStamp(path);
+        }
+        // A module's own jar under its own tree. Not every entry naming a module: an installed copy
+        // of one sits in the repository and is that repository's to vouch for.
+        if (builtByWorkspace(entry)) {
+            return fileStamp(path);
+        }
+        return entry.suppliedStamp() != null ? entry.suppliedStamp() : SourceStamp.ofFile(path);
+    }
+
+    /** One built file by its length and modification time; null where it cannot be read. */
+    private static String fileStamp(Path file) {
+        try {
+            return SourceStamp.of((Files.size(file) + "\u0001"
+                + Files.getLastModifiedTime(file).toMillis())
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
     }
 
     /**
      * The walk behind a directory's stamp: every file under it by path, length and modification
-     * time, in an order the filesystem does not get to choose. Null where the walk fails, which
-     * reads as changed, an entry nothing can look at having nothing to compare.
+     * time, read in one attribute call per file and digested in the order the walk meets them. Null
+     * where the walk fails, which reads as changed, an entry nothing can look at having nothing to
+     * compare.
+     *
+     * <p>Visit order rather than sorted, because sorting needs every line held first and the stamp
+     * only has to move when the tree does. An order that shifted under an unchanged tree would read
+     * the entry once more, which is the safe direction; measured over sakila's twelve directories,
+     * six thousand files, this walk is a fifth of the sorted one.
      */
     private static String directoryStamp(Path directory) {
-        try (Stream<Path> files = Files.walk(directory)) {
-            var lines = new java.util.ArrayList<String>();
-            for (Path file : files.filter(Files::isRegularFile).toList()) {
-                lines.add(directory.relativize(file)
-                    + "\u0001" + Files.size(file)
-                    + "\u0001" + Files.getLastModifiedTime(file).toMillis());
-            }
-            java.util.Collections.sort(lines);
-            return SourceStamp.of(String.join("\n", lines)
-                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        var digest = SourceStamp.streamed();
+        try {
+            Files.walkFileTree(directory, new java.nio.file.SimpleFileVisitor<>() {
+                @Override
+                public java.nio.file.FileVisitResult visitFile(
+                        Path file, java.nio.file.attribute.BasicFileAttributes attributes) {
+                    if (attributes.isRegularFile()) {
+                        digest.update((directory.relativize(file) + "\u0001" + attributes.size()
+                            + "\u0001" + attributes.lastModifiedTime().toMillis() + "\n")
+                            .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    }
+                    return java.nio.file.FileVisitResult.CONTINUE;
+                }
+            });
+            return digest.stamp();
         } catch (IOException | RuntimeException e) {
             return null;
         }

@@ -164,9 +164,22 @@ public final class GraphitronStore {
     public static CapturedSchema capture(GraphitronModelStore store, GraphIdentity graph,
                                          SubjectConfig config, List<ClasspathEntry> classpath,
                                          ClassLoader loader) {
+        return capture(store, graph, config, classpath, loader, null);
+    }
+
+    /**
+     * {@link #capture(GraphitronModelStore, GraphIdentity, SubjectConfig, List, ClassLoader)} under
+     * a dev session's observation, which lets the capture skip what the session saw nothing move
+     * under; null for a run watching nothing.
+     */
+    public static CapturedSchema capture(GraphitronModelStore store, GraphIdentity graph,
+                                         SubjectConfig config, List<ClasspathEntry> classpath,
+                                         ClassLoader loader,
+                                         no.sikt.graphitron.model.sources.Observation observation) {
         var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
         return capture(graph.name(), () ->
-            ModelCapture.capture(store.dsl(), graph, config, classpath, loader, readAt));
+            ModelCapture.capture(store.dsl(), graph, config, classpath, loader, readAt, null,
+                observation));
     }
 
     /**

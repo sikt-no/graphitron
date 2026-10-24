@@ -294,9 +294,9 @@ each parameter, so the generator reads it and `ServiceCatalog` resolves nothing.
 one whose instances graphitron can build; its public methods are service methods, and a public
 static method needs no holder.
 
-* **The generated jOOQ classes are read with their members** `blocked`, on "A second capture of an
-  unchanged classpath opens no entry and walks no tree". The census's header-only package goes, so tables, records, `Routines`,
-  package classes and DAOs are read like any other class, with a sis capture timed before and after.
+* **The generated jOOQ classes are read with their members** `open`. The census's header-only
+  package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
+  class, with a sis capture timed before and after.
 * **Every public constructor is a method row** `open`. `code_method` holds each as `<init>` with its
   parameters, which the census already reads and the capture drops; `code_service_method` leaves
   them out.
@@ -661,9 +661,6 @@ treating each kind by what it can do, and catching a stale catalog.
   `build_warning_stale_module`.
 * **A directory's stamp covers what the reading reads** `open`. Regenerating jOOQ into a module that
   also holds services no longer makes every service class read again.
-* **A second capture of an unchanged classpath opens no entry and walks no tree** `open`. A dev
-  round after the first takes the class-file watcher's word for which entries changed, where
-  `generate` keeps the walk; a test captures twice and a sis second round is timed.
 
 ### Which types are nodes, with which id and key, is stated once and every reader reads it `open`
 

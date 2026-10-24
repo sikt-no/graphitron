@@ -52,6 +52,7 @@ import org.apache.maven.plugins.annotations.Parameter;
 import org.apache.maven.plugins.annotations.ResolutionScope;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.net.BindException;
 import java.net.InetSocketAddress;
 import java.net.URI;
@@ -383,6 +384,13 @@ public class DevMojo extends AbstractRewriteMojo {
     // any one round, which is what rules out hanging it off RunContext. Package-private so
     // DevMojoTest can assert what a watcher told it.
     Observation observation = Observation.rediscovering();
+
+    /** The session's observation, so a round's capture leaves alone what nothing moved under. */
+    @Override
+    Observation observation() {
+        return observation;
+    }
+
     // The paths the watchers saw, per corpus, so each round can name what it was told instead of
     // announcing only that it ran. Diagnostic: it holds paths where the observation holds folded
     // instance keys, and nothing decides anything from it.
@@ -453,12 +461,35 @@ public class DevMojo extends AbstractRewriteMojo {
             sessionStore.reaped().report(storeHome).ifPresent(getLog()::info);
         }
 
+        // What the session watches, before the initial round rather than after it: the classpath
+        // watcher is registered ahead of that round's capture, so what the capture reads is dated
+        // above the corpus's floor and the next round can believe it without looking. Registering a
+        // corpus reads the roster to refuse one no crawler declares, which needs the store open.
+        // A misspelling would otherwise read as the default, which is the arm the developer
+        // reaching for this flag is trying to leave. Said once, and the session continues on the
+        // default rather than failing: the flag is a diagnostic aid, not a correctness setting.
+        if (!REDISCOVER_ALWAYS.equalsIgnoreCase(rediscover)
+            && !REDISCOVER_OBSERVED.equalsIgnoreCase(rediscover)) {
+            getLog().warn("graphitron:dev: unrecognised graphitron.dev.rediscover value '"
+                + rediscover + "'; expected " + REDISCOVER_OBSERVED + " or " + REDISCOVER_ALWAYS
+                + ". Continuing on " + REDISCOVER_OBSERVED + ".");
+        }
+        this.observation = rediscoverAlways()
+            ? Observation.rediscovering()
+            : new Observation(sessionStore.dsl());
+        this.recentChanges = new RecentChanges(project.getBasedir().toPath());
+        // Vocabulary-less until the store arrives below: the directive vocabulary is read out of the
+        // session's graph, so there is nothing to hand the constructor. Built here because the
+        // classpath watcher's callback names it.
+        var workspace = new Workspace();
+
         var initialCtxHolder = new AtomicReference<RunContext>();
         var initialHolder = new AtomicReference<InitialOutput>();
         try {
             runModulePlan(() -> withCodegenScope(ctx -> {
                 initialCtxHolder.set(ctx);
                 registerGeneratedRoots(ctx);
+                prepareClasspathWatcher(ctx, workspace);
                 if (skipInitial) {
                     // Nothing is emitted this startup by design, so the editor's products come from
                     // the reporting-only entry point rather than from a pass.
@@ -476,6 +507,9 @@ public class DevMojo extends AbstractRewriteMojo {
             // <schemaInputs> match nothing is the ordinary way) would otherwise leave the workspace
             // file held for the rest of the Maven run, which is precisely the held-store trouble
             // the demotion warning tells users to go looking for.
+            if (classpathWatcher != null) {
+                classpathWatcher.close();
+            }
             sessionStore.close();
             throw e;
         }
@@ -490,23 +524,6 @@ public class DevMojo extends AbstractRewriteMojo {
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
         this.reportFacts = new ReportFacts(sessionStore.dsl(),
             new GraphIdentity(initialCtx.graphName(), initialCtx.basedir()));
-        // What the session watches. Constructed once the store is open, because registering a
-        // corpus reads the roster to refuse one no crawler declares, and before the save listener
-        // is built below, which marks through it. Registering this early is harmless: registration
-        // establishes no floor, so nothing is trusted until a watcher says it is up.
-        // A misspelling would otherwise read as the default, which is the arm the developer
-        // reaching for this flag is trying to leave. Said once, and the session continues on the
-        // default rather than failing: the flag is a diagnostic aid, not a correctness setting.
-        if (!REDISCOVER_ALWAYS.equalsIgnoreCase(rediscover)
-            && !REDISCOVER_OBSERVED.equalsIgnoreCase(rediscover)) {
-            getLog().warn("graphitron:dev: unrecognised graphitron.dev.rediscover value '"
-                + rediscover + "'; expected " + REDISCOVER_OBSERVED + " or " + REDISCOVER_ALWAYS
-                + ". Continuing on " + REDISCOVER_OBSERVED + ".");
-        }
-        this.observation = rediscoverAlways()
-            ? Observation.rediscovering()
-            : new Observation(sessionStore.dsl());
-        this.recentChanges = new RecentChanges(project.getBasedir().toPath());
         // No graph identity: a .java file's declarations are facts about the file, and a file
         // belongs to whoever compiles it rather than to a graph.
         this.javaSourceFacts = new JavaSourceFacts(sessionStore.dsl(), observation);
@@ -514,9 +531,6 @@ public class DevMojo extends AbstractRewriteMojo {
         // instance to land on. It is re-declared on every refresh, the roots being the walk's.
         this.javaSourceFacts.register(initialCtx.compileSourceRoots());
 
-        // Vocabulary-less until the store arrives on the next line: the directive vocabulary is
-        // read out of the session's graph now, so there is nothing to hand the constructor.
-        var workspace = new Workspace();
         // The editor's read access to the store, connections of its own rather than a share of the
         // writer's: LSP requests arrive concurrently while a capture round holds this handle. Three
         // readers rather than one because reads on one reader serialize and the session has three
@@ -603,7 +617,7 @@ public class DevMojo extends AbstractRewriteMojo {
         // the consumer-change recompile off this same driver.
         maybeStartIncrementalCompiler();
         Set<Path> schemaRoots = startSchemaWatcher(initialCtx, workspace);
-        startClasspathWatcher(initialCtx, workspace);
+        startClasspathWatcher();
         startSourceWatcher(initialCtx);
         // Seed the source facts so goto-definition / hover work before the first .java edit; the
         // source watcher refreshes them on the source cadence thereafter. Path-only read on
@@ -901,11 +915,19 @@ public class DevMojo extends AbstractRewriteMojo {
         return roots;
     }
 
-    private void startClasspathWatcher(RunContext ctx, Workspace workspace) throws MojoExecutionException {
+    /**
+     * Registers the classpath watcher, before the initial round's capture so that what the capture
+     * reads is dated above the corpus's floor and the second round believes it without walking a
+     * tree. Its thread starts later, in {@link #startClasspathWatcher}, once what its callback needs
+     * is built: a watch service holds the events of its registered keys until they are taken, so
+     * a class written in between is delivered rather than lost. Once per session.
+     */
+    private void prepareClasspathWatcher(RunContext ctx, Workspace workspace) {
+        if (classpathWatcher != null) {
+            return;
+        }
         Set<Path> roots = resolveClasspathRoots(ctx);
         if (roots.isEmpty()) {
-            getLog().info("graphitron:dev: skipping classpath watcher; "
-                + "no compiled output yet under any reactor project's target/classes");
             return;
         }
         this.classpathDebounce = new DebounceExecutor(debounceMs);
@@ -918,9 +940,15 @@ public class DevMojo extends AbstractRewriteMojo {
                 roots, classpathDebounce, () -> onClasspathChange(workspace), ".class",
                 watched(CLASSPATH_CORPUS));
         } catch (IOException e) {
-            cleanup();
-            throw new MojoExecutionException(
-                "graphitron:dev: failed to start classpath watcher", e);
+            throw new UncheckedIOException("graphitron:dev: failed to start classpath watcher", e);
+        }
+    }
+
+    private void startClasspathWatcher() {
+        if (classpathWatcher == null) {
+            getLog().info("graphitron:dev: skipping classpath watcher; "
+                + "no compiled output yet under any reactor project's target/classes");
+            return;
         }
         Thread classpathThread = new Thread(classpathWatcher::run, "graphitron-dev-classpath");
         classpathThread.setDaemon(true);

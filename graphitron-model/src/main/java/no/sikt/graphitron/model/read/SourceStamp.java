@@ -126,6 +126,33 @@ public final class SourceStamp {
         return recorded != null && recorded.equals(of(content));
     }
 
+    /**
+     * A {@code sha256:} stamp fed piece by piece, for a source whose content is gathered as it is
+     * walked rather than held as one array: the same stamp {@link #of} gives the concatenation.
+     */
+    public static Streamed streamed() {
+        return new Streamed(digest());
+    }
+
+    /** What {@link #streamed} hands back: feed it, then ask for the stamp once. */
+    public static final class Streamed {
+
+        private final MessageDigest digest;
+
+        private Streamed(MessageDigest digest) {
+            this.digest = digest;
+        }
+
+        public Streamed update(byte[] content) {
+            digest.update(content);
+            return this;
+        }
+
+        public String stamp() {
+            return SHA256 + HexFormat.of().formatHex(digest.digest());
+        }
+    }
+
     private static MessageDigest digest() {
         try {
             return MessageDigest.getInstance("SHA-256");

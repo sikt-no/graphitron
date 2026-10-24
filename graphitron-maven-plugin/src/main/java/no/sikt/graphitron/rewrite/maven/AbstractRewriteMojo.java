@@ -1389,7 +1389,16 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         return GraphitronStore.capture(store, new GraphIdentity(ctx.graphName(), ctx.basedir()),
             SubjectConfig.of(ctx),
             ctx.classpathRoots(),
-            ctx.codegenLoader());
+            ctx.codegenLoader(),
+            observation());
+    }
+
+    /**
+     * What the goal watches and has seen move, which lets a capture leave alone what nothing moved
+     * under; null for a one-shot goal, which watches nothing and decides from the filesystem.
+     */
+    no.sikt.graphitron.model.sources.Observation observation() {
+        return null;
     }
 
     /**

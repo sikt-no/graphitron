@@ -20,6 +20,7 @@ import no.sikt.graphitron.model.capture.federation.FederationCapture;
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.capture.jooq.JooqFactCapture;
 import no.sikt.graphitron.model.capture.store.StoreEntries;
+import no.sikt.graphitron.model.sources.Observation;
 import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH;
@@ -60,18 +61,36 @@ public final class ModelCapture {
      * <p>Each gatherer commits its own work, in transactions of its own choosing, and records how
      * far it got through {@link Progress}.
      */
-    @SuppressWarnings("deprecation")
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                          List<ClasspathEntry> classpath, ClassLoader loader,
                                          LocalDateTime readAt, StageProgress progress) {
+        return capture(dsl, graph, config, classpath, loader, readAt, progress, null);
+    }
+
+    /**
+     * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, ClassLoader, LocalDateTime,
+     * StageProgress)} under a dev session's observation, which lets the classpath reading leave an
+     * entry the session saw nothing move under without looking at it.
+     *
+     * @param observation what the session watches and has seen move, or null for a run watching
+     *                    nothing
+     */
+    @SuppressWarnings("deprecation")
+    public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
+                                         List<ClasspathEntry> classpath, ClassLoader loader,
+                                         LocalDateTime readAt, StageProgress progress,
+                                         Observation observation) {
         writeGraph(dsl, graph, readAt);
         Progress.started(dsl, graph.name(), Progress.CAPTURE);
         StoreEntries.write(dsl, graph.name(), config, classpath, readAt);
 
-        JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null), loader,
-            readAt);
-        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
-            config.jooqPackage().orElse(null), readAt);
+        String jooqPackage = config.jooqPackage().orElse(null);
+        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath, jooqPackage,
+            readAt, observation);
+        // The catalog is the generated classes, so it is read again only where the entry holding
+        // them moved; the classpath reading has just said whether it did.
+        JooqFactCapture.capture(dsl, graph.name(), jooqPackage, loader, readAt,
+            ClasspathSourceCapture.stampOfEntryHolding(dsl, classpath, jooqPackage).orElse(null));
         CodeCapture.capture(dsl, classes, loader, readAt);
 
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
