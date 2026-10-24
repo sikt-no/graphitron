@@ -1,6 +1,8 @@
 package no.sikt.graphitron.model.capture.code.fixtures;
 
+import org.jooq.Configuration;
 import org.jooq.DSLContext;
+import org.jooq.impl.DefaultDSLContext;
 
 import java.util.Collection;
 import java.util.List;
@@ -88,5 +90,15 @@ public final class ServiceFixture {
     /** And one nothing can make, which is what reaches it without making it constructible. */
     public static String describeHolder(DSLContext dsl, AbstractHolder holder) {
         return holder.toString();
+    }
+
+    /** Takes the run's jOOQ context as a Configuration, the other type jOOQ hands a routine. */
+    public static String withConfiguration(Configuration configuration, String id) {
+        return id;
+    }
+
+    /** Takes a DSLContext implementation, which is a value of that class and not the context slot. */
+    public static String withDefaultContext(DefaultDSLContext dsl, String id) {
+        return id;
     }
 }

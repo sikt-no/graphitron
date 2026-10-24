@@ -87,6 +87,7 @@ public final class CodeCapture {
 
     /** The type a {@code @service} parameter has when the run's own jOOQ context is passed to it. */
     private static final String JOOQ_DSL_CONTEXT = "org.jooq.DSLContext";
+    private static final String JOOQ_CONFIGURATION = "org.jooq.Configuration";
 
     /** The role a condition's parameter plays when its declaration names one generated table. */
     private static final String TABLE_CONCRETE = "TABLE_CONCRETE";
@@ -1051,10 +1052,18 @@ public final class CodeCapture {
      * Concrete or not is then the declaration's own answer: a position written as
      * {@code org.jooq.Table} itself, raw or wildcarded, names no table, and neither does one written
      * as a type variable, whose erasure is a bound the source never wrote.
+     *
+     * <p>The jOOQ context is matched by exact type, not by assignability: a position declared as a
+     * class implementing {@code DSLContext} asks for a value of that class, which the run does not
+     * have, while {@code DSLContext} and {@code Configuration} are the two forms jOOQ hands a caller
+     * the context it runs in.
      */
     private static String roleOf(ClassfileCensus.ParameterAt at, ClassAncestry ancestry) {
-        if (ancestry.isA(at.type(), JOOQ_DSL_CONTEXT)) {
+        if (JOOQ_DSL_CONTEXT.equals(at.type())) {
             return "DSL_CONTEXT";
+        }
+        if (JOOQ_CONFIGURATION.equals(at.type())) {
+            return "CONFIGURATION";
         }
         if (!ancestry.isA(at.type(), JOOQ_TABLE)) {
             return "OTHER";

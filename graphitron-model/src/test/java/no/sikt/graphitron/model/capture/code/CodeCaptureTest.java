@@ -853,6 +853,23 @@ class CodeCaptureTest {
         withReactorCapture(dsl -> assertThat(liftersOn(dsl, LIFTERS)).doesNotContain("twoParameters"));
     }
 
+    /**
+     * The jOOQ context is either type jOOQ hands a caller, matched exactly: a class implementing
+     * {@code DSLContext} is a value of that class, not the slot the run fills with its own context.
+     */
+    @Test
+    @DisplayName("a Configuration is the jOOQ context, and an implementation of DSLContext is not")
+    void theJooqContextIsEitherTypeExactly() {
+        withReactorCapture(dsl -> {
+            assertThat(serviceRolesOn(dsl, "withConfiguration"))
+                .as("a Configuration is the run's jOOQ context, as a DSLContext is")
+                .containsExactly("CONFIGURATION", "OTHER");
+            assertThat(serviceRolesOn(dsl, "withDefaultContext"))
+                .as("an implementation of DSLContext is decided by its own type, not by what it implements")
+                .containsExactly("OTHER", "OTHER");
+        });
+    }
+
     /** The table lifted from is carried, being the one clause the site rather than the method decides. */
     @Test
     @DisplayName("the table a lifter lifts from is the sole position's role")
@@ -1191,6 +1208,16 @@ class CodeCaptureTest {
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
             .orderBy(CODE_METHOD_PARAMETER.POSITION)
             .fetch(CODE_METHOD_PARAMETER.EXTRACTION);
+    }
+
+    /** The roles of one service fixture method's positions, in parameter order. */
+    private static List<String> serviceRolesOn(DSLContext dsl, String methodName) {
+        return dsl.select(CODE_METHOD_PARAMETER.ROLE)
+            .from(CODE_METHOD_PARAMETER)
+            .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(SERVICES))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
+            .orderBy(CODE_METHOD_PARAMETER.POSITION)
+            .fetch(CODE_METHOD_PARAMETER.ROLE);
     }
 
     /** The roles of one method's positions, in parameter order. */
