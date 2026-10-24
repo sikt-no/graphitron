@@ -662,8 +662,8 @@ treating each kind by what it can do, and catching a stale catalog.
 * **A directory's stamp covers what the reading reads** `open`. Regenerating jOOQ into a module that
   also holds services no longer makes every service class read again.
 * **A second capture of an unchanged classpath opens no entry and walks no tree** `open`. A dev
-  round takes the class-file watcher's word for which entries changed instead of stating every file
-  under each directory; a test captures twice and a sis second capture is timed.
+  round after the first takes the class-file watcher's word for which entries changed, where
+  `generate` keeps the walk; a test captures twice and a sis second round is timed.
 
 ### Which types are nodes, with which id and key, is stated once and every reader reads it `open`
 
