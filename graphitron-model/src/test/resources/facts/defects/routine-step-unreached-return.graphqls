@@ -11,7 +11,7 @@ type Film @table(name: "film") {
   castFilms(minLength: Int!): [Actor!]
     @reference(path: [{table: "film_actor"}])
     @routine(name: "films_for_actor",
-             argMapping: "pActorId: actor_id, pMinLength: minLength")
+             argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
 }
 
 extend type Query {

@@ -24,7 +24,7 @@ directive @routine(
 |===
 | Name | Type | Default | Description
 | `name` | `String!` | (required) | The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog.
-| `argMapping` | `String` | (empty) | Binds routine IN parameters (`routineParam: name`, comma-separated). The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. The right-hand side is a GraphQL argument of the field, or, where the routine is a step of a child field's path, a column of the table the path stands on (see <<parameter-binding,Where a parameter takes its value>>). An argument may be a dot-path walking into nested input fields (`pInventoryId: input.inventoryId`), the shared path form described once in xref:service.adoc#arg-mapping[Binding a parameter to a nested input field]. An unmentioned parameter binds as if mapped to its own name.
+| `argMapping` | `String` | (empty) | Binds routine IN parameters (`routineParam: source`, comma-separated). The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv` for a `p_env` parameter. The right-hand side is a GraphQL argument of the field, or `$source.<column>` for a column of the row the routine is applied to on a child field (see <<parameter-binding,Where a parameter takes its value>>). An argument may be a dot-path walking into nested input fields (`pInventoryId: input.inventoryId`), the shared path form described once in xref:service.adoc#arg-mapping[Binding a parameter to a nested input field]. An unmentioned parameter binds as if mapped to its own name.
 |===
 
 == Canonical example
@@ -114,12 +114,12 @@ At a child position, pagination is the one axis that does not compose yet: a chi
 [[parameter-binding]]
 == Where a parameter takes its value
 
-Every IN parameter of the routine takes its value from one place, named by the `argMapping` entry for it, or by the parameter's own name where no entry names it. That name is one of two things:
+Every IN parameter of the routine takes its value from one place, named by the `argMapping` entry for it, or by the parameter's own name where no entry names it:
 
-* *An argument of the field.* The value is the argument's, or the leaf a dot-path walks to inside it.
-* *A column of the table the path stands on,* where the routine is a step of a child field's path. That table is the enclosing type's table when the routine comes first, and the last hop's table after `@reference` hops. A column is matched by its SQL name, without regard to case. The call becomes correlated: SQL evaluates it once per row of that table, via `CROSS JOIN LATERAL`, inside the same statement that fetches the parent (the inline correlated multiset), so there is no per-row round trip. A column's Java type must be the parameter's.
+* *A bare name is an argument of the field.* The value is the argument's, or the leaf a dot-path walks to inside it.
+* *`$source.<column>` is a column of the row the routine is applied to.* That is the enclosing type's row when the routine comes first in a child field's path, and the last hop's table after `@reference` hops. A column is matched by its SQL name, without regard to case. The call becomes correlated: SQL evaluates it once per row of that table, via `CROSS JOIN LATERAL`, inside the same statement that fetches the parent (the inline correlated multiset), so there is no per-row round trip. A column's Java type must be the parameter's.
 
-A name that is both an argument and a column is an error, reported as `GRAPHITRON_ROUTINE_PARAMETER_AMBIGUOUS` at the `@routine`: neither is preferred, since a preference would let a table gaining a column change what a call reads without anything in the schema changing. Rename the argument. A name that is neither leaves the parameter with no value, reported as `GRAPHITRON_ROUTINE_PARAMETER_UNBOUND`. At a root field no table stands, so every name must be an argument.
+A bare name never binds a column, so adding a column to a table never changes what a call reads. A name that is no argument, or a `$source.<column>` naming no column of that table, leaves the parameter with no value, reported as `GRAPHITRON_ROUTINE_PARAMETER_UNBOUND` at the `@routine`. A root field has no such row, so `$source` is an error there and every parameter binds an argument.
 
 [source,graphql]
 ----
@@ -127,7 +127,7 @@ type Actor @table(name: "actor") {
     films(minLength: Int!): [ActorFilm!]
         @routine(
             name:       "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
 }
@@ -149,7 +149,7 @@ Every position falls out of that one rule. In these examples (from the sakila ex
 # Routine then hops: the routine supplies the rows, a hop lands on the film table.
 recentFilms(minLength: Int!): [Film!]
     @routine(name: "films_for_actor",
-             argMapping: "pActorId: actor_id, pMinLength: minLength")
+             argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @reference(path: [{table: "film"}])
     @defaultOrder(primaryKey: true)
 
@@ -158,14 +158,14 @@ recentFilms(minLength: Int!): [Film!]
 castFilms(minLength: Int!): [ActorFilm!]
     @reference(path: [{table: "film_actor"}])
     @routine(name: "films_for_actor",
-             argMapping: "pActorId: actor_id, pMinLength: minLength")
+             argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @defaultOrder(fields: [{name: "film_id"}])
 
 # Sandwich: hops in, routine, hop back out to a catalog terminus.
 castRecentFilms(minLength: Int!): [Film!]
     @reference(path: [{table: "film_actor"}])
     @routine(name: "films_for_actor",
-             argMapping: "pActorId: actor_id, pMinLength: minLength")
+             argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @reference(path: [{table: "film"}])
     @defaultOrder(primaryKey: true)
 ----
@@ -368,7 +368,7 @@ Because the batch is keyed by the routine's column-bound inputs, `@splitQuery` o
 * Without `@reference` on a Mutation field, the return may instead be a payload carrier (exactly one nullable `@table`-element data field plus an optional errors-shaped field). A carrier's rows are not the routine's result: they are what the data field re-reads post-commit, not what the field returns. The carrier + `@reference` combination is rejected as a directive conflict, and `@reference` on the carrier's data field is deferred (see <<write,Writes on Mutation>>).
 * `name:` must resolve to a *table-valued function* in the jOOQ catalog. A name that resolves to nothing is rejected with `@routine could not be resolved — no table-valued function named ...`, and at a child position, where the routine is a step of the field's path, the editor reports it at the `@routine` as `GRAPHITRON_ELEMENT_UNRESOLVED`; a name that resolves to a plain table or view is rejected with `... resolves to a table or view, not a table-valued function`. A name that exists as a database routine but is not table-valued (a procedure, or a scalar or void function) is reported as deferred with a pointer to the follow-up item carrying that call surface; only a genuinely absent name gets the unknown-name rejection.
 * On a root field composing a chain (`Query` and `Mutation` alike), `@routine` must be the first directive application: a root chain has no implicit head, so the routine supplies it. A root routine's parameters bind from GraphQL arguments only, no table standing there to read a column of.
-* `argMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is a name that binds the parameter to nothing or to both an argument and a column (see <<parameter-binding,Where a parameter takes its value>>); the unbound case lists the field's arguments and the standing table's columns as candidates. A dot-path whose later segment names nothing the value at that depth opens into is a build error listing the candidates. A column has no path form, since it has no nested fields.
+* `argMapping:` parameter names are the jOOQ-generated (camelCased) names. Naming a parameter the routine does not declare is a build error, as is an entry that binds the parameter to nothing (see <<parameter-binding,Where a parameter takes its value>>): a name that is no argument lists the field's arguments, and points at `$source.<column>` where the name is a column; a `$source` column the table lacks lists that table's columns. A dot-path whose later segment names nothing the value at that depth opens into is a build error listing the candidates. A column has no path form, since it has no nested fields.
 * An `argMapping` path must land on a scalar or enum leaf, or on a key column projected out of a node id (see <<node-id-key-projection>>). Binding a routine parameter to a whole input object is a build error naming the input type: a routine IN parameter takes one value, so bind a scalar field inside it. Enum-valued and converted leaves are reported as deferred; the routine call emitter reads argument values directly today. A column-bound parameter's Java type must match the routine parameter's, and so must a key column projected out of a node id: a mismatch there is a build error naming both types, resolvable only where the routine's call surface was captured. Resolving the parameter names off the generated `Routines` method requires the consumer to compile their jOOQ sources with `-parameters`.
 * A `@nodeId`-carrying leaf's `@nodeId` must name `typeName:` explicitly, a routine parameter having no containing table to infer the node type from. Whether the leaf must be opened with a key column follows from the node type's key: one column is inferred and the leaf may stay closed, and more than one is a build error stating the count and listing the columns, one binding carrying one value. The parameter receives a key column's own value either way, never the encoded id. Naming a column the node type does not resolve is a build error suggesting the near miss, naming one whose Java type the parameter cannot take is a build error stating both types, and opening an `ID` that carries no `@nodeId` at all is a build error too: what a dot opens is a node id, and an `ID` that is not one has nothing to open. Exactly one segment may follow a node id, a node id opening into one key column, and opening a *list* of node ids is reported as deferred: it names the list of that key column across the decoded ids, which parameter binding does not emit yet.
 * One routine node per chain: chains with more than one `@routine` application do not generate yet and are reported as deferred.

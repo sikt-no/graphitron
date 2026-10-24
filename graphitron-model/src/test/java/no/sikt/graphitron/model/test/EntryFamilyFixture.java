@@ -110,7 +110,7 @@ public final class EntryFamilyFixture {
           film(id: ID! @nodeId(typeName: "Film") @lookupKey): Film
 
           reportedFilms: [Film!]
-            @routine(name: "public.reported_films", argMapping: "pEnv: env, pFilmId: film_id")
+            @routine(name: "public.reported_films", argMapping: "pEnv: env, pFilmId: $source.film_id")
 
           media: [Media!] @referenceFor(type: "Book", path: [
               {table: "book", key: "book_media_fk",

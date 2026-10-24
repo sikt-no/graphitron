@@ -7669,7 +7669,7 @@ class GraphitronSchemaBuilderTest {
             type Film @table(name: "film") {
               rows(minLength: Int!): [ActorFilmRow!]
                 @reference(path: [{key: "film_actor_film_id_fkey"}])
-                @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength")
+                @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
@@ -7870,7 +7870,7 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") {
               recentFilms(minLength: Int!): [Film!]
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actor_id, pMinLength: minLength")
+                         argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @reference(path: [{table: "film"}])
                 @defaultOrder(primaryKey: true)
             }
@@ -7903,7 +7903,7 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [ActorFilm!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actor_id, pMinLength: minLength")
+                         argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
@@ -7934,7 +7934,7 @@ class GraphitronSchemaBuilderTest {
               castRecentFilms(minLength: Int!): [Film!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actor_id, pMinLength: minLength")
+                         argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @reference(path: [{table: "film"}])
                 @defaultOrder(primaryKey: true)
             }
@@ -7959,7 +7959,7 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") {
               recentFilms(minLength: Int!): [Film!]
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actor_id, pMinLength: minLength")
+                         argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @defaultOrder(primaryKey: true)
             }
             type Query { actor: Actor }
@@ -7982,7 +7982,7 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [Actor!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actor_id, pMinLength: minLength")
+                         argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
             }
             type Query { film: Film }
             """);
@@ -7992,8 +7992,8 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childChainParameterNamingNothingListsThePreviousNodesColumns() {
-        // A name resolves against the running source at the routine's position: here the
+    void childChainSourceColumnTheTableLacksListsThePreviousNodesColumns() {
+        // $source resolves against the running source at the routine's position: here the
         // previous node is film_actor, so the message lists ITS columns, not the implicit head's.
         var schema = build("""
             type ActorFilm {
@@ -8003,15 +8003,15 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [ActorFilm!]
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: title, pMinLength: minLength")
+                         argMapping: "pActorId: $source.title, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
             """);
         var f = (UnclassifiedField) schema.field("Film", "castFilms");
-        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
         assertThat(f.reason())
-            .contains("'title' is neither an argument of this field nor a column of 'film_actor'")
+            .contains("column 'title', which is not a column of 'film_actor'")
             .contains("actor_id"); // the previous node's columns are listed
     }
 
@@ -8026,7 +8026,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
+                         argMapping: "pEnv: $source.title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
@@ -8214,7 +8214,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!] @splitQuery
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
+                         argMapping: "pEnv: $source.title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
@@ -8258,7 +8258,7 @@ class GraphitronSchemaBuilderTest {
               castFilms(minLength: Int!): [ActorFilm!] @splitQuery
                 @reference(path: [{table: "film_actor"}])
                 @routine(name: "films_for_actor",
-                         argMapping: "pActorId: actor_id, pMinLength: minLength")
+                         argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { film: Film }
@@ -8277,7 +8277,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: [String!]! @lookupKey): [Tilgang!] @splitQuery
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
+                         argMapping: "pEnv: $source.title, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
@@ -8287,21 +8287,20 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void childRoutineParameterNamingNothingRejectsWithCandidates() {
+    void childRoutineSourceColumnTheTableLacksRejectsWithCandidates() {
         var schema = build(TILGANG_TYPE + """
             type Film @table(name: "film") {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: no_such_column, pServiceId: serviceId, pFeideId: feideId")
+                         argMapping: "pEnv: $source.no_such_column, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);
         var f = (UnclassifiedField) schema.field("Film", "tilganger");
-        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.UnknownName.class);
         assertThat(f.reason())
-            .contains("@routine parameter 'pEnv' has no binding")
-            .contains("'no_such_column' is neither an argument of this field nor a column of 'film'")
+            .contains("column 'no_such_column', which is not a column of 'film'")
             .contains("title"); // the parent table's columns are listed
         assertThat(f.kind()).isEqualTo(RejectionKind.AUTHOR_ERROR);
     }
@@ -8325,9 +8324,9 @@ class GraphitronSchemaBuilderTest {
     }
 
     @Test
-    void routineParameterNamingAnArgumentAndAColumnRejectsAsAmbiguous() {
-        // title is an argument of the field and a column of film, the table the path stands on.
-        // Neither wins: a precedence would let a new column change the call silently.
+    void bareNameBindsTheArgumentEvenWhereAColumnSharesItsName() {
+        // title is an argument of the field and a column of film. A bare name never binds a
+        // column, so pEnv reads the argument and a new column could not change the call.
         var schema = build(TILGANG_TYPE + """
             type Film @table(name: "film") {
               title: String
@@ -8337,10 +8336,45 @@ class GraphitronSchemaBuilderTest {
             }
             type Query { film: Film }
             """);
+        var f = (ChildField.TableField) schema.field("Film", "tilganger");
+        var rc = (TableExpr.RoutineCall) ((JoinStep.Hop) f.joinPath().get(0)).target();
+        var pEnv = rc.routine().argBindings().stream()
+            .filter(b -> b.routineParamName().equals("pEnv")).findFirst().orElseThrow();
+        assertThat(pEnv.source()).isInstanceOf(ParamSource.Arg.class);
+    }
+
+    @Test
+    void childRoutineBareColumnNameHasNoBindingAndPointsAtSource() {
+        // title is a column of film and no argument: written bare it binds nothing, and the
+        // message says how a column is bound.
+        var schema = build(TILGANG_TYPE + """
+            type Film @table(name: "film") {
+              title: String
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: title, pServiceId: serviceId, pFeideId: feideId")
+            }
+            type Query { film: Film }
+            """);
         var f = (UnclassifiedField) schema.field("Film", "tilganger");
         assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
-        assertThat(f.reason()).contains(
-            "@routine parameter 'pEnv' reads 'title', which is both an argument of this field and a column of 'film'");
+        assertThat(f.reason())
+            .contains("@routine parameter 'pEnv' has no binding: 'title' is not an argument of this field")
+            .contains("which an entry binds as $source.title");
+    }
+
+    @Test
+    void rootRoutineSourceColumnRejectsAsStructural() {
+        var schema = build(TILGANG_TYPE + """
+            type Query {
+              tilganger(serviceId: String!, feideId: String!): [Tilgang!]!
+                @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+                         argMapping: "pEnv: $source.title, pServiceId: serviceId, pFeideId: feideId")
+            }
+            """);
+        var f = (UnclassifiedField) schema.field("Query", "tilganger");
+        assertThat(f.rejection()).isInstanceOf(Rejection.AuthorError.Structural.class);
+        assertThat(f.reason()).contains("a root field has no row for $source to read");
     }
 
     @Test
@@ -8470,7 +8504,7 @@ class GraphitronSchemaBuilderTest {
             type Actor @table(name: "actor") {
               films(minLength: Int!): [ActorFilm!]
                 @asConnection
-                @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength")
+                @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
                 @defaultOrder(fields: [{name: "film_id"}])
             }
             type Query { actors: [Actor!]! }
@@ -8548,7 +8582,7 @@ class GraphitronSchemaBuilderTest {
               title: String
               tilganger(serviceId: String!, feideId: String!): [Tilgang!]
                 @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
-                         argMapping: "pEnv: film_id, pServiceId: serviceId, pFeideId: feideId")
+                         argMapping: "pEnv: $source.film_id, pServiceId: serviceId, pFeideId: feideId")
             }
             type Query { film: Film }
             """);

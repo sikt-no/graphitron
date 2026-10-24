@@ -159,18 +159,17 @@ at that depth, which suggests the near miss.
 
 *Next step.* Correct the segment. xref:directives/service.adoc#arg-mapping[Binding a parameter to a nested input field] is the canonical description of the form.
 
-`@routine` adds four rejections on top, because a routine IN parameter is resolved from the
-database catalog rather than by reflection, and its name can bind a column as well as an argument:
+`@routine` adds three rejections on top, because a routine IN parameter is resolved from the
+database catalog rather than by reflection, and `$source.<column>` binds a column of the row the
+routine is applied to:
 
 * `@routine argMapping names parameter 'pEnvv', which is not an IN parameter of routine 'rentFilm'`
   (the *left*-hand side named no routine parameter). Check the jOOQ-generated camelCased name.
 * `@routine parameter 'pEnv' has no binding`: the name the parameter reads, its `argMapping` entry's
-  right-hand side or its own name where no entry names it, is neither an argument of the field nor,
-  on a child field, a column of the table the path stands on. The editor reports it as
-  `GRAPHITRON_ROUTINE_PARAMETER_UNBOUND` at the `@routine`.
-* `@routine parameter 'pActorId' reads 'actor_id', which is both an argument of this field and a
-  column of 'actor'`: the call takes one value and neither is preferred. Rename the argument. The
-  editor reports it as `GRAPHITRON_ROUTINE_PARAMETER_AMBIGUOUS` at the `@routine`.
+  right-hand side or its own name where no entry names it, is no argument of the field. A bare name
+  never binds a column; where it names one, the message says to write `$source.<column>`. A
+  `$source` column the table lacks is reported the same way, listing that table's columns. The
+  editor reports both as `GRAPHITRON_ROUTINE_PARAMETER_UNBOUND` at the `@routine`.
 * `@routine parameter 'pEnv' binds to 'input', whose GraphQL type 'RentFilmInput' is not a scalar
   or enum`: the path stopped on an input object. A routine IN parameter takes one value; bind a
   scalar field inside it.

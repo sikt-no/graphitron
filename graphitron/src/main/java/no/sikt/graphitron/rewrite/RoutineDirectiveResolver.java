@@ -227,7 +227,9 @@ final class RoutineDirectiveResolver {
         if (parsedMapping instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new NodeResolved.Rejected(Rejection.structural("@routine " + pe.message()));
         }
-        Map<String, List<String>> overrides = ((ArgBindingMap.ParsedArgMapping.Ok) parsedMapping).overrides();
+        var parsedOk = (ArgBindingMap.ParsedArgMapping.Ok) parsedMapping;
+        Map<String, List<String>> overrides = parsedOk.overrides();
+        Map<String, String> sigils = parsedOk.sigilBindings();
 
         return switch (ctx.catalog.resolveTableValuedFunction(routineName)) {
             case JooqCatalog.RoutineResolution.NotInCatalog ignored -> new NodeResolved.Rejected(Rejection.unknownTable(
@@ -246,28 +248,28 @@ final class RoutineDirectiveResolver {
             case JooqCatalog.RoutineResolution.NoConvenienceMethod nc -> new NodeResolved.Rejected(Rejection.structural(
                 "@routine could not be resolved — " + nc.detail()));
             case JooqCatalog.RoutineResolution.Resolved fn ->
-                bindArgs(parentTypeName, fieldDef, fn, overrides, isRoot, standingTableSqlName, seat);
+                bindArgs(parentTypeName, fieldDef, fn, overrides, sigils, isRoot, standingTableSqlName, seat);
         };
     }
 
     /**
-     * Binds every routine IN parameter to its value source. A parameter reads the name its
-     * {@code argMapping} entry writes, or its own name where no entry names it, and that name is
-     * either an argument of the field or a column of the table the path stands on
-     * ({@code standingTableSqlName}, {@code null} at a root, where only arguments bind). A name
-     * that is both is rejected rather than ranked, since a precedence would change a call's
-     * meaning silently when the table gains a column; a name that is neither leaves the parameter
-     * unbound. Argument paths resolve through the shared {@link ArgBindingMap#of} seam, by exactly
-     * the rules {@code @service} and {@code @condition} use.
+     * Binds every routine IN parameter to its value source. A parameter whose {@code argMapping}
+     * entry is {@code $source.<column>} reads that column of the table the path stands on
+     * ({@code standingTableSqlName}, {@code null} at a root, which has no such row). Every other
+     * parameter reads an argument: the path its entry writes, or its own name where no entry names
+     * it. A bare name never binds a column. Argument paths resolve through the shared
+     * {@link ArgBindingMap#of} seam, by exactly the rules {@code @service} and {@code @condition} use.
      */
     private NodeResolved bindArgs(String parentTypeName, GraphQLFieldDefinition fieldDef,
             JooqCatalog.RoutineResolution.Resolved fn, Map<String, List<String>> overrides,
-            boolean isRoot, String standingTableSqlName, Seat seat) {
+            Map<String, String> sigils, boolean isRoot, String standingTableSqlName, Seat seat) {
         // The left-hand side is per-directive and does not unify: a routine names catalog IN
         // parameters, a @service method names reflected Java parameters. Without this check a
         // misspelled target is silently dropped and the parameter it meant to claim falls through
         // to the unbound rejection below, describing an entry the author did not write.
-        for (var claimed : overrides.keySet()) {
+        var claimedNames = new LinkedHashSet<String>(overrides.keySet());
+        claimedNames.addAll(sigils.keySet());
+        for (var claimed : claimedNames) {
             if (fn.params().stream().noneMatch(p -> p.name().equals(claimed))) {
                 return new NodeResolved.Rejected(Rejection.structural(
                     "@routine argMapping names parameter '" + claimed
@@ -280,58 +282,55 @@ final class RoutineDirectiveResolver {
         var slotTypes = FieldBuilder.argSlotTypes(fieldDef);
         var columns = new HashMap<String, ColumnRef>();
         for (var param : fn.params()) {
-            var written = overrides.getOrDefault(param.name(), List.of(param.name()));
-            boolean isArgument = slotTypes.containsKey(written.get(0));
-            Optional<ColumnRef> column = written.size() == 1 && standingTableSqlName != null
-                ? ctx.catalog.resolveColumn(standingTableSqlName, written.get(0))
-                : Optional.empty();
-            String name = String.join(".", written);
-            if (isArgument && column.isPresent()) {
-                return new NodeResolved.Rejected(Rejection.structural(
-                    "@routine parameter '" + param.name() + "' reads '" + name + "', which is both an "
-                    + "argument of this field and a column of '" + standingTableSqlName + "'; rename the "
-                    + "argument so the name says which one the call takes"));
-            }
-            if (column.isPresent()) {
+            String columnName = ArgMappingSigil.sourceColumn(sigils.get(param.name()));
+            if (columnName != null) {
+                if (standingTableSqlName == null) {
+                    return new NodeResolved.Rejected(isRoot
+                        ? Rejection.structural("@routine binds parameter '" + param.name() + "' to '"
+                            + sigils.get(param.name()) + "', but a root field has no row for $source to"
+                            + " read; bind it from an argument")
+                        // A record-backed parent: the column would be one of the record's accessors,
+                        // which a routine cannot bind yet.
+                        : Rejection.deferred("@routine binds parameter '" + param.name() + "' to '"
+                            + sigils.get(param.name()) + "' under a parent without a catalog table,"
+                            + " which is not yet supported"));
+                }
+                var column = ctx.catalog.resolveColumn(standingTableSqlName, columnName);
+                if (column.isEmpty()) {
+                    return new NodeResolved.Rejected(Rejection.unknownColumn(
+                        "@routine binds parameter '" + param.name() + "' to column '" + columnName
+                        + "', which is not a column of '" + standingTableSqlName + "', the table the"
+                        + " routine is applied to",
+                        columnName, ctx.catalog.columnSqlNamesOf(standingTableSqlName)));
+                }
                 // The emitted call passes the column's Field directly to the routine's Field
                 // overload, so the column's boxed Java type must be the parameter's boxed Java
                 // type: a mismatch here would be a javac error in the generated source.
                 if (!column.get().columnClass().equals(param.typeName())) {
                     return new NodeResolved.Rejected(Rejection.structural(
                         "@routine binds parameter '" + param.name() + "' (" + param.typeName()
-                        + ") to column '" + name + "' of '" + standingTableSqlName + "' ("
+                        + ") to column '" + columnName + "' of '" + standingTableSqlName + "' ("
                         + column.get().columnClass() + "); the column's Java type must match the "
                         + "routine parameter's"));
                 }
                 columns.put(param.name(), column.get());
-            } else if (!isArgument && written.size() == 1) {
-                // A dot-path names no column, so one whose head is no argument is left to
-                // ArgBindingMap.of below, which reports it in the wording every argMapping shares.
-                if (!isRoot && standingTableSqlName == null) {
-                    // A child whose parent has no catalog table (a record-backed parent): the
-                    // name may mean one of the record's accessors, which a routine cannot bind yet.
-                    return new NodeResolved.Rejected(Rejection.deferred(
-                        "@routine parameter '" + param.name() + "' reads '" + name + "', which is no "
-                        + "argument of this field; binding a parent's value under a parent without a "
-                        + "catalog table is not yet supported"));
-                }
-                var candidates = new ArrayList<>(slotTypes.keySet());
-                String what = "not an argument of this field";
-                String availableColumns = "";
-                if (standingTableSqlName != null) {
-                    var columnNames = ctx.catalog.columnSqlNamesOf(standingTableSqlName);
-                    candidates.addAll(columnNames);
-                    what = "neither an argument of this field nor a column of '" + standingTableSqlName + "'";
-                    availableColumns = ", and its columns are "
-                        + ArgBindingMap.formatNameSet(new LinkedHashSet<>(columnNames));
-                }
+                continue;
+            }
+            var written = overrides.getOrDefault(param.name(), List.of(param.name()));
+            // A dot-path whose head is no argument is left to ArgBindingMap.of below, which
+            // reports it in the wording every argMapping shares.
+            if (written.size() == 1 && !slotTypes.containsKey(written.get(0))) {
+                String hint = standingTableSqlName != null
+                    && ctx.catalog.resolveColumn(standingTableSqlName, written.get(0)).isPresent()
+                    ? "; '" + written.get(0) + "' is a column of '" + standingTableSqlName
+                        + "', which an entry binds as " + ArgMappingSigil.SOURCE_PREFIX + written.get(0)
+                    : BuildContext.candidateHint(written.get(0), List.copyOf(slotTypes.keySet()));
                 return new NodeResolved.Rejected(Rejection.structural(
-                    "@routine parameter '" + param.name() + "' has no binding: '" + name + "' is "
-                    + what
+                    "@routine parameter '" + param.name() + "' has no binding: '" + written.get(0)
+                    + "' is not an argument of this field"
                     + (overrides.containsKey(param.name()) ? "" : ", and no argMapping entry names the parameter")
                     + "; available arguments are " + ArgBindingMap.formatNameSet(slotTypes.keySet())
-                    + availableColumns
-                    + BuildContext.candidateHint(name, candidates)));
+                    + hint));
             }
         }
         var argumentOverrides = new LinkedHashMap<>(overrides);

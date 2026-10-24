@@ -82,6 +82,33 @@ class ArgMappingSigilTest {
     }
 
     @Test
+    void sourceColumnEntry_isLiftedAtTheRoutineSite() {
+        var result = (ArgMappingSigil.ScanResult.Ok) ArgMappingSigil.scan(
+            "pActorId: $source.actor_id, pMinLength: minLength", ArgMappingSigil.Site.ROUTINE);
+        assertThat(result.sigilBindings()).containsExactlyEntriesOf(Map.of("pActorId", "$source.actor_id"));
+        assertThat(result.residual()).isEqualTo(" pMinLength: minLength");
+        assertThat(ArgMappingSigil.sourceColumn("$source.actor_id")).isEqualTo("actor_id");
+    }
+
+    @Test
+    void sourceWithoutExactlyOneColumn_isAnUnknownSigil() {
+        for (String rhs : new String[] {"$source", "$source.", "$source.a.b"}) {
+            var result = ArgMappingSigil.scan("pActorId: " + rhs, ArgMappingSigil.Site.ROUTINE);
+            assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+                assertThat(rejected.message()).isEqualTo(ArgMappingSigil.unknownSigilMessage(rhs)));
+        }
+    }
+
+    @ParameterizedTest
+    @EnumSource(value = ArgMappingSigil.Site.class, names = "ROUTINE", mode = EnumSource.Mode.EXCLUDE)
+    void sourceAtANonAdmittedSite_rejectsNamingTheRoutineSite(ArgMappingSigil.Site site) {
+        assertThat(site.admitsSourceSigil()).isFalse();
+        var result = ArgMappingSigil.scan("pActorId: $source.actor_id", site);
+        assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+            assertThat(rejected.message()).isEqualTo(ArgMappingSigil.sourceNotAdmittedMessage(site)));
+    }
+
+    @Test
     void duplicateSigilTarget_rejectsAsTheDuplicateEntryRule() {
         var result = ArgMappingSigil.scan(
             "identity: $session, identity: $session", ArgMappingSigil.Site.SERVICE);

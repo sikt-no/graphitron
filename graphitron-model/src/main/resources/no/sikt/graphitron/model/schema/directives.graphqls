@@ -581,16 +581,16 @@ directive @routine(
   """The database routine name, optionally schema-qualified (`schema.routine`). Must resolve to a table-valued function in the jOOQ catalog."""
   name: String!
   """
-  Binds routine IN parameters. Each entry is `routineParam: name`; multiple entries are
+  Binds routine IN parameters. Each entry is `routineParam: source`; multiple entries are
   comma-separated. The routine parameter name is the jOOQ-generated (camelCased) name, e.g. `pEnv`
   for a `p_env` parameter. An unmentioned parameter binds as if mapped to its own name.
 
-  The name is a GraphQL argument of the field, or, where the routine is a step of a child field's
-  path, a column of the table the path stands on there (the enclosing type's table when the
-  routine comes first). A column-bound parameter makes the call correlated (LATERAL). A name that
-  is both an argument and a column is an error rather than a choice: rename the argument. A name
-  that is neither leaves the parameter unbound, which is an error too. At a root field no table
-  stands, so only arguments bind.
+  The name is a GraphQL argument of the field. `$source.<column>` instead binds the parameter to a
+  column of the row the routine is applied to: the enclosing type's table when the routine comes
+  first in a child field's path, the table the preceding @reference reached otherwise. A
+  column-bound parameter makes the call correlated (LATERAL). A bare name never binds a column, and
+  a name that is not an argument leaves the parameter unbound, which is an error. A root field has
+  no such row, so only arguments bind there.
 
   An argument name may walk into nested input fields with dot-separated segments
   (`argMapping: "pCustomerId: input.customerId"`), the same form at every directive that accepts

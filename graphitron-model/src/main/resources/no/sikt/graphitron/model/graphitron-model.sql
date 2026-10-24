@@ -8902,7 +8902,7 @@ CREATE TABLE graphitron_field_path_parameter (
   CHECK ((from_column IS NULL) <> (argument IS NULL)),
   CHECK (parameter_position >= 0)
 );
-COMMENT ON TABLE graphitron_field_path_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
+COMMENT ON TABLE graphitron_field_path_parameter IS 'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.';
 COMMENT ON COLUMN graphitron_field_path_parameter.graph_name IS 'the owning graph''s partition, carried from the step';
 COMMENT ON COLUMN graphitron_field_path_parameter.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_path_parameter.field_name IS 'the field whose path the step is of';
@@ -8924,11 +8924,12 @@ CREATE VIEW graphitron_field_path_parameter_binding
    element_source_name, element_source_line, element_source_column,
    parameter_position, parameter_name, bound_to, argument_name,
    from_source_name, from_schema, from_table, from_column) AS
--- Each parameter of the routine a step calls, with the name it reads and what that name is. The
--- name is the one the parameter's argMapping entry writes, or the parameter's own where no entry
--- names it. It can head a path into the field's arguments, and it can name a column of the table
--- the step departs, matched as a column spelling is anywhere, without regard to case; a dotted
--- path names no column. Either side, both or neither may hold, and this view says which.
+-- Each parameter of the routine a step calls, with what its argMapping entry binds it to and what
+-- that is. An entry $source.<column> names a column of the table the step departs, matched as a
+-- column spelling is anywhere, without regard to case. Any other entry, or the parameter's own name
+-- where no entry names it, heads a path into the field's arguments; a bare name never binds a
+-- column, and a sigil heads no argument, a GraphQL name never beginning with $. One side holds, or
+-- neither does, and this view says which.
 SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_schema, p.start_table,
        p.position, p.element_source_name, p.element_source_line, p.element_source_column,
        sp.position, sp.jooq_name, COALESCE(am.bound_to, sp.jooq_name), a.argument_name,
@@ -8958,8 +8959,8 @@ SELECT p.graph_name, p.type_name, p.field_name, p.start_source_name, p.start_sch
   LEFT JOIN sql_column c
     ON c.source_name = p.from_source_name AND c.table_schema = p.from_schema
    AND c.table_name = p.from_table
-   AND c.column_name_upper = UPPER(COALESCE(am.bound_to, sp.jooq_name));
-COMMENT ON VIEW graphitron_field_path_parameter_binding IS 'What each parameter of a routine step reads: one row per step and parameter, the name written for it and the argument and the column that name could be. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") gives pActorId reading actor_id, a column of actor and no argument, and pMinLength reading minLength, an argument and no column.';
+   AND am.head_path = '$source' AND c.column_name_upper = am.tail_name_upper;
+COMMENT ON VIEW graphitron_field_path_parameter_binding IS 'What each parameter of a routine step reads: one row per step and parameter, the name written for it and the argument and the column that name could be. For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") gives pActorId reading $source.actor_id, a column of actor, and pMinLength reading minLength, an argument.';
 -- COMMENT ON COLUMN graphitron_field_path_parameter_binding.bound_to IS 'the name the parameter reads: its argMapping entry''s right side as written, or the parameter''s own name where no entry names it';
 -- COMMENT ON COLUMN graphitron_field_path_parameter_binding.argument_name IS 'the field''s argument the name heads, or NULL where it heads none';
 -- COMMENT ON COLUMN graphitron_field_path_parameter_binding.from_column IS 'the column of the table the step departs that the name spells, or NULL where it spells none';
@@ -10393,18 +10394,10 @@ SELECT DISTINCT st.graph_name, st.element_source_name, st.element_source_line,
   FROM graphitron_field_path_stop st
  WHERE st.moves = 0
 UNION ALL
--- A routine step's parameter whose name is both an argument of the field and a column of the table
--- the step departs, at the @routine: no precedence picks one, since a table gaining a column would
--- then change what a call reads without a word written. One row per @routine however many of its
--- parameters do; which ones is graphitron_field_path_parameter_binding's to say.
-SELECT DISTINCT b.graph_name, b.element_source_name, b.element_source_line, b.element_source_column,
-       'ROUTINE_PARAMETER_AMBIGUOUS', CAST(NULL AS VARCHAR)
-  FROM graphitron_field_path_parameter_binding b
- WHERE b.argument_name IS NOT NULL AND b.from_column IS NOT NULL
-UNION ALL
--- A routine step's parameter whose name is neither, at the @routine: an argMapping entry naming no
--- argument and no column of the table the step departs, or a parameter no entry names whose own name
--- is neither. The call has no value for it. One row per @routine, as above.
+-- A routine step's parameter that binds nothing, at the @routine: an argMapping entry naming no
+-- argument, a $source entry naming no column of the table the step departs, or a parameter no entry
+-- names whose own name is no argument. The call has no value for it. One row per @routine however
+-- many of its parameters do; which ones is graphitron_field_path_parameter_binding's to say.
 SELECT DISTINCT b.graph_name, b.element_source_name, b.element_source_line, b.element_source_column,
        'ROUTINE_PARAMETER_UNBOUND', CAST(NULL AS VARCHAR)
   FROM graphitron_field_path_parameter_binding b
@@ -15621,10 +15614,8 @@ INSERT INTO graphitron_defect_type VALUES
    'A @reference on a root field needs a leading @routine to start from: a root field has no source row for the path to depart from.'),
   ('NO_ROUTE_TO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_NO_ROUTE_TO_TARGET',
    'A chain runs to its last link and arrives somewhere other than the table the field''s rows were said to come from.'),
-  ('ROUTINE_PARAMETER_AMBIGUOUS', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_AMBIGUOUS',
-   'A @routine parameter reads a name that is both an argument of the field and a column of the table the path stands on, and the call takes one value; renaming the argument settles which.'),
   ('ROUTINE_PARAMETER_UNBOUND', 'error', 'GRAPHITRON', 'GRAPHITRON_ROUTINE_PARAMETER_UNBOUND',
-   'A @routine parameter reads a name that is neither an argument of the field nor a column of the table the path stands on, so the call has no value for it.'),
+   'A @routine parameter binds nothing: its name is no argument of the field, or its $source.<column> names no column of the table the routine is applied to, so the call has no value for it.'),
   ('TABLE_NAMES_ROUTINE', 'error', 'GRAPHITRON', 'GRAPHITRON_TABLE_NAMES_ROUTINE',
    'A @table names a table-valued function, and a type is not bound to a function: the field carrying @routine binds its return type to the routine''s result, so the directive is removed.'),
   ('CHAIN_WITHOUT_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_CHAIN_WITHOUT_TARGET',
@@ -15739,7 +15730,7 @@ INSERT INTO meta_relation VALUES
    'A child @routine is a step of the path like any other: from the table the walk stands at to its function''s result. What the step calls is this row, and how it is called is its parameter rows.'),
   ('graphitron_field_path_parameter', 'field-path-parameter', 'graphitron',
    'Where a routine step''s parameter takes its value: one row per step and parameter, a column of the table the step departs or an argument of the field.',
-   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.',
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") binds pActorId from actor.actor_id and pMinLength from the argument minLength.',
    'The routine step''s join, as a key step''s is its column pairs: a parameter bound from a column correlates the call with the row the walk stands at, one from an argument does not, and a reader that needs either, the fan-out advisory among them, reads the row rather than the mapping strings.'),
   ('graphitron_field_path_parameter_rule', 'field-path-parameter', 'graphitron',
    'One row the routine parameter rule computes, in the shape graphitron_field_path_parameter stores: the rule itself, evaluated on demand rather than read off disk.',
@@ -15747,8 +15738,8 @@ INSERT INTO meta_relation VALUES
    'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_field_path_parameter_binding', 'field-path-parameter', 'graphitron',
    'What each parameter of a routine step reads: one row per step and parameter, the name written for it and the argument and the column that name could be.',
-   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: actor_id, pMinLength: minLength") gives pActorId reading actor_id, a column of actor and no argument, and pMinLength reading minLength, an argument and no column.',
-   'One name, two places it can bind, and a parameter takes its value from exactly one: the rule keeps the parameters whose name is one of the two and the defect rule reports the others at the @routine, both reading this view so the two cannot disagree on what a name is.'),
+   'For example Actor.films over @routine(name: "films_for_actor", argMapping: "pActorId: $source.actor_id, pMinLength: minLength") gives pActorId reading $source.actor_id, a column of actor, and pMinLength reading minLength, an argument.',
+   'An entry binds a column or an argument, and a parameter takes its value from exactly one: the rule keeps the parameters that bind and the defect rule reports the others at the @routine, both reading this view so the two cannot disagree on what an entry names.'),
   ('graphitron_field_path_stop', 'field-path-stop', 'graphitron',
    'Where a field''s path stopped short of its written elements: one row per field and start whose walk met an element it could not step through.',
    'For example {key: "film_actor_actor_id_fkey"} on a Film field stops the walk from film at position 0, no move leaving film, and {table: "film"} from a table two keys join to it stops with two.',

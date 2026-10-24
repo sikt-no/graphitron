@@ -11,7 +11,7 @@ type Actor @table(name: "actor") {
   firstName: String @field(name: "first_name")
   recentFilms(minLength: Int!): [Film!]
     @routine(name: "films_for_actor",
-             argMapping: "pActorId: actor_id, pMinLength: minLength")
+             argMapping: "pActorId: $source.actor_id, pMinLength: minLength")
     @defaultOrder(primaryKey: true)
 }
 

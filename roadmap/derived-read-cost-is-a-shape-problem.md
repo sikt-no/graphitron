@@ -184,9 +184,8 @@ resolutions and links built beside it are gone.
   a producer; any other is a step from the table the walk stands on to its function, called with
   that table's columns and the field's arguments. Each parameter's source is a row of the step,
   `graphitron_field_path_parameter`, read off `graphitron_field_path_parameter_binding`.
-  `columnMapping` is gone: `argMapping` names an argument or a column of the standing table, a
-  name that is both is `ROUTINE_PARAMETER_AMBIGUOUS` and one that is neither
-  `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
+  `columnMapping` is gone: an `argMapping` entry names an argument, or with `$source.<column>` a
+  column of the standing table, and one that binds nothing is `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
   takes one more step, from the function's result to that table by name: a walk step at the next
   place with no written element. The MCP server shows the routine step and the inferred one; what
   is left is the editor, whose `argMapping` completion at a path routine offers the field's
@@ -782,10 +781,12 @@ not surviving the harvest, so they are recorded here as they land rather than fo
   a function's result with `@table` stops building, with a message saying to remove the directive.
   The field's `@routine` gives the type its rows, the routine's result, which binds no table.
 * **Breaking: `@routine` loses `columnMapping`** ("breaking: @routine loses columnMapping, unused in
-  FS-plattform; argMapping names an argument or a column"). A schema writing `columnMapping` stops
-  building; `argMapping` names a routine parameter's source, an argument or a column of the table
-  the path stands on. A name that is both draws `ROUTINE_PARAMETER_AMBIGUOUS`, and one that is
-  neither draws `ROUTINE_PARAMETER_UNBOUND`.
+  FS-plattform; argMapping names an argument or a column"; "breaking: a bare argMapping name is an
+  argument, $source.<column> binds a column"). A schema writing `columnMapping` stops building.
+  An `argMapping` entry binds a routine parameter to an argument, or with `$source.<column>` to a
+  column of the row the routine is applied to: the enclosing type's row, or the table the preceding
+  `@reference` reached. A bare name never binds a column. An entry that binds nothing draws
+  `ROUTINE_PARAMETER_UNBOUND`.
 * **Removed: the MCP schema tool's `demand` slot** ("the demand relations go"). A tool reading it gets no slot; it
   restated directives the same entry shows.
 * **Changed: `graphitron:capture` never fails over a schema that parses** ("capture captures, and

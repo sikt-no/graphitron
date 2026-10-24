@@ -10,7 +10,9 @@ import java.util.Map;
 
 /**
  * Shared owner of the {@code argMapping} sigil vocabulary: {@code $session} binds a Java
- * parameter to the session handle the {@code <sessionState>} mount returned. One owner in the
+ * parameter to the session handle the {@code <sessionState>} mount returned, and
+ * {@code $source.<column>} binds a routine parameter to a column of the row the routine is
+ * applied to. One owner in the
  * {@code FieldSourceSigil} shape (the literal set, the parse fork, the admitted-site predicate,
  * the canonical messages, unit-pinnable directly), routed through by both the build-side parse
  * ({@code ArgBindingMap.parseArgMapping}) and fact capture's {@code @service} argMapping site,
@@ -30,6 +32,14 @@ public final class ArgMappingSigil {
      * bind the Java parameter to the mount's returned session handle.
      */
     public static final String SESSION_LITERAL = "$session";
+
+    /**
+     * Sigil prefix. An entry's right-hand side {@code $source.<column>} binds the parameter to that
+     * column of the row the routine is applied to: the parent's row where the routine comes first
+     * in its path, the table the preceding {@code @reference} reached otherwise. A bare name never
+     * binds a column.
+     */
+    public static final String SOURCE_PREFIX = "$source.";
 
     private ArgMappingSigil() {}
 
@@ -61,6 +71,11 @@ public final class ArgMappingSigil {
         /** True only at the admitted site; parse, diagnostics and completions read one predicate. */
         public boolean admitsSessionSigil() {
             return this == SERVICE;
+        }
+
+        /** True only at the routine site, the one whose call reads the row it is applied to. */
+        public boolean admitsSourceSigil() {
+            return this == ROUTINE;
         }
     }
 
@@ -106,11 +121,16 @@ public final class ArgMappingSigil {
             int colon = piece.indexOf(':');
             String rhs = colon < 0 ? "" : piece.substring(colon + 1).strip();
             if (colon >= 0 && rhs.startsWith("$")) {
-                if (!SESSION_LITERAL.equals(rhs)) {
+                if (SESSION_LITERAL.equals(rhs)) {
+                    if (!site.admitsSessionSigil()) {
+                        return new ScanResult.Rejected(notAdmittedMessage(site));
+                    }
+                } else if (sourceColumn(rhs) != null) {
+                    if (!site.admitsSourceSigil()) {
+                        return new ScanResult.Rejected(sourceNotAdmittedMessage(site));
+                    }
+                } else {
                     return new ScanResult.Rejected(unknownSigilMessage(rhs));
-                }
-                if (!site.admitsSessionSigil()) {
-                    return new ScanResult.Rejected(notAdmittedMessage(site));
                 }
                 String javaName = piece.substring(0, colon).strip();
                 if (javaName.isEmpty()) {
@@ -182,9 +202,29 @@ public final class ArgMappingSigil {
         return entries;
     }
 
+    /**
+     * The column a {@code $source.<column>} right-hand side names, or {@code null} where
+     * {@code rhs} is not that sigil with exactly one name after it.
+     */
+    public static String sourceColumn(String rhs) {
+        if (rhs == null || !rhs.startsWith(SOURCE_PREFIX)) {
+            return null;
+        }
+        String column = rhs.substring(SOURCE_PREFIX.length());
+        return column.isEmpty() || column.indexOf('.') >= 0 ? null : column;
+    }
+
     /** Canonical message for a {@code $}-prefixed argMapping value that is not an admitted sigil. */
     public static String unknownSigilMessage(String raw) {
-        return "Unknown sigil '" + raw + "' in argMapping; allowed: " + SESSION_LITERAL;
+        return "Unknown sigil '" + raw + "' in argMapping; allowed: " + SESSION_LITERAL + ", "
+            + SOURCE_PREFIX + "<column>";
+    }
+
+    /** Canonical message for {@code $source.<column>} at an argMapping site that does not admit it. */
+    public static String sourceNotAdmittedMessage(Site site) {
+        return "'" + SOURCE_PREFIX + "<column>' is not admitted in " + site.description()
+            + "; it is only valid in @routine argMapping, where it binds the parameter to a column of"
+            + " the row the routine is applied to.";
     }
 
     /** Canonical message for {@code $session} at an argMapping site that does not admit it. */

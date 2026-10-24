@@ -2942,7 +2942,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
         @reference(path: [{table: "film_actor"}])
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the sandwich chain — hops in, lateral routine, name-matched hop
@@ -2952,7 +2952,7 @@ type Film implements Node & Searchable @table(name: "film") @node {
         @reference(path: [{table: "film_actor"}])
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)
@@ -3037,7 +3037,7 @@ type Actor implements Searchable @table(name: "actor") {
     films(minLength: Int!): [ActorFilm!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # The dot-path form at a correlated child position: pMinLength reads through the wrapper
@@ -3046,7 +3046,7 @@ type Actor implements Searchable @table(name: "actor") {
     filmsNested(filter: ActorFilmFilter!): [ActorFilm!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: filter.minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: filter.minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the child routine-then-hops chain — the lateral routine node
@@ -3056,7 +3056,7 @@ type Actor implements Searchable @table(name: "actor") {
     recentFilms(minLength: Int!): [Film!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)
@@ -3065,7 +3065,7 @@ type Actor implements Searchable @table(name: "actor") {
     recentFilmsInferred(minLength: Int!): [Film!]
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @defaultOrder(primaryKey: true)
     # R435 execution fixture: the batched keyed re-query form (@splitQuery) of the correlated
@@ -3075,7 +3075,7 @@ type Actor implements Searchable @table(name: "actor") {
     filmsSplit(minLength: Int!): [ActorFilm!] @splitQuery
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @defaultOrder(fields: [{name: "film_id"}])
     # R435 execution fixture: the batched routine-then-hops chain — same batch anchor, with the
@@ -3084,7 +3084,7 @@ type Actor implements Searchable @table(name: "actor") {
     recentFilmsSplit(minLength: Int!): [Film!] @splitQuery
         @routine(
             name: "films_for_actor"
-            argMapping: "pActorId: actor_id, pMinLength: minLength"
+            argMapping: "pActorId: $source.actor_id, pMinLength: minLength"
         )
         @reference(path: [{table: "film"}])
         @defaultOrder(primaryKey: true)

@@ -43,7 +43,7 @@ public record RoutineRef(ClassName routinesClass, String methodName, List<ArgBin
      * <p>{@code source} is the routine-shaped branch of the shared call-source taxonomy,
      * {@link ParamSource.RoutineParamSource}: {@link ParamSource.Arg} when a GraphQL field
      * argument supplies the value, {@link ParamSource.SourceColumn} when a column of the table the
-     * path stands on does; {@code argMapping} names either. The narrowing is carried
+     * path stands on does ({@code $source.<column>} in {@code argMapping}). The narrowing is carried
      * by the type rather than by prose, so the emitter's switch has no unreachable arms.
      *
      * <p>{@code spentAt} is the input element this binding consumes: the argument or the input
