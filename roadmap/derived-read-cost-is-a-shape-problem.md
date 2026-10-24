@@ -68,6 +68,34 @@ restated here; the history and `## Retired vocabulary` keep it.
 
 **Root: an expensive derived read is a modelling defect, so fix the shape rather than the cost.**
 
+**Destination: a `@service` field is generated from the store alone.** Its call, what fills each
+parameter and the result its fields read are store facts the generator emits from, so neither
+`ServiceCatalog` nor the walk resolves anything for it. The critical path, by node title:
+
+```text
+A service call is emitted from the store
+├── A service call is the one overload every parameter of which is filled
+│   └── Every call's parameter states what fills it
+│       ├── A condition reference names an overload set
+│       ├── A parameter states its type's first argument
+│       ├── A `Configuration` parameter is the jOOQ context
+│       ├── An argument path through input types is stored
+│       ├── A parameter's fill states how its value is built
+│       │   └── The generated jOOQ classes are read with their members
+│       │       └── A rebuild that changes no class reads none
+│       ├── A consumed key is a source
+│       │   └── A producer's consumed keys are stated
+│       ├── `$context` names a context value
+│       └── `$tenant` in argMapping routes a service call
+├── A service's holder is its one widest buildable constructor
+│   └── Every public constructor is a method row
+└── A producer's carrier is its one data channel
+    └── A field's source is its parent's result
+```
+
+Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
+a flip in flight below asks for it.
+
 **Flips in flight.** Each place where an old and a new statement of one fact both run today, and
 the node that ends it. No node adds in an area with an open subtract here unless it is that
 subtract's prerequisite, and a node that adds says which line it retires.
@@ -227,8 +255,8 @@ resolutions and links built beside it are gone.
 An argument or input field binds the way a field does: to a target table, the column or key it
 names there, and the path from its holder's target to it. Today `graphitron_field_scope_table`,
 `intent_input_occurrence_path`, `intent_input_occurrence_path_step`,
-`intent_argument_reference_step_hop`, the argument and input-field step targets and the
-`intent_argmapping_` relations derive that at read time. The target model is the path model fields
+`intent_argument_reference_step_hop` and the argument and input-field step targets derive that at
+read time; the `intent_argmapping_` relations go with "An argument path through input types is stored". The target model is the path model fields
 already have: every path is a row of one supertype, an output field's path is its one named subtype,
 and an input field's or argument's path is anonymous, walked by the same rules from the target of
 each field that uses it. R1099, the author-facing navigation over output fields, builds on this
@@ -312,10 +340,21 @@ static method needs no holder.
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
 * **A service's holder is its one widest buildable constructor** `blocked`, on "Every public constructor is a method row" and "A `Configuration` parameter is the jOOQ context". Every
   parameter is jOOQ context or a context key; two of the widest is a defect.
-* **Every service parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context" and "A condition reference names an overload set". One row per
-  producer, overload and position: jOOQ context, `$session`, an argument path, a context key or the
-  parent's keys, claimed by argMapping, by name, by type or as the one unclaimed pair.
-* **A service call is the one overload every parameter of which is filled** `blocked`, on "Every service parameter states what fills it". Every argMapping left side names one of its parameters;
+* **An argument path through input types is stored** `open`. One row per argMapping entry or
+  unmapped parameter at its call site, naming the argument, the input fields it walks and the node
+  type's key column where it ends; `graphitron_argmapping_candidate`, `graphitron_argmapping_match`
+  and the `intent_argmapping_` and `intent_resolved_node_key_` views go with it.
+* **A parameter's fill states how its value is built** `blocked`, on "An argument path through input types is stored" and "The generated jOOQ classes are read with their members". A scalar, a list, or a Java record,
+  bean or jOOQ record built from an input object's fields, as the parameter's delivered class asks,
+  replacing the delivery `intent_argmapping_bound_parameter_type` derives.
+* **`$context` names a context value** `open`. A context argument is an argMapping source as
+  `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
+* **Every call's parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context", "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "A consumed key is a source" and "`$context` names a context value". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+  `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
+  context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
+  claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
+  `graphitron_field_path_parameter` rows become its rows.
+* **A service call is the one overload every parameter of which is filled** `blocked`, on "Every call's parameter states what fills it". Every argMapping left side names one of its parameters;
   none is an unclaimed parameter and several an ambiguous call, defects beside facts in the corpus.
 * **`$tenant` in argMapping routes a service call** `open`. The sigil on a pair's left side names
   the value whose tenant the call runs on, beside `@tenant`, with the same type and same-tenant rules.
