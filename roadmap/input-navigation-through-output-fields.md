@@ -1,13 +1,13 @@
 ---
 id: R1099
 title: "Inputs navigate through output fields, and argMapping names its source"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 3
 theme: classification-model
 depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-10-24
-last-updated: 2026-10-24
+last-updated: 2026-10-25
 ---
 
 # Inputs navigate through output fields, and argMapping names its source
@@ -239,3 +239,12 @@ revision.
      union target resolves on that type's own fields or per member.
 
    *Response:* the occurrence is the grain: one walk per using field and path of input fields beneath its argument, in R876's branch, which replaces `intent_input_occurrence_path` and its steps. A nested input field navigating to an object-typed output field sets `$target` for the input beneath it, so `ActorFilter` serves any `Actor` target. Defects are per occurrence at the writing site, naming the using field; an interface or union target resolves per member type, each member its own walk. All stated under navigation.
+
+### Round 2: Spec → Ready, signed off (session_01GTcAKUooH5fFN1jLWYMGph, 2026-10-25)
+
+Each round 1 finding is answered in the plan body: the resolutions are stored at the occurrence
+grain, the division with R876's branch is stated with `depends-on`, the shorthand has one reading,
+the break shipped as one changelog line, `$source.` on an input is a defect until built, and reuse,
+retargeting and per-member resolution are specified. One wording note, not blocking: Implementation
+step 2 still has `graphitron_argmapping_match` and `ArgBindingMap.of` "read the walk", where the Store
+section has them read `graphitron_argmapping_binding`; the implementer follows the Store section.
