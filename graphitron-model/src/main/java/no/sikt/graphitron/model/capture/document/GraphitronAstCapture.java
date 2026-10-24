@@ -92,7 +92,8 @@ public final class GraphitronAstCapture {
                 case GraphQLSourceCapture.SourceDocument.Specification specification ->
                     GraphitronAstEntries.write(dsl, graph.name(), specification.sourceName(),
                         specification.registry(), readAt);
-                case GraphQLSourceCapture.SourceDocument.Unchanged _ -> { }
+                case GraphQLSourceCapture.SourceDocument.Unchanged _,
+                     GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> { }
                 case GraphQLSourceCapture.SourceDocument.Dropped _ ->
                     GraphitronAstEntries.write(dsl, graph.name(), document.sourceName(),
                         new TypeDefinitionRegistry(), readAt);

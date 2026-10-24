@@ -1,11 +1,14 @@
 package no.sikt.graphitron.model;
 
 import no.sikt.graphitron.model.test.CapturedStore;
+import no.sikt.graphitron.model.read.SourceStamp;
+import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.FederationLinkComposer;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
@@ -22,8 +25,9 @@ import static org.assertj.core.api.Assertions.assertThatCode;
  * consumer's build. {@link ConfiguredTagTest} pins where the tags themselves land.
  *
  * <p>Two things are pinned. The capture composed and assembled the tagged corpus cleanly, so the
- * verdict is empty. And the stamp lookup records the tagged file stamped, any generator-injected
- * name it meets being recorded unstamped rather than stamped or refused.
+ * verdict is empty. And the stamp lookup records the tagged file stamped, the bundled directive
+ * vocabulary and specification by the bytes this module ships, and a generator-injected name it
+ * meets unstamped rather than stamped or refused.
  */
 class TaggedCaptureStampTest {
 
@@ -51,20 +55,25 @@ class TaggedCaptureStampTest {
                         .from(STORE_SOURCE)
                         .where(STORE_SOURCE.SOURCE_KIND.eq("SCHEMA_FILE"))
                         .fetch())
-                    .as("the schema file is stamped, and the generator-injected names are "
-                        + "recorded unstamped rather than stamped or refused")
+                    .as("the schema file is stamped, the two bundled documents by the bytes this "
+                        + "module ships, and a generator-injected name is recorded unstamped rather "
+                        + "than stamped or refused")
                     .anySatisfy(row -> {
                         assertThat(row.value1()).isEqualTo(
                             CapturedStore.fixtureFile(tmp).toAbsolutePath().normalize().toString());
                         assertThat(row.value2()).isNotNull();
                     })
                     .allSatisfy(row -> {
-                        if (!row.value1().equals(CapturedStore.fixtureFile(tmp)
+                        String name = row.value1();
+                        if (name.equals(SchemaLoader.DIRECTIVES_SOURCE_NAME)) {
+                            assertThat(row.value2()).isEqualTo(SourceStamp.of(
+                                SchemaLoader.directivesSdl().getBytes(StandardCharsets.UTF_8)));
+                        } else if (name.equals(SchemaLoader.SPECIFICATION_SOURCE_NAME)) {
+                            assertThat(row.value2())
+                                .isEqualTo(SourceStamp.of(SchemaLoader.specificationBytes()));
+                        } else if (!name.equals(CapturedStore.fixtureFile(tmp)
                             .toAbsolutePath().normalize().toString())) {
-                            assertThat(row.value1()).isIn(
-                                FederationLinkComposer.CONFIGURED_SOURCE_NAME,
-                                no.sikt.graphitron.model.schema.SchemaLoader.DIRECTIVES_SOURCE_NAME,
-                                no.sikt.graphitron.model.schema.SchemaLoader.SPECIFICATION_SOURCE_NAME);
+                            assertThat(name).isEqualTo(FederationLinkComposer.CONFIGURED_SOURCE_NAME);
                             assertThat(row.value2()).isNull();
                         }
                     });

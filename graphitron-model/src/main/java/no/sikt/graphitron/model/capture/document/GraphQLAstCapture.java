@@ -141,8 +141,22 @@ public final class GraphQLAstCapture {
     public static void capture(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,
                                LocalDateTime readAt) {
+        capture(dsl, graph, documents, true, readAt);
+    }
+
+    /**
+     * {@link #capture(DSLContext, GraphIdentity, List, LocalDateTime)} told whether the files stand
+     * in a different order than when the anchors were last derived. The anchors are a statement over
+     * the entries and the order alone, so where no document was transcribed or dropped and the order
+     * stood still they are already what this reading would write, and nothing is written.
+     *
+     * @param reordered whether the order a collision is settled by moved; true where unknown
+     */
+    public static void capture(DSLContext dsl, GraphIdentity graph,
+                               List<GraphQLSourceCapture.SourceDocument> documents,
+                               boolean reordered, LocalDateTime readAt) {
         Progress.started(dsl, graph.name(), GATHERER);
-        dsl.transaction(tx -> gather(tx.dsl(), graph, documents, readAt));
+        dsl.transaction(tx -> gather(tx.dsl(), graph, documents, reordered, readAt));
         Progress.completed(dsl, graph.name(), GATHERER);
     }
 
@@ -151,9 +165,22 @@ public final class GraphQLAstCapture {
 
     private static void gather(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,
-                               LocalDateTime readAt) {
+                               boolean reordered, LocalDateTime readAt) {
         captureEntries(dsl, graph, documents, readAt);
-        anchor(dsl, graph.name(), readAt);
+        if (reordered || documents.stream().anyMatch(GraphQLAstCapture::transcribed)) {
+            anchor(dsl, graph.name(), readAt);
+        }
+    }
+
+    /** Whether this reading wrote or emptied the document's entries, which is what moves an anchor. */
+    static boolean transcribed(GraphQLSourceCapture.SourceDocument document) {
+        return switch (document) {
+            case GraphQLSourceCapture.SourceDocument.Changed _,
+                 GraphQLSourceCapture.SourceDocument.Specification _,
+                 GraphQLSourceCapture.SourceDocument.Dropped _ -> true;
+            case GraphQLSourceCapture.SourceDocument.Unchanged _,
+                 GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> false;
+        };
     }
 
     /**
@@ -183,7 +210,8 @@ public final class GraphQLAstCapture {
                 case GraphQLSourceCapture.SourceDocument.Specification specification ->
                     GraphQLAstEntries.write(dsl, graph.name(), specification.sourceName(),
                         specification.registry(), readAt);
-                case GraphQLSourceCapture.SourceDocument.Unchanged _ -> { }
+                case GraphQLSourceCapture.SourceDocument.Unchanged _,
+                     GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> { }
                 case GraphQLSourceCapture.SourceDocument.Dropped _ ->
                     GraphQLAstEntries.write(dsl, graph.name(), document.sourceName(),
                         new TypeDefinitionRegistry(), readAt);

@@ -469,6 +469,22 @@ public final class SchemaLoader {
     }
 
     /**
+     * The bundled {@code specification.graphqls} as bytes, for a reader that stamps the document
+     * rather than parsing it: the same bytes for as long as this module is the same build.
+     */
+    public static byte[] specificationBytes() {
+        try (var stream = SchemaLoader.class.getResourceAsStream(SPECIFICATION_SOURCE_NAME)) {
+            if (stream == null) {
+                throw new IllegalStateException(SPECIFICATION_SOURCE_NAME + " not found on classpath");
+            }
+            return stream.readAllBytes();
+        } catch (java.io.IOException e) {
+            throw new java.io.UncheckedIOException(
+                "bundled " + SPECIFICATION_SOURCE_NAME + " could not be read", e);
+        }
+    }
+
+    /**
      * Parses the bundled {@code specification.graphqls}, failing on {@link #parseDirectives}'
      * terms: a broken resource is this module's fault, not an author's.
      *

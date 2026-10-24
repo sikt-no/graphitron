@@ -98,7 +98,7 @@ public final class ModelCapture {
         // reading; the source reading has written the problems the throw reports.
         SchemaLoader.throwIfUnparsed(reading.failures());
         var documents = reading.documents();
-        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, reading.reordered(), readAt);
         FederationCapture.capture(dsl, graph.name(), readAt);
 
         // The decode reads only the corpus as written, so it runs ahead of the anchor.

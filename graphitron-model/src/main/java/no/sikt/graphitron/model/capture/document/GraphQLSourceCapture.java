@@ -125,6 +125,13 @@ public final class GraphQLSourceCapture {
          */
         record Specification(String sourceName, TypeDefinitionRegistry registry)
             implements SourceDocument {}
+
+        /**
+         * The specification's document, holding the bytes this graph's rows were already derived
+         * from: the bundled resource is stamped like a file, so it is transcribed once per build of
+         * this module rather than on every reading.
+         */
+        record UnchangedSpecification(String sourceName) implements SourceDocument {}
     }
 
     /**
@@ -148,10 +155,13 @@ public final class GraphQLSourceCapture {
      * @param refusals  what each source refused of itself, a document declaring one thing twice,
      *                  which its own registry has already dropped, so the merge of the documents
      *                  never meets it and only this list says it happened
+     * @param reordered whether the files stand in a different modification-time order than when
+     *                  this graph's rows were last derived, which moves what a collision resolves
+     *                  to even where no file's bytes moved
      */
     public record CorpusReading(List<SourceDocument> documents, List<SchemaInput> inputs,
                                 List<SchemaLoader.SyntaxFailure> failures,
-                                List<SchemaError> refusals) {
+                                List<SchemaError> refusals, boolean reordered) {
         public CorpusReading {
             documents = List.copyOf(documents);
             inputs = List.copyOf(inputs);
@@ -200,21 +210,34 @@ public final class GraphQLSourceCapture {
             .toList());
         if (!parse.failures().isEmpty()) {
             GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
-            return new CorpusReading(List.of(), inputs, parse.failures(), List.of());
+            return new CorpusReading(List.of(), inputs, parse.failures(), List.of(), false);
         }
+        // The order the files stood in when this graph's rows were last derived, read before any
+        // modification time is written over: the anchors settle a collision by it.
+        var heldOrder = orderOf(heldModifiedAt(dsl, graph.name()));
         var documents = new ArrayList<SourceDocument>();
         for (var source : parse.perSource()) {
             documents.add(read(dsl, graph.name(), source.sourceName(), source.registry(), held, readAt));
         }
         var configured = new LinkedHashSet<String>();
         documents.forEach(document -> configured.add(document.sourceName()));
+        // The specification is claimed like a file, so it is among the held sources and is not one
+        // this graph dropped.
+        configured.add(SchemaLoader.SPECIFICATION_SOURCE_NAME);
         for (String name : held.keySet()) {
             if (!configured.contains(name)) {
                 documents.add(new SourceDocument.Dropped(name));
             }
         }
-        documents.add(readSpecification(dsl, graph.name(), readAt));
-        configured.add(SchemaLoader.SPECIFICATION_SOURCE_NAME);
+        documents.add(readSpecification(dsl, graph.name(), held, readAt));
+        var nowModifiedAt = new java.util.HashMap<String, LocalDateTime>();
+        for (var name : heldOrder) {
+            if (configured.contains(name)) {
+                nowModifiedAt.put(name, modifiedAt(name));
+            }
+        }
+        boolean reordered = !orderOf(nowModifiedAt).equals(
+            heldOrder.stream().filter(nowModifiedAt::containsKey).toList());
         dropMembership(dsl, graph.name(), configured);
         writeInputs(dsl, graph.name(), inputs, configured, readAt);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
@@ -223,7 +246,33 @@ public final class GraphQLSourceCapture {
         var refusals = parse.perSource().stream()
             .flatMap(source -> source.registryErrors().stream())
             .toList();
-        return new CorpusReading(documents, inputs, parse.failures(), refusals);
+        return new CorpusReading(documents, inputs, parse.failures(), refusals, reordered);
+    }
+
+    /**
+     * When each of this graph's schema files was last seen modified, as the store holds it. What
+     * the anchors order a collision by, so a change in it changes what they would say even where
+     * no file's bytes moved.
+     */
+    private static Map<String, LocalDateTime> heldModifiedAt(DSLContext dsl, String graph) {
+        var m = STORE_GRAPH_SOURCE;
+        var s = STORE_SOURCE;
+        var held = new java.util.HashMap<String, LocalDateTime>();
+        dsl.select(s.SOURCE_NAME, s.MTIME)
+            .from(m).join(s).on(s.SOURCE_NAME.eq(m.SOURCE_NAME))
+            .where(m.GRAPH_NAME.eq(graph))
+            .and(s.SOURCE_KIND.eq("SCHEMA_FILE"))
+            .forEach(row -> held.put(row.value1(), row.value2()));
+        return held;
+    }
+
+    /** Source names oldest first, by name where two share an instant; {@link #OLDEST_FIRST}'s order. */
+    private static List<String> orderOf(Map<String, LocalDateTime> modifiedAt) {
+        return modifiedAt.keySet().stream()
+            .sorted(Comparator.<String, LocalDateTime>comparing(modifiedAt::get,
+                    Comparator.nullsFirst(Comparator.naturalOrder()))
+                .thenComparing(Comparator.naturalOrder()))
+            .toList();
     }
 
     /**
@@ -261,7 +310,7 @@ public final class GraphQLSourceCapture {
     private static SourceDocument read(DSLContext dsl, String graph, String sourceName,
                                        TypeDefinitionRegistry registry,
                                        Map<String, String> held, LocalDateTime readAt) {
-        String stamp = SourceStamp.ofFile(Path.of(sourceName));
+        String stamp = stampOf(sourceName);
         recordSource(dsl, sourceName, stamp, readAt);
         // Unknown counts as changed: a source this graph has not transcribed, or one whose bytes
         // could not be hashed, is not one this reading may skip on the strength of a comparison.
@@ -275,14 +324,33 @@ public final class GraphQLSourceCapture {
     }
 
     /**
-     * The specification's document, recorded and claimed on the terms a source with no stamp gets:
-     * it has no file to hash, so every reading transcribes it again, which costs ten declarations.
+     * A source's stamp: a file's bytes, and for the bundled directive vocabulary, which is offered
+     * as a source but is no file, the bytes this module ships, so it is transcribed once per build
+     * of this module rather than on every reading.
+     */
+    private static String stampOf(String sourceName) {
+        if (SchemaLoader.DIRECTIVES_SOURCE_NAME.equals(sourceName)) {
+            return SourceStamp.of(SchemaLoader.directivesSdl()
+                .getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        }
+        return SourceStamp.ofFile(Path.of(sourceName));
+    }
+
+    /**
+     * The specification's document, recorded and claimed on the terms a file gets: it has no file,
+     * but its bundled bytes are stamped like one, so a graph that already transcribed them is left
+     * alone and the document is parsed only where it has to be transcribed.
      */
     private static SourceDocument readSpecification(DSLContext dsl, String graph,
+                                                    Map<String, String> held,
                                                     LocalDateTime readAt) {
         String sourceName = SchemaLoader.SPECIFICATION_SOURCE_NAME;
-        recordSource(dsl, sourceName, null, readAt);
-        claimMembership(dsl, graph, sourceName, null, readAt);
+        String stamp = SourceStamp.of(SchemaLoader.specificationBytes());
+        recordSource(dsl, sourceName, stamp, readAt);
+        if (stamp.equals(held.get(sourceName))) {
+            return new SourceDocument.UnchangedSpecification(sourceName);
+        }
+        claimMembership(dsl, graph, sourceName, stamp, readAt);
         return new SourceDocument.Specification(sourceName, SchemaLoader.parseSpecification());
     }
 
