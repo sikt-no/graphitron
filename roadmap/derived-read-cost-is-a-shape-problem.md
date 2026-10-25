@@ -505,7 +505,9 @@ own, so its output is fixed by the store, the emitted schema and the run's confi
     nothing, are defects located in the build file the configuration was read from. An argument or
     input field is a tenant field when its column joins a matched column, which needs the argument
     model; the walk's classifier goes with the walk rather than learning the pattern. The session
-    hook half reads `code_method`, waiting on the two `CodeCapture` lines in the register.
+    hook half reads `code_method` and its parameters' `role`, where sis's `FsSesjon.mount` and
+    `unmount` take the context as `CONFIGURATION`, waiting on the two `CodeCapture` lines in the
+    register.
 * **`graphitron` does no orchestration** `open`. A harness in `graphitron`'s tests that captures and
   reads nothing of the generator moves to the model's test fixtures, with the tests that exercise
   capture alone.
