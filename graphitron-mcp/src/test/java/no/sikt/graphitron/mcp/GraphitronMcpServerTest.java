@@ -645,11 +645,8 @@ class GraphitronMcpServerTest {
     }
 
     /**
-     * A multi-column foreign key's two column lists pair up, and pair up in the referenced
-     * constraint's own order. The census never copies the target columns onto the referencing row,
-     * they being the referenced constraint's own rows matched on position, so this is the one place a
-     * hand-written pairing could go wrong where the relation could not: a join that forgot the
-     * position predicate would answer with every combination of the two lists and still look like a
+     * A multi-column foreign key's two column lists pair up, in the key's own order. A join that
+     * forgot a predicate would answer with every combination of the two lists and still look like a
      * foreign key.
      */
     @Test
@@ -666,6 +663,26 @@ class GraphitronMcpServerTest {
                 .containsEntry("targetTable", "public.project")
                 .containsEntry("columns", List.of("org_id", "project_id"))
                 .containsEntry("targetColumns", List.of("org_id", "project_id")));
+    }
+
+    /**
+     * A foreign key whose {@code REFERENCES} list orders the referenced key's columns differently from
+     * that key's own declaration pairs each column with the one the list names, not with the one at
+     * the same position of the key.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void catalogDescribePairsAReorderedForeignKeyByItsReferencesList() {
+        var structured = structured(GraphitronMcpServer.catalogDescribeResult(
+            CATALOG.handle(), CATALOG.reader(), Map.of("table", "nodeidfixture.reordered_fk_child")));
+
+        var foreignKeys = (Map<String, Object>) structured.get("foreignKeys");
+        assertThat((List<Map<String, Object>>) foreignKeys.get("outgoing"))
+            .singleElement()
+            .satisfies(fk -> assertThat(fk)
+                .containsEntry("constraintName", "reordered_fk_child_parent_fkey")
+                .containsEntry("columns", List.of("fk_b", "fk_c", "fk_a"))
+                .containsEntry("targetColumns", List.of("pk_b", "pk_c", "pk_a")));
     }
 
     /**

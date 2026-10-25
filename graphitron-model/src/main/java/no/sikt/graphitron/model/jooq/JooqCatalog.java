@@ -1374,7 +1374,8 @@ public class JooqCatalog {
                 fk.getKey().getName(),
                 keyJavaConstantName(fk).orElse(null),
                 fk.getFields().stream().map(org.jooq.Field::getName).toList(),
-                fk.getKey().getFields().stream().map(org.jooq.Field::getName).toList()))
+                fk.getKey().getFields().stream().map(org.jooq.Field::getName).toList(),
+                fk.getKeyFields().stream().map(field -> fk.getKey().getFields().indexOf(field)).toList()))
             .toList();
     }
 
@@ -1416,6 +1417,10 @@ public class JooqCatalog {
      * {@code targetColumns} is that constraint's own column list; a consumer keying constraints
      * rather than tables needs the name, and one that already has the columns can ignore it.
      *
+     * <p>{@code referencedPositions} holds, for each of {@code columns} in order, the position in
+     * {@code targetColumns} it references: the key's {@code REFERENCES} list, which may order the
+     * referenced key's columns differently from that key's own declaration.
+     *
      * <p>{@code jooqName} is the {@code Keys}-class constant name, or null when the key resolves to
      * no constant. Null is a fact rather than a failure: a generated model need not carry a
      * {@code Keys} class, and a key with no constant is a key nobody can name in
@@ -1428,11 +1433,13 @@ public class JooqCatalog {
         String referencedConstraintName,
         String jooqName,
         java.util.List<String> columns,
-        java.util.List<String> targetColumns
+        java.util.List<String> targetColumns,
+        java.util.List<Integer> referencedPositions
     ) {
         public ForeignKeyFacts {
             columns = java.util.List.copyOf(columns);
             targetColumns = java.util.List.copyOf(targetColumns);
+            referencedPositions = java.util.List.copyOf(referencedPositions);
         }
     }
 

@@ -32,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA_UNREADABLE;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
@@ -109,6 +110,7 @@ public final class JooqFactCapture {
         constraintColumns(dsl, constraints, touchedAt);
         primaryKeys(dsl, tables, touchedAt);
         referentialConstraints(dsl, jooq, tables, touchedAt);
+        referentialConstraintColumns(dsl, jooq, tables, touchedAt);
         tableReferences(dsl, sourceNames(tables), touchedAt);
         indexes(dsl, jooq, tables, touchedAt);
         indexColumns(dsl, jooq, tables, touchedAt);
@@ -347,9 +349,8 @@ public final class JooqFactCapture {
     }
 
     /**
-     * The referential half of a foreign key. The target columns are deliberately not copied here:
-     * they are the referenced constraint's own {@code sql_constraint_column} rows matched on
-     * position, which is what SQL guarantees.
+     * The referential half of a foreign key: the constraint it references. Which of that
+     * constraint's columns each of its own names is {@link #referentialConstraintColumns}'s.
      */
     private static void referentialConstraints(DSLContext dsl, JooqCatalog jooq,
                                                List<TableAt> tables, LocalDateTime touchedAt) {
@@ -383,11 +384,64 @@ public final class JooqFactCapture {
                     t.CONSTRAINT_NAME, t.REFERENCED_SCHEMA, t.REFERENCED_TABLE,
                     t.REFERENCED_CONSTRAINT_NAME, t.TOUCHED_AT)
                 .values(markers)
-                .onDuplicateKeyUpdate()
+                // The primary key, named: the referenced constraint beside it is a second unique
+                // key, and an upsert matching on either scans every source's rows.
+                .onConflict(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME)
+                .doUpdate()
                 .set(t.REFERENCED_SOURCE_NAME, excluded(t.REFERENCED_SOURCE_NAME))
                 .set(t.REFERENCED_SCHEMA, excluded(t.REFERENCED_SCHEMA))
                 .set(t.REFERENCED_TABLE, excluded(t.REFERENCED_TABLE))
                 .set(t.REFERENCED_CONSTRAINT_NAME, excluded(t.REFERENCED_CONSTRAINT_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * Each foreign-key column with the position of the referenced key it names. The key's
+     * {@code REFERENCES} list orders the referenced columns, and may order them differently from
+     * the referenced key's own declaration, so the pairing is read off the key rather than matched
+     * on position.
+     */
+    private static void referentialConstraintColumns(DSLContext dsl, JooqCatalog jooq,
+                                                     List<TableAt> tables, LocalDateTime touchedAt) {
+        var t = SQL_REFERENTIAL_CONSTRAINT_COLUMN;
+        Map<String, String> sourceByTable = sourceByTable(tables);
+        record Paired(TableAt owner, JooqCatalog.ForeignKeyFacts key, int position) {}
+        List<Paired> paired = new ArrayList<>();
+        for (TableAt at : tables) {
+            for (JooqCatalog.ForeignKeyFacts key : jooq.foreignKeyFactsOf(at.table())) {
+                for (int i = 0; i < key.referencedPositions().size(); i++) {
+                    paired.add(new Paired(at, key, i));
+                }
+            }
+        }
+        if (paired.isEmpty()) {
+            return;
+        }
+        var rows = paired.stream().collect(Rows.toRowList(
+            p -> val(p.owner().source(), t.SOURCE_NAME),
+            p -> val(p.owner().schema(), t.TABLE_SCHEMA),
+            p -> val(p.owner().name(), t.TABLE_NAME),
+            p -> val(p.key().constraintName(), t.CONSTRAINT_NAME),
+            p -> val(p.position(), t.POSITION),
+            p -> val(sourceByTable.getOrDefault(p.key().targetTable(), p.owner().source()),
+                t.REFERENCED_SOURCE_NAME),
+            p -> val(split(p.key().targetTable())[0], t.REFERENCED_SCHEMA),
+            p -> val(split(p.key().targetTable())[1], t.REFERENCED_TABLE),
+            p -> val(p.key().referencedConstraintName(), t.REFERENCED_CONSTRAINT_NAME),
+            p -> val(p.key().referencedPositions().get(p.position()), t.REFERENCED_POSITION),
+            p -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME,
+                    t.POSITION, t.REFERENCED_SOURCE_NAME, t.REFERENCED_SCHEMA, t.REFERENCED_TABLE,
+                    t.REFERENCED_CONSTRAINT_NAME, t.REFERENCED_POSITION, t.TOUCHED_AT)
+                .values(markers)
+                .onConflict(t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.CONSTRAINT_NAME, t.POSITION)
+                .doUpdate()
+                .set(t.REFERENCED_SOURCE_NAME, excluded(t.REFERENCED_SOURCE_NAME))
+                .set(t.REFERENCED_SCHEMA, excluded(t.REFERENCED_SCHEMA))
+                .set(t.REFERENCED_TABLE, excluded(t.REFERENCED_TABLE))
+                .set(t.REFERENCED_CONSTRAINT_NAME, excluded(t.REFERENCED_CONSTRAINT_NAME))
+                .set(t.REFERENCED_POSITION, excluded(t.REFERENCED_POSITION))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
@@ -806,7 +860,7 @@ public final class JooqFactCapture {
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
-        SQL_REFERENTIAL_CONSTRAINT, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
+        SQL_REFERENTIAL_CONSTRAINT, SQL_REFERENTIAL_CONSTRAINT_COLUMN, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
         SQL_NODE_METADATA,
         SQL_NODE_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
 

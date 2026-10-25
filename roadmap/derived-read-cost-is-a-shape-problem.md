@@ -753,16 +753,8 @@ elsewhere in the graph.
 
 Stating the seeded cases as documents put real schemas in front of rules that had only met
 hand-written rows, and six of those rules answered wrongly, threw, or never fired. Each is fixed
-here with a document that shows it, the foreign-key pairing first because it decodes ids into the
-wrong columns on a valid schema.
+here with a document that shows it.
 
-* **A foreign key's referenced columns are captured in the key's own order** `open`. Fixed first.
-  SQL pairs a foreign key's Nth column with the Nth column of its `REFERENCES` list, which may be any
-  permutation of the referenced key; jOOQ carries that list as `ForeignKey.getKeyFields()`, and the
-  capture reads `getKey().getFields()`, the referenced key's declaration order, instead.
-  `intent_foreign_key_column_pair` then pairs by position and lands `pk_a` on `fk_b` for
-  `nodeidfixture.reordered_fk_child`. The referenced column is captured per foreign-key position,
-  the pairing reads it, and a document on that fixture pins `pk_a` to `fk_a`.
 * **A chain of input types costs its occurrences, not its paths** `open`.
   `InputOccurrencePaths.copyParentSteps` enumerates every path through an input type chain, so
   twenty levels of two fields each is a million paths and a capture that ran past fourteen minutes.

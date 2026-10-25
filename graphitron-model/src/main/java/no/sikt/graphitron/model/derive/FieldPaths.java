@@ -30,7 +30,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NAME_MATCHED_KEY_COLUMN;
-import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static org.jooq.impl.DSL.count;
 import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
@@ -156,15 +156,15 @@ public final class FieldPaths {
     }
 
     /**
-     * The column pairs each step joins on: a key's own columns paired position by position with the
-     * columns of the constraint it references, oriented the way the step rode it; or, for a table
+     * The column pairs each step joins on: a key's own columns, each paired with the referenced
+     * column its {@code REFERENCES} list names, oriented the way the step rode it; or, for a table
      * reached from a function's result, the named table's key matched to the result's columns by name.
      */
     private static void columns(DSLContext dsl, Table<Record> c, String graph,
                                 LocalDateTime touchedAt) {
         var keys = STEP;
         var fc = SQL_CONSTRAINT_COLUMN.as("fc");
-        var rc = SQL_REFERENTIAL_CONSTRAINT.as("rc");
+        var rcc = SQL_REFERENTIAL_CONSTRAINT_COLUMN.as("rcc");
         var pc = SQL_CONSTRAINT_COLUMN.as("pc");
         Field<Boolean> onFrom = f(c, "FK_ON_FROM", Boolean.class);
         var byKey = dsl.select(cols(c, keys))
@@ -179,11 +179,13 @@ public final class FieldPaths {
             .join(fc).on(fc.SOURCE_NAME.eq(str(c, "CONSTRAINT_SOURCE_NAME")),
                 fc.TABLE_SCHEMA.eq(str(c, "CONSTRAINT_SCHEMA")), fc.TABLE_NAME.eq(str(c, "CONSTRAINT_TABLE")),
                 fc.CONSTRAINT_NAME.eq(str(c, "CONSTRAINT_NAME")))
-            .join(rc).on(rc.SOURCE_NAME.eq(fc.SOURCE_NAME), rc.TABLE_SCHEMA.eq(fc.TABLE_SCHEMA),
-                rc.TABLE_NAME.eq(fc.TABLE_NAME), rc.CONSTRAINT_NAME.eq(fc.CONSTRAINT_NAME))
-            .join(pc).on(pc.SOURCE_NAME.eq(rc.REFERENCED_SOURCE_NAME),
-                pc.TABLE_SCHEMA.eq(rc.REFERENCED_SCHEMA), pc.TABLE_NAME.eq(rc.REFERENCED_TABLE),
-                pc.CONSTRAINT_NAME.eq(rc.REFERENCED_CONSTRAINT_NAME), pc.POSITION.eq(fc.POSITION))
+            .join(rcc).on(rcc.SOURCE_NAME.eq(fc.SOURCE_NAME), rcc.TABLE_SCHEMA.eq(fc.TABLE_SCHEMA),
+                rcc.TABLE_NAME.eq(fc.TABLE_NAME), rcc.CONSTRAINT_NAME.eq(fc.CONSTRAINT_NAME),
+                rcc.POSITION.eq(fc.POSITION))
+            .join(pc).on(pc.SOURCE_NAME.eq(rcc.REFERENCED_SOURCE_NAME),
+                pc.TABLE_SCHEMA.eq(rcc.REFERENCED_SCHEMA), pc.TABLE_NAME.eq(rcc.REFERENCED_TABLE),
+                pc.CONSTRAINT_NAME.eq(rcc.REFERENCED_CONSTRAINT_NAME),
+                pc.POSITION.eq(rcc.REFERENCED_POSITION))
             .where(f(c, "MOVES").eq(1));
         var n = SQL_NAME_MATCHED_KEY_COLUMN;
         var ts = GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;

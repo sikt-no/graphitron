@@ -5529,6 +5529,10 @@ CREATE TABLE sql_referential_constraint (
   referenced_constraint_name VARCHAR NOT NULL,
   touched_at                 TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, table_name, constraint_name),
+  -- The key with the constraint it references beside it, which the primary key already makes
+  -- unique; it is here so a column of this key can reference the key and its target together.
+  UNIQUE (source_name, table_schema, table_name, constraint_name,
+          referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name),
   FOREIGN KEY (source_name, table_schema, table_name, constraint_name)
     REFERENCES sql_constraint (source_name, table_schema, table_name, constraint_name),
   FOREIGN KEY (referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name)
@@ -5544,6 +5548,43 @@ COMMENT ON COLUMN sql_referential_constraint.referenced_schema IS 'schema of the
 COMMENT ON COLUMN sql_referential_constraint.referenced_table IS 'the referenced constraint''s table';
 COMMENT ON COLUMN sql_referential_constraint.referenced_constraint_name IS 'the referenced constraint''s name';
 COMMENT ON COLUMN sql_referential_constraint.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
+
+CREATE TABLE sql_referential_constraint_column (
+  source_name                VARCHAR NOT NULL,
+  table_schema               VARCHAR NOT NULL,
+  table_name                 VARCHAR NOT NULL,
+  constraint_name            VARCHAR NOT NULL,
+  position                   INT     NOT NULL,
+  referenced_source_name     VARCHAR NOT NULL,
+  referenced_schema          VARCHAR NOT NULL,
+  referenced_table           VARCHAR NOT NULL,
+  referenced_constraint_name VARCHAR NOT NULL,
+  referenced_position        INT     NOT NULL,
+  touched_at                 TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name, constraint_name, position),
+  UNIQUE (source_name, table_schema, table_name, constraint_name, referenced_position),
+  FOREIGN KEY (source_name, table_schema, table_name, constraint_name, position)
+    REFERENCES sql_constraint_column (source_name, table_schema, table_name, constraint_name, position),
+  FOREIGN KEY (source_name, table_schema, table_name, constraint_name,
+               referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name)
+    REFERENCES sql_referential_constraint (source_name, table_schema, table_name, constraint_name,
+               referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name),
+  FOREIGN KEY (referenced_source_name, referenced_schema, referenced_table, referenced_constraint_name,
+               referenced_position)
+    REFERENCES sql_constraint_column (source_name, table_schema, table_name, constraint_name, position)
+);
+COMMENT ON TABLE sql_referential_constraint_column IS 'One column of one foreign key, and the position of the referenced key it names. For example position 0 of reordered_fk_child_parent_fkey, fk_b, names position 1 of reordered_pk_parent_pkey, pk_b.';
+COMMENT ON COLUMN sql_referential_constraint_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_referential_constraint_column.table_schema IS 'schema of the declaring table';
+COMMENT ON COLUMN sql_referential_constraint_column.table_name IS 'the declaring (source) table';
+COMMENT ON COLUMN sql_referential_constraint_column.constraint_name IS 'the foreign key''s name';
+COMMENT ON COLUMN sql_referential_constraint_column.position IS 'the place in the foreign key''s own column list, 0-based; with the four columns above, the foreign key''s own sql_constraint_column row';
+COMMENT ON COLUMN sql_referential_constraint_column.referenced_source_name IS 'the referenced constraint''s generated-package source, forwarded from sql_referential_constraint so the column can only name a position of the constraint its key references';
+COMMENT ON COLUMN sql_referential_constraint_column.referenced_schema IS 'schema of the referenced constraint''s table, forwarded as the source above is';
+COMMENT ON COLUMN sql_referential_constraint_column.referenced_table IS 'the referenced constraint''s table, forwarded as the source above is';
+COMMENT ON COLUMN sql_referential_constraint_column.referenced_constraint_name IS 'the referenced constraint''s name, forwarded as the source above is';
+COMMENT ON COLUMN sql_referential_constraint_column.referenced_position IS 'the position in the referenced constraint''s own column list that this column references, which is where the REFERENCES list puts it and not, in general, this column''s own position: SQL lets that list order the key''s columns any way it likes. A position rather than a column name, so the referenced column has one answer, the referenced constraint''s own sql_constraint_column row';
+COMMENT ON COLUMN sql_referential_constraint_column.touched_at IS 'when the reading that produced this row ran, swept as sql_referential_constraint''s instant is';
 
 CREATE VIEW sql_constraint_hop
   (source_name, table_schema, table_name, constraint_name, fk_on_from,
@@ -7000,29 +7041,30 @@ COMMENT ON VIEW intent_bound_table IS 'Deprecated with the whole intent_ family,
 CREATE VIEW intent_foreign_key_column_pair
   (source_name, table_schema, table_name, constraint_name, position, column_name,
    referenced_source_name, referenced_schema, referenced_table, referenced_column_name) AS
-SELECT rc.source_name, rc.table_schema, rc.table_name, rc.constraint_name, cc.position,
-       cc.column_name, rc.referenced_source_name, rc.referenced_schema, rc.referenced_table,
+SELECT p.source_name, p.table_schema, p.table_name, p.constraint_name, p.position,
+       cc.column_name, p.referenced_source_name, p.referenced_schema, p.referenced_table,
        rk.column_name
-  FROM sql_referential_constraint rc
+  FROM sql_referential_constraint_column p
   JOIN sql_constraint_column cc
-    ON cc.source_name = rc.source_name AND cc.table_schema = rc.table_schema
-   AND cc.table_name = rc.table_name AND cc.constraint_name = rc.constraint_name
+    ON cc.source_name = p.source_name AND cc.table_schema = p.table_schema
+   AND cc.table_name = p.table_name AND cc.constraint_name = p.constraint_name
+   AND cc.position = p.position
   JOIN sql_constraint_column rk
-    ON rk.source_name = rc.referenced_source_name AND rk.table_schema = rc.referenced_schema
-   AND rk.table_name = rc.referenced_table
-   AND rk.constraint_name = rc.referenced_constraint_name
-   AND rk.position = cc.position;
-COMMENT ON VIEW intent_foreign_key_column_pair IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. What a foreign key equates: one row per position, the key''s own column beside the column it references. The join condition every reader that renders or reasons about a foreign key needs, and a derivation rather than a capture because the census records the two constraints'' column lists separately and the pairing between them is positional. Positional is the whole content of this relation and it is SQL''s own rule rather than a convention adopted here: a foreign key''s Nth column references the Nth column of the constraint it points at, which is why sql_constraint_column carries a position at all and why nothing else has to be matched on a name. Both sides are joined on their own constraint''s full key, so a constraint name two schemas or two classpath entries both declare pairs within its own table and never across, which is the collision the endpoint triples exist to prevent. A key whose referenced constraint has fewer columns than it declares pairs only the positions both sides hold, and that is a malformed catalog rather than a shape to model: the census would have to have recorded a key SQL could not have created. No arity is exposed beside the pairs, the position being dense from zero on both sides, so a reader wanting the width counts rows. Nothing here is specific to any one consumer''s question, which is why it sits with the catalog derivations and not beside the relation that first needed it: the @nodeId lift is its first reader and a rendered join is its obvious second.';
+    ON rk.source_name = p.referenced_source_name AND rk.table_schema = p.referenced_schema
+   AND rk.table_name = p.referenced_table
+   AND rk.constraint_name = p.referenced_constraint_name
+   AND rk.position = p.referenced_position;
+COMMENT ON VIEW intent_foreign_key_column_pair IS 'Deprecated with the whole intent_ family, which has no owning gatherer and is being retired. A fact derived here belongs in the family that owns the corpus it comes from, captured as early as it can be so that every reader reaches it instead of deriving it again. What a foreign key equates: one row per position, the key''s own column beside the column it references. The join condition every reader that renders or reasons about a foreign key needs. The pairing is captured, in sql_referential_constraint_column, and not derived: a foreign key''s Nth column references the Nth column of its REFERENCES list, and that list may order the referenced key''s columns differently from the key''s own declaration, so matching the two constraints'' positions would pair the wrong columns. Both sides are joined on their own constraint''s full key, so a constraint name two schemas or two classpath entries both declare pairs within its own table and never across, which is the collision the endpoint triples exist to prevent. No arity is exposed beside the pairs, the position being dense from zero, so a reader wanting the width counts rows. Nothing here is specific to any one consumer''s question, which is why it sits with the catalog derivations and not beside the relation that first needed it: the @nodeId lift is its first reader and a rendered join is its obvious second.';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.source_name IS 'the declaring table''s catalog partition, as on sql_referential_constraint';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.table_schema IS 'the declaring table''s SQL schema';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.table_name IS 'the declaring table''s SQL name: the table the foreign key sits on, which is the child end of the relationship';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.constraint_name IS 'the foreign key''s name under the declaring table, completing sql_referential_constraint''s key with the three columns above';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.position IS '0-based position within the key, dense from zero, shared by both sides of the pair; the order a tuple predicate over the key has to preserve';
+-- COMMENT ON COLUMN intent_foreign_key_column_pair.position IS '0-based position within the foreign key''s own column list, dense from zero; the order a tuple predicate over the key has to preserve';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.column_name IS 'the key''s own column at this position, on the declaring table. The catalog''s own spelling, so a reader matching it against an authored one folds the authored side';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_source_name IS 'the referenced table''s catalog partition';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_schema IS 'the referenced table''s SQL schema';
 -- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_table IS 'the referenced table''s SQL name: the parent end of the relationship, equal to the declaring table on a self-referencing key';
--- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_column_name IS 'the referenced constraint''s column at this position, on the referenced table; the other half of the equality this row states';
+-- COMMENT ON COLUMN intent_foreign_key_column_pair.referenced_column_name IS 'the referenced column this position names, on the referenced table; the other half of the equality this row states';
 
 CREATE TABLE graphitron_defect_type (
   code      VARCHAR NOT NULL,
@@ -16852,7 +16894,7 @@ INSERT INTO meta_relation VALUES
   ('sql_constraint_column', 'constraint-column', 'jooq',
    'One position in one constraint''s column list, naming the column that sits there.',
    'For example position 0 of film_actor''s primary key, naming actor_id.',
-   'A constraint''s columns are ordered and are a repeating group, so they are their own relation keyed by position, one relation for all three forms as KEY_COLUMN_USAGE is. A foreign key''s target columns are deliberately absent: they are the referenced constraint''s own rows matched on position, and copying them here would be a second answer able to disagree with the first.'),
+   'A constraint''s columns are ordered and are a repeating group, so they are their own relation keyed by position, one relation for all three forms as KEY_COLUMN_USAGE is. A foreign key''s target columns are not copied here; which of the referenced key''s positions each of its columns names is sql_referential_constraint_column''s.'),
   ('sql_primary_key', 'database-table', 'jooq',
    'One table''s primary key, naming the constraint that is it.',
    'For example public.film, whose primary key is the constraint film_pkey.',
@@ -16868,7 +16910,11 @@ INSERT INTO meta_relation VALUES
   ('sql_referential_constraint', 'table-constraint', 'jooq',
    'One foreign key''s reference to the constraint it resolves against.',
    'For example film_actor''s foreign key to film, referencing the film_pkey constraint of public.film.',
-   'The foreign-key-only extension of sql_constraint, split off rather than folded in as nullable columns, so a row exists exactly where a reference does. Referencing a constraint rather than a table is what SQL declares, and the target columns stay the referenced constraint''s own rows matched on position rather than being copied here. Implicit-path inference is a derivation over these rows, not a fact captured beside them.'),
+   'The foreign-key-only extension of sql_constraint, split off rather than folded in as nullable columns, so a row exists exactly where a reference does. Referencing a constraint rather than a table is what SQL declares; which referenced column each of the key''s columns names is sql_referential_constraint_column''s. Implicit-path inference is a derivation over these rows, not a fact captured beside them.'),
+  ('sql_referential_constraint_column', 'constraint-column', 'jooq',
+   'One column of one foreign key, and the position of the referenced key it names.',
+   'For example position 0 of reordered_fk_child_parent_fkey, fk_b, names position 1 of reordered_pk_parent_pkey, pk_b.',
+   'SQL pairs a foreign key''s Nth column with the Nth column of its REFERENCES list, and that list may order the referenced key''s columns any way it likes, so the pairing is a fact of the key and is captured rather than derived from the two constraints'' positions. jOOQ carries it as ForeignKey.getKeyFields(). The referenced side is a position into the referenced constraint''s own sql_constraint_column rows, not a column name, so the column has one answer, and the foreign keys hold it to the constraint sql_referential_constraint records and to a column that constraint has.'),
   ('sql_table_reference', 'table-reference-pair', 'jooq',
    'One ordered pair of tables at least one foreign key connects, and how many connect it.',
    'For example film_actor to film is one row saying 1, and a pair two foreign keys join is one row saying 2.',

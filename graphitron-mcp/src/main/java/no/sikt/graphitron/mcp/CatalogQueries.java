@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT;
+import static no.sikt.graphitron.model.Tables.SQL_REFERENTIAL_CONSTRAINT_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.concat;
 import static org.jooq.impl.DSL.exists;
@@ -194,7 +195,7 @@ final class CatalogQueries {
      *     outgoing key and the declaring table for an incoming one, so one row shape serves both
      *     directions and the wire names the slot
      * @param columnPairs the constraint's columns in its own order, each paired with the referenced
-     *     column at the same position. One list of pairs rather than two parallel lists, because the
+     *     column its {@code REFERENCES} list names. One list of pairs rather than two parallel lists, because the
      *     pairing is what the read guarantees: two lists can disagree in length or in order and still
      *     look like an answer, where a pair cannot. The wire's two arrays are the transposition of
      *     this, taken where the contract asks for them
@@ -202,8 +203,7 @@ final class CatalogQueries {
     record ForeignKeyEntry(String constraintName, String otherTable, List<ColumnPair> columnPairs) {}
 
     /**
-     * One position of a foreign key: the referencing column and the referenced column that sits at the
-     * same position in the referenced constraint.
+     * One position of a foreign key: the referencing column and the referenced column it names.
      */
     record ColumnPair(String column, String targetColumn) {}
 
@@ -503,27 +503,31 @@ final class CatalogQueries {
     /**
      * One foreign key's columns paired with the columns they reference, in the constraint's own order.
      *
-     * <p>The pairing is a join on position. A foreign key's target columns are the referenced
-     * constraint's own rows matched on position, which {@code sql_referential_constraint} documents as
-     * guaranteed by SQL semantics and never copied onto the referencing row; expressing that as
-     * {@code ON referenced.position = referencing.position} makes a mispairing unrepresentable, and
-     * projecting the result as pairs carries that guarantee out of the query rather than dropping it at
-     * the boundary.
+     * <p>The pairing is the one {@code sql_referential_constraint_column} captured from the key's
+     * {@code REFERENCES} list, which may order the referenced key's columns differently from that
+     * key's own declaration; projecting the result as pairs carries it out of the query rather than
+     * dropping it at the boundary.
      */
     private static Field<List<ColumnPair>> columnPairs() {
         var referencing = SQL_CONSTRAINT_COLUMN.as("referencing");
+        var pairing = SQL_REFERENTIAL_CONSTRAINT_COLUMN.as("pairing");
         var referenced = SQL_CONSTRAINT_COLUMN.as("referenced");
 
         return multiset(
             select(referencing.COLUMN_NAME, referenced.COLUMN_NAME)
                 .from(referencing)
+                .join(pairing).on(
+                    pairing.SOURCE_NAME.eq(referencing.SOURCE_NAME)
+                        .and(pairing.TABLE_SCHEMA.eq(referencing.TABLE_SCHEMA))
+                        .and(pairing.TABLE_NAME.eq(referencing.TABLE_NAME))
+                        .and(pairing.CONSTRAINT_NAME.eq(referencing.CONSTRAINT_NAME))
+                        .and(pairing.POSITION.eq(referencing.POSITION)))
                 .join(referenced).on(
-                    referenced.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SOURCE_NAME)
-                        .and(referenced.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_SCHEMA))
-                        .and(referenced.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_TABLE))
-                        .and(referenced.CONSTRAINT_NAME
-                            .eq(SQL_REFERENTIAL_CONSTRAINT.REFERENCED_CONSTRAINT_NAME))
-                        .and(referenced.POSITION.eq(referencing.POSITION)))
+                    referenced.SOURCE_NAME.eq(pairing.REFERENCED_SOURCE_NAME)
+                        .and(referenced.TABLE_SCHEMA.eq(pairing.REFERENCED_SCHEMA))
+                        .and(referenced.TABLE_NAME.eq(pairing.REFERENCED_TABLE))
+                        .and(referenced.CONSTRAINT_NAME.eq(pairing.REFERENCED_CONSTRAINT_NAME))
+                        .and(referenced.POSITION.eq(pairing.REFERENCED_POSITION)))
                 .where(referencing.SOURCE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.SOURCE_NAME)
                     .and(referencing.TABLE_SCHEMA.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_SCHEMA))
                     .and(referencing.TABLE_NAME.eq(SQL_REFERENTIAL_CONSTRAINT.TABLE_NAME))
