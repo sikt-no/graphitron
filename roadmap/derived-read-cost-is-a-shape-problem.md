@@ -776,8 +776,7 @@ wrong columns on a valid schema.
   branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
   application with no entry beside it never return a row, and they go. `@routine` and `@mutation`
   decline what they cannot read, so theirs stay.
-* **What the manual refuses of a `@nodeId` is a defect row** `blocked`, on "The target type of a
-  `@nodeId` coordinate is the entry's". The generator refuses these and the store records nothing:
+* **What the manual refuses of a `@nodeId` is a defect row** `blocked`, on "The target type of a `@nodeId` coordinate is the entry's". The generator refuses these and the store records nothing:
   a bare `@nodeId` on a field of a type that is not a node, a `typeName:` naming a type without
   `@node`, arguments of a node-returning field matched to columns its table lacks, a `typeName:`
   with no route from the slot's table, and a bare `@nodeId` on an input field under a multi-table
