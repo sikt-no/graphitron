@@ -11430,27 +11430,27 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
                   WHERE ib.graph_name = e.graph_name AND ib.type_name = e.target)
 )
 -- What each handed row becomes. A pivot field's type is the row its aggregate makes; a connection's
--- wrapper holds the page as an object its fields read; an @error type holds the exception a producer
--- caught; a table-bound type is a row of its table, whoever hands it, since moving from a result back
--- into the tables always refetches; otherwise a field whose path ends on a @routine hands the row of
--- its function's result, an @externalField hands on the value its Field carries, a reader hands on
--- what its parent holds, and a producer that hands back a
--- value holds an object: a service's, a write's or a routine write's result, and a connection's
--- facets. A table's own record
--- handed back is such a value, read through the Record API and never as a row: nothing selected it.
+-- wrapper holds the page as an object its fields read; an @error type holds the exception a
+-- producer caught; a table-bound type is a row of its table, whoever hands it, since moving from a
+-- result back into the tables always refetches, and a row of no table where its binding names
+-- several; otherwise a field whose path ends on a @routine hands the row of its function's result,
+-- an @externalField hands on the value its Field carries, a reader hands on what its parent holds,
+-- and a producer that hands back a value holds an object: a service's, a write's or a routine
+-- write's result, and a connection's facets. A table's own record handed back is such a value, read
+-- through the Record API and never as a row: nothing selected it.
 SELECT h.graph_name, h.member,
        CASE WHEN dp.coordinate IS NOT NULL THEN 'ROW'
             WHEN h.wrapped OR de.coordinate IS NOT NULL THEN 'OBJECT'
             WHEN b.type_name IS NOT NULL THEN 'ROW'
             ELSE COALESCE(h.shape, 'OBJECT') END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
-            WHEN b.type_name IS NOT NULL THEN b.table_source_name
+            WHEN b.type_name IS NOT NULL THEN CASE WHEN b.candidates = 1 THEN b.table_source_name END
             ELSE h.table_source_name END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
-            WHEN b.type_name IS NOT NULL THEN b.table_schema
+            WHEN b.type_name IS NOT NULL THEN CASE WHEN b.candidates = 1 THEN b.table_schema END
             ELSE h.table_schema END,
        CASE WHEN dp.coordinate IS NOT NULL OR h.wrapped OR de.coordinate IS NOT NULL THEN NULL
-            WHEN b.type_name IS NOT NULL THEN b.table_name
+            WHEN b.type_name IS NOT NULL THEN CASE WHEN b.candidates = 1 THEN b.table_name END
             ELSE h.table_name END,
        CASE WHEN dp.coordinate IS NOT NULL THEN h.field_type
             WHEN h.wrapped OR de.coordinate IS NOT NULL OR b.type_name IS NOT NULL THEN NULL
@@ -11471,7 +11471,10 @@ SELECT h.graph_name, h.member,
 UNION
 -- A federation entity holds its table's row, resolved through _entities; graphitron resolves only
 -- table-bound entities.
-SELECT da.graph_name, da.coordinate, 'ROW', b.table_source_name, b.table_schema, b.table_name,
+SELECT da.graph_name, da.coordinate, 'ROW',
+       CASE WHEN b.candidates = 1 THEN b.table_source_name END,
+       CASE WHEN b.candidates = 1 THEN b.table_schema END,
+       CASE WHEN b.candidates = 1 THEN b.table_name END,
        CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
   FROM graphitron_directive_application da
   JOIN graphitron_resolved_type_binding b

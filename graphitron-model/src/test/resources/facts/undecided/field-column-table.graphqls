@@ -98,3 +98,11 @@ extend schema @assertAbsent(relation: "graphitron_field_target_column", rows: ""
   Venue,     name
   Note,      text
   """)
+
+# A binding that names several tables is a row of none of them: Venue is still a row, a table
+# being bound to it, but no one table says which.
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name = 'Venue'", rows: """
+  type_name, shape
+  Venue,     ROW
+  """)
+extend schema @assertEmpty(relation: "graphitron_result_table", where: "type_name = 'Venue'")

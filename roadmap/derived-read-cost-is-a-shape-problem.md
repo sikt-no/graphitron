@@ -84,7 +84,8 @@ A service call is emitted from the store
 │       │   └── The generated jOOQ classes are read with their members
 │       ├── An object result is lifted onto a key row
 │       │   ├── A field's key row is stated
-│       │   └── A type an `@externalField` returns holds an OBJECT
+│       │   ├── A type an `@externalField` returns holds an OBJECT
+│       │   └── A binding that names several tables is a row of none of them
 │       ├── `$context` names a context value
 │       └── `$tenant` in argMapping routes a service call
 ├── A service's holder is its one widest buildable constructor
@@ -453,6 +454,10 @@ classified records have no reader left and can go with the walk.
   on the source side starts one, a `SOURCE_ROW` key or a `COLUMNS` key on the parent's record
   table: a path is written from the source, so a field whose key re-fetches its own target gets no
   start. The hover's departing table for an input type's record binding is kept, not dropped.
+  * **A binding that names several tables is a row of none of them** `done`. The result rule took a
+    bound type's table from every candidate of its binding, so a type bound to a bare name two
+    schemas declare held a ROW of both; it is still a ROW, of no table, the ambiguity being the
+    binding's own defect.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
