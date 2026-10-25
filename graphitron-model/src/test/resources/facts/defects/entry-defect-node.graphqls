@@ -1,0 +1,63 @@
+# What a @node can be refused for. Without the Node interface it is refused at the @node, and its
+# id, being no node's identity, is read as a column film does not have. A pinned key naming a
+# column the table lacks is one defect per @node naming the first failing spelling as written,
+# and a key whose columns resolve, folded by generated name, draws nothing. Over a view with no
+# key to offer there is no id to encode; over a table with a primary key, that key answers.
+
+interface Node { id: ID! }
+
+type FilmWithoutInterface @table(name: "film")
+  @node {
+  id: ID!
+  title: String
+}
+
+type FilmPinned implements Node @table(name: "film") @node(keyColumns: ["film_id", "no_such_col"]) {
+  id: ID!
+  title: String
+}
+
+type FilmPinnedTwice implements Node @table(name: "film") @node(keyColumns: ["zz_missing", "film_id", "aa_missing"]) {
+  id: ID!
+  title: String
+}
+
+type FilmFolded implements Node @table(name: "film") @node(keyColumns: ["FILM_ID"]) {
+  id: ID!
+  title: String
+}
+
+type FilmList implements Node @table(name: "film_list") @node {
+  id: ID!
+  title: String
+}
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  title: String
+}
+
+extend type Query {
+  withoutInterface: FilmWithoutInterface
+  pinned: FilmPinned
+  pinnedTwice: FilmPinnedTwice
+  folded: FilmFolded
+  filmList: [FilmList]
+  film: Film
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: "type_name = 'FilmWithoutInterface'", rows: """
+  code,                        field_name, source_line
+  NODE_WITHOUT_NODE_INTERFACE, ,           81
+  COLUMN_UNRESOLVED,           id,         82
+  """)
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('NODE_WITHOUT_NODE_INTERFACE', 'NODE_KEY_COLUMN_UNRESOLVED', 'NODE_WITHOUT_KEY')
+  """, rows: """
+  code,                        type_name,            detail
+  NODE_WITHOUT_NODE_INTERFACE, FilmWithoutInterface,
+  NODE_KEY_COLUMN_UNRESOLVED,  FilmPinned,           no_such_col
+  NODE_KEY_COLUMN_UNRESOLVED,  FilmPinnedTwice,      zz_missing
+  NODE_WITHOUT_KEY,            FilmList,             film_list
+  """)

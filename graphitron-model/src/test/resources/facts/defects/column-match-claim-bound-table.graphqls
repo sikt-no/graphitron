@@ -1,0 +1,94 @@
+# Which column a field's own name claims on the table its type is bound to, no directive involved.
+# The name is the @field binding where one is written, matched across case, and only a scalar or
+# enum leaf carries a column. A field matching nothing claims nothing and leaves the binding
+# standing, a bare @table binds the table its type is named for, a qualified one splits on its
+# dot, and a name two schemas declare binds both candidates and claims nothing. A root's binding
+# is masked. An authored @service wins its coordinate in the reduction while the column reading
+# survives beside it, and a node's id over a table with an id column reads that column.
+
+interface Node { id: ID! }
+
+enum Rating { G PG }
+
+type Film @table(name: "film") {
+  title: String
+  year: Int @field(name: "release_year")
+  certificate: String @field(name: "rating")
+  heading: String @field(name: "TITLE")
+  Rating: String
+  rating: Rating
+  language_id: Language
+}
+
+type Unbound @table(name: "film") {
+  year: Int
+  certificate: String
+}
+
+type Language @table {
+  unmatched: String
+}
+
+type Served @table(name: "film") {
+  title: String @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+  rating: String
+}
+
+type Dup @table(name: "note") {
+  body: String
+}
+
+type Qualified @table(name: "multischema_a.note") {
+  body: String
+}
+
+type Holder implements Node @table(name: "array_holder") @node {
+  id: ID!
+}
+
+extend type Query @table(name: "film") {
+  films: [Film!]!
+  unbound: [Unbound!]!
+  served: [Served!]!
+  dups: [Dup!]!
+  qualified: [Qualified!]!
+  holders: [Holder!]!
+}
+
+extend schema @expectEquals(relation: "intent_column_match_claim", where: "type_name <> 'FactAnchor'", rows: """
+  type_name, field_name,  matched_name, matched_by, table_source_name,                              table_schema,  table_name,   column_name
+  Film,      title,       title,        JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         title
+  Film,      year,        release_year, JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         release_year
+  Film,      certificate, rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
+  Film,      heading,     TITLE,        JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         title
+  Film,      Rating,      Rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
+  Film,      rating,      rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
+  Served,    title,       title,        JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         title
+  Served,    rating,      rating,       JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        film,         rating
+  Qualified, body,        body,         JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.multischema_a, multischema_a, note,         body
+  Holder,    id,          id,           JOOQ_NAME,  no.sikt.graphitron.rewrite.test.jooq.public_,   public,        array_holder, id
+  """)
+
+# The row carries the field's own declaration position, not the binding's.
+extend schema @assertContains(relation: "intent_column_match_claim", rows: """
+  type_name, field_name, source_line, source_column
+  Film,      title,      85,          3
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", where: "type_name <> 'FactAnchor'", rows: """
+  type_name, table_schema,  table_name,   candidates
+  Film,      public,        film,         1
+  Unbound,   public,        film,         1
+  Language,  public,        language,     1
+  Served,    public,        film,         1
+  Dup,       multischema_a, note,         2
+  Dup,       multischema_b, note,         2
+  Qualified, multischema_a, note,         1
+  Holder,    public,        array_holder, 1
+  """)
+
+extend schema @expectEquals(relation: "intent_resolved_field_claim", where: "type_name = 'Served'", rows: """
+  type_name, field_name, classifier,   tier
+  Served,    title,      SERVICE,      AUTHORED
+  Served,    rating,     TABLE_COLUMN, INFERRED
+  """)

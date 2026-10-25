@@ -1,0 +1,22 @@
+# A key name two schemas both declare. note is bound by a bare name both multischema schemas declare,
+# so its path departs from either, and note_event_fk reaches each schema's event: two tables, so the
+# arities move together. A schema qualifier on the key scopes it to that schema, and a qualified
+# spelling is a SQL constraint name. A spelling no site writes is not in the spelling population.
+
+type Note @table(name: "note") {
+  anyEvent: Event @reference(path: [{key: "note_event_fk"}])
+  thisSchemasEvent: Event @reference(path: [{key: "multischema_a.note_event_fk"}])
+}
+
+type Event @table(name: "multischema_a.event") { eventId: Int @field(name: "event_id") }
+
+extend type Query { notes: [Note!]! }
+
+extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
+  type_name, field_name,       position, via, key_matched_by, from_schema,   to_schema,     to_table, constraint_name, targets, candidates
+  Note,      anyEvent,         0,        KEY, SQL_NAME,       multischema_a, multischema_a, event,    note_event_fk,   2,       2
+  Note,      anyEvent,         0,        KEY, SQL_NAME,       multischema_b, multischema_b, event,    note_event_fk,   2,       2
+  Note,      thisSchemasEvent, 0,        KEY, SQL_NAME,       multischema_a, multischema_a, event,    note_event_fk,   1,       1
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_spelled_table", where: "spelling = 'event'")

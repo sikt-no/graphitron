@@ -1,0 +1,37 @@
+# The table an argument binds against, and which rule answered. The field's named type's own table
+# comes first, through a connection from its element type, and every argument of a field is its own
+# row. Where the named type binds nothing the @mutation table answers, and where both answer the
+# named type wins. A named type bound by a bare name two schemas declare is no scope rather than a
+# picked one, and stops the first rule without stopping the second. A field returning a type nothing
+# binds has no scope.
+
+type Film @table(name: "film") { title: String }
+
+# Bound to a bare name two schemas declare, so it binds nothing.
+type Venue @table(name: "event") { name: String }
+
+type Report { text: String }
+
+extend type Query {
+  films(inActor: ID, title: String): [Film!]!
+  pagedFilms(inActor: ID): [Film!]! @asConnection
+  venues(inActor: ID): [Venue!]!
+  report(since: String): Report
+}
+
+type Mutation {
+  deleteFilm(id: ID): Boolean @mutation(typeName: DELETE, table: "film")
+  createFilm(title: String): Film @mutation(typeName: INSERT, table: "actor")
+  createVenue(name: String): Venue @mutation(typeName: INSERT, table: "film")
+}
+
+extend schema @expectEquals(relation: "graphitron_argument_scope_table",
+    where: "argument_name NOT IN ('first', 'after', 'last', 'before')", rows: """
+  type_name, field_name,  argument_name, basis,            table_name
+  Query,     films,       inActor,       NAMED_TYPE_TABLE, film
+  Query,     films,       title,         NAMED_TYPE_TABLE, film
+  Query,     pagedFilms,  inActor,       NAMED_TYPE_TABLE, film
+  Mutation,  deleteFilm,  id,            MUTATION_TABLE,   film
+  Mutation,  createFilm,  title,         NAMED_TYPE_TABLE, film
+  Mutation,  createVenue, name,          MUTATION_TABLE,   film
+  """)

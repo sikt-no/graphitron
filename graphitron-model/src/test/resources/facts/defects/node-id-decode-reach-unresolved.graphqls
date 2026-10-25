@@ -1,0 +1,59 @@
+# Decodes whose reach resolves short of the node type's table, each with its navigation beside the
+# hops it did get, since an empty hop set means a stopped chain here and not identity. Two keys from
+# film to language are two predicates, so discovery answers nothing; a key film_actor declares toward
+# film is not one film departs, so it is not discovered either. An authored chain carries the hops it
+# reached and no more, an input field's own path walked from its use site's table. A node type whose
+# table name two schemas hold has no arrival at all.
+
+interface Node { id: ID! }
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Language implements Node @table(name: "language") @node {
+  id: ID!
+}
+
+type FilmActor implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+type Category implements Node @table(name: "category") @node {
+  id: ID!
+}
+
+type Event implements Node @table(name: "event") @node {
+  id: ID!
+}
+
+input FilmInput {
+  inCategory: ID @nodeId(typeName: "Category") @reference(path: [{key: "film_category_film_id_fkey"}])
+}
+
+extend type Query {
+  films(
+    languageId: ID @nodeId(typeName: "Language"),
+    castEntryId: ID @nodeId(typeName: "FilmActor"),
+    inCategory: ID @nodeId(typeName: "Category") @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}]),
+    atEvent: ID @nodeId(typeName: "Event")
+  ): [Film]
+}
+
+type Mutation {
+  updateFilm(in: FilmInput): Film @mutation(typeName: UPDATE)
+}
+
+extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", rows: """
+  site,        use_site,                          node_type_name, navigation,     from_table, to_table
+  ARGUMENT,    Query.films(castEntryId),          FilmActor,      DISCOVERED_KEY, film,       film_actor
+  ARGUMENT,    Query.films(inCategory),           Category,       AUTHORED_PATH,  film,       category
+  ARGUMENT,    Query.films(languageId),           Language,       DISCOVERED_KEY, film,       language
+  INPUT_FIELD, Mutation.updateFilm(in)/inCategory, Category,      AUTHORED_PATH,  film,       category
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_hop", rows: """
+  use_site,                           position, via, from_table, to_table,      constraint_name,            fk_on_from
+  Query.films(inCategory),            0,        KEY, film,       film_category, film_category_film_id_fkey, FALSE
+  Mutation.updateFilm(in)/inCategory, 0,        KEY, film,       film_category, film_category_film_id_fkey, FALSE
+  """)

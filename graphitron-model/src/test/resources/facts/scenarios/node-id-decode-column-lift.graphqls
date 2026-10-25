@@ -1,0 +1,77 @@
+# Where each value a @nodeId decode yields lands: one row per position of the node type's key, with
+# the column on the slot's own table it lifts back to, or none. Own-row identity lands each key column
+# on itself, a single hop on the key's own column, and a chain whose next hop departs columns the last
+# arrived at lifts back through every hop. A composite key lands every position. The lift drops on a
+# junction chain, whose second hop departs a column the first never arrived at, and on a key
+# referencing an alternate key, which translates a value before it can filter. A reverse hop lands the
+# key columns the departure shares and no others, position by position.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+}
+
+type Actor implements Node @table(name: "actor") @node {
+  id: ID!
+}
+
+type Category implements Node @table(name: "category") @node {
+  id: ID!
+}
+
+type FilmActor implements Node @table(name: "film_actor") {
+  id: ID!
+}
+
+type LevelA implements Node @table(name: "nodeidfixture.level_a") @node {
+  id: ID!
+}
+
+type LevelC @table(name: "nodeidfixture.level_c") {
+  name: String
+}
+
+type Project implements Node @table(name: "project") @node {
+  id: ID!
+}
+
+type ProjectNote @table(name: "project_note") {
+  body: String
+}
+
+type XlatParent implements Node @table(name: "xlat_parent") @node {
+  id: ID!
+}
+
+type XlatChild implements Node @table(name: "xlat_child") @node {
+  id: ID!
+}
+
+extend type Query {
+  films(
+    ids: [ID] @nodeId(typeName: "Film"),
+    inCategory: ID @nodeId(typeName: "Category") @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_category_category_id_fkey"}]),
+    castEntry: ID @nodeId(typeName: "FilmActor") @reference(path: [{key: "film_actor_film_id_fkey"}])
+  ): [Film]
+  filmActors(actorId: ID @nodeId(typeName: "Actor")): [FilmActor]
+  levelCs(ofA: ID @nodeId(typeName: "LevelA") @reference(path: [{key: "level_c_level_b_fk"}, {key: "level_b_level_a_fk"}])): [LevelC]
+  projectNotes(ofProject: ID @nodeId(typeName: "Project")): [ProjectNote]
+  xlatChildren(ofParent: ID @nodeId(typeName: "XlatParent") @reference(path: [{key: "xlat_child_parent_alt_key_fkey"}])): [XlatChild]
+  xlatParents(childRow: ID @nodeId(typeName: "XlatChild") @reference(path: [{key: "xlat_child_parent_alt_key_fkey"}])): [XlatParent]
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
+  use_site,                         position, key_column_name, local_column_name
+  Query.filmActors(actorId),        0,        actor_id,        actor_id
+  Query.films(castEntry),           0,        actor_id,
+  Query.films(castEntry),           1,        film_id,         film_id
+  Query.films(ids),                 0,        film_id,         film_id
+  Query.films(inCategory),          0,        category_id,
+  Query.levelCs(ofA),               0,        k1,              k1
+  Query.levelCs(ofA),               1,        k2,              k2
+  Query.projectNotes(ofProject),    0,        org_id,          org_id
+  Query.projectNotes(ofProject),    1,        project_id,      project_id
+  Query.xlatChildren(ofParent),     0,        pk_id,
+  Query.xlatParents(childRow),      0,        child_id,
+  """)

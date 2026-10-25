@@ -1,0 +1,38 @@
+# The table an input field is classified against, which is its consuming field's and reaches it
+# through the argument. Nesting carries it down unchanged, a @table on the nested input object
+# ignored, and a mutation's payload is handed its @mutation table. One input type under fields over
+# two tables is two rows, and under two fields over one table is one. The argument itself is no
+# input field, an argument on a field whose type binds nothing hands nothing down, and an input type
+# no argument passes is classified against nothing.
+
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+type Report { text: String }
+
+input FilmFilter { title: String nested: Deep }
+input Deep @table(name: "actor") { title: String }
+input SharedFilter { lastUpdate: String @field(name: "last_update") }
+input ReportFilter { title: String }
+input Unused { title: String }
+input FilmInput { title: String }
+
+extend type Query {
+  films(filter: FilmFilter, shared: SharedFilter): [Film!]!
+  otherFilms(filter: FilmFilter): [Film!]!
+  actors(shared: SharedFilter): [Actor!]!
+  report(filter: ReportFilter): Report
+}
+
+type Mutation {
+  updateFilm(input: FilmInput): Boolean @mutation(typeName: UPDATE, table: "film")
+}
+
+extend schema @expectEquals(relation: "graphitron_input_field_resolving_table", rows: """
+  type_name,    field_name, table_name
+  FilmFilter,   title,      film
+  FilmFilter,   nested,     film
+  Deep,         title,      film
+  SharedFilter, lastUpdate, film
+  SharedFilter, lastUpdate, actor
+  FilmInput,    title,      film
+  """)

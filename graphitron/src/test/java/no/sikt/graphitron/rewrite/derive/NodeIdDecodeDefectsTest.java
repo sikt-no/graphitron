@@ -27,10 +27,9 @@ import no.sikt.graphitron.model.derive.NodeIdPolymorphicDecodeDefects;
  * relation in the shape the rules read, and that the report a consumer meets is minted from what it
  * finds.
  *
- * <p>What the view returns given rows is not asked here. That is the relation's own algebra, its three
- * verdicts and the three populations it excludes, and it lives in the module whose DDL declares it,
- * in {@code no.sikt.graphitron.model.intent.NodeIdDecodeDefectTest}, against a store seeded row by
- * row. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the prose it
+ * <p>What the view decides is not asked here. That is the relation's own algebra, its three verdicts
+ * and the three populations it excludes, and it lives in the module whose DDL declares it, in the
+ * {@code node-id-decode-defect} document under graphitron-model's {@code src/test/resources/facts}. What stands here is the decode: which {@link Rejection} arm each verdict becomes, the prose it
  * carries, the location it points at, and the population this consumer asks about.
  *
  * <p>Every fixture below spells a schema that used to compile. An author annotated an argument

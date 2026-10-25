@@ -1,0 +1,92 @@
+# Where a @nodeId decode lands its key, judged: a written path that stops short of the node type's
+# table, and a landed key column whose Java type disagrees with the column it lands on. One fault
+# draws one row, a chain that stalled or a key only partly landed draws none, and a branch a
+# per-participant route applies at is not judged while its sibling still is.
+#
+# converter_org.org_code carries a converter and binds as String; diverged_ref_child,
+# diverged_ref_sibling and diverged_term_ref spell their copy as a plain bigint, Long, and
+# converter_campus carries the converter too.
+
+type Category @table(name: "category") @node { name: String }
+type Film @table(name: "film") { title: String }
+type ConverterOrg @table(name: "converter_org") @node { orgName: String @field(name: "org_name") }
+# The same table keyed on two columns, one of which a foreign key from diverged_ref_child covers.
+type ConverterOrgPair @table(name: "converter_org") @node(keyColumns: ["org_code", "org_name"]) {
+  orgName: String @field(name: "org_name")
+}
+type ConverterCampusTerm @table(name: "converter_campus_term") @node { termName: String @field(name: "term_name") }
+type ConverterCampus @table(name: "converter_campus") { campusName: String @field(name: "campus_name") }
+type DivergedRefChild @table(name: "diverged_ref_child") { childName: String @field(name: "child_name") }
+type DivergedRefSibling @table(name: "diverged_ref_sibling") { siblingName: String @field(name: "sibling_name") }
+type DivergedTermRef @table(name: "diverged_term_ref") { termNo: Int @field(name: "term_no") }
+type DivergedChildLabel @table(name: "diverged_child_label") { label: String }
+# Two participants over one table.
+type DivergedRefChildRead @table(name: "diverged_ref_child") { childName: String @field(name: "child_name") }
+type DivergedRefChildWrite @table(name: "diverged_ref_child") { childName: String @field(name: "child_name") }
+
+union OrgHolder = DivergedRefChild | DivergedRefSibling
+union SameTableHolder = DivergedRefChildRead | DivergedRefChildWrite
+union Sited = ConverterCampus | DivergedRefSibling
+
+# One input type under two consumers, only one of which offers the participant it names.
+input HolderFilter {
+  ofOrg: ID @referenceFor(type: "DivergedRefChild", path: [{key: "diverged_ref_child_org_code_fkey"}])
+}
+
+extend type Query {
+  # One hop reaches the junction and the node type is one hop further on.
+  shortOfCategory(inCategory: ID @nodeId(typeName: "Category")
+      @reference(path: [{key: "film_category_film_id_fkey"}])): [Film!]!
+  # The whole path: the key lands nowhere, a correlated EXISTS on category, no fault.
+  inCategory(inCategory: ID @nodeId(typeName: "Category")
+      @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_category_category_id_fkey"}])): [Film!]!
+  # The second step connects nothing to the junction: the walk refuses that, not this relation.
+  stalled(inCategory: ID @nodeId(typeName: "Category")
+      @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_language_id_fkey"}])): [Film!]!
+  # A discovered key whose two ends disagree: the type verdict and only that.
+  divergedChildren(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [DivergedRefChild!]!
+  # Both ends carry the converter.
+  campuses(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [ConverterCampus!]!
+  # One position of two lands, so the decode is an EXISTS and the diverging one is in no comparison.
+  partial(ofPair: ID @nodeId(typeName: "ConverterOrgPair")): [DivergedRefChild!]!
+  # Every position lands and the first diverges.
+  termRefs(ofTerm: ID @nodeId(typeName: "ConverterCampusTerm")): [DivergedTermRef!]!
+  # The path stops on diverged_ref_child, whose org_code also diverges: one fault, one row.
+  labels(ofOrg: ID @nodeId(typeName: "ConverterOrg")
+      @reference(path: [{key: "diverged_child_label_child_id_fkey"}])): [DivergedChildLabel!]!
+  # Own-row identity has nothing to land.
+  orgs(ids: [ID!] @nodeId(typeName: "ConverterOrg")): [ConverterOrg!]!
+  # A participant route at one branch: that branch is not judged, its sibling is.
+  holders(ofOrg: ID @nodeId(typeName: "ConverterOrg")
+      @referenceFor(type: "DivergedRefChild", path: [{key: "diverged_ref_child_org_code_fkey"}])): [OrgHolder!]!
+  # No route written: both branches are judged.
+  unrouted(ofOrg: ID @nodeId(typeName: "ConverterOrg")): [OrgHolder!]!
+  # Two participants over one table are one branch, so naming one declines both.
+  sameTable(ofOrg: ID @nodeId(typeName: "ConverterOrg")
+      @referenceFor(type: "DivergedRefChildRead", path: [{key: "diverged_ref_child_org_code_fkey"}])): [SameTableHolder!]!
+  # An application naming a participant no consumer offers.
+  misspelled(ofOrg: ID
+      @referenceFor(type: "DivergedRefChidl", path: [{key: "diverged_ref_child_org_code_fkey"}])): [OrgHolder!]!
+  filteredHolders(filter: HolderFilter): [OrgHolder!]!
+  sited(filter: HolderFilter): [Sited!]!
+}
+
+# The applications the exclusion reads, per consumer: the misspelled one and the input field under
+# sited, whose consumer offers no DivergedRefChild, have no row.
+extend schema @expectEquals(relation: "intent_reference_for_application", rows: """
+  site,        type_name,    field_name, argument_name, ordinal, consuming_type_name, consuming_field_name, participant_type_name, table_name
+  ARGUMENT,    Query,        holders,    ofOrg,         0,       Query,               holders,              DivergedRefChild,      diverged_ref_child
+  ARGUMENT,    Query,        sameTable,  ofOrg,         0,       Query,               sameTable,            DivergedRefChildRead,  diverged_ref_child
+  INPUT_FIELD, HolderFilter, ofOrg,      ,              0,       Query,               filteredHolders,      DivergedRefChild,      diverged_ref_child
+  """)
+
+extend schema @expectEquals(relation: "intent_node_id_decode_landing_defect", rows: """
+  use_site,                         origin_table,         node_type_name,      verdict,                   terminal_table,     target_table,          position, key_column_name, key_binding_type, local_column_name, local_binding_type
+  Query.divergedChildren(ofOrg),    diverged_ref_child,   ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
+  Query.labels(ofOrg),              diverged_child_label, ConverterOrg,        PATH_STOPS_SHORT,          diverged_ref_child, converter_org,         ,         ,                ,                 ,
+  Query.shortOfCategory(inCategory), film,                Category,            PATH_STOPS_SHORT,          film_category,      category,              ,         ,                ,                 ,
+  Query.termRefs(ofTerm),           diverged_term_ref,    ConverterCampusTerm, LANDING_TYPE_DISAGREEMENT, ,                   converter_campus_term, 0,        org_code,        java.lang.String, org_code,          java.lang.Long
+  Query.holders(ofOrg),             diverged_ref_sibling, ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
+  Query.unrouted(ofOrg),            diverged_ref_child,   ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
+  Query.unrouted(ofOrg),            diverged_ref_sibling, ConverterOrg,        LANDING_TYPE_DISAGREEMENT, ,                   converter_org,         0,        org_code,        java.lang.String, org_code,          java.lang.Long
+  """)

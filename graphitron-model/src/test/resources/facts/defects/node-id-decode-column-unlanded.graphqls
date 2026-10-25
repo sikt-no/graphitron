@@ -1,0 +1,46 @@
+# Decodes whose key lands short. A key pinned in SDL that a compound departure reaches only part of
+# is recorded position by position rather than collapsed. An input field's own path that stops at a
+# junction lands nothing local and still states the key column. A node type no tier resolves key
+# columns for has no rows at all.
+
+interface Node { id: ID! }
+
+type Film @table(name: "film") {
+  title: String
+}
+
+type Category implements Node @table(name: "category") @node {
+  id: ID!
+}
+
+type Project implements Node @table(name: "project") @node(keyColumns: ["org_id", "name"]) {
+  id: ID!
+}
+
+type ProjectNote @table(name: "project_note") {
+  body: String
+}
+
+type FilmList implements Node @table(name: "film_list") @node {
+  id: ID!
+}
+
+input FilmInput {
+  inCategory: ID @nodeId(typeName: "Category") @reference(path: [{key: "film_category_film_id_fkey"}])
+}
+
+extend type Query {
+  projectNotes(ofProject: ID @nodeId(typeName: "Project") @reference(path: [{key: "project_note_project_fkey"}])): [ProjectNote]
+  films(onList: ID @nodeId(typeName: "FilmList")): [Film]
+}
+
+type Mutation {
+  updateFilm(in: FilmInput): Film @mutation(typeName: UPDATE)
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
+  use_site,                           position, key_column_name, local_column_name
+  Mutation.updateFilm(in)/inCategory, 0,        category_id,
+  Query.projectNotes(ofProject),      0,        org_id,          org_id
+  Query.projectNotes(ofProject),      1,        name,
+  """)

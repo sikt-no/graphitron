@@ -1,0 +1,45 @@
+# Where a @reference path breaks, reported once at the element the author would edit. A table two
+# foreign keys reach is an ambiguous route, and naming the key settles it. A self-referencing key
+# is one route, read the way the field's cardinality says, whether the key or the table is named.
+# An element naming nothing the catalog has is unresolved and only it is reported; one whose
+# routes all depart elsewhere is unreachable; a chain arriving somewhere other than its target
+# breaks at its last link; and a chain on a field with no table target is reported once.
+
+type Film @table(name: "film") {
+  language: Language @reference(path: [{table: "language"}])
+  languageByKey: Language @reference(path: [{key: "film_language_id_fkey"}])
+  actors: [Actor!]! @reference(path: [{key: "film_actor_actor_id_fkey"}])
+  wrong: [Language!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
+  loose: [Row!]! @reference(path: [{table: "film_actor"}, {table: "actor"}])
+}
+
+type Actor @table(name: "actor") {
+  first_name: String
+  broken: [Language!]! @reference(path: [{key: "film_actor_actor_id_fkey"},
+                                        {key: "no_such_constraint"}])
+}
+
+type Category @table(name: "category") {
+  parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+  children: [Category!]! @reference(path: [{key: "category_parent_category_id_fkey"}])
+  parentByTable: Category @reference(path: [{table: "category"}])
+}
+
+type Language @table(name: "language") { name: String }
+
+type Row { title: String }
+
+extend type Query {
+  films: [Film!]!
+  actors: [Actor!]!
+  categories: [Category!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                    coordinate
+  ROUTE_AMBIGUOUS,         Film.language
+  NO_ROUTE_FROM_DEPARTURE, Film.actors
+  NO_ROUTE_TO_TARGET,      Film.wrong
+  CHAIN_WITHOUT_TARGET,    Film.loose
+  ELEMENT_UNRESOLVED,      Actor.broken
+  """)

@@ -1,0 +1,46 @@
+# The write rules, read with no catalog behind the capture. More than one @routine on a write is
+# one defect, and a paginated return on a write is its own beside it rather than displacing it;
+# a write with one @routine and a plain return draws neither. The same arrangement on a query root
+# heads no write, so its only defect is the @reference written before its @routine. Every code a
+# rule emits is a declared defect type. With no catalog read, no @table spelling is wrong yet.
+
+extend schema @withConfiguration(jooqPackage: null)
+
+type Film { id: ID }
+
+input FilmOrder { title: String }
+
+type Unread @table(name: "no_such_table") { title: String }
+
+extend type Query {
+  film(id: ID, order: FilmOrder @orderBy): Film
+    @reference(path: [{table: "film"}])
+    @routine(name: "film_fn")
+  unread: Unread
+}
+
+type Mutation {
+  insertFilm(id: ID, order: FilmOrder @orderBy): Film
+    @routine(name: "first_fn")
+    @routine(name: "second_fn")
+  insertFilms: [Film] @asConnection @routine(name: "first_fn") @routine(name: "second_fn")
+  insertFilmsOnce: [Film] @routine(name: "first_fn")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('ROOT_REFERENCE_WITHOUT_ROUTINE', 'MULTIPLE_ROUTINE_NODES', 'CONNECTION_RETURN',
+           'READ_SURFACE_ON_WRITE')
+  """, rows: """
+  code,                           coordinate,              source_line, detail
+  ROOT_REFERENCE_WITHOUT_ROUTINE, Query.film,              88,
+  MULTIPLE_ROUTINE_NODES,         Mutation.insertFilm,     96,
+  READ_SURFACE_ON_WRITE,          Mutation.insertFilm(order:), 94,     orderBy
+  CONNECTION_RETURN,              Mutation.insertFilms,    97,
+  MULTIPLE_ROUTINE_NODES,         Mutation.insertFilms,    97,
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_rule", where: """
+  code NOT IN (SELECT code FROM graphitron_defect_type)
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_entry_defect_site", where: "code = 'TABLE_UNRESOLVED'")

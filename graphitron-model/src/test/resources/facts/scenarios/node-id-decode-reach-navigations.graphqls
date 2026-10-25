@@ -1,0 +1,65 @@
+# How a @nodeId decode reaches the table its node type's key lives on, and the hops that take it
+# there. A slot on the node's own table is own-row identity and walks nothing. A written @reference
+# is the authored path even where it departs and arrives at one table, a self-key, and contributes
+# its hops in written order. With nothing written and two tables, the one key the departing table
+# declares is discovered, from the use site's table for an input field. An output field encodes, so
+# it is no decode at all.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID!
+  title: String
+}
+
+type Actor implements Node @table(name: "actor") @node {
+  id: ID!
+}
+
+type Category implements Node @table(name: "category") @node {
+  id: ID!
+}
+
+type FilmActor @table(name: "film_actor") {
+  lastUpdate: String @field(name: "last_update")
+}
+
+type Inventory @table(name: "inventory") {
+  filmNodeId: ID @nodeId(typeName: "Film")
+}
+
+input CastInput {
+  actorId: ID @nodeId(typeName: "Actor")
+}
+
+extend type Query {
+  films(
+    ids: [ID] @nodeId(typeName: "Film"),
+    inCategory: ID @nodeId(typeName: "Category") @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_category_category_id_fkey"}])
+  ): [Film]
+  categories(childOf: ID @nodeId(typeName: "Category") @reference(path: [{key: "category_parent_category_id_fkey"}])): [Category]
+  filmActors(actorId: ID @nodeId(typeName: "Actor")): [FilmActor]
+  inventories: [Inventory]
+}
+
+type Mutation {
+  addCastEntry(in: CastInput): FilmActor @mutation(typeName: INSERT)
+}
+
+extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", rows: """
+  site,        use_site,                          node_type_name, navigation,     from_table, to_table
+  ARGUMENT,    Query.categories(childOf),         Category,       AUTHORED_PATH,  category,   category
+  ARGUMENT,    Query.filmActors(actorId),         Actor,          DISCOVERED_KEY, film_actor, actor
+  ARGUMENT,    Query.films(ids),                  Film,           SAME_TABLE,     film,       film
+  ARGUMENT,    Query.films(inCategory),           Category,       AUTHORED_PATH,  film,       category
+  INPUT_FIELD, Mutation.addCastEntry(in)/actorId, Actor,          DISCOVERED_KEY, film_actor, actor
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_hop", rows: """
+  use_site,                          position, via,        from_table,    to_table,      constraint_name,                  fk_on_from
+  Query.categories(childOf),         0,        KEY,        category,      category,      category_parent_category_id_fkey, TRUE
+  Query.filmActors(actorId),         0,        DISCOVERED, film_actor,    actor,         film_actor_actor_id_fkey,         TRUE
+  Query.films(inCategory),           0,        KEY,        film,          film_category, film_category_film_id_fkey,       FALSE
+  Query.films(inCategory),           1,        KEY,        film_category, category,      film_category_category_id_fkey,   TRUE
+  Mutation.addCastEntry(in)/actorId, 0,        DISCOVERED, film_actor,    actor,         film_actor_actor_id_fkey,         TRUE
+  """)

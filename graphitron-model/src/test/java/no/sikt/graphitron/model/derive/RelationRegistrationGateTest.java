@@ -483,7 +483,7 @@ class RelationRegistrationGateTest {
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);
         // The defect collapse. UNSHADOWED because the model it would be compared against
         // states no defect population at all: the walk threw, and a thrown error is not a
-        // row anything can be held to. What pins it is EntryDefectTest.
+        // row anything can be held to. What pins it is the entry-defect fact documents.
         registrations.put("graphitron_entry_defect", Arm.UNSHADOWED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);

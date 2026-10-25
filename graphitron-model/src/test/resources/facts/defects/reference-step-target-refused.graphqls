@@ -1,0 +1,47 @@
+# Where a field's @reference chain stops or splits. film declares two keys to language, so a table
+# element naming language is one destination by two routes, and an arrival so reached is walked on
+# once. A first element naming no key ends the chain though both elements are stored, a type with
+# no @table gives its path nowhere to start, and a condition whose arrival is the wildcard routes
+# no hop even where the field's own type binds a table.
+
+type Film @table(name: "film") {
+  title: String
+  spokenIn: Language @reference(path: [{table: "language"}])
+  sameLanguage: [Film!]! @reference(path: [{table: "language"}, {table: "film"}])
+  unresolved: [Actor!]! @reference(path: [{key: "no_such_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+type Language @table(name: "language") { name: String }
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+
+type Unbound {
+  actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
+}
+
+type Customer @table(name: "customer") {
+  customerId: Int @field(name: "customer_id")
+  anyByCondition: Address @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+    method: "customerToAnyTable"}}])
+}
+
+type Address @table(name: "address") { addressId: Int @field(name: "address_id") }
+
+extend type Query { films: [Film!]! unbound: Unbound customers: [Customer!]! }
+
+extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
+  type_name, field_name,   position, via,   from_table, to_table, constraint_name,                fk_on_from, targets, candidates
+  Film,      spokenIn,     0,        TABLE, film,       language, film_language_id_fkey,          TRUE,       1,       2
+  Film,      spokenIn,     0,        TABLE, film,       language, film_original_language_id_fkey, TRUE,       1,       2
+  Film,      sameLanguage, 0,        TABLE, film,       language, film_language_id_fkey,          TRUE,       1,       2
+  Film,      sameLanguage, 0,        TABLE, film,       language, film_original_language_id_fkey, TRUE,       1,       2
+  Film,      sameLanguage, 1,        TABLE, language,   film,     film_language_id_fkey,          FALSE,      1,       2
+  Film,      sameLanguage, 1,        TABLE, language,   film,     film_original_language_id_fkey, FALSE,      1,       2
+  """)
+
+# Both elements of the unresolved path were authored; only their resolution declines.
+extend schema @assertContains(relation: "graphitron_field_reference_step_entry", rows: """
+  type_name, field_name, position
+  Film,      unresolved, 0
+  Film,      unresolved, 1
+  """)

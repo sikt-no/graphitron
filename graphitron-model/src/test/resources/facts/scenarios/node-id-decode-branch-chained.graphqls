@@ -1,0 +1,29 @@
+# One written two-hop path over a union of two tables is two walks. Each branch's first hop arrives
+# at an intermediate of its own, and the two intermediates depart their second hop from columns of one
+# name, so the second hops look interchangeable. Each branch lifts back through its own chain only, to
+# a column of the table it departed.
+
+interface Node { id: ID! }
+
+type Rolle implements Node @table(name: "rolle") @node {
+  id: ID!
+}
+
+type EmneRolle @table(name: "emnerolle") { emneCode: String @field(name: "emne_code") }
+type KlasseRolle @table(name: "klasserolle") { klasseCode: String @field(name: "klasse_code") }
+
+union Roller = EmneRolle | KlasseRolle
+
+input RolleFilter {
+  rolleId: ID @nodeId(typeName: "Rolle") @reference(path: [{key: "link_fkey"}, {key: "rolle_fkey"}])
+}
+
+extend type Query {
+  personroller(filter: RolleFilter): [Roller]
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
+  origin_table, position, key_column_name, local_column_name
+  emnerolle,    0,        rollekode,       emne_code
+  klasserolle,  0,        rollekode,       klasse_code
+  """)

@@ -1,0 +1,59 @@
+# A claiming directive whose arguments do not decode still claims, through its bare application,
+# and says so with decoded false: a @routine without its name and a @mutation without its verb.
+# The position masks hold for these claims as they do for decoded ones, and a repeated @routine is
+# again one claim at its first application. @lookupKey has no such fallback: written on a field
+# rather than an argument, it claims nothing. The coordinates are the ones authored-claim-decoded
+# decodes, so a graph's decode silences no claim of another's.
+
+type Film @table(name: "film") {
+  title: String
+  routine: [Film!]! @routine
+  mutation: Film @mutation
+}
+
+extend type Query {
+  routine: [Film!]! @routine
+  mutation: Film @mutation
+  repeated: [Film!]!
+    @routine
+    @routine
+  raw: Film @lookupKey
+}
+
+type Mutation {
+  routine: [Film!]! @routine
+  mutation: Film @mutation
+}
+
+type Subscription {
+  routine: [Film!]! @routine
+  mutation: Film @mutation
+}
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name, classifier, trigger,  decoded
+  Film,      routine,    ROUTINE,    routine,  FALSE
+  Query,     routine,    ROUTINE,    routine,  FALSE
+  Query,     repeated,   ROUTINE,    routine,  FALSE
+  Mutation,  mutation,   MUTATION,   mutation, FALSE
+  """)
+
+extend schema @assertContains(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name, source_line
+  Query,     repeated,   89
+  """)
+
+# Assembly refuses every bare @routine and @mutation, and the @lookupKey on a field.
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class,                           source_line
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  81
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  82
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  86
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  87
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  88
+  ASSEMBLY, DirectiveIllegalLocationError,         91
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  95
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  96
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  100
+  ASSEMBLY, DirectiveMissingNonNullArgumentError,  101
+  """)

@@ -1,0 +1,23 @@
+# A @table spelling the catalog cannot settle, reported at the @table with the spelling written: a
+# name no table carries is unresolved, and a name two schemas declare is ambiguous until it is
+# qualified.
+
+type Missing @table(name: "no_such_table") { title: String }
+
+type Event @table(name: "event") { id: ID }
+
+type QualifiedEvent @table(name: "multischema_a.event") { id: ID }
+
+extend type Query {
+  missing: Missing
+  event: Event
+  qualifiedEvent: QualifiedEvent
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code IN ('TABLE_UNRESOLVED', 'TABLE_AMBIGUOUS')
+  """, rows: """
+  code,             type_name, detail
+  TABLE_UNRESOLVED, Missing,   no_such_table
+  TABLE_AMBIGUOUS,  Event,     event
+  """)

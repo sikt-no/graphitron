@@ -25,9 +25,9 @@ import static org.assertj.core.api.Assertions.assertThat;
  * sigil asks, and its boundary is most of what it claims, so half the cases here are payload shapes
  * that contribute nothing.
  *
- * <p>Every case captures real SDL against the test catalog rather than seeding rows, for the reason
- * {@code ReferenceStepTargetTest} states: a seeded fixture is free to declare a shape capture never
- * writes, and the case then pins behaviour no build can produce. The catalog supplies the bound
+ * <p>Every case captures real SDL against the test catalog rather than seeding rows: a seeded
+ * fixture is free to declare a shape capture never writes, and the case then pins behaviour no build
+ * can produce. The catalog supplies the bound
  * element types, and a reading of the test classes the record-backed one.
  *
  * <p>Each case asserts the whole graph's rows rather than a projection of them, so a payload that

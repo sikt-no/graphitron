@@ -1,0 +1,25 @@
+# One input field's @reference path walked once per table it is classified against. CityFilter is
+# passed to a field over customer and to one over staff; each reaches address by its own key, and
+# from address the second element takes the one key to city whichever table the chain left from.
+# Those second hops agree on every column but the resolving table, which keeps the two chains apart
+# in the rows and in the counts: without it, each would count two candidates where it has one.
+
+type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
+type Staff @table(name: "staff") { staffId: Int @field(name: "staff_id") }
+
+input CityFilter {
+  inCity: String @field(name: "city") @reference(path: [{table: "address"}, {table: "city"}])
+}
+
+extend type Query {
+  customers(filter: CityFilter): [Customer!]!
+  staff(filter: CityFilter): [Staff!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_input_field_reference_step_target", rows: """
+  resolving_table, position, from_table, to_table, constraint_name,          targets, candidates
+  customer,        0,        customer,   address,  customer_address_id_fkey, 1,       1
+  customer,        1,        address,    city,     address_city_id_fkey,     1,       1
+  staff,           0,        staff,      address,  staff_address_id_fkey,    1,       1
+  staff,           1,        address,    city,     address_city_id_fkey,     1,       1
+  """)

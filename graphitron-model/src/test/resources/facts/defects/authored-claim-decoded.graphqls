@@ -1,0 +1,112 @@
+# Which classification an author claims at each coordinate, one row per claiming directive whose
+# arguments decoded. @service claims anywhere, @externalField and @nodeId nowhere on a root,
+# @routine anywhere but Mutation and Subscription, @lookupKey on Query alone and @mutation on
+# Mutation alone, and no type claim lands on a root. A repeated @routine is one claim at its first
+# application and several marked arguments one claim at the first argument. An argument naming an
+# input that carries @lookupKey, directly, through other inputs or around a cycle, claims with no
+# position of its own.
+
+type Film @table(name: "film") {
+  title: String
+  claimed: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+    @nodeId
+  routine: [Film!]! @routine(name: "film_fn")
+  mutation: Film @mutation(typeName: INSERT)
+  marked(id: ID @lookupKey): Film
+}
+
+type Failure @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
+  title: String
+}
+
+input LookupInput { key: Int @lookupKey }
+input Outer { nested: LookupInput }
+input CycleA { key: Int @lookupKey, partner: CycleB }
+input CycleB { back: CycleA }
+
+extend type Query @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
+  claimed: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+    @nodeId
+  routine: [Film!]! @routine(name: "film_fn")
+  mutation: Film @mutation(typeName: INSERT)
+  marked(id: ID @lookupKey): Film
+  repeated: [Film!]!
+    @routine(name: "first_fn")
+    @routine(name: "second_fn")
+  markedTwice(
+    first: ID @lookupKey
+    second: ID @lookupKey
+  ): Film
+  byInput(in: LookupInput): Film
+  untouched(in: ID): Film
+  byOuter(in: Outer): Film
+  byA(in: CycleA): Film
+  byB(in: CycleB): Film
+}
+
+type Mutation @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
+  claimed: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+    @nodeId
+  routine: [Film!]! @routine(name: "film_fn")
+  mutation: Film @mutation(typeName: INSERT)
+  marked(id: ID @lookupKey): Film
+}
+
+type Subscription @table(name: "film") @error(handlers: [{handler: DATABASE}]) {
+  claimed: String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleUppercase"})
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions"})
+    @nodeId
+  routine: [Film!]! @routine(name: "film_fn")
+  mutation: Film @mutation(typeName: INSERT)
+  marked(id: ID @lookupKey): Film
+}
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", rows: """
+  type_name,    field_name,  classifier,     trigger,       decoded
+  Film,         claimed,     SERVICE,        service,       TRUE
+  Film,         claimed,     EXTERNAL_FIELD, externalField, TRUE
+  Film,         claimed,     NODE_ID,        nodeId,        TRUE
+  Film,         routine,     ROUTINE,        routine,       TRUE
+  Query,        claimed,     SERVICE,        service,       TRUE
+  Query,        routine,     ROUTINE,        routine,       TRUE
+  Query,        marked,      LOOKUP_KEY,     lookupKey,     TRUE
+  Query,        repeated,    ROUTINE,        routine,       TRUE
+  Query,        markedTwice, LOOKUP_KEY,     lookupKey,     TRUE
+  Query,        byInput,     LOOKUP_KEY,     lookupKey,     TRUE
+  Query,        byOuter,     LOOKUP_KEY,     lookupKey,     TRUE
+  Query,        byA,         LOOKUP_KEY,     lookupKey,     TRUE
+  Query,        byB,         LOOKUP_KEY,     lookupKey,     TRUE
+  Mutation,     claimed,     SERVICE,        service,       TRUE
+  Mutation,     mutation,    MUTATION,       mutation,      TRUE
+  Subscription, claimed,     SERVICE,        service,       TRUE
+  """)
+
+# The collapses answer with a position: the first @routine's line and the first marked argument's,
+# and none at all where the marked application sits on a remote input field.
+extend schema @assertContains(relation: "intent_authored_field_claim", rows: """
+  type_name, field_name,  source_line
+  Query,     repeated,    109
+  Query,     markedTwice, 112
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_field_claim", where: "source_name IS NULL", rows: """
+  type_name, field_name
+  Query,     byInput
+  Query,     byOuter
+  Query,     byA
+  Query,     byB
+  """)
+
+extend schema @expectEquals(relation: "intent_authored_type_claim", where: "type_name <> 'FactAnchor'", rows: """
+  type_name, classifier, trigger, decoded
+  Film,      TABLE,      table,   TRUE
+  Failure,   TABLE,      table,   TRUE
+  Failure,   ERROR,      error,   TRUE
+  """)

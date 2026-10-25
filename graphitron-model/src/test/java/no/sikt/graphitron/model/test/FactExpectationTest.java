@@ -123,6 +123,13 @@ class FactExpectationTest {
         var ctx = TestRunContext.of();
         var jooq = CatalogInput.of(ctx);
         var claimed = FactDocuments.claimed();
+        // -Dfacts=<prefix>[,<prefix>...] reads only the documents named by one, for iterating on a
+        // document without capturing the rest. A build sets nothing and reads them all.
+        var only = System.getProperty("facts");
+        if (only != null) {
+            var prefixes = List.of(only.split(","));
+            claimed.keySet().removeIf(document -> prefixes.stream().noneMatch(document.id()::startsWith));
+        }
         claimed.forEach((document, claim) -> claims.put(document.id(), claim));
         var graphs = Graphs.of(List.copyOf(claimed.keySet()));
         // The classpath corpus beside the catalog, so a document can state what a reading finds in
@@ -269,7 +276,7 @@ class FactExpectationTest {
     @Test
     @DisplayName("the undecided folder does not grow")
     void theUndecidedFolderDoesNotGrow() {
-        assertThat(claims.values().stream().filter(claim -> claim == FactDocuments.Claim.UNDECIDED).count())
+        assertThat(FactDocuments.documents(FactDocuments.Claim.UNDECIDED).size())
             .as("undecided documents; lower UNDECIDED_CEILING when one leaves")
             .isEqualTo(UNDECIDED_CEILING);
     }

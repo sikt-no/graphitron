@@ -1,0 +1,78 @@
+# A @nodeId argument whose decoded value reaches a Java parameter by name, judged at that parameter:
+# refused on the key's arity, on the key column's type, or on the slot's shape, and otherwise
+# carried out. Each verdict sits beside the shapes that resolve, since the relation is the
+# population the decode does not claim and an absence there is a resolution.
+
+type Film @table(name: "film") @node { title: String }
+
+# A composite key, (actor_id, film_id).
+type FilmActor @table(name: "film_actor") @node { filmId: Int @field(name: "film_id") }
+
+# A pinned key column the table does not have, so the catalog cannot type it.
+type Pinned @table(name: "language") @node(keyColumns: ["not_a_column"]) { name: String }
+
+input PairingInput {
+  title: String
+  pairingId: ID @nodeId(typeName: "FilmActor")
+}
+
+extend type Query {
+  # A composite key at a parameter holding one String: refused on the count alone.
+  pairings(userId: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
+  # The sole key column is an Integer and the parameter a String: refused naming both.
+  greetings(userId: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
+  # The parameter takes an Integer, the key column's own type.
+  film(id: ID @nodeId(typeName: "Film")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+  # The node type's own record takes the whole tuple, at any arity.
+  filmActorRecord(in: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmActorRecord"})
+  # No parameter at all: a table predicate.
+  films(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
+  # A key column the catalog cannot type draws no type verdict.
+  pinned(userId: ID @nodeId(typeName: "Pinned")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
+  # A primitive parameter names no class: no type verdict at one key column ...
+  untyped(ids: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "untyped"})
+  # ... and still refused on the arity at two.
+  untypedPairing(ids: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "untyped"})
+  # A list lands on the element: a List of the node type's own record ...
+  filmActorsByIds(ids: [ID!] @nodeId(typeName: "FilmActor")): [FilmActor]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService", method: "filmActorsByIds"})
+  # ... or of the sole key column's type.
+  filmsByIds(ids: [ID!] @nodeId(typeName: "Film")): [Film]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  # An element the key column cannot take is refused on the element.
+  rateFilms(ratings: [ID!] @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRatingService", method: "rateFilms"})
+  # A composite key at a List of single values is refused on the arity, per element.
+  pairingsByIds(ids: [ID!] @nodeId(typeName: "FilmActor")): [Film]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  # A Set of the very record: the element is right and the container is not.
+  titleTitlecase(films: [ID!] @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleTitlecase"})
+  # One id at a List parameter.
+  filmActorByIds(ids: ID @nodeId(typeName: "FilmActor")): [FilmActor]
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmActorCarrierService", method: "filmActorsByIds"})
+  # An overloaded producer resolves several candidate slots and no verdict.
+  byIds(ids: ID @nodeId(typeName: "FilmActor")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "byIds"})
+  # An input field whose root argument feeds a parameter: the value lands inside the bean.
+  echo(by: PairingInput): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
+}
+
+extend schema @expectEquals(relation: "intent_node_id_decode_defect", rows: """
+  use_site,                     node_type_name, verdict,                      arity, key_column_name, column_java_type,  slot_java_type,   slot_shape, landing_java_type,                                   argument_list_depth
+  Query.greetings(userId),      Film,           KEY_COLUMN_TYPE_DISAGREEMENT, 1,     film_id,         java.lang.Integer, java.lang.String, SINGLE,     java.lang.String,                                    0
+  Query.pairings(userId),       FilmActor,      KEY_ARITY_EXCEEDS_SLOT,       2,     ,                ,                  java.lang.String, SINGLE,     java.lang.String,                                    0
+  Query.pairingsByIds(ids),     FilmActor,      KEY_ARITY_EXCEEDS_SLOT,       2,     ,                ,                  java.util.List,   LIST,       java.lang.Integer,                                   1
+  Query.rateFilms(ratings),     Film,           KEY_COLUMN_TYPE_DISAGREEMENT, 1,     film_id,         java.lang.Integer, java.util.List,   LIST,       no.sikt.graphitron.rewrite.test.services.FilmRating, 1
+  Query.titleTitlecase(films),  Film,           SLOT_SHAPE_MISMATCH,          1,     film_id,         java.lang.Integer, java.util.Set,    MISMATCH,   java.util.Set,                                       1
+  Query.filmActorByIds(ids),    FilmActor,      SLOT_SHAPE_MISMATCH,          2,     ,                ,                  java.util.List,   MISMATCH,   java.util.List,                                      0
+  Query.untypedPairing(ids),    FilmActor,      KEY_ARITY_EXCEEDS_SLOT,       2,     ,                ,                  ,                 ,           ,                                                    
+  """)

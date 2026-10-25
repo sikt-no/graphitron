@@ -39,8 +39,8 @@ import no.sikt.graphitron.model.derive.AuthoredClaim;
  * spec-by-example corpus. The walk is the other side of every assertion here, which is what keeps
  * this half in the module the walk lives in: it retires when the walk does.
  *
- * <p>What the relations return given rows is a question about the model's own SQL and is pinned
- * where that SQL is declared, in {@code no.sikt.graphitron.model.intent.ColumnMatchClaimTest}. The
+ * <p>What the relations return is a question about the model's own SQL and is pinned where that SQL
+ * is declared, in the {@code column-match-claim} documents under graphitron-model's {@code src/test/resources/facts}. The
  * three cases below are the ones that cannot move, each naming a {@code graphitron} type as the
  * expected value rather than as scenery: the corpus sweep compares against the walk's
  * {@code ColumnBackedField} carrying {@code CallSiteCompaction.Direct}, the path case compares a

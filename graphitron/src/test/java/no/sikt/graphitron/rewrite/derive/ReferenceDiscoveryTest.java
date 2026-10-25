@@ -20,7 +20,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 /**
  * The registered agreement anchor for {@code intent_field_reference_discovery}: the foreign key an
  * omitted {@code @reference} path finds between a field's two endpoints. The complement of what
- * {@code no.sikt.graphitron.model.intent.ReferenceStepTargetTest} pins, which is the chain an
+ * the {@code reference-step-target} documents under graphitron-model's {@code src/test/resources/facts} pin, which is the chain an
  * authored path walks; here nothing was written and the resolution is the catalog's own
  * connectivity.
  *

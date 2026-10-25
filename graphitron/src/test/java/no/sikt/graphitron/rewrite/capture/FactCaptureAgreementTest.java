@@ -86,60 +86,55 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       author wrote is asked both what it makes of a set of applications and whether real SDL
  *       reaches it in that shape: {@code no.sikt.graphitron.rewrite.derive.AuthoredClaimConflictsTest}
  *       binds the lookup arm to {@code LookupFacts.triggersFor} over a real capture, while
- *       {@code no.sikt.graphitron.model.intent.AuthoredClaimTest} binds each arm pair, its position
- *       mask and its ordinal collapse to a census stated row by row in the module whose DDL
- *       declares them; the column-match view carries its reason in two places for the same reason,
+ *       the {@code authored-claim} fact documents in graphitron-model bind each arm pair, its
+ *       position mask and its ordinal collapse over SDL captured against the sakila catalog in the
+ *       module whose DDL declares them; the column-match view carries its reason in two places for the same reason,
  *       though the two questions asked of it have different lifetimes.
  *       {@code no.sikt.graphitron.rewrite.derive.ColumnMatchShadowTest} binds the view and the
  *       reduction over it to the classification walk's fall-through arm over the spec-by-example
  *       corpus, which is the half that retires when the walk does, while
- *       {@code no.sikt.graphitron.model.intent.ColumnMatchClaimTest} binds what the view returns
- *       given rows, and the table resolution it stands on ({@code intent_bound_table}) through the
- *       claim's own table witness, to a catalog stated table by table in the module whose DDL
- *       declares them: the two-tier name match with the tiers deliberately disagreeing, three
- *       decoy tables each differing from the bound one in one part of the witness key, and the
- *       bindings a column claim cannot speak for;
- *       {@code no.sikt.graphitron.model.intent.ReferenceStepTargetTest} binds the spelling
- *       resolution the bindings themselves stand on ({@code graphitron_spelled_table}) and the
- *       {@code @reference} chain over it ({@code graphitron_field_reference_step_hop} and
+ *       the {@code column-match-claim} fact documents bind what the view returns, and the table
+ *       resolution it stands on ({@code intent_bound_table}) through the claim's own table witness,
+ *       over captured SDL in the module whose DDL declares them: bare, qualified and ambiguous
+ *       bindings, a graph resolving through its own catalog and no other, and the bindings a
+ *       column claim cannot speak for;
+ *       the {@code reference-step-target} fact documents bind the spelling resolution the
+ *       bindings themselves stand on ({@code graphitron_spelled_table}) and the {@code @reference}
+ *       chain over it ({@code graphitron_field_reference_step_hop} and
  *       {@code graphitron_field_reference_step_target}, the hop view pinned through the chain that
- *       reaches or refuses it rather than twice), to a catalog stated table by table in the module
- *       whose DDL declares them, the shapes each case turns on (two foreign keys between one pair
- *       of tables, a key pointing back at its own table, a constraint name two schemas both
- *       declare, a table name two schemas both declare) being ones no one real catalog offers side
- *       by side;
- *       {@code no.sikt.graphitron.model.intent.ArgumentReferenceStepTargetTest} binds the
- *       argument-site pair ({@code intent_argument_reference_step_hop} and
- *       {@code graphitron_argument_reference_step_target}, the hop view pinned through the chain for the
- *       same reason) against that same catalog, and additionally binds the two views to each other:
- *       the arms are textually parallel, so one case seeds one path shape at both sites and asserts
- *       the shared columns come back equal, which is what keeps a change to one from silently
- *       leaving the other behind;
- *       {@code no.sikt.graphitron.model.intent.ConditionMethodRouteTest} binds
+ *       reaches or refuses it rather than twice), over SDL captured against the sakila catalog,
+ *       whose multischema schemas supply the shapes the cases turn on (two foreign keys between
+ *       one pair of tables, a key pointing back at its own table, a constraint name two schemas
+ *       both declare, a table name two schemas both declare);
+ *       the {@code argument-reference-step-target} fact documents bind the argument-site pair
+ *       ({@code intent_argument_reference_step_hop} and
+ *       {@code graphitron_argument_reference_step_target}, the hop view pinned through the chain for
+ *       the same reason) against that same catalog, and state one path at both sites, the arms
+ *       being textually parallel, which is what keeps a change to one from silently leaving the
+ *       other behind;
+ *       the {@code condition-method-route} fact documents bind
  *       {@code graphitron_condition_method_route}, the rung both hop views join for an element that
- *       names a condition and neither a key nor a table, against a seeded census and catalog: the
- *       shapes are the ones a signature can take rather than ones a real classpath offers side by
- *       side, and the asymmetry between the two parameters is asserted from both sides, an
- *       unresolvable arrival being no route where an unresolvable departure is every table in the
- *       graph's sources;
+ *       names a condition and neither a key nor a table, the asymmetry between the two parameters
+ *       asserted from both sides, an unresolvable arrival being no route where an unresolvable
+ *       departure is every table in the graph's sources;
  *       the relation that named why a route was absent is gone, having reached no surface in the
  *       time it existed, so a silence at that hop is now unexplained rather than explained to
  *       nobody;
- *       {@code no.sikt.graphitron.model.intent.ArgumentScopeTableTest} binds
+ *       the fact document {@code argument-scope-table-rungs.graphqls} binds
  *       {@code graphitron_argument_scope_table}, which table an argument's column-shaped content binds
  *       against, one case per rung plus the cases where the rungs compete, the precedence being the
  *       claim rather than the table that came out;
- *       {@code no.sikt.graphitron.model.intent.NodeIdInstructionTest} binds
+ *       the {@code node-id-instruction} fact documents bind
  *       {@code graphitron_node_id_instruction}, which slots carry the {@code @nodeId} instruction and
  *       which node type each names, with one case per basis because the basis is the claim: a
  *       coordinate answered by the wrong rule resolves the wrong node type wherever several rules
  *       could answer, so the assertion is which rule answered and not merely that something did;
- *       {@code no.sikt.graphitron.model.intent.NodeIdDecodeReachTest} binds the pair a decode
+ *       the {@code node-id-decode-reach} fact documents bind the pair a decode
  *       navigates on ({@code intent_node_id_decode_endpoint} and
  *       {@code graphitron_node_id_decode_hop}, the hop child pinned through the endpoint relation's
  *       navigation column rather than twice), one case per navigation and one per shape that
  *       contributes no hop, the two silences meaning different things being the claim;
- *       {@code no.sikt.graphitron.model.intent.NodeIdDecodeColumnTest} binds where the decoded
+ *       the {@code node-id-decode-column} fact documents bind where the decoded
  *       values land ({@code graphitron_node_id_decode_column}, and with it the foreign-key pairing
  *       ({@code intent_foreign_key_column_pair}) and its walk-oriented reading
  *       ({@code graphitron_node_id_decode_hop_column}) that the lift walks over), one case per shape
@@ -217,8 +212,8 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  *       {@code intent_authored_claim_conflict} view to hand-written per-fixture expectations
  *       the view does not produce, the re-aimed anchor left standing after the corpus shadow
  *       proved the cutover and retired with the Java reduction it shadowed, and the two claim
- *       relations it reads are pinned given rows by
- *       {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}; the same class binds
+ *       relations it reads are pinned by the {@code authored-claim} fact documents; the same class
+ *       binds
  *       {@code intent_authored_claim_rejection}, the post-capture mint over that view, on the one
  *       claim a minted relation can be held to, that it stands one-to-one with the view it mints
  *       from and words each violation exactly as the build-error projection does, which is what

@@ -577,38 +577,6 @@ COMMENT ON COLUMN graphql_type.kind IS 'the first declaration site''s form in me
 COMMENT ON COLUMN graphql_type.description IS 'SDL description string; net-new as a persisted fact (today read live off retained graphql-java objects). Extensions cannot carry descriptions, so this is the base definition''s when one exists';
 COMMENT ON COLUMN graphql_type.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
-CREATE TABLE graphql_type_declaration (
-  graph_name    VARCHAR NOT NULL,
-  type_name     VARCHAR NOT NULL,
-  source_name   VARCHAR NOT NULL,
-  source_line   INT     NOT NULL,
-  source_column INT     NOT NULL,
-  merge_ordinal INT     NOT NULL,
-  is_extension  BOOLEAN NOT NULL,
-  kind          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
-  PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
-  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
-);
--- The position without the type name, which is what GraphQLAstCapture.directiveApplications
--- holds when it reads the declaration an application was written inside. The type name leads the
--- primary key, so without this every such lookup scans every declaration of the graph. An index
--- and not a unique key, though no two declarations start at one place: the position is not yet
--- this relation's identity, and stating it changes what the writer's upsert matches.
-CREATE INDEX graphql_type_declaration_position_ix
-  ON graphql_type_declaration (graph_name, source_name, source_line, source_column);
-COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension, at the position it was written. For example type Film in film.graphqls and extend type Film in rental.graphqls are two rows, the first with is_extension false.';
-COMMENT ON COLUMN graphql_type_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_type_declaration.type_name IS 'the type this site declares or extends';
-COMMENT ON COLUMN graphql_type_declaration.source_name IS 'the site''s file; a site is a syntactic occurrence, so its location is its identity, though the key leads with the type name';
-COMMENT ON COLUMN graphql_type_declaration.source_line IS 'line of the site, 1-based';
-COMMENT ON COLUMN graphql_type_declaration.source_column IS 'in the key because a line does not identify a site: two extensions of one type can share a line in minified SDL';
-COMMENT ON COLUMN graphql_type_declaration.merge_ordinal IS 'capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal';
-COMMENT ON COLUMN graphql_type_declaration.is_extension IS 'FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint';
-COMMENT ON COLUMN graphql_type_declaration.kind IS 'the declaration form written at this site; a mismatch against the type row''s kind is a detection';
-COMMENT ON COLUMN graphql_type_declaration.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
-
 CREATE TABLE graphql_schema_problem (
   graph_name    VARCHAR NOT NULL,
   ordinal       INT     NOT NULL,
@@ -807,6 +775,43 @@ COMMENT ON COLUMN graphql_ast_type_declaration_entry.kind IS 'which of the six d
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.is_extension IS 'whether this position extends a type rather than defining it. TRUE and FALSE are both ordinary states of a well-formed corpus, and a name carrying only extensions is an author error some detection reports, never a refusal here';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.description IS 'the description written here, or NULL where none was. Always NULL on an extension, the grammar giving extensions nowhere to put one; stated in a comment rather than a CHECK, because a gatherer that refuses a row is a gatherer that stops gathering';
+
+CREATE TABLE graphql_type_declaration (
+  graph_name    VARCHAR NOT NULL,
+  type_name     VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  merge_ordinal INT     NOT NULL,
+  is_extension  BOOLEAN NOT NULL,
+  kind          VARCHAR NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
+  -- The entry this site was derived from, so a declaration the reading no longer finds takes this
+  -- row with it, and what a changed declaration reaches is read off this edge before it goes.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
+  CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
+);
+-- The position without the type name, which is what GraphQLAstCapture.directiveApplications
+-- holds when it reads the declaration an application was written inside. The type name leads the
+-- primary key, so without this every such lookup scans every declaration of the graph. An index
+-- and not a unique key, though no two declarations start at one place: the position is not yet
+-- this relation's identity, and stating it changes what the writer's upsert matches.
+CREATE INDEX graphql_type_declaration_position_ix
+  ON graphql_type_declaration (graph_name, source_name, source_line, source_column);
+COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension, at the position it was written. For example type Film in film.graphqls and extend type Film in rental.graphqls are two rows, the first with is_extension false.';
+COMMENT ON COLUMN graphql_type_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_type_declaration.type_name IS 'the type this site declares or extends';
+COMMENT ON COLUMN graphql_type_declaration.source_name IS 'the site''s file; a site is a syntactic occurrence, so its location is its identity, though the key leads with the type name';
+COMMENT ON COLUMN graphql_type_declaration.source_line IS 'line of the site, 1-based';
+COMMENT ON COLUMN graphql_type_declaration.source_column IS 'in the key because a line does not identify a site: two extensions of one type can share a line in minified SDL';
+COMMENT ON COLUMN graphql_type_declaration.merge_ordinal IS 'capture-assigned position in merge order: the base definition, then extensions in document order; on a base-less chain the first extension holds 0. Dense per type (a gate), and the order behind every element ordinal';
+COMMENT ON COLUMN graphql_type_declaration.is_extension IS 'FALSE exactly at merge_ordinal 0 on a well-formed schema; a base-less extension chain is an author error a detection reports, never a constraint';
+COMMENT ON COLUMN graphql_type_declaration.kind IS 'the declaration form written at this site; a mismatch against the type row''s kind is a detection';
+COMMENT ON COLUMN graphql_type_declaration.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
 
 CREATE TABLE graphql_ast_directive_definition_entry (
   graph_name     VARCHAR NOT NULL,

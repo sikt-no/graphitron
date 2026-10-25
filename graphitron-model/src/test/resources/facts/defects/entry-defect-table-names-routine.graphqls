@@ -1,0 +1,25 @@
+# A @table naming a table-valued function. A type is not bound to a function: the field carrying
+# @routine binds its return type to the routine's result, so the @table is refused at the type,
+# quoting the spelling, and the type that leaves it off draws nothing.
+
+type Tilgang @table(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr") {
+  organisasjonskode: Int
+}
+
+type TilgangBound {
+  organisasjonskode: Int
+}
+
+extend type Query {
+  tilganger(env: String!, serviceId: String!, feideId: String!): [Tilgang!]!
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+  tilgangerBound(env: String!, serviceId: String!, feideId: String!): [TilgangBound!]!
+    @routine(name: "tilganger_for_feidebruker_med_fs_fiktivt_fnr",
+             argMapping: "pEnv: env, pServiceId: serviceId, pFeideId: feideId")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                type_name, detail
+  TABLE_NAMES_ROUTINE, Tilgang,   tilganger_for_feidebruker_med_fs_fiktivt_fnr
+  """)

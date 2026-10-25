@@ -1,0 +1,66 @@
+# A bare @nodeId whose consuming field returns a multi-table polymorphic container: an interface
+# binding no table of its own, or a union. The target it is inferred from is one table per
+# participant, so it is one row per participant, each naming the node type over that participant's
+# table, and the rows differ in nothing else. A written typeName: at the same field is one row, and so
+# is a bare one on a discriminated interface binding one table: what fans out is the inference over
+# several tables. The branches disagreeing is not a refused decode.
+
+interface Node { id: ID! }
+
+interface Media { id: ID! }
+
+interface MediaItem @table(name: "film") @discriminate(on: "text_rating") { title: String }
+
+type Film implements Node & Media & MediaItem @table(name: "film") @node @discriminator(value: "G") {
+  id: ID!
+  title: String
+}
+
+type Actor implements Node & Media @table(name: "actor") @node {
+  id: ID!
+}
+
+union Occupant = Film | Actor
+
+input MediaFilter {
+  someId: ID @nodeId
+}
+
+extend type Query {
+  media(
+    someId: ID @nodeId
+    # Actor reaches film through film_actor, which a written typeName: on a multi-table field states.
+    filmId: ID @nodeId(typeName: "Film")
+      @referenceFor(type: "Actor", path: [{key: "film_actor_actor_id_fkey"}, {key: "film_actor_film_id_fkey"}])
+  ): [Media]
+  occupants(someId: ID @nodeId): [Occupant]
+  films(where: MediaFilter): [Film]
+  mediaItems(someId: ID @nodeId): [MediaItem]
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: """
+  site,         use_site,                  basis,                  resolved_type_name
+  ARGUMENT,     Query.media(filmId),       EXPLICIT_TYPE_NAME,     Film
+  ARGUMENT,     Query.media(someId),       TARGET_TABLE_NODE_TYPE, Actor
+  ARGUMENT,     Query.media(someId),       TARGET_TABLE_NODE_TYPE, Film
+  ARGUMENT,     Query.mediaItems(someId),  TARGET_TABLE_NODE_TYPE, Film
+  ARGUMENT,     Query.occupants(someId),   TARGET_TABLE_NODE_TYPE, Actor
+  ARGUMENT,     Query.occupants(someId),   TARGET_TABLE_NODE_TYPE, Film
+  INPUT_FIELD,  Query.films(where)/someId, TARGET_TABLE_NODE_TYPE, Film
+  OUTPUT_FIELD, Actor.id,                  OWN_ID_FIELD,           Actor
+  OUTPUT_FIELD, Film.id,                   OWN_ID_FIELD,           Film
+  """)
+
+# Every column but the source position, which is the directive's and one for both, so a column
+# telling the two branches apart would show.
+extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: """
+  use_site = 'Query.media(someId)'
+  """, rows: """
+  site,     type_name, field_name, argument_name, path, use_site,            basis,                  resolved_type_name, resolved_type_kind, carries_reference_path
+  ARGUMENT, Query,     media,      someId,        ,     Query.media(someId), TARGET_TABLE_NODE_TYPE, Actor,  NODE_TYPE,          FALSE
+  ARGUMENT, Query,     media,      someId,        ,     Query.media(someId), TARGET_TABLE_NODE_TYPE, Film,  NODE_TYPE,          FALSE
+  """)
+
+extend schema @assertEmpty(relation: "intent_node_id_decode_defect", where: """
+  use_site = 'Query.media(someId)'
+  """)

@@ -1,0 +1,27 @@
+# How a written table name resolves against the catalog, event being declared in both multischema
+# schemas. A qualified spelling binds its schema and an unqualified one reaches every schema
+# declaring the name. A period with one side empty, or a second period, names no table: the empty
+# half is not read as unqualified and a third segment is not guessed at. A bare @table spells the
+# type's own name, which meets the catalog without regard to case.
+
+type Event @table { eventId: Int @field(name: "event_id") }
+
+type Film @table(name: "film") {
+  title: String
+  qualified: Event @reference(path: [{table: "multischema_a.event"}])
+  unqualified: Event @reference(path: [{table: "event"}])
+  emptyName: Event @reference(path: [{table: "event."}])
+  emptySchema: Event @reference(path: [{table: ".event"}])
+  threeParts: Event @reference(path: [{table: "multischema_a.event.x"}])
+}
+
+extend type Query { films: [Film!]! }
+
+extend schema @expectEquals(relation: "graphitron_spelled_table", where: "spelling <> 'film' AND spelling <> 'payment'", rows: """
+  spelling,            table_schema,  table_name, candidates
+  multischema_a.event, multischema_a, event,      1
+  event,               multischema_a, event,      2
+  event,               multischema_b, event,      2
+  Event,               multischema_a, event,      2
+  Event,               multischema_b, event,      2
+  """)

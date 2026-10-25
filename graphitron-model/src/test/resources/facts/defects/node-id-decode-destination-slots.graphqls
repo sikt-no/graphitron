@@ -1,0 +1,56 @@
+# Whether a decoded node id reaches a Java parameter, and which one, keyed at the root of the use
+# site: an argument fed to a parameter is a slot, and so is an input field below it, because the
+# argument is. Where no parameter is fed the decode binds a table predicate and draws no slot row,
+# however the key lands.
+
+type Film @table(name: "film") @node { title: String }
+type Category @table(name: "category") @node { name: String }
+type Language @table(name: "language") @node { name: String }
+
+# A composite key, (actor_id, film_id), and a table whose foreign key covers both columns.
+type FilmActor @table(name: "film_actor") @node { filmId: Int @field(name: "film_id") }
+type FilmActorNote @table(name: "film_actor_note") { noteTxt: String @field(name: "note_txt") }
+
+input Filter @table(name: "film") {
+  filmId: ID @nodeId(typeName: "Film")
+}
+
+extend type Query {
+  # Own-row identity binds the row's own columns.
+  films(ids: [ID!] @nodeId(typeName: "Film")): [Film!]!
+  # The junction chain binds the node type's own table inside a correlated EXISTS.
+  filmsInCategory(inCategory: ID @nodeId(typeName: "Category")
+      @reference(path: [{key: "film_category_film_id_fkey"}, {key: "film_category_category_id_fkey"}])): [Film!]!
+  # A composite key whose every position lifts is local.
+  notes(ofPairing: ID @nodeId(typeName: "FilmActor")): [FilmActorNote!]!
+  # A reverse hop reaching one of two key columns is remote.
+  filmsOfPair(ofPair: ID @nodeId(typeName: "FilmActor")
+      @reference(path: [{key: "film_actor_film_id_fkey"}])): [Film!]!
+  # An argument matched to a parameter by its own name descends into it.
+  film(id: ID @nodeId(typeName: "Film")): Film
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmLookupService", method: "lookup"})
+  # A primitive parameter is still the slot, with no type.
+  untyped(ids: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "untyped"})
+  # A record of some other table is still the slot, and no destination.
+  modifyFilmRecord(in: ID @nodeId(typeName: "Language")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmRecordService", method: "modifyFilmRecord"})
+  # An overload resolves both candidate slots.
+  byIds(ids: ID @nodeId(typeName: "Film")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.NodeIdSlotService", method: "byIds"})
+  # An input field reaches Java because its root argument does ...
+  echo(by: Filter): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmTitleEchoService", method: "echo"})
+  # ... and binds a predicate where nothing consumes that argument.
+  filtered(where: Filter): [Film!]!
+}
+
+extend schema @expectEquals(relation: "intent_node_id_decode_slot", rows: """
+  use_site,                   carrier,         param_name, java_type,                                                              root_type_name, root_field_name,  root_argument_name, candidates
+  Query.byIds(ids),           NAMED_PARAMETER, ids,        java.lang.String,                                                       Query,          byIds,            ids,                2
+  Query.byIds(ids),           NAMED_PARAMETER, ids,        ,                                                                       Query,          byIds,            ids,                2
+  Query.echo(by)/filmId,      NAMED_PARAMETER, by,         no.sikt.graphitron.rewrite.test.conditions.FilmTitleFilter,             Query,          echo,             by,                 1
+  Query.film(id),             NAMED_PARAMETER, id,         java.lang.Integer,                                                      Query,          film,             id,                 1
+  Query.modifyFilmRecord(in), NAMED_PARAMETER, in,         no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, Query,          modifyFilmRecord, in,                 1
+  Query.untyped(ids),         NAMED_PARAMETER, ids,        ,                                                                       Query,          untyped,          ids,                1
+  """)

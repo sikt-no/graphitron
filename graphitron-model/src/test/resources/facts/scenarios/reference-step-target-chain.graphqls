@@ -1,0 +1,51 @@
+# A field's @reference path walked element by element from its type's table. Each key hop takes its
+# direction from which table declares the key, a table element discovers its key, and a key name
+# answers as the SQL constraint name or, where none does, as the generated Keys constant, either
+# without regard to case. A self-referential key is one hop, both orientations landing on one
+# table. A bare condition is a hop its method's parameters route: no constraint, no direction.
+
+type Film @table(name: "film") {
+  title: String
+  actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+  titleTexts: [String] @field(name: "title_txt") @reference(path: [{table: "film_translation"}])
+  bySqlName: Language @reference(path: [{key: "film_language_id_fkey"}])
+  byKeysConstant: Language @reference(path: [{key: "FILM__FILM_LANGUAGE_ID_FKEY"}])
+  byUpperCase: Language @reference(path: [{key: "FILM_LANGUAGE_ID_FKEY"}])
+  filmActors: [FilmActor!]! @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+    method: "filmToFilmActor"}}])
+}
+
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+type Language @table(name: "language") { name: String }
+type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+
+type Category @table(name: "category") {
+  name: String
+  parent: Category @reference(path: [{key: "category_parent_category_id_fkey"}])
+}
+
+extend type Query { films: [Film!]! categories: [Category!]! }
+
+extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
+  type_name, field_name,     position, via,       key_matched_by, from_table, to_table,         constraint_name,                  fk_on_from, targets, candidates
+  Film,      actors,         0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,          FALSE,      1,       1
+  Film,      actors,         1,        KEY,       SQL_NAME,       film_actor, actor,            film_actor_actor_id_fkey,         TRUE,       1,       1
+  Film,      titleTexts,     0,        TABLE,     ,               film,       film_translation, film_translation_film_id_fkey,    FALSE,      1,       1
+  Film,      bySqlName,      0,        KEY,       SQL_NAME,       film,       language,         film_language_id_fkey,            TRUE,       1,       1
+  Film,      byKeysConstant, 0,        KEY,       JOOQ_NAME,      film,       language,         film_language_id_fkey,            TRUE,       1,       1
+  Film,      byUpperCase,    0,        KEY,       SQL_NAME,       film,       language,         film_language_id_fkey,            TRUE,       1,       1
+  Film,      filmActors,     0,        CONDITION, ,               film,       film_actor,       ,                                 ,           1,       1
+  Category,  parent,         0,        KEY,       SQL_NAME,       category,   category,         category_parent_category_id_fkey, TRUE,       1,       1
+  """)
+
+# The table element's spelling resolves although no @table wrote it, only the path element.
+extend schema @assertContains(relation: "graphitron_spelled_table", rows: """
+  spelling,         table_schema, table_name,       candidates
+  film_translation, public,       film_translation, 1
+  """)
+
+extend schema @assertAbsent(relation: "graphitron_table_entry", rows: """
+  table_ref
+  film_translation
+  """)

@@ -1,0 +1,147 @@
+# A @nodeId(typeName:) naming a multitable union or interface: one instruction per use site, every
+# member reported with its two flags, the record supertype a slot is assignable from, and the
+# verdicts that refuse the decode. The incumbent per-node-type defect view stays quiet on every
+# such slot, since the container resolves no key shape for it to read.
+
+type Customer @table(name: "customer") @node {
+  firstName: String @field(name: "first_name")
+  # An output field encodes, and a container has nothing to encode from.
+  occupantId: ID @nodeId(typeName: "AddressOccupant")
+}
+type Staff @table(name: "staff") @node { firstName: String @field(name: "first_name") }
+# Table-bound and not a node type.
+type Rental @table(name: "rental") { rentalId: Int @field(name: "rental_id") }
+# Binds no table.
+type Ghost { name: String }
+# film_list has no primary key, so its record is a TableRecord and not an UpdatableRecord.
+type FilmListing @table(name: "film_list") @node(keyColumns: ["title"]) { title: String }
+
+union AddressOccupant = Customer | Staff
+union SoleOccupant = Customer
+union WithRental = Customer | Staff | Rental
+union MixedOccupant = Customer | Staff | Rental | Ghost
+union Anything = Ghost
+union KeylessOccupant = Customer | FilmListing
+
+# A single-table interface: the container binds a table itself.
+interface MediaItem @table(name: "film") { title: String }
+type Film @table(name: "film") @node { title: String }
+type Inventory @table(name: "inventory") { inventoryId: Int @field(name: "inventory_id") }
+
+input MediaFilter {
+  filmId: ID @nodeId(typeName: "Film")
+  itemId: ID @nodeId(typeName: "MediaItem")
+}
+
+input OccupantFilter {
+  customerId: ID @nodeId(typeName: "Customer")
+  occupantId: ID @nodeId(typeName: "AddressOccupant")
+}
+
+extend type Query {
+  # A slot typed as a record supertype every member's record has.
+  occupant(occupant: ID @nodeId(typeName: "AddressOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  # One admissible member: what makes a decode polymorphic is the type named, not the count.
+  sole(occupant: ID @nodeId(typeName: "SoleOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  # One member's record failing the ancestry test refuses the whole slot.
+  keyless(occupant: ID @nodeId(typeName: "KeylessOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  # A List of the supertype lands each id on an element.
+  keys(keys: [ID!] @nodeId(typeName: "AddressOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantsByMapping"})
+  # A Set is refused on the shape, before any member is compared.
+  titleTitlecase(films: [ID!] @nodeId(typeName: "AddressOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmService", method: "titleTitlecase"})
+  withRental(occupant: ID @nodeId(typeName: "WithRental")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  anything(occupant: ID @nodeId(typeName: "Anything")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  media(occupant: ID @nodeId(typeName: "MediaItem")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService", method: "assignOccupantByArgument"})
+  # The container and a node type at one read-side field, as arguments and as input fields ...
+  mediaItems(item: ID @nodeId(typeName: "MediaItem"), film: ID @nodeId(typeName: "Film"), filter: MediaFilter): [MediaItem!]!
+  # ... and under a written path that stops short of film.
+  inventories(item: ID @nodeId(typeName: "MediaItem") @reference(path: [{key: "inventory_store_id_fkey"}]),
+      film: ID @nodeId(typeName: "Film") @reference(path: [{key: "inventory_store_id_fkey"}])): [Inventory!]!
+  # No parameter is fed: the value would bind a table predicate.
+  occupants(occupant: ID @nodeId(typeName: "AddressOccupant")): [Customer!]!
+  # A producer class the classpath census never reached: the verdict stands aside.
+  unread(occupant: ID @nodeId(typeName: "AddressOccupant")): String
+    @service(service: {className: "no.example.Svc", method: "get"})
+  # An input field under a generated fetch field, beside a node-typed sibling.
+  filtered(filter: OccupantFilter): [Customer!]!
+  # A slot typed as neither a record nor a key column's type.
+  greet(userId: ID @nodeId(typeName: "AddressOccupant")): String
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.UserGreetingService", method: "greet"})
+}
+
+extend schema @expectEquals(relation: "intent_node_id_polymorphic_decode_defect", rows: """
+  use_site,                         container_name,  verdict,                      member_type_name
+  Customer.occupantId,              AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
+  Query.anything(occupant),         Anything,        NO_TABLE_MEMBERS,
+  Query.filtered(filter)/occupantId, AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
+  Query.greet(userId),              AddressOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, Customer
+  Query.greet(userId),              AddressOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, Staff
+  Query.keyless(occupant),          KeylessOccupant, SLOT_NOT_SUPERTYPE_OF_MEMBER, FilmListing
+  Query.inventories(item),          MediaItem,       CONTAINER_NOT_AT_A_SLOT,
+  Query.media(occupant),            MediaItem,       SINGLE_TABLE_CONTAINER,
+  Query.mediaItems(filter)/itemId,  MediaItem,       CONTAINER_NOT_AT_A_SLOT,
+  Query.mediaItems(item),           MediaItem,       CONTAINER_NOT_AT_A_SLOT,
+  Query.occupants(occupant),        AddressOccupant, CONTAINER_NOT_AT_A_SLOT,
+  Query.titleTitlecase(films),      AddressOccupant, SLOT_SHAPE_MISMATCH,
+  Query.withRental(occupant),       WithRental,      MEMBER_NOT_NODE_TYPE,         Rental
+  """)
+
+# The disjointness: no polymorphic slot draws a row in the per-node-type view.
+extend schema @assertEmpty(relation: "intent_node_id_decode_defect")
+
+# A container naming instruction is one row per use site, not one per member ...
+extend schema @expectEquals(relation: "graphitron_node_id_instruction", where: "use_site = 'Query.occupant(occupant)'", rows: """
+  site,     use_site,                 basis,              resolved_type_name, resolved_type_kind
+  ARGUMENT, Query.occupant(occupant), EXPLICIT_TYPE_NAME, AddressOccupant,    POLY_CONTAINER
+  """)
+
+# ... so a two-member container is still one candidate slot, which is what tells the incumbent
+# view's quiet at greet apart from its ambiguity filter.
+extend schema @expectEquals(relation: "intent_node_id_decode_slot", where: "use_site IN ('Query.occupant(occupant)', 'Query.greet(userId)')", rows: """
+  use_site,                 candidates
+  Query.greet(userId),      1
+  Query.occupant(occupant), 1
+  """)
+
+# Every member's record is assignable to the UpdatableRecord slot.
+extend schema @assertContains(relation: "intent_record_slot_assignable", rows: """
+  node_type_name, record_class,                                                     slot_type_name
+  Customer,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.CustomerRecord, org.jooq.UpdatableRecord
+  Staff,          no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.StaffRecord,    org.jooq.UpdatableRecord
+  """)
+
+# Every member of every container, both predicates as columns.
+extend schema @expectEquals(relation: "intent_node_container_member", where: "container_name IN ('MixedOccupant', 'Anything')", rows: """
+  container_name, container_kind, member_type_name, is_table_bound, is_node_type
+  Anything,       UNION,          Ghost,            FALSE,          FALSE
+  MixedOccupant,  UNION,          Customer,         TRUE,           TRUE
+  MixedOccupant,  UNION,          Ghost,            FALSE,          FALSE
+  MixedOccupant,  UNION,          Rental,           TRUE,           FALSE
+  MixedOccupant,  UNION,          Staff,            TRUE,           TRUE
+  """)
+
+# A container binding a table itself draws no endpoint row, at an argument, at an input field or
+# under a written path, while a node type at the same coordinates does. graphitron_tabletype holds
+# MediaItem, so the endpoint's own kind predicate is what keeps it out.
+extend schema @expectEquals(relation: "intent_node_id_decode_endpoint", where: "use_site LIKE 'Query.mediaItems%' OR use_site LIKE 'Query.inventories%' OR use_site LIKE 'Query.filtered%'", rows: """
+  use_site,                           node_type_name, navigation,     from_table, to_table
+  Query.filtered(filter)/customerId,  Customer,       SAME_TABLE,     customer,   customer
+  Query.inventories(film),            Film,           AUTHORED_PATH,  inventory,  film
+  Query.mediaItems(film),             Film,           SAME_TABLE,     film,       film
+  Query.mediaItems(filter)/filmId,    Film,           SAME_TABLE,     film,       film
+  """)
+
+# So the path that stops short is judged for the node type and not for the container.
+extend schema @expectEquals(relation: "intent_node_id_decode_landing_defect", where: "use_site LIKE 'Query.inventories%'", rows: """
+  use_site,                origin_table, node_type_name, verdict,          terminal_table, target_table
+  Query.inventories(film), inventory,    Film,           PATH_STOPS_SHORT, store,          film
+  """)
+

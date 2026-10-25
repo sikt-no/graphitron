@@ -1,0 +1,19 @@
+# An argument on a field returning a union departs from every participant's table, and one element
+# is reached on both stored arms: film_actor reaches film by its foreign key, and the table-valued
+# function films_for_actor by a name match, its result exposing film's whole primary key. Two routes
+# reach the element and both land on film, so each arm counts two candidates and one target.
+
+type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+type FilmForActor @table(name: "films_for_actor") { title: String }
+
+union AnyFilmRow = FilmActor | FilmForActor
+
+extend type Query {
+  rows(filmed: String @reference(path: [{table: "film"}])): [AnyFilmRow!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_argument_reference_step_target", rows: """
+  field_name, argument_name, position, via,        from_table,      to_table, constraint_name,         targets, candidates
+  rows,       filmed,        0,        TABLE,      film_actor,      film,     film_actor_film_id_fkey, 1,       2
+  rows,       filmed,        0,        NAME_MATCH, films_for_actor, film,     ,                        1,       2
+  """)

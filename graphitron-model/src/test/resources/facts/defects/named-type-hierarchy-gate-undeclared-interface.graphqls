@@ -1,0 +1,27 @@
+# A type implementing an interface nothing declares. The schema does not build, and capture records
+# that rather than refusing the document: the membership row names a container no kind stands
+# behind, and the problem beside it is the record of why. An object bound to a table is the kind a
+# binding is a fact about, and it binds.
+
+type Cash implements Node @table(name: "film") {
+  id: ID!
+}
+
+extend type Query {
+  cash: Cash
+}
+
+extend schema @assertContains(relation: "graphitron_tabletype", rows: """
+  type_name, named_type_kind, table_name
+  Cash,      OBJECT,          film
+  """)
+
+extend schema @expectEquals(relation: "graphql_implements_interface", rows: """
+  type_name, interface_name
+  Cash,      Node
+  """)
+
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  ASSEMBLY, MissingInterfaceTypeError
+  """)

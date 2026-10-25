@@ -606,9 +606,8 @@ class, a document or an entry that goes takes what hung off it by cascade. What 
 today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.md`.
 
 * **A schema edit re-anchors only what the edited document feeds** `blocked`, on the children below. The graphql family's only inputs are the documents and the bundled ones, so its rows are kept by key: the foreign keys say what a change reaches, and a round with no change reaches nothing.
-  * **Every user of an entry references it** `open`. A row derived from one entry forwards the entry's key and holds a foreign key to it, as the `graphitron_ast_` decode entries already do; `graphql_type_declaration` and the rows keyed by a declaration site reference the declaration entry rather than `graphql_type_element`.
   * **A changed document's entries are written as a diff** `open`. The entry write compares a changed source's rows with the stored ones under its key and reports which rows came, went and changed, instead of upserting every row and sweeping by instant; a dropped source is the diff in which every row went.
-  * **The anchors re-derive only the coordinates a change reaches** `blocked`, on "Every user of an entry references it" and "A changed document's entries are written as a diff". The closure follows the foreign keys from the diff before anything is deleted; an anchor re-derives the coordinates it touched, a source whose modification time moved adds its own, and an anchor row that comes out the same ends the closure there.
+  * **The anchors re-derive only the coordinates a change reaches** `blocked`, on "A changed document's entries are written as a diff". The closure follows the foreign keys from the diff before anything is deleted, and the cascade then unwinds what was derived from the gone rows; an anchor, which may hold for other sources, references what built it ON DELETE SET NULL through its own nullable copy of the site key, graph column included, held equal to the identity columns by a check, as `source_ref` beside `source_name` does on the `graphql_ast_` declaration entries, so the null touches the copy and never the key; it re-derives the coordinates the closure touched, takes a source whose modification time moved as touching its own, and ends the closure where its row comes out the same.
   * **An edit round costs what the edited document reaches** `blocked`, on "The anchors re-derive only the coordinates a change reaches". A test edits one document of several and asserts the other documents' rows keep their earlier reading's instant, and a sis edit round is timed beside a no-op one.
 * **A classpath change reruns only the gatherers that read the classpath** `open`. A round that
   succeeds says which gatherers it ran and which it skipped.
@@ -683,7 +682,7 @@ disagree with the build about which types are nodes.
   `graphitron_ast_node_keycolumn_entry`, and `NodeKeyColumns` runs in the anchor beside `Nodes`.
 * **Table types, nodes and node key columns are marked and swept** `blocked`, on "The node is settled from the position-keyed entries, in one place". An unchanged binding keeps its node and
   key columns rather than losing them to a clear and refill.
-* **A node is what the manual says takes effect** `blocked`, on "The node-id subject converts".
+* **A node is what the manual says takes effect** `open`.
   `graphitron_node_type` goes, its readers read `graphitron_node`, and
   `NodeDeclaration.isNodeType` moves to the same predicate in the same commit.
 * **The editor and the MCP read the resolved node** `open`. Completion of `typeName:`, its
@@ -745,15 +744,10 @@ elsewhere in the graph.
   `seedService`, `seedFieldCondition` and their siblings become documents, each corpus gap added
   to the sakila catalog or service module first.
 * **The table-binding and node subject converts** `open`. The classes seeding `@table` and `@node`
-  through `seedTableBinding` and `seedNode` become documents, except the claim tests, which go
-  with "The claims go".
-* **The reference-step subject converts** `open`. The step tests go with the resolution they pin, and
-  any case the forward walk's documents do not state, the spelled table's included, is captured.
-* **The node-id subject converts** `blocked`, on "Encode and decode read the target type, and the old node-id relations go". Its classes become documents against the new node-id relations.
+  through `seedTableBinding` and `seedNode` become documents.
 * **Every other seeded class converts by its subject** `open`. Fields, mutations, input fields and
   arguments convert whole, a subject listing its corpus gaps once before its first conversion.
-* **`SeededStore` is deleted** `blocked`, on "The code-reference subject converts", "The table-binding and node subject converts", "The reference-step subject converts", "The node-id subject converts" and "Every other seeded class converts by its subject". The fixture and `CodeRows` go,
-  and `SeedingDissolutionGateTest` goes with them.
+* **`SeededStore` is deleted** `blocked`, on "The code-reference subject converts", "The table-binding and node subject converts" and "Every other seeded class converts by its subject". The fixture goes, and `SeedingDissolutionGateTest` goes with them.
 
 ### The agreement test dissolves, each case to the corpus it pins `open`
 

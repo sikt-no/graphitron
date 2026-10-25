@@ -42,12 +42,10 @@ import no.sikt.graphitron.model.derive.FieldClaim;
  * guard, the build-error consumer's population pin, the undecoded presence-arm fallbacks, and the
  * classifier vocabulary round trip.
  *
- * <p>What the two claim views return given rows is not asked here. That is the relations' own
- * algebra, their arm pairs, their per-position masks and their ordinal collapses, and it lives in
- * the module whose DDL declares them, in
- * {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}, against a store seeded row by row.
- * Every fixture below is a real capture of real SDL for the same reason the split was worth making:
- * what stands here is that an author's schema reaches those relations in the shape the rule reads,
+ * <p>What the two claim views decide is not asked here. That is the relations' own algebra, their
+ * arm pairs, their per-position masks and their ordinal collapses, and it lives in the module whose
+ * DDL declares them, in the {@code authored-claim} documents under graphitron-model's {@code src/test/resources/facts}.
+ * What stands here is that an author's schema reaches those relations in the shape the rule reads,
  * and that the report a consumer meets is minted from what it finds.
  */
 @PipelineTier
@@ -287,8 +285,8 @@ class AuthoredClaimConflictsTest {
      * schema for the gatherer's traversal to walk, and the population is the one a run whose
      * document did assemble would have had.
      *
-     * <p>What those arms return given such rows is the claim views' own question and is asked in
-     * {@code no.sikt.graphitron.model.intent.AuthoredClaimTest}; what stands here is that a real
+     * <p>What those arms return for such a schema is the claim views' own question and is asked in
+     * the {@code authored-claim-undecoded} document under graphitron-model's {@code src/test/resources/facts}; what stands here is that a real
      * capture of a real broken schema reaches that state and that the report is minted from it.
      */
     @Test

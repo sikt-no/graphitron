@@ -1,0 +1,31 @@
+# A key element and a bare condition element, which put a row in each of the two tables the hop is
+# stored as: the keyed one, whose rows a foreign key identifies, and the keyless one, whose rows
+# none does. The union view presents both under the one name readers spell.
+
+type Film @table(name: "film") {
+  title: String
+  filmActors: [FilmActor!]! @reference(path: [{key: "film_actor_film_id_fkey"}])
+  filmActorsByCondition: [FilmActor!]! @reference(path: [{condition: {
+    className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+    method: "filmToFilmActor"}}])
+}
+
+type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+
+extend type Query { films: [Film!]! }
+
+extend schema @assertContains(relation: "graphitron_field_reference_step_hop_keyed", rows: """
+  type_name, field_name, position, via, key_matched_by, from_table, to_table,   constraint_name,         fk_on_from
+  Film,      filmActors, 0,        KEY, SQL_NAME,       film,       film_actor, film_actor_film_id_fkey, FALSE
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_reference_step_hop_keyless", rows: """
+  type_name, field_name,            position, via,       from_table, to_table
+  Film,      filmActorsByCondition, 0,        CONDITION, film,       film_actor
+  """)
+
+extend schema @assertContains(relation: "graphitron_field_reference_step_hop", rows: """
+  type_name, field_name,            via
+  Film,      filmActors,            KEY
+  Film,      filmActorsByCondition, CONDITION
+  """)

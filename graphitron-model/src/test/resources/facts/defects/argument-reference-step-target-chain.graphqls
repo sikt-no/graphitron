@@ -1,0 +1,84 @@
+# An argument's @reference path walked from the table its field's named type binds, which is what
+# lets a root field's argument depart at all, and through a connection from its element type's
+# table. The walk is the field site's: the same path at both sites resolves to the same hops. Two
+# arguments of one field are two chains. A bare condition is a hop its method's parameters route,
+# composing after a key hop; beside a key the key routes it. A wildcard arrival, or overloads
+# arriving at two tables, route nothing; overloads agreeing on the arrival route from their own
+# departures. A first element naming no key ends the chain, and a field whose type binds nothing
+# gives its arguments nowhere to start.
+
+type Film @table(name: "film") {
+  title: String
+  actors: [Actor!]! @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+}
+
+type Actor @table(name: "actor") { firstName: String @field(name: "first_name") }
+type Customer @table(name: "customer") { customerId: Int @field(name: "customer_id") }
+type Report { text: String }
+
+extend type Query {
+  films(
+    inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    viaJunction: String @reference(path: [{key: "film_actor_film_id_fkey"}])
+    titled: String @reference(path: [{table: "film_translation"}])
+    inLanguage: String @reference(path: [{table: "language"}])
+    unresolved: String @reference(path: [{key: "no_such_fkey"}, {key: "film_actor_actor_id_fkey"}])
+    byCondition: String @reference(path: [{condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+      method: "filmToFilmActor"}}])
+    keyThenCondition: String @reference(path: [{key: "film_actor_film_id_fkey"}, {condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures",
+      method: "filmActorJunctionToActor"}}])
+    conditionBesideKey: String @reference(path: [{key: "film_actor_film_id_fkey", condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+      method: "customerToAddress"}}])
+  ): [Film!]!
+  pagedFilms(inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}])): [Film!]! @asConnection
+  # The same element on the root field itself departs from Query, which binds nothing.
+  rootPath(inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}])): [Film!]!
+    @reference(path: [{key: "film_actor_film_id_fkey"}])
+  report(inActor: String @reference(path: [{key: "film_actor_film_id_fkey"}])): Report
+  customers(
+    anyTable: String @reference(path: [{condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+      method: "customerToAnyTable"}}])
+    diverging: String @reference(path: [{condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+      method: "divergingArrivals"}}])
+    perDeparture: String @reference(path: [{condition: {
+      className: "no.sikt.graphitron.rewrite.test.conditions.ConditionMethodRouteFixtures",
+      method: "agreeingOnArrival"}}])
+  ): [Customer!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_argument_reference_step_target", rows: """
+  field_name, argument_name,      position, via,       key_matched_by, from_table, to_table,         constraint_name,                fk_on_from, targets, candidates
+  films,      inActor,            0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
+  films,      inActor,            1,        KEY,       SQL_NAME,       film_actor, actor,            film_actor_actor_id_fkey,       TRUE,       1,       1
+  films,      viaJunction,        0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
+  films,      titled,             0,        TABLE,     ,               film,       film_translation, film_translation_film_id_fkey,  FALSE,      1,       1
+  films,      inLanguage,         0,        TABLE,     ,               film,       language,         film_language_id_fkey,          TRUE,       1,       2
+  films,      inLanguage,         0,        TABLE,     ,               film,       language,         film_original_language_id_fkey, TRUE,       1,       2
+  films,      byCondition,        0,        CONDITION, ,               film,       film_actor,       ,                               ,           1,       1
+  films,      keyThenCondition,   0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
+  films,      keyThenCondition,   1,        CONDITION, ,               film_actor, actor,            ,                               ,           1,       1
+  films,      conditionBesideKey, 0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
+  pagedFilms, inActor,            0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
+  rootPath,   inActor,            0,        KEY,       SQL_NAME,       film,       film_actor,       film_actor_film_id_fkey,        FALSE,      1,       1
+  customers,  perDeparture,       0,        CONDITION, ,               customer,   address,          ,                               ,           1,       1
+  """)
+
+# The field site, where Film.actors writes inActor's path and agrees with it hop for hop, and
+# Query.rootPath reaches nothing.
+extend schema @expectEquals(relation: "graphitron_field_reference_step_target", rows: """
+  type_name, field_name, position, via, key_matched_by, from_table, to_table,   constraint_name,          fk_on_from, targets, candidates
+  Film,      actors,     0,        KEY, SQL_NAME,       film,       film_actor, film_actor_film_id_fkey,  FALSE,      1,       1
+  Film,      actors,     1,        KEY, SQL_NAME,       film_actor, actor,      film_actor_actor_id_fkey, TRUE,       1,       1
+  """)
+
+# Both elements of the unresolved path were authored; only their resolution declines.
+extend schema @assertContains(relation: "graphitron_argument_reference_step_entry", rows: """
+  field_name, argument_name, position
+  films,      unresolved,    0
+  films,      unresolved,    1
+  """)

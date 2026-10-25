@@ -32,8 +32,8 @@ class SeedingDissolutionGateTest {
     private static final List<String> NOT_CALLERS =
         List.of("SeededStore.java", "SeedingDissolutionGateTest.java");
 
-    /** Callers on 2026-10-15. Lower it when you convert one. */
-    private static final int CEILING = 36;
+    /** Callers on 2026-10-25. Lower it when you convert one. */
+    private static final int CEILING = 16;
 
     @Test
     @DisplayName("no case starts seeding rows it could state as a document")

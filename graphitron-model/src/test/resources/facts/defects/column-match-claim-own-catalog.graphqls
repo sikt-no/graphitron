@@ -1,0 +1,28 @@
+# A graph resolves its bindings through the catalog it was captured against and no other, though
+# every graph's catalog sits in one store: solo_parent is this catalog's and binds, with the
+# witness naming this catalog, and film is only the fixture catalog's, so it binds nothing here.
+
+extend schema @withConfiguration(jooqPackage: "no.sikt.graphitron.rewrite.singleschemafixture")
+
+type Parent @table(name: "solo_parent") {
+  name: String
+}
+
+type Film @table(name: "film") {
+  title: String
+}
+
+extend type Query {
+  parents: [Parent!]!
+  films: [Film!]!
+}
+
+extend schema @expectEquals(relation: "intent_column_match_claim", rows: """
+  type_name, field_name, table_source_name,                               table_schema, table_name,  column_name
+  Parent,    name,       no.sikt.graphitron.rewrite.singleschemafixture, singleschema, solo_parent, name
+  """)
+
+extend schema @expectEquals(relation: "intent_bound_table", rows: """
+  type_name, table_source_name,                               table_name
+  Parent,    no.sikt.graphitron.rewrite.singleschemafixture, solo_parent
+  """)

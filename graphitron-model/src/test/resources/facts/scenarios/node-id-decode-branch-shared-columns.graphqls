@@ -1,0 +1,39 @@
+# A @nodeId argument on a field returning a union of three tables, each declaring its own foreign key
+# to the node type's table and all three pairing the same two column names. The decode is stated once
+# per branch, so each branch is its own hop pairing and lands its own key positions, once.
+
+interface Node { id: ID! }
+
+type Project implements Node @table(name: "project") @node {
+  id: ID!
+}
+
+type ProjectNote @table(name: "project_note") { body: String }
+type ProjectEvent @table(name: "project_event") { summary: String }
+type DescribeHub @table(name: "describe_hub") { hubCode: String @field(name: "hub_code") }
+
+union ProjectRecord = ProjectNote | ProjectEvent | DescribeHub
+
+extend type Query {
+  projectRecords(ofProject: ID @nodeId(typeName: "Project")): [ProjectRecord]
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_hop_column", rows: """
+  origin_table,  pair_position, from_column_name, to_column_name
+  describe_hub,  0,             org_id,           org_id
+  describe_hub,  1,             project_id,       project_id
+  project_event, 0,             org_id,           org_id
+  project_event, 1,             project_id,       project_id
+  project_note,  0,             org_id,           org_id
+  project_note,  1,             project_id,       project_id
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_id_decode_column", rows: """
+  origin_table,  position, key_column_name, local_column_name
+  describe_hub,  0,        org_id,          org_id
+  describe_hub,  1,        project_id,      project_id
+  project_event, 0,        org_id,          org_id
+  project_event, 1,        project_id,      project_id
+  project_note,  0,        org_id,          org_id
+  project_note,  1,        project_id,      project_id
+  """)

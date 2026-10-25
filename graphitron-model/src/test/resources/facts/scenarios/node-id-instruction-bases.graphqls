@@ -1,0 +1,77 @@
+# Which rule states a slot's @nodeId instruction, where film and actor are each one node type's
+# table. A written typeName: resolves by name at all three sites. A bare directive on a node's own
+# field takes the containing type, and displaces the name-carried reading of its id. A bare directive
+# elsewhere takes the one node type over its target table: the field's named type for an argument,
+# moved by the argument's own @reference, and the use site's table for an input field, which on a
+# DELETE returning no table is @mutation(table:). A node's own id and a slot named id at a node-backed
+# target carry the instruction with nothing written, an input field once per use site. An id on a type
+# that is not a node carries nothing.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+type Actor implements Node @table(name: "actor") @node {
+  id: ID!
+}
+
+type Inventory @table(name: "inventory") {
+  filmNodeId: ID @nodeId(typeName: "Film")
+}
+
+type Holder @table(name: "array_holder") {
+  id: ID
+}
+
+input InventoryFilter {
+  filmId: ID @nodeId(typeName: "Film")
+}
+
+input FilmInput {
+  filmId: ID @nodeId
+}
+
+input FilmUpdateInput {
+  id: ID
+  title: String
+}
+
+input FilmKeyInput {
+  filmId: ID @nodeId
+}
+
+input KeyInput {
+  id: ID
+}
+
+extend type Query {
+  inventories(filmId: ID @nodeId(typeName: "Film"), where: InventoryFilter): [Inventory]
+  films(filmId: ID @nodeId): [Film]
+  holders: [Holder]
+}
+
+type Mutation {
+  createFilm(in: FilmInput): Film @mutation(typeName: INSERT)
+  updateFilm(in: FilmUpdateInput): Film @mutation(typeName: UPDATE)
+  deleteFilm(in: FilmKeyInput): ID @mutation(typeName: DELETE, table: "film")
+  createFilmByKey(in: KeyInput): Film @mutation(typeName: INSERT)
+  createActorByKey(in: KeyInput): Actor @mutation(typeName: INSERT)
+}
+
+extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: """
+  site,         use_site,                         basis,                  resolved_type_name
+  ARGUMENT,     Query.films(filmId),              TARGET_TABLE_NODE_TYPE, Film
+  ARGUMENT,     Query.inventories(filmId),        EXPLICIT_TYPE_NAME,     Film
+  INPUT_FIELD,  Mutation.createActorByKey(in)/id, TARGET_ID_NAME,         Actor
+  INPUT_FIELD,  Mutation.createFilm(in)/filmId,   TARGET_TABLE_NODE_TYPE, Film
+  INPUT_FIELD,  Mutation.createFilmByKey(in)/id,  TARGET_ID_NAME,         Film
+  INPUT_FIELD,  Mutation.deleteFilm(in)/filmId,   TARGET_TABLE_NODE_TYPE, Film
+  INPUT_FIELD,  Mutation.updateFilm(in)/id,       TARGET_ID_NAME,         Film
+  INPUT_FIELD,  Query.inventories(where)/filmId,  EXPLICIT_TYPE_NAME,     Film
+  OUTPUT_FIELD, Actor.id,                         OWN_ID_FIELD,           Actor
+  OUTPUT_FIELD, Film.id,                          CONTAINING_NODE_TYPE,   Film
+  OUTPUT_FIELD, Inventory.filmNodeId,             EXPLICIT_TYPE_NAME,     Film
+  """)
