@@ -749,6 +749,50 @@ elsewhere in the graph.
   arguments convert whole, a subject listing its corpus gaps once before its first conversion.
 * **`SeededStore` is deleted** `blocked`, on "The code-reference subject converts", "The table-binding and node subject converts" and "Every other seeded class converts by its subject". The fixture goes, and `SeedingDissolutionGateTest` goes with them.
 
+### What the converted seeded cases turned up is fixed `open`
+
+Stating the seeded cases as documents put real schemas in front of rules that had only met
+hand-written rows, and six of those rules answered wrongly, threw, or never fired. Each is fixed
+here with a document that shows it, the foreign-key pairing first because it decodes ids into the
+wrong columns on a valid schema.
+
+* **A foreign key's referenced columns are captured in the key's own order** `open`. Fixed first.
+  SQL pairs a foreign key's Nth column with the Nth column of its `REFERENCES` list, which may be any
+  permutation of the referenced key; jOOQ carries that list as `ForeignKey.getKeyFields()`, and the
+  capture reads `getKey().getFields()`, the referenced key's declaration order, instead.
+  `intent_foreign_key_column_pair` then pairs by position and lands `pk_a` on `fk_b` for
+  `nodeidfixture.reordered_fk_child`. The referenced column is captured per foreign-key position,
+  the pairing reads it, and a document on that fixture pins `pk_a` to `fk_a`.
+* **A chain of input types costs its occurrences, not its paths** `open`.
+  `InputOccurrencePaths.copyParentSteps` enumerates every path through an input type chain, so
+  twenty levels of two fields each is a million paths and a capture that ran past fourteen minutes.
+  A document holding that chain stands guard.
+* **An object type used as an input type is an assembly problem** `open`. `SchemaAssembly.of`
+  records what graphql-java refuses as a `SchemaProblem`, but `NotAnInputTypeError` and
+  `NotAnOutputTypeError` are thrown bare, so the capture dies instead of writing a
+  `graphql_schema_problem` row.
+* **The claim views keep only the presence branches capture reaches** `open`. The decodes of
+  `@service`, `@externalField`, `@nodeId`, `@table` and `@error` always write an entry, so the
+  branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
+  application with no entry beside it never return a row, and they go. `@routine` and `@mutation`
+  decline what they cannot read, so theirs stay.
+* **What the manual refuses of a `@nodeId` is a defect row** `blocked`, on "The target type of a
+  `@nodeId` coordinate is the entry's". The generator refuses these and the store records nothing:
+  a bare `@nodeId` on a field of a type that is not a node, a `typeName:` naming a type without
+  `@node`, arguments of a node-returning field matched to columns its table lacks, a `typeName:`
+  with no route from the slot's table, and a bare `@nodeId` on an input field under a multi-table
+  field whose members disagree. A bare `@nodeId` argument names its field's return type, so
+  `films(filmId: ID @nodeId): [Film]` is a `Film` id even where a second node type shares `film`;
+  today the store resolves nothing there and the generator refuses it as ambiguous. A document
+  `node-id-instruction-unresolved` under `defects` states all of these.
+* **A `@nodeId` argument walking its own path decodes the type it arrives at** `blocked`, on
+  "Encode and decode read the target type, and the old node-id relations go". On
+  `filmsByActor(byActor: ID @nodeId @reference(path: [{key: "film_actor_film_id_fkey"}, {key:
+  "film_actor_actor_id_fkey"}])): [Film]` the store resolves `Actor` from the table the path
+  arrives at, while the generator infers `Film` from the field's table and emits `actor.FILM_ID`.
+  The generator never supported the shape and is not patched for it: reading the store's target
+  type is the fix, and the case returns to `node-id-instruction-bases` when that lands.
+
 ### The agreement test dissolves, each case to the corpus it pins `open`
 
 `FactCaptureAgreementTest` and the shadow tests compared the store against the walk. Each case
