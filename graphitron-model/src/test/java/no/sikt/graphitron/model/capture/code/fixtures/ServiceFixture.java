@@ -101,4 +101,14 @@ public final class ServiceFixture {
     public static String withDefaultContext(DefaultDSLContext dsl, String id) {
         return id;
     }
+
+    /** Keys handed over as a set of records, the form a batched child service takes. */
+    public static String byKeys(DSLContext dsl, Set<SlotRecord> keys) {
+        return "";
+    }
+
+    /** A set of lists of records, which the delivered element alone does not tell from the above. */
+    public static String byKeyGroups(DSLContext dsl, Set<List<SlotRecord>> keys) {
+        return "";
+    }
 }

@@ -994,7 +994,7 @@ public final class CodeCapture {
      * The parameters, their roles and what each contains, plus the catalog table a concrete table
      * position names.
      *
-     * <p>The role is one column over four exclusive values rather than one vocabulary per arm,
+     * <p>The role is one column over five exclusive values rather than one vocabulary per arm,
      * because a position typed as a jOOQ table is typed that way whoever is asking. What that
      * means at a coordinate is the arm's reading of it.
      */
@@ -1025,13 +1025,14 @@ public final class CodeCapture {
             row -> val(rootOf(row.at().typeRefs()), p.ERASED_CLASS),
             row -> val(elementOf(deliveryOf(row.at().typeRefs(), containers)), p.ELEMENT_CLASS),
             row -> val(deliveryNameOf(deliveryOf(row.at().typeRefs(), containers)), p.DELIVERY),
+            row -> val(firstArgumentOf(row.at().typeRefs()), p.FIRST_ARGUMENT_CLASS),
             row -> val(row.role(), p.ROLE),
             row -> val(row.extraction(), p.EXTRACTION),
             row -> val(touchedAt, p.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.METHOD_NAME, p.DESCRIPTOR, p.POSITION,
                     p.PARAMETER_NAME, p.PARAMETER_TYPE, p.ERASED_CLASS, p.ELEMENT_CLASS, p.DELIVERY,
-                    p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
+                    p.FIRST_ARGUMENT_CLASS, p.ROLE, p.EXTRACTION, p.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
@@ -1039,6 +1040,7 @@ public final class CodeCapture {
                 .set(p.ERASED_CLASS, excluded(p.ERASED_CLASS))
                 .set(p.ELEMENT_CLASS, excluded(p.ELEMENT_CLASS))
                 .set(p.DELIVERY, excluded(p.DELIVERY))
+                .set(p.FIRST_ARGUMENT_CLASS, excluded(p.FIRST_ARGUMENT_CLASS))
                 .set(p.ROLE, excluded(p.ROLE))
                 .set(p.EXTRACTION, excluded(p.EXTRACTION))
                 .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
@@ -1070,6 +1072,20 @@ public final class CodeCapture {
         }
         String root = rootClass(at);
         return root == null || JOOQ_TABLE.equals(root) ? "TABLE_ANY" : TABLE_CONCRETE;
+    }
+
+    /**
+     * The class the declaration names as its first type argument, or null where it names none: a
+     * raw or non-generic type, or a first argument that is a type variable or an unbounded wildcard.
+     * Read off the census's own reference at path {@code 0}, so {@code Set<FilmRecord>} answers
+     * {@code FilmRecord} and {@code Set<List<FilmRecord>>} answers {@code List}.
+     */
+    private static String firstArgumentOf(List<ClassfileCensus.TypeRefAt> refs) {
+        return refs.stream()
+            .filter(ref -> ref.path().equals("0"))
+            .map(ClassfileCensus.TypeRefAt::referencedClass)
+            .findFirst()
+            .orElse(null);
     }
 
     /** The class the declaration names at the root of the type, or null where it names none. */

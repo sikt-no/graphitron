@@ -870,6 +870,23 @@ class CodeCaptureTest {
         });
     }
 
+    /**
+     * A set of records and a set of lists of them deliver the same element many times over, so
+     * the first type argument is what tells them apart, read off the declaration rather than parsed.
+     */
+    @Test
+    @DisplayName("a parameter states its type's first argument")
+    void aParameterStatesItsFirstTypeArgument() {
+        withReactorCapture(dsl -> {
+            assertThat(serviceFirstArgumentsOn(dsl, "byKeys"))
+                .as("the context has no argument, and a set of records names the record")
+                .containsExactly(null, SLOT_RECORD);
+            assertThat(serviceFirstArgumentsOn(dsl, "byKeyGroups"))
+                .as("a set of lists names the list, not the record inside it")
+                .containsExactly(null, "java.util.List");
+        });
+    }
+
     /** The table lifted from is carried, being the one clause the site rather than the method decides. */
     @Test
     @DisplayName("the table a lifter lifts from is the sole position's role")
@@ -1208,6 +1225,16 @@ class CodeCaptureTest {
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
             .orderBy(CODE_METHOD_PARAMETER.POSITION)
             .fetch(CODE_METHOD_PARAMETER.EXTRACTION);
+    }
+
+    /** The first type argument of one service fixture method's positions, in parameter order. */
+    private static List<String> serviceFirstArgumentsOn(DSLContext dsl, String methodName) {
+        return dsl.select(CODE_METHOD_PARAMETER.FIRST_ARGUMENT_CLASS)
+            .from(CODE_METHOD_PARAMETER)
+            .where(CODE_METHOD_PARAMETER.CLASS_NAME.eq(SERVICES))
+            .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
+            .orderBy(CODE_METHOD_PARAMETER.POSITION)
+            .fetch(CODE_METHOD_PARAMETER.FIRST_ARGUMENT_CLASS);
     }
 
     /** The roles of one service fixture method's positions, in parameter order. */
