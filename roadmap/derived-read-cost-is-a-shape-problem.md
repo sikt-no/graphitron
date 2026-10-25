@@ -600,8 +600,12 @@ what the edit touched rather than what the project holds. Deletion rides on the 
 class, a document or an entry that goes takes what hung off it by cascade. What a sis round does
 today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.md`.
 
-* **A schema edit re-anchors only what the edited document feeds** `open`. A comment-only edit
-  reruns the document gatherers it reaches and leaves the catalog and classpath gatherers alone.
+* **A schema edit re-anchors only what the edited document feeds** `blocked`, on the children below. The graphql family's only inputs are the documents and the bundled ones, so its rows are kept by key: the foreign keys say what a change reaches, and a round with no change reaches nothing.
+  * **The graphql relations are declared** `open`. The fourteen `graphql_` relations the `graphql-ast` gatherer writes without a `meta_relation` row (`graphql_type`, `graphql_field`, `graphql_type_declaration` and the `*_element` decompositions among them) get an owner and a grain, so the gates hold their keys.
+  * **Every user of an entry references it** `blocked`, on "The graphql relations are declared". A row derived from one entry forwards the entry's key and holds a foreign key to it, as the `graphitron_ast_` decode entries already do; `graphql_type_declaration` and the rows keyed by a declaration site reference the declaration entry rather than `graphql_type_element`.
+  * **A changed document's entries are written as a diff** `open`. The entry write compares a changed source's rows with the stored ones under its key and reports which rows came, went and changed, instead of upserting every row and sweeping by instant; a dropped source is the diff in which every row went.
+  * **The anchors re-derive only the coordinates a change reaches** `blocked`, on "Every user of an entry references it" and "A changed document's entries are written as a diff". The closure follows the foreign keys from the diff before anything is deleted; an anchor re-derives the coordinates it touched, a source whose modification time moved adds its own, and an anchor row that comes out the same ends the closure there.
+  * **An edit round costs what the edited document reaches** `blocked`, on "The anchors re-derive only the coordinates a change reaches". A test edits one document of several and asserts the other documents' rows keep their earlier reading's instant, and a sis edit round is timed beside a no-op one.
 * **A classpath change reruns only the gatherers that read the classpath** `open`. A round that
   succeeds says which gatherers it ran and which it skipped.
 * **A document that does not parse ends the round at the parse** `done`.
