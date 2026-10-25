@@ -87,10 +87,10 @@ public final class ModelCapture {
         String jooqPackage = config.jooqPackage().orElse(null);
         var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath, jooqPackage,
             readAt, observation);
-        // The catalog is the generated classes, so it is read again only where the entry holding
-        // them moved; the classpath reading has just said whether it did.
+        // The catalog is the generated classes, so it is read again only where an entry holding
+        // them moved; the classpath reading has just said whether one did.
         JooqFactCapture.capture(dsl, graph.name(), jooqPackage, loader, readAt,
-            ClasspathSourceCapture.stampOfEntryHolding(dsl, classpath, jooqPackage).orElse(null));
+            ClasspathSourceCapture.stampOfEntriesHolding(dsl, classpath, jooqPackage).orElse(null));
         CodeCapture.capture(dsl, classes, loader, readAt);
 
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);

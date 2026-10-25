@@ -80,13 +80,13 @@ public final class JooqFactCapture {
 
     /**
      * {@link #capture(DSLContext, String, String, ClassLoader, LocalDateTime)} given the stamp of
-     * the classpath entry the package's classes were read from, which is what the catalog is: a
-     * graph whose every package source under {@code jooqPackage} was read from an entry stamped
+     * the classpath entries the package's classes were read from, which is what the catalog is: a
+     * graph whose every package source under {@code jooqPackage} was read under
      * {@code artifactStamp} holds the catalog these bytes describe, so nothing is loaded and nothing
      * is written. Each package source records the stamp it was read under, which is what lets the
      * next capture ask.
      *
-     * @param artifactStamp the holding entry's stamp, or null where none is known, which reads the
+     * @param artifactStamp the holding entries' stamp, or null where none is known, which reads the
      *                      catalog every time
      */
     public static void capture(DSLContext dsl, String graphName, String jooqPackage,

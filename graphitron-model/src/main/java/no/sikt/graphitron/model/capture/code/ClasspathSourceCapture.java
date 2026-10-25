@@ -205,17 +205,21 @@ public final class ClasspathSourceCapture {
     }
 
     /**
-     * The stamp of the one entry of {@code classpath} that holds {@code javaPackage}'s classes, as
-     * this gatherer last recorded it; empty where no entry holds the package or more than one does.
+     * One stamp for every entry of {@code classpath} holding classes under {@code javaPackage}, as
+     * this gatherer last recorded them; empty where no entry holds the package or one holding it
+     * carries no stamp.
      *
      * <p>What a reader of a package lets decide whether the package's bytes have moved, which for
-     * the generated jOOQ classes is whether the catalog needs reading again: the entry's stamp moves
-     * whenever a class under it does. Asked after a {@link #capture}, so the stamp is the current
-     * one whether the entry was read or left alone.
+     * the generated jOOQ classes is whether the catalog needs reading again: an entry's stamp moves
+     * whenever a class under it does, and this moves whenever any of theirs does. Every holding
+     * entry rather than one, a package being free to span modules: sis's generated classes sit in
+     * one and a hand-written class under the same package in another, and an entry counted that the
+     * catalog does not read only errs toward reading it again. Asked after a {@link #capture}, so
+     * each stamp is the current one whether its entry was read or left alone.
      */
-    public static java.util.Optional<String> stampOfEntryHolding(DSLContext dsl,
-                                                                 List<ClasspathEntry> classpath,
-                                                                 String javaPackage) {
+    public static java.util.Optional<String> stampOfEntriesHolding(DSLContext dsl,
+                                                                   List<ClasspathEntry> classpath,
+                                                                   String javaPackage) {
         if (javaPackage == null || javaPackage.isEmpty()) {
             return java.util.Optional.empty();
         }
@@ -230,10 +234,18 @@ public final class ClasspathSourceCapture {
             .join(s).on(s.SOURCE_NAME.eq(f.SOURCE_NAME))
             .where(f.SOURCE_NAME.in(names))
             .and(f.FILE_PATH.startsWith(javaPackage.replace('.', '/') + "/"))
+            .orderBy(s.SOURCE_NAME)
             .fetch();
-        return holding.size() == 1
-            ? java.util.Optional.ofNullable(holding.get(0).value2())
-            : java.util.Optional.empty();
+        if (holding.isEmpty() || holding.stream().anyMatch(row -> row.value2() == null)) {
+            return java.util.Optional.empty();
+        }
+        if (holding.size() == 1) {
+            return java.util.Optional.of(holding.get(0).value2());
+        }
+        var combined = SourceStamp.streamed();
+        holding.forEach(row -> combined.update((row.value1() + "\u0001" + row.value2() + "\n")
+            .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
+        return java.util.Optional.of(combined.stamp());
     }
 
     /** The entries this run may read at all, which is every one it did not inherit. */
