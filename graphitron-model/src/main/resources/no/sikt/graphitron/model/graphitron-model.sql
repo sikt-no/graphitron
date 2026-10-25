@@ -440,7 +440,7 @@ CREATE TABLE graphql_type_element (
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the anchor every SDL fact, every directive decode and every type-keyed derivation hangs off. It carries the key and nothing else, which is what a coordinate relation is for: existence is the whole assertion, and every attribute of the type is a fact some other relation owns at that fact''s own cadence. Split out from graphql_type so the reference web anchors on the earliest cadence an SDL fact can have. A name exists because some declaration site declares or extends it, which the per-file parse settles before anything is composed and before assembly has judged anything; a relation on a later cadence can then be rewritten, withheld or emptied without the facts hanging off the coordinate following it. Anchoring on a composed relation instead makes every per-site fact''s existence conditional on the whole document assembling, and an author mid-edit is exactly the reader who has no assembled document and every per-site fact. The declared-or-extended reading is what makes the site rows'' foreign keys structural (capture writes this row before any site row), and on a base-less extension chain (an author error a detection reports) the row still exists, anchored by the extension sites.';
+COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the anchor every type-keyed fact hangs off, carrying the key and nothing else. For example type Film { title: String } in one file and extend type Film { year: Int } in another are one row, Film.';
 COMMENT ON COLUMN graphql_type_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_element.type_name IS 'the GraphQL type name as some declaration site spells it; the coordinate every other SDL fact hangs off';
 COMMENT ON COLUMN graphql_type_element.coordinate IS 'this row as graphql_element spells it, which for a type is the type name beside it; the join down from the supertype, so a reader that has a coordinate and wants its parts reads them here rather than splitting the spelling. Written by the same call that writes the supertype row and from the same string, so the two cannot disagree, and the foreign key on it is what makes a coordinate with no anchor impossible';
@@ -461,7 +461,7 @@ CREATE TABLE graphql_field_element (
   -- the writer computes both from the same strings in the same call, so no SDL can fail it.
   CHECK (coordinate = type_name || '.' || field_name)
 );
-COMMENT ON TABLE graphql_field_element IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web, on graphql_type_element''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row (the losing declaration is the duplicate quarantine''s business, not this relation''s). OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field, which the specification counts as two kinds of schema element sharing one coordinate form. This relation asserts neither and holds both, the two differing in nothing it carries; the supertype settles it, graphql_element.element_kind saying FIELD or INPUT_FIELD from the parent''s kind at the moment the walk writes the row.';
+COMMENT ON TABLE graphql_field_element IS 'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web. For example title: String on type Film is the row (Film, title, Film.title).';
 COMMENT ON COLUMN graphql_field_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_field_element.type_name IS 'the owning type, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_field_element.field_name IS 'the field name within the owning type';
@@ -484,7 +484,7 @@ CREATE TABLE graphql_argument_element (
   -- may carry the check.
   CHECK (coordinate = type_name || '.' || field_name || '(' || argument_name || ':)')
 );
-COMMENT ON TABLE graphql_argument_element IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations, on graphql_type_element''s terms and for its reason.';
+COMMENT ON TABLE graphql_argument_element IS 'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations. For example films(rating: String) on Query is the row (Query, films, rating, Query.films(rating:)).';
 COMMENT ON COLUMN graphql_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_argument_element.type_name IS 'owning type of the field the argument sits on';
 COMMENT ON COLUMN graphql_argument_element.field_name IS 'the field the argument sits on, anchored by graphql_field_element';
@@ -502,7 +502,7 @@ CREATE TABLE graphql_enum_value_element (
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations, on graphql_type_element''s terms and for its reason.';
+COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations. For example the G of enum Rating { G PG } is the row (Rating, G, Rating.G).';
 
 CREATE TABLE graphql_directive_element (
   graph_name     VARCHAR NOT NULL,
@@ -570,7 +570,7 @@ CREATE TABLE graphql_type (
   UNIQUE (graph_name, type_name, kind),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
-COMMENT ON TABLE graphql_type IS 'What a named type is: the two attributes of the type itself, hanging off graphql_type_element, which is where the name''s existence now lives and where everything else in the schema anchors. Read from whichever site capture meets first in merge order (macro-contributed sites included), which on a well-formed schema is the base definition; graphql_type_declaration carries every site and the kind each one wrote. Nothing references this relation, deliberately: the split exists so that what a later cadence owns cannot drag the reference web with it, and holding the reference web off the attribute relation is that split doing its job rather than an omission.';
+COMMENT ON TABLE graphql_type IS 'What a named type is: its kind and its description, hanging off graphql_type_element. For example type Film { title: String } is the row (Film, OBJECT).';
 COMMENT ON COLUMN graphql_type.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type.type_name IS 'the type these attributes describe, anchored by graphql_type_element';
 COMMENT ON COLUMN graphql_type.kind IS 'the first declaration site''s form in merge order (the base definition''s, on a well-formed schema)';
@@ -598,7 +598,7 @@ CREATE TABLE graphql_type_declaration (
 -- this relation's identity, and stating it changes what the writer's upsert matches.
 CREATE INDEX graphql_type_declaration_position_ix
   ON graphql_type_declaration (graph_name, source_name, source_line, source_column);
-COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension. All five extension kinds are live today, so a type''s effective shape may be assembled from several files; this relation records who contributed what and indexes the incremental-refresh unit ("which types does this file touch"). The built-in scalars are declared in the bundled specification.graphqls, which sorts after every file, so an author''s declaration of one is the base and an authored extension merges after it.';
+COMMENT ON TABLE graphql_type_declaration IS 'A declaration site of a type: the base definition or one extension, at the position it was written. For example type Film in film.graphqls and extend type Film in rental.graphqls are two rows, the first with is_extension false.';
 COMMENT ON COLUMN graphql_type_declaration.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_type_declaration.type_name IS 'the type this site declares or extends';
 COMMENT ON COLUMN graphql_type_declaration.source_name IS 'the site''s file; a site is a syntactic occurrence, so its location is its identity, though the key leads with the type name';
@@ -1506,7 +1506,7 @@ CREATE TABLE graphql_field (
   CHECK (is_list OR item_non_null IS NULL),
   CHECK (is_list = (list_depth > 0))
 );
-COMMENT ON TABLE graphql_field IS 'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it, hanging off graphql_field_element. OBJECT and INTERFACE parents make it an output field, INPUT_OBJECT parents an input field; the join decides. Nothing references this relation, on graphql_type''s terms: the field-keyed reference web anchors on the coordinate instead.';
+COMMENT ON TABLE graphql_field IS 'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it. For example title: String! on type Film is the row (Film, title) with type_sdl String! and non_null true.';
 COMMENT ON COLUMN graphql_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_field.type_name IS 'owning type';
 COMMENT ON COLUMN graphql_field.field_name IS 'the field name within the owning type';
@@ -1552,7 +1552,7 @@ CREATE TABLE graphql_argument (
   CHECK (is_list OR item_non_null IS NULL),
   CHECK (is_list = (list_depth > 0))
 );
-COMMENT ON TABLE graphql_argument IS 'What an argument on a field is, hanging off graphql_argument_element. Net-new coordinate: today arguments are classified per-field and mostly projected away, with no location kept. Nothing references this relation, on graphql_type''s terms.';
+COMMENT ON TABLE graphql_argument IS 'What an argument on a field is: its type expression, its default, its description and the site that declared it. For example films(rating: String = "G") on Query is the row (Query, films, rating) with default_value_sdl "G".';
 COMMENT ON COLUMN graphql_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_argument.type_name IS 'owning type of the field the argument sits on';
 COMMENT ON COLUMN graphql_argument.field_name IS 'the field name within the owning type';
@@ -1590,7 +1590,7 @@ CREATE TABLE graphql_enum_value (
   FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_enum_value IS 'What a value an enum declares is, hanging off graphql_enum_value_element. Net-new coordinate; deprecation is not a column because @deprecated is an ordinary applied directive. Nothing references this relation, on graphql_type''s terms.';
+COMMENT ON TABLE graphql_enum_value IS 'What a value an enum declares is: its place in the enum, its description and the site that declared it. For example the PG of enum Rating { G PG } is the row (Rating, PG) at ordinal 1.';
 COMMENT ON COLUMN graphql_enum_value.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_enum_value.type_name IS 'the owning ENUM type';
 COMMENT ON COLUMN graphql_enum_value.value_name IS 'the enum value name within the owning enum type';
@@ -1637,7 +1637,7 @@ CREATE TABLE graphql_implements_interface (
     REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
 );
 
-COMMENT ON TABLE graphql_union_member IS 'A union names a member: one row per member the union declares, in the order it wrote them. Separate from graphql_implements_interface because the two are not one fact wearing two hats; a union declares who it admits and a type declares which interfaces it answers to, so the declaring end differs and with it the key, the position base and every foreign key. graphql_poly_member unions the two for the readers that genuinely take either.';
+COMMENT ON TABLE graphql_union_member IS 'A union names a member: one row per member type the union declares, in the order it wrote them. For example union Result = Film | Actor is two rows, (Result, Film) at position 0 and (Result, Actor) at 1.';
 COMMENT ON COLUMN graphql_union_member.union_name IS 'the union declaring the membership, which is also the declaration this row hangs off';
 COMMENT ON COLUMN graphql_union_member.member_type_name IS 'the type the union admits, author-spelled and unanchored: a union may name a type no document declares, which assembly refuses and this relation records';
 COMMENT ON COLUMN graphql_union_member.position IS 'source order within the union, numbered from zero. Inherited rather than intended, and it disagrees with graphql_implements_interface.position on the base; a mapping-constant fingerprint digests a list in this order, so rebasing is a change of its own.';
@@ -1648,7 +1648,7 @@ COMMENT ON COLUMN graphql_union_member.declaration_column IS 'column of the same
 COMMENT ON COLUMN graphql_union_member.source_name IS 'the file the member or interface token itself was written in; NOT NULL as on graphql_field';
 COMMENT ON COLUMN graphql_union_member.source_line IS 'source line of that token, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_union_member.source_column IS 'source column of that token, 1-based per the graphql-java convention';
-COMMENT ON TABLE graphql_implements_interface IS 'A type answers to an interface: one row per interface the type declares it implements. The declaring end is the type, which is why this keys on the type and graphql_union_member keys on the union; the interface may be one no document declares, which assembly refuses and this relation records rather than refusing itself.';
+COMMENT ON TABLE graphql_implements_interface IS 'A type answers to an interface: one row per interface the type declares it implements. For example type Film implements Node & Named is two rows, (Film, Node) and (Film, Named).';
 COMMENT ON COLUMN graphql_implements_interface.type_name IS 'the implementing type, which is the declaration this row hangs off';
 COMMENT ON COLUMN graphql_implements_interface.interface_name IS 'the interface named in the implements clause, author-spelled and unanchored';
 COMMENT ON COLUMN graphql_implements_interface.position IS 'source order of this implementor among the interface''s implementors, numbered from one, which is what the merged relation counted and what a reader ordering them still expects. Not the interface''s position within this type''s implements clause: the split moved the key and left the numbering alone, renumbering being visible to a mapping-constant fingerprint. See graphql_union_member.position for why the two bases differ.';
@@ -1679,7 +1679,7 @@ CREATE TABLE graphql_root_operation (
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
 );
-COMMENT ON TABLE graphql_root_operation IS 'The schema definition names a root operation type. These rows are the seeds the reachability derivation grows from. The binding is an author-spelled reference, so its dangling case mints a located diagnostic; the position columns are what it locates from. (A double binding cannot reach capture: a schema extension re-binding an operation throws at parse.)';
+COMMENT ON TABLE graphql_root_operation IS 'The schema binds a root operation to a type: one row per operation it names. For example schema { query: Query mutation: Mutation } is two rows, (QUERY, Query) and (MUTATION, Mutation).';
 COMMENT ON COLUMN graphql_root_operation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_root_operation.operation IS 'which root slot';
 COMMENT ON COLUMN graphql_root_operation.type_name IS 'the object type serving it';
@@ -1708,7 +1708,7 @@ CREATE TABLE graphql_directive (
   PRIMARY KEY (graph_name, directive_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE graphql_directive IS 'A directive is defined.';
+COMMENT ON TABLE graphql_directive IS 'A directive is defined: whether it repeats, its description and the site that declared it. For example directive @paged repeatable on FIELD_DEFINITION is the row (paged) with repeatable true.';
 COMMENT ON COLUMN graphql_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_directive.directive_name IS 'the applied or defined directive name, without the leading @';
 COMMENT ON COLUMN graphql_directive.repeatable IS 'whether the definition says ''repeatable''; governs the ordinal on applications';
@@ -1726,7 +1726,7 @@ CREATE TABLE graphql_directive_location (
   PRIMARY KEY (graph_name, directive_name, location),
   FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_directive_location IS 'A directive definition names a permitted location.';
+COMMENT ON TABLE graphql_directive_location IS 'A directive definition names a permitted location. For example directive @paged on FIELD_DEFINITION | ARGUMENT_DEFINITION is two rows.';
 COMMENT ON COLUMN graphql_directive_location.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_directive_location.directive_name IS 'the applied or defined directive name, without the leading @';
 COMMENT ON COLUMN graphql_directive_location.location IS 'introspection location name, e.g. FIELD_DEFINITION, INPUT_FIELD_DEFINITION';
@@ -1752,7 +1752,7 @@ CREATE TABLE graphql_directive_argument (
   FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL)
 );
-COMMENT ON TABLE graphql_directive_argument IS 'A directive definition declares a formal argument. Carries the same wrapping decode as graphql_field, so list-ness of a directive argument is a column read, not a string parse.';
+COMMENT ON TABLE graphql_directive_argument IS 'A directive definition declares a formal argument: its type expression, its default, its description and the site that declared it. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName) with type_sdl String.';
 COMMENT ON COLUMN graphql_directive_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_directive_argument.directive_name IS 'the applied or defined directive name, without the leading @';
 COMMENT ON COLUMN graphql_directive_argument.argument_name IS 'the argument name within the owning field';
@@ -15145,6 +15145,27 @@ COMMENT ON COLUMN meta_relation.example IS 'one example row stated concretely, a
 COMMENT ON COLUMN meta_relation.rationale IS 'why this relation exists, a paragraph at most by the CHECK beside it; measurements, rejected shapes and arguments with earlier authors belong in the architecture docs rather than here';
 
 INSERT INTO meta_grain VALUES
+  ('type-declaration-site',
+   'one site that declares or extends one type, in one graph',
+   'graph_name, type_name, source_name, source_line, source_column', 'sdl'),
+  ('field-argument',
+   'one argument one field declares, in one graph',
+   'graph_name, type_name, field_name, argument_name', 'sdl'),
+  ('enum-value',
+   'one value one enum declares, in one graph',
+   'graph_name, type_name, value_name', 'sdl'),
+  ('directive-location',
+   'one location one directive definition permits, in one graph',
+   'graph_name, directive_name, location', 'sdl'),
+  ('implemented-interface',
+   'one interface one type declares it implements, in one graph',
+   'graph_name, type_name, interface_name', 'sdl'),
+  ('union-member',
+   'one member type one union declares, in one graph',
+   'graph_name, union_name, member_type_name', 'sdl'),
+  ('root-operation',
+   'one root operation the schema binds, in one graph',
+   'graph_name, operation', 'sdl'),
   ('field-path-intermediate',
    'one table a field''s path passes through, at the place of the step arriving there, in one graph',
    'graph_name, type_name, field_name, position', 'sdl'),
@@ -15940,6 +15961,66 @@ INSERT INTO meta_relation VALUES
    'One argument an author passed to an application: the application''s own key and the formal argument the value binds.',
    'For example the fields: "id" of type Film @key(fields: "id") is one row.',
    'One relation for the reason the applications above are one, and by an easier argument: the five this replaces were identical but for the site key they copied down from their parent, so there was never a fact here that differed by site. The value is the rendered SDL literal rather than a parse of it, which is what makes an application legible without knowing what the directive means and what lets a consumer that does know read the same string the author typed. Nothing is ranked, an argument being named once inside one application; a document naming one twice is a schema problem and the upsert keeps the later of the two.'),
+  ('graphql_type_element', 'graph-type', 'graphql-ast',
+   'A type name exists in this graph: the anchor every type-keyed fact hangs off, carrying the key and nothing else.',
+   'For example type Film { title: String } in one file and extend type Film { year: Int } in another are one row, Film.',
+   'Existence is the whole assertion, and every attribute of the type is a fact some other relation owns at that fact''s own cadence. Split out from graphql_type so the reference web anchors on the earliest cadence an SDL fact can have: a name exists because some declaration site declares or extends it, which the per-file parse settles before anything is composed or judged, so a relation on a later cadence can be rewritten, withheld or emptied without the facts hanging off the coordinate following it. Anchoring on a composed relation instead would make every per-site fact''s existence conditional on the whole corpus assembling.'),
+  ('graphql_type', 'graph-type', 'graphql-ast',
+   'What a named type is: its kind and its description, hanging off graphql_type_element.',
+   'For example type Film { title: String } is the row (Film, OBJECT).',
+   'Read from whichever site capture meets first in merge order, macro-contributed sites included, which on a well-formed schema is the base definition; graphql_type_declaration carries every site and the kind each one wrote. Nothing references this relation, deliberately: the split from graphql_type_element exists so that what a later cadence owns cannot drag the reference web with it, and holding the reference web off the attribute relation is that split doing its job.'),
+  ('graphql_type_declaration', 'type-declaration-site', 'graphql-ast',
+   'A declaration site of a type: the base definition or one extension, at the position it was written.',
+   'For example type Film in film.graphqls and extend type Film in rental.graphqls are two rows, the first with is_extension false.',
+   'All five extension kinds are live, so a type''s effective shape may be assembled from several files; this relation records which site contributed what, in merge order, and is the unit an incremental refresh asks about: which types a file touches. The built-in scalars are declared in the bundled specification.graphqls, which sorts after every file, so an author''s declaration of one is the base and an authored extension merges after it. Keyed by the site, so two files declaring one name are two rows and each keeps its own position.'),
+  ('graphql_field_element', 'graph-field', 'graphql-ast',
+   'A field coordinate exists on a type: the anchor for the field-keyed half of the reference web.',
+   'For example title: String on type Film is the row (Film, title, Film.title).',
+   'On graphql_type_element''s terms and for its reason. Written from the declaration sites, so the coordinate exists as soon as one site declares the field, and a coordinate two sites declare is one row; the losing declaration is the duplicate quarantine''s business, not this relation''s. Object and interface parents make it an output field and input object parents an input field, which the specification counts as two kinds of schema element sharing one coordinate form; this relation holds both, the two differing in nothing it carries, and graphql_element says which.'),
+  ('graphql_field', 'graph-field', 'graphql-ast',
+   'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it.',
+   'For example title: String! on type Film is the row (Film, title) with type_sdl String! and non_null true.',
+   'Hangs off graphql_field_element. Object and interface parents make it an output field, input object parents an input field, and the join decides. Nothing references this relation, on graphql_type''s terms: the field-keyed reference web anchors on the coordinate instead, so an attribute rewritten at a later cadence drags nothing with it.'),
+  ('graphql_argument_element', 'field-argument', 'graphql-ast',
+   'An argument coordinate exists on a field: the anchor for the argument-keyed decode relations.',
+   'For example films(rating: String) on Query is the row (Query, films, rating, Query.films(rating:)).',
+   'On graphql_type_element''s terms and for its reason: existence is the assertion, and what the argument is lives in graphql_argument at its own cadence.'),
+  ('graphql_argument', 'field-argument', 'graphql-ast',
+   'What an argument on a field is: its type expression, its default, its description and the site that declared it.',
+   'For example films(rating: String = "G") on Query is the row (Query, films, rating) with default_value_sdl "G".',
+   'Hangs off graphql_argument_element. Arguments were once classified per field and mostly projected away, with no position kept; this keeps each with the site that declared it. Nothing references this relation, on graphql_type''s terms.'),
+  ('graphql_enum_value_element', 'enum-value', 'graphql-ast',
+   'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations.',
+   'For example the G of enum Rating { G PG } is the row (Rating, G, Rating.G).',
+   'On graphql_type_element''s terms and for its reason: existence is the assertion, and what the value is lives in graphql_enum_value.'),
+  ('graphql_enum_value', 'enum-value', 'graphql-ast',
+   'What a value an enum declares is: its place in the enum, its description and the site that declared it.',
+   'For example the PG of enum Rating { G PG } is the row (Rating, PG) at ordinal 1.',
+   'Hangs off graphql_enum_value_element. Deprecation is not a column because @deprecated is an ordinary applied directive, read from graphql_directive_application like any other. Nothing references this relation, on graphql_type''s terms.'),
+  ('graphql_implements_interface', 'implemented-interface', 'graphql-ast',
+   'A type answers to an interface: one row per interface the type declares it implements.',
+   'For example type Film implements Node & Named is two rows, (Film, Node) and (Film, Named).',
+   'The declaring end is the type, which is why this keys on the type and graphql_union_member keys on the union: a union declares who it admits and a type declares what it answers to, so the two are not one fact wearing two hats. The interface may be one no document declares, which assembly refuses and this relation records rather than refusing itself. graphql_poly_member unions the two for the readers that take either.'),
+  ('graphql_union_member', 'union-member', 'graphql-ast',
+   'A union names a member: one row per member type the union declares, in the order it wrote them.',
+   'For example union Result = Film | Actor is two rows, (Result, Film) at position 0 and (Result, Actor) at 1.',
+   'Separate from graphql_implements_interface because a union declares who it admits and a type declares which interfaces it answers to, so the declaring end differs and with it the key, the position base and every foreign key. graphql_poly_member unions the two for the readers that genuinely take either.'),
+  ('graphql_root_operation', 'root-operation', 'graphql-ast',
+   'The schema binds a root operation to a type: one row per operation it names.',
+   'For example schema { query: Query mutation: Mutation } is two rows, (QUERY, Query) and (MUTATION, Mutation).',
+   'These rows are the seeds the reachability derivation grows from. The binding is an author-spelled reference, so its dangling case mints a located diagnostic, and the position columns are what it locates from. A double binding cannot reach capture: a schema extension re-binding an operation throws at parse.'),
+  ('graphql_directive', 'directive-name', 'graphql-ast',
+   'A directive is defined: whether it repeats, its description and the site that declared it.',
+   'For example directive @paged repeatable on FIELD_DEFINITION is the row (paged) with repeatable true.',
+   'What a definition says about itself is one fact and that its coordinate exists is another, which graphql_directive_element states; the split is graphql_type''s from graphql_type_element. The author''s directives and the bundled vocabulary both land here, a name declared twice settled by the order every declaration is ranked in.'),
+  ('graphql_directive_location', 'directive-location', 'graphql-ast',
+   'A directive definition names a permitted location.',
+   'For example directive @paged on FIELD_DEFINITION | ARGUMENT_DEFINITION is two rows.',
+   'One row per location rather than a list column, so whether a directive may sit somewhere is a key lookup, and a location a definition stopped naming leaves as a row.'),
+  ('graphql_directive_argument', 'directive-argument-name', 'graphql-ast',
+   'A directive definition declares a formal argument: its type expression, its default, its description and the site that declared it.',
+   'For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName) with type_sdl String.',
+   'Carries the same wrapping decode as graphql_field, so the list-ness of a directive argument is a column read rather than a string parse. graphql_directive_argument_element is the decomposition of its coordinate, on graphql_type''s split from graphql_type_element.'),
   ('graphitron_ast_input_value_deprecated_entry', 'sdl-declaration-site', 'graphitron',
    'What a deprecation marker on an input value says: the replacement hint the author gave, decoded.',
    'For example a connectionName argument marked with the reason "own your Connection type" gives one row carrying that text.',
