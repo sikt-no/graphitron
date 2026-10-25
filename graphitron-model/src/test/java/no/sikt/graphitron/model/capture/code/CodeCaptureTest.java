@@ -887,6 +887,26 @@ class CodeCaptureTest {
         });
     }
 
+    /**
+     * A result names its first type argument on the parameter's terms, which is what a jOOQ Field
+     * hands over: no peel reaches it, a Field being no container.
+     */
+    @Test
+    @DisplayName("a method's result states its type's first argument")
+    void aResultStatesItsFirstTypeArgument() {
+        withReactorCapture(dsl -> {
+            assertThat(serviceResultFirstArgument(dsl, "manyStrings")).isEqualTo("java.lang.String");
+            assertThat(serviceResultFirstArgument(dsl, "stringsByKey"))
+                .as("the first of two arguments")
+                .isEqualTo("java.lang.Integer");
+            assertThat(serviceResultFirstArgument(dsl, "oneString")).as("not generic").isNull();
+            assertThat(serviceResultFirstArgument(dsl, "anythingAtAll"))
+                .as("an unbounded wildcard names no class")
+                .isNull();
+            assertThat(serviceResultFirstArgument(dsl, "aCount")).as("a primitive").isNull();
+        });
+    }
+
     /** The table lifted from is carried, being the one clause the site rather than the method decides. */
     @Test
     @DisplayName("the table a lifter lifts from is the sole position's role")
@@ -1235,6 +1255,15 @@ class CodeCaptureTest {
             .and(CODE_METHOD_PARAMETER.METHOD_NAME.eq(methodName))
             .orderBy(CODE_METHOD_PARAMETER.POSITION)
             .fetch(CODE_METHOD_PARAMETER.FIRST_ARGUMENT_CLASS);
+    }
+
+    /** The first type argument of one service fixture method's result. */
+    private static String serviceResultFirstArgument(DSLContext dsl, String methodName) {
+        return dsl.select(CODE_METHOD.RESULT_FIRST_ARGUMENT_CLASS)
+            .from(CODE_METHOD)
+            .where(CODE_METHOD.CLASS_NAME.eq(SERVICES))
+            .and(CODE_METHOD.METHOD_NAME.eq(methodName))
+            .fetchOne(CODE_METHOD.RESULT_FIRST_ARGUMENT_CLASS);
     }
 
     /** The roles of one service fixture method's positions, in parameter order. */

@@ -47,7 +47,6 @@ class FieldKeyRowPinTest {
      * last assertion until its line goes.
      */
     private static final Map<String, String> UPSTREAM_GAPS = Map.of(
-        "FilmCardWrapper.film", "graphitron_result holds a ROW of inventory for a type an @externalField returns, where the method hands back a FilmCardData object",
         "FilmWithActorsResult.film", "graphitron_result_class reaches no class for an error-carrying payload's data element, so its fields are readers",
         "FilmWithActorsResult.actors", "the same",
         "NestedFilmsPayload.films", "the code family reads no nested class, here NestedFilmsPayloadHolder$Payload, so the accessor is unknown",

@@ -83,7 +83,8 @@ A service call is emitted from the store
 │       ├── A parameter's fill states how its value is built
 │       │   └── The generated jOOQ classes are read with their members
 │       ├── An object result is lifted onto a key row
-│       │   └── A field's key row is stated
+│       │   ├── A field's key row is stated
+│       │   └── A type an `@externalField` returns holds an OBJECT
 │       ├── `$context` names a context value
 │       └── `$tenant` in argMapping routes a service call
 ├── A service's holder is its one widest buildable constructor
@@ -429,8 +430,12 @@ classified records have no reader left and can go with the walk.
   * **A table with no record class says so** `open`. `sql_table.record_class_fqn` is NULL where jOOQ
     generated no record class, so a generic record names no table: sakila's `recordless_note`, none
     on sis.
-  * **A type an `@externalField` returns holds an OBJECT** `open`. `graphitron_result` holds a ROW of
-    inventory for `FilmCardWrapper`, where the method hands back a `FilmCardData`.
+  * **A type an `@externalField` returns holds an OBJECT** `done`. `code_method` states its result
+    type's first argument, so an `@externalField` method's `Field<FilmRecord>` backs `FilmCard` with
+    `FilmRecord`, and the result rule hands that value down as an OBJECT rather than the parent's row.
+  * **A record's method beside its components is a read slot** `open`. A record offers only its
+    components, so `FilmCardData.example()` backs nothing and `RecordExample` holds an OBJECT of no
+    class, where the classifier reads it through that accessor.
   * **An error-carrying payload's data element holds its class** `open`. `FilmWithActorsResult` has
     no `graphitron_result_class` row, so its fields are readers where the classifier fetches.
   * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
@@ -444,7 +449,10 @@ classified records have no reader left and can go with the walk.
   `graphitron_field_source_table`'s inherited rule today.
 * **An object result is lifted onto a key row** `open`. Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
-  dissolves into `graphitron_result_table` with its interim record and source-row rules.
+  dissolves into `graphitron_result_table` with its interim record and source-row rules. Only a key
+  on the source side starts one, a `SOURCE_ROW` key or a `COLUMNS` key on the parent's record
+  table: a path is written from the source, so a field whose key re-fetches its own target gets no
+  start. The hover's departing table for an input type's record binding is kept, not dropped.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.

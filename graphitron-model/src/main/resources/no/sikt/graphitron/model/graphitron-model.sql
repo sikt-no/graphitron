@@ -6028,6 +6028,7 @@ CREATE TABLE code_method (
   result_erased_class  VARCHAR,
   result_element_class VARCHAR,
   result_delivery      VARCHAR,
+  result_first_argument_class VARCHAR,
   touched_at  TIMESTAMP NOT NULL,
   PRIMARY KEY (source_name, class_name, method_name, descriptor),
   FOREIGN KEY (source_name, class_name)
@@ -6047,6 +6048,7 @@ COMMENT ON COLUMN code_method.result_element_class IS 'the class the result deli
 COMMENT ON COLUMN code_method.result_delivery IS 'how the result delivers that class, DIRECT where the type is one, WRAPPED inside an Optional and MANY inside a collection. What a field declared a list is checked against, a single-delivering method behind a list field being an author error. NULL with the element beside it';
 COMMENT ON COLUMN code_method.descriptor IS 'the JVM method descriptor, completing the key. What tells two overloads apart, which no rendering of the erased types can: two methods taking same-named types from different packages render alike';
 COMMENT ON COLUMN code_method.is_static IS 'whether the method is static. A property of the declaration rather than of any directive, though it is what @service reads to decide whether a holder is needed and what @condition folds on before admitting a set of overloads as one target';
+COMMENT ON COLUMN code_method.result_first_argument_class IS 'the class the result type names as its first type argument, on code_method_parameter.first_argument_class'' terms, or NULL where it names none. Field<FilmRecord> says FilmRecord, which no peel reaches, a jOOQ Field being an expression of its argument rather than a container of it: what an @externalField method hands a field is this class, and a Field<Boolean> is what a condition method may return besides a Condition';
 COMMENT ON COLUMN code_method.result_type IS 'the type the method results in, by reference. Not a relation of its own beside the parameters, because a result is the one thing a method has exactly one of and it carries neither a name nor an ordinal to be bound at: a parameter binds a type to a named position, and a result is the type';
 COMMENT ON COLUMN code_method.touched_at IS 'when the reading that produced this row ran; swept by the reading that replaces it';
 
@@ -11368,13 +11370,19 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
     LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
   UNION ALL
+  -- An @externalField hands down what its method's Field evaluates to, a value of the class the
+  -- Field carries and never the parent's row.
   SELECT f.graph_name, f.type_name, f.field_name, f.coordinate, ft.target_type_name, FALSE,
-         CASE WHEN re.table_name IS NOT NULL THEN 'ROW' ELSE pa.shape END,
-         CASE WHEN re.table_name IS NOT NULL THEN re.table_source_name ELSE pa.table_source_name END,
-         CASE WHEN re.table_name IS NOT NULL THEN re.table_schema ELSE pa.table_schema END,
-         CASE WHEN re.table_name IS NOT NULL THEN re.table_name ELSE pa.table_name END,
-         CASE WHEN re.table_name IS NOT NULL THEN NULL ELSE pa.pivot_type_name END,
-         CASE WHEN re.table_name IS NOT NULL THEN NULL ELSE pa.pivot_field_name END,
+         CASE WHEN re.table_name IS NOT NULL THEN 'ROW'
+              WHEN xf.coordinate IS NOT NULL THEN 'OBJECT' ELSE pa.shape END,
+         CASE WHEN re.table_name IS NOT NULL THEN re.table_source_name
+              WHEN xf.coordinate IS NULL THEN pa.table_source_name END,
+         CASE WHEN re.table_name IS NOT NULL THEN re.table_schema
+              WHEN xf.coordinate IS NULL THEN pa.table_schema END,
+         CASE WHEN re.table_name IS NOT NULL THEN re.table_name
+              WHEN xf.coordinate IS NULL THEN pa.table_name END,
+         CASE WHEN re.table_name IS NULL AND xf.coordinate IS NULL THEN pa.pivot_type_name END,
+         CASE WHEN re.table_name IS NULL AND xf.coordinate IS NULL THEN pa.pivot_field_name END,
          CAST(NULL AS VARCHAR)
     FROM parent pa
     JOIN graphitron_field f
@@ -11385,6 +11393,9 @@ edge (graph_name, field_type, field_name, coordinate, target, wrapped, shape,
       ON p.graph_name = f.graph_name AND p.type_name = f.type_name AND p.field_name = f.field_name
     LEFT JOIN graphitron_routine_result re
       ON re.graph_name = f.graph_name AND re.type_name = f.type_name AND re.field_name = f.field_name
+    LEFT JOIN graphitron_directive_application xf
+      ON xf.graph_name = f.graph_name AND xf.coordinate = f.coordinate
+     AND xf.directive_name = 'externalField'
    WHERE p.field_name IS NULL
 ),
 -- Each field hands an object type itself, or each object member of a union or interface, and a
@@ -11422,7 +11433,8 @@ handed (graph_name, field_type, field_name, coordinate, member, wrapped, shape,
 -- wrapper holds the page as an object its fields read; an @error type holds the exception a producer
 -- caught; a table-bound type is a row of its table, whoever hands it, since moving from a result back
 -- into the tables always refetches; otherwise a field whose path ends on a @routine hands the row of
--- its function's result, a reader hands on what its parent holds, and a producer that hands back a
+-- its function's result, an @externalField hands on the value its Field carries, a reader hands on
+-- what its parent holds, and a producer that hands back a
 -- value holds an object: a service's, a write's or a routine write's result, and a connection's
 -- facets. A table's own record
 -- handed back is such a value, read through the Record API and never as a row: nothing selected it.
@@ -11640,12 +11652,14 @@ COMMENT ON VIEW graphitron_field_source_table_rule IS 'One row the field source-
 -- COMMENT ON COLUMN graphitron_field_source_table_rule.basis IS 'SOURCE_TYPE, INHERITED, RECORD_CLASS or SOURCE_ROW, as graphitron_field_source_table.basis states';
 
 CREATE VIEW graphitron_type_backing_rule (graph_name, type_name, class_name, declared_via) AS
--- What a producer grounds, two axes: the class a resolved @service or @externalField method returns
--- backs the field's type, and the class a parameter takes backs the type of the argument feeding it,
--- the parameter's own name unless the reference's argMapping redirects it. Objects and input objects
--- only.
+-- What a producer grounds, two axes: the class a resolved @service method delivers, or the class an
+-- @externalField method's Field carries, backs the field's type, and the class a parameter takes
+-- backs the type of the argument feeding it, the parameter's own name unless the reference's
+-- argMapping redirects it. Objects and input objects only.
 WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
-  SELECT s.graph_name, f.named_type, m.result_element_class
+  SELECT s.graph_name, f.named_type,
+         CASE WHEN s.directive_name = 'service' THEN m.result_element_class
+              ELSE m.result_first_argument_class END
     FROM graphitron_code_reference_site s
     JOIN graphitron_code_reference r
       ON r.graph_name = s.graph_name AND r.source_name = s.source_name
@@ -11658,8 +11672,8 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
     JOIN graphql_type t
       ON t.graph_name = f.graph_name AND t.type_name = f.named_type
      AND t.kind IN ('OBJECT', 'INPUT_OBJECT')
-   WHERE s.directive_name IN ('service', 'externalField')
-     AND m.result_element_class IS NOT NULL
+   WHERE (s.directive_name = 'service' AND m.result_element_class IS NOT NULL)
+      OR (s.directive_name = 'externalField' AND m.result_first_argument_class IS NOT NULL)
   UNION
   SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s

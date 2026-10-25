@@ -1,0 +1,78 @@
+# An @externalField hands its field what the method's Field evaluates to: a value of the class the
+# Field carries, not the parent's row. So the type it returns holds an OBJECT backed by that class,
+# its fields read through accessors, and a table child under it reads the key off the value.
+
+type Inventory @table(name: "inventory") {
+  inventoryId: Int @field(name: "inventory_id")
+  "Field<FilmRecord>: a table's own record, read through the Record API."
+  filmRef: FilmCard
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+  "Field<FilmCardData>: a Java record wrapping one."
+  filmCardData: FilmCardWrapper
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions"})
+}
+
+type FilmCard { filmId: Int @field(name: "film_id") }
+
+type FilmCardWrapper {
+  "A table child under the value: its key is read off the record's film() accessor."
+  film: Film
+  "Read off FilmCardData.example(), not a component: a record offers its components only, so no class backs it."
+  example: RecordExample
+}
+
+type RecordExample { fieldA: String }
+
+type Film @table(name: "film") {
+  title: String
+  "A scalar @externalField hands no object, so no result follows from it."
+  titleUpper: String
+    @externalField(reference: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmFields", method: "title"})
+}
+
+extend type Query { inventories: [Inventory!]! }
+
+# The class a method's result names as its first type argument, which no peel reaches.
+extend schema @assertContains(relation: "code_method", rows: """
+  class_name,                                                        method_name,  result_element_class, result_first_argument_class
+  no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions,    filmRef,      org.jooq.Field,       no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  no.sikt.graphitron.rewrite.test.extensions.InventoryExtensions,    filmCardData, org.jooq.Field,       no.sikt.graphitron.rewrite.test.services.FilmCardData
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_backing", where: "type_name IN ('FilmCard', 'FilmCardWrapper', 'RecordExample')", rows: """
+  type_name,       class_name,                                                             declared_via
+  FilmCard,        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord, PRODUCER
+  FilmCardWrapper, no.sikt.graphitron.rewrite.test.services.FilmCardData,                  PRODUCER
+  """)
+
+extend schema @expectEquals(relation: "graphitron_result", where: "type_name IN ('FilmCard', 'FilmCardWrapper', 'RecordExample', 'Film')", rows: """
+  type_name,       shape
+  FilmCard,        OBJECT
+  FilmCardWrapper, OBJECT
+  RecordExample,   OBJECT
+  Film,            ROW
+  """)
+
+# None of them is a row of inventory.
+extend schema @assertEmpty(relation: "graphitron_result_table", where: "type_name IN ('FilmCard', 'FilmCardWrapper', 'RecordExample')")
+
+extend schema @expectEquals(relation: "graphitron_result_class", where: "type_name IN ('FilmCard', 'FilmCardWrapper', 'RecordExample')", rows: """
+  type_name,       class_name
+  FilmCard,        no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord
+  FilmCardWrapper, no.sikt.graphitron.rewrite.test.services.FilmCardData
+  """)
+
+extend schema @assertContains(relation: "graphitron_reader", rows: """
+  type_name,       field_name,   reads
+  Inventory,       filmRef,      EXPRESSION
+  Inventory,       filmCardData, EXPRESSION
+  FilmCard,        filmId,       ACCESSOR
+  FilmCardWrapper, example,      ACCESSOR
+  RecordExample,   fieldA,       ACCESSOR
+  Film,            titleUpper,   EXPRESSION
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_key_row", where: "type_name = 'FilmCardWrapper'", rows: """
+  type_name,       field_name, kind,     table_name, arity
+  FilmCardWrapper, film,       ACCESSOR, film,       ONE
+  """)

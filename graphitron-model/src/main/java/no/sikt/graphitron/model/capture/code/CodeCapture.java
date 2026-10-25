@@ -15,6 +15,7 @@ import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -311,11 +312,12 @@ public final class CodeCapture {
                 m.RESULT_ELEMENT_CLASS),
             d -> val(deliveryNameOf(deliveryOf(d.at().returnTypeRefs(), containers)),
                 m.RESULT_DELIVERY),
+            d -> val(firstArgumentOf(d.at().returnTypeRefs()), m.RESULT_FIRST_ARGUMENT_CLASS),
             d -> val(touchedAt, m.TOUCHED_AT)));
         BindBatch.execute(dsl, methodRows, markers ->
             dsl.insertInto(m, m.SOURCE_NAME, m.CLASS_NAME, m.METHOD_NAME, m.DESCRIPTOR, m.IS_STATIC,
                     m.RESULT_TYPE, m.RESULT_ERASED_CLASS, m.RESULT_ELEMENT_CLASS, m.RESULT_DELIVERY,
-                    m.TOUCHED_AT)
+                    m.RESULT_FIRST_ARGUMENT_CLASS, m.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(m.IS_STATIC, excluded(m.IS_STATIC))
@@ -323,6 +325,7 @@ public final class CodeCapture {
                 .set(m.RESULT_ERASED_CLASS, excluded(m.RESULT_ERASED_CLASS))
                 .set(m.RESULT_ELEMENT_CLASS, excluded(m.RESULT_ELEMENT_CLASS))
                 .set(m.RESULT_DELIVERY, excluded(m.RESULT_DELIVERY))
+                .set(m.RESULT_FIRST_ARGUMENT_CLASS, excluded(m.RESULT_FIRST_ARGUMENT_CLASS))
                 .set(m.TOUCHED_AT, excluded(m.TOUCHED_AT)));
         exceptions(dsl, found.stream()
             .map(d -> new Member(d.source(), d.className(), d.at()))
@@ -953,9 +956,10 @@ public final class CodeCapture {
     private static boolean isConditionMethod(ClassfileCensus.MethodAt method) {
         return JOOQ_CONDITION.equals(method.returnType())
             || JOOQ_FIELD.equals(method.returnType())
-                && method.returnTypeRefs().stream().anyMatch(ref -> "0".equals(ref.path())
-                    && JAVA_BOOLEAN.equals(ref.referencedClass())
-                    && "NONE".equals(ref.variance()));
+                && firstArgument(method.returnTypeRefs())
+                    .filter(ref -> JAVA_BOOLEAN.equals(ref.referencedClass())
+                        && "NONE".equals(ref.variance()))
+                    .isPresent();
     }
 
     /** Whether the lifter arm admits this method, which is every clause of its contract. */
@@ -1081,11 +1085,13 @@ public final class CodeCapture {
      * {@code FilmRecord} and {@code Set<List<FilmRecord>>} answers {@code List}.
      */
     private static String firstArgumentOf(List<ClassfileCensus.TypeRefAt> refs) {
-        return refs.stream()
-            .filter(ref -> ref.path().equals("0"))
-            .map(ClassfileCensus.TypeRefAt::referencedClass)
-            .findFirst()
-            .orElse(null);
+        return firstArgument(refs).map(ClassfileCensus.TypeRefAt::referencedClass).orElse(null);
+    }
+
+    /** The census's reference at the first type argument, path {@code 0}, where it names a class. */
+    private static Optional<ClassfileCensus.TypeRefAt> firstArgument(
+            List<ClassfileCensus.TypeRefAt> refs) {
+        return refs.stream().filter(ref -> ref.path().equals("0")).findFirst();
     }
 
     /** The class the declaration names at the root of the type, or null where it names none. */
