@@ -77,6 +77,8 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * `graphitron_routine_entry`, written by the anchor and by the registry decode. Ends at
   "`graphitron_routine_entry` is gone".
 * `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
+* A routine-ended field's function in `graphitron_routine_result` and in
+  `graphitron_field_path_landing`'s row with no place. Ends at "The landing does not restate a routine's function".
 * Argument and input-field walks from `graphitron_field_scope_table` beside the target. Ends at
   "The argument readers read the target and its walk".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
@@ -176,6 +178,9 @@ resolutions and links built beside it are gone.
 * **Capture states each field's path in the order it was written** `done`.
 * **A path is resolved by a deterministic forward walk over what each element names** `done`.
 * **A table-bound type no field returns is walked from its binding** `done`.
+* **The landing does not restate a routine's function** `open`. `graphitron_field_path_landing`'s row
+  with no place, a path a `@routine` ends with nothing after it, goes, and a reader wanting that
+  function reads `graphitron_routine_result`, which states it once before the walk.
 * **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
