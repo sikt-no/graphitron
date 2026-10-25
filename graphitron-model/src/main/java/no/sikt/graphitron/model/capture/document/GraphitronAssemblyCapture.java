@@ -10,6 +10,7 @@ import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
 import no.sikt.graphitron.model.derive.PathElements;
+import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
 import no.sikt.graphitron.model.derive.ResolvedTypeBindings;
 import no.sikt.graphitron.model.derive.SpelledTables;
@@ -87,6 +88,9 @@ public final class GraphitronAssemblyCapture {
         FieldSourceTables.derive(dsl, graph, readAt);
         // Last, each output field's fetcher, off the targets, bindings and backings above.
         Fetchers.derive(dsl, graph, readAt);
+        // How each field under a held object takes its keys off it, off the producers and results
+        // just written and the path elements above; the walk departs from these.
+        FieldKeyRows.derive(dsl, graph, readAt);
         // Then each field's path, off the producers and results just written: walked from every
         // table its parent's result is a row of, or from a root routine's own table, one written
         // element at a time.

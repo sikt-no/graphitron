@@ -212,6 +212,11 @@ class SupertypeSignatureGateTest {
         // routine start is not here only because it is keyed by its producer alone.
         Set.of("graphitron_field_path_start", "graphitron_field_path_start_binding",
                "graphitron_field_path_start_result"),
+        // Two methods a field's fetch calls, keyed by the field: the method a service producer runs
+        // and the method a key row is taken by. Different facts about one field, a field being
+        // either a service producer or a field taking keys off its parent's object, never both, so
+        // no relation holds the two; both are calls, which the call model states once.
+        Set.of("graphitron_field_key_row_method", "graphitron_producer_service"),
         // The five application sites, which keep their own signature now that a supertype carries
         // the name they share: each still holds the parent hop as a foreign key into the relation
         // its own site declares, and that is the payload grouping them here. The row stays because

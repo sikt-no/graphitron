@@ -1,0 +1,74 @@
+# A field that fetches its own rows under a parent holding an object takes the keys off that object,
+# and how is stated per field. COLUMNS reads them as columns: the target's own key where the object
+# is what a service produced of that table (a re-fetch), or the first key's columns where a path
+# departs from a table's record. SOURCE_ROW has a @sourceRow method return them. ACCESSOR takes the
+# table records a member of the object returns: of the target's table, or of the table a union's
+# members hang off.
+
+type Film @table(name: "film") { title: String }
+type Language @table(name: "language") { name: String }
+type Address @table(name: "address") { address: String }
+type Customer @table(name: "customer") { firstName: String @field(name: "first_name") }
+type Staff @table(name: "staff") { firstName: String @field(name: "first_name") }
+union AddressOccupant = Customer | Staff
+
+# Backed by FilmRecord: a path departs from film by its first key.
+type FilmDetailsCarrier {
+  filmId: Int @field(name: "film_id")
+  language: [Language!]! @reference(path: [{key: "film_language_id_fkey"}])
+}
+
+# A plain class whose lifter returns customer.address_id.
+type CustomerAddressSummary {
+  customerId: Int!
+  address: [Address!]!
+    @sourceRow(
+      className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter",
+      method: "addressIdOf"
+    )
+    @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+# A plain class whose films() returns a list of FilmRecord.
+type CreateFilmsPayload {
+  films: [Film!]!
+}
+
+# Backed by FilmRecord, the target's own record: the field refetches it.
+type FilmServicePayload {
+  film: Film
+}
+
+# A plain class whose addresses() returns AddressRecords, the table the union's members hang off.
+type OccupantsBatchPayload {
+  occupants: [AddressOccupant!]! @field(name: "addresses")
+}
+
+extend type Query {
+  filmDetailsBatch(ids: [Int!]!): [FilmDetailsCarrier!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmsByIds"})
+  customerAddressSummary(customerId: Int!): CustomerAddressSummary
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryService", method: "lookup"})
+  recentlyCreatedFilmsBatched: [CreateFilmsPayload!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.CreateFilmsPayloadService", method: "recentlyCreatedFilmsBatched"})
+  serviceFilmById(id: Int!): FilmServicePayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmCarrierService", method: "filmById"})
+  occupantsBatch: [OccupantsBatchPayload!]!
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayloadService", method: "occupantsBatch"})
+}
+
+extend schema @expectEquals(relation: "graphitron_field_key_row", rows: """
+  type_name,              field_name, kind,       table_name, arity
+  FilmDetailsCarrier,     language,   COLUMNS,    film,       ONE
+  CustomerAddressSummary, address,    SOURCE_ROW, customer,   ONE
+  CreateFilmsPayload,     films,      ACCESSOR,   film,       MANY
+  FilmServicePayload,     film,       COLUMNS,    film,       ONE
+  OccupantsBatchPayload,  occupants,  ACCESSOR,   address,    MANY
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_key_row_method", rows: """
+  type_name,              field_name, kind,       method_class_name,                                                         method_name
+  CustomerAddressSummary, address,    SOURCE_ROW, no.sikt.graphitron.rewrite.test.services.CustomerAddressSummaryLifter,    addressIdOf
+  CreateFilmsPayload,     films,      ACCESSOR,   no.sikt.graphitron.rewrite.test.services.CreateFilmsPayload,              films
+  OccupantsBatchPayload,  occupants,  ACCESSOR,   no.sikt.graphitron.rewrite.test.services.OccupantsBatchPayload,           addresses
+  """)

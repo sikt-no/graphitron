@@ -82,8 +82,8 @@ A service call is emitted from the store
 │       ├── An argument path through input types is stored
 │       ├── A parameter's fill states how its value is built
 │       │   └── The generated jOOQ classes are read with their members
-│       ├── A consumed key is a source
-│       │   └── A producer's consumed keys are stated
+│       ├── An object result is lifted onto a key row
+│       │   └── A field's key row is stated
 │       ├── `$context` names a context value
 │       └── `$tenant` in argMapping routes a service call
 ├── A service's holder is its one widest buildable constructor
@@ -117,7 +117,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
 * Clear-and-recompute in `DerivationStratum` and the assembly steps beside mark and sweep. Ends at
   "`DerivationStratum` is gone, each step anchored by its owner".
 * A field's departure table in `graphitron_field_source_table`'s interim rules and in
-  `graphitron_result_table`. Ends at "A consumed key is a source".
+  `graphitron_result_table`. Ends at "An object result is lifted onto a key row".
 * A payload's producer in `graphitron_carrier_data_field` and the `intent_` carrier relations. Ends
   at "A producer's carrier is its one data channel".
 * A field's column picked by `intent_column_match_claim` and stated by
@@ -231,8 +231,8 @@ resolutions and links built beside it are gone.
 * **A broken or refused path is a defect at its position** `open`. A walk that stops, ends at the wrong
   table or has no source, an element naming nothing, and `@reference` beside `@referenceFor` or
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
-  neither a result table nor a consumed key starts the walk, so `@sourceRow` fields and
-  `FilmDetailsCarrier.language` have none until "A consumed key is a source".
+  neither a result table nor a key row starts the walk, so `@sourceRow` fields and
+  `FilmDetailsCarrier.language` have none until "An object result is lifted onto a key row".
   * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
 * **The field grain reads only the walk** `done`.
 * **A key element states which name it matched by** `done`.
@@ -347,7 +347,7 @@ static method needs no holder.
   replacing the delivery `intent_argmapping_bound_parameter_type` derives.
 * **`$context` names a context value** `open`. A context argument is an argMapping source as
   `$session` is, so `contextArguments` reads as the pairs it implies and a parameter row names the key.
-* **Every call's parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context", "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "A consumed key is a source", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
+* **Every call's parameter states what fills it** `blocked`, on "A parameter states its type's first argument", "A `Configuration` parameter is the jOOQ context", "A condition reference names an overload set", "An argument path through input types is stored", "A parameter's fill states how its value is built", "An object result is lifted onto a key row", "`$context` names a context value" and "`$tenant` in argMapping routes a service call". One row per call site, callee and position for every directive that calls a method or routine (`@service`,
   `@routine` at a root or on a path, `@condition`, `@tableMethod`, `@externalField`, `@record`): jOOQ
   context, `$session`, `$context`, `$tenant`, `$source` or the parent's keys, or an argument path,
   claimed by argMapping, by name, by type or as the one unclaimed pair. A routine step's
@@ -421,18 +421,29 @@ classified records have no reader left and can go with the walk.
   readers move onto them while `graphitron_carrier_data_field` goes.
 * **The matched key is stated** `open`. `graphitron_producer_matched_key` holds one row per `ONE`
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
-* **A producer's consumed keys are stated** `open`. `graphitron_field_source_key` holds, per field
-  taking keys from its parent's object, how it takes them and the table they match, and the
-  fetcher's DataLoader is generated from it.
+* **A field's key row is stated** `done`. `graphitron_field_key_row` holds, per field
+  taking keys from its parent's object, how it takes them (`COLUMNS`, `SOURCE_ROW`, `ACCESSOR`) and
+  whose columns they are, pinned against the classifier's key lift over sakila but for the gaps below.
+  * **The DataLoader's key is read from the key row** `blocked`, on "`TypeFetcherGenerator` reads the store, one family of field at a time". The fetcher's batch key and its lift are
+    generated from the stored row, not from the leaf's `KeyLift`.
   * **A table with no record class says so** `open`. `sql_table.record_class_fqn` is NULL where jOOQ
-    generated no record class, so the `RECORD` way of taking keys names only real records.
+    generated no record class, so a generic record names no table: sakila's `recordless_note`, none
+    on sis.
+  * **A type an `@externalField` returns holds an OBJECT** `open`. `graphitron_result` holds a ROW of
+    inventory for `FilmCardWrapper`, where the method hands back a `FilmCardData`.
+  * **An error-carrying payload's data element holds its class** `open`. `FilmWithActorsResult` has
+    no `graphitron_result_class` row, so its fields are readers where the classifier fetches.
+  * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
+    its kind, so their accessors are unknown.
+  * **A plain object's first key is read off its members** `open`. The classifier's `FkColumns`
+    reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
 * **A field's source is its parent's result** `open`. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **A consumed key is a source** `blocked`, on "A producer's consumed keys are stated". Under an
-  object parent a path starts at the consumed key's table, and `graphitron_field_source_table`
+* **An object result is lifted onto a key row** `open`. Under an
+  object parent a path starts at the key row's table, and `graphitron_field_source_table`
   dissolves into `graphitron_result_table` with its interim record and source-row rules.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the

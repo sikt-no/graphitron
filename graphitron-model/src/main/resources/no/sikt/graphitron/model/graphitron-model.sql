@@ -8500,6 +8500,68 @@ COMMENT ON COLUMN graphitron_result_class.shape IS 'always OBJECT, pinned so the
 COMMENT ON COLUMN graphitron_result_class.class_name IS 'the class, as graphitron_type_backing names it from what a producer returns or a member delivers';
 COMMENT ON COLUMN graphitron_result_class.touched_at IS 'the reading that last wrote this row; the sweep deletes the rows an older reading wrote';
 
+CREATE TABLE graphitron_field_key_row (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  table_source_name VARCHAR   NOT NULL,
+  table_schema      VARCHAR   NOT NULL,
+  table_name        VARCHAR   NOT NULL,
+  arity             VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  UNIQUE (graph_name, type_name, field_name, kind),
+  FOREIGN KEY (graph_name, type_name, field_name)
+    REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (kind IN ('COLUMNS', 'SOURCE_ROW', 'ACCESSOR')),
+  CHECK (arity IN ('ONE', 'MANY'))
+);
+COMMENT ON TABLE graphitron_field_key_row IS 'How a field takes the keys its rows are fetched by off the object its parent holds: one row per field whose parent holds an OBJECT and that fetches its own rows. For example FilmDetailsCarrier.language, under a FilmRecord, takes film''s columns off the record, and CreateFilmsPayload.films takes the film records its films() accessor returns.';
+COMMENT ON COLUMN graphitron_field_key_row.graph_name IS 'the owning graph''s partition, carried from the field';
+COMMENT ON COLUMN graphitron_field_key_row.type_name IS 'the type owning the field, one that holds an OBJECT';
+COMMENT ON COLUMN graphitron_field_key_row.field_name IS 'the field; with the column above a reference into graphitron_field';
+COMMENT ON COLUMN graphitron_field_key_row.kind IS 'how the keys are taken, a closed vocabulary of three. COLUMNS: read as columns off the object, a table record or members named like the columns: the target''s key where the object is what a write or a service produced (a re-fetch), the first key''s columns where a path departs from it. SOURCE_ROW: returned by the field''s @sourceRow method. ACCESSOR: the table records a member of the object returns, their primary key';
+COMMENT ON COLUMN graphitron_field_key_row.table_source_name IS 'the catalog partition of the table whose columns the keys are';
+COMMENT ON COLUMN graphitron_field_key_row.table_schema IS 'that table''s SQL schema';
+COMMENT ON COLUMN graphitron_field_key_row.table_name IS 'the table whose columns the keys are: the target for a re-fetch, the record''s table for a table record or an accessor, the table declaring the path''s first key for @sourceRow';
+COMMENT ON COLUMN graphitron_field_key_row.arity IS 'ONE where one parent object yields one key, MANY where it yields several: a list of produced records, or an accessor returning a collection';
+COMMENT ON COLUMN graphitron_field_key_row.touched_at IS 'when the reading that derived this row ran; the stage sweeps the graph''s rows carrying another instant';
+
+CREATE TABLE graphitron_field_key_row_method (
+  graph_name         VARCHAR   NOT NULL,
+  type_name          VARCHAR   NOT NULL,
+  field_name         VARCHAR   NOT NULL,
+  kind               VARCHAR   NOT NULL,
+  method_source_name VARCHAR   NOT NULL,
+  method_class_name  VARCHAR   NOT NULL,
+  method_name        VARCHAR   NOT NULL,
+  method_descriptor  VARCHAR   NOT NULL,
+  touched_at         TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, kind)
+    REFERENCES graphitron_field_key_row (graph_name, type_name, field_name, kind) ON DELETE CASCADE,
+  FOREIGN KEY (method_source_name, method_class_name, method_name, method_descriptor)
+    REFERENCES code_method (source_name, class_name, method_name, descriptor) ON DELETE CASCADE,
+  CHECK (kind IN ('SOURCE_ROW', 'ACCESSOR'))
+);
+COMMENT ON TABLE graphitron_field_key_row_method IS 'The method a key row is taken by, where one is: one row per field whose keys a @sourceRow method returns or an accessor of the parent''s object yields. For example CreateFilmPayload.language''s keys are CreateFilmPayloadLifter.liftLanguageId''s, and FilmWithActorsResult.actors'' are FilmWithActors.actorRecords().';
+COMMENT ON COLUMN graphitron_field_key_row_method.graph_name IS 'the owning graph''s partition, carried from the key';
+COMMENT ON COLUMN graphitron_field_key_row_method.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_key_row_method.field_name IS 'the field; with the columns above a reference into graphitron_field_key_row';
+COMMENT ON COLUMN graphitron_field_key_row_method.kind IS 'SOURCE_ROW or ACCESSOR, carried so the reference into the key names a kind that has a method';
+COMMENT ON COLUMN graphitron_field_key_row_method.method_source_name IS 'the classpath entry the method was read from';
+COMMENT ON COLUMN graphitron_field_key_row_method.method_class_name IS 'the class declaring it: the @sourceRow class, or the parent object''s class for an accessor';
+COMMENT ON COLUMN graphitron_field_key_row_method.method_name IS 'the method''s name';
+COMMENT ON COLUMN graphitron_field_key_row_method.method_descriptor IS 'its descriptor, telling overloads apart';
+COMMENT ON COLUMN graphitron_field_key_row_method.touched_at IS 'when the reading that derived this row ran, as on the key';
+
+CREATE INDEX graphql_ast_field_definition_entry_coordinate_ix
+  ON graphql_ast_field_definition_entry (graph_name, type_name, name);
+COMMENT ON INDEX graphql_ast_field_definition_entry_coordinate_ix IS 'The coordinate side''s probe: graphitron_field_key_row_rule reaches a producing field''s definition site from its type and name, where the primary key leads with the site.';
+
 -- How a field reads the result its parent holds: under a ROW, a column of it, an expression
 -- projected into it, or a row nested in it; under an OBJECT, an accessor. A field that is a
 -- producer, or claims a kind it is no producer of, is not here.
@@ -11920,6 +11982,167 @@ COMMENT ON COLUMN graphitron_carrier_data_field.field_name IS 'the data channel'
 COMMENT ON COLUMN graphitron_carrier_data_field.family IS 'which producing directive returns the payload, a closed three-value domain: SERVICE (@service), DML (@mutation), ROUTINE (@routine). Provenance and policy both, the two rejections that differ between families being this column''s; a payload two families return is a row per family, and a reader that means one of them filters on it';
 COMMENT ON COLUMN graphitron_carrier_data_field.element_kind IS 'what the channel''s element is, a closed three-value domain: TABLE (the named type is bound to one catalog table), RECORD (the backing closure reaches a class for it), ID (the ID scalar, the encoded-key echo). Never NULL here, an unrecognized element having dropped its whole payload';
 COMMENT ON COLUMN graphitron_carrier_data_field.data_fields IS 'how many data channels the payload declares, this row being one of them; 1 is what a carrier requires, and a larger number is what the generator''s own "require exactly one" rejection counts. Stated as a column rather than left to each reader''s count, because whether the payload is a carrier at all decides the reading and a reader that counted for itself would be re-deriving the scan''s arity';
+
+CREATE VIEW graphitron_field_key_row_rule
+  (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name, arity,
+   method_source_name, method_class_name, method_name, method_descriptor) AS
+-- The fields that fetch their own rows under a parent holding an OBJECT, with what the parent holds
+-- and what the field reads. A parent holding several classes takes no part: which one arrives is the
+-- producer's, so no one key is the field's.
+WITH field_at (graph_name, type_name, field_name, class_name, record_source_name, record_schema,
+               record_table, target_type_name, many, polymorphic, base_name, def_source_name,
+               def_line, def_column) AS (
+  SELECT p.graph_name, p.type_name, p.field_name, rc.class_name,
+         rt.source_name, rt.table_schema, rt.table_name,
+         ft.target_type_name,
+         f.is_list OR ft.wrapper_type_name IS NOT NULL,
+         tt.kind IN ('INTERFACE', 'UNION'),
+         COALESCE((SELECT be.name_ref FROM graphql_ast_field_directive_entry fd
+                     JOIN graphitron_ast_field_binding_entry be
+                       ON be.graph_name = fd.graph_name AND be.source_name = fd.source_name
+                      AND be.source_line = fd.source_line AND be.source_column = fd.source_column
+                    WHERE fd.graph_name = d.graph_name AND fd.source_name = d.source_name
+                      AND fd.parent_line = d.source_line AND fd.parent_column = d.source_column
+                    LIMIT 1), p.field_name),
+         d.source_name, d.source_line, d.source_column
+    FROM graphitron_producer p
+    JOIN graphitron_result r
+      ON r.graph_name = p.graph_name AND r.type_name = p.type_name AND r.shape = 'OBJECT'
+    JOIN graphitron_field f
+      ON f.graph_name = p.graph_name AND f.type_name = p.type_name AND f.field_name = p.field_name
+    JOIN graphitron_field_target ft
+      ON ft.graph_name = p.graph_name AND ft.type_name = p.type_name AND ft.field_name = p.field_name
+    JOIN graphitron_type tt
+      ON tt.graph_name = ft.graph_name AND tt.type_name = ft.target_type_name
+    LEFT JOIN graphitron_result_class rc
+      ON rc.graph_name = r.graph_name AND rc.type_name = r.type_name
+    LEFT JOIN sql_table rt
+      ON rt.record_class_fqn = rc.class_name
+    LEFT JOIN graphql_ast_field_definition_entry d
+      ON d.graph_name = p.graph_name AND d.type_name = p.type_name AND d.name = p.field_name
+   WHERE p.kind IN ('SELECT', 'LOOKUP')
+     AND (SELECT COUNT(*) FROM graphitron_result_class c2
+           WHERE c2.graph_name = r.graph_name AND c2.type_name = r.type_name) <= 1
+),
+-- The payloads a write hands back: the types a mutation's or a routine's write returns.
+written (graph_name, type_name) AS (
+  SELECT DISTINCT wt.graph_name, wt.target_type_name
+    FROM graphitron_producer wp
+    JOIN graphitron_field_target wt
+      ON wt.graph_name = wp.graph_name AND wt.type_name = wp.type_name AND wt.field_name = wp.field_name
+   WHERE wp.kind IN ('INSERT', 'UPDATE', 'DELETE', 'ROUTINE')
+),
+target (graph_name, type_name, field_name, source_name, table_schema, table_name) AS (
+  SELECT fa.graph_name, fa.type_name, fa.field_name, b.table_source_name, b.table_schema, b.table_name
+    FROM field_at fa
+    JOIN graphitron_resolved_type_binding b
+      ON b.graph_name = fa.graph_name AND b.type_name = fa.target_type_name AND b.candidates = 1
+   WHERE NOT fa.polymorphic
+),
+first_key (graph_name, type_name, field_name, source_name, table_schema, table_name,
+           referenced_source_name, referenced_schema, referenced_table) AS (
+  SELECT fa.graph_name, fa.type_name, fa.field_name, rk.source_name, rk.table_schema, rk.table_name,
+         rk.referenced_source_name, rk.referenced_schema, rk.referenced_table
+    FROM field_at fa
+    JOIN graphitron_ast_field_path_entry e
+      ON e.graph_name = fa.graph_name AND e.source_name = fa.def_source_name
+     AND e.field_line = fa.def_line AND e.field_column = fa.def_column AND e.position = 0
+    JOIN graphitron_path_element_key k
+      ON k.graph_name = e.graph_name AND k.source_name = e.source_name
+     AND k.source_line = e.element_line AND k.source_column = e.element_column
+    JOIN sql_referential_constraint rk
+      ON rk.source_name = k.constraint_source_name AND rk.table_schema = k.constraint_schema
+     AND rk.table_name = k.constraint_table AND rk.constraint_name = k.constraint_name
+),
+source_row (graph_name, type_name, field_name, class_name, method) AS (
+  SELECT fa.graph_name, fa.type_name, fa.field_name, sr.class_name, sr.method
+    FROM field_at fa
+    JOIN graphql_ast_field_directive_entry fd
+      ON fd.graph_name = fa.graph_name AND fd.source_name = fa.def_source_name
+     AND fd.parent_line = fa.def_line AND fd.parent_column = fa.def_column
+    JOIN graphitron_ast_source_row_entry sr
+      ON sr.graph_name = fd.graph_name AND sr.source_name = fd.source_name
+     AND sr.source_line = fd.source_line AND sr.source_column = fd.source_column
+),
+-- A member of the parent's class named as the field reads, returning table records: of the target's
+-- table where the target is one table, of any table where it is several, that table being the hub the
+-- members hang off. Its delivery agrees with the field's: a collection under a list, one under one.
+accessor (graph_name, type_name, field_name, source_name, class_name, method_name, descriptor,
+          table_source_name, table_schema, table_name, arity) AS (
+  SELECT fa.graph_name, fa.type_name, fa.field_name, s.source_name, s.class_name, s.method_name,
+         s.descriptor, et.source_name, et.table_schema, et.table_name,
+         CASE WHEN s.delivery = 'MANY' THEN 'MANY' ELSE 'ONE' END
+    FROM field_at fa
+    JOIN code_read_slot s
+      ON s.class_name = fa.class_name AND s.slot_name = fa.base_name
+    JOIN sql_table et
+      ON et.record_class_fqn = s.element_class
+    LEFT JOIN target t
+      ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
+   WHERE fa.record_table IS NULL
+     AND (fa.polymorphic OR (et.source_name = t.source_name AND et.table_schema = t.table_schema
+                             AND et.table_name = t.table_name))
+     AND ((s.delivery = 'MANY') = fa.many)
+)
+-- A re-fetch: the parent is the payload a write hands back, or a record of the target's own table
+-- a service produced, so the target's key is read straight off it.
+SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', t.source_name, t.table_schema,
+       t.table_name, CASE WHEN fa.many THEN 'MANY' ELSE 'ONE' END,
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM field_at fa
+  JOIN target t
+    ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
+ WHERE EXISTS (SELECT 1 FROM written w
+                WHERE w.graph_name = fa.graph_name AND w.type_name = fa.type_name)
+    OR (fa.record_table = t.table_name AND fa.record_schema = t.table_schema
+        AND fa.record_source_name = t.source_name)
+UNION ALL
+-- @sourceRow: the method returns the keys, the source-side columns of the path's first key, or the
+-- target's own key where no path is written.
+SELECT fa.graph_name, fa.type_name, fa.field_name, 'SOURCE_ROW',
+       COALESCE(fk.source_name, t.source_name), COALESCE(fk.table_schema, t.table_schema),
+       COALESCE(fk.table_name, t.table_name), 'ONE', m.source_name, m.class_name, m.method_name,
+       m.descriptor
+  FROM field_at fa
+  JOIN source_row sr
+    ON sr.graph_name = fa.graph_name AND sr.type_name = fa.type_name AND sr.field_name = fa.field_name
+  LEFT JOIN first_key fk
+    ON fk.graph_name = fa.graph_name AND fk.type_name = fa.type_name AND fk.field_name = fa.field_name
+  LEFT JOIN target t
+    ON t.graph_name = fa.graph_name AND t.type_name = fa.type_name AND t.field_name = fa.field_name
+  JOIN code_method m
+    ON m.class_name = sr.class_name AND m.method_name = sr.method AND m.is_static
+ WHERE COALESCE(fk.table_name, t.table_name) IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM written w
+                    WHERE w.graph_name = fa.graph_name AND w.type_name = fa.type_name)
+   AND NOT COALESCE(t.table_name = fa.record_table AND t.table_schema = fa.record_schema
+                    AND t.source_name = fa.record_source_name, FALSE)
+UNION ALL
+-- A table record the path departs from, by its first key or, to several tables, by its own key.
+SELECT fa.graph_name, fa.type_name, fa.field_name, 'COLUMNS', fa.record_source_name,
+       fa.record_schema, fa.record_table, 'ONE',
+       CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR), CAST(NULL AS VARCHAR)
+  FROM field_at fa
+ WHERE fa.record_table IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM source_row sr WHERE sr.graph_name = fa.graph_name
+                     AND sr.type_name = fa.type_name AND sr.field_name = fa.field_name)
+   AND NOT EXISTS (SELECT 1 FROM target t WHERE t.graph_name = fa.graph_name
+                     AND t.type_name = fa.type_name AND t.field_name = fa.field_name
+                     AND t.table_name = fa.record_table AND t.table_schema = fa.record_schema
+                     AND t.source_name = fa.record_source_name)
+   AND (fa.polymorphic OR EXISTS (SELECT 1 FROM first_key fk WHERE fk.graph_name = fa.graph_name
+                                    AND fk.type_name = fa.type_name AND fk.field_name = fa.field_name))
+UNION ALL
+-- An accessor of the parent's class, where nothing above took the keys and exactly one matches.
+SELECT a.graph_name, a.type_name, a.field_name, 'ACCESSOR', a.table_source_name, a.table_schema,
+       a.table_name, a.arity, a.source_name, a.class_name, a.method_name, a.descriptor
+  FROM accessor a
+ WHERE NOT EXISTS (SELECT 1 FROM source_row sr WHERE sr.graph_name = a.graph_name
+                     AND sr.type_name = a.type_name AND sr.field_name = a.field_name)
+   AND (SELECT COUNT(*) FROM accessor a2 WHERE a2.graph_name = a.graph_name
+          AND a2.type_name = a.type_name AND a2.field_name = a.field_name) = 1;
+COMMENT ON VIEW graphitron_field_key_row_rule IS 'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk. For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.';
+
 
 CREATE TABLE graphitron_field_scope_table (
   graph_name        VARCHAR NOT NULL,
@@ -16594,6 +16817,18 @@ INSERT INTO meta_relation VALUES
    'Where a field''s path ends on a @routine: one row per field whose last written element is a @routine naming one routine, with the function whose result the rows of the type it returns are.',
    'For example Actor.films over @routine(name: "films_for_actor") returns ActorFilm, whose rows are films_for_actor''s result; a mutation''s @routine is a write and draws no row.',
    'A @routine binds no table, so what such a type''s rows are is a fact about the field that calls the routine, stated once here from the written path for every reader that asks where the type is read: the result rule, the source table, the column claims. It needs no walk, the function being where any path ending on it lands. Stored, because those readers ask it as a probe per type, which a view answers by evaluating its whole rule again.'),
+  ('graphitron_field_key_row', 'graph-field', 'graphitron',
+   'How a field takes the keys its rows are fetched by off the object its parent holds: one row per field whose parent holds an OBJECT and that fetches its own rows.',
+   'For example FilmDetailsCarrier.language, under a FilmRecord, takes film''s columns off the record, and CreateFilmsPayload.films takes the film records its films() accessor returns.',
+   'A field under a held object fetches its rows by keys only that object can give, so how the keys are taken is a fact about the field and its parent''s class, stated once here, not worked out again by the generator from the class at build time. The kind names the generator''s key lift and the table says whose columns the keys are, so the walk can depart from it.'),
+  ('graphitron_field_key_row_method', 'graph-field', 'graphitron',
+   'The method a key row is taken by, where one is: one row per field whose keys a @sourceRow method returns or an accessor of the parent''s object yields.',
+   'For example CreateFilmPayload.language''s keys are CreateFilmPayloadLifter.liftLanguageId''s, and FilmWithActorsResult.actors'' are FilmWithActors.actorRecords().',
+   'A subtype of graphitron_field_key_row for the two kinds that name a method, so the key carries no column that is NULL by kind; its reference into the key names the kind, so a COLUMNS key can hold no method.'),
+  ('graphitron_field_key_row_rule', 'graph-field', 'graphitron',
+   'One row the key-row rule computes, in the shape graphitron_field_key_row and its method subtype store together: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture writes this view''s rows for one graph into the two relations, which are the names every reader spells.',
+   'The rule, kept in the catalog rather than in the stage that runs it, so it is stated once in SQL where the gates reading stored definitions can see what it reads.'),
   ('graphitron_routine_result_rule', 'graph-field', 'graphitron',
    'One row the routine result rule computes, in the shape graphitron_routine_result stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example a capture inserts this view''s rows for one graph into graphitron_routine_result, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
