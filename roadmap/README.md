@@ -43,7 +43,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
-| `R1096` | Select a translated text column by the request language (Accept-Language) | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
+| `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
@@ -439,7 +439,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R537` [**Pin the DefaultRead-under-Outcome validate-time rejection with a named test**](pin-defaultread-outcome-rejection.md) — Backlog, cleanup
 - `R689` [**Pre-index reads of ErrorIndex.EMPTY return a plausible wrong answer**](phase-varying-index-reads-lack-a-not-built-arm.md) — Backlog, architecture
 - `R532` [**Route surfaceMultiProducerRejections through bindingRejectionVerdict**](single-producer-rejection-seed.md) — Backlog, cleanup
-- `R1096` [**Select a translated text column by the request language (Accept-Language)**](request-language-column-selection.md) — Spec, feature
+- `R1096` [**Select a translated text column by the request language (Accept-Language)**](request-language-column-selection.md) — Spec, feature, blocked by [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)
 - `R467` [**Upgrade graphql-java 25.0 -> 26.0**](upgrade-graphql-java-26.md) — Ready, tech-debt
 - `R520` [**@table-on-input removal housekeeping: changelog, LSP directive list, docs (Phase 4)**](table-on-input-removal-housekeeping.md) — Backlog, architecture
 - `R485` [**Model-level isFkHop/pairsOf helpers for JoinStep narrowings**](fk-hop-narrowing-helpers.md) — Backlog, structural
