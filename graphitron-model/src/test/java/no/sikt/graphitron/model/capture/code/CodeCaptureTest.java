@@ -890,7 +890,7 @@ class CodeCaptureTest {
             var dsl = store.dsl();
             ModelCapture.writeGraph(dsl, new GraphIdentity("reclaim", dir), FIRST);
             CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "reclaim",
-                    List.of(ClasspathEntry.project(gone), ClasspathEntry.project(stays)), null, FIRST),
+                    List.of(ClasspathEntry.project(gone), ClasspathEntry.project(stays)), null, FIRST, null),
                 null, FIRST);
             String goneName = gone.toString();
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(goneName)))
@@ -902,7 +902,7 @@ class CodeCaptureTest {
 
             deleteTree(gone);
             CodeCapture.capture(dsl, ClasspathSourceCapture.capture(dsl, "reclaim",
-                    List.of(ClasspathEntry.project(stays)), null, SECOND),
+                    List.of(ClasspathEntry.project(stays)), null, SECOND, null),
                 null, SECOND);
 
             assertThat(dsl.fetchCount(STORE_SOURCE, STORE_SOURCE.SOURCE_NAME.eq(goneName)))

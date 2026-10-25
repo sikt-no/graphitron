@@ -51,7 +51,7 @@ public final class ModelCapture {
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
                                          List<ClasspathEntry> classpath, ClassLoader loader,
                                          LocalDateTime readAt) {
-        return capture(dsl, graph, config, classpath, loader, readAt, null);
+        return capture(dsl, graph, config, classpath, loader, readAt, null, null);
     }
 
     /**
@@ -60,20 +60,10 @@ public final class ModelCapture {
      *
      * <p>Each gatherer commits its own work, in transactions of its own choosing, and records how
      * far it got through {@link Progress}.
-     */
-    public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
-                                         List<ClasspathEntry> classpath, ClassLoader loader,
-                                         LocalDateTime readAt, StageProgress progress) {
-        return capture(dsl, graph, config, classpath, loader, readAt, progress, null);
-    }
-
-    /**
-     * {@link #capture(DSLContext, GraphIdentity, SubjectConfig, List, ClassLoader, LocalDateTime,
-     * StageProgress)} under a dev session's observation, which lets the classpath reading leave an
-     * entry the session saw nothing move under without looking at it.
      *
-     * @param observation what the session watches and has seen move, or null for a run watching
-     *                    nothing
+     * @param observation what a dev session watches and has seen move, which lets the classpath
+     *                    reading leave an entry nothing moved under without looking at it; null for
+     *                    a run watching nothing
      */
     @SuppressWarnings("deprecation")
     public static CapturedSchema capture(DSLContext dsl, GraphIdentity graph, SubjectConfig config,
@@ -84,13 +74,10 @@ public final class ModelCapture {
         Progress.started(dsl, graph.name(), Progress.CAPTURE);
         StoreEntries.write(dsl, graph.name(), config, classpath, readAt);
 
-        String jooqPackage = config.jooqPackage().orElse(null);
-        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath, jooqPackage,
-            readAt, observation);
-        // The catalog is the generated classes, so it is read again only where an entry holding
-        // them moved; the classpath reading has just said whether one did.
-        JooqFactCapture.capture(dsl, graph.name(), jooqPackage, loader, readAt,
-            ClasspathSourceCapture.stampOfEntriesHolding(dsl, classpath, jooqPackage).orElse(null));
+        JooqFactCapture.capture(dsl, graph.name(), config.jooqPackage().orElse(null), loader,
+            readAt);
+        var classes = ClasspathSourceCapture.capture(dsl, graph.name(), classpath,
+            config.jooqPackage().orElse(null), readAt, observation);
         CodeCapture.capture(dsl, classes, loader, readAt);
 
         var reading = GraphQLSourceCapture.capture(dsl, graph, config, readAt);
@@ -98,11 +85,11 @@ public final class ModelCapture {
         // reading; the source reading has written the problems the throw reports.
         SchemaLoader.throwIfUnparsed(reading.failures());
         var documents = reading.documents();
-        GraphQLAstCapture.capture(dsl, graph, documents, reading.reordered(), readAt);
+        GraphQLAstCapture.capture(dsl, graph, documents, readAt);
         FederationCapture.capture(dsl, graph.name(), readAt);
 
         // The decode reads only the corpus as written, so it runs ahead of the anchor.
-        SdlFactCapture.decode(dsl, graph.name(), reading, readAt);
+        SdlFactCapture.decode(dsl, graph.name(), GraphQLAssemblyCapture.corpus(documents), readAt);
         GraphitronAstCapture.capture(dsl, graph, documents, readAt);
         // The composition hands federation-jvm the link the anchor just settled.
         var assembled = GraphQLAssemblyCapture.capture(dsl, graph, reading, readAt);

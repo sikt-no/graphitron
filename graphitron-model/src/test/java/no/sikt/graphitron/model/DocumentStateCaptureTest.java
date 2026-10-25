@@ -23,7 +23,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -209,97 +208,7 @@ class DocumentStateCaptureTest {
         });
     }
 
-    /**
-     * The corpus's anchors are a statement over the entries and the files' order, so a reading that
-     * transcribed nothing and found the order where it was has nothing to anchor. The specification
-     * document is part of that: its bundled bytes are stamped like a file's, so it is not read again
-     * either.
-     */
-    @Test
-    @DisplayName("a reading that transcribed nothing leaves the corpus's anchors alone")
-    void anUnchangedCorpusIsNotAnchoredAgain() {
-        ThreadConfinedStore.run(dsl -> {
-            Path directory = temporaryDirectory();
-            write(directory, "widget.graphqls", WIDGET);
-            write(directory, "query.graphqls", QUERY);
-            readAsCaptured(dsl, directory, FIRST);
-
-            readAsCaptured(dsl, directory, SECOND);
-
-            assertThat(dsl.selectDistinct(GRAPHQL_ELEMENT.TOUCHED_AT).from(GRAPHQL_ELEMENT)
-                    .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(GRAPH))
-                    .fetch(GRAPHQL_ELEMENT.TOUCHED_AT))
-                .as("every anchor still carries the reading that derived it")
-                .containsExactly(FIRST);
-            assertThat(dsl.selectDistinct(GRAPHQL_AST_ENTRY.TOUCHED_AT).from(GRAPHQL_AST_ENTRY)
-                    .where(GRAPHQL_AST_ENTRY.GRAPH_NAME.eq(GRAPH))
-                    .and(GRAPHQL_AST_ENTRY.SOURCE_NAME.eq(SchemaLoader.SPECIFICATION_SOURCE_NAME))
-                    .fetch(GRAPHQL_AST_ENTRY.TOUCHED_AT))
-                .as("and the specification's own entries were not transcribed again")
-                .containsExactly(FIRST);
-        });
-    }
-
-    /**
-     * Which of two declarations of one coordinate the corpus honours is settled by the files'
-     * modification order, so a file touched past its neighbour moves the anchors though no byte
-     * moved. A touch that keeps the order is the control: it changes nothing an anchor reads.
-     */
-    @Test
-    @DisplayName("files that swap modification order are anchored again, though no byte moved")
-    void aReorderedCorpusIsAnchoredAgain() throws IOException {
-        Path directory = temporaryDirectory();
-        write(directory, "widget.graphqls", WIDGET);
-        write(directory, "query.graphqls", QUERY);
-        setModified(directory, "widget.graphqls", 1_000);
-        setModified(directory, "query.graphqls", 2_000);
-        ThreadConfinedStore.run(dsl -> {
-            readAsCaptured(dsl, directory, FIRST);
-
-            setModified(directory, "widget.graphqls", 3_000);
-            setModified(directory, "query.graphqls", 4_000);
-            readAsCaptured(dsl, directory, SECOND);
-            assertThat(anchoredAt(dsl)).as("a touch that keeps the order is not a reason")
-                .containsExactly(FIRST);
-
-            setModified(directory, "widget.graphqls", 5_000);
-            readAsCaptured(dsl, directory, THIRD);
-            assertThat(anchoredAt(dsl)).as("the widget file now younger than the query file is")
-                .containsExactly(THIRD);
-        });
-    }
-
     // ------------------------------------------------------------------------------- the reading
-
-    /**
-     * One reading as a run captures it, the anchors told whether the files' order moved, which is
-     * what lets them stand where nothing they read did.
-     */
-    private static void readAsCaptured(DSLContext dsl, Path baseDir, LocalDateTime readAt) {
-        var graph = new GraphIdentity(GRAPH, baseDir);
-        ModelCapture.writeGraph(dsl, graph, readAt);
-        var reading = GraphQLSourceCapture.capture(dsl, graph, corpus(baseDir, "*.graphqls"),
-            readAt);
-        SchemaLoader.throwIfUnparsed(reading.failures());
-        GraphQLAstCapture.capture(dsl, graph, reading.documents(), reading.reordered(), readAt);
-        GraphQLSourceCapture.reclaim(dsl, reading.documents());
-    }
-
-    private static List<LocalDateTime> anchoredAt(DSLContext dsl) {
-        return dsl.selectDistinct(GRAPHQL_ELEMENT.TOUCHED_AT).from(GRAPHQL_ELEMENT)
-            .where(GRAPHQL_ELEMENT.GRAPH_NAME.eq(GRAPH))
-            .fetch(GRAPHQL_ELEMENT.TOUCHED_AT);
-    }
-
-    /** Sets a file's modification time to a fixed number of seconds after the epoch. */
-    private static void setModified(Path directory, String name, long seconds) {
-        try {
-            Files.setLastModifiedTime(directory.resolve(name),
-                java.nio.file.attribute.FileTime.fromMillis(seconds * 1_000));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        }
-    }
 
     /** One reading of everything the configuration names, which is what a run does. */
     private static void read(DSLContext dsl, Path baseDir, LocalDateTime readAt) {

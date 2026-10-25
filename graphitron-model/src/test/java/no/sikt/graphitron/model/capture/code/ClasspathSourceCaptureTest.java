@@ -146,54 +146,6 @@ class ClasspathSourceCaptureTest {
         }
     }
 
-    /**
-     * A package two entries hold classes under, as sis's generated package does beside a
-     * hand-written class in another module. The catalog's stamp covers both, so it is there to
-     * compare at all, and a class moving in either entry moves it.
-     */
-    @Test
-    @DisplayName("a package two entries hold is stamped by both, and moves when either does")
-    void aPackageTwoEntriesHoldIsStampedByBoth(@TempDir Path dir) throws IOException {
-        // Public classes, the census recording no other kind, so no test class of this package will do.
-        Path first = dir.resolve("first");
-        Path second = dir.resolve("second");
-        copyClass(first, ClasspathSourceCapture.class);
-        Path otherClass = copyClass(second, CodeCapture.class);
-        var classpath = List.of(ClasspathEntry.project(first), ClasspathEntry.project(second));
-        String pkg = ClasspathSourceCapture.class.getPackageName();
-        try (var store = GraphitronStore.inMemory()) {
-            var dsl = store.dsl();
-            captureAll(dsl, dir, classpath);
-            var stamp = ClasspathSourceCapture.stampOfEntriesHolding(dsl, classpath, pkg);
-            assertThat(stamp).as("both entries hold the package, and it has one stamp").isPresent();
-
-            captureAll(dsl, dir, classpath);
-            assertThat(ClasspathSourceCapture.stampOfEntriesHolding(dsl, classpath, pkg))
-                .as("unmoved, the same stamp").isEqualTo(stamp);
-
-            touch(otherClass);
-            captureAll(dsl, dir, classpath);
-            assertThat(ClasspathSourceCapture.stampOfEntriesHolding(dsl, classpath, pkg))
-                .as("a class moved in the second entry moves it").isNotEqualTo(stamp);
-        }
-    }
-
-    /** Copies a main class's compiled file into {@code entry} at its package path, returning the copy. */
-    private static Path copyClass(Path entry, Class<?> type) throws IOException {
-        String relative = type.getName().replace('.', '/') + ".class";
-        Path target = entry.resolve(relative);
-        Files.createDirectories(target.getParent());
-        Files.copy(Path.of("target", "classes").resolve(relative), target);
-        return target;
-    }
-
-    private static void captureAll(DSLContext dsl, Path dir, List<ClasspathEntry> classpath) {
-        pause();
-        var readAt = LocalDateTime.now().truncatedTo(ChronoUnit.MICROS);
-        ModelCapture.writeGraph(dsl, new GraphIdentity(GRAPH, dir), readAt);
-        ClasspathSourceCapture.capture(dsl, GRAPH, classpath, null, readAt, null);
-    }
-
     /** One capture of {@code entry} for the graph, and what it made of the entry. */
     private static ClasspathSource capture(DSLContext dsl, Path dir, Path entry,
                                            Observation observation) {

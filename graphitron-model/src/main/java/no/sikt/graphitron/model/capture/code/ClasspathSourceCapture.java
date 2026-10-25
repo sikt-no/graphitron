@@ -99,18 +99,9 @@ public final class ClasspathSourceCapture {
      *
      * <p>The instant is the caller's, on every gatherer's terms: the rows the gatherers below write
      * carry it, and their sweeps tell this reading's rows from the last one's by it.
-     */
-    public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
-                                  String headerOnlyPackage, LocalDateTime readAt) {
-        return capture(dsl, graph, classpath, headerOnlyPackage, readAt, null);
-    }
-
-    /**
-     * {@link #capture(DSLContext, String, List, String, LocalDateTime)} under a dev session's
-     * observation, which can say which entries have not moved since this store read them; such an
-     * entry is left alone on the stamp the store holds, without a walk.
      *
-     * @param observation what the session watches and has seen move, or null for a run watching
+     * @param observation what a dev session watches and has seen move, so an entry nothing moved
+     *                    under is left alone on the stamp the store holds; null for a run watching
      *                    nothing, which decides every entry from the filesystem
      */
     public static Reading capture(DSLContext dsl, String graph, List<ClasspathEntry> classpath,
@@ -202,50 +193,6 @@ public final class ClasspathSourceCapture {
         sources.sort(java.util.Comparator.comparingInt(
             source -> order.getOrDefault(source.sourceName(), Integer.MAX_VALUE)));
         return new Reading(reading.census(), List.copyOf(sources), graph);
-    }
-
-    /**
-     * One stamp for every entry of {@code classpath} holding classes under {@code javaPackage}, as
-     * this gatherer last recorded them; empty where no entry holds the package or one holding it
-     * carries no stamp.
-     *
-     * <p>What a reader of a package lets decide whether the package's bytes have moved, which for
-     * the generated jOOQ classes is whether the catalog needs reading again: an entry's stamp moves
-     * whenever a class under it does, and this moves whenever any of theirs does. Every holding
-     * entry rather than one, a package being free to span modules: sis's generated classes sit in
-     * one and a hand-written class under the same package in another, and an entry counted that the
-     * catalog does not read only errs toward reading it again. Asked after a {@link #capture}, so
-     * each stamp is the current one whether its entry was read or left alone.
-     */
-    public static java.util.Optional<String> stampOfEntriesHolding(DSLContext dsl,
-                                                                   List<ClasspathEntry> classpath,
-                                                                   String javaPackage) {
-        if (javaPackage == null || javaPackage.isEmpty()) {
-            return java.util.Optional.empty();
-        }
-        var names = declared(classpath).stream().map(entry -> entry.path().toString()).toList();
-        if (names.isEmpty()) {
-            return java.util.Optional.empty();
-        }
-        var f = STORE_CLASS_FILE;
-        var s = STORE_SOURCE;
-        var holding = dsl.selectDistinct(s.SOURCE_NAME, s.STAMP)
-            .from(f)
-            .join(s).on(s.SOURCE_NAME.eq(f.SOURCE_NAME))
-            .where(f.SOURCE_NAME.in(names))
-            .and(f.FILE_PATH.startsWith(javaPackage.replace('.', '/') + "/"))
-            .orderBy(s.SOURCE_NAME)
-            .fetch();
-        if (holding.isEmpty() || holding.stream().anyMatch(row -> row.value2() == null)) {
-            return java.util.Optional.empty();
-        }
-        if (holding.size() == 1) {
-            return java.util.Optional.of(holding.get(0).value2());
-        }
-        var combined = SourceStamp.streamed();
-        holding.forEach(row -> combined.update((row.value1() + "\u0001" + row.value2() + "\n")
-            .getBytes(java.nio.charset.StandardCharsets.UTF_8)));
-        return java.util.Optional.of(combined.stamp());
     }
 
     /** The entries this run may read at all, which is every one it did not inherit. */

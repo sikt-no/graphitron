@@ -600,11 +600,6 @@ what the edit touched rather than what the project holds. Deletion rides on the 
 class, a document or an entry that goes takes what hung off it by cascade. What a sis round does
 today is in `roadmap/audits/2026-10-19-where-a-dev-round-spends-its-time-on-sis.md`.
 
-* **A round with nothing changed does nothing** `open`. On sakila's second generate the graphitron
-  gatherer (3,259 ms) and the assembly (424 ms) go to about 5 ms each, as `jooq`, `code`,
-  `graphql-ast` and `sdl` already have; derivation is left to dissolve rather than tuned. The parse
-  and the assembled schema stay while derivation and the generator read them, so a dev session
-  reuses the last round's where nothing they are built from moved.
 * **A schema edit re-anchors only what the edited document feeds** `open`. A comment-only edit
   reruns the document gatherers it reaches and leaves the catalog and classpath gatherers alone.
 * **A classpath change reruns only the gatherers that read the classpath** `open`. A round that

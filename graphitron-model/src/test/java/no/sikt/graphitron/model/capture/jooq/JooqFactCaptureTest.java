@@ -15,7 +15,6 @@ import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
-import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.assertj.core.api.Assertions.assertThat;
 import static no.sikt.graphitron.model.test.TestRunContext.JOOQ_PACKAGE;
 
@@ -124,49 +123,6 @@ class JooqFactCaptureTest {
             assertThat(store.dsl().fetchCount(SQL_COLUMN)).isEqualTo(columnsAfterFirst);
             assertThat(store.dsl().fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(SECOND)))
                 .as("and every row now carries the second reading").isEqualTo(afterFirst);
-        }
-    }
-
-    /**
-     * The catalog is the generated classes, so a capture handed the stamp the graph's catalog was
-     * read under has nothing to read: no row is rewritten, which is what the second reading's
-     * instant being nowhere says.
-     */
-    @Test
-    @DisplayName("a catalog whose classes have not moved is not read again")
-    void anUnmovedCatalogIsNotReadAgain() {
-        try (var store = GraphitronStore.inMemory()) {
-            var dsl = store.dsl();
-            SeededStore.seedGraph(dsl, GRAPH);
-            JooqFactCapture.capture(dsl, GRAPH, JOOQ_PACKAGE, loader(), FIRST, "stamp-1");
-            int afterFirst = dsl.fetchCount(SQL_TABLE);
-
-            JooqFactCapture.capture(dsl, GRAPH, JOOQ_PACKAGE, loader(), SECOND, "stamp-1");
-
-            assertThat(dsl.fetchCount(SQL_TABLE)).isEqualTo(afterFirst).isPositive();
-            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(SECOND)))
-                .as("no table row was rewritten").isZero();
-        }
-    }
-
-    @Test
-    @DisplayName("a catalog whose classes moved is read again, under the new stamp")
-    void aMovedCatalogIsReadAgain() {
-        try (var store = GraphitronStore.inMemory()) {
-            var dsl = store.dsl();
-            SeededStore.seedGraph(dsl, GRAPH);
-            JooqFactCapture.capture(dsl, GRAPH, JOOQ_PACKAGE, loader(), FIRST, "stamp-1");
-            int afterFirst = dsl.fetchCount(SQL_TABLE);
-
-            JooqFactCapture.capture(dsl, GRAPH, JOOQ_PACKAGE, loader(), SECOND, "stamp-2");
-
-            assertThat(dsl.fetchCount(SQL_TABLE, SQL_TABLE.TOUCHED_AT.eq(SECOND)))
-                .as("every table row rewritten").isEqualTo(afterFirst);
-            assertThat(dsl.selectDistinct(STORE_SOURCE.STAMP).from(STORE_SOURCE)
-                    .where(STORE_SOURCE.SOURCE_KIND.eq("JOOQ_SCHEMA"))
-                    .fetch(STORE_SOURCE.STAMP))
-                .as("and every package source records the stamp it was read under")
-                .containsExactly("stamp-2");
         }
     }
 

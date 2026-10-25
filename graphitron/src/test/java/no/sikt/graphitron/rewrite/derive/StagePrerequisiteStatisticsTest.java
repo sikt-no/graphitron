@@ -132,13 +132,13 @@ class StagePrerequisiteStatisticsTest {
 
             var prerequisites = prerequisiteTables(dsl);
             var cold = new UnanalysedPrerequisites(dsl, prerequisites);
-            ModelCapture.capture(dsl, graph, config, List.of(), jooq.loader(), readAt, cold);
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq.loader(), readAt, cold, null);
             var coldPopulated = populated(dsl, prerequisites);
             dependentStagesUnderColdCapture = coldPopulated.keySet();
             unanalysedUnderColdCapture = retained(cold.observed(), coldPopulated);
 
             var warm = new UnanalysedPrerequisites(dsl, prerequisites);
-            ModelCapture.capture(dsl, graph, config, List.of(), jooq.loader(), readAt, warm);
+            ModelCapture.capture(dsl, graph, config, List.of(), jooq.loader(), readAt, warm, null);
             var warmPopulated = populated(dsl, prerequisites);
             dependentStagesUnderWarmCapture = warmPopulated.keySet();
             unanalysedUnderWarmCapture = retained(warm.observed(), warmPopulated);

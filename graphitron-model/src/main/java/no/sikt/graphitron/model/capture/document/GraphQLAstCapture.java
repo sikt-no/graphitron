@@ -141,22 +141,8 @@ public final class GraphQLAstCapture {
     public static void capture(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,
                                LocalDateTime readAt) {
-        capture(dsl, graph, documents, true, readAt);
-    }
-
-    /**
-     * {@link #capture(DSLContext, GraphIdentity, List, LocalDateTime)} told whether the files stand
-     * in a different order than when the anchors were last derived. The anchors are a statement over
-     * the entries and the order alone, so where no document was transcribed or dropped and the order
-     * stood still they are already what this reading would write, and nothing is written.
-     *
-     * @param reordered whether the order a collision is settled by moved; true where unknown
-     */
-    public static void capture(DSLContext dsl, GraphIdentity graph,
-                               List<GraphQLSourceCapture.SourceDocument> documents,
-                               boolean reordered, LocalDateTime readAt) {
         Progress.started(dsl, graph.name(), GATHERER);
-        dsl.transaction(tx -> gather(tx.dsl(), graph, documents, reordered, readAt));
+        dsl.transaction(tx -> gather(tx.dsl(), graph, documents, readAt));
         Progress.completed(dsl, graph.name(), GATHERER);
     }
 
@@ -165,12 +151,9 @@ public final class GraphQLAstCapture {
 
     private static void gather(DSLContext dsl, GraphIdentity graph,
                                List<GraphQLSourceCapture.SourceDocument> documents,
-                               boolean reordered, LocalDateTime readAt) {
+                               LocalDateTime readAt) {
         captureEntries(dsl, graph, documents, readAt);
-        if (reordered
-                || documents.stream().anyMatch(GraphQLSourceCapture.SourceDocument::transcribed)) {
-            anchor(dsl, graph.name(), readAt);
-        }
+        anchor(dsl, graph.name(), readAt);
     }
 
     /**

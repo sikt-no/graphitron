@@ -1,7 +1,5 @@
 package no.sikt.graphitron.model.capture.sdl;
 
-import no.sikt.graphitron.model.capture.document.GraphQLAssemblyCapture;
-import no.sikt.graphitron.model.capture.document.GraphQLSourceCapture;
 import no.sikt.graphitron.model.sink.Progress;
 import org.jooq.DSLContext;
 import java.time.LocalDateTime;
@@ -169,25 +167,6 @@ public final class SdlFactCapture {
      * by {@link Progress}: one transaction rather than several because it
      * clears the graph's decoded rows before it writes them again, so a commit between the two would
      * leave a reader looking at none.
-     */
-    public static void decode(DSLContext dsl, String graphName,
-                              GraphQLSourceCapture.CorpusReading reading,
-                              LocalDateTime readAt) {
-        if (reading.moved()) {
-            decode(dsl, graphName,
-                GraphQLAssemblyCapture.corpus(reading.documents()),
-                readAt);
-            return;
-        }
-        // The decode reads the documents alone, so a reading that moved none of them would clear
-        // and write back exactly what the graph holds; its progress still says it ran.
-        Progress.started(dsl, graphName, GATHERER);
-        Progress.completed(dsl, graphName, GATHERER);
-    }
-
-    /**
-     * {@link #decode(DSLContext, String, GraphQLSourceCapture.CorpusReading, LocalDateTime)} over a
-     * corpus already merged, unconditionally.
      */
     public static void decode(DSLContext dsl, String graphName, TypeDefinitionRegistry merged,
                               LocalDateTime readAt) {

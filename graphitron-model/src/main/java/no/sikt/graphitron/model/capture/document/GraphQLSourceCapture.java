@@ -75,11 +75,6 @@ public final class GraphQLSourceCapture {
         /** The source this is about, named as the store names it. */
         String sourceName();
 
-        /** Whether this reading wrote or emptied the document's entries, which is what moves a derivation. */
-        default boolean transcribed() {
-            return !(this instanceof Unchanged || this instanceof UnchangedSpecification);
-        }
-
         /**
          * A source that states something: it parsed, and {@link #registry()} is what it said.
          *
@@ -160,27 +155,15 @@ public final class GraphQLSourceCapture {
      * @param refusals  what each source refused of itself, a document declaring one thing twice,
      *                  which its own registry has already dropped, so the merge of the documents
      *                  never meets it and only this list says it happened
-     * @param reordered whether the files stand in a different modification-time order than when
-     *                  this graph's rows were last derived, which moves what a collision resolves
-     *                  to even where no file's bytes moved
      */
     public record CorpusReading(List<SourceDocument> documents, List<SchemaInput> inputs,
                                 List<SchemaLoader.SyntaxFailure> failures,
-                                List<SchemaError> refusals, boolean reordered) {
+                                List<SchemaError> refusals) {
         public CorpusReading {
             documents = List.copyOf(documents);
             inputs = List.copyOf(inputs);
             failures = List.copyOf(failures);
             refusals = List.copyOf(refusals);
-        }
-
-        /**
-         * Whether anything a derivation over the documents alone reads has moved since the last
-         * reading: a document transcribed or dropped, or the files standing in another order. Where
-         * it has not, such a derivation would write exactly what the store holds.
-         */
-        public boolean moved() {
-            return reordered || documents.stream().anyMatch(SourceDocument::transcribed);
         }
     }
 
@@ -224,11 +207,8 @@ public final class GraphQLSourceCapture {
             .toList());
         if (!parse.failures().isEmpty()) {
             GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
-            return new CorpusReading(List.of(), inputs, parse.failures(), List.of(), false);
+            return new CorpusReading(List.of(), inputs, parse.failures(), List.of());
         }
-        // The order the files stood in when this graph's rows were last derived, read before any
-        // modification time is written over: the anchors settle a collision by it.
-        var heldOrder = orderOf(heldModifiedAt(dsl, graph.name()));
         var documents = new ArrayList<SourceDocument>();
         for (var source : parse.perSource()) {
             documents.add(read(dsl, graph.name(), source.sourceName(), source.registry(), held, readAt));
@@ -244,14 +224,6 @@ public final class GraphQLSourceCapture {
             }
         }
         documents.add(readSpecification(dsl, graph.name(), held, readAt));
-        var nowModifiedAt = new java.util.HashMap<String, LocalDateTime>();
-        for (var name : heldOrder) {
-            if (configured.contains(name)) {
-                nowModifiedAt.put(name, modifiedAt(name));
-            }
-        }
-        boolean reordered = !orderOf(nowModifiedAt).equals(
-            heldOrder.stream().filter(nowModifiedAt::containsKey).toList());
         dropMembership(dsl, graph.name(), configured);
         writeInputs(dsl, graph.name(), inputs, configured, readAt);
         GraphQLSchemaProblems.writeParsed(dsl, graph.name(), parse.failures(), readAt);
@@ -260,33 +232,7 @@ public final class GraphQLSourceCapture {
         var refusals = parse.perSource().stream()
             .flatMap(source -> source.registryErrors().stream())
             .toList();
-        return new CorpusReading(documents, inputs, parse.failures(), refusals, reordered);
-    }
-
-    /**
-     * When each of this graph's schema files was last seen modified, as the store holds it. What
-     * the anchors order a collision by, so a change in it changes what they would say even where
-     * no file's bytes moved.
-     */
-    private static Map<String, LocalDateTime> heldModifiedAt(DSLContext dsl, String graph) {
-        var m = STORE_GRAPH_SOURCE;
-        var s = STORE_SOURCE;
-        var held = new java.util.HashMap<String, LocalDateTime>();
-        dsl.select(s.SOURCE_NAME, s.MTIME)
-            .from(m).join(s).on(s.SOURCE_NAME.eq(m.SOURCE_NAME))
-            .where(m.GRAPH_NAME.eq(graph))
-            .and(s.SOURCE_KIND.eq("SCHEMA_FILE"))
-            .forEach(row -> held.put(row.value1(), row.value2()));
-        return held;
-    }
-
-    /** Source names oldest first, by name where two share an instant; {@link #OLDEST_FIRST}'s order. */
-    private static List<String> orderOf(Map<String, LocalDateTime> modifiedAt) {
-        return modifiedAt.keySet().stream()
-            .sorted(Comparator.<String, LocalDateTime>comparing(modifiedAt::get,
-                    Comparator.nullsFirst(Comparator.naturalOrder()))
-                .thenComparing(Comparator.naturalOrder()))
-            .toList();
+        return new CorpusReading(documents, inputs, parse.failures(), refusals);
     }
 
     /**
