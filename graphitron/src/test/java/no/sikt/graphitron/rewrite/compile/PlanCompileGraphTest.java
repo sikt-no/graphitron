@@ -120,6 +120,7 @@ class PlanCompileGraphTest {
         assertThat(nodes()).doesNotContain(PKG + ".conditions.FilmConditions");
         // The session hook implementation is committed only when session state is configured.
         assertThat(nodes()).doesNotContain(PKG + ".schema.GraphitronSessionHook");
+        assertThat(nodes()).doesNotContain(PKG + ".schema.SessionMountException");
     }
 
     @Test

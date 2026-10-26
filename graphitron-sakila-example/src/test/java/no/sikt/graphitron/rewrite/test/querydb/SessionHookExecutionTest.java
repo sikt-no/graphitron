@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord;
+import no.sikt.graphitron.generated.schema.SessionMountException;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -20,6 +21,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.Executor;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -239,7 +241,8 @@ class SessionHookExecutionTest {
             assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
                     singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
                     "{\"sub\":\"reject-me\"}"))
-                .as("the mount's own exception propagates, verbatim cause included")
+                .as("the mount's own exception propagates as the cause of the request-scoped rejection")
+                .isInstanceOf(SessionMountException.class)
                 .hasStackTraceContaining("unentitled principal");
             assertThat(raw.isClosed())
                 .as("fail closed: the half-mounted connection is evicted, never pooled")
@@ -249,6 +252,105 @@ class SessionHookExecutionTest {
                 raw.close();
             }
         }
+    }
+
+    @Test
+    void failedAutocommitAssertion_isNotARejectedIdentity() throws Exception {
+        // A connection that refuses setAutoCommit is a deployment fault, not the database
+        // rejecting the caller: it must not read as SessionMountException to a consumer that
+        // maps that type to 401.
+        Connection raw = probeConnection();
+        raw.close();
+        Executor sameThread = Runnable::run;
+        assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
+                singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
+                "{\"sub\":\"alice\"}"))
+            .isNotInstanceOf(SessionMountException.class)
+            .hasRootCauseInstanceOf(SQLException.class);
+    }
+
+    @Test
+    void rejectedMount_rejectsTheWholeRequestOnce_withTheMountsCauseReachable() {
+        // Three root fields that each need the database: one mount attempt, one evicted
+        // connection, no per-field log line, and GraphQL.execute throws instead of answering.
+        var opened = new CopyOnWriteArrayList<Connection>();
+        var logged = new CopyOnWriteArrayList<Throwable>();
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(countingDataSource(opened), SQLDialect.POSTGRES)
+            .withFetcherErrorLog((thrown, reference, env) -> logged.add(thrown));
+        var engine = runtime.newGraphQL(no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        assertThatThrownBy(() -> engine.execute(rejectedInput(
+                "{ a: filmsOrdered { title } b: customerByPk(customerId: 1) { firstName } c: sessionPrincipal }")))
+            .isInstanceOf(SessionMountException.class)
+            .hasStackTraceContaining("unentitled principal");
+        assertThat(opened).as("the first rejection is remembered: one mount attempt, not one per field").hasSize(1);
+        assertThat(opened).allSatisfy(c -> assertThat(c.isClosed()).as("evicted").isTrue());
+        assertThat(logged).as("a rejected identity is no fetcher fault: nothing is logged per field").isEmpty();
+    }
+
+    @Test
+    void rejectedMount_failsTheAsyncExecutionWithTheSameException() {
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+            countingDataSource(new CopyOnWriteArrayList<>()), SQLDialect.POSTGRES);
+        var engine = runtime.newGraphQL(no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        assertThat(engine.executeAsync(rejectedInput("{ filmsOrdered { title } }")))
+            .failsWithin(java.time.Duration.ofSeconds(30))
+            .withThrowableOfType(java.util.concurrent.ExecutionException.class)
+            .withCauseInstanceOf(SessionMountException.class);
+    }
+
+    @Test
+    void operationTouchingNoDatabase_neverMounts_soARejectedPrincipalStillSucceeds() {
+        var opened = new CopyOnWriteArrayList<Connection>();
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(countingDataSource(opened), SQLDialect.POSTGRES);
+        var engine = runtime.newGraphQL(no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        var result = engine.execute(rejectedInput("{ __typename }"));
+
+        assertThat(result.getErrors()).isEmpty();
+        assertThat(opened).as("lazy: no field needed a connection").isEmpty();
+    }
+
+    @Test
+    void chainedInstrumentation_stillLetsTheRejectionEscape_inEitherOrder() {
+        // Pins the graphql-java premise the override rests on: a throw from
+        // instrumentExecutionResult escapes execute, also from inside a ChainedInstrumentation,
+        // whichever side of the consumer's own instrumentation graphitron's sits.
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+            countingDataSource(new CopyOnWriteArrayList<>()), SQLDialect.POSTGRES);
+        var schema = no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {});
+        graphql.execution.instrumentation.Instrumentation consumers =
+            new graphql.execution.instrumentation.SimplePerformantInstrumentation();
+        var graphitrons = new no.sikt.graphitron.generated.schema.GraphitronConnectionInstrumentation(runtime);
+        for (var chain : List.of(List.of(graphitrons, consumers), List.of(consumers, graphitrons))) {
+            var engine = graphql.GraphQL.newGraphQL(schema)
+                .instrumentation(new graphql.execution.instrumentation.ChainedInstrumentation(chain))
+                .build();
+            assertThatThrownBy(() -> engine.execute(rejectedInput("{ filmsOrdered { title } }")))
+                .isInstanceOf(SessionMountException.class);
+        }
+    }
+
+    @Test
+    void errorChannelMapping_neverClaimsARejectedMount() {
+        // A GENERIC handler on RuntimeException, or a database mapping on the SQLState, would
+        // otherwise turn a rejected identity into payload data.
+        var claimsEverything = new no.sikt.graphitron.generated.schema.ErrorRouter.Mapping() {
+            @Override public boolean match(Throwable thrown, Throwable candidate) { return true; }
+            @Override public String description() { return null; }
+        };
+        var rejected = new SessionMountException(new SQLException("unentitled principal", "P0001"));
+
+        assertThat(no.sikt.graphitron.generated.schema.ErrorRouter.claim(
+                new java.util.concurrent.CompletionException(rejected),
+                new no.sikt.graphitron.generated.schema.ErrorRouter.Mapping[]{claimsEverything}, null))
+            .isNull();
+        assertThat(no.sikt.graphitron.generated.schema.ErrorRouter.claim(
+                new IllegalStateException("an ordinary fault"),
+                new no.sikt.graphitron.generated.schema.ErrorRouter.Mapping[]{claimsEverything}, null))
+            .as("control: the same mapping claims anything else")
+            .isNotNull();
     }
 
     @Test
@@ -398,6 +500,32 @@ class SessionHookExecutionTest {
     }
 
     // ===== helpers =====
+
+    private static graphql.ExecutionInput rejectedInput(String query) {
+        return no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"reject-me\"}", "reject-me")
+            .query(query)
+            .build();
+    }
+
+    /** A DataSource opening a fresh probe-role connection per call, recording each one. */
+    private static javax.sql.DataSource countingDataSource(List<Connection> opened) {
+        return new javax.sql.DataSource() {
+            @Override public Connection getConnection() throws SQLException {
+                var connection = probeConnection();
+                opened.add(connection);
+                return connection;
+            }
+            @Override public Connection getConnection(String u, String p) throws SQLException { return getConnection(); }
+            @Override public PrintWriter getLogWriter() { return null; }
+            @Override public void setLogWriter(PrintWriter out) { }
+            @Override public void setLoginTimeout(int seconds) { }
+            @Override public int getLoginTimeout() { return 0; }
+            @Override public java.util.logging.Logger getParentLogger() { return null; }
+            @Override public <T> T unwrap(Class<T> iface) throws SQLException { throw new SQLException("not a wrapper"); }
+            @Override public boolean isWrapperFor(Class<?> iface) { return false; }
+        };
+    }
 
     private static Connection probeConnection() throws SQLException {
         return DriverManager.getConnection(jdbcUrl, PROBE_USER, PROBE_PASSWORD);

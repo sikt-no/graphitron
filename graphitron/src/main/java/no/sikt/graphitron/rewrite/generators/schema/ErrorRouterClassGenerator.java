@@ -99,6 +99,15 @@ public final class ErrorRouterClassGenerator {
             no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
     }
 
+    /**
+     * The emitted {@code TenantConnections} carrier, whose {@code isMountFailure} predicate the
+     * router asks so that it never names the mount-gated {@code SessionMountException} itself.
+     */
+    static ClassName tenantConnectionsClass(String outputPackage) {
+        var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).tenantConnections();
+        return ClassName.get(unit.packageName(), unit.simpleName());
+    }
+
     private static ClassName connectionRuntimeUnit(String outputPackage, String simpleName) {
         var unit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage)
             .singleton(no.sikt.graphitron.plan.GeneratedUnits.SUB_SCHEMA, simpleName);
@@ -145,7 +154,7 @@ public final class ErrorRouterClassGenerator {
         var toConfiguredLog = buildToConfiguredLogMethod(fetcherErrorLog);
 
         var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
-        var claim = buildClaimMethod();
+        var claim = buildClaimMethod(tenantConnectionsClass(outputPackage));
         var defaultResponse = FieldSpec.builder(fetcherErrorResponse, DEFAULT_RESPONSE,
                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addJavadoc("Answers when no {@code FetcherErrorResponse} is configured, or when the configured one\n"
@@ -441,7 +450,7 @@ public final class ErrorRouterClassGenerator {
             .build();
     }
 
-    private static MethodSpec buildClaimMethod() {
+    private static MethodSpec buildClaimMethod(ClassName tenantConnections) {
         var mappingArray = ArrayTypeName.of(ClassName.get("", MAPPING_INTERFACE));
         return MethodSpec.methodBuilder("claim")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
@@ -466,10 +475,16 @@ public final class ErrorRouterClassGenerator {
                 + "read, and hands the source to {@code FetcherErrorLog.matched}; later claims of the same\n"
                 + "source do neither, so a batch failure that reaches many fields logs once. A null\n"
                 + "{@code env} or context records nothing.\n"
+                + "\n"
+                + "<p>A rejected session mount is never claimed: it fails the request as a whole, so no\n"
+                + "mapping may turn it into payload data.\n"
                 + "@param thrown the exception the fetcher caught\n"
                 + "@param mappings the channel's dispatch table\n"
                 + "@param env the failing field's environment, or {@code null}\n"
                 + "@return the claimed link of {@code thrown}'s cause chain, or {@code null}\n")
+            .beginControlFlow("if ($T.isMountFailure(thrown))", tenantConnections)
+            .addStatement("return null")
+            .endControlFlow()
             .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))
             .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
             .beginControlFlow("if (mapping.match(thrown, t))")
@@ -586,9 +601,20 @@ public final class ErrorRouterClassGenerator {
                 + "\n"
                 + "<p>Surfacing is narrowed to the client-error marker type, so an unclaimed client\n"
                 + "error reads the same with or without a channel, while an authored mapping that\n"
-                + "matches it still places it into the payload.\n",
+                + "matches it still places it into the payload.\n"
+                + "\n"
+                + "<p>A rejected session mount answers a fixed placeholder error, unlogged and with no\n"
+                + "reference: the operation throws it out of {@code GraphQL.execute} when it completes,\n"
+                + "so this result is discarded and the consumer decides what the request answers.\n",
                 clientException, DATA_FETCHER_RESULT)
             .addCode(CodeBlock.builder()
+                .beginControlFlow("if ($T.isMountFailure(thrown))", tenantConnectionsClass(outputPackage))
+                .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
+                .add("    .data(null)\n")
+                .add("    .error($T.newError(env).message($S).build())\n", GRAPHQL_ERROR_BUILDER,
+                    "The session identity was rejected.")
+                .addStatement("    .build()")
+                .endControlFlow()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
                 .beginControlFlow("if (t instanceof $T clientError)", clientException)
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)

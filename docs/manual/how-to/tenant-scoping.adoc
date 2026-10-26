@@ -135,4 +135,6 @@ new GraphitronRuntime(defaultPool, byTenant, SQLDialect.POSTGRES, myExecutor, Du
 
 A tenant that fails or misses the deadline contributes one `null` element and a path-bearing entry in the response's `errors` array; the field's element nullability chooses whether that stays partial data (`[Thing]`) or nulls the whole field (`[Thing!]`). See the xref:../reference/directives/tenantFanOut.adoc[directive reference].
 
+The one exception is a rejected identity. When your `<sessionState>` mount throws on any tenant, the request fails as a whole instead of returning partial data: `GraphQL.execute` throws `SessionMountException`, as described in xref:../../architecture/reference/runtime-extension-points.adoc#rejected-mount[A rejected identity rejects the request]. The mount payload is one identity for every tenant, so the first rejection answers every later acquisition in the operation. On a mutation, a field routed to a tenant whose mount succeeded may already have committed before another tenant's mount is rejected; the rejection does not undo it.
+
 xref:index.adoc[← How-to index]

@@ -116,6 +116,11 @@ public final class ConnectionRuntimeClassGenerator {
     public static final String PINNED_CONNECTION_CLASS_NAME = "PinnedConnection";
     /** The generated hook class emitted from a configured {@code <sessionState>} method pair. */
     public static final String SESSION_HOOK_IMPL_CLASS_NAME = "GraphitronSessionHook";
+    /**
+     * The request-scoped rejection a throwing mount becomes, emitted beside the hook class and
+     * only with it: a build that mounts nothing has nothing to reject.
+     */
+    public static final String SESSION_MOUNT_EXCEPTION_CLASS_NAME = "SessionMountException";
     /** The per-operation tenant-keyed connection carrier. */
     public static final String TENANT_CONNECTIONS_CLASS_NAME = "TenantConnections";
     /**
@@ -169,6 +174,7 @@ public final class ConnectionRuntimeClassGenerator {
     private static final ClassName TIMEOUT_EXCEPTION = ClassName.get("java.util.concurrent", "TimeoutException");
     private static final ClassName TIME_UNIT = ClassName.get("java.util.concurrent", "TimeUnit");
     private static final ClassName ATOMIC_INTEGER = ClassName.get("java.util.concurrent.atomic", "AtomicInteger");
+    private static final ClassName ATOMIC_REFERENCE = ClassName.get("java.util.concurrent.atomic", "AtomicReference");
     private static final ClassName THREAD_LOCAL = ClassName.get("java.lang", "ThreadLocal");
     private static final TypeName OBJECT_KEY = ClassName.get(Object.class);
     private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
@@ -245,6 +251,7 @@ public final class ConnectionRuntimeClassGenerator {
             : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
         var sessionHookImpl = ClassName.get(schemaPackage, SESSION_HOOK_IMPL_CLASS_NAME);
+        var sessionMountException = ClassName.get(schemaPackage, SESSION_MOUNT_EXCEPTION_CLASS_NAME);
         var pinnedConnection = ClassName.get(schemaPackage, PINNED_CONNECTION_CLASS_NAME);
         var runtime = ClassName.get(schemaPackage, RUNTIME_CLASS_NAME);
         var tenantConnections = ClassName.get(schemaPackage, TENANT_CONNECTIONS_CLASS_NAME);
@@ -260,11 +267,12 @@ public final class ConnectionRuntimeClassGenerator {
         boolean multiTenant = tenantKeyType != null;
 
         var units = new ArrayList<TypeSpec>();
-        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionHooks, tenantKey, multiTenant));
+        units.add(pinnedConnection(pinnedConnection, sessionHookImpl, sessionMountException, sessionHooks,
+            tenantKey, multiTenant));
         units.add(runtime(runtime, pinnedConnection, instrumentation, fetcherErrorLog, fetcherErrorResponse,
             sessionHooks, tenantKey, multiTenant, tenantConnections));
         units.add(tenantConnections(tenantConnections, runtime, pinnedConnection, provider, commitPolicy, tenantKey,
-            multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter, columnValues));
+            multiTenant, sessionHooks, requestTenants, tenantColumn, errorRouter, columnValues, sessionMountException));
         if (multiTenant) {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
@@ -272,6 +280,7 @@ public final class ConnectionRuntimeClassGenerator {
         units.add(fetcherErrorResponse(fetcherErrorResponse));
         if (sessionHooks.emitsHookImplementation()) {
             units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
+            units.add(sessionMountException(sessionMountException));
         }
         return List.copyOf(units);
     }
@@ -292,7 +301,7 @@ public final class ConnectionRuntimeClassGenerator {
      * tenant the connection is acquired for, handed on to the mount.
      */
     private static TypeSpec pinnedConnection(ClassName pinnedConnection, ClassName sessionHookImpl,
-            SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
+            ClassName sessionMountException, SessionHooks sessionHooks, TypeName tenantKey, boolean multiTenant) {
         var payload = payloadParams(sessionHooks);
         boolean mounts = sessionHooks.emitsHookImplementation();
         boolean unmounts = sessionHooks.unmountRef().isPresent();
@@ -366,11 +375,19 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("connection.setAutoCommit(true)");
         if (mounts) {
             String args = mountCallArgs(payload, multiTenant);
+            acquireBuilder
+                .addComment("Only the mount itself is a rejected identity: a failed autocommit assertion above is")
+                .addComment("a deployment fault and must not reach a consumer's mapping of identity rejections.")
+                .beginControlFlow("try");
             if (handleType != null) {
                 acquireBuilder.addStatement("handle = $T.mount($L)", sessionHookImpl, args);
             } else {
                 acquireBuilder.addStatement("$T.mount($L)", sessionHookImpl, args);
             }
+            acquireBuilder
+                .nextControlFlow("catch ($T rejected)", Exception.class)
+                .addStatement("throw new $T(rejected)", sessionMountException)
+                .endControlFlow();
         }
         acquireBuilder
             .nextControlFlow("catch ($T mountFailure)", Throwable.class)
@@ -392,7 +409,8 @@ public final class ConnectionRuntimeClassGenerator {
                     + "hook's static {@code mount}, with the typed payload. The mount therefore always runs\n"
                     + "outside any transaction, as its own committed statement, whatever the pool's\n"
                     + "configuration. Fail-closed: a throwing mount (or a failed autocommit assertion)\n"
-                    + "evicts the connection and propagates before any operation SQL runs.\n"
+                    + "evicts the connection and propagates before any operation SQL runs; the mount's own\n"
+                    + "throw propagates as {@code SessionMountException}, the assertion's as itself.\n"
                 : "Pins one connection and asserts autocommit on it (the resting state graphitron holds an\n"
                     + "owned connection in). No {@code <sessionState>} is configured, so no identity is\n"
                     + "mounted and no hook runs. Fail-closed: a failed assertion evicts the connection.\n")
@@ -1042,6 +1060,16 @@ public final class ConnectionRuntimeClassGenerator {
                 + "registration by the consumer. This is the owned-connection engine assembly; pair it with\n"
                 + "{@code Graphitron.buildSchema(...)}: {@code var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();}.\n"
                 + "\n"
+                + "<p>A later {@code .instrumentation(other)} on the returned builder replaces the attached\n"
+                + "instrumentation, after which nothing is pinned or mounted; add your own (for example\n"
+                + "OpenTelemetry) through a {@code ChainedInstrumentation} that keeps\n"
+                + "{@code new GraphitronConnectionInstrumentation(this)} in the chain.\n"
+                + (sessionHooks.emitsHookImplementation()
+                    ? "\n<p>When the mount rejects the caller's identity, {@code execute} throws\n"
+                        + "{@code SessionMountException} in place of a result, with the mount's exception as\n"
+                        + "its cause.\n"
+                    : "")
+                + "\n"
                 + "<p>The escape-hatch engine ({@code Graphitron.newGraphQL()}) attaches no instrumentation;\n"
                 + "there the caller owns the {@code DSLContext}, transactions, and identity.\n"
                 + "@param schema the {@link graphql.schema.GraphQLSchema} from {@code Graphitron.buildSchema(...)}\n"
@@ -1182,8 +1210,10 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName provider, ClassName commitPolicy, TypeName tenantKey,
                                               boolean multiTenant, SessionHooks sessionHooks,
                                               ClassName requestTenants, CodeBlock tenantColumn,
-                                              ClassName errorRouter, ClassName columnValues) {
+                                              ClassName errorRouter, ClassName columnValues,
+                                              ClassName sessionMountException) {
         var payload = payloadParams(sessionHooks);
+        boolean mounts = sessionHooks.emitsHookImplementation();
         TypeName handleType = sessionHooks instanceof SessionHooks.Handled h ? h.handleType() : null;
         boolean handled = handleType != null;
         var clientException = ClassName.get(self.packageName(),
@@ -1215,6 +1245,13 @@ public final class ConnectionRuntimeClassGenerator {
                 + "key's pinned connection may still be executing: {@link #dslFor} never hands it out\n"
                 + "again, and {@link #releaseAll} routes it through {@code PinnedConnection.abort()}\n"
                 + "instead of a close that would return a possibly-live connection to the pool.\n")
+            .build();
+        var mountFailureField = FieldSpec.builder(ParameterizedTypeName.get(ATOMIC_REFERENCE, sessionMountException),
+                "firstMountFailure", Modifier.PRIVATE, Modifier.FINAL)
+            .initializer("new $T<>()", ATOMIC_REFERENCE)
+            .addJavadoc("The operation's first rejected mount, set once ({@code compareAndSet}, so concurrent\n"
+                + "scatter workers resolve to one winner). Every later acquisition on any key rethrows it\n"
+                + "rather than retrying the mount: the payload is one identity for every key.\n")
             .build();
         var closedField = FieldSpec.builder(boolean.class, "closed", Modifier.PRIVATE, Modifier.VOLATILE)
             .addJavadoc("Set by {@link #releaseAll} before draining, so a straggler worker that finishes\n"
@@ -1318,6 +1355,15 @@ public final class ConnectionRuntimeClassGenerator {
                     "Tenant '", "' timed out earlier in this operation; its connection is never reused.")
                 .endControlFlow();
         }
+        if (mounts) {
+            entryForBuilder
+                .addComment("A rejected mount is remembered for the operation: answer every later acquisition")
+                .addComment("with it, after the tenant refusals above so their order is unchanged.")
+                .addStatement("$T rejected = firstMountFailure.get()", sessionMountException)
+                .beginControlFlow("if (rejected != null)")
+                .addStatement("throw rejected")
+                .endControlFlow();
+        }
         entryForBuilder
             .addStatement("$T entry", entryType)
             .beginControlFlow("try")
@@ -1344,7 +1390,14 @@ public final class ConnectionRuntimeClassGenerator {
             .addCode("    } catch ($T e) {\n", SQL_EXCEPTION)
             .addCode("        throw new $T(e);\n", COMPLETION_EXCEPTION)
             .addCode("    }\n")
-            .addCode("});\n")
+            .addCode("});\n");
+        if (mounts) {
+            entryForBuilder
+                .nextControlFlow("catch ($T e)", sessionMountException)
+                .addStatement("firstMountFailure.compareAndSet(null, e)")
+                .addStatement("throw firstMountFailure.get()");
+        }
+        entryForBuilder
             .nextControlFlow("catch ($T e)", COMPLETION_EXCEPTION)
             .beginControlFlow("if (e.getCause() instanceof $T sql)", SQL_EXCEPTION)
             .addStatement("throw sql")
@@ -1534,6 +1587,9 @@ public final class ConnectionRuntimeClassGenerator {
                 .build());
         }
         carrier.addField(entriesField);
+        if (mounts) {
+            carrier.addField(mountFailureField);
+        }
         if (multiTenant) {
             carrier.addField(timedOutField)
                 .addField(closedField);
@@ -1544,7 +1600,17 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(dslDefault)
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
-            .addMethod(staticDslDefault(self));
+            .addMethod(staticDslDefault(self))
+            .addMethod(isMountFailure(mounts ? sessionMountException : null));
+        if (mounts) {
+            carrier.addMethod(MethodSpec.methodBuilder("mountFailure")
+                .addModifiers(Modifier.PUBLIC)
+                .returns(ParameterizedTypeName.get(ClassName.get("java.util", "Optional"), sessionMountException))
+                .addStatement("return $T.ofNullable(firstMountFailure.get())", ClassName.get("java.util", "Optional"))
+                .addJavadoc("The operation's first rejected mount, if any. Read by the instrumentation when the\n"
+                    + "operation completes, to throw it in place of the result.\n")
+                .build());
+        }
         if (handled) {
             carrier.addMethod(sessionHandleAccessor(handleType));
         }
@@ -1572,7 +1638,7 @@ public final class ConnectionRuntimeClassGenerator {
                 .addMethod(fanOutRows(self, tenantKey))
                 .addMethod(fanOutBatchRows(self, tenantKey))
                 .addMethod(collapseFanOut(self))
-                .addMethod(logFanOutFailure(self, errorRouter))
+                .addMethod(logFanOutFailure(self, errorRouter, mounts))
                 .addMethod(staticDslFor(self, tenantKey))
                 .addMethod(dslGlobal)
                 .addMethod(staticDslGlobal(self))
@@ -1927,15 +1993,24 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code tenantFailed} (a timeout as a synthesized {@code TimeoutException}, so the consumer's
      * damping sees outages too); without one, the default line for the arm is written.
      */
-    private static MethodSpec logFanOutFailure(ClassName self, ClassName errorRouter) {
+    private static MethodSpec logFanOutFailure(ClassName self, ClassName errorRouter, boolean mounts) {
         var outcome = self.nestedClass("Outcome");
         var failureType = self.nestedClass("FanOutFailure");
-        return MethodSpec.methodBuilder("logFanOutFailure")
+        var builder = MethodSpec.methodBuilder("logFanOutFailure")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(failureType)
             .addParameter(ParameterizedTypeName.get(outcome, WildcardTypeName.subtypeOf(Object.class)), "outcome")
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
-            .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)")
+            .beginControlFlow("if (outcome instanceof Outcome.Failed<?> failed)");
+        if (mounts) {
+            builder
+                .beginControlFlow("if (isMountFailure(failed.cause()))")
+                .addComment("A rejected mount fails the whole request when the operation completes; this marker")
+                .addComment("never reaches a client, so nothing is logged and no reference is minted.")
+                .addStatement("return new FanOutFailure($S, FanOutFailure.FAILED)", "")
+                .endControlFlow();
+        }
+        return builder
             .addStatement("String reference = $T.newReference(failed.cause(), env)", errorRouter)
             .beginControlFlow("if (!$T.toConfiguredLog(env, reference,"
                 + " log -> log.tenantFailed(failed.key(), failed.cause(), reference, env)))", errorRouter)
@@ -1962,6 +2037,36 @@ public final class ConnectionRuntimeClassGenerator {
             .addJavadoc("Redaction seam for per-tenant failures: the cause and tenant go to the server log\n"
                 + "under a fresh correlation id; only the id and a machine-readable classification\n"
                 + "travel to the client, on the marker.\n")
+            .build();
+    }
+
+    /**
+     * {@code static boolean isMountFailure(Throwable thrown)}: whether a rejected mount is anywhere
+     * on {@code thrown}'s cause chain. Emitted in every build so the fixed {@code ErrorRouter} can
+     * ask without naming {@code SessionMountException}, which exists only with a mount; without
+     * one ({@code sessionMountException == null}) the answer is always {@code false}.
+     */
+    private static MethodSpec isMountFailure(ClassName sessionMountException) {
+        var builder = MethodSpec.methodBuilder("isMountFailure")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(Throwable.class, "thrown");
+        if (sessionMountException == null) {
+            builder.addStatement("return false");
+        } else {
+            builder
+                .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", Throwable.class)
+                .beginControlFlow("if (t instanceof $T)", sessionMountException)
+                .addStatement("return true")
+                .endControlFlow()
+                .endControlFlow()
+                .addStatement("return false");
+        }
+        return builder
+            .addJavadoc("Whether {@code thrown}'s cause chain carries a rejected session mount. The error\n"
+                + "router declines such a throw: the operation fails as a whole when it completes, so no\n"
+                + "field logs it, mints a reference for it, or places it in a payload.\n"
+                + "@param thrown what a fetcher caught\n")
             .build();
     }
 
@@ -2980,6 +3085,34 @@ public final class ConnectionRuntimeClassGenerator {
                 + "path over its elements.\n"
                 + "@param container the outer argument value (a {@code Map}, a {@code List} of maps, or {@code null})\n"
                 + "@param path the build-time key path from the container down to the bound slot\n")
+            .build();
+    }
+
+    /**
+     * {@code SessionMountException}: what {@code PinnedConnection.acquire} turns a throwing mount
+     * into. A request-scoped fault, unlike the field-scoped {@code GraphitronClientException}: the
+     * carrier remembers the first one per operation, and the instrumentation throws it out of
+     * {@code GraphQL.execute} so the consumer can answer the request as a whole.
+     */
+    private static TypeSpec sessionMountException(ClassName self) {
+        return TypeSpec.classBuilder(self)
+            .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
+            .superclass(RuntimeException.class)
+            .addJavadoc("The database rejected this request's session identity: the configured\n"
+                + "{@code <sessionState>} mount threw. Thrown out of {@code GraphQL.execute} on the\n"
+                + "owned-connection path in place of a result, since no field can run without identity.\n"
+                + "The mount's own exception is the {@linkplain #getCause() cause}, so its SQLState stays\n"
+                + "inspectable; the message carries none of it.\n")
+            .addField(FieldSpec.builder(long.class, "serialVersionUID",
+                    Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+                .initializer("1L")
+                .build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(Throwable.class, "cause")
+                .addStatement("super($S, cause)", "The session identity mount was rejected")
+                .addJavadoc("@param cause what the mount threw\n")
+                .build())
             .build();
     }
 

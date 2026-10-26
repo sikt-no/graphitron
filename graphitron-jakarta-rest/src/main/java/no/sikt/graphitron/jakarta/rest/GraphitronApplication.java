@@ -4,6 +4,9 @@ import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.SchemaPrinter;
+import jakarta.ws.rs.WebApplicationException;
+
+import java.util.Optional;
 
 /**
  * The dependency-inversion seam between {@code graphitron-jakarta-rest} and a Graphitron subgraph.
@@ -94,11 +97,49 @@ public interface GraphitronApplication {
     }
 
     /**
+     * Answers an exception that escaped {@link #newExecutionInput()} or execution as a client fault
+     * instead of redacting it. The case it exists for: when the database rejects the caller's
+     * identity, the {@code <sessionState>} mount throws, and on the owned-connection engine
+     * {@code GraphQL.execute} throws the generated {@code SessionMountException} (in your
+     * {@code <outputPackage>.schema}) with the mount's own exception as its cause. Map it to the
+     * status you want:
+     *
+     * <pre>{@code
+     * @Override
+     * public Optional<WebApplicationException> clientFault(Throwable thrown) {
+     *     if (thrown instanceof SessionMountException mount && rejectedIdentity(mount.getCause())) {
+     *         return Optional.of(new NotAuthorizedException("identity rejected"));
+     *     }
+     *     return Optional.empty();
+     * }
+     * }</pre>
+     *
+     * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from
+     * {@link #newExecutionInput()} is, and the library logs nothing about the fault. Empty, the
+     * default, redacts it to the reference-only {@code 500}. If this method throws or returns
+     * {@code null}, the fault is redacted and one ERROR line names your class and the class of what
+     * it threw.
+     *
+     * @param thrown the exception that escaped
+     * @return the client fault to answer with, or empty to redact
+     */
+    default Optional<WebApplicationException> clientFault(Throwable thrown) {
+        return Optional.empty();
+    }
+
+    /**
      * Engine assembly via graphql-java's own builder seam. The library caches
      * {@code engineBuilder().build()} once at application scope. The default delegates to
      * {@link #schema()} so there is exactly one built schema feeding both the engine and the SDL
-     * endpoint; override to chain {@code .instrumentation(...)} (e.g. OpenTelemetry
-     * {@code GraphQLTelemetry}), a custom {@code ExecutionStrategy}, or any future engine knob.
+     * endpoint; override to add an instrumentation (e.g. OpenTelemetry {@code GraphQLTelemetry}), a
+     * custom {@code ExecutionStrategy}, or any future engine knob.
+     *
+     * <p>On the owned-connection engine ({@code GraphitronRuntime.newGraphQL(schema)}) the builder
+     * already carries the generated {@code GraphitronConnectionInstrumentation}, and
+     * {@code .instrumentation(other)} replaces it: no identity is mounted and no connection is
+     * pinned from then on. Add yours through a {@code ChainedInstrumentation} that keeps it,
+     * for example
+     * {@code .instrumentation(new ChainedInstrumentation(new GraphitronConnectionInstrumentation(runtime), telemetry))}.
      *
      * @return a {@link GraphQL.Builder} over {@link #schema()}, ready for {@code .build()}
      */

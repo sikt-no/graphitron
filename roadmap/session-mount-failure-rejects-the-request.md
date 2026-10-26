@@ -1,7 +1,7 @@
 ---
 id: R1097
 title: "A rejected session identity fails the whole request instead of surfacing as a redacted field error"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: error-channel
@@ -70,6 +70,17 @@ On the pinned graphql-java 25.0, an exception thrown from `Instrumentation.instr
 First-client draft is the consumer view in the Goal. Real homes when this ships: `docs/architecture/reference/runtime-extension-points.adoc` (the `<sessionState>` section: a throwing mount rejects the request, `execute` throws `SessionMountException` on the owned path, and what a raw-engine consumer must catch), the `GraphitronApplication.clientFault` javadoc, the `newGraphQL` javadoc in `ConnectionRuntimeClassGenerator`, and `docs/manual/how-to/tenant-scoping.adoc` (the fan-out exception above).
 
 The connection instrumentation is attached by `runtime.newGraphQL(schema)`, and a later `.instrumentation(other)` on that builder, for example OpenTelemetry, replaces it silently, after which no mount ever happens. The same doc pass fixes this footgun: the `newGraphQL` javadoc and the `GraphitronApplication.engineBuilder` javadoc (whose current text recommends chaining `.instrumentation(...)` for OpenTelemetry) name `ChainedInstrumentation` over `GraphitronConnectionInstrumentation` as the safe pattern. Accepting extra instrumentations on `newGraphQL` itself would remove the footgun rather than document it; that is out of this item's scope and left to a successor if wanted.
+
+### Implementation notes
+
+Where the build differs from the plan above, or settles what it left to the implementer:
+
+* `ErrorRouter` is a fixed runtime class rendered from the output package alone, so it does not name the mount-gated `SessionMountException`. It asks `TenantConnections.isMountFailure(Throwable)`, emitted in every build (always `false` without a mount). The arm sits in `claim` (declines, so `recordClaim` neither records nor calls `FetcherErrorLog.matched`) and at the top of `surfaceClientErrorOrRedact` (the placeholder, ahead of `redact`). The scatter path's `logFanOutFailure` returns a reference-less `FanOutFailure` for a mount failure, without logging.
+* `SessionMountException` joins the `CONNECTION_RUNTIME` unit set beside `GraphitronSessionHook`, under the same `emitsHookImplementation()` gate; `PlanCompileGraph` declares `PinnedConnection` and `TenantConnections` edges to it.
+* The `@error`-channel variant is tested on the emitted `ErrorRouter.claim` with a mapping that claims everything (`SessionHookExecutionTest.errorChannelMapping_neverClaimsARejectedMount`), not through a schema fixture. There is no separate `@splitQuery` variant: a batched field's async arm goes through the same `surfaceClientErrorOrRedact`, and the result is discarded either way.
+* The multi-tenant race is `TenantFanOutExecutionTest.rejectedMountOnRacingScatterWorkers_rejectsTheRequestOnce_overridingPartialData`. The jakarta-rest cases run end to end in the Quarkus app (`GraphQLOverHttpConformanceTest`, the rejected-identity pair) against the real `reject-me` mount; the "no handler ERROR log" half is not asserted.
+* The dev executor and `ExecuteTool` need no change: the reflective invoke already turns any throw into `DevExecutionException`, reported as a failed call, and the dev executor's preflight mount rejects first anyway.
+* The `<sessionState>` docs also gain one sentence that a mount may run its own jOOQ transaction (`transactionResult`), since the hook's `Configuration` falls back to jOOQ's default provider, which restores autocommit. A second consumer asked for it; it is not covered by a test.
 
 ## Other solutions we've considered
 

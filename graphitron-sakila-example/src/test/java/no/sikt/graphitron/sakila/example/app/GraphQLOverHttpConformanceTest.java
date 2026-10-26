@@ -7,8 +7,11 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 
+import java.util.List;
+
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.matchesPattern;
 import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
@@ -306,6 +309,43 @@ class GraphQLOverHttpConformanceTest {
             // The ordered first catch arm re-throws the ForbiddenException; JAX-RS maps it to 403.
             // A 500 here would mean the redaction arm swallowed it, the bug the ordering prevents.
             .statusCode(403);
+    }
+
+    private static final String REJECTED_IDENTITY_HEADER = FaultInjectingGraphitronApplication.REJECTED_IDENTITY_HEADER;
+
+    @Test
+    @DisplayName("Rejected session identity: the application's clientFault maps the mount rejection to its own status (401), unredacted. -- " + SPEC_REVISION)
+    void rejectedIdentityMappedByClientFaultIsTheApplicationsStatus() {
+        given()
+            .contentType(APPLICATION_JSON)
+            .accept(GRAPHQL_RESPONSE_JSON)
+            .header(REJECTED_IDENTITY_HEADER, "401")
+            .body("{\"query\":\"{ a: filmsOrdered { title } b: customerByPk(customerId: 1) { firstName } }\"}")
+        .when()
+            .post("/graphql")
+        .then()
+            .statusCode(401)
+            .header("WWW-Authenticate", "Bearer");
+    }
+
+    @Test
+    @DisplayName("Rejected session identity without a clientFault answer: the request is redacted to the reference-only 500, never a 422 or per-field errors. -- " + SPEC_REVISION)
+    void rejectedIdentityWithoutClientFaultIsRedacted500() {
+        for (String mode : List.of("none", "throw", "null")) {
+            given()
+                .contentType(APPLICATION_JSON)
+                .accept(GRAPHQL_RESPONSE_JSON)
+                .header(REJECTED_IDENTITY_HEADER, mode)
+                .body("{\"query\":\"{ filmsOrdered { title } }\"}")
+            .when()
+                .post("/graphql")
+            .then()
+                .statusCode(500)
+                .body("errors", hasSize(1))
+                .body("errors[0].message", matchesPattern(REFERENCE_MESSAGE))
+                .body(not(containsString("unentitled principal")))
+                .body(not(containsString("SessionMountException")));
+        }
     }
 
     @Test

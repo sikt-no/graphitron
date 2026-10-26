@@ -123,8 +123,9 @@ class ConnectionRuntimeClassGeneratorTest {
         LifecycleHookFixture.mountThrows = new RuntimeException("unentitled role");
 
         assertThatThrownBy(() -> acquire(fakeDataSource(), "claims-payload"))
-            .as("a throwing mount rejects the request")
-            .isInstanceOf(Throwable.class);
+            .as("a throwing mount becomes the request-scoped rejection, the mount's throw as its cause")
+            .satisfies(t -> assertThat(t.getClass().getSimpleName()).isEqualTo("SessionMountException"))
+            .hasCause(LifecycleHookFixture.mountThrows);
 
         // Connection acquired, mount attempted and failed, connection evicted (aborted) rather
         // than returned; unmount never runs and no connection is handed back for SQL.

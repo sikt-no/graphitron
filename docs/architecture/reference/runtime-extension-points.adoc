@@ -40,7 +40,10 @@ var engine  = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 ----
 
 `runtime.newGraphQL(schema)` attaches the connection-lifecycle instrumentation,
-so you register nothing else. Per request you pass only your mount method's
+so you register nothing else. A later `.instrumentation(other)` on that builder replaces
+it, after which nothing is pinned or mounted; add your own instrumentation (for
+example OpenTelemetry) through a `ChainedInstrumentation` that keeps
+`new GraphitronConnectionInstrumentation(runtime)` in the chain. Per request you pass only your mount method's
 payload (and any declared `contextArguments`):
 
 [source,java]
@@ -101,6 +104,55 @@ performance defects. The structure is what makes the contract cheap to hold:
 committed session state, and a mutation field's transaction settling later
 cannot revert it. Graphitron therefore never re-runs your methods around
 transaction boundaries.
+
+[#rejected-mount]
+==== A rejected identity rejects the request
+
+When the database rejects the caller's identity, your mount method throws. No
+field can run without identity, so Graphitron rejects the whole request once
+rather than answering each field with a redacted error. On the owned-connection
+path, `GraphQL.execute` throws the generated `SessionMountException` (in your
+`<outputPackage>.schema` package) in place of a result, and `executeAsync`
+completes exceptionally with it. The exception your mount threw is its cause, so
+you can read its SQLState and choose the answer:
+
+[source,java]
+----
+ExecutionResult result;
+try {
+    result = engine.execute(input);
+} catch (SessionMountException rejected) {
+    // rejected.getCause() is what the mount threw, for example the SQLException
+    // your identity routine raised: map it to 401, 400 or whatever fits.
+    return unauthorized(rejected.getCause());
+}
+----
+
+What you can rely on:
+
+* *One attempt per request.* The first rejection is remembered for the
+  operation; every later field that needs a connection, on any tenant, gets the
+  same exception without mounting again.
+* *Nothing is logged per field.* The rejection never reaches the
+  `FetcherErrorLog`, mints no reference and is never claimed by an `@error`
+  channel, whatever its handlers match.
+* *Only the mount is an identity fault.* A pool or connection fault while taking
+  the connection, including a connection that refuses autocommit, propagates as
+  itself, never as `SessionMountException`, so mapping that type to 401 cannot
+  hide an outage.
+* *A request that needs no database never mounts*, so it succeeds whatever the
+  caller's identity.
+
+With `graphitron-jakarta-rest`, return the status from
+`GraphitronApplication.clientFault(Throwable)`; without an override the handler
+answers the reference-only 500.
+
+The mount runs on a connection in autocommit, with a jOOQ `Configuration`
+carrying no Graphitron transaction provider. A mount that has to write (for
+example provisioning the caller's row) may open its own transaction there with
+`transactionResult(...)`: jOOQ's default provider switches autocommit off for
+that transaction and restores it when the transaction ends, so the connection is
+back in autocommit before any field runs.
 
 If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
 build time (`no-session-state`): an unsecured direct-to-database API is a

@@ -148,6 +148,7 @@ class ArchitectureDocSymbolGuardTest {
         exempt.put("OrderByResult", "emitted: per-app order-by result class");
         exempt.put("Outcome", "emitted: error-channel result type in generated output");
         exempt.put("Outcome.Success", "emitted: the success arm of that generated result type");
+        exempt.put("SessionMountException", "emitted: per-app rejection a throwing <sessionState> mount becomes");
 
         // module: a real reactor type in a module this test tier does not depend on.
         exempt.put("BundledLibraryLookup", "module: graphitron-lsp");

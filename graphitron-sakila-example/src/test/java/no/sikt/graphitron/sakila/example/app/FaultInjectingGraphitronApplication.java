@@ -6,8 +6,14 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Alternative;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.ForbiddenException;
+import jakarta.ws.rs.NotAuthorizedException;
+import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
+import no.sikt.graphitron.generated.Graphitron;
+import no.sikt.graphitron.generated.schema.SessionMountException;
+
+import java.util.Optional;
 
 /**
  * Test-only fault-injection seam for the error-redaction guard. The shipped reference adapter
@@ -43,6 +49,14 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
 
     /** Sentinel header carrying a trace id both redaction sites quote as the reference. */
     static final String TRACE_HEADER = "X-Graphitron-Trace";
+
+    /**
+     * Sentinel header seeding the request with the principal the database's mount routine rejects,
+     * and choosing what {@link #clientFault} answers: {@code 401} maps the rejection to
+     * {@code NotAuthorizedException}, {@code throw} and {@code null} misbehave, {@code none} keeps
+     * the default.
+     */
+    static final String REJECTED_IDENTITY_HEADER = "X-Graphitron-Rejected-Identity";
 
     /** Sentinel header turning the built-in {@code /graphql} endpoint off for one request. */
     static final String BUILT_IN_HEADER = "X-Graphitron-Built-In";
@@ -80,6 +94,9 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
             throw new IllegalStateException(
                 "could not open JDBC connection to db-fault-host:5432 in no.sikt.graphitron.internal");
         }
+        if (headers.getHeaderString(REJECTED_IDENTITY_HEADER) != null) {
+            return Graphitron.newOwnedExecutionInput("{\"sub\":\"reject-me\"}", "reject-me");
+        }
         String traceId = headers.getHeaderString(TRACE_HEADER);
         if (traceId != null) {
             return super.newExecutionInput().graphQLContext(b -> b
@@ -87,6 +104,24 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
                 .put(TracedErrorText.TRACE_KEY, traceId));
         }
         return super.newExecutionInput();
+    }
+
+    @Override
+    public Optional<WebApplicationException> clientFault(Throwable thrown) {
+        String mode = headers.getHeaderString(REJECTED_IDENTITY_HEADER);
+        if (mode == null || "none".equals(mode)) {
+            return super.clientFault(thrown);
+        }
+        if ("throw".equals(mode)) {
+            throw new IllegalStateException("the adapter's clientFault is broken");
+        }
+        if ("null".equals(mode)) {
+            return null;
+        }
+        if (thrown instanceof SessionMountException mount && mount.getCause() != null) {
+            return Optional.of(new NotAuthorizedException("identity rejected", "Bearer"));
+        }
+        return Optional.empty();
     }
 
     @Override

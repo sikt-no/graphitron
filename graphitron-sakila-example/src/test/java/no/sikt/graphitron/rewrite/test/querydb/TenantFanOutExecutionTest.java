@@ -5,6 +5,7 @@ import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
 import no.sikt.graphitron.generated.multitenant.schema.FetcherErrorLog;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
+import no.sikt.graphitron.generated.multitenant.schema.SessionMountException;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
@@ -377,6 +378,31 @@ class TenantFanOutExecutionTest {
         assertThat(logged.get(0).tenantKey()).isEqualTo(2);
         assertThat(logged.get(0).cause()).isNotInstanceOf(java.util.concurrent.TimeoutException.class);
         assertThat(logged.get(0).reference()).isEqualTo(referenceOf(result.getErrors().get(0)));
+    }
+
+    @Test
+    void rejectedMountOnRacingScatterWorkers_rejectsTheRequestOnce_overridingPartialData() {
+        // Both tenants' workers mount concurrently and both are rejected: one winner is remembered
+        // for the operation, the second root field never mounts again, no tenant failure is
+        // logged, and execute throws in place of partial data.
+        var logged = new java.util.concurrent.CopyOnWriteArrayList<LoggedTenantFailure>();
+        Map<Integer, DataSource> byTenant = new java.util.LinkedHashMap<>();
+        byTenant.put(1, tenantDataSource("fanout_t1", TENANT_1_OPENED, null));
+        byTenant.put(2, tenantDataSource("fanout_t2", TENANT_2_OPENED, null));
+        var engine = new GraphitronRuntime(defaultDataSource(), byTenant, SQLDialect.POSTGRES)
+            .withFetcherErrorLog(recordingTenantLog(logged))
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
+
+        org.assertj.core.api.Assertions.assertThatThrownBy(() -> engine.execute(Graphitron
+                .newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"reject-me\"}")
+                .query("{ a: filmsEverywhere { title } b: filmsEverywhere { title } }")
+                .build()))
+            .isInstanceOf(SessionMountException.class)
+            .hasStackTraceContaining("unentitled principal");
+        assertThat(TENANT_1_OPENED.get() + TENANT_2_OPENED.get())
+            .as("each tenant's worker tried at most once; the second field reused the remembered rejection")
+            .isBetween(1, 2);
+        assertThat(logged).as("a rejected identity is not a tenant outage").isEmpty();
     }
 
     @Test

@@ -22,6 +22,7 @@ import org.slf4j.LoggerFactory;
 
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 // The consumer example in the javadoc below writes its annotations as &#64; and sits in a bare <pre>
 // rather than a {@code} block: javadoc reads an @ in a line's first column as a block tag even
@@ -99,7 +100,8 @@ import java.util.Map;
  *       holder populated in the resource is visible to the adapter that reads it.</li>
  *   <li><b>Client faults propagate.</b> A {@link WebApplicationException} thrown by the resource
  *       method, or by the seam, reaches the container unredacted. That is the documented way to
- *       answer {@code 401} and {@code 403}; every other escaping exception is redacted to a
+ *       answer {@code 401} and {@code 403}, and {@link GraphitronApplication#clientFault(Throwable)}
+ *       may answer any other escape the same way; the rest are redacted to a
  *       reference-only {@code 500}.</li>
  *   <li><b>Mounting under {@code /graphql/{...}} shadows the built-in sub-paths.</b> Jakarta REST
  *       sorts candidate root resource classes by literal-character count, and {@code /graphql/} has
@@ -333,6 +335,12 @@ public class GraphqlHttpHandler {
             // propagates out. The seam, not a swallow, carries the 4xx.
             throw clientFault;
         } catch (Exception thrown) {
+            // The application may answer the escape as a client fault, the shape the arm above
+            // passes through (a rejected session mount mapped to 401, say); nothing is logged then.
+            Optional<WebApplicationException> clientFault = clientFault(thrown);
+            if (clientFault.isPresent()) {
+                throw clientFault.get();
+            }
             // Any other escape is a genuine internal fault (the observed case: the seam forcing a
             // JDBC connection with the database down). This handler-level guard is the structural
             // complement to the generated ErrorRouter's per-fetcher redaction: newExecutionInput()
@@ -350,6 +358,22 @@ public class GraphqlHttpHandler {
                 .entity(serialise(errorBody(redactedMessage(thrown, reference))))
                 .build();
         }
+    }
+
+    /** {@link GraphitronApplication#clientFault(Throwable)}, contained: redaction on failure. */
+    private Optional<WebApplicationException> clientFault(Throwable thrown) {
+        Optional<WebApplicationException> answer;
+        try {
+            answer = application.clientFault(thrown);
+        } catch (Throwable failure) {
+            logOverrideFailure("clientFault", failure, "redacting");
+            return Optional.empty();
+        }
+        if (answer == null) {
+            logOverrideFailure("clientFault", null, "redacting");
+            return Optional.empty();
+        }
+        return answer;
     }
 
     /** {@link GraphitronApplication#newReference(Throwable)}, contained: the default on failure. */

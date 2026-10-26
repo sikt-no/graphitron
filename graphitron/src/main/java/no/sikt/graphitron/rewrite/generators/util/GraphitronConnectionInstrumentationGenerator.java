@@ -53,6 +53,11 @@ import java.util.List;
  *       ({@code releaseAll()}: unmount, then return-or-evict). Release is idempotent.</li>
  * </ol>
  *
+ * <h2>A rejected mount rejects the request ({@code instrumentExecutionResult})</h2>
+ * When {@code <sessionState>} configures a mount and it threw during the operation, the carrier
+ * remembers the first {@code SessionMountException}, and this override throws it in place of the
+ * result, so it escapes {@code GraphQL.execute}. Emitted only with a mount.
+ *
  * <h2>Incremental delivery is rejected</h2>
  * Connection-per-operation release closes the pinned connections at completion; a deferred fetcher
  * running afterwards would use a closed connection. The emitted class therefore rejects
@@ -72,6 +77,8 @@ public final class GraphitronConnectionInstrumentationGenerator {
     private static final ClassName EXECUTION_RESULT = ClassName.get("graphql", "ExecutionResult");
     private static final ClassName GRAPHQL_CONTEXT = ClassName.get("graphql", "GraphQLContext");
     private static final ClassName EXECUTION_CONTEXT = ClassName.get("graphql.execution", "ExecutionContext");
+    private static final ClassName EXECUTION_PARAMS = ClassName.get("graphql.execution.instrumentation.parameters", "InstrumentationExecutionParameters");
+    private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
 
     private GraphitronConnectionInstrumentationGenerator() {}
 
@@ -241,6 +248,26 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 + "single-tenant as the one-key case. See the class javadoc for the full sequence.\n")
             .build();
 
+        var instrumentExecutionResult = MethodSpec.methodBuilder("instrumentExecutionResult")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE, EXECUTION_RESULT))
+            .addParameter(EXECUTION_RESULT, "executionResult")
+            .addParameter(EXECUTION_PARAMS, "parameters")
+            .addParameter(INSTRUMENTATION_STATE, "rawState")
+            .addStatement("$T state = ($T) rawState", state, state)
+            .beginControlFlow("if (state != null && state.carrier != null && state.carrier.mountFailure().isPresent())")
+            .addComment("No field can run without identity: the rejected mount replaces the result, escaping")
+            .addComment("GraphQL.execute for the consumer to answer the request as a whole.")
+            .addStatement("throw state.carrier.mountFailure().get()")
+            .endControlFlow()
+            .addStatement("return $T.completedFuture(executionResult)", COMPLETABLE_FUTURE)
+            .addJavadoc("Throws the operation's rejected session mount, when there was one, in place of the\n"
+                + "result, so {@code GraphQL.execute} throws {@code SessionMountException} (and\n"
+                + "{@code executeAsync} completes exceptionally with it). The connection it was mounted on\n"
+                + "was already evicted at acquisition.\n")
+            .build();
+
         var stateType = TypeSpec.classBuilder("State")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(INSTRUMENTATION_STATE)
@@ -249,7 +276,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 + "completion.\n")
             .build();
 
-        return TypeSpec.classBuilder(CLASS_NAME)
+        var builder = TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addSuperinterface(INSTRUMENTATION)
             .addJavadoc("graphql-java {@link $T} that owns the per-operation connection lifecycle for the\n"
@@ -261,7 +288,11 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addMethod(primaryConstructor)
             .addMethod(policyConstructor)
             .addMethod(createState)
-            .addMethod(beginExecuteOperation)
+            .addMethod(beginExecuteOperation);
+        if (sessionHooks.emitsHookImplementation()) {
+            builder.addMethod(instrumentExecutionResult);
+        }
+        return builder
             .addType(stateType)
             .build();
     }

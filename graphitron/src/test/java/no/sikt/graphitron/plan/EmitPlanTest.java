@@ -76,7 +76,7 @@ class EmitPlanTest {
     }
 
     @Test
-    void connectionRuntime_commitsTheHookClassWhenSessionHooksAreResolved() {
+    void connectionRuntime_commitsTheHookClassAndItsRejectionWhenSessionHooksAreResolved() {
         GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(PLAIN_SDL);
         var model = SessionHooksFixtures.withHooks(bundle.model(),
             SessionHooksFixtures.handleLess(SessionHooksFixtures.stringPayload("claims")));
@@ -84,7 +84,7 @@ class EmitPlanTest {
             DEFAULT_OUTPUT_PACKAGE);
         assertThat(unitNames(plan, GlobalUnitKind.CONNECTION_RUNTIME))
             .containsExactly("PinnedConnection", "GraphitronRuntime", "TenantConnections",
-                "FetcherErrorLog", "FetcherErrorResponse", "GraphitronSessionHook");
+                "FetcherErrorLog", "FetcherErrorResponse", "GraphitronSessionHook", "SessionMountException");
     }
 
     @Test

@@ -302,10 +302,12 @@ public final class PlanCompileGraph {
                     var runtime = runtimeUnit("GraphitronRuntime");
                     var tenantConnections = runtimeUnit("TenantConnections");
                     var hookImpl = runtimeUnit("GraphitronSessionHook");
+                    var mountException = runtimeUnit("SessionMountException");
                     var requestTenants = runtimeUnit("RequestTenants");
                     var fetcherErrorLog = runtimeUnit("FetcherErrorLog");
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
+                    pinned.ifPresent(p -> mountException.ifPresent(m -> declared(p, m)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
                         fetcherErrorLog.ifPresent(l -> declared(r, l));
@@ -316,6 +318,7 @@ public final class PlanCompileGraph {
                         runtime.ifPresent(r -> declared(t, r));
                         pinned.ifPresent(p -> declared(t, p));
                         requestTenants.ifPresent(rt -> declared(t, rt));
+                        mountException.ifPresent(m -> declared(t, m));
                         // The fan-out failure path hands its throw to the consumer's log through
                         // the router's shared guard.
                         fetcherErrorLog.ifPresent(l -> declared(t, l));
