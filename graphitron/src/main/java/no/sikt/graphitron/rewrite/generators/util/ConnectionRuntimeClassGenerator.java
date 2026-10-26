@@ -1190,7 +1190,7 @@ public final class ConnectionRuntimeClassGenerator {
      * An entry holds the key's pinned connection and its provider-bound {@code DSLContext}
      * together, minted inside the one {@code computeIfAbsent} and discarded together at release:
      * one cached {@code DSLContext} per key is one transaction provider per pinned connection,
-     * so the provider's {@code depth} is the only nesting counter on that connection, and the
+     * so the provider's scope stack is the only record of open transactions on that connection, and the
      * mount's handle (written once to the entry's {@code Configuration}) lives and dies with the
      * connection it describes.
      *
@@ -1371,8 +1371,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addComment("mechanism. The checked acquisition failure tunnels out of the compute lambda")
             .addComment("unchanged. The whole entry is minted here: pin and mount, bind a DSLContext to the")
             .addComment("pinned connection through the resolved source's dialect and settings, swap in one")
-            .addComment("transaction provider (one per pinned connection, so its depth is the only nesting")
-            .addComment("counter on that connection). jOOQ's single-connection provider treats release as a")
+            .addComment("transaction provider (one per pinned connection, so its scope stack is the only")
+            .addComment("record of open transactions on that connection). jOOQ's single-connection provider treats release as a")
             .addComment("no-op, so the runtime keeps sole ownership of close/evict.")
             .addCode("entry = entries.computeIfAbsent(key, k -> {\n")
             .addCode("    try {\n")

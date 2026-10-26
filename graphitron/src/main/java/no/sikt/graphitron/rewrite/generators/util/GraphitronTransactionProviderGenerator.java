@@ -47,20 +47,31 @@ import java.util.List;
  * graphitron itself asserted ({@code begin}'s deferred-rollback reopen guard, and
  * {@code PinnedConnection.release}'s open-transaction detection), never a mode to preserve.
  *
- * <h2>A failed commit leaves its scope open</h2>
- * jOOQ follows a {@code commit} that throws with a {@code rollback} for the same scope, so
- * {@code commit} pops the savepoint and decrements {@code depth} only after the arm succeeded: the
- * follow-up rollback then closes the scope exactly once (a nested scope rolls back to its
- * savepoint, a top-level one settles as failed), and the provider stays consistent for the rest
- * of the operation. Savepoint release is skipped where the driver does not implement it (Oracle),
- * since an unreleased marker dies with the enclosing transaction; no other release failure is
- * hidden, because a swallowed release over an aborted transaction turns into a silent rollback at
- * the enclosing commit.
+ * <h2>Every close names the scope its open recorded</h2>
+ * The provider keeps a stack of open scopes, each a {@code TopLevel} transaction or a
+ * {@code Savepointed} one, and ties every close to its open through jOOQ's per-call
+ * {@code TransactionContext}: {@code transactionResult} builds a fresh context for each call and
+ * passes that same object to {@code begin}, {@code commit} and {@code rollback}. The contract:
+ * <ul>
+ *   <li>An open records its scope (pushes it and puts it on the context) only once every JDBC call
+ *       succeeded. jOOQ follows a {@code begin} that throws with a {@code rollback} on the same
+ *       context, and a rollback for a context with no scope recorded changes nothing, so a failed
+ *       open (a savepoint refused inside an aborted Postgres transaction, say) never closes the
+ *       scope around it.</li>
+ *   <li>A close dispatches on the variant of the scope it names, not on how deeply it is nested, and refuses one
+ *       that is not innermost.</li>
+ *   <li>A failed commit leaves its scope open, so jOOQ's follow-up rollback closes that same scope
+ *       exactly once.</li>
+ * </ul>
+ * Savepoint release is skipped where the driver does not implement it (Oracle), since an
+ * unreleased marker dies with the enclosing transaction; no other release failure is hidden,
+ * because a swallowed release over an aborted transaction turns into a silent rollback at the
+ * enclosing commit.
  *
  * <h2>Single-connection safety</h2>
  * The provider instance is built once per pinned connection, inside the carrier entry that owns
- * the connection's one cached {@code DSLContext}, and holds that connection's only nesting depth
- * and savepoint stack. That is sound because SQL on one pinned connection runs on one thread at a
+ * the connection's one cached {@code DSLContext}, and holds that connection's only scope stack.
+ * That is sound because SQL on one pinned connection runs on one thread at a
  * time ({@code RowsMethodCall} emits synchronous batch loaders; a scatter worker owns its key's
  * connection exclusively); no two transactions on the pinned connection are ever open
  * concurrently.
@@ -80,6 +91,7 @@ public final class GraphitronTransactionProviderGenerator {
     private static final ClassName TRANSACTION_PROVIDER = ClassName.get("org.jooq", "TransactionProvider");
     private static final ClassName TRANSACTION_CONTEXT = ClassName.get("org.jooq", "TransactionContext");
     private static final ClassName DATA_ACCESS_EXCEPTION = ClassName.get("org.jooq.exception", "DataAccessException");
+    private static final String SCOPE_KEY = "SCOPE_KEY";
 
     private GraphitronTransactionProviderGenerator() {}
 
@@ -95,14 +107,24 @@ public final class GraphitronTransactionProviderGenerator {
     }
 
     private static TypeSpec provider(ClassName self, ClassName commitPolicy) {
-        var savepointDeque = ParameterizedTypeName.get(DEQUE, SAVEPOINT);
+        var scope = self.nestedClass("Scope");
+        var topLevel = self.nestedClass("TopLevel");
+        var savepointed = self.nestedClass("Savepointed");
+        var scopeDeque = ParameterizedTypeName.get(DEQUE, scope);
 
         var connectionField = FieldSpec.builder(CONNECTION, "connection", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
-        var savepointsField = FieldSpec.builder(savepointDeque, "savepoints", Modifier.PRIVATE, Modifier.FINAL)
+        var scopesField = FieldSpec.builder(scopeDeque, "scopes", Modifier.PRIVATE, Modifier.FINAL)
             .initializer("new $T<>()", ARRAY_DEQUE)
+            .addJavadoc("The open scopes, innermost first. A scope is pushed only once its open fully\n"
+                + "succeeded and removed when it closes.\n")
             .build();
-        var depthField = FieldSpec.builder(int.class, "depth", Modifier.PRIVATE).build();
+        var scopeKeyField = FieldSpec.builder(Object.class, SCOPE_KEY, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("new $T()", Object.class)
+            .addJavadoc("The {@code TransactionContext} data key a successful {@code begin} records its scope\n"
+                + "under. jOOQ builds a fresh context, with its own data map, for every\n"
+                + "{@code transactionResult} call, so the entry names exactly the scope that call opened.\n")
+            .build();
 
         var canonicalConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
@@ -113,8 +135,40 @@ public final class GraphitronTransactionProviderGenerator {
             .addJavadoc("Builds a provider over the pinned {@code connection} applying {@code commitPolicy}\n"
                 + "to every top-level transaction it demarcates. One instance per pinned connection,\n"
                 + "constructed inside the carrier entry that owns the connection's one cached\n"
-                + "{@code DSLContext}, so this instance's {@code depth} is the only nesting counter on\n"
-                + "that connection.\n")
+                + "{@code DSLContext}, so this instance's scope stack is the only record of open\n"
+                + "transactions on that connection.\n")
+            .build();
+
+        var open = MethodSpec.methodBuilder("open")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(scope)
+            .addException(SQL_EXCEPTION)
+            .addStatement("$T opened", scope)
+            .beginControlFlow("if (scopes.isEmpty() && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
+            .addComment("Deferred-rollback dev mode: open the operation transaction once and keep")
+            .addComment("it open across field settles, so post-settle read-backs observe the writes; each")
+            .addComment("field boundary is a savepoint. PinnedConnection.release discards the whole")
+            .addComment("transaction and restores autocommit at operation completion. When the savepoint")
+            .addComment("fails after autocommit went off, no scope is recorded and the next open reuses")
+            .addComment("the transaction, as a second field does.")
+            .beginControlFlow("if (connection.getAutoCommit())")
+            .addStatement("connection.setAutoCommit(false)")
+            .endControlFlow()
+            .addStatement("opened = new $T(connection.setSavepoint())", savepointed)
+            .nextControlFlow("else if (scopes.isEmpty())")
+            .addComment("Top-level: a mutation field opens a writable transaction by turning autocommit off.")
+            .addComment("No mode is captured: autocommit-on is the asserted resting state on an owned")
+            .addComment("connection, and settle re-asserts it unconditionally.")
+            .addStatement("connection.setAutoCommit(false)")
+            .addStatement("opened = new $T()", topLevel)
+            .nextControlFlow("else")
+            .addStatement("opened = new $T(connection.setSavepoint())", savepointed)
+            .endControlFlow()
+            .addComment("Every JDBC call succeeded: only now does the provider's state change.")
+            .addStatement("scopes.push(opened)")
+            .addStatement("return opened")
+            .addJavadoc("Opens one scope, all or nothing: the JDBC calls run first and the scope is pushed\n"
+                + "only once they all succeeded, so a failed open leaves the stack as it was.\n")
             .build();
 
         var begin = MethodSpec.methodBuilder("begin")
@@ -123,27 +177,48 @@ public final class GraphitronTransactionProviderGenerator {
             .returns(void.class)
             .addParameter(TRANSACTION_CONTEXT, "ctx")
             .beginControlFlow("try")
-            .beginControlFlow("if (depth == 0 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
-            .addComment("Deferred-rollback dev mode: open the operation transaction once and keep")
-            .addComment("it open across field settles, so post-settle read-backs observe the writes; each")
-            .addComment("field boundary is a savepoint. PinnedConnection.release discards the whole")
-            .addComment("transaction and restores autocommit at operation completion.")
-            .beginControlFlow("if (connection.getAutoCommit())")
-            .addStatement("connection.setAutoCommit(false)")
-            .endControlFlow()
-            .addStatement("savepoints.push(connection.setSavepoint())")
-            .nextControlFlow("else if (depth == 0)")
-            .addComment("Top-level: a mutation field opens a writable transaction by turning autocommit off.")
-            .addComment("No mode is captured: autocommit-on is the asserted resting state on an owned")
-            .addComment("connection, and settle re-asserts it unconditionally.")
-            .addStatement("connection.setAutoCommit(false)")
-            .nextControlFlow("else")
-            .addStatement("savepoints.push(connection.setSavepoint())")
-            .endControlFlow()
-            .addStatement("depth++")
+            .addStatement("ctx.data($L, open())", SCOPE_KEY)
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
             .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION, "Could not begin transaction")
             .endControlFlow()
+            .build();
+
+        var close = MethodSpec.methodBuilder("close")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(void.class)
+            .addParameter(scope, "closing")
+            .addParameter(boolean.class, "failed")
+            .addException(SQL_EXCEPTION)
+            .beginControlFlow("if (closing instanceof $T sp && failed)", savepointed)
+            .addComment("Nested, or a deferred-rollback field: discard exactly this scope's writes and")
+            .addComment("keep the enclosing (or operation) transaction open.")
+            .addStatement("connection.rollback(sp.savepoint())")
+            .nextControlFlow("else if (closing instanceof $T sp)", savepointed)
+            .addComment("Nested, or a deferred-rollback field settling: release the marker; the enclosing")
+            .addComment("(or operation) transaction stays open.")
+            .addStatement("releaseSavepoint(sp.savepoint())")
+            .nextControlFlow("else")
+            .addComment("Top-level: the commit policy decides persist-vs-discard; failed forces a rollback.")
+            .addStatement("settle(failed)")
+            .endControlFlow()
+            .addJavadoc("Closes {@code closing}, dispatching on its variant: a savepointed scope rolls back\n"
+                + "to its savepoint when {@code failed} and releases it otherwise; the top-level scope\n"
+                + "settles. Leaves the stack to the caller.\n")
+            .build();
+
+        var innermost = MethodSpec.methodBuilder("requireInnermost")
+            .addModifiers(Modifier.PRIVATE)
+            .returns(void.class)
+            .addParameter(scope, "closing")
+            .addParameter(String.class, "operation")
+            .beginControlFlow("if (scopes.peek() != closing)")
+            .addStatement("throw new $T($S + operation + $S + scopes.size() + $S)", IllegalStateException.class,
+                "Cannot ", " a transaction scope that is not the innermost open one (",
+                " open); scopes close in the reverse order they opened")
+            .endControlFlow()
+            .addJavadoc("Refuses to close a scope that is not the innermost open one, leaving the stack as\n"
+                + "it is: jOOQ's {@code transactionResult} cannot produce that order, so it is an\n"
+                + "ordering bug to stop at its site rather than a scope closed wrongly fields later.\n")
             .build();
 
         var commit = MethodSpec.methodBuilder("commit")
@@ -151,27 +226,22 @@ public final class GraphitronTransactionProviderGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
             .addParameter(TRANSACTION_CONTEXT, "ctx")
-            .addComment("The scope closes (pop, depth--) only once its commit succeeded: when anything here")
-            .addComment("throws, depth and the savepoint stack stay as begin left them, so the rollback jOOQ")
-            .addComment("issues next for the same scope closes it exactly once.")
-            .beginControlFlow("try")
-            .beginControlFlow("if (depth == 1 && commitPolicy == $T.ROLLBACK_ONLY)", commitPolicy)
-            .addComment("Deferred-rollback: the field settles by releasing its savepoint; the operation")
-            .addComment("transaction stays open so later read-backs observe the writes, and nothing settles")
-            .addComment("until release discards the whole transaction.")
-            .addStatement("releaseSavepoint(savepoints.peek())")
-            .addStatement("savepoints.pop()")
-            .nextControlFlow("else if (depth == 1)")
-            .addComment("Top-level: the commit policy decides persist-vs-discard.")
-            .addStatement("settle(false)")
-            .nextControlFlow("else")
-            .addStatement("releaseSavepoint(savepoints.peek())")
-            .addStatement("savepoints.pop()")
+            .addStatement("$T closing = ($T) ctx.data($L)", scope, scope, SCOPE_KEY)
+            .beginControlFlow("if (closing == null)")
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "Cannot commit a transaction scope that never opened")
             .endControlFlow()
-            .addStatement("depth--")
+            .addStatement("requireInnermost(closing, $S)", "commit")
+            .addComment("The scope closes (pop, and the context entry cleared) only once its commit succeeded:")
+            .addComment("when anything here throws, the scope stays open, so the rollback jOOQ issues next")
+            .addComment("for the same context closes it exactly once.")
+            .beginControlFlow("try")
+            .addStatement("close(closing, false)")
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
             .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION, "Could not commit transaction")
             .endControlFlow()
+            .addStatement("scopes.pop()")
+            .addStatement("ctx.data().remove($L)", SCOPE_KEY)
             .build();
 
         var releaseSavepoint = MethodSpec.methodBuilder("releaseSavepoint")
@@ -201,17 +271,20 @@ public final class GraphitronTransactionProviderGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(void.class)
             .addParameter(TRANSACTION_CONTEXT, "ctx")
-            .beginControlFlow("try")
-            .addStatement("depth--")
-            .beginControlFlow("if (depth == 0 && commitPolicy != $T.ROLLBACK_ONLY)", commitPolicy)
-            .addComment("Top-level failure: roll the whole transaction back and restore autocommit.")
-            .addComment("failed == true forces a rollback regardless of the commit policy.")
-            .addStatement("settle(true)")
-            .nextControlFlow("else")
-            .addComment("Nested, or a deferred-rollback field: discard exactly this scope's writes and")
-            .addComment("keep the enclosing (or operation) transaction open.")
-            .addStatement("connection.rollback(savepoints.pop())")
+            .addStatement("$T closing = ($T) ctx.data($L)", scope, scope, SCOPE_KEY)
+            .beginControlFlow("if (closing == null)")
+            .addComment("The open failed and recorded nothing: jOOQ's follow-up rollback for it has no")
+            .addComment("scope to close, so the enclosing scope and the connection stay untouched.")
+            .addStatement("return")
             .endControlFlow()
+            .addStatement("requireInnermost(closing, $S)", "roll back")
+            .addComment("Removed whether or not the JDBC call succeeds: nothing calls rollback for this scope")
+            .addComment("again, and a failed top-level rollback is left to PinnedConnection.release, whose")
+            .addComment("open-transaction detection covers it.")
+            .addStatement("scopes.pop()")
+            .addStatement("ctx.data().remove($L)", SCOPE_KEY)
+            .beginControlFlow("try")
+            .addStatement("close(closing, true)")
             .nextControlFlow("catch ($T e)", SQL_EXCEPTION)
             .addStatement("throw new $T($S, e)", DATA_ACCESS_EXCEPTION, "Could not roll back transaction")
             .endControlFlow()
@@ -251,6 +324,34 @@ public final class GraphitronTransactionProviderGenerator {
                 + "chosen per site.\n")
             .build();
 
+        var scopeType = TypeSpec.interfaceBuilder("Scope")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.SEALED)
+            .addJavadoc("One transaction this provider demarcates: the top-level transaction or a savepoint\n"
+                + "nested inside it. Compared by identity; both arms live in this compilation unit, so the\n"
+                + "sealed interface needs no {@code permits} clause.\n")
+            .build();
+        var topLevelType = TypeSpec.classBuilder("TopLevel")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addSuperinterface(scope)
+            .addJavadoc("A top-level transaction under {@link CommitPolicy#COMMIT}: opened by turning\n"
+                + "autocommit off, closed by {@code settle}.\n")
+            .build();
+        var savepointedType = TypeSpec.classBuilder("Savepointed")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addSuperinterface(scope)
+            .addJavadoc("Every other scope (a nested transaction, or a field under\n"
+                + "{@link CommitPolicy#ROLLBACK_ONLY}): closed by releasing or rolling back to its savepoint.\n")
+            .addField(FieldSpec.builder(SAVEPOINT, "savepoint", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addParameter(SAVEPOINT, "savepoint")
+                .addStatement("this.savepoint = savepoint")
+                .build())
+            .addMethod(MethodSpec.methodBuilder("savepoint")
+                .returns(SAVEPOINT)
+                .addStatement("return savepoint")
+                .build())
+            .build();
+
         return TypeSpec.classBuilder(CLASS_NAME)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
             .addSuperinterface(TRANSACTION_PROVIDER)
@@ -260,14 +361,20 @@ public final class GraphitronTransactionProviderGenerator {
                 + "{@link CommitPolicy#ROLLBACK_ONLY} can suppress a commit. See\n"
                 + "{@code GraphitronTransactionProviderGenerator} for the full contract.\n", TRANSACTION_PROVIDER)
             .addType(commitPolicyEnum)
+            .addType(scopeType)
+            .addType(topLevelType)
+            .addType(savepointedType)
+            .addField(scopeKeyField)
             .addField(connectionField)
             .addField(policyField)
-            .addField(savepointsField)
-            .addField(depthField)
+            .addField(scopesField)
             .addMethod(canonicalConstructor)
             .addMethod(begin)
             .addMethod(commit)
             .addMethod(rollback)
+            .addMethod(open)
+            .addMethod(close)
+            .addMethod(innermost)
             .addMethod(releaseSavepoint)
             .addMethod(settle)
             .build();

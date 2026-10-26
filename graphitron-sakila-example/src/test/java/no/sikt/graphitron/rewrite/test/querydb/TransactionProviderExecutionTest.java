@@ -20,6 +20,7 @@ import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 /**
  * Execution-tier coverage of the emitted {@link GraphitronTransactionProvider}'s failure path
@@ -111,8 +112,61 @@ class TransactionProviderExecutionTest {
             ctx.transaction(second -> second.dsl().execute("insert into tx_provider.marker values (2)"));
 
             assertThat(markers())
-                .as("the provider's depth and savepoint stack came back consistent for the next transaction")
+                .as("the provider's scope stack came back consistent for the next transaction")
                 .containsExactly(1, 2);
+            assertThat(connection.getAutoCommit()).isTrue();
+        } finally {
+            dsl.execute("delete from tx_provider.marker");
+        }
+    }
+
+    @Test
+    void nestedOpenOverAnAbortedTransaction_failsAlone_andTheEnclosingScopeRollsBackOnce() throws SQLException {
+        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+            var provider = new GraphitronTransactionProvider(connection, CommitPolicy.COMMIT);
+            DSLContext ctx = DSL.using(new DefaultConfiguration()
+                .set(connection)
+                .set(SQLDialect.POSTGRES)
+                .set(provider));
+            var nestedFailure = new AtomicReference<DataAccessException>();
+
+            Throwable thrown = catchThrowable(() -> ctx.transaction(outer -> {
+                outer.dsl().execute("insert into tx_provider.marker values (1)");
+                try {
+                    outer.dsl().execute("select 1 / 0");
+                } catch (DataAccessException swallowedByServiceCode) {
+                    // The service catches the failed statement, leaving the transaction aborted,
+                    // and then opens a nested transaction: Postgres refuses the savepoint.
+                }
+                try {
+                    outer.dsl().transaction(nested -> nested.dsl().execute("insert into tx_provider.marker values (3)"));
+                } catch (DataAccessException e) {
+                    nestedFailure.set(e);
+                    throw e;
+                }
+            }));
+
+            assertThat(thrown)
+                .as("the failed open propagates out of the outer transaction as itself")
+                .isNotNull()
+                .isSameAs(nestedFailure.get())
+                .hasMessageContaining("Could not begin transaction");
+            assertThat(nestedFailure.get().getSuppressed())
+                .as("jOOQ's rollback for the open that failed found no scope, so it had nothing to fail")
+                .isEmpty();
+            assertThat(nestedFailure.get().getCause())
+                .isInstanceOf(SQLException.class)
+                .extracting(e -> ((SQLException) e).getSQLState())
+                .isEqualTo("25P02");
+            assertThat(markers())
+                .as("the enclosing transaction rolled back, once, as itself")
+                .isEmpty();
+
+            ctx.transaction(second -> second.dsl().execute("insert into tx_provider.marker values (2)"));
+
+            assertThat(markers())
+                .as("the provider's scope stack came back consistent for the next transaction")
+                .containsExactly(2);
             assertThat(connection.getAutoCommit()).isTrue();
         } finally {
             dsl.execute("delete from tx_provider.marker");

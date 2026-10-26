@@ -1,7 +1,7 @@
 ---
 id: R1055
 title: "GraphitronTransactionProvider closes the enclosing scope when a begin fails"
-status: In Progress
+status: In Review
 bucket: bug
 theme: runtime-connection
 depends-on: []
@@ -59,6 +59,12 @@ Unit tier, `GraphitronTransactionProviderGeneratorTest`. The failed-open cases g
 * The R1054 tests keep passing unchanged in what they assert.
 
 Execution tier, `TransactionProviderExecutionTest` against real Postgres: inside an outer transaction, insert a marker, run a failing statement and catch it, then open a nested transaction. The nested open throws with a `25P02` cause and no suppressed exceptions; the exception propagates out of the outer transaction, which rolls back once (no marker); a second transaction on the same provider commits its marker; the connection is back in autocommit.
+
+## Implementation notes
+
+* The graphitron JavaPoet fork emits no records, so `TopLevel` and `Savepointed` are private static final classes implementing a private `SEALED` interface, following the scatter `Outcome` precedent in `ConnectionRuntimeClassGenerator`; identity equality is what plain classes have, which is what the plan asks for. The private methods are `open()`, `close(Scope, boolean failed)` and `requireInnermost(Scope, String)`, for R1101 to reach.
+* `rollback` checks innermost, then pops and clears the context entry before its JDBC call, so a failed rollback leaves no scope behind; `commit` checks innermost and pops only after its JDBC call succeeded.
+* Every new or changed unit test fails against the provider as it stood before this change (8 of 21), and the 13 existing ones pass on both.
 
 ## Retired vocabulary
 

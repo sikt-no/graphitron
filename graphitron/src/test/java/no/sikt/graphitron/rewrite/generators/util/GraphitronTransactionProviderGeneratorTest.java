@@ -3,7 +3,11 @@ package no.sikt.graphitron.rewrite.generators.util;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.test.compile.EmittedCodeHarness;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
+import org.jooq.DSLContext;
+import org.jooq.SQLDialect;
 import org.jooq.TransactionContext;
+import org.jooq.TransactionProvider;
+import org.jooq.impl.DSL;
 import org.jooq.exception.DataAccessException;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -54,6 +58,16 @@ class GraphitronTransactionProviderGeneratorTest {
     private SQLException releaseFailure;
     /** When set, the fake connection throws this from {@code commit}, after recording it. */
     private SQLException commitFailure;
+    /** When set, the fake connection throws this from {@code setSavepoint}, after recording it. */
+    private SQLException savepointFailure;
+    /** When set, the fake connection throws this from {@code setAutoCommit(false)}, after recording it. */
+    private SQLException autoCommitOffFailure;
+    /**
+     * The contexts of the scopes the direct-invocation helpers opened, innermost first: a
+     * successful {@code begin} pushes a fresh context, a successful {@code commit} pops it, a failed
+     * one leaves it for the {@code rollback} that follows, as jOOQ's {@code transactionResult} does.
+     */
+    private final java.util.Deque<TransactionContext> openContexts = new java.util.ArrayDeque<>();
 
     @BeforeAll
     static void compileEmittedProvider() throws Exception {
@@ -80,6 +94,9 @@ class GraphitronTransactionProviderGeneratorTest {
         events.clear();
         releaseFailure = null;
         commitFailure = null;
+        savepointFailure = null;
+        autoCommitOffFailure = null;
+        openContexts.clear();
     }
 
     @Test
@@ -145,7 +162,7 @@ class GraphitronTransactionProviderGeneratorTest {
             .containsExactly(harnessConnectionParam(), commitPolicyCommit.getClass());
         assertThat(java.util.Arrays.stream(providerClass.getDeclaredFields())
             .map(java.lang.reflect.Field::getName))
-            .doesNotContain("priorAutoCommit", "afterSettle");
+            .doesNotContain("priorAutoCommit", "afterSettle", "depth", "savepoints");
     }
 
     private static Class<?> harnessConnectionParam() {
@@ -270,8 +287,8 @@ class GraphitronTransactionProviderGeneratorTest {
         assertThat(events).containsExactly(
             "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "rollbackToSavepoint:sp1");
 
-        // depth and the savepoint stack came back consistent: a further nested scope and the
-        // top-level commit behave as on a fresh provider.
+        // The scope stack came back consistent: a further nested scope and the top-level commit
+        // behave as on a fresh provider.
         releaseFailure = null;
         events.clear();
         begin(provider);
@@ -305,6 +322,140 @@ class GraphitronTransactionProviderGeneratorTest {
         assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
     }
 
+    // --- a failed open, through jOOQ's own transactionResult ----------------------------------------
+    //
+    // The bug is in how the provider meets jOOQ's call sequence (a begin that throws is followed by
+    // a rollback on the same context), so these go through transactionResult rather than driving
+    // begin/rollback by hand, which would assume the sequence the tests exist to check.
+
+    @Test
+    void nestedOpenFailure_underCommit_leavesTheEnclosingScopeToItsOwnRollback() throws Throwable {
+        // Postgres refuses the savepoint inside an aborted transaction (25P02). The nested open
+        // fails, jOOQ rolls back a scope that never opened (nothing happens), and the exception
+        // propagates out of the outer body, whose own rollback is the only one.
+        var aborted = new SQLException("current transaction is aborted", "25P02");
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var dsl = jooqOver(fakeConnection(), provider);
+        savepointFailure = aborted;
+
+        assertThatThrownBy(() -> dsl.transactionResult(outer ->
+                outer.dsl().transactionResult(inner -> 1)))
+            .isInstanceOf(DataAccessException.class)
+            .hasMessageContaining("Could not begin transaction")
+            .hasCause(aborted)
+            .satisfies(t -> assertThat(t.getSuppressed()).isEmpty());
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "rollback", "setAutoCommit:true");
+    }
+
+    @Test
+    void nestedOpenFailure_underCommit_caughtByTheOuterBody_letsTheOuterScopeCommitOnce() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var dsl = jooqOver(fakeConnection(), provider);
+        savepointFailure = new SQLException("current transaction is aborted", "25P02");
+
+        int result = dsl.transactionResult(outer -> {
+            try {
+                outer.dsl().transactionResult(inner -> 1);
+            } catch (DataAccessException expected) {
+                // the service decides the nested failure is not fatal
+            }
+            return 2;
+        });
+
+        assertThat(result).isEqualTo(2);
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void topLevelOpenFailure_reachesNoRollback_andTheNextTransactionRunsInFull() throws Throwable {
+        var refused = new SQLException("connection refused autocommit off", "08003");
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var dsl = jooqOver(fakeConnection(), provider);
+        autoCommitOffFailure = refused;
+
+        assertThatThrownBy(() -> dsl.transactionResult(tx -> 1))
+            .isInstanceOf(DataAccessException.class)
+            .hasCause(refused)
+            .satisfies(t -> assertThat(t.getSuppressed()).isEmpty());
+        assertThat(events).containsExactly("setAutoCommit:false");
+
+        autoCommitOffFailure = null;
+        events.clear();
+        dsl.transactionResult(tx -> 1);
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void nestedOpenFailure_underRollbackOnly_leavesTheFieldSavepointToTheFieldsOwnCommit() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
+        var dsl = jooqOver(fakeConnection(), provider);
+
+        dsl.transactionResult(field -> {
+            savepointFailure = new SQLException("current transaction is aborted", "25P02");
+            try {
+                field.dsl().transactionResult(inner -> 1);
+            } catch (DataAccessException expected) {
+                // caught by the field body
+            }
+            savepointFailure = null;
+            return 1;
+        });
+
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1",
+            "setSavepoint:sp2",
+            "releaseSavepoint:sp1");
+    }
+
+    @Test
+    void rollbackOnly_firstOpenLosingItsSavepoint_isReusedByTheNextField() throws Throwable {
+        // Autocommit goes off, then the savepoint fails: no scope is recorded, and the next field
+        // finds the transaction already open and takes only a savepoint.
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
+        var dsl = jooqOver(fakeConnection(), provider);
+        savepointFailure = new SQLException("savepoint refused", "XX000");
+
+        assertThatThrownBy(() -> dsl.transactionResult(field -> 1))
+            .isInstanceOf(DataAccessException.class);
+
+        savepointFailure = null;
+        dsl.transactionResult(field -> 1);
+
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1",
+            "getAutoCommit", "setSavepoint:sp2", "releaseSavepoint:sp2");
+    }
+
+    @Test
+    void closingAScopeThatIsNotInnermost_isRefused_andTheInnerScopeStillClosesNormally() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var outer = fakeContext();
+        var inner = fakeContext();
+        invokeTx(provider, "begin", outer);
+        invokeTx(provider, "begin", inner);
+
+        assertThatThrownBy(() -> invokeTx(provider, "commit", outer))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("not the innermost");
+
+        invokeTx(provider, "commit", inner);
+        invokeTx(provider, "commit", outer);
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void committingAContextThatNeverOpened_isRefused() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+
+        assertThatThrownBy(() -> invokeTx(provider, "commit", fakeContext()))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("never opened");
+        assertThat(events).isEmpty();
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
 
     private Object newProvider(Connection connection, Object policy) throws Throwable {
@@ -312,16 +463,48 @@ class GraphitronTransactionProviderGeneratorTest {
         return providerClass.getConstructor(Connection.class, policyClass).newInstance(connection, policy);
     }
 
-    private void begin(Object provider) throws Throwable { invokeTx(provider, "begin"); }
-    private void commit(Object provider) throws Throwable { invokeTx(provider, "commit"); }
-    private void rollback(Object provider) throws Throwable { invokeTx(provider, "rollback"); }
+    private void begin(Object provider) throws Throwable {
+        var ctx = fakeContext();
+        invokeTx(provider, "begin", ctx);
+        openContexts.push(ctx);
+    }
 
-    private void invokeTx(Object provider, String name) throws Throwable {
+    private void commit(Object provider) throws Throwable {
+        invokeTx(provider, "commit", openContexts.peek());
+        openContexts.pop();
+    }
+
+    private void rollback(Object provider) throws Throwable {
+        invokeTx(provider, "rollback", openContexts.pop());
+    }
+
+    private void invokeTx(Object provider, String name, TransactionContext ctx) throws Throwable {
         try {
-            providerClass.getMethod(name, TransactionContext.class).invoke(provider, (Object) null);
+            providerClass.getMethod(name, TransactionContext.class).invoke(provider, ctx);
         } catch (InvocationTargetException e) {
             throw e.getCause();
         }
+    }
+
+    /** A jOOQ {@link DSLContext} whose transactions run through {@code provider} over {@code connection}. */
+    private static DSLContext jooqOver(Connection connection, Object provider) {
+        return DSL.using(connection, SQLDialect.POSTGRES).configuration()
+            .derive((TransactionProvider) provider)
+            .dsl();
+    }
+
+    /** A {@link TransactionContext} whose {@code data} methods are backed by its own map, as jOOQ's are. */
+    private static TransactionContext fakeContext() {
+        var data = new java.util.HashMap<Object, Object>();
+        return (TransactionContext) Proxy.newProxyInstance(
+            harness.classLoader(), new Class<?>[]{TransactionContext.class}, (proxy, method, args) -> {
+                if (method.getName().equals("data")) {
+                    if (args == null || args.length == 0) return data;
+                    if (args.length == 1) return data.get(args[0]);
+                    return data.put(args[0], args[1]);
+                }
+                return objectMethodOrDefault(proxy, method, args, "ctx");
+            });
     }
 
     // --- recording fakes -------------------------------------------------------------------------
@@ -338,6 +521,7 @@ class GraphitronTransactionProviderGeneratorTest {
                 case "getAutoCommit" -> { events.add("getAutoCommit"); yield autoCommit.get(); }
                 case "setAutoCommit" -> {
                     events.add("setAutoCommit:" + args[0]);
+                    if (!(Boolean) args[0] && autoCommitOffFailure != null) throw autoCommitOffFailure;
                     autoCommit.set((Boolean) args[0]);
                     yield null;
                 }
@@ -353,6 +537,7 @@ class GraphitronTransactionProviderGeneratorTest {
                 case "setSavepoint" -> {
                     var label = "sp" + savepointCount.incrementAndGet();
                     events.add("setSavepoint:" + label);
+                    if (savepointFailure != null) throw savepointFailure;
                     yield savepoint(label);
                 }
                 case "releaseSavepoint" -> {
