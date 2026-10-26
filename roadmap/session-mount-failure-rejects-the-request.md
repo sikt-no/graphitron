@@ -1,7 +1,7 @@
 ---
 id: R1097
 title: "A rejected session identity fails the whole request instead of surfacing as a redacted field error"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 4
 theme: error-channel
