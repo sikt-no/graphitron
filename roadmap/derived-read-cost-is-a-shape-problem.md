@@ -749,22 +749,6 @@ elsewhere in the graph.
   arguments convert whole, a subject listing its corpus gaps once before its first conversion.
 * **`SeededStore` is deleted** `blocked`, on "The code-reference subject converts", "The table-binding and node subject converts" and "Every other seeded class converts by its subject". The fixture goes, and `SeedingDissolutionGateTest` goes with them.
 
-### Generation needs the module's own sources, not its compiled classes `open`
-
-What a schema names in the module being generated is read from that module's source files, which the
-generated code is compiled together with, so a `generate` that runs before the module is compiled
-needs nothing it has not got. `SourceWalker` already parses those sources, parse-only, into the
-`java_` family.
-
-* **A class the module's own sources declare is read from its source** `open`. A regression, fixed
-  ahead of the planned work: opptak's `@error` names `UtdanningstilbudRedigeringStengtException`,
-  written in its own sources, and `ClasspathNameability` refuses it as "not carried by this
-  module's own classes" because generation runs before they are compiled. The `java_` family gains
-  each class declaration's written supertypes (`ClassTree`'s extends and implements clauses, as
-  written) and each file's package and imports, so a written name resolves to its class; nameability
-  accepts a class the sources declare, and the `@error` check walks the resolved supertypes until it
-  meets a class the classpath knows.
-
 ### What the converted seeded cases turned up is fixed `open`
 
 Stating the seeded cases as documents put real schemas in front of rules that had only met
@@ -1089,6 +1073,22 @@ whether the defect it reports still exists is its own author's to re-measure.
 
 Found while writing the discipline down, verified, and not fixed. Recorded so they are findable
 rather than left in a transcript.
+
+* **A declared reactor sibling with no build output is read from a stale installed jar, silently.**
+  Run on its own from a checkout where `opptak-service` had never been built, opptak-subgraph's
+  generate fell back to an installed `opptak-service-1.0-SNAPSHOT.jar` from an older build that
+  lacks the classes the schema names, and refused seven `@error` classes and the services of
+  thirteen fields that the sibling's sources declare. No stale-module warning fired, though the sources are newer
+  than the jar. In a reactor build the sibling compiles first and nothing is refused.
+* **Generation reads a class the schema names only once it is compiled.** Parked rather than
+  planned: generation runs before the module compiles, so a class written in the module's own
+  sources, or in a declared sibling's that was not built, is not nameable until it is. The case
+  first offered for it was the stale sibling above, not a class in the module's own sources, so
+  no real schema is known to need it yet. Built once and dropped: the `java_` family capturing each
+  file's package and imports and each class's written supertypes, `generate` walking the module's
+  own source roots (20 files in 732 ms cold on opptak), nameability taking the module's sources in
+  place of its compiled output, and the `@error` check following written supertypes to a class the
+  classpath knows. A `@service` in the same module would still need its compiled method signatures.
 
 * **Nothing enforces mark and sweep.** No gate checks that a stored relation's rows are swept. One
   gatherer's clear set is re-derived from its own source text and compared; the other lists are
