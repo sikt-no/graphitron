@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 5
 theme: runtime-connection
-depends-on: [transaction-provider-failed-begin-closes-enclosing-scope]
+depends-on: []
 created: 2026-10-26
 last-updated: 2026-10-26
 ---

@@ -39,7 +39,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
-| `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start <sub>blocked by: [transaction-provider-failed-begin-closes-enclosing-scope](transaction-provider-failed-begin-closes-enclosing-scope.md)</sub> | Spec | 2026-10-26 | [plan](mutation-field-transaction-scope.md) |
+| `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start | Spec | 2026-10-26 | [plan](mutation-field-transaction-scope.md) |
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
@@ -59,7 +59,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R112` | Operation-driven test corpus, capability catalog, and runtime trace <sub>blocked by: [capability-catalog](capability-catalog.md)</sub> | Spec | 2026-08-06 | [plan](operation-driven-test-corpus.md) |
 | `R180` | Resolved accessors for record-parent column reads (recordColumnReadArgs) | Spec | 2026-07-15 <sub>created 2026-05-19</sub> | [plan](record-parent-column-read-helper.md) |
 | `R684` | fact-model doctrine: consumers share relations, not queries | Ready | 2026-08-17 <sub>created 2026-08-16</sub> | [plan](consumers-share-relations-not-queries.md) |
-| `R1055` | GraphitronTransactionProvider closes the enclosing scope when a begin fails | In Review | 2026-10-26 <sub>created 2026-10-16</sub> | [plan](transaction-provider-failed-begin-closes-enclosing-scope.md) |
 
 ---
 
@@ -597,14 +596,13 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1102` [**A value the session mount derives binds where a contextArgument binds today**](session-handle-component-bindings.md) — Ready, feature
-- `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start**](mutation-field-transaction-scope.md) — Spec, feature, blocked by [transaction-provider-failed-begin-closes-enclosing-scope](transaction-provider-failed-begin-closes-enclosing-scope.md)
+- `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start**](mutation-field-transaction-scope.md) — Spec, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1098` [**graphitron-jakarta-rest hands the request headers to newExecutionInput**](jakarta-rest-request-aware-execution-input.md) — Backlog, feature
 - `R996` [**A tenant-scoped row referencing another tenant routes on the referenced tenant**](cross-tenant-reference-from-tenant-scoped-parent.md) — Backlog, architecture
 - `R505` [**Tenant-index tables: per-row tenant routing off an index parent**](tenant-index-parent-row-routing.md) — Backlog, architecture
 - `R995` [**The cross-scope tenant check sees every table a batched statement joins**](tenant-reach-includes-join-path-tables.md) — Backlog, architecture
 - `R517` [**Client narrowing of the fan-out domain: a tenant-column list argument intersects the request set**](tenant-fanout-argument-narrowing.md) — Backlog, architecture
-- `R1055` [**GraphitronTransactionProvider closes the enclosing scope when a begin fails**](transaction-provider-failed-begin-closes-enclosing-scope.md) — In Review, bug
 
 ### search
 
