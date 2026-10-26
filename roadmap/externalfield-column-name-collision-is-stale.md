@@ -1,13 +1,13 @@
 ---
 id: R1094
 title: "@externalField: drop the column-name collision rejection, made moot by result-key aliasing"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 2
 theme: codegen-correctness
 depends-on: []
 created: 2026-10-23
-last-updated: 2026-10-23
+last-updated: 2026-10-26
 ---
 
 # @externalField: drop the column-name collision rejection, made moot by result-key aliasing
