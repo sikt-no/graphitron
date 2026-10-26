@@ -5,20 +5,25 @@ status: Backlog
 bucket: architecture
 priority: 9
 theme: classification-model
-depends-on: []
+depends-on: [unskip-javapoet-tests]
 created: 2026-05-17
-last-updated: 2026-05-17
+last-updated: 2026-10-26
 ---
 
 # graphitron-javapoet: emit records, sealed/permits, package-info.java
 
-`graphitron-javapoet` is forked from Square's JavaPoet at a point that
-predates Java records (Java 14+) and sealed types (Java 17+). The
-emit framework supports four `TypeSpec.Kind` values: `CLASS`,
-`INTERFACE`, `ENUM`, `ANNOTATION`. Records, sealed/permits clauses,
-and `package-info.java` files cannot be generated through the framework
-today. The rewrite uses graphitron-javapoet exclusively for code emit,
-so any emitter that wants to produce these shapes hits a wall.
+## Goal
+
+An emitter in the rewrite can produce a Java record, a sealed type
+with a `permits` clause, and a `package-info.java` file through
+`graphitron-javapoet`, the in-tree copy of JavaPoet that all generated
+source passes through. Today it cannot: the fork was taken from
+Square's JavaPoet before records (Java 14+) and sealed types
+(Java 17+), so `TypeSpec.Kind` offers only `CLASS`, `INTERFACE`,
+`ENUM` and `ANNOTATION`, and there is no way to write a
+`package-info.java`. For a consumer of graphitron nothing changes when
+this item lands; it unblocks generated-code shapes that do change what
+consumers see, starting with R94's input types.
 
 R94 (`emit-input-records`) ran into this limitation: the spec called
 for one Java record per SDL input type plus a sealed marker interface
@@ -28,37 +33,65 @@ spec-shape ambition to this item. R172 ships the audit that
 substitutes for the marker-and-package-info enforcement in the
 meantime.
 
-This item extends graphitron-javapoet with:
-1. `TypeSpec.Kind.RECORD` plus the corresponding `recordBuilder` API.
-   Records carry an ordered component list, a canonical compact-form
-   constructor (no body — javapoet renders the compact form), and
-   accessor synthesis.
-2. `sealed` modifier and `permits` clause support on `TypeSpec`
-   (classes and interfaces). The builder accepts a `permits` list of
-   `TypeName`; the rendered output emits `sealed ... permits A, B, C`
-   in the type header.
-3. `non-sealed` modifier support on subtypes of sealed parents.
-4. Package-info emission: either a new `PackageSpec` shape or a
-   `JavaFile`-level option to render `package-info.java`. The file
-   carries Javadoc and any package-level annotations.
+## Plan: port from Palantir's JavaPoet
 
-Each change is a substantive emit-framework upgrade with downstream
-impact across the rewrite once available. The follow-on consumer
-work (re-emitting R94's `<outputPackage>.inputs.*` as records + sealed
-marker + package-info) is its own slice.
+Square archived JavaPoet in October 2024, and its README names
+Palantir's JavaPoet (`com.palantir.javapoet:javapoet`, Apache 2.0) as
+the option for current Java language features. Palantir's version
+already implements records and sealed types and is actively released
+(0.22.0 on 2026-10-18). Rather than writing these from scratch, port
+Palantir's implementation into `graphitron-javapoet`, keeping our
+package and our additions, and credit Palantir in the module README
+and the touched files' headers next to the existing Square
+attribution.
+
+What 0.22.0 provides, read from its sources jar:
+
+1. **Records.** `TypeSpec.Kind.RECORD` (rendered keyword `record`),
+   `TypeSpec.recordBuilder(String)` and `recordBuilder(ClassName)`,
+   and `TypeSpec.Builder.recordConstructor(MethodSpec)`. The record
+   constructor's parameters become the record components in the
+   header; a non-empty constructor body is emitted inside the type.
+   `MethodSpec.compactConstructorBuilder()` produces the compact form
+   (`Foo { ... }`, no parameter list).
+2. **Sealed types.** `TypeSpec.Builder.addPermittedSubclass(...)` and
+   `addPermittedSubclasses(...)` (overloads for `TypeName`, `Type`,
+   `TypeMirror`), rendering `sealed ... permits A, B, C`. `build()`
+   rejects permitted subclasses on a type without `Modifier.SEALED`.
+   Palantir validates only `SEALED`; confirm that `Modifier.NON_SEALED`
+   on a subtype renders as `non-sealed` and add handling if not.
+3. **`package-info.java`.** Not in Palantir. Add it ourselves: either
+   a `JavaFile`-level option or a small dedicated spec that renders
+   the package declaration with its Javadoc and package-level
+   annotations, written through the same `writeToPathReporting` path
+   as other files.
+
+The port is concentrated in `TypeSpec` (the `Kind` enum, builder,
+header emit, validation) and `MethodSpec` (the compact-constructor
+flag and its emit), with `CodeWriter` touched for header rendering.
+Palantir's sources use Java 16+ syntax such as pattern-matching
+`instanceof`; that is fine here, since generator code targets Java 25.
+The source the port *emits* must still be valid at Java 17, which
+records and sealed types are.
+
+Sequencing: `graphitron-javapoet`'s own 400-test suite is currently
+skipped (`skipTests` in its pom). R560 turns it back on; land that
+first so this change to the emit framework runs against the fork's
+regression suite, and port Palantir's record and sealed tests
+alongside the code.
 
 ## Acceptance
 
 - `TypeSpec.recordBuilder("Foo")` emits a valid Java record header
   with the specified components, modifiers, implements clause, and
-  any methods.
-- `TypeSpec.classBuilder("Foo").sealedTo(List.of(ClassName.get(...)))`
-  (or equivalent API) emits the `sealed ... permits ...` header.
-- `JavaFile.packageInfo(...)` (or equivalent) emits a valid
-  `package-info.java` carrying Javadoc and package-level annotations.
+  any methods, including a compact canonical constructor.
+- A sealed class or interface built with permitted subclasses emits
+  the `sealed ... permits ...` header, and a `non-sealed` subtype
+  emits correctly.
+- A `package-info.java` with Javadoc and package-level annotations can
+  be emitted.
 - Existing emit sites compile unchanged (additive APIs).
-- A round-trip test confirms each new shape emits valid Java 17
-  source.
+- A round-trip test compiles each new shape as Java 17 source.
 
 ## Out of scope
 
@@ -67,3 +100,26 @@ marker + package-info) is its own slice.
 - Pattern-matching, switch-pattern, or other later-Java-version
   syntactic features. Records, sealed, and package-info are the
   Java-17 frontier the rewrite needs immediately.
+
+## Other solutions we've considered
+
+- **Depend on Palantir's JavaPoet directly instead of the fork.** Our
+  fork already matches Palantir in the most disruptive respect (fields
+  are private behind accessors such as `kind()` and `name()`), so most
+  call sites would survive. Against it: 289 files import
+  `no.sikt.graphitron.javapoet` and would all change; our additions
+  have no Palantir equivalent and would need a new home (in use
+  outside the module: `CodeBlock.declare` and friends, 16 call sites;
+  `TypeSpec.referencedClassNames`, 8; `CodeBlock.statementOf`, 2;
+  `JavaFile.writeToPathReporting`, 1; `CodeBlock.empty`, 1); and
+  Palantir is still 0.x with frequent releases, so API breaks are
+  allowed and we would track them. It would also reverse the module
+  README's stated reason for forking: keeping the emitter an
+  implementation detail with no compatibility obligations. Reconsider
+  if the fork's own additions shrink or Palantir reaches 1.0.
+- **Implement records and sealed types from scratch.** Same result as
+  the port, with more design work and less tested code.
+- **A different code-generation library** (Roaster, JavaParser's
+  printer, JCodeModel, Micronaut's sourcegen fork). None shares
+  JavaPoet's API, so every emitter would be rewritten, for features a
+  port provides at a fraction of the cost.
