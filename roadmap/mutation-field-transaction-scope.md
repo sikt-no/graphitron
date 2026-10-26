@@ -5,7 +5,7 @@ status: Spec
 bucket: feature
 priority: 5
 theme: runtime-connection
-depends-on: []
+depends-on: [transaction-provider-failed-begin-closes-enclosing-scope]
 created: 2026-10-26
 last-updated: 2026-10-26
 ---
@@ -112,7 +112,7 @@ Two behaviours change for owned-path consumers with no configuration: a `@servic
 
 * **R1097** (Spec), rejected session identity: same instrumentation class and same `ErrorRouter` placement; see Hook failure routing. Independent otherwise.
 * **R722** (Spec), `@service(transactional:)`: on the owned path this item makes every `@service` mutation transactional, so R722's value there is gone. Its reviewer should decide whether it is re-scoped to the escape hatch and queries or discarded; this item does not change it.
-* **R1055** (Backlog), a failed begin closes the enclosing scope: the outer scope adds a new caller of the provider's begin, so the bug matters more. Fold it in or land it first.
+* **R1055** (Spec), a failed begin closes the enclosing scope: a hard dependency. Under this plan every `@service` mutation runs inside the field scope, so a failed nested begin would otherwise close the field scope. R1055 replaces the provider's depth counter with a stack of scope entries, makes an open all-or-nothing, and makes every close name its scope; the outer scope's open and settle here build on those private open and close methods, and this item decides their visibility.
 * **R469** (Backlog), `@defer` on the owned path: a deferred payload fragment would complete after the scope settles. Incremental delivery stays rejected; R469 has to account for this when it lifts that.
 
 ## Other solutions we've considered
@@ -141,4 +141,6 @@ Today a field's `transactionResult` commits inside its fetcher, so a commit that
 **Non-blocking.**
 
 - R1055 should be a hard dependency, not "fold it in or land it first". Under this plan every `@service` mutation runs at depth 1 or deeper, so the R1055 scenario (service code catches a failed statement, then opens a nested `transactionResult` whose `setSavepoint()` fails with `25P02`) now closes the *field* scope and leaves `depth` wrong for every later field. Put it in `depends-on:` and drop the alternative.
+
+  *Response:* R1055 is now in `depends-on:` and the Relation to other items entry drops the alternative. R1055's spec also restructures the provider's scope tracking so the outer scope's open and settle have an all-or-nothing open and a scope-naming close to build on.
 - The scope boundaries assume the serial mutation strategy, and the spec itself notes a consumer can replace it with `.mutationExecutionStrategy(...)`. With a parallel strategy, field N+1's `beginFieldExecution` would settle field N mid-flight. `ExecutionContext.getMutationStrategy()` is reachable from `beginExecuteOperation`; failing the operation when it is not an `AsyncSerialExecutionStrategy` matches how the instrumentation already fails fast on incremental support, and the "replaced instrumentation" test has a natural sibling.
