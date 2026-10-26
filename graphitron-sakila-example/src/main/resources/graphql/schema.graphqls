@@ -959,6 +959,13 @@ type Query {
     # would fail if the value were read through a join into the row-producing statement.
     allFanItems: [FanItem!]!
     fanItem(fanBaseId: Int! @field(name: "fan_base_id")): FanItem
+
+    # An @externalField may share its name with a column on its parent table: the computed term is
+    # projected and read back under a reserved result-key alias, never under the bare name, so the
+    # same-named column cannot shadow it. One root per shape: a plain @table type, and a
+    # single-table discriminated interface whose participants declare the shared name.
+    computedTitleFilm(filmId: Int! @field(name: "film_id")): ComputedTitleFilm
+    allFanLabelled: [FanLabelled!]!
     allFanOwners: [FanOwner!]!
 
     # Connection twin of allContent: the same participant-driven select list, paginated. The
@@ -4121,6 +4128,47 @@ type FanAlphaPlacement {
 
 type FanBetaPlacement {
     target: FanTarget @reference(path: [{key: "fan_base_beta_target_id_fkey"}])
+}
+
+# 'title' shares its name with the film.title column on purpose: it returns lower(title) from the
+# @externalField method, and 'plainTitle' reads the column beside it.
+type ComputedTitleFilm @table(name: "film") {
+    title:      String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FilmExtensions",
+        method: "lowerTitle"
+    })
+    plainTitle: String @field(name: "TITLE")
+}
+
+# 'label' shares its name with the fan_base.label column on purpose, declared on the interface and
+# on both participants with one method, so the interface owns its alias and the fold carries one
+# term for it. 'plainLabel' reads the column beside it. Kept apart from FanItem, whose 'label' the
+# fold assertions read as the column.
+interface FanLabelled @table(name: "fan_base") @discriminate(on: "fan_kind") {
+    fanBaseId:  Int!   @field(name: "fan_base_id")
+    label:      String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FanExtensions",
+        method: "kindLabel"
+    })
+    plainLabel: String @field(name: "label")
+}
+
+type FanLabelledAlpha implements FanLabelled @table(name: "fan_base") @discriminator(value: "ALPHA") {
+    fanBaseId:  Int!   @field(name: "fan_base_id")
+    label:      String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FanExtensions",
+        method: "kindLabel"
+    })
+    plainLabel: String @field(name: "label")
+}
+
+type FanLabelledBeta implements FanLabelled @table(name: "fan_base") @discriminator(value: "BETA") {
+    fanBaseId:  Int!   @field(name: "fan_base_id")
+    label:      String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.FanExtensions",
+        method: "kindLabel"
+    })
+    plainLabel: String @field(name: "label")
 }
 
 # The two participants' 'target' destination, one table reached over two different FKs.

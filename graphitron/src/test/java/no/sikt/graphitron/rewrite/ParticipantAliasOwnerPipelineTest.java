@@ -1,10 +1,19 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.command.Contribution;
+import no.sikt.graphitron.command.ProjectionCommand;
 import no.sikt.graphitron.command.ReservedAliases;
+import no.sikt.graphitron.command.SelectTerm;
 import no.sikt.graphitron.javapoet.MethodSpec;
+import no.sikt.graphitron.plan.ConditionCommands;
+import no.sikt.graphitron.plan.GeneratedUnits;
+import no.sikt.graphitron.plan.LauncherCommands;
+import no.sikt.graphitron.plan.ProjectionCommands;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.AliasOwner;
+import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
+import no.sikt.graphitron.rewrite.model.QueryField;
 import no.sikt.graphitron.rewrite.model.ResultKeyAliasedField;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -214,6 +223,63 @@ class ParticipantAliasOwnerPipelineTest {
             .as("both Item and Zeta declare the name; the representative is the first by name, so "
                 + "every participant of either interface agrees on one owner per field name")
             .isEqualTo(new AliasOwner.QualifiedBy("Item"));
+    }
+
+    @Test
+    void computedFieldSharingAColumnName_isOwnedByTheInterface_andProjectsBesideTheColumn() {
+        // The sis shape: an @externalField declared on the interface and on both participants
+        // under a name the base table also has as a column, beside a field reading that column.
+        // The computed term is aliased by result key and the column term by its own name, so the
+        // column namespace never enters the alias-owner verdict or the fold's dedupe.
+        var schema = TestSchemaHelper.buildSchema("""
+            interface Item @table(name: "fan_base") @discriminate(on: "fan_kind") {
+                fanBaseId: Int! @field(name: "fan_base_id")
+                label: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "fanLabel"})
+            }
+            type Alpha implements Item @table(name: "fan_base") @discriminator(value: "ALPHA") {
+                fanBaseId: Int! @field(name: "fan_base_id")
+                label: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "fanLabel"})
+                plainLabel: String @field(name: "label")
+            }
+            type Beta implements Item @table(name: "fan_base") @discriminator(value: "BETA") {
+                fanBaseId: Int! @field(name: "fan_base_id")
+                label: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "fanLabel"})
+                plainLabel: String @field(name: "label")
+            }
+            type Query { items: [Item!]! }
+            """);
+        assertThat(schema.diagnostics())
+            .noneMatch(e -> e.kind() == RejectionKind.INVALID_SCHEMA);
+
+        for (var participant : new String[] {"Alpha", "Beta"}) {
+            assertThat(schema.field(participant, "label")).isInstanceOf(ChildField.ComputedField.class);
+            assertThat(ownerOf(schema, participant, "label"))
+                .as("an interface-declared name is owned by the interface, column or no column")
+                .isEqualTo(new AliasOwner.QualifiedBy("Item"));
+        }
+
+        assertThat(ProjectionCommands.siblingProjectionConflicts(schema))
+            .as("both participants resolve the interface-owned name to one projection")
+            .isEmpty();
+
+        var relation = ProjectionCommands.produce(schema,
+            ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE), DEFAULT_OUTPUT_PACKAGE);
+        var alpha = relation.rows().stream()
+            .filter(r -> r instanceof ProjectionCommand.AnchorUnit a && a.unit().simpleName().equals("Alpha"))
+            .map(r -> (ProjectionCommand.AnchorUnit) r)
+            .findFirst().orElseThrow();
+        var plainLabel = projectOf(alpha, "plainLabel");
+        assertThat(plainLabel.terms()).singleElement().isInstanceOf(SelectTerm.Column.class);
+        assertThat(((SelectTerm.Column) plainLabel.terms().get(0)).column().sqlName()).isEqualTo("label");
+        var label = projectOf(alpha, "label");
+        assertThat(label.terms()).singleElement().isInstanceOf(SelectTerm.HelperCall.class);
+        assertThat(label.aliasOwner()).isEqualTo(new AliasOwner.QualifiedBy("Item"));
+
+        var items = (QueryField.QueryTableInterfaceField) schema.field("Query", "items");
+        assertThat(LauncherCommands.selectionRestriction(items.participants(), schema::fieldsOf,
+                new GeneratedUnits(DEFAULT_OUTPUT_PACKAGE)).sharedAliasFieldNames())
+            .as("the interface-owned alias is shared across the arms' selection occurrences")
+            .contains("label");
     }
 
     // ===== the census: what the namespace cannot disambiguate =====
@@ -445,6 +511,14 @@ class ParticipantAliasOwnerPipelineTest {
             .findFirst().orElseThrow();
         assertThat(nested).isInstanceOf(ResultKeyAliasedField.class);
         return ((ResultKeyAliasedField) nested).aliasOwner();
+    }
+
+    /** The one {@code Project} contribution an anchor unit carries for {@code fieldName}. */
+    private static Contribution.Project projectOf(ProjectionCommand.AnchorUnit unit, String fieldName) {
+        return unit.contributions().stream()
+            .filter(c -> c.field().equals(fieldName))
+            .map(c -> (Contribution.Project) c)
+            .findFirst().orElseThrow();
     }
 
     /** The stamped verdict for one coordinate. */

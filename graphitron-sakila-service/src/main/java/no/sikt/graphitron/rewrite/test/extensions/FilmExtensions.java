@@ -31,6 +31,19 @@ public final class FilmExtensions {
     }
 
     /**
+     * Returns the film's title in lower case. The Sakila seed stores titles in upper case, so the
+     * computed value is visibly distinct from the column.
+     *
+     * <p>Wired by {@code ComputedTitleFilm.title}, a field that shares its name with the
+     * {@code title} column on purpose: the computed term is read back under its result-key
+     * alias, so it returns this value while a sibling {@code @field(name: "TITLE")} still reads
+     * the column.
+     */
+    public static Field<String> lowerTitle(Film table) {
+        return DSL.lower(table.TITLE);
+    }
+
+    /**
      * Widened form of the contract: the sole parameter is {@code Table<?>} rather than the
      * generated {@code Film}, which the parameter check accepts because it still takes the parent
      * table. A widened helper has no typed column accessors, so it addresses the column by name

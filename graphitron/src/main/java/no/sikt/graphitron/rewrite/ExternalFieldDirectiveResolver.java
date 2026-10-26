@@ -48,23 +48,17 @@ final class ExternalFieldDirectiveResolver {
 
     /**
      * Resolves {@code @externalField} on {@code fieldDef}. {@code parentTable} is the parent
-     * type's resolved {@link TableRef}: its SQL name gates the alias-collision check, and its
-     * table and record class names gate the {@link ServiceCatalog#reflectExternalField}
-     * parent-table-class invariant. The whole ref is passed rather than a projection of it, so
-     * that check stays a value comparison and no live jOOQ handle crosses into this resolver.
+     * type's resolved {@link TableRef}: its table and record class names gate the
+     * {@link ServiceCatalog#reflectExternalField} parent-table-class invariant. The whole ref is
+     * passed rather than a projection of it, so that check stays a value comparison and no live
+     * jOOQ handle crosses into this resolver.
+     *
+     * <p>The field may share its name with a column on the parent table: the computed term is
+     * projected and read back under a reserved result-key alias (see
+     * {@link no.sikt.graphitron.rewrite.model.ResultKeyAliasedField}), never under the bare name.
      */
     Resolved resolve(GraphQLFieldDefinition fieldDef, TableRef parentTable) {
         String name = fieldDef.getName();
-
-        // Alias-collision check: the wiring side looks up the field by name via
-        // DSL.field("<name>") against the result Record. If the GraphQL field name collides
-        // with a real SQL column on the parent @table, the alias shadows it and the aliased
-        // read resolves to the wrong value.
-        if (ctx.catalog.findColumn(parentTable.tableName(), name).isPresent()) {
-            return new Resolved.Rejected(Rejection.structural("@externalField name '" + name + "' collides with column '" + name
-                    + "' on table '" + parentTable.tableName()
-                    + "'; rename the GraphQL field or use @field(name: ...) to disambiguate"));
-        }
 
         FieldBuilder.ExternalRef extRef = fb.parseExternalRef(fieldDef, DIR_EXTERNAL_FIELD, ARG_EXTERNAL_FIELD_REF);
         if (extRef != null && extRef.argMappingError() != null) {

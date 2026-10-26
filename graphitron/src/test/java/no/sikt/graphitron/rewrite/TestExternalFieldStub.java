@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.FanBase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.ActorRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord;
@@ -68,6 +69,14 @@ class TestExternalFieldStub {
      * rejection path.
      */
     public Field<String> nonStatic(Film table) {
+        throw new UnsupportedOperationException();
+    }
+
+    /**
+     * Typed on {@code fan_base}, for the single-table interface fixture whose {@code label} field
+     * shares its name with the {@code label} column.
+     */
+    public static Field<String> fanLabel(FanBase table) {
         throw new UnsupportedOperationException();
     }
 

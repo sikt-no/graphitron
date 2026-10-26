@@ -668,8 +668,9 @@ public final class FetcherEmitter {
                     RECORD, DSL, DSL, slot.readName()));
         }
         if (field instanceof ChildField.ComputedField cmp) {
-            // Wired by name: the type's $project unit inlines the developer's method call
-            // aliased to the result key; the read picks the result Record up by that alias.
+            // Wired by result-key alias: the type's $project unit inlines the developer's method
+            // call under the reserved result-key alias; the read picks the result Record up by
+            // that alias, never by the bare field name.
             return columnByAlias(cmp, fetchersClass, new CallSiteCompaction.Direct(), outputPackage);
         }
         if (field instanceof ChildField.ParticipantColumnReferenceField pcrf) {

@@ -1946,20 +1946,44 @@ class GraphitronSchemaBuilderTest {
                 assertThat(unc.reason()).contains("doesNotExist");
             }),
 
-        NAME_COLLIDES_WITH_COLUMN(
-            "@externalField name colliding with an existing column → UnclassifiedField (AUTHOR_ERROR)",
+        NAME_MATCHES_COLUMN(
+            "@externalField sharing its name with a column on the parent table → ComputedField; a sibling still reads the column",
             """
             type Film @table(name: "film") {
                 title: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+                plainTitle: String @field(name: "TITLE")
             }
             type Query { film: Film }
             """,
             schema -> {
+                // The computed term is projected and read under a reserved result-key alias, never
+                // under the bare field name, so the same-named column cannot shadow it.
                 var field = schema.field("Film", "title");
-                assertThat(field).isInstanceOf(no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField.class);
-                var unc = (no.sikt.graphitron.rewrite.model.GraphitronField.UnclassifiedField) field;
-                assertThat(unc.kind()).isEqualTo(no.sikt.graphitron.model.diagnostics.RejectionKind.AUTHOR_ERROR);
-                assertThat(unc.reason()).contains("collides with column 'title'");
+                assertThat(field).isInstanceOf(ComputedField.class);
+                var cf = (ComputedField) field;
+                assertThat(cf.method().methodName()).isEqualTo("rating");
+                assertThat(cf.aliasOwner()).isEqualTo(no.sikt.graphitron.rewrite.model.AliasOwner.shared());
+                var plain = schema.field("Film", "plainTitle");
+                assertThat(plain).isInstanceOf(ColumnBackedField.class);
+                assertThat(((ColumnBackedField) plain).columns().get(0).sqlName()).isEqualTo("title");
+            }),
+
+        NODE_ID_MATCHES_ID_COLUMN(
+            "@externalField on Node.id over a table with an `id` column → ComputedField (widened verdict, pinned on purpose: "
+                + "nothing yet checks that the computed id agrees with the node decoder)",
+            """
+            type Baz implements Node @table(name: "baz") @node {
+                id: ID! @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "anyTable"})
+            }
+            type Query { baz: Baz }
+            """,
+            schema -> {
+                // The directive is an explicit reading of the field, like @nodeId and @field, so it
+                // exits ahead of the Node.id arm and its shadowed-id-column refusal. A future
+                // agreement check between the computed id and the node decoder flips this row.
+                var field = schema.field("Baz", "id");
+                assertThat(field).isInstanceOf(ComputedField.class);
+                assertThat(((ComputedField) field).method().methodName()).isEqualTo("anyTable");
             }),
 
         METHOD_DEFAULTS_TO_FIELD_NAME(
