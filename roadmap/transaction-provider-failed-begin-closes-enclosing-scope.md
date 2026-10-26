@@ -1,7 +1,7 @@
 ---
 id: R1055
 title: "GraphitronTransactionProvider closes the enclosing scope when a begin fails"
-status: Ready
+status: In Progress
 bucket: bug
 theme: runtime-connection
 depends-on: []
@@ -30,7 +30,7 @@ Verified against trunk at `e2d0d1778` and the jOOQ 3.20.11 sources:
 
 ## Implementation
 
-All changes are in `GraphitronTransactionProviderGenerator`; the emitted provider's public surface (`CommitPolicy`, the constructor, the three `TransactionProvider` methods) is unchanged.
+The change is in `GraphitronTransactionProviderGenerator`, plus the prose that describes the provider by its depth counter elsewhere (see Retired vocabulary); the emitted provider's public surface (`CommitPolicy`, the constructor, the three `TransactionProvider` methods) is unchanged.
 
 * **Scopes are entries, not a count.** Replace `depth` and `Deque<Savepoint> savepoints` with one `Deque<Scope> scopes`. `Scope` is a private sealed interface in the emitted class with two record variants: `TopLevel`, a top-level transaction under `COMMIT`, and `Savepointed(Savepoint savepoint)`, every other scope. Sealed interfaces and records are valid Java 17; dispatch on them with `instanceof` patterns, since a pattern `switch` needs 21. Scopes are compared by identity (`==`), never by record `equals`. The nesting depth, where still needed, is `scopes.size()`.
 * **An open is all-or-nothing.** `begin` makes its JDBC calls first and changes provider state only as its last step: it pushes the new `Scope` and records it on the context with `ctx.data(SCOPE_KEY, scope)`, where `SCOPE_KEY` is a private static key object of the emitted class. If any JDBC call throws, nothing is pushed or recorded. The decision tree is unchanged, now keyed on `scopes.isEmpty()` instead of `depth == 0`: empty under `ROLLBACK_ONLY` turns autocommit off if it is on and takes a savepoint; empty under `COMMIT` turns autocommit off; otherwise takes a savepoint. Factor the open into a private method returning the `Scope`, so R1101's carrier-driven open can reuse it.
@@ -62,12 +62,12 @@ Execution tier, `TransactionProviderExecutionTest` against real Postgres: inside
 
 ## Retired vocabulary
 
-* The `depth` field and the `savepoints` field of the emitted `GraphitronTransactionProvider`, and the provider-javadoc phrase "nesting depth and savepoint stack". Test names and comments in `GraphitronTransactionProviderGeneratorTest` that describe behaviour in terms of `depth` are renamed in terms of scopes.
+* The `depth` field and the `savepoints` field of the emitted `GraphitronTransactionProvider`, and the provider-javadoc phrase "nesting depth and savepoint stack". Test names and comments in `GraphitronTransactionProviderGeneratorTest` that describe behaviour in terms of `depth` are renamed in terms of scopes. The same wording outside the generator goes too: the carrier javadoc and the `entryFor` comment in `ConnectionRuntimeClassGenerator` ("the provider's `depth` is the only nesting counter"), the provider constructor's javadoc, and the assertion message in `TransactionProviderExecutionTest` ("the provider's depth and savepoint stack came back consistent").
 
 ## Relation to other items
 
 * **R1101** (Spec), one transaction per top-level mutation field: depends on this item. Under R1101 every `@service` mutation runs inside a field scope, so the failed nested open described above would close the field scope. This item factors the all-or-nothing open and the scope-naming close into private methods; R1101 decides how its provider-side open and settle reach them, including any widening of visibility.
-* **R1097** (In Progress), rejected session identity: no interaction. The mount runs in `PinnedConnection.acquire` in autocommit, before any scope opens, so a rejected identity never reaches the provider.
+* **R1097** (Done), rejected session identity: no interaction. The mount runs in `PinnedConnection.acquire` in autocommit, before any scope opens, so a rejected identity never reaches the provider.
 
 ## Other solutions we've considered
 
