@@ -749,6 +749,22 @@ elsewhere in the graph.
   arguments convert whole, a subject listing its corpus gaps once before its first conversion.
 * **`SeededStore` is deleted** `blocked`, on "The code-reference subject converts", "The table-binding and node subject converts" and "Every other seeded class converts by its subject". The fixture goes, and `SeedingDissolutionGateTest` goes with them.
 
+### Generation needs the module's own sources, not its compiled classes `open`
+
+What a schema names in the module being generated is read from that module's source files, which the
+generated code is compiled together with, so a `generate` that runs before the module is compiled
+needs nothing it has not got. `SourceWalker` already parses those sources, parse-only, into the
+`java_` family.
+
+* **A class the module's own sources declare is read from its source** `open`. A regression, fixed
+  ahead of the planned work: opptak's `@error` names `UtdanningstilbudRedigeringStengtException`,
+  written in its own sources, and `ClasspathNameability` refuses it as "not carried by this
+  module's own classes" because generation runs before they are compiled. The `java_` family gains
+  each class declaration's written supertypes (`ClassTree`'s extends and implements clauses, as
+  written) and each file's package and imports, so a written name resolves to its class; nameability
+  accepts a class the sources declare, and the `@error` check walks the resolved supertypes until it
+  meets a class the classpath knows.
+
 ### What the converted seeded cases turned up is fixed `open`
 
 Stating the seeded cases as documents put real schemas in front of rules that had only met
