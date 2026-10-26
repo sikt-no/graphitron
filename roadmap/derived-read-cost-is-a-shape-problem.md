@@ -777,12 +777,24 @@ here with a document that shows it.
   today the store resolves nothing there and the generator refuses it as ambiguous. A document
   `node-id-instruction-unresolved` under `defects` states all of these.
 * **A `@nodeId` argument walking its own path decodes the type it arrives at** `blocked`, on
-  "Encode and decode read the target type, and the old node-id relations go". On
-  `filmsByActor(byActor: ID @nodeId @reference(path: [{key: "film_actor_film_id_fkey"}, {key:
-  "film_actor_actor_id_fkey"}])): [Film]` the store resolves `Actor` from the table the path
-  arrives at, while the generator infers `Film` from the field's table and emits `actor.FILM_ID`.
-  The generator never supported the shape and is not patched for it: reading the store's target
-  type is the fix, and the case returns to `node-id-instruction-bases` when that lands.
+  "Encode and decode read the target type, and the old node-id relations go". On the field below
+  the store resolves `Actor` from the table the path arrives at, while the generator infers `Film`
+  from the field's table and emits `actor.FILM_ID`, which does not compile. The generator never
+  supported the shape and is not patched for it: reading the store's target type is the fix. When
+  it lands, the fragment goes into the scenario `node-id-instruction-bases`, which already declares
+  `Film` and `Actor` as nodes: the field into its `extend type Query`, the row into its
+  `graphitron_node_id_instruction` expectation.
+
+  ```graphql
+  extend type Query {
+    filmsByActor(byActor: ID @nodeId @reference(path: [{key: "film_actor_film_id_fkey"}, {key: "film_actor_actor_id_fkey"}])): [Film]
+  }
+
+  extend schema @expectEquals(relation: "graphitron_node_id_instruction", rows: """
+    site,     use_site,                    basis,                  resolved_type_name
+    ARGUMENT, Query.filmsByActor(byActor), TARGET_TABLE_NODE_TYPE, Actor
+    """)
+  ```
 
 ### The agreement test dissolves, each case to the corpus it pins `open`
 
