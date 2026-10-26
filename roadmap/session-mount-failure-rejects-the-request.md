@@ -1,13 +1,13 @@
 ---
 id: R1097
 title: "A rejected session identity fails the whole request instead of surfacing as a redacted field error"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: error-channel
 depends-on: []
 created: 2026-10-23
-last-updated: 2026-10-23
+last-updated: 2026-10-26
 ---
 
 # A rejected session identity fails the whole request instead of surfacing as a redacted field error
@@ -42,7 +42,7 @@ No field can run without identity, so this is a request-level fault, and the con
 
 ## Verified premise
 
-On the pinned graphql-java 25.0, an exception thrown from `Instrumentation.instrumentExecutionResult`, thrown from `beginExecuteOperation`, or returned as a failed future from `instrumentExecutionResult`, each propagates out of `GraphQL.execute` unchanged (probe run against the 25.0 jar, three modes, all threw the original exception). The plan leans on the second form, so an execution-tier test pins it; the pending graphql-java upgrade is where that test would catch a change.
+On the pinned graphql-java 25.0, an exception thrown from `Instrumentation.instrumentExecutionResult`, thrown from `beginExecuteOperation`, or returned as a failed future from `instrumentExecutionResult`, each propagates out of `GraphQL.execute` unchanged (probe run against the 25.0 jar, three modes, all threw the original exception). The plan leans on the first form, so an execution-tier test pins it; the pending graphql-java upgrade is where that test would catch a change.
 
 ## Plan
 
@@ -77,3 +77,14 @@ The connection instrumentation is attached by `runtime.newGraphQL(schema)`, and 
 * **A consumer-named classifier method mapping mount exceptions to a GraphQL error or status.** The most flexible option and the largest surface: it adds a second status mechanism beside the `WebApplicationException` passthrough and competes with JAX-RS `ExceptionMapper`.
 * **A shared hand-written exception type in a runtime module** so jakarta-rest can name it. Breaks the invariant that runtime code is generated into the consumer, not shipped as a jar.
 * **A consumer instrumentation that calls `dslDefault()` in `beginExecuteOperation`** (the issue's workaround). Works, but depends on generated classes the docs do not offer as consumer API, and mounts only the default source.
+
+## Reviewer findings
+
+### Round 1 (2026-10-26, Spec -> Ready, reviewer session 01JD78h7sQVcWHBqWJ6mi1SH)
+
+Verdict: Ready. The goal stands on its own, and the plan extends the existing seams (`PinnedConnection.acquire`, the `TenantConnections` carrier, `ErrorRouter`, the `WebApplicationException` passthrough in `GraphqlHttpHandler`) rather than adding a parallel mechanism. Corrected in passing: the "Verified premise" said the plan leans on the second probed form; it leans on the first (a throw from `instrumentExecutionResult`). Three notes for the implementer, none of which changes the design:
+
+1. `ErrorRouter` has no single shared catch entry. Channel arms call `claim` and fall through to `surfaceClientErrorOrRedact`; no-channel arms call `surfaceClientErrorOrRedact` directly. The arm therefore belongs in both: `claim` declines a chain carrying `SessionMountException` (so `recordClaim` neither records nor calls `FetcherErrorLog.matched`), and `surfaceClientErrorOrRedact` answers the placeholder ahead of `redact`.
+2. The tenant scatter workers do not reach `claim` or `redact`; a failed tenant goes through the carrier's `logFanOutFailure`, which mints a reference and logs. It needs the same suppression for a mount failure.
+3. On a multi-tenant mutation, a field routed to a tenant whose mount succeeded may commit before a later tenant's mount is rejected, and the request then throws. The `tenant-scoping.adoc` paragraph this plan already owes should say so, so a consumer mapping the rejection to 401 knows writes on other tenants may have landed.
+
