@@ -64,6 +64,15 @@ Measured against the tree at `387bdf7`.
   three in `ServicePolymorphicReturnExecutionTest`); ten read seeded film 1's title, which the
   one seeded-row writer above changes (`FederationEntitiesDispatchTest`, `RootFieldExecutionTest`,
   `ApprovalQueryExampleTest`, `RoutineFieldExecutionTest` and others).
+* **Two more victims, observed 2026-10-26.** `PageSizeMaximumQueryTest` (added after the
+  measurement above) reads the whole `film` table through a page-size-capped connection: on trunk
+  CI run 7148 at `0d7ea51`, `followingTheCursorVisitsEveryRowOnce` saw `[1, 2, 3, 4, 5, 98]` and
+  `aLastAboveTheMaximumIsServedAtTheMaximumFromTheEnd` saw `[5, 98]` instead of `[4, 5]`, film 98
+  being a sibling's committed insert. The same tree run locally on `local-db` passed that class but
+  failed `FederationEntitiesDispatchTest.entities_typeScopedSelectionSet_resolvesEachTypesOwnFields`,
+  which read film 1's title as `UPD-OK-<uuid>` mid-way through
+  `updateFilmWithErrors_existingFilm_returnsTheUpdatedRow`, and `filmsByTitleBean_absentInput...`
+  (six films). Different classes fail on each run of one tree, so the count above is a floor.
 * **About 65 more are safe only by convention.** Roughly 51 exact-cast and absence assertions over
   `film_actor` hold because `DmlBulkMutationsExecutionTest` seeds its pairs inside
   `inRolledBackTransaction`; fourteen whole-table `rental` counts in `GraphQLQueryTest` hold
