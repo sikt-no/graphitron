@@ -1,7 +1,7 @@
 ---
 id: R1093
 title: "UPDATE and DELETE accept a node id that encodes the primary key plus extra columns"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: nodeid
@@ -223,7 +223,7 @@ What landed differs from the plan above in two small ways, neither changing the 
 * **The walker's echo parameter is a record, not a bare column list.** `DeleteRowsWalker.walk` takes `EchoColumns(nodeTypeName, columns)` (with `EchoColumns.NONE` on the direct-return path), because the new rejection names the payload's node type and the walker has no other way to learn it.
 * **`MissingAsDeletedEchoUnencodable` carries no field name.** Its components are the table, the payload's node type, the input's columns and the unsupplied columns. The mutation field is already on the `UnclassifiedField` that wraps every walker rejection, which is also how `MissingAsDeletedNeedsPrimaryKey` gets its coordinate.
 
-Where the plan's tests landed: the membership helper in `KeyMembershipTest`; the walker cases in `UpdateRowsWalkerTest` and `DeleteRowsWalkerTest`; the model facts in `SuperkeyNodeIdDmlClassificationTest` (a sibling of `MutationDmlNodeIdClassificationTest`, on the execution fixture's SDL); the routing read in `TenantBindingClassificationTest`; and the execution cases in `DmlBulkMutationsExecutionTest` under "Superkey node ids", over the new `InventoryUnit` and `FilmCategoryNode` fixtures. The execution `inventory` rows take explicit ids, since the table's serial lags the seed's explicit ids.
+Where the plan's tests landed: the membership helper in `KeyMembershipTest`; the walker cases in `UpdateRowsWalkerTest` and `DeleteRowsWalkerTest` (the `IdempotentByPrimaryKey` compact constructor among them); the record-carrier leaves' echo/`RETURNING` refusal in `RecordCarrierEchoReturningInvariantTest`; the model facts in `SuperkeyNodeIdDmlClassificationTest` (a sibling of `MutationDmlNodeIdClassificationTest`, on the execution fixture's SDL); the routing read in `TenantBindingClassificationTest`; and the execution cases in `DmlBulkMutationsExecutionTest` under "Superkey node ids", over the new `InventoryUnit` and `FilmCategoryNode` fixtures. The execution `inventory` rows take explicit ids, since the table's serial lags the seed's explicit ids.
 
 ## Reviewer findings
 
@@ -236,6 +236,8 @@ Reviewed on trunk at `61539cc`, against the delivery in `668868d`. The verificat
 **Question 2 (how we know it is complete): one spec-named test is missing.** Tests § Unit tier, "Compact constructors", names two refusals. The `IdempotentByPrimaryKey` half is in `DeleteRowsWalkerTest`. The other half, "the record-carrier leaves refuse an `echoBinding` that differs from `returning.nodeKeyTail()`", has no test. Nothing exercises `MutationField.requireEchoMatchesReturning`'s throw, on either `MutationDmlRecordField` or `MutationBulkDmlRecordField`. The plan names that check as "the leaf as enforcer" of the echo/RETURNING shape agreement. Today the pipeline and execution tests only show that the two sides happen to agree on the shapes the fixtures build. If the check were deleted or inverted, the build would stay green.
 
 **What satisfies it:** a unit-tier test that builds each record-carrier leaf with a Delete arm whose `IdempotentByPrimaryKey.echoBinding` disagrees with the `Returning`'s `nodeKeyTail`. Cover a missing tail column, and either an extra column or a wrong order. Assert `IllegalArgumentException` on both leaves. Add the matching-shape case as the positive control. No production change is needed. The next Done reviewer only has to confirm the test exists and fails if the check is removed.
+
+> **Response.** Added `RecordCarrierEchoReturningInvariantTest` (unit tier, `graphitron/src/test/java/no/sikt/graphitron/rewrite/model/`). Its table has primary key `(a, b)` and node key `(a, b, x, y)`. The test refuses four mismatches on both leaves: a missing tail column, an extra echo column, a reversed order, and no echo under a widened `RETURNING`. Its positive controls are the matching shape, and an `Identified` DELETE with a widened `RETURNING`, which has no echo to hold to the shape. With the `echoed.equals(tail)` throw in `MutationField.requireEchoMatchesReturning` disabled, the four refusal cases fail. No production code changed.
 
 ## Other solutions we've considered
 

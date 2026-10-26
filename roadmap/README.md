@@ -32,7 +32,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1093` | UPDATE and DELETE accept a node id that encodes the primary key plus extra columns | In Progress | 2026-10-26 <sub>created 2026-10-23</sub> | [plan](superkey-node-id-on-update-and-delete.md) |
+| `R1093` | UPDATE and DELETE accept a node id that encodes the primary key plus extra columns | In Review | 2026-10-26 <sub>created 2026-10-23</sub> | [plan](superkey-node-id-on-update-and-delete.md) |
 | `R1097` | A rejected session identity fails the whole request instead of surfacing as a redacted field error | Spec | 2026-10-23 | [plan](session-mount-failure-rejects-the-request.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
@@ -511,7 +511,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R902` [**@node key columns defaulted from the primary key are a grain table, not a read-time tier**](node-default-key-columns-are-a-grain.md) — Backlog, architecture
 - `R929` [**A @referenceFor route is a discovered key in the store**](store-reads-no-referencefor-step.md) — Backlog, bug
 - `R1100` [**A node type can narrow its key and still accept ids minted under the old key**](legacy-node-key-shape.md) — Backlog, feature
-- `R1093` [**UPDATE and DELETE accept a node id that encodes the primary key plus extra columns**](superkey-node-id-on-update-and-delete.md) — In Progress, feature
+- `R1093` [**UPDATE and DELETE accept a node id that encodes the primary key plus extra columns**](superkey-node-id-on-update-and-delete.md) — In Review, feature
 - `R897` [**typeId uniqueness is enforced per graph and claimed at supergraph scope**](typeid-unique-at-supergraph-scope.md) — Backlog, validation
 - `R588` [**Diagnostics for `implements Node @table` over a table with no node metadata**](node-without-metadata-diagnostics.md) — Backlog, dx
 - `R267` [**Replace deprecated-for-removal DataType.convert(Object) in NodeIdEncoder.decode<Type>**](nodeid-encoder-deprecated-convert.md) — Backlog, tech-debt
