@@ -1,13 +1,13 @@
 ---
 id: R1093
 title: "UPDATE and DELETE accept a node id that encodes the primary key plus extra columns"
-status: In Review
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
 depends-on: []
 created: 2026-10-23
-last-updated: 2026-10-23
+last-updated: 2026-10-26
 ---
 
 # UPDATE and DELETE accept a node id that encodes the primary key plus extra columns
@@ -224,6 +224,18 @@ What landed differs from the plan above in two small ways, neither changing the 
 * **`MissingAsDeletedEchoUnencodable` carries no field name.** Its components are the table, the payload's node type, the input's columns and the unsupplied columns. The mutation field is already on the `UnclassifiedField` that wraps every walker rejection, which is also how `MissingAsDeletedNeedsPrimaryKey` gets its coordinate.
 
 Where the plan's tests landed: the membership helper in `KeyMembershipTest`; the walker cases in `UpdateRowsWalkerTest` and `DeleteRowsWalkerTest`; the model facts in `SuperkeyNodeIdDmlClassificationTest` (a sibling of `MutationDmlNodeIdClassificationTest`, on the execution fixture's SDL); the routing read in `TenantBindingClassificationTest`; and the execution cases in `DmlBulkMutationsExecutionTest` under "Superkey node ids", over the new `InventoryUnit` and `FilmCategoryNode` fixtures. The execution `inventory` rows take explicit ids, since the table's serial lags the seed's explicit ids.
+
+## Reviewer findings
+
+### In Review → Done, round 1: rework (question 2, completeness evidence)
+
+Reviewed on trunk at `61539cc`, against the delivery in `668868d`. The verification build (`mvn install -Plocal-db`) is green: 4584 tests in `graphitron`, 1306 in `graphitron-sakila-example`, including all eight superkey cases in `DmlBulkMutationsExecutionTest`.
+
+**Question 1 (correct, and the change approved): passes.** The walkers, `KeyMembership`, `CarrierRole`, `Returning`, the echo binding, the tenant-routing read, the bulk VALUES-join guard and the rejection plumbing all match the plan. The two deviations are recorded under Implementation notes, and both are sound. The user-manual and `typed-rejection.adoc` changes follow the drafted text and leak no roadmap markers.
+
+**Question 2 (how we know it is complete): one spec-named test is missing.** Tests § Unit tier, "Compact constructors", names two refusals. The `IdempotentByPrimaryKey` half is in `DeleteRowsWalkerTest`. The other half, "the record-carrier leaves refuse an `echoBinding` that differs from `returning.nodeKeyTail()`", has no test. Nothing exercises `MutationField.requireEchoMatchesReturning`'s throw, on either `MutationDmlRecordField` or `MutationBulkDmlRecordField`. The plan names that check as "the leaf as enforcer" of the echo/RETURNING shape agreement. Today the pipeline and execution tests only show that the two sides happen to agree on the shapes the fixtures build. If the check were deleted or inverted, the build would stay green.
+
+**What satisfies it:** a unit-tier test that builds each record-carrier leaf with a Delete arm whose `IdempotentByPrimaryKey.echoBinding` disagrees with the `Returning`'s `nodeKeyTail`. Cover a missing tail column, and either an extra column or a wrong order. Assert `IllegalArgumentException` on both leaves. Add the matching-shape case as the positive control. No production change is needed. The next Done reviewer only has to confirm the test exists and fails if the check is removed.
 
 ## Other solutions we've considered
 
