@@ -144,3 +144,11 @@ Today a field's `transactionResult` commits inside its fetcher, so a commit that
 
   *Response:* R1055 is now in `depends-on:` and the Relation to other items entry drops the alternative. R1055's spec also restructures the provider's scope tracking so the outer scope's open and settle have an all-or-nothing open and a scope-naming close to build on.
 - The scope boundaries assume the serial mutation strategy, and the spec itself notes a consumer can replace it with `.mutationExecutionStrategy(...)`. With a parallel strategy, field N+1's `beginFieldExecution` would settle field N mid-flight. `ExecutionContext.getMutationStrategy()` is reachable from `beginExecuteOperation`; failing the operation when it is not an `AsyncSerialExecutionStrategy` matches how the instrumentation already fails fast on incremental support, and the "replaced instrumentation" test has a natural sibling.
+
+### Round 1 addendum (2026-10-26, Spec -> Ready, reviewer session 01AzNHaZ9KuhqRa3sNfSoAPn)
+
+Verdict unchanged. One further non-blocking finding, raised by the user after round 1 was pushed.
+
+**Non-blocking.**
+
+- The operation name is part of what each field's hook call must capture, but the spec states it only in the user-docs draft ("`MutationScope` ... the operation name") and nowhere it would be built or checked. Implementation says only that `MutationScope` is a new emitted record: list its components and where each comes from (the operation name from `ExecutionContext.getOperationDefinition().getName()`, captured in `beginExecuteOperation`). Settle what an anonymous operation (`mutation { ... }`) gives, `null`, `Optional`, or something else, since an audit consumer has to handle it. The Tests section's hook records only `txid_current()` and the coordinate; have it record the operation name too and pin both a named and an anonymous operation. Consider using it in the Goal's `begin` example, so the requirement sits in the goal rather than in a passing clause. Relatedly, the Goal reads as one hook call per field, while in a multi-tenant build it is one per field per tenant connection touched; the user-docs draft says so, and the Goal should not contradict it.
