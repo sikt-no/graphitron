@@ -20,9 +20,10 @@ A value the `<sessionState>` mount derives (an identity the database looked up o
 
 fs-plattform's opptak subgraph, moving from the escape hatch to the owned-connection engine on Postgres with RLS and a single tenant. Its mount looks up the caller (`auth.finn_identitet`), may provision a `SOKER` row, and yields `brukerId` and `sokerId`. Its schema reads those two values through `contextArguments` in 26 places, across services and conditions. Reading such a value would pin a connection first; that is acceptable for opptak, since every use is a database field or condition.
 
-## Shapes raised so far
+## Direction
 
-* A component binding against a mount that returns a record, for example `argMapping: "brukerId: $session.brukerId"`, accepted in `@condition` as well as `@service`.
-* A `contextArgument` declared as derived from the handle, so the existing 26 bindings stay as they are and only the source of the value changes.
+The mount's return type is already introspected at build time: it is the handle type `unmount` receives and `argMapping: "x: $session"` binds today. Make that introspected value the `$session` variable, addressable by path the way other `argMapping` dot-paths are: `argMapping: "brukerId: $session.brukerId"` binds one member of the handle, resolved and type-checked against the mount's declared return type at build time, so a path that names no member fails the build rather than a request. The sigil works in every directive that takes an `argMapping`, `@condition` as well as `@service`, which also gives `$session` in a condition a documented meaning.
+
+Considered and set aside: a `contextArgument` declared as derived from the handle. It would leave existing bindings untouched, but it adds a second declaration form for a value the handle already carries, where the path form reuses the handle the build already knows.
 
 Related: a rejected mount already fails the whole request as `SessionMountException` (R1097, in review), which is what makes a mount that does real identity work viable.
