@@ -1,7 +1,7 @@
 ---
 id: R1102
 title: "A value the session mount derives binds where a contextArgument binds today"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: runtime-connection
@@ -74,7 +74,7 @@ fs-plattform's opptak subgraph, moving from the escape hatch to the owned-connec
 
 * `Single` tenancy (every single-tenant build, and the routed, non-fanned rows of a multi-tenant one): root and batched rows methods pass their `dsl`. A `$project` whose subtree reaches a session-reading glue takes `dsl` too; projections that read no session keep their signature. Callers pass the `dsl` of the statement they build.
 * **The projection fact is a closure, computed once over the call graph.** Unlike the per-glue `readsRequestContext` map `ProjectionCommands.produce` builds today (one hop: a glue method's rows), whether a projection unit takes `dsl` is transitive over `Contribution.Call` edges between projection units, and that graph has cycles (a type reaching itself through a nested field, as `Film` to actors to films). `ProjectionCommands.produce` computes it after every unit is minted: seed the units whose own contributions call a session-reading glue, then walk caller edges backwards (the inverse of `Contribution.Call.callee()`), marking each caller once; the visited set makes it terminate on cycles, and the result is the least fixpoint. The fact rides each `ProjectionCommand` row as a value (`readsSession`), the way glue calls already ride the contributions, so renderers read it and never recompute it. It is a plan-layer fact computed in Java beside its one-hop precedent, not a store relation.
-* **The call convention stays in one place.** `ProjectionCall` is the single emitter of `$project` calls for every consumer (nested descents in `ProjectionUnitRenderer`, root and batched launchers, the polymorphic per-participant selects, the federation entity dispatch). It reads the callee row's `readsSession` and appends the `dsl` argument when it holds, so no consumer spells the extra argument by hand. Every consumer in `Single` tenancy has the statement's `dsl` in scope; the fanned launchers, which do not, are covered by the rejection below.
+* **The call convention stays in one place.** `ProjectionCall` is the single emitter of `$project` calls for every consumer (nested descents in `ProjectionUnitRenderer`, root and batched launchers, the polymorphic and discriminated per-participant selects, the federation entity dispatch, the routine-write re-read, and the service-rows and reentry-rows arms). It reads the callee row's `readsSession` and appends the `dsl` argument when it holds, so no consumer spells the extra argument by hand. Every consumer in `Single` tenancy has the statement's `dsl` in scope; the fanned launchers, which do not, are covered by the rejection below.
 * **Recompilation.** A signature change ripples to every caller, including callers in other projection units. `PlanCompileGraph.addProjectionEdges` already records a `precise` edge from each unit to every `Contribution.Call` callee and to each glue it calls, so the dev loop already recompiles a caller when its callee's signature changes; no new edge kind is needed. A pipeline test pins it: flipping a glue to read `$session` changes the signature of the projection that calls it and of a projection in another unit that calls that one.
 * Under fan-out the per-tenant handle exists only inside the scatter lambda, and the condition and `$project` are built on the dispatch thread by design. v1 does not move them: a `$session` condition on a fanned launcher, or in a subtree projected under one, is rejected at validate time, naming the fanned field and stating that `$session` in a service still works under fan-out. Lifting that needs the session-reading part of the statement built per tenant without reading graphql-java state on a worker, a separate design.
 * `$session` in a `@service` keeps working under fan-out unchanged, since each call already reads its own connection's handle.
@@ -140,3 +140,17 @@ Non-blocking, for the author's judgment:
 * "`CallParam` exposes one derived read source ... in place of the boolean pair": there is one boolean today (`readsRequestContext`; `decodesNodeId` is orthogonal and stays). Presumably "the predicate and its negated uses" is meant.
 
   > *Author response.* Yes; reworded to "the `readsRequestContext()` predicate", with `decodesNodeId()` named as orthogonal.
+
+### Round 2 (2026-10-26, Spec -> Ready, reviewer session 013nppeKAeTQdYmEGB6LeLv8)
+
+Verdict: Ready. All three round-1 findings are resolved in the plan body, and the claims the revision adds hold against the tree:
+
+* `Site.REFERENCE_STEP` is unused in main and `parseExternalRef`'s only callers are `@service` and `@externalField`, so one admitting `CONDITION`, the path-step parse moved to `REFERENCE_STEP`, and a throw in the dead arm is the whole sigil change.
+* `PlanCompileGraph.addProjectionEdges` records a `precise` edge from each projection unit to every `Contribution.Call` callee and to the `Multiset` and `LookupMultiset` filter glue owners, so the signature ripple needs no new edge kind.
+* The generated `SessionHandleRecord` extends `UDTRecordImpl` directly, implements no `Record2`, and declares only `getPrincipal()` and `getSessionNo()` besides setters and constructors, so the declared-members rule yields exactly `principal` and `sessionNo`.
+* Every `$project` call site goes through `ProjectionCall`. Corrected in passing: the consumer list now also names the discriminated selects, the routine-write re-read and the service-rows and reentry-rows arms, which go through `ProjectionCall` too and each declare their `dsl`; fan-out occurs only in `RootLauncherRenderer.fannedBody` and `BatchedRowsFragments`, both covered by the rejection.
+
+Two notes for the implementer, neither of which changes the design:
+
+1. Session-reading glue reaches a projection unit through two wraps, `CallWrap.Multiset.filter` and `CallWrap.LookupMultiset.filter`; seed the closure from both, as `addProjectionEdges` reads both.
+2. `ProjectionCall.fromLauncher` and `fromGrouped` take the callee's `ClassName`, not its row, so appending `dsl` from the callee's `readsSession` means each such call site hands `ProjectionCall` the row (or the flag) as well.
