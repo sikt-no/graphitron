@@ -1,7 +1,7 @@
 ---
 id: R1055
 title: "GraphitronTransactionProvider closes the enclosing scope when a begin fails"
-status: Spec
+status: Ready
 bucket: bug
 theme: runtime-connection
 depends-on: []
