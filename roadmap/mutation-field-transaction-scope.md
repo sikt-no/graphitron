@@ -1,7 +1,7 @@
 ---
 id: R1101
 title: "One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: runtime-connection
@@ -216,4 +216,10 @@ Every owned acquisition opens a field scope while one is active, reads included,
 - The hook recognises a parameter of the mount's return type as the session handle. When the handle type is also a payload type (a mount returning `String`, say), a `String` parameter is ambiguous between the handle and a payload contextArgument. Either reject a hook whose handle type equals a payload parameter's type at build time, or bind the handle by a declared marker; state which.
 
   *Author response.* Build-time rejection, stated in The hook. A parameter of the handle type binds the handle, at most one per hook. When the handle type is a JDK type, a parameter of that type is rejected as ambiguous, naming the parameter and the handle type, so nothing binds silently. A marker would need an annotation on the consumer's classpath that graphitron does not ship. The `<unmount>` hook keeps its rule: it takes no payload, so it has no ambiguity. The user-docs draft states the rule, and the pipeline tier pins both rejections.
+
+### Round 3 (2026-10-26, Spec -> Ready, reviewer session 01JD78h7sQVcWHBqWJ6mi1SH)
+
+Verdict: Ready. Both round 2 findings are answered in the plan body as asked: the timed-out entry is skipped on the dispatch thread after the join and left to `releaseAll`'s abort, with the field failed and a spy test; `TenantConnections.markFieldFailed(env)` is the lenient seam, emitted in every build, called from `claim` and both arms of `surfaceClientErrorOrRedact`, with escape-hatch tests. The two non-blocking notes are taken. One note for the implementer, not blocking:
+
+- A scatter worker records the scope it opens on whatever field scope is active at that moment. A straggler from field N that passes `entryFor`'s post-check just before its deadline and opens after field N+1 became active would register on N+1, whose settle then sees a timed-out key and fails N+1 for N's straggler. Bind the field scope a worker opens against to the field that dispatched the scatter (capture it when the scatter starts), and skip the open when the key is already timed out.
 
