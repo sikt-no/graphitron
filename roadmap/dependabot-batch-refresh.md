@@ -94,6 +94,18 @@ The Groovy override exists because the invoker plugin's own bundled Groovy could
 
 No new tests. Acceptance is a green verification build and a green trunk CI run (including `docs-build`/`docs-deploy` for the Pages actions) on the tree carrying the taken bumps, and an open Dependabot list holding only bumps this item explicitly dropped.
 
+## Implementation notes
+
+What the batch came to, for the In Review gate:
+
+* **Taken:** #518, #519, #550 (plus `exec-maven-plugin` in `graphitron/pom.xml`, which the pull request predates), #541, #514, #513, #522 and #551.
+  * #522: `npm ci && npm run build` in `graphitron-jakarta-rest/tools/graphiql-build` reproduces the committed bundle with no diff, so the lockfile ships alone.
+  * #551: the September red did not reproduce. `-pl :graphitron-mcp` on the bumped tree runs 151 tests green, with `dependency:list` confirming JUnit 6.1.3 on the module's test classpath, so the cause was trunk-side at the time.
+* **Groovy:** invoker 3.10.1 declares Groovy 4.0.31 itself (its `groovyVersion` property imports `groovy-bom` 4.0.31), the version our override pinned. With the override and its comment removed, the 11 invoker integration tests pass, `verify.groovy` scripts included. The pin is retired, and #517 (Groovy 5.0.7) is not taken: invoker owns its Groovy now.
+* **Closed without taking:** #554 (superseded: trunk's lockfile carries markdown-it 14.3.3) and #517.
+* **Dependabot:** both ecosystem entries carry `target-branch: "claude/graphitron-rewrite"`. No `npm` entry for `graphiql-build`: a version-update pull request there needs a bundle rebuild and commit beside the lockfile, which Dependabot cannot do. Security-alert pull requests, which ignore `target-branch` and keep targeting `main`, already cover it. When one arrives, it is applied on the trunk the way #522 was.
+* **Verification:** the first full build of the low-risk set failed only in `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`, which saw two other classes' transient films (150, 151): a victim R863 already records, not a bump. Resuming from `graphitron-sakila-example` was green.
+
 ## Reviewer findings
 
 ### Round 1 (2026-10-27, Spec -> Ready, reviewer session 012sVnS83TmVK37gGHNvqRf6)

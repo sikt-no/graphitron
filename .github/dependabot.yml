@@ -2,6 +2,9 @@ version: 2
 updates:
 - package-ecosystem: "maven"
   directory: "/"
+  # main only moves by sync-main.yml fast-forwarding it to the trunk, so pull requests
+  # target the trunk, where they get CI against the current tree and can be merged.
+  target-branch: "claude/graphitron-rewrite"
   schedule:
     interval: "weekly"
   groups:
@@ -21,5 +24,6 @@ updates:
 
 - package-ecosystem: "github-actions"
   directory: "/"
+  target-branch: "claude/graphitron-rewrite"
   schedule:
     interval: "weekly"
