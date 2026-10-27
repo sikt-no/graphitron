@@ -2617,7 +2617,7 @@ public final class MultiTablePolymorphicEmitter {
         for (var slot : ordering.slots()) {
             builder.addCode(typedFieldDeclaration(ctx, slotLocal(slot), slotAlias(slot), slot.typingColumn()));
         }
-        var base = orderResultExpr(ordering.base(), null, resultClass, keyArity);
+        var base = orderResultExpr(ordering.base(), null, resultClass, ordering.slots(), keyArity);
         switch (ordering.surface()) {
             case PolymorphicOrdering.Surface.Fixed _ -> builder.addStatement("return $L", base);
             case PolymorphicOrdering.Surface.Argument arg when !arg.list() -> {
@@ -2629,7 +2629,7 @@ public final class MultiTablePolymorphicEmitter {
                 builder.addCode("$>");
                 for (var order : ordering.namedOrders()) {
                     builder.addCode("case $S -> $L;\n", order.name(),
-                        orderResultExpr(order, CodeBlock.of("desc"), resultClass, keyArity));
+                        orderResultExpr(order, CodeBlock.of("desc"), resultClass, ordering.slots(), keyArity));
                 }
                 builder.addCode("default -> $L;\n", base);
                 builder.addCode("$<");
@@ -2650,7 +2650,7 @@ public final class MultiTablePolymorphicEmitter {
                 for (var order : ordering.namedOrders()) {
                     builder.addCode("case $S -> {\n$>", order.name());
                     var flip = order.uniformAsc() ? CodeBlock.of("desc") : null;
-                    for (var part : orderedParts(order, flip, false, keyArity)) {
+                    for (var part : orderedParts(order, flip, false, ordering.slots(), keyArity)) {
                         builder.addStatement("sortParts.add($L)", part.sort());
                         builder.addStatement("colParts.add($L)", part.column());
                     }
@@ -2680,16 +2680,20 @@ public final class MultiTablePolymorphicEmitter {
     /**
      * The sort terms of one declared order, optionally followed by the key-field /
      * {@code __typename} tiebreakers. {@code flip} is the runtime-descending expression when the
-     * order is flipped by a runtime direction, else {@code null}.
+     * order is flipped by a runtime direction, else {@code null}. A declared slot sorts through
+     * {@link no.sikt.graphitron.render.OrderByFragments#sortTerm}, so a nullable one sorts
+     * {@code NULLS LAST}; the key and {@code __typename} tiebreakers are never {@code NULL} and state
+     * no null placement.
      */
     private static List<OrderedPart> orderedParts(PolymorphicOrdering.SlotOrder order, CodeBlock flip,
-            boolean withTiebreakers, int keyArity) {
+            boolean withTiebreakers, List<PolymorphicOrdering.Slot> slots, int keyArity) {
         var parts = new ArrayList<OrderedPart>();
         switch (order) {
             case PolymorphicOrdering.SlotOrder.OnSlots onSlots -> {
                 for (var entry : onSlots.entries()) {
                     String local = "slot" + entry.slotOrdinal();
-                    parts.add(new OrderedPart(sortTerm(local, entry.direction(), flip), CodeBlock.of("$L", local)));
+                    parts.add(new OrderedPart(no.sikt.graphitron.render.OrderByFragments.sortTerm(CodeBlock.of("$L", local),
+                        entry.direction(), slots.get(entry.slotOrdinal()).nullable(), flip), CodeBlock.of("$L", local)));
                 }
                 if (withTiebreakers) {
                     for (int i = 0; i < keyArity; i++) {
@@ -2722,8 +2726,8 @@ public final class MultiTablePolymorphicEmitter {
      * order with its tiebreakers. {@code flip} applies only to a uniformly ascending order.
      */
     private static CodeBlock orderResultExpr(PolymorphicOrdering.SlotOrder order, CodeBlock flip,
-            ClassName resultClass, int keyArity) {
-        var parts = orderedParts(order, order.uniformAsc() ? flip : null, true, keyArity);
+            ClassName resultClass, List<PolymorphicOrdering.Slot> slots, int keyArity) {
+        var parts = orderedParts(order, order.uniformAsc() ? flip : null, true, slots, keyArity);
         var sorts = CodeBlock.join(parts.stream().map(OrderedPart::sort).toList(), ", ");
         var cols = CodeBlock.join(parts.stream().map(OrderedPart::column).toList(), ", ");
         return CodeBlock.of("new $T($T.of($L), $T.of($L))", resultClass, LIST, sorts, LIST, cols);

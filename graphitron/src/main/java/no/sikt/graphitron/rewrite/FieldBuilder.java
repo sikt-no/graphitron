@@ -1200,7 +1200,7 @@ class FieldBuilder {
             var typingParticipant = participants.getFirst();
             key.add(new PolymorphicOrdering.Slot(i,
                 ctx.columnFacts(typingParticipant.table(), columnByParticipant.get(typingParticipant)).bindingType(),
-                columnByParticipant));
+                columnByParticipant, false));
         }
         return rejected ? List.of() : key;
     }
@@ -1278,8 +1278,11 @@ class FieldBuilder {
         var entries = new ArrayList<PolymorphicOrdering.SlotEntry>();
         for (int i = 0; i < arity; i++) {
             var columnByParticipant = new LinkedHashMap<ParticipantRef.TableBound, ColumnRef>();
+            boolean nullable = false;
             for (var e : perParticipant.entrySet()) {
-                columnByParticipant.put(e.getKey(), columnsOf(e.getValue()).get(i).column());
+                var participantEntry = columnsOf(e.getValue()).get(i);
+                columnByParticipant.put(e.getKey(), participantEntry.column());
+                nullable |= participantEntry.nullable();
             }
             boolean agrees = positionAgrees(label, i, columnByParticipant,
                 (participant, column) -> {
@@ -1306,7 +1309,7 @@ class FieldBuilder {
             }
             if (ordinal < 0) {
                 ordinal = slots.size();
-                slots.add(new PolymorphicOrdering.Slot(ordinal, typingFacts.bindingType(), columnByParticipant));
+                slots.add(new PolymorphicOrdering.Slot(ordinal, typingFacts.bindingType(), columnByParticipant, nullable));
             }
             var entry = firstCols.get(i);
             entries.add(new PolymorphicOrdering.SlotEntry(ordinal, entry.direction(), entry.collation()));

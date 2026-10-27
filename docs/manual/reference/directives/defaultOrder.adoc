@@ -92,6 +92,7 @@ type Query {
 * `index` requires jOOQ index generation. `fields[].name` resolves against the field's return-type table, not the parent.
 * On a root field returning a list or connection of a multi-table interface or union, the columns resolve against each participant's own table, and every participant has to carry them at the same SQL type and bound Java type. A child field, or a single-valued root field, over such a type rejects the directive. See xref:../../how-to/sort-results.adoc#sort-across-polymorphism[How-to: Sort across polymorphism].
 * Stable keyset pagination depends on the order identifying a row. On a connection, graphitron appends the table's primary key to a field-based or index-based order that does not already contain a key, in the direction of the last listed column; see xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].
+* A column that admits `NULL` sorts its `NULL` rows last whatever the `direction:`, on lists and connections alike; see xref:../../how-to/sort-results.adoc#where-null-sorts[Where `NULL` sorts].
 
 == See also
 

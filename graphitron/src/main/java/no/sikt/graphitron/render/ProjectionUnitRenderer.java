@@ -408,14 +408,7 @@ public final class ProjectionUnitRenderer {
         sel.add("\n        .where($L)", where.build());
 
         if (m.orderBy() instanceof OrderBySpec.Fixed fixed && !fixed.columns().isEmpty()) {
-            var orderParts = CodeBlock.builder();
-            for (int i = 0; i < fixed.columns().size(); i++) {
-                if (i > 0) orderParts.add(", ");
-                var col = fixed.columns().get(i);
-                orderParts.add("$L.$L.$L()",
-                    terminalAlias, col.column().javaName(), col.direction().jooqMethodName());
-            }
-            sel.add("\n        .orderBy($L)", orderParts.build());
+            sel.add("\n        .orderBy($L)", OrderByFragments.fixedSortParts(fixed, terminalAlias));
         }
 
         if (m.arity() == Arity.SINGLE) {

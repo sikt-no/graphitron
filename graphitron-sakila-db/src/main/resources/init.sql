@@ -593,6 +593,26 @@ CREATE TABLE paged_b (
 );
 INSERT INTO paged_b (k1, k2, name) VALUES (1, 1, 'B-1-1'), (1, 3, 'B-1-3'), (1, 10, 'B-1-10'), (3, 1, 'B-3-1');
 
+-- A nullable sort column. valid_to is NULL for a period that is still valid, the realistic case of
+-- an order on a column that admits NULL: such a column sorts its NULL rows last in both directions,
+-- and keyset paging steps through them on the appended period_id. The non-null values repeat, three
+-- rows are NULL, and at two rows a page the boundary falls inside the NULL run in both directions:
+-- ascending (valid_to, period_id) is 3 6 | 1 4 | 8 2 | 5 7, descending 8 4 | 1 6 | 3 7 | 5 2.
+CREATE TABLE validity_period (
+    period_id integer     PRIMARY KEY,
+    label     varchar(50) NOT NULL,
+    valid_to  date
+);
+INSERT INTO validity_period (period_id, label, valid_to) VALUES
+    (1, 'March-1', '2026-03-01'), (2, 'Open-2', NULL), (3, 'January-3', '2026-01-01'),
+    (4, 'March-4', '2026-03-01'), (5, 'Open-5', NULL), (6, 'January-6', '2026-01-01'),
+    (7, 'Open-7', NULL), (8, 'June-8', '2026-06-01');
+-- An index mixing a nullable and a NOT NULL column, so an @order(index:) entry carries each
+-- column's own nullability; and a view over the table, whose columns jOOQ reports as nullable
+-- whatever the data holds, so a node key declared on it is still not given a null placement.
+CREATE INDEX validity_period_valid_to_label_idx ON validity_period (valid_to, label);
+CREATE VIEW validity_period_view AS SELECT period_id, label, valid_to FROM validity_period;
+
 -- R36 item 2 fixture: composite-PK parent for child interface @asConnection. Sakila has no
 -- junction-as-parent shape (film_actor and film_category are pure junctions with no children
 -- FK-referencing them), so we synthesise one. project (org_id, project_id) is the composite-PK

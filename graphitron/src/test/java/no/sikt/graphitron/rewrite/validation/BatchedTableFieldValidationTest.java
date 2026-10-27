@@ -69,7 +69,7 @@ class BatchedTableFieldValidationTest {
     private static final ReturnTypeRef.TableBoundReturnType R_RT_SINGLE = filmReturn(new FieldWrapper.Single(true));
     private static final ReturnTypeRef.TableBoundReturnType R_RT_LIST = filmReturn(new FieldWrapper.List(true, true));
     private static final OrderBySpec.Fixed R_PK_ORDER = new OrderBySpec.Fixed(
-        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC)), true);
+        List.of(new OrderBySpec.ColumnOrderEntry(new ColumnRef("film_id", "FILM_ID", "java.lang.Integer"), null, OrderBySpec.SortDirection.ASC, false)), true);
     private static final SourceKey R_SOURCE_KEY_SINGLE = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
     private static final SourceKey R_SOURCE_KEY_LIST = TestFixtures.recordParentRowSourceKey(PARENT_KEY_COLS);
     private static final LoaderRegistration R_LR_SINGLE = TestFixtures.loaderRegistration(R_RT_SINGLE, false, false);

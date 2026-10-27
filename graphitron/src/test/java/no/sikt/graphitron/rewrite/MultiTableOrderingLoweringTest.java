@@ -334,6 +334,39 @@ class MultiTableOrderingLoweringTest {
             .noneMatch(m -> m.kind() == OperationMember.Kind.ORDER_BY);
     }
 
+    // ===== Slot nullability =====
+
+    @Test
+    void declaredSlot_isNullableWhenEveryParticipantsColumnIs_andNotWhenNoneIs() {
+        var field = rootField(OCCUPANT_UNION + """
+            type Query { byEmail: [Occupant!]! @defaultOrder(fields: [{name: "email"}]) }
+            """, "byEmail");
+        assertThat(orderingOf(field).slots()).singleElement()
+            .satisfies(slot -> assertThat(slot.nullable()).as("email admits NULL on both").isTrue());
+
+        var byName = orderingOf(rootField(OCCUPANT_UNION + """
+            type Query { byName: [Occupant!]! @asConnection @defaultOrder(fields: [{name: "last_name"}]) }
+            """, "byName"));
+        assertThat(byName.slots()).singleElement()
+            .satisfies(slot -> assertThat(slot.nullable()).as("last_name is NOT NULL on both").isFalse());
+        assertThat(byName.key()).isNotEmpty()
+            .allSatisfy(slot -> assertThat(slot.nullable()).as("a key slot is never nullable").isFalse());
+    }
+
+    @Test
+    void declaredSlot_isNullableWhenOneParticipantsColumnIs() {
+        // label is NOT NULL on the table and nullable on the view over it, as jOOQ reports every
+        // view column; the union column is NULL wherever one participant's is.
+        var field = rootField("""
+            type ValidityPeriod @table(name: "validity_period") { label: String }
+            type ValidityPeriodView @table(name: "validity_period_view") { label: String }
+            union Period = ValidityPeriod | ValidityPeriodView
+            type Query { periods: [Period!]! @defaultOrder(fields: [{name: "label"}]) }
+            """, "periods");
+        assertThat(orderingOf(field).slots()).singleElement()
+            .satisfies(slot -> assertThat(slot.nullable()).isTrue());
+    }
+
     // ===== Helpers =====
 
     /**

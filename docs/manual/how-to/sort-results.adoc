@@ -89,7 +89,16 @@ xref:../reference/directives/asConnection.adoc[`@asConnection`] emits keyset pag
 +
 For a list-valued `@orderBy` argument the key goes after the whole sequence the client sends, not after each value, and it takes the direction of the last value; with a single-valued argument it is part of each `@order` value and flips with a runtime `direction:` where that value does. Plain lists are not completed: without a cursor, a tie only changes the order between runs and never drops a row. A table with no key at all (a view without a synthetic primary key, a table-valued function result) has nothing to append. The build warns under the lint rule `connection-order-not-unique`, and the listed columns have to be unique on their own.
 
-Backward pagination (`last:`/`before:`) reuses the same cursor encoding; the rewrite reverses each `SortField`'s direction via jOOQ's `$field()`/`$sortOrder()` model API, runs the seek, and returns rows in the original order. This means a cursor issued from a `first:` page round-trips correctly through a `before:` request and vice versa, without any per-direction encoding split.
+Backward pagination (`last:`/`before:`) reuses the same cursor encoding; the rewrite reverses each `SortField`'s direction and its null placement via jOOQ's `$field()`/`$sortOrder()`/`$nullOrdering()` model API, runs the seek, and returns rows in the original order. This means a cursor issued from a `first:` page round-trips correctly through a `before:` request and vice versa, without any per-direction encoding split.
+
+[#where-null-sorts]
+== Where `NULL` sorts
+
+An order column that admits `NULL` sorts its `NULL` rows last, in both directions: `@defaultOrder(fields: [{name: "length"}], direction: DESC)` orders `length DESC NULLS LAST`, the longest films first and the films with no length after them. The same holds on plain lists and connections, on single-table and multi-table fields, for `@defaultOrder`, `@orderBy` and `@order` alike. A backward page (`last:`/`before:`) and a runtime `direction:` keep the `NULL` rows at the end rather than mirroring them to the front. A column declared `NOT NULL` is rendered with no null placement, since none is observable.
+
+On a connection the seek pages through the `NULL` rows too: after the last non-null value come the `NULL` rows, in the order of the key graphitron appends (see <<stable-cursors-and-tie-breakers>>), and a cursor taken inside that run continues within it. Every column of a view counts as admitting `NULL`, because the database catalog reports it so whatever the data holds.
+
+For an index to serve such an order: `ASC NULLS LAST` is what a plain b-tree index stores, so it serves an ascending order scanned forward for `first:` and backward for `last:`. `DESC NULLS LAST` is not the mirror of that index; on a table large enough for the sort to matter, declare the index `DESC NULLS LAST` to serve a descending order on a nullable column.
 
 == Collation pitfalls
 

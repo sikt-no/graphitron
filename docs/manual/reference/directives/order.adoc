@@ -46,7 +46,7 @@ enum ActorSort {
 }
 ----
 
-`FILM_ID @order(primaryKey: true)` sorts by `film.film_id`, the primary key of the bound table. `TITLE @order(fields: [{name: "title"}])` sorts by the `title` column without requiring a database index. On a connection, a value whose columns do not identify a row has the primary key appended for the cursor, so `TITLE` pages on `title, film_id`; see xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].
+`FILM_ID @order(primaryKey: true)` sorts by `film.film_id`, the primary key of the bound table. `TITLE @order(fields: [{name: "title"}])` sorts by the `title` column without requiring a database index. On a connection, a value whose columns do not identify a row has the primary key appended for the cursor, so `TITLE` pages on `title, film_id`; see xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers]. A column that admits `NULL` sorts its `NULL` rows last in either direction; see xref:../../how-to/sort-results.adoc#where-null-sorts[Where `NULL` sorts].
 
 Index-based sorting (with optional multi-column index):
 

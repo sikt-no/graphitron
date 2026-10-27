@@ -135,11 +135,15 @@ public record PolymorphicOrdering(
      * @param slotClass           the one bound Java type every participant's column agrees on
      * @param columnByParticipant the column each participant projects into the slot; the first
      *                            entry's column types the emitted slot field
+     * @param nullable            whether the union column admits {@code NULL}: true when any
+     *                            participant's column does, so the emitter sorts the slot
+     *                            {@code NULLS LAST}; always false on a key slot
      */
     public record Slot(
         int ordinal,
         String slotClass,
-        SequencedMap<ParticipantRef.TableBound, ColumnRef> columnByParticipant
+        SequencedMap<ParticipantRef.TableBound, ColumnRef> columnByParticipant,
+        boolean nullable
     ) {
         public Slot {
             Objects.requireNonNull(slotClass, "slotClass");

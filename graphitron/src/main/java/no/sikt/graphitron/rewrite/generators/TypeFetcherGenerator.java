@@ -5251,15 +5251,11 @@ public class TypeFetcherGenerator {
             for (int i = 0; i < cols.size(); i++) {
                 if (i > 0) { sortParts.add(", "); colParts.add(", "); }
                 var col = cols.get(i);
-                if (namedOrder.order().uniformAsc()) {
-                    // Uniform-ASC: runtime `dir` flips the whole spec.
-                    sortParts.add("$S.equals(dir) ? $L.$L.desc() : $L.$L.asc()",
-                        "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName());
-                } else {
-                    // Direction-locked: SDL author baked in per-entry directions; ignore runtime dir.
-                    sortParts.add("$L.$L.$L()",
-                        srcAlias, col.column().javaName(), col.direction().jooqMethodName());
-                }
+                // Uniform-ASC: runtime `dir` flips the whole spec. Direction-locked: the SDL author
+                // baked in per-entry directions, so the runtime dir is ignored.
+                sortParts.add(no.sikt.graphitron.render.OrderByFragments.sortTerm(
+                    CodeBlock.of("$L.$L", srcAlias, col.column().javaName()), col.direction(), col.nullable(),
+                    namedOrder.order().uniformAsc() ? CodeBlock.of("$S.equals(dir)", "DESC") : null));
                 colParts.add("$L.$L", srcAlias, col.column().javaName());
             }
             code.add("case $S -> new $T($T.of($L), $T.of($L));\n",
@@ -5317,13 +5313,9 @@ public class TypeFetcherGenerator {
             code.add("case $S -> {\n", namedOrder.name());
             code.indent();
             for (var col : cols) {
-                if (namedOrder.order().uniformAsc()) {
-                    code.addStatement("sortParts.add($S.equals(d) ? $L.$L.desc() : $L.$L.asc())",
-                        "DESC", srcAlias, col.column().javaName(), srcAlias, col.column().javaName());
-                } else {
-                    code.addStatement("sortParts.add($L.$L.$L())",
-                        srcAlias, col.column().javaName(), col.direction().jooqMethodName());
-                }
+                code.addStatement("sortParts.add($L)", no.sikt.graphitron.render.OrderByFragments.sortTerm(
+                    CodeBlock.of("$L.$L", srcAlias, col.column().javaName()), col.direction(), col.nullable(),
+                    namedOrder.order().uniformAsc() ? CodeBlock.of("$S.equals(d)", "DESC") : null));
                 code.addStatement("colParts.add($L.$L)", srcAlias, col.column().javaName());
             }
             code.unindent();
@@ -5347,6 +5339,8 @@ public class TypeFetcherGenerator {
      * columns they lack follow, sorted like the last composed part, so a uniform direction stays
      * uniform and a runtime {@code direction:} carries over to the key. A request whose values
      * contributed no column at all falls back to the base ordering, as an empty argument does.
+     * The appended key states no null placement even after a {@code NULLS LAST} part: a row key
+     * never holds {@code NULL} (see {@link no.sikt.graphitron.rewrite.OrderByResolver#rowIdentity}).
      *
      * <pre>{@code
      * if (sortParts.isEmpty()) return <base>;

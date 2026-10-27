@@ -67,7 +67,7 @@ class RootLauncherRendererTest {
     private static Ordering.Columns pkDesc() {
         return new Ordering.Columns(new OrderBySpec.Fixed(List.of(
             new OrderBySpec.ColumnOrderEntry(col("film_id", "FILM_ID", "java.lang.Integer"),
-                null, OrderBySpec.SortDirection.DESC)), false));
+                null, OrderBySpec.SortDirection.DESC, false)), false));
     }
 
     @Test

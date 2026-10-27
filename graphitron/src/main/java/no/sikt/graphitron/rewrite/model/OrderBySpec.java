@@ -40,8 +40,12 @@ public sealed interface OrderBySpec
      * {@code direction} is the resolved per-entry sort direction. Set by the resolver from the
      * per-field {@code FieldSort.direction:} value if present, otherwise inherited from the
      * directive-level {@code direction:} argument (or {@code ASC} when neither is supplied).
+     * {@code nullable} is whether the column admits {@code NULL}, as the catalog reports it; an
+     * emitter renders such an entry {@code NULLS LAST} in either direction, which is also what makes
+     * jOOQ's keyset seek step through the {@code NULL} rows. The row-key columns
+     * {@code OrderByResolver.complete} appends carry {@code false}: they identify the row.
      */
-    record ColumnOrderEntry(ColumnRef column, String collation, SortDirection direction) {}
+    record ColumnOrderEntry(ColumnRef column, String collation, SortDirection direction, boolean nullable) {}
 
     /**
      * Maps an {@code @orderBy} enum value name to the SQL ORDER BY it represents.

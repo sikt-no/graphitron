@@ -124,18 +124,27 @@ public class ConnectionHelperClassGenerator {
 
         // --- reverseOrderBy(List<SortField<?>>) → List<SortField<?>> ---
         // Private helper used only by pageRequest(...) for backward pagination; shared by every
-        // connection fetcher. Uses jOOQ's $field() and $sortOrder() model-API accessors, the
-        // only way to flip a SortField's direction without losing its expression.
+        // connection fetcher. Uses jOOQ's $field(), $sortOrder() and $nullOrdering() model-API
+        // accessors, the only way to flip a SortField's direction without losing its expression.
+        // A stated null placement is mirrored with the direction (NULLS LAST becomes NULLS FIRST),
+        // so the backward query is the exact reverse of the forward one and the NULL rows end up
+        // last again once trimmedResult re-reverses the page; a field with none stays without one.
         var sortOrderClass = ClassName.get("org.jooq", "SortOrder");
+        var nullOrderingClass = ClassName.get("org.jooq.impl", "QOM", "NullOrdering");
         var reverseOrderBy = MethodSpec.methodBuilder("reverseOrderBy")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(listOfSortField)
             .addParameter(listOfSortField, "orderBy")
             .addStatement("$T<$T<?>> reversed = new $T<>(orderBy.size())", ARRAY_LIST, sortField, ARRAY_LIST)
             .addCode("for ($T<?> sf : orderBy) {\n", sortField)
-            .addCode("    reversed.add(sf.$$field().sort(\n")
-            .addCode("        sf.$$sortOrder() == $T.DESC ? $T.ASC : $T.DESC));\n",
+            .addCode("    $T<?> flipped = sf.$$field().sort(\n", sortField)
+            .addCode("        sf.$$sortOrder() == $T.DESC ? $T.ASC : $T.DESC);\n",
                 sortOrderClass, sortOrderClass, sortOrderClass)
+            .addCode("    if (sf.$$nullOrdering() != null) {\n")
+            .addCode("        flipped = flipped.$$nullOrdering(sf.$$nullOrdering() == $T.NULLS_LAST\n", nullOrderingClass)
+            .addCode("            ? $T.NULLS_FIRST : $T.NULLS_LAST);\n", nullOrderingClass, nullOrderingClass)
+            .addCode("    }\n")
+            .addCode("    reversed.add(flipped);\n")
             .addCode("}\n")
             .addStatement("return reversed")
             .build();

@@ -49,7 +49,7 @@ class RootLookupValidationTest {
         FILM_TABLE);
     private static final LookupResolution LIST_KEYED_LOOKUP = new LookupResolution.Keyed(LIST_LOOKUP);
     private static final OrderBySpec.Fixed PK_ORDER = new OrderBySpec.Fixed(
-        List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null, OrderBySpec.SortDirection.ASC)), true);
+        List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID_COL, null, OrderBySpec.SortDirection.ASC, false)), true);
     private static final String CARDINALITY_MISMATCH =
         "Field 'Query.filmById': result type does not match input cardinality";
     private static final String NONNULL_ITEM =

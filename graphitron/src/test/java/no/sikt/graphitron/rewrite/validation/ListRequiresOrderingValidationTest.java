@@ -33,7 +33,7 @@ class ListRequiresOrderingValidationTest {
 
     private static final ColumnRef FILM_ID = new ColumnRef("film_id", "FILM_ID", "java.lang.Integer");
     private static final OrderBySpec.Fixed PK_ORDER =
-        new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID, null, OrderBySpec.SortDirection.ASC)), true);
+        new OrderBySpec.Fixed(List.of(new OrderBySpec.ColumnOrderEntry(FILM_ID, null, OrderBySpec.SortDirection.ASC, false)), true);
 
     private static ReturnTypeRef.TableBoundReturnType filmReturn(FieldWrapper wrapper) {
         return new ReturnTypeRef.TableBoundReturnType(

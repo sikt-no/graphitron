@@ -603,6 +603,21 @@ type Query {
         order: FilmOrderBy @orderBy,
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # Orders on a nullable column: validity_period.valid_to is NULL for a period still valid. The
+    # NULL rows sort last in both directions, ascending and descending, on backward pages and under
+    # a runtime direction:, and the appended period_id lets the seek page through them.
+    validityPeriodsByValidTo(first: Int, after: String, last: Int, before: String): [ValidityPeriod!]!
+        @asConnection(defaultFirstValue: 2)
+        @defaultOrder(fields: [{name: "valid_to"}])
+    validityPeriodsByValidToDesc(first: Int, after: String, last: Int, before: String): [ValidityPeriod!]!
+        @asConnection(defaultFirstValue: 2)
+        @defaultOrder(fields: [{name: "valid_to"}], direction: DESC)
+    validityPeriodsOrdered(order: ValidityPeriodOrderBy @orderBy,
+            first: Int, after: String, last: Int, before: String): [ValidityPeriod!]!
+        @asConnection(defaultFirstValue: 2)
+    # The plain-list form: no cursor, the same NULLS LAST.
+    validityPeriodsByValidToDescList: [ValidityPeriod!]!
+        @defaultOrder(fields: [{name: "valid_to"}], direction: DESC)
     # argres Phase 4: @condition on INPUT_FIELD_DEFINITION, resolved on the consumer's table.
     # FilmConditionInput.filmId carries @condition; the condition method is wired
     # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
@@ -3599,6 +3614,21 @@ enum FilmSort {
 
 input FilmOrderBy {
     field: FilmSort!
+    direction: SortDirection
+}
+
+type ValidityPeriod @table(name: "validity_period") {
+    periodId: Int! @field(name: "period_id")
+    label: String!
+    validTo: LocalDate @field(name: "valid_to")
+}
+
+enum ValidityPeriodSort {
+    VALID_TO @order(fields: [{name: "valid_to"}])
+}
+
+input ValidityPeriodOrderBy {
+    field: ValidityPeriodSort!
     direction: SortDirection
 }
 

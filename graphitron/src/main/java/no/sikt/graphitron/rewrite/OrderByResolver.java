@@ -191,7 +191,10 @@ final class OrderByResolver {
      * Otherwise the row-key columns it does not list follow it in row-key order, uncollated, in
      * the direction of its last entry: a uniform-direction order stays uniform, so jOOQ keeps its
      * row-value seek and an index scanned either way still serves it, and {@code uniformAsc} is
-     * unchanged, so a runtime {@code direction:} flips the appended key with the rest.
+     * unchanged, so a runtime {@code direction:} flips the appended key with the rest. The appended
+     * entries carry {@code nullable = false} by rule rather than by catalog read: {@link #rowIdentity}
+     * has already decided they identify the row, and the catalog would call a view's node key
+     * nullable, costing the order its row-value seek and adding {@code NULLS LAST} for nothing.
      */
     static OrderBySpec.Fixed complete(OrderBySpec.Fixed fixed, RowIdentity.Keyed keyed) {
         if (fixed.columns().isEmpty()) return fixed;
@@ -202,7 +205,7 @@ final class OrderByResolver {
         var columns = new ArrayList<>(fixed.columns());
         for (var column : keyed.rowKey()) {
             if (!listed.contains(column.sqlName())) {
-                columns.add(new OrderBySpec.ColumnOrderEntry(column, null, direction));
+                columns.add(new OrderBySpec.ColumnOrderEntry(column, null, direction, false));
             }
         }
         return new OrderBySpec.Fixed(List.copyOf(columns), fixed.uniformAsc());
@@ -258,7 +261,8 @@ final class OrderByResolver {
                 .map(ce -> new OrderBySpec.ColumnOrderEntry(
                     new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()),
                     null,
-                    OrderBySpec.SortDirection.ASC))
+                    OrderBySpec.SortDirection.ASC,
+                    ce.nullable()))
                 .toList(),
             true));
     }
@@ -387,7 +391,8 @@ final class OrderByResolver {
             .map(ce -> new OrderBySpec.ColumnOrderEntry(
                 new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()),
                 null,
-                direction))
+                direction,
+                ce.nullable()))
             .toList();
     }
 
@@ -411,7 +416,8 @@ final class OrderByResolver {
                 .map(ce -> new OrderBySpec.ColumnOrderEntry(
                     new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()),
                     null,
-                    defaultDirection))
+                    defaultDirection,
+                    ce.nullable()))
                 .toList();
         }
 
@@ -432,7 +438,7 @@ final class OrderByResolver {
                 if (ceOpt.isEmpty()) return null;
                 var ce = ceOpt.get();
                 entries.add(new OrderBySpec.ColumnOrderEntry(
-                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()), collation, entryDirection));
+                    new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()), collation, entryDirection, ce.nullable()));
             }
             return entries;
         }

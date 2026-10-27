@@ -1612,6 +1612,117 @@ class GraphitronSchemaBuilderTest {
             .toList();
     }
 
+    // ===== Order entries carry their column's nullability =====
+
+    /**
+     * Every resolved order entry says whether its column admits {@code NULL}, as the catalog reports
+     * it, so the emitters can sort it {@code NULLS LAST}. The row key a connection's order is
+     * completed with is {@code NOT NULL} by rule, on a view too, where the catalog calls every column
+     * nullable; that is what keeps an order on {@code NOT NULL} columns on jOOQ's row-value seek.
+     */
+    enum OrderNullabilityCase implements ClassificationCase {
+        FIELDS_ENTRY_CARRIES_ITS_COLUMNS_NULLABILITY(
+            "a fields: entry on a nullable column is nullable and one on a NOT NULL column is not",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film!]! @defaultOrder(fields: [{name: "length"}, {name: "title"}])
+            }
+            """,
+            schema -> assertThat(nullability(rootOrder(schema, "films")))
+                .containsExactly("length nullable", "title not null")),
+
+        INDEX_ENTRIES_CARRY_EACH_COLUMNS_OWN_NULLABILITY(
+            "an index: order over a mixed index carries each column's own nullability",
+            """
+            type ValidityPeriod @table(name: "validity_period") { label: String }
+            type Query {
+                periods: [ValidityPeriod!]! @defaultOrder(index: "validity_period_valid_to_label_idx")
+            }
+            """,
+            schema -> assertThat(nullability(rootOrder(schema, "periods")))
+                .containsExactly("valid_to nullable", "label not null")),
+
+        PRIMARY_KEY_ENTRIES_ARE_NOT_NULL(
+            "a primaryKey: order and the primary-key fallback are not nullable",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film!]! @defaultOrder(primaryKey: true)
+                filmsByFallback: [Film!]!
+            }
+            """,
+            schema -> {
+                assertThat(nullability(rootOrder(schema, "films"))).containsExactly("film_id not null");
+                assertThat(nullability(rootOrder(schema, "filmsByFallback"))).containsExactly("film_id not null");
+            }),
+
+        APPENDED_ROW_KEY_IS_NOT_NULL(
+            "the primary key a connection's order on a nullable column is completed with is not nullable",
+            """
+            type ValidityPeriod @table(name: "validity_period") { label: String }
+            type Query {
+                periods: [ValidityPeriod!]! @asConnection @defaultOrder(fields: [{name: "valid_to"}])
+            }
+            """,
+            schema -> assertThat(nullability(rootOrder(schema, "periods")))
+                .containsExactly("valid_to nullable", "period_id not null")),
+
+        APPENDED_VIEW_NODE_KEY_IS_NOT_NULL(
+            "a view's node key appended to a connection's order is not nullable, though the catalog calls"
+            + " every view column nullable",
+            """
+            type ValidityPeriodView implements Node @table(name: "validity_period_view")
+                    @node(keyColumns: ["period_id"]) {
+                id: ID! @nodeId
+                label: String
+            }
+            type Query {
+                periods: [ValidityPeriodView!]! @asConnection @defaultOrder(fields: [{name: "label"}])
+            }
+            """,
+            schema -> assertThat(nullability(rootOrder(schema, "periods")))
+                .containsExactly("label nullable", "period_id not null")),
+
+        AUTHORED_VIEW_KEY_COLUMN_KEEPS_ITS_CATALOG_VALUE(
+            "an authored entry naming a view's node-key column keeps the catalog's nullable",
+            """
+            type ValidityPeriodView implements Node @table(name: "validity_period_view")
+                    @node(keyColumns: ["period_id"]) {
+                id: ID! @nodeId
+                label: String
+            }
+            type Query {
+                periods: [ValidityPeriodView!]! @asConnection @defaultOrder(fields: [{name: "period_id"}])
+            }
+            """,
+            schema -> assertThat(nullability(rootOrder(schema, "periods")))
+                .containsExactly("period_id nullable"));
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        OrderNullabilityCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(OrderNullabilityCase.class)
+    void orderNullability(OrderNullabilityCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    /** {@code "column nullable"} or {@code "column not null"} per entry of a {@link OrderBySpec.Fixed}. */
+    private static List<String> nullability(OrderBySpec spec) {
+        assertThat(spec).isInstanceOf(OrderBySpec.Fixed.class);
+        return ((OrderBySpec.Fixed) spec).columns().stream()
+            .map(e -> e.column().sqlName().toLowerCase(java.util.Locale.ROOT) + (e.nullable() ? " nullable" : " not null"))
+            .toList();
+    }
+
     private static List<String> notUniqueFindings(GraphitronSchema schema) {
         return schema.warnings().stream()
             .filter(w -> w instanceof BuildWarning.LintFinding lf

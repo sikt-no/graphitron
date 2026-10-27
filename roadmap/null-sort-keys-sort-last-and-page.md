@@ -76,6 +76,11 @@ The rule, in one place: an order entry whose column admits `NULL` sorts `NULLS L
   These are the cases the goal names; each fails on today's code (the ascending forward walk never reaches the `NULL` rows, the descending walk shows them first, and a `NULL` cursor returns an empty page).
 - A multi-table polymorphic connection ordered on a nullable column is covered at the pipeline tier above; an execution case is added only if a participant table with a nullable sortable column already exists in the fixture, rather than seeding one for it.
 
+## Implementation notes
+
+- The fixture is `validity_period` (eight rows, three with a `NULL` `valid_to`) with `NullSortKeyPagingExecutionTest` over it; all five cases failed on the code before this item, and with only `reverseOrderBy`'s null mirroring disabled every backward walk fails. The plain list has no cursor and so no appended `period_id`, so its case asserts the `valid_to` sequence rather than row ids.
+- The pipeline cases needed a mixed-nullability index and a view, neither of which the sakila fixture had, so `init.sql` also carries `validity_period_valid_to_label_idx` and `validity_period_view`. The view serves both the view-backed node key case and the multitable slot that is nullable on one participant only (`label` is `NOT NULL` on the table and nullable on the view).
+
 ## Other solutions we've considered
 
 - **A hand-written null-safe seek predicate in `ConnectionHelper`** replacing `.seek(...)` with a `Condition` built from the decoded cursor. jOOQ already renders exactly that predicate once the sort fields state their null placement (see the table above), so writing our own would be a second implementation of jOOQ's, plus a change to the query-chain shape at every seek site.

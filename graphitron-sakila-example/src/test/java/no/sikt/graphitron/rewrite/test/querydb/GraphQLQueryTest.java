@@ -503,7 +503,8 @@ class GraphQLQueryTest {
     @Test
     void filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered() {
         Map<String, Object> data = execute("{ filmsByTitleBean { filmId } }");
-        assertThat(data).extractingByKey("filmsByTitleBean", as(list(Map.class))).hasSize(5);
+        assertThat(seededById(data, "filmsByTitleBean"))
+            .extracting(f -> f.get("filmId")).containsExactlyElementsOf(SEEDED_FILM_IDS);
     }
 
     @Test
