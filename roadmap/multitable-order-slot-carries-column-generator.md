@@ -98,3 +98,50 @@ Acceptance outside our build: the reporter confirms on the next RC that `personb
 - **Type the slot by its Java class** (`DSL.field(name, String.class)`), the reporter's first suggestion. It drops the converter and binding, so `converterPlacesConnection` would decode its cursor as `String` and bind the seek as `varchar` against a `bigint` domain, which is the operator error the converter fixtures exist to catch.
 - **Rebuild from the base type** (`getDataType().getSQLDataType().asConvertedDataType(getDataType().getBinding())`), the reporter's second. It also works in the scratch program, but it re-assembles converter and binding by hand to remove one property that `generatedAlwaysAs(null)` removes directly, and it drops the other overrides along the way.
 - **Sort the derived table by untyped name** (`DSL.field(DSL.name("__ord0__"))`). The `ORDER BY` would render, but the seek and the cursor need the slot typed.
+
+## Reviewer findings
+
+### Round 1 (2026-10-27, Spec -> Ready, reviewer session 01FY5UvtzU2Aa8xNAsnypLnT)
+
+Verdict: withhold. One blocking finding on question two, in the Tests fixture. The goal reads on
+its own (a multitable root sorted on a client-side computed column stops throwing and sorts like a
+stored column, with converter-backed sorts unchanged), and the fix is sound and fits the tree:
+`typedFieldDeclaration` really is the single declaration point for both slots and key fields, and
+the jOOQ facts the Cause section rests on all reproduce against 3.20.11. The problem is the fixture
+step, which names a codegen hook that table columns never go through.
+
+**Finding 1 (question two: would I hand this to an implementer as-is). `JavaGenerator.getTypeReference`
+is not on the table-column path, so overriding it cannot mark the fixture columns.**
+
+In jooq-codegen 3.20.11, table columns get their type through
+`getJavaTypeReference(Database, DataTypeDefinition, JavaWriter)`, which calls
+`getJavaTypeReference0`, which calls the *private* `getTypeReference0`. The protected
+`getTypeReference(...)` that the spec names is a thin wrapper over that same private method, and
+nothing inside `JavaGenerator` calls it. An override would never run. Its parameter list also has
+no column identity, so it could not say which columns are "the designated columns" anyway.
+
+A working route exists, and it changes what the implementer builds, so it is the author's choice to
+make:
+
+- `getJavaTypeReference(Database, DataTypeDefinition, JavaWriter)` is protected and on the path,
+  and the `DataTypeDefinition` it receives exposes `getGenerator()`, `getGenerationOption()` and
+  `getGenerationLocation()`.
+- Open-source jooq-meta keeps a `<generator>` from a `<forcedType>`:
+  `DefaultDataTypeDefinition.generator(String)` logs the "commercial only" notice and stores the
+  value anyway. So the columns can be designated in `graphitron-sakila-db/pom.xml` by a forcedType
+  (that pom already carries `<forcedTypes>`), and the override can append the
+  `generatedAlwaysAs(...)`/`generationLocation(CLIENT)` text when `getGenerator()` is non-null. No
+  per-column list in `NodeIdFixtureGenerator` is needed.
+
+What would satisfy it: name the hook that table columns actually reach, say how the columns are
+designated, and fix the claims that "nothing in the tree uses it yet" and "the hook to try first" so
+they match the chosen hook. If the author prefers another mechanism, check that the type text it
+writes ends up in the `createField(...)` call of the generated `TableImpl`, because that is the
+`DataType` that `Tables.<T>.<COL>.getDataType()` returns.
+
+Non-blocking: the helper gate in `TypeFetcherGenerator` has to cover all three ways a field reaches
+`typedFieldDeclaration`: `buildOrderingHelper` (from `emitMethods` and
+`emitRootConnectionMethods`), `buildRootConnectionFetcher` and `buildBatchedConnectionRowsMethod`
+(both through `declareKeyFields`). Otherwise the generated class references a helper it does not
+declare, which fails compilation in `graphitron-sakila-example` rather than going unnoticed, so the
+existing build catches a gap.
