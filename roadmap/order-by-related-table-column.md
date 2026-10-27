@@ -26,7 +26,7 @@ An `@order` or `@defaultOrder` entry can sort by a value that does not live in a
 
 ### `path:`: a column on a to-one related table
 
-Add an optional `path: [ReferenceElement!]` to `FieldSort`, reusing the existing input type and its `table:` / `key:` / `condition:` semantics, so there is one way to say "walk from here to that table" across the schema:
+Add an optional `path: [ReferenceElement!]` to `FieldSort`, reusing the existing input type and its `table:` / `key:` semantics, so there is one way to say "walk from here to that table" across the schema:
 
 ```graphql
 enum QueryUtdanningsinstanserOrderByFieldInput {
@@ -41,6 +41,8 @@ enum QueryUtdanningsinstanserOrderByFieldInput {
 `name` is resolved against the table the path lands on; with no `path:` nothing changes. The same argument belongs on `@defaultOrder` since both directives share `FieldSort`. `index:` and `primaryKey:` are table-scoped and stay own-table only.
 
 The path is always written out: there is no inferred or empty form, so a column name never silently changes table.
+
+A `condition:` on any hop of an ordering path is rejected. Graphitron appends a hop's condition to the enclosing `WHERE` (`JoinStep.Hop.filter`), and on the `LEFT JOIN` an ordering path emits, a `WHERE` predicate on the joined table drops every parent without a matching row, so the sort would change which rows the field returns. A filter on which related row counts belongs in a `method:`, where it narrows the candidate rows and never the parents. Moving the condition into the join's `ON` clause would make it coherent; that is a later extension, not part of this item.
 
 ### `method:`: a sort key the author derives
 
@@ -75,7 +77,7 @@ A hop is to-one when it traverses an FK from the table that holds the FK columns
 
 Consequences, stated so the reviewer does not have to derive them:
 
-- A hop that carries only a `condition:` (an `On.Predicate` hop with no `key:`/`table:`) has no FK to prove uniqueness from, so it is rejected; the author must name a `key:`. A `condition:` accompanying a `key:` is a per-hop filter, does not change the key's cardinality, and is allowed.
+- Every hop names a `key:` or a `table:`, and no hop carries a `condition:` (see `### path:` above). A hop resolved without an FK has nothing to prove uniqueness from and is rejected.
 - The classification is catalog-derived at build time, not author-asserted; there is no opt-out argument.
 - A parent with no related row still appears: the join is a LEFT JOIN, so the sort key is `NULL`. R1112 makes a `NULL` key sort last in both directions and makes the seek return such rows, for every nullable order column; this item inherits that and adds no nulls rule of its own.
 
@@ -97,7 +99,7 @@ R1106 owns tiebreaking. A single-table connection whose listed columns contain n
 4. Tiebreaker: restrict R1106's identifying-key test to own-table column entries, in `OrderByResolver.complete` and in the check `TypeFetcherGenerator.buildRowKeyCompletion` emits, per the Tiebreaker rule above.
 5. Model: widen `OrderBySpec.ColumnOrderEntry` with the resolved join steps (empty for own-table columns) so the emitter knows which table alias the column belongs to.
 6. Emission: LEFT JOIN the path in the generated select and order by the aliased column, including the keyset-pagination cursor and the backward flip, which today assume columns of the root table.
-7. Validation: reject at classification, through the existing `OrderByResolver` rejection route, a non-to-one hop, a `condition:`-only hop, an unknown column on the landing table, and an unresolvable path.
+7. Validation: reject at classification, through the existing `OrderByResolver` rejection route, a non-to-one hop, a `condition:` on any hop (the message points at `method:`), an unknown column on the landing table, and an unresolvable path.
 8. `method:` resolution: resolve the reference with the machinery `@externalField` already uses (class and method lookup, the sole parameter typed as the field's table class, a `Field<?>` return); reject a missing method, a wrong parameter or return type, `argMapping:`, `method:` together with `name:` or `path:`, and neither of `name:`/`method:` set. Widen the model with a sealed sibling of `OrderBySpec.ColumnOrderEntry`, an expression entry carrying the method reference, collation and direction, rather than a nullable method field on the column entry.
 9. `method:` emission: call the method once per query with the field's alias, project the returned expression under its own minted alias (finding 5's projection and alias rule applies to it as to a path column), and drive `orderBy`, `seek` and the cursor from that projection, so the cursor encodes the sort key's value and not the method. A `NULL` sort key (no related row) is paged by R1112's null-aware seek, like a nullable path column.
 
@@ -108,7 +110,7 @@ R1106 owns tiebreaking. A single-table connection whose listed columns contain n
 
 ## Tests
 
-- Pipeline-tier classification: accepted to-one path (child to parent), accepted one-to-one extension hop, rejected to-many hop (message names the hop and direction), rejected `condition:`-only hop, unknown column on the landing table, unresolvable `key:`.
+- Pipeline-tier classification: accepted to-one path (child to parent), accepted one-to-one extension hop, rejected to-many hop (message names the hop and direction), rejected `condition:` on a hop, alone and beside a `key:` (message points at `method:`), unknown column on the landing table, unresolvable `key:`.
 - Pipeline-tier tiebreaker on a connection: path-only order (row key appended even when the path column is the related table's primary key), a path column whose name equals one of the field's own key columns (row key still appended), `method:`-only order (row key appended), and an own-table key beside a path entry (nothing appended). The same cases through a list-valued `@orderBy` argument, where completion happens in the generated helper.
 - Pipeline-tier `method:` classification: accepted method, missing method, wrong parameter type, non-`Field` return, `argMapping:` rejected, `method:` with `name:`, `method:` with `path:`, neither set.
 - Execution-tier: a connection ordered by a column on a to-one related table against the sakila fixtures, forward and backward pagination, a parent with no related row, and duplicate sort keys resolved by the appended primary key.
