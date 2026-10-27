@@ -1,7 +1,7 @@
 ---
 id: R1112
 title: "A NULL sort key sorts last in both directions, and keyset paging returns the rows that carry one"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness
