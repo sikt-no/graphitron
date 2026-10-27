@@ -5,7 +5,7 @@ status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness
-depends-on: [single-table-connection-primary-key-tiebreaker]
+depends-on: []
 created: 2026-10-27
 last-updated: 2026-10-27
 ---

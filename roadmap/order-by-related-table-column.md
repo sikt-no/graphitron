@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: codegen-correctness
-depends-on: [single-table-connection-primary-key-tiebreaker, null-sort-keys-sort-last-and-page]
+depends-on: [null-sort-keys-sort-last-and-page]
 created: 2026-10-21
 last-updated: 2026-10-27
 ---
