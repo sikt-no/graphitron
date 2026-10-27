@@ -1,7 +1,7 @@
 ---
 id: R1103
 title: "Derive the compile-graph oracle from javac and retire referencedClassNames"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 8
 theme: testing
