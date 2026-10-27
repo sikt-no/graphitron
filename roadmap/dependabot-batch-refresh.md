@@ -1,7 +1,7 @@
 ---
 id: R1104
 title: "Take the open Dependabot bumps, best effort per bump"
-status: Ready
+status: In Progress
 bucket: tech-debt
 priority: 5
 theme: tooling
