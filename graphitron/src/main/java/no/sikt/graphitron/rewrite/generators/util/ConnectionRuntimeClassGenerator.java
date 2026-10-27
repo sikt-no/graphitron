@@ -1056,14 +1056,17 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("return $T.newGraphQL(schema).instrumentation(new $T(this))", graphQL, instrumentation)
             .addJavadoc("Builds a {@link graphql.GraphQL.Builder} over {@code schema} with the connection-lifecycle\n"
                 + "instrumentation already attached: every operation pins connections on first demand, mounts\n"
-                + "identity, runs in operation-typed transactions, and releases at completion, with no\n"
-                + "registration by the consumer. This is the owned-connection engine assembly; pair it with\n"
+                + "identity, runs each top-level mutation field in one transaction (queries in autocommit),\n"
+                + "and releases at completion, with no registration by the consumer. This is the owned-connection engine assembly; pair it with\n"
                 + "{@code Graphitron.buildSchema(...)}: {@code var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();}.\n"
                 + "\n"
                 + "<p>A later {@code .instrumentation(other)} on the returned builder replaces the attached\n"
                 + "instrumentation, after which nothing is pinned or mounted; add your own (for example\n"
                 + "OpenTelemetry) through a {@code ChainedInstrumentation} that keeps\n"
-                + "{@code new GraphitronConnectionInstrumentation(this)} in the chain.\n"
+                + "{@code new GraphitronConnectionInstrumentation(this)} in the chain. Keep graphql-java's\n"
+                + "serial mutation strategy: a {@code .mutationExecutionStrategy(...)} that is not an\n"
+                + "{@code AsyncSerialExecutionStrategy} is refused when a mutation starts, since each\n"
+                + "top-level mutation field settles its transaction when the next one starts.\n"
                 + (sessionHooks.emitsHookImplementation()
                     ? "\n<p>When the mount rejects the caller's identity, {@code execute} throws\n"
                         + "{@code SessionMountException} in place of a result, with the mount's exception as\n"
@@ -1082,7 +1085,7 @@ public final class ConnectionRuntimeClassGenerator {
                 + "time via {@code Graphitron.runtime(dataSource, dialect)} (or a {@link Source}-form\n"
                 + "constructor carrying jOOQ {@code Settings}), it pins connections on first demand, mounts\n"
                 + "and unmounts per-request identity through the generated hook's static methods, and\n"
-                + "demarcates operation-typed transactions (via the instrumentation {@link #newGraphQL}\n"
+                + "demarcates one transaction per top-level mutation field (via the instrumentation {@link #newGraphQL}\n"
                 + "attaches). Holds no per-request state and no hook state: the mount choice is emitted\n"
                 + "code, never a held value. The callbacks it holds are the consumer's application-scoped\n"
                 + "{@code FetcherErrorLog} ({@link #withFetcherErrorLog}) and {@code FetcherErrorResponse}\n"
@@ -1337,6 +1340,12 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(entryType)
             .addParameter(optionalKey, "key")
             .addException(SQL_EXCEPTION);
+        var brokenMessage = MutationFieldScopeEmitter.brokenKeyRefusalMessage();
+        entryForBuilder
+            .beginControlFlow("if (brokenKeys.contains(key))")
+            .addStatement("throw new $T($S + key + $S)", IllegalStateException.class,
+                brokenMessage.get(0), brokenMessage.get(1))
+            .endControlFlow();
         if (multiTenant) {
             entryForBuilder
                 .addComment("Authorization before anything else: only a key in the request tenant set ever")
@@ -1380,13 +1389,14 @@ public final class ConnectionRuntimeClassGenerator {
                 .replace("key.get()", "k.get()"), acquireDefault)
             .addCode("        $T dsl = $T.using(pinned.connection(), pinned.dialect(), pinned.settings());\n",
                 DSL_CONTEXT, DSL)
-            .addCode("        dsl.configuration().set(new $T(pinned.connection(), commitPolicy));\n", provider);
+            .addCode("        $T provider = new $T(pinned.connection(), commitPolicy);\n", provider, provider)
+            .addCode("        dsl.configuration().set(provider);\n");
         if (handled) {
             entryForBuilder.addCode("        dsl.configuration().data($S, pinned.handle());\n",
                 SessionHooks.HANDLE_DATA_KEY);
         }
         entryForBuilder
-            .addCode("        return new Entry(pinned, dsl);\n")
+            .addCode("        return new Entry(pinned, dsl, provider);\n")
             .addCode("    } catch ($T e) {\n", SQL_EXCEPTION)
             .addCode("        throw new $T(e);\n", COMPLETION_EXCEPTION)
             .addCode("    }\n")
@@ -1433,7 +1443,8 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(DSL_CONTEXT)
             .addParameter(tenantKey, "tenantKey")
             .addException(SQL_EXCEPTION)
-            .addStatement("return entryFor($T.of(tenantKey)).dsl", ClassName.get("java.util", "Optional"))
+            .addStatement("$T key = $T.of(tenantKey)", optionalKey, ClassName.get("java.util", "Optional"))
+            .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for {@code tenantKey}, pinning and\n"
                 + "mounting one connection for the key on first use and reusing it thereafter. A drop-in for\n"
                 + "{@code getDslContext(env)} at a routed fetcher site.\n"
@@ -1444,7 +1455,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
             .addException(SQL_EXCEPTION)
-            .addStatement("return entryFor($T.empty()).dsl", ClassName.get("java.util", "Optional"))
+            .addStatement("$T key = $T.empty()", optionalKey, ClassName.get("java.util", "Optional"))
+            .addStatement("return enlist(key, entryFor(key))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for the default source, pinning and\n"
                 + "mounting one connection on first use and reusing it thereafter. The untenanted\n"
                 + "sibling of {@link #dslFor}, and always the fixed default source, whatever default\n"
@@ -1456,7 +1468,7 @@ public final class ConnectionRuntimeClassGenerator {
             .addModifiers(Modifier.PUBLIC)
             .returns(DSL_CONTEXT)
             .addException(SQL_EXCEPTION)
-            .addStatement("return entryFor(defaultTenant).dsl")
+            .addStatement("return enlist(defaultTenant, entryFor(defaultTenant))")
             .addJavadoc("Returns the provider-bound {@code DSLContext} for graphitron's own reads of global\n"
                 + "tables: the request's default tenant when it names one, else the default source. A\n"
                 + "present default tenant resolves through {@link #entryFor} like any routed key, so it\n"
@@ -1544,12 +1556,18 @@ public final class ConnectionRuntimeClassGenerator {
                 + "it describes and a {@code $$session} read is per-key by construction.\n")
             .addField(FieldSpec.builder(pinnedConnection, "pinned", Modifier.PRIVATE, Modifier.FINAL).build())
             .addField(FieldSpec.builder(DSL_CONTEXT, "dsl", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(provider, "provider", Modifier.PRIVATE, Modifier.FINAL)
+                .addJavadoc("The connection's one transaction provider, also bound into {@code dsl}: the carrier\n"
+                    + "opens and ends a mutation field's scope on it directly.\n")
+                .build())
             .addMethod(MethodSpec.constructorBuilder()
                 .addModifiers(Modifier.PRIVATE)
                 .addParameter(pinnedConnection, "pinned")
                 .addParameter(DSL_CONTEXT, "dsl")
+                .addParameter(provider, "provider")
                 .addStatement("this.pinned = pinned")
                 .addStatement("this.dsl = dsl")
+                .addStatement("this.provider = provider")
                 .build())
             .build();
 
@@ -1586,7 +1604,12 @@ public final class ConnectionRuntimeClassGenerator {
                     + "first mount for a key.\n")
                 .build());
         }
-        carrier.addField(entriesField);
+        carrier.addField(entriesField)
+            .addField(MutationFieldScopeEmitter.activeField(self))
+            .addField(MutationFieldScopeEmitter.brokenKeys(tenantKey));
+        if (multiTenant) {
+            carrier.addField(MutationFieldScopeEmitter.scatterField(self));
+        }
         if (mounts) {
             carrier.addField(mountFailureField);
         }
@@ -1601,7 +1624,13 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
             .addMethod(staticDslDefault(self))
-            .addMethod(isMountFailure(mounts ? sessionMountException : null));
+            .addMethod(isMountFailure(mounts ? sessionMountException : null))
+            .addMethod(MutationFieldScopeEmitter.beginField(self))
+            .addMethod(MutationFieldScopeEmitter.enlist(self, tenantKey, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.settleField(self, provider, tenantKey, multiTenant))
+            .addMethod(MutationFieldScopeEmitter.probe(self))
+            .addMethod(MutationFieldScopeEmitter.rollBackQuietly(self, provider))
+            .addMethod(MutationFieldScopeEmitter.markFieldFailed(self));
         if (mounts) {
             carrier.addMethod(MethodSpec.methodBuilder("mountFailure")
                 .addModifiers(Modifier.PUBLIC)
@@ -1614,7 +1643,8 @@ public final class ConnectionRuntimeClassGenerator {
         if (handled) {
             carrier.addMethod(sessionHandleAccessor(handleType));
         }
-        carrier.addType(entryClass);
+        carrier.addType(entryClass)
+            .addType(MutationFieldScopeEmitter.fieldScopeType(provider, tenantKey));
         if (multiTenant) {
             carrier.addField(FieldSpec.builder(String.class, TENANTS_KEY_FIELD,
                     Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
@@ -2301,11 +2331,14 @@ public final class ConnectionRuntimeClassGenerator {
             .addStatement("$T<$T> order = new $T<>(new $T<>(keys))", LIST, tenantKey, ARRAY_LIST, LINKED_HASH_SET)
             .addStatement("$T<$T<$T>> futures = new $T<>(order.size())",
                 LIST, COMPLETABLE_FUTURE, outcomeOfR, ARRAY_LIST)
+            .addComment("Workers enlist on the mutation field that dispatched them, captured here on the")
+            .addComment("dispatch thread, never on whatever field is active when a straggler resumes.")
+            .addStatement("$T dispatching = activeField", self.nestedClass(MutationFieldScopeEmitter.FIELD_SCOPE_CLASS_NAME))
             .addStatement("int submitted = 0")
             .beginControlFlow("try")
             .beginControlFlow("while (submitted < order.size())")
             .addStatement("$T key = order.get(submitted)", tenantKey)
-            .addStatement("futures.add($T.supplyAsync(() -> scatterWorker(key, perTenant), runtime.fanOutExecutor()))",
+            .addStatement("futures.add($T.supplyAsync(() -> scatterWorker(key, perTenant, dispatching), runtime.fanOutExecutor()))",
                 COMPLETABLE_FUTURE)
             .addStatement("submitted++")
             .endControlFlow()
@@ -2374,13 +2407,16 @@ public final class ConnectionRuntimeClassGenerator {
             .returns(ParameterizedTypeName.get(outcome, r))
             .addParameter(tenantKey, "key")
             .addParameter(ParameterizedTypeName.get(FUNCTION, DSL_CONTEXT, r), "perTenant")
+            .addParameter(self.nestedClass(MutationFieldScopeEmitter.FIELD_SCOPE_CLASS_NAME), "dispatching")
             .addStatement("SCATTER_WORKER.set($T.TRUE)", Boolean.class)
+            .addStatement("SCATTER_FIELD.set(dispatching)")
             .beginControlFlow("try")
             .addStatement("return new Outcome.Success<>(key, perTenant.apply(dslFor(key)))")
             .nextControlFlow("catch ($T cause)", Throwable.class)
             .addStatement("return new Outcome.Failed<>(key, cause)")
             .nextControlFlow("finally")
             .addStatement("SCATTER_WORKER.remove()")
+            .addStatement("SCATTER_FIELD.remove()")
             .endControlFlow()
             .addJavadoc("One tenant's unit of work on a fan-out executor thread: pin-or-reuse the key's\n"
                 + "connection through {@link #dslFor}, apply {@code perTenant}, fold the result or any\n"

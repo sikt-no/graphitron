@@ -2174,6 +2174,31 @@ INSERT INTO presence_item (item_id, host_id, name) VALUES
     (25, 5, 'fifth');
 
 -- ===========================
+-- mutation field transaction scope fixtures
+-- ===========================
+--
+-- MutationScopeExecutionTest reads back which writes of an owned-path mutation field survived.
+-- MutationScopeService's @service mutations write marker rows here and then end the ways a field
+-- can end. The deferred child's foreign key is checked only at commit, so an orphan insert passes
+-- its statement and fails the field's commit.
+
+CREATE TABLE public.mutation_scope_marker (
+    id     serial PRIMARY KEY,
+    marker text   NOT NULL
+);
+
+CREATE TABLE public.mutation_scope_deferred_parent (
+    id integer PRIMARY KEY
+);
+
+CREATE TABLE public.mutation_scope_deferred_child (
+    id        serial  PRIMARY KEY,
+    parent_id integer NOT NULL REFERENCES public.mutation_scope_deferred_parent(id)
+        DEFERRABLE INITIALLY DEFERRED,
+    marker    text    NOT NULL
+);
+
+-- ===========================
 -- single-schema fixture: one schema generated on its own, into the root package.
 -- ===========================
 --

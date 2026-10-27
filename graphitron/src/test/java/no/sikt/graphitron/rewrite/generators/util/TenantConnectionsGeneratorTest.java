@@ -66,6 +66,14 @@ class TenantConnectionsGeneratorTest {
         for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, null, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
+        // The instrumentation reports a mutation field's settle failure through the router, which
+        // raises the client-error type; a real build always emits both beside the runtime.
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.generate(PACKAGE)) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
         harness = EmittedCodeHarness.compile(units);
         runtimeClass = harness.load(SCHEMA_PACKAGE + ".GraphitronRuntime");
         tenantConnectionsClass = harness.load(SCHEMA_PACKAGE + ".TenantConnections");

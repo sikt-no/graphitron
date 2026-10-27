@@ -5925,6 +5925,67 @@ type Mutation {
             className: "no.sikt.graphitron.rewrite.test.services.StaffAliasRecordService",
             method: "describeStaffAlias"
         })
+
+    # Owned-path mutation field transactions (MutationScopeExecutionTest): @service mutations that
+    # write marker rows into mutation_scope_marker and then end the ways a field can end. Each top-level
+    # field is one transaction, so the rows survive only when the field succeeds and commits.
+    scopeWriteOne(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeOne"
+        })
+    scopeWriteOneRequired(marker: String!): String!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeOne"
+        })
+    scopeWriteTwiceThenThrow(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeTwiceThenThrow"
+        })
+    scopeWriteTwiceThenRefuse(marker: String!): MutationScopeRefusedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeTwiceThenRefuse"
+        })
+    scopeWriteThenCatchAFailedStatement(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeThenCatchAFailedStatement"
+        })
+    scopeWriteADeferredOrphan(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeADeferredOrphan"
+        })
+    scopeWriteADeferredOrphanRequired(marker: String!): String!
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "writeADeferredOrphan"
+        })
+    scopeNoDatabase(marker: String!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.MutationScopeService",
+            method: "noDatabase"
+        })
+}
+
+# The @error channel of Mutation.scopeWriteTwiceThenRefuse: the claimed exception becomes payload data,
+# and the field's writes still roll back.
+type MutationScopeRefused @error(handlers: [{
+        handler: GENERIC,
+        className: "no.sikt.graphitron.rewrite.test.services.MutationScopeRefusedException"
+    }]) {
+    path: [String!]!
+    message: String!
+}
+
+union MutationScopeRefusedError = MutationScopeRefused
+
+type MutationScopeRefusedPayload {
+    marker: String
+    errors: [MutationScopeRefusedError]
 }
 
 # ===== @pivot fixtures =====

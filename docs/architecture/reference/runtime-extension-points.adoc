@@ -53,8 +53,9 @@ var input = Graphitron.newOwnedExecutionInput(claims, userId).query(q).build();
 
 For that operation Graphitron takes one connection when a field first needs it,
 runs your mount method on it to mount identity, executes (each top-level
-mutation field in its own transaction that commits or rolls back independently,
-queries in autocommit), then runs your unmount method and releases the
+mutation field, payload included, in its own transaction that commits or rolls
+back independently, see <<owned-path-transactions>>; queries in autocommit),
+then runs your unmount method and releases the
 connection. A connection whose unmount failed is evicted, never returned to the
 pool.
 
@@ -158,6 +159,48 @@ If you configure no `<sessionState>`, Graphitron mounts no identity and warns at
 build time (`no-session-state`): an unsecured direct-to-database API is a
 data-exposure risk. Silence that rule only if the API is intentionally
 unsecured or uses the escape hatch exclusively.
+
+[#owned-path-transactions]
+=== Transactions on the owned-connection path
+
+Each top-level mutation field runs in one transaction. It begins the first time
+the field uses a connection and ends when the field's value is complete,
+payload included: it commits when the field succeeded and rolls back when the
+field failed. A field fails when its fetcher, or anything under it, threw,
+whether or not an `@error` channel turned the exception into a typed payload,
+or when a GraphQL error lies under the field's path. Fields commit
+independently of each other, in document order. A `transactionResult` your
+`@service` opens inside the field is a savepoint in that transaction, not a
+commit. A field that never touches the database opens no transaction. Query
+operations are unchanged and run in autocommit.
+
+A field reported as successful has committed. If the commit fails, or the
+database had already aborted the transaction (on PostgreSQL, any statement that
+failed inside it, even one your code caught, aborts the transaction, and the
+driver's commit then rolls back without an error), the field is reported as
+failed: its value becomes `null` and the response carries a redacted error at
+its path, and the cause is logged under the error's reference through your
+`FetcherErrorLog` like any unmatched fetcher failure. Later fields in the
+operation still run.
+
+The mutations run one field at a time. An engine configured with a mutation
+execution strategy other than graphql-java's serial one
+(`AsyncSerialExecutionStrategy` or a subclass) is rejected when a mutation
+starts, since each field settles when the next one starts.
+
+In a multi-tenant build each connection the field touches commits or rolls
+back on its own: there is no transaction across connections. A field whose
+first connection committed and whose second then failed to commit is reported
+as failed with the first connection's writes kept; once one connection fails,
+the field's remaining connections roll back. A tenant whose fan-out worker
+missed its deadline fails the field, and its transaction is discarded with its
+connection.
+
+On the escape-hatch path you own the `DSLContext` and its transactions, and
+Graphitron opens no scope. The same effect there is a consumer `Instrumentation`
+that opens a transaction on your connection when a top-level mutation field
+starts and settles it when the next one starts or the operation completes, with
+a jOOQ `TransactionListener` if code must run as each transaction begins.
 
 === Per-tenant routing
 

@@ -345,6 +345,9 @@ public final class PlanCompileGraph {
                     runtimeUnit("FetcherErrorLog").ifPresent(l -> declared(instrumentation, l));
                     runtimeUnit("FetcherErrorResponse").ifPresent(l -> declared(instrumentation, l));
                     refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(instrumentation, tp));
+                    // A mutation field whose transaction fails to settle is reported through the
+                    // router, in every owned build.
+                    refOf(GlobalUnitKind.ERROR_ROUTER).ifPresent(er -> declared(instrumentation, er));
                 }
                 case SCHEMA_CLASS -> {
                     var schemaClass = units.get(0);

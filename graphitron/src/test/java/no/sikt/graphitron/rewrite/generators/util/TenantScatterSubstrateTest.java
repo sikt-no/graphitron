@@ -59,6 +59,8 @@ class TenantScatterSubstrateTest {
     private static Class<?> timedOutClass;
 
     private final List<String> events = java.util.Collections.synchronizedList(new ArrayList<>());
+    /** Labels whose fake connection fails {@code commit()}, after recording it. */
+    private final java.util.Set<String> failCommitFor = java.util.concurrent.ConcurrentHashMap.newKeySet();
 
     @BeforeAll
     static void compile() {
@@ -116,6 +118,7 @@ class TenantScatterSubstrateTest {
     @BeforeEach
     void resetEvents() {
         events.clear();
+        failCommitFor.clear();
     }
 
     @Test
@@ -413,6 +416,117 @@ class TenantScatterSubstrateTest {
 
     // --- driving helpers -------------------------------------------------------------------------
 
+    // --- a mutation field's transaction across scatter workers -----------------------------------
+
+    @Test
+    void mutationField_aTimedOutTenantsScope_isNeverEnded_andFailsTheField() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(800));
+        Object tc = newTenantConnections(runtime);
+        var hold = new CountDownLatch(1);
+        beginField(tc, "m");
+
+        // Each worker enlists on the field before its unit of work runs, so A's connection holds an
+        // open field transaction when its worker misses the deadline.
+        List<?> outcomes = scatter(tc, List.of("A", "B"), dsl ->
+            "A-conn".equals(connectionLabel(dsl)) ? awaitThen(hold, "late") : "ok");
+        assertThat(outcomes.get(0)).isInstanceOf(timedOutClass);
+
+        events.clear();
+        Throwable cause = settleField(tc, false);
+
+        assertThat(cause)
+            .as("settling discovered the failure, so it is reported at the field")
+            .hasMessageContaining("Tenant 'A' timed out");
+        assertThat(events)
+            .as("the field fails, so the responsive tenant rolls back; the straggler's connection is"
+                + " never touched while its worker may still run on it")
+            .contains("rollback:B", "setAutoCommit:B:true")
+            .doesNotContain("commit:B", "rollback:A", "commit:A", "setAutoCommit:A:true");
+
+        hold.countDown();
+        events.clear();
+        releaseAll(tc);
+        assertThat(events).as("the abort discards A's transaction with its connection").contains("abort:A");
+    }
+
+    @Test
+    void mutationField_thatFailed_rollsBackEveryConnectionItTouched() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        beginField(tc, "m");
+        dslFor(tc, "A");
+        dslFor(tc, "B");
+
+        events.clear();
+        assertThat(settleField(tc, true))
+            .as("the field had already failed, so settling reports nothing of its own")
+            .isNull();
+        assertThat(events)
+            .contains("rollback:A", "rollback:B")
+            .doesNotContain("commit:A", "commit:B", "probe:A", "probe:B");
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_aFailedCommitOnTheSecondConnection_keepsTheFirstsCommit_andFailsTheField() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B", "C"), 4, Duration.ofSeconds(10));
+        Object tc = newTenantConnections(runtime);
+        beginField(tc, "m");
+        dslFor(tc, "A");
+        dslFor(tc, "B");
+        dslFor(tc, "C");
+        failCommitFor.add("B");
+
+        events.clear();
+        Throwable cause = settleField(tc, false);
+
+        assertThat(cause).isInstanceOf(SQLException.class).hasMessageContaining("deferred");
+        assertThat(events)
+            .as("each connection settles on its own, in the order opened: A probes and commits, B's"
+                + " commit fails and rolls back, and C, after the field failed, rolls back unprobed")
+            .containsSubsequence("probe:A", "commit:A", "probe:B", "commit:B", "rollback:B", "rollback:C")
+            .doesNotContain("rollback:A", "commit:C", "probe:C");
+        releaseAll(tc);
+    }
+
+    @Test
+    void mutationField_aStragglerEnlistsOnTheFieldThatDispatchedIt_neverOnALaterOne() throws Throwable {
+        Object runtime = newRuntime(sources("A", "B"), 4, Duration.ofMillis(800));
+        Object tc = newTenantConnections(runtime);
+        var hold = new CountDownLatch(1);
+        var workerDone = new CountDownLatch(1);
+        beginField(tc, "first");
+
+        List<?> outcomes = scatter(tc, List.of("A"), dsl -> {
+            awaitThen(hold, null);
+            try {
+                // A straggler that resumes after its field settled and acquires another key.
+                return dslFor(tc, "B");
+            } catch (Throwable e) {
+                return e;
+            } finally {
+                workerDone.countDown();
+            }
+        });
+        assertThat(outcomes.get(0)).isInstanceOf(timedOutClass);
+        settleField(tc, false);
+        beginField(tc, "second");
+
+        events.clear();
+        hold.countDown();
+        assertThat(workerDone.await(5, TimeUnit.SECONDS)).isTrue();
+        assertThat(events)
+            .as("B is pinned, but the settled first field opens nothing on it, and the second field"
+                + " never sees the straggler")
+            .contains("getConnection:B")
+            .doesNotContain("setAutoCommit:B:false");
+
+        events.clear();
+        assertThat(settleField(tc, false)).as("the second field has nothing to fail for").isNull();
+        assertThat(events).doesNotContain("commit:B", "rollback:B");
+        releaseAll(tc);
+    }
+
     private Map<String, DataSource> sources(String... labels) {
         var sources = new LinkedHashMap<String, DataSource>();
         for (String label : labels) {
@@ -443,6 +557,14 @@ class TenantScatterSubstrateTest {
         return (List<?>) invoke(() -> tenantConnectionsClass
             .getMethod("scatter", Collection.class, Function.class)
             .invoke(tc, keys, perTenant));
+    }
+
+    private void beginField(Object tc, String resultKey) throws Throwable {
+        invoke(() -> tenantConnectionsClass.getMethod("beginField", List.class).invoke(tc, List.of(resultKey)));
+    }
+
+    private Throwable settleField(Object tc, boolean failed) throws Throwable {
+        return (Throwable) invoke(() -> tenantConnectionsClass.getMethod("settleField", boolean.class).invoke(tc, failed));
     }
 
     private Object dslFor(Object tc, Object key) throws Throwable {
@@ -528,11 +650,29 @@ class TenantScatterSubstrateTest {
                     events.add((disconnect ? "disconnect:" : "connect:") + label);
                     yield fakePreparedStatement(disconnect && failDisconnect);
                 }
+                // A mutation field's transaction on this connection, as the carrier opens and ends it.
+                case "setAutoCommit" -> { events.add("setAutoCommit:" + label + ":" + args[0]); yield null; }
+                case "commit" -> {
+                    events.add("commit:" + label);
+                    if (failCommitFor.contains(label)) throw new SQLException("deferred constraint violated", "23503");
+                    yield null;
+                }
+                case "createStatement" -> {
+                    events.add("probe:" + label);
+                    yield fakeStatement();
+                }
+                case "rollback" -> { events.add("rollback:" + label); yield null; }
                 case "close" -> { events.add("close:" + label); yield null; }
                 case "abort" -> { events.add("abort:" + label); yield null; }
                 case "toString" -> label + "-conn";
                 default -> objectMethodOrDefault(proxy, method, args, label);
             });
+    }
+
+    private java.sql.Statement fakeStatement() {
+        return (java.sql.Statement) Proxy.newProxyInstance(
+            harness.classLoader(), new Class<?>[]{java.sql.Statement.class},
+            (proxy, method, args) -> objectMethodOrDefault(proxy, method, args, "fakeStatement"));
     }
 
     private PreparedStatement fakePreparedStatement(boolean throwOnExecute) {

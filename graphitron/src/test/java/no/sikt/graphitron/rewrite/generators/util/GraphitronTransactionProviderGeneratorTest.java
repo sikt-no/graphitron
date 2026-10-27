@@ -456,7 +456,98 @@ class GraphitronTransactionProviderGeneratorTest {
         assertThat(events).isEmpty();
     }
 
+    // --- a mutation field's scope, held by the carrier without a TransactionContext ---------------
+    //
+    // The connection carrier opens a field's scope through the package-private open() and ends it
+    // through end(scope, failed), holding the Scope itself; jOOQ transactions inside the field nest
+    // on top through begin/commit/rollback as usual.
+
+    @Test
+    void fieldScope_withANestedJooqTransaction_closesCleanly() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        var dsl = jooqOver(fakeConnection(), provider);
+        Object field = open(provider);
+
+        dsl.transactionResult(nested -> 1);
+        end(provider, field, false);
+
+        assertThat(field.getClass().getSimpleName()).isEqualTo("TopLevel");
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void fieldScope_endedWhileANestedScopeIsOpen_isRefused_andTheStackIsUnchanged() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        Object field = open(provider);
+        begin(provider);
+
+        assertThatThrownBy(() -> end(provider, field, false))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("not the innermost");
+
+        commit(provider);
+        end(provider, field, false);
+        assertThat(events).containsExactly(
+            "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void fieldScope_failedCommit_thenFailedEnd_leavesTheStackEmptyAndAutoCommitRestored() throws Throwable {
+        var deferred = new SQLException("deferred constraint violated", "23503");
+        Object provider = newProvider(fakeConnection(), commitPolicyCommit);
+        Object field = open(provider);
+        commitFailure = deferred;
+
+        assertThatThrownBy(() -> end(provider, field, false)).isSameAs(deferred);
+        commitFailure = null;
+        end(provider, field, true);
+
+        assertThat(events).containsExactly("setAutoCommit:false", "commit", "rollback", "setAutoCommit:true");
+        events.clear();
+        Object next = open(provider);
+        end(provider, next, false);
+        assertThat(events)
+            .as("the stack was empty again: the next field's scope is top-level")
+            .containsExactly("setAutoCommit:false", "commit", "setAutoCommit:true");
+    }
+
+    @Test
+    void fieldScope_underRollbackOnly_isASavepointInTheOperationTransaction() throws Throwable {
+        Object provider = newProvider(fakeConnection(), commitPolicyRollbackOnly);
+        Object first = open(provider);
+        end(provider, first, false);
+        Object second = open(provider);
+        end(provider, second, true);
+
+        assertThat(first.getClass().getSimpleName()).isEqualTo("Savepointed");
+        assertThat(events).containsExactly(
+            "getAutoCommit", "setAutoCommit:false", "setSavepoint:sp1", "releaseSavepoint:sp1",
+            "getAutoCommit", "setSavepoint:sp2", "rollbackToSavepoint:sp2");
+    }
+
     // --- driving helpers -------------------------------------------------------------------------
+
+    private Object open(Object provider) throws Throwable {
+        try {
+            var method = providerClass.getDeclaredMethod("open");
+            method.setAccessible(true);
+            return method.invoke(provider);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
+
+    private void end(Object provider, Object scope, boolean failed) throws Throwable {
+        try {
+            var scopeType = harness.load(SCHEMA_PACKAGE + ".GraphitronTransactionProvider$Scope");
+            var method = providerClass.getDeclaredMethod("end", scopeType, boolean.class);
+            method.setAccessible(true);
+            method.invoke(provider, scope, failed);
+        } catch (InvocationTargetException e) {
+            throw e.getCause();
+        }
+    }
 
     private Object newProvider(Connection connection, Object policy) throws Throwable {
         Class<?> policyClass = policy.getClass();

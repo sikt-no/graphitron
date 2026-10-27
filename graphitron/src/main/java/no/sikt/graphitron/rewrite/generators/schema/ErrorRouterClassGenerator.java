@@ -57,6 +57,7 @@ public final class ErrorRouterClassGenerator {
     private static final ClassName DATA_FETCHING_ENVIRONMENT  = ClassName.get("graphql.schema", "DataFetchingEnvironment");
     private static final ClassName DATA_FETCHER_RESULT        = ClassName.get("graphql.execution", "DataFetcherResult");
     private static final ClassName GRAPHQL_ERROR_BUILDER      = ClassName.get("graphql", "GraphqlErrorBuilder");
+    private static final ClassName GRAPHQL_ERROR_CN           = ClassName.get("graphql", "GraphQLError");
     private static final ClassName LOGGER_CN                  = ClassName.get("org.slf4j", "Logger");
     private static final ClassName LOGGER_FACTORY_CN          = ClassName.get("org.slf4j", "LoggerFactory");
     private static final ClassName LIST_CN                    = ClassName.get(List.class);
@@ -195,6 +196,7 @@ public final class ErrorRouterClassGenerator {
             .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
             .addMethod(buildClientMessageMethod(fetcherErrorResponse))
             .addMethod(surfaceClientErrorOrRedact)
+            .addMethod(buildSettleFailureMethod(fetcherErrorResponse))
             .addMethod(claim)
             .addMethod(buildRecordClaimMethod(fetcherErrorLog, fetcherErrorResponse))
             .addMethod(matchesSource)
@@ -489,6 +491,8 @@ public final class ErrorRouterClassGenerator {
             .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
             .beginControlFlow("if (mapping.match(thrown, t))")
             .addStatement("recordClaim(thrown, t, env)")
+            .addComment("A claimed exception still fails the field: its mutation transaction rolls back.")
+            .addStatement("$T.markFieldFailed(env)", tenantConnections)
             .addStatement("return t")
             .endControlFlow()
             .endControlFlow()
@@ -608,6 +612,8 @@ public final class ErrorRouterClassGenerator {
                 + "so this result is discarded and the consumer decides what the request answers.\n",
                 clientException, DATA_FETCHER_RESULT)
             .addCode(CodeBlock.builder()
+                .add("// Every arm below fails the field: its mutation transaction, if any, rolls back.\n")
+                .addStatement("$T.markFieldFailed(env)", tenantConnectionsClass(outputPackage))
                 .beginControlFlow("if ($T.isMountFailure(thrown))", tenantConnectionsClass(outputPackage))
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
@@ -811,6 +817,45 @@ public final class ErrorRouterClassGenerator {
             .endControlFlow()
             .endControlFlow()
             .addStatement("return call.apply($L)", DEFAULT_RESPONSE)
+            .build();
+    }
+
+    /**
+     * {@code static GraphQLError settleFailure(Throwable cause, DataFetchingEnvironment env)}: the
+     * redacted error for a top-level mutation field whose transaction failed to settle after the
+     * field resolved (a failed commit, an aborted transaction, a timed-out tenant). The same
+     * disposition as {@code redact}, through the same configured log and response, built for the
+     * instrumentation to add to the result rather than returned from a fetcher.
+     */
+    private static MethodSpec buildSettleFailureMethod(ClassName fetcherErrorResponse) {
+        return MethodSpec.methodBuilder("settleFailure")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(GRAPHQL_ERROR_CN)
+            .addParameter(THROWABLE, "thrown")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addParameter(ClassName.get("graphql.execution", "ResultPath"), "path")
+            .addJavadoc("The redacted error for a top-level mutation field whose transaction failed to settle\n"
+                + "after the field resolved: a failed commit, a transaction the database had already\n"
+                + "aborted, or a timed-out tenant. Mints a reference, hands {@code thrown} to the configured\n"
+                + "{@code FetcherErrorLog.unmatched} (else logs it at ERROR) and answers\n"
+                + "{@code FetcherErrorResponse.unmatchedMessage}'s text at the field's path, exactly as\n"
+                + "{@link #redact} does for a fetcher. The owned-connection instrumentation calls it once\n"
+                + "per failed field and puts the error in the result.\n"
+                + "@param thrown the settle failure\n"
+                + "@param env the top-level field's environment, captured when its fetch began, or\n"
+                + "{@code null}\n"
+                + "@param path the field's result path, where the error is placed\n"
+                + "@return the error to add at the field's path\n")
+            .addStatement("$T reference = newReference(thrown, env)", STRING_CN)
+            .beginControlFlow("if (!toConfiguredLog(env, reference, log -> log.unmatched(thrown, reference, env)))")
+            .addStatement("LOGGER.error(\"Mutation field failed to settle its transaction; correlation id = {}\","
+                + " reference, thrown)")
+            .endControlFlow()
+            .addStatement("$T message = answer(configured(env, $T.class),"
+                + " response -> response.unmatchedMessage(thrown, reference, env), () -> $S + reference)",
+                STRING_CN, fetcherErrorResponse, "reference = ")
+            .addStatement("return (env == null ? $T.newError().path(path) : $T.newError(env))"
+                + ".message(message).build()", GRAPHQL_ERROR_BUILDER, GRAPHQL_ERROR_BUILDER)
             .build();
     }
 

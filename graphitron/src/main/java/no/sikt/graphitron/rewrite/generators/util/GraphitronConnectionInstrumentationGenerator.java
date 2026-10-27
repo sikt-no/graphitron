@@ -42,16 +42,36 @@ import java.util.List;
  *       database never pins and never mounts. Nothing is published under the typed
  *       {@code DSLContext.class} key: that key belongs to the escape-hatch factory alone, so the
  *       accessor distinguishes the modes structurally.</li>
- *   <li>No outer transaction is opened. <b>Query operations</b> run in autocommit, with no
- *       read-only enforcement. <b>Mutation operations</b> let each
- *       field's shipped {@code dsl.transactionResult(...)} be the per-field writable boundary through
- *       the provider: under {@code COMMIT} each field's transaction commits or rolls back
- *       independently; under {@code ROLLBACK_ONLY} (the dev-execution mode) the provider's deferred
- *       observe-then-discard topology savepoint-scopes each field inside one operation transaction
- *       that release discards.</li>
- *   <li>On completion (success, error, cancellation) release every pinned connection
- *       ({@code releaseAll()}: unmount, then return-or-evict). Release is idempotent.</li>
+ *   <li><b>Query operations</b> run in autocommit, with no read-only enforcement.
+ *       <b>Mutation operations</b> are refused unless the engine's mutation strategy is
+ *       graphql-java's serial one ({@code AsyncSerialExecutionStrategy} or a subclass), since each
+ *       top-level field settles when the next one starts.</li>
+ *   <li>On completion (success, error, cancellation) settle the last mutation field, then release
+ *       every pinned connection ({@code releaseAll()}: unmount, then return-or-evict), in that
+ *       order, in the one callback of the context this method returns. Release is idempotent.</li>
  * </ol>
+ *
+ * <h2>One transaction per top-level mutation field</h2>
+ * {@code beginFieldExecution} settles the previous top-level mutation field and begins the next on
+ * the carrier ({@code TenantConnections.beginField}); the carrier opens the field's transaction on
+ * each connection the field first acquires and nests every jOOQ transaction inside it as a
+ * savepoint, so the field's writes and its payload's reads, batched sub-fields included, are one
+ * transaction per connection. Settling here rather than in the previous field's own
+ * {@code beginFieldExecution} completion matters: graphql-java completes that context before the
+ * field's sub-selections are done. The last field settles in the operation callback, ahead of
+ * release by construction; the strategy's own completion is a sibling callback on the same
+ * future, which {@code CompletableFuture} may run after release. A field fails, and rolls back,
+ * when an error lies under its path or {@code ErrorRouter} marked it (an exception redacted,
+ * surfaced or claimed into an {@code @error} payload). Under {@code ROLLBACK_ONLY} (the
+ * dev-execution mode) each field's scope is a savepoint in one operation transaction that release
+ * discards.
+ *
+ * <p>A field whose transaction fails to settle after the field resolved (a failed commit, a
+ * PostgreSQL transaction aborted by a statement the field's code caught, a timed-out tenant) is
+ * reported by {@code instrumentExecutionResult}, which runs after the operation callback: its
+ * value becomes {@code null}, with null propagation for a non-null field, and its redacted error,
+ * logged under a reference through the consumer's {@code FetcherErrorLog}, is added at its path.
+ * A rejected session mount still takes precedence and is thrown in place of the result.
  *
  * <h2>A rejected mount rejects the request ({@code instrumentExecutionResult})</h2>
  * When {@code <sessionState>} configures a mount and it threw during the operation, the carrier
@@ -79,6 +99,19 @@ public final class GraphitronConnectionInstrumentationGenerator {
     private static final ClassName EXECUTION_CONTEXT = ClassName.get("graphql.execution", "ExecutionContext");
     private static final ClassName EXECUTION_PARAMS = ClassName.get("graphql.execution.instrumentation.parameters", "InstrumentationExecutionParameters");
     private static final ClassName COMPLETABLE_FUTURE = ClassName.get("java.util.concurrent", "CompletableFuture");
+    private static final ClassName FIELD_PARAMS = ClassName.get("graphql.execution.instrumentation.parameters", "InstrumentationFieldParameters");
+    private static final ClassName FIELD_FETCH_PARAMS = ClassName.get("graphql.execution.instrumentation.parameters", "InstrumentationFieldFetchParameters");
+    private static final ClassName FIELD_FETCHING_CONTEXT = ClassName.get("graphql.execution.instrumentation", "FieldFetchingInstrumentationContext");
+    private static final ClassName OPERATION = ClassName.get("graphql.language", "OperationDefinition").nestedClass("Operation");
+    private static final ClassName SERIAL_STRATEGY = ClassName.get("graphql.execution", "AsyncSerialExecutionStrategy");
+    private static final ClassName RESULT_PATH = ClassName.get("graphql.execution", "ResultPath");
+    private static final ClassName EXECUTION_STEP_INFO = ClassName.get("graphql.execution", "ExecutionStepInfo");
+    private static final ClassName DATA_FETCHING_ENVIRONMENT = ClassName.get("graphql.schema", "DataFetchingEnvironment");
+    private static final ClassName GRAPHQL_ERROR = ClassName.get("graphql", "GraphQLError");
+    private static final ClassName LIST = ClassName.get("java.util", "List");
+    private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
+    private static final ClassName LINKED_HASH_MAP = ClassName.get("java.util", "LinkedHashMap");
 
     private GraphitronConnectionInstrumentationGenerator() {}
 
@@ -111,14 +144,15 @@ public final class GraphitronConnectionInstrumentationGenerator {
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
         var commitPolicy = provider.nestedClass(GraphitronTransactionProviderGenerator.COMMIT_POLICY_ENUM_NAME);
         var state = self.nestedClass("State");
+        var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
         return List.of(instrumentation(self, runtime, tenantConnections, requestTenants, fetcherErrorLog,
-            fetcherErrorResponse, commitPolicy, state, tenantKey, sessionHooks));
+            fetcherErrorResponse, commitPolicy, state, tenantKey, sessionHooks, errorRouter));
     }
 
     private static TypeSpec instrumentation(
             ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
             ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName commitPolicy, ClassName state,
-            TypeName tenantKey, SessionHooks sessionHooks) {
+            TypeName tenantKey, SessionHooks sessionHooks, ClassName errorRouter) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -171,6 +205,18 @@ public final class GraphitronConnectionInstrumentationGenerator {
                 "Incremental delivery (@defer/@stream) is not supported on the Graphitron "
                 + "owned-connection path; it is a named follow-on")
             .endControlFlow()
+            .addStatement("state.mutation = executionContext.getOperationDefinition().getOperation() == $T.MUTATION",
+                OPERATION)
+            .beginControlFlow("if (state.mutation && !(executionContext.getMutationStrategy() instanceof $T))",
+                SERIAL_STRATEGY)
+            .addComment("Each top-level mutation field is one transaction, settled when the next field starts;")
+            .addComment("under a parallel strategy that point would come while the previous field still runs.")
+            .addStatement("throw new $T($S + executionContext.getMutationStrategy().getClass().getName())",
+                IllegalStateException.class, "The Graphitron owned-connection path runs each top-level mutation"
+                    + " field as one transaction and needs graphql-java's serial mutation strategy"
+                    + " (AsyncSerialExecutionStrategy or a subclass); configured: ")
+            .endControlFlow()
+            .addStatement("state.executionContext = executionContext")
             .addCode("\n");
         if (tenantKey != null) {
             beginExecuteOperationBuilder
@@ -238,42 +284,191 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addStatement("state.carrier = carrier")
             .addStatement("graphQLContext.put($T.class, carrier)", tenantConnections)
             .addCode("\n")
-            .addComment("Release every pinned connection on every completion path (success, error,")
-            .addComment("cancellation). releaseAll() is idempotent and one entry's unmount failure never")
-            .addComment("orphans another's connection.")
-            .addStatement("return $T.whenCompleted((result, throwable) -> state.carrier.releaseAll())",
-                SIMPLE_INSTRUMENTATION_CONTEXT)
+            .addComment("On every completion path (success, error, cancellation): settle the last mutation")
+            .addComment("field, then release every pinned connection, in that order, in this one callback.")
+            .addComment("The strategy's own completion runs from a sibling callback on the same future, which")
+            .addComment("CompletableFuture may run after this one, so it cannot order the two. releaseAll() is")
+            .addComment("idempotent and one entry's unmount failure never orphans another's connection.")
+            .addCode("return $T.whenCompleted((result, throwable) -> {\n", SIMPLE_INSTRUMENTATION_CONTEXT)
+            .addCode("    try {\n")
+            .addCode("        settle(state, throwable != null);\n")
+            .addCode("    } finally {\n")
+            .addCode("        state.carrier.releaseAll();\n")
+            .addCode("    }\n")
+            .addCode("});\n")
             .addJavadoc("Publishes the per-operation connection carrier for the owned-connection path and\n"
                 + "releases every pinned connection at completion; acquisition is lazy and per key, with\n"
                 + "single-tenant as the one-key case. See the class javadoc for the full sequence.\n")
             .build();
 
-        var instrumentExecutionResult = MethodSpec.methodBuilder("instrumentExecutionResult")
+        var failedField = state.nestedClass("FailedField");
+        var instrumentExecutionResultBuilder = MethodSpec.methodBuilder("instrumentExecutionResult")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
             .returns(ParameterizedTypeName.get(COMPLETABLE_FUTURE, EXECUTION_RESULT))
             .addParameter(EXECUTION_RESULT, "executionResult")
             .addParameter(EXECUTION_PARAMS, "parameters")
             .addParameter(INSTRUMENTATION_STATE, "rawState")
-            .addStatement("$T state = ($T) rawState", state, state)
-            .beginControlFlow("if (state != null && state.carrier != null && state.carrier.mountFailure().isPresent())")
-            .addComment("No field can run without identity: the rejected mount replaces the result, escaping")
-            .addComment("GraphQL.execute for the consumer to answer the request as a whole.")
-            .addStatement("throw state.carrier.mountFailure().get()")
-            .endControlFlow()
+            .addStatement("$T state = ($T) rawState", state, state);
+        if (sessionHooks.emitsHookImplementation()) {
+            instrumentExecutionResultBuilder
+                .beginControlFlow("if (state != null && state.carrier != null && state.carrier.mountFailure().isPresent())")
+                .addComment("No field can run without identity: the rejected mount replaces the result, escaping")
+                .addComment("GraphQL.execute for the consumer to answer the request as a whole. It takes")
+                .addComment("precedence over any field's settle failure.")
+                .addStatement("throw state.carrier.mountFailure().get()")
+                .endControlFlow();
+        }
+        var instrumentExecutionResult = instrumentExecutionResultBuilder
+            .beginControlFlow("if (state == null || state.failedFields.isEmpty())")
             .addStatement("return $T.completedFuture(executionResult)", COMPLETABLE_FUTURE)
-            .addJavadoc("Throws the operation's rejected session mount, when there was one, in place of the\n"
-                + "result, so {@code GraphQL.execute} throws {@code SessionMountException} (and\n"
-                + "{@code executeAsync} completes exceptionally with it). The connection it was mounted on\n"
-                + "was already evicted at acquisition.\n")
+            .endControlFlow()
+            .addComment("A field whose transaction failed to settle after it resolved is reported as failed:")
+            .addComment("its value becomes null (a non-null mutation field nulls data, by null propagation)")
+            .addComment("and its redacted error is added. This runs after the operation callback settled the")
+            .addComment("last field, by future composition in GraphQL.executeAsync.")
+            .addStatement("$T<$T, $T> data = executionResult.getData()", MAP, String.class, Object.class)
+            .addStatement("$T<$T, $T> rewritten = data == null ? null : new $T<>(data)",
+                MAP, String.class, Object.class, LINKED_HASH_MAP)
+            .addStatement("$T<$T> errors = new $T<>(executionResult.getErrors())", LIST, GRAPHQL_ERROR, ARRAY_LIST)
+            .beginControlFlow("for ($T failed : state.failedFields)", failedField)
+            .addStatement("errors.add(failed.error)")
+            .beginControlFlow("if (rewritten != null)")
+            .addStatement("rewritten.put(failed.resultKey, null)")
+            .beginControlFlow("if (failed.nonNull)")
+            .addStatement("rewritten = null")
+            .endControlFlow()
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("$T<$T, $T> finalData = rewritten", MAP, String.class, Object.class)
+            .addStatement("return $T.completedFuture(executionResult.transform(b -> b.data(finalData).errors(errors)))",
+                COMPLETABLE_FUTURE)
+            .addJavadoc((sessionHooks.emitsHookImplementation()
+                    ? "Throws the operation's rejected session mount, when there was one, in place of the\n"
+                        + "result, so {@code GraphQL.execute} throws {@code SessionMountException} (and\n"
+                        + "{@code executeAsync} completes exceptionally with it). The connection it was mounted on\n"
+                        + "was already evicted at acquisition. Otherwise rewrites"
+                    : "Rewrites")
+                + " the result for every top-level mutation field whose\n"
+                + "transaction failed to settle after the field resolved: its value becomes {@code null},\n"
+                + "with null propagation for a non-null field, and its redacted error is added.\n")
+            .build();
+
+        var settle = MethodSpec.methodBuilder("settle")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addParameter(state, "state")
+            .addParameter(boolean.class, "failed")
+            .beginControlFlow("if (state.fieldPath == null)")
+            .addStatement("return")
+            .endControlFlow()
+            .addStatement("$T path = state.fieldPath", RESULT_PATH)
+            .addStatement("state.fieldPath = null")
+            .addStatement("boolean errorUnder = failed || errorUnder(state.executionContext, path.toList())")
+            .addStatement("$T cause = state.carrier.settleField(errorUnder)", Throwable.class)
+            .beginControlFlow("if (cause != null)")
+            .addStatement("state.failedFields.add(new $T(path.getSegmentName(), state.fieldNonNull,"
+                + " $T.settleFailure(cause, state.fieldEnvironment, path)))", failedField, errorRouter)
+            .endControlFlow()
+            .addJavadoc("Settles the running top-level mutation field, if any: its transaction commits unless\n"
+                + "it failed ({@code failed}, an error recorded under its path, or a mark from\n"
+                + "{@code ErrorRouter}). A failure settling itself discovers is recorded for\n"
+                + "{@link #instrumentExecutionResult} to report.\n")
+            .build();
+
+        var errorUnder = MethodSpec.methodBuilder("errorUnder")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(EXECUTION_CONTEXT, "executionContext")
+            .addParameter(ParameterizedTypeName.get(LIST, ClassName.get(Object.class)), "path")
+            .beginControlFlow("for ($T error : executionContext.getErrors())", GRAPHQL_ERROR)
+            .addStatement("$T<$T> at = error.getPath()", LIST, Object.class)
+            .beginControlFlow("if (at != null && at.size() >= path.size() && at.subList(0, path.size()).equals(path))")
+            .addStatement("return true")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return false")
+            .addJavadoc("Whether an error recorded so far lies at or under {@code path}.\n")
+            .build();
+
+        var beginFieldExecution = MethodSpec.methodBuilder("beginFieldExecution")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, ClassName.get(Object.class)))
+            .addParameter(FIELD_PARAMS, "parameters")
+            .addParameter(INSTRUMENTATION_STATE, "rawState")
+            .addStatement("$T state = ($T) rawState", state, state)
+            .addStatement("$T info = parameters.getExecutionStepInfo()", EXECUTION_STEP_INFO)
+            .beginControlFlow("if (state != null && state.mutation && state.carrier != null && info.getPath().getLevel() == 1)")
+            .addComment("Under the serial strategy a top-level field starts only once the previous one's value,")
+            .addComment("payload included, is complete: the previous field's own completion callback comes")
+            .addComment("earlier than that, so it settles here.")
+            .addStatement("settle(state, false)")
+            .addStatement("state.fieldPath = info.getPath()")
+            .addStatement("state.fieldNonNull = info.isNonNullType()")
+            .addStatement("state.fieldEnvironment = null")
+            .addStatement("state.carrier.beginField(info.getPath().toList())")
+            .endControlFlow()
+            .addStatement("return null")
+            .addJavadoc("Settles the previous top-level mutation field and begins the next; its transaction\n"
+                + "opens on each connection the field first acquires.\n")
+            .build();
+
+        var beginFieldFetching = MethodSpec.methodBuilder("beginFieldFetching")
+            .addAnnotation(Override.class)
+            .addModifiers(Modifier.PUBLIC)
+            .returns(FIELD_FETCHING_CONTEXT)
+            .addParameter(FIELD_FETCH_PARAMS, "parameters")
+            .addParameter(INSTRUMENTATION_STATE, "rawState")
+            .addStatement("$T state = ($T) rawState", state, state)
+            .beginControlFlow("if (state != null && state.fieldPath != null && state.fieldEnvironment == null"
+                + " && parameters.getExecutionStepInfo().getPath().equals(state.fieldPath))")
+            .addComment("The settle-failure report goes through the consumer's FetcherErrorLog and")
+            .addComment("FetcherErrorResponse, which take the field's environment.")
+            .addStatement("state.fieldEnvironment = parameters.getEnvironment()")
+            .endControlFlow()
+            .addStatement("return null")
+            .addJavadoc("Captures the running top-level mutation field's environment, for a settle failure's\n"
+                + "report.\n")
+            .build();
+
+        var failedFieldType = TypeSpec.classBuilder("FailedField")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("A top-level mutation field whose transaction failed to settle: where it sits in the\n"
+                + "result, whether null propagation reaches {@code data}, and its redacted error.\n")
+            .addField(FieldSpec.builder(String.class, "resultKey", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(boolean.class, "nonNull", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addField(FieldSpec.builder(GRAPHQL_ERROR, "error", Modifier.PRIVATE, Modifier.FINAL).build())
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PRIVATE)
+                .addParameter(String.class, "resultKey")
+                .addParameter(boolean.class, "nonNull")
+                .addParameter(GRAPHQL_ERROR, "error")
+                .addStatement("this.resultKey = resultKey")
+                .addStatement("this.nonNull = nonNull")
+                .addStatement("this.error = error")
+                .build())
             .build();
 
         var stateType = TypeSpec.classBuilder("State")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(INSTRUMENTATION_STATE)
             .addField(FieldSpec.builder(tenantConnections, "carrier", Modifier.PRIVATE).build())
-            .addJavadoc("Per-request instrumentation state: the connection carrier to release at\n"
-                + "completion.\n")
+            .addField(FieldSpec.builder(EXECUTION_CONTEXT, "executionContext", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(boolean.class, "mutation", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(RESULT_PATH, "fieldPath", Modifier.PRIVATE)
+                .addJavadoc("The running top-level mutation field's path, {@code null} between fields.\n")
+                .build())
+            .addField(FieldSpec.builder(boolean.class, "fieldNonNull", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(DATA_FETCHING_ENVIRONMENT, "fieldEnvironment", Modifier.PRIVATE).build())
+            .addField(FieldSpec.builder(ParameterizedTypeName.get(LIST, failedField), "failedFields",
+                    Modifier.PRIVATE, Modifier.FINAL)
+                .initializer("new $T<>()", ARRAY_LIST)
+                .build())
+            .addType(failedFieldType)
+            .addJavadoc("Per-request instrumentation state: the connection carrier to release at completion,\n"
+                + "and the running top-level mutation field. Read and written on the dispatch thread:\n"
+                + "graphql-java calls the field hooks there, and the serial strategy starts a field only\n"
+                + "once the previous one completed.\n")
             .build();
 
         var builder = TypeSpec.classBuilder(CLASS_NAME)
@@ -288,10 +483,12 @@ public final class GraphitronConnectionInstrumentationGenerator {
             .addMethod(primaryConstructor)
             .addMethod(policyConstructor)
             .addMethod(createState)
-            .addMethod(beginExecuteOperation);
-        if (sessionHooks.emitsHookImplementation()) {
-            builder.addMethod(instrumentExecutionResult);
-        }
+            .addMethod(beginExecuteOperation)
+            .addMethod(beginFieldExecution)
+            .addMethod(beginFieldFetching)
+            .addMethod(instrumentExecutionResult)
+            .addMethod(settle)
+            .addMethod(errorUnder);
         return builder
             .addType(stateType)
             .build();

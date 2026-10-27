@@ -244,15 +244,15 @@ class SessionHookImplGeneratorTest {
         for (TypeSpec spec : GraphitronConnectionInstrumentationGenerator.generate(PACKAGE, tenantKeyType, hooks)) {
             units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
         }
+        // The instrumentation reports a mutation field's settle failure through the router, which
+        // raises the client-error type; a real build always emits both beside the runtime.
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
+        for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.generate(PACKAGE)) {
+            units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
+        }
         if (tenantKeyType != null) {
-            // The multi-tenant carrier raises the client-error type and hands fan-out failures to
-            // the router's log guard, both of which a real build always emits beside the runtime.
-            for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator.generate()) {
-                units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
-            }
-            for (TypeSpec spec : no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator.generate(PACKAGE)) {
-                units.put(SCHEMA_PACKAGE + "." + spec.name(), spec);
-            }
             // The tenant key's canonical form is the column trip, held by the util package's ColumnValues.
             for (TypeSpec spec : ColumnValuesClassGenerator.generate()) {
                 units.put(PACKAGE + ".util." + spec.name(), spec);

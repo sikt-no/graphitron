@@ -2,7 +2,7 @@
 :description: Flip a mutation resolver into INSERT, UPDATE, DELETE, or UPSERT; the write target is named by the field's return type or @mutation(table:).
 :!toc:
 
-Marks a mutation field as fully generated and picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). The write runs inside a transaction graphitron opens, with a primary-key-only `RETURNING`; a `@table`-typed response is then read back by a follow-up SELECT keyed on those primary keys, so the response selection set never widens the write statement itself. The delegated alternative carries no such boundary: graphitron opens no transaction around a xref:service.adoc#transaction-demarcation[`@service`] invocation, and the method owns its own commit point.
+Marks a mutation field as fully generated and picks the SQL shape (`INSERT`, `UPDATE`, `DELETE`, `UPSERT`). The write runs inside a transaction graphitron opens, with a primary-key-only `RETURNING`; a `@table`-typed response is then read back by a follow-up SELECT keyed on those primary keys, so the response selection set never widens the write statement itself. On the owned-connection path that transaction is the field's own and covers the read-back too: the write, the follow-up SELECT and the payload's nested reads commit or roll back together (xref:../../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path]). The delegated alternative carries no boundary of its own on the escape-hatch path: see xref:service.adoc#transaction-demarcation[`@service`].
 
 Every `INSERT`, `UPDATE` and `UPSERT` checks the strings it writes against their columns' declared lengths before the statement runs, and rejects an over-long value without writing anything; see xref:../../how-to/error-channel.adoc#column-length-check[the column-length check].
 
@@ -73,7 +73,7 @@ SELECT film.film_id AS "filmId", film.title AS "title"
  WHERE film.film_id = ?
 ----
 
-The follow-up SELECT narrows to the response selection set: a mutation that asks for `{ filmId title }` retrieves only those columns. Because the write has already committed when the read-back runs, an error during the response SELECT surfaces as a field error and cannot undo the write.
+The follow-up SELECT narrows to the response selection set: a mutation that asks for `{ filmId title }` retrieves only those columns. On the escape-hatch path the write has already committed when the read-back runs, so an error during the response SELECT surfaces as a field error and cannot undo the write. On the owned-connection path the read-back runs inside the field's transaction, so such an error fails the field and rolls the write back.
 
 For a bulk mutation (list input, `[Film!]!` return), the follow-up SELECT joins a `VALUES (idx, pk)` table over the returned keys and orders by `idx`. The payload list contains one entry per written row, in the order the rows were written, mirroring xref:lookupKey.adoc[`@lookupKey`]'s ordering contract ("returns a list of results in the same order").
 
