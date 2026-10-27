@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: codegen-correctness
-depends-on: [single-table-connection-primary-key-tiebreaker]
+depends-on: [single-table-connection-primary-key-tiebreaker, null-sort-keys-sort-last-and-page]
 created: 2026-10-21
 last-updated: 2026-10-27
 ---
@@ -77,7 +77,7 @@ Consequences, stated so the reviewer does not have to derive them:
 
 - A hop that carries only a `condition:` (an `On.Predicate` hop with no `key:`/`table:`) has no FK to prove uniqueness from, so it is rejected; the author must name a `key:`. A `condition:` accompanying a `key:` is a per-hop filter, does not change the key's cardinality, and is allowed.
 - The classification is catalog-derived at build time, not author-asserted; there is no opt-out argument.
-- A parent with no related row still appears: the join is a LEFT JOIN, so the sort key is `NULL`. Nulls placement follows the database default for the direction unless the spec pins it (see forks), and must be part of the cursor.
+- A parent with no related row still appears: the join is a LEFT JOIN, so the sort key is `NULL`. R1112 makes a `NULL` key sort last in both directions and makes the seek return such rows, for every nullable order column; this item inherits that and adds no nulls rule of its own.
 
 The rejection names the field coordinate, the enum value, the offending hop, and the direction in which it fans out (for example "hop 1 `utdanningsinstans` to `utdanningsinstansnavn` via `<key>` is to-many: one parent has many `utdanningsinstansnavn` rows; an ordering path may only follow to-one hops"). A to-many relation is the `method:` form's case, and the rejection message says so: it points at `method:` and at the view-plus-synthetic-key alternative.
 
@@ -99,11 +99,11 @@ R1106 owns tiebreaking. A single-table connection whose listed columns contain n
 6. Emission: LEFT JOIN the path in the generated select and order by the aliased column, including the keyset-pagination cursor and the backward flip, which today assume columns of the root table.
 7. Validation: reject at classification, through the existing `OrderByResolver` rejection route, a non-to-one hop, a `condition:`-only hop, an unknown column on the landing table, and an unresolvable path.
 8. `method:` resolution: resolve the reference with the machinery `@externalField` already uses (class and method lookup, the sole parameter typed as the field's table class, a `Field<?>` return); reject a missing method, a wrong parameter or return type, `argMapping:`, `method:` together with `name:` or `path:`, and neither of `name:`/`method:` set. Widen the model with a sealed sibling of `OrderBySpec.ColumnOrderEntry`, an expression entry carrying the method reference, collation and direction, rather than a nullable method field on the column entry.
-9. `method:` emission: call the method once per query with the field's alias, project the returned expression under its own minted alias (finding 5's projection and alias rule applies to it as to a path column), and drive `orderBy`, `seek` and the cursor from that projection, so the cursor encodes the sort key's value and not the method. A `NULL` sort key (a parent with no related row) meets the same null-safe seek requirement as a nullable path column (finding 3).
+9. `method:` emission: call the method once per query with the field's alias, project the returned expression under its own minted alias (finding 5's projection and alias rule applies to it as to a path column), and drive `orderBy`, `seek` and the cursor from that projection, so the cursor encodes the sort key's value and not the method. A `NULL` sort key (no related row) is paged by R1112's null-aware seek, like a nullable path column.
 
 ## Design forks to settle during Spec review
 
-- **Nulls placement.** Related row absent means a `NULL` key. Recommendation: do not invent a rule; inherit the database default per direction, and make the cursor encode nullness so forward and backward pages agree. Confirm that the existing keyset emission can express this for own-table nullable columns today; if it cannot, that is a prerequisite this item must name.
+- **Nulls placement.** Settled: a `NULL` key sorts last in both directions, and the null-aware seek that pages it is R1112's, a dependency of this item, since own-table nullable columns have the same defect today.
 - **Multi-hop paths.** Allowed provided every hop is to-one. Confirm the alias scheme in `JoinStep.Hop` stays unique when the order join and a selected-field join traverse the same FK in one statement (reuse versus a second alias).
 
 ## Tests
