@@ -18,7 +18,7 @@ import no.sikt.graphitron.model.lint.LintRule;
 
 /**
  * Fixture warnings-as-errors gate: builds the sakila-example schema and asserts the
- * generator's warning channel emits <em>exactly</em> the expected set (two advisories).
+ * generator's warning channel emits <em>exactly</em> the expected set (three advisories).
  *
  * <p>Fixture builds treat generator warnings as errors unless the fixture's point is to assert
  * the warning path. This test declares which warnings the example fixture intentionally carries:
@@ -39,6 +39,13 @@ import no.sikt.graphitron.model.lint.LintRule;
  * and cannot be segregated by the filters below; that is why it is asserted here rather than
  * carved out. The message format is pinned on minimal SDL by
  * {@code TableOnInputDeprecationWarningTest}.
+ *
+ * <p>The third is the {@link LintRule#CONNECTION_ORDER_NOT_UNIQUE} advisory on
+ * {@code Query.tilgangerConnection}, a connection over a table-valued function result: the result
+ * has no key graphitron could append to make the order identify a row, so whether
+ * {@code (organisasjonskode, rollekode)} is unique is the author's word. The fixture is the
+ * end-to-end proof that a keyless connection still pages on its listed columns, so the warning is
+ * pinned here. The message format is pinned on minimal SDL in {@code GraphitronSchemaBuilderTest}.
  */
 @PipelineTier
 class FixtureWarningsGateTest {
@@ -81,10 +88,10 @@ class FixtureWarningsGateTest {
             .toList();
 
         assertThat(warnings)
-            .as("the sakila-example fixture must emit exactly two generator warnings; "
+            .as("the sakila-example fixture must emit exactly three generator warnings; "
                 + "a new entry means a fixture started tripping an advisory that is not "
                 + "declared/asserted (see R294)")
-            .hasSize(2);
+            .hasSize(3);
 
         assertThat(warnings)
             .as("the @asConnection same-table @nodeId advisory")
@@ -95,7 +102,7 @@ class FixtureWarningsGateTest {
                     .contains("'ids'")
                     .contains("every page of @asConnection would equal the input set");
 
-                // The field sits at schema.graphqls line 702; fields added above it shift this
+                // The field sits at schema.graphqls line 708; fields added above it shift this
                 // line, and so does prose, a comment above it counting as much as a field.
                 // Update the expected line if the field moves.
                 assertThat(warning.location()).isNotNull();
@@ -104,7 +111,20 @@ class FixtureWarningsGateTest {
                     .endsWith("schema.graphqls");
                 assertThat(warning.location().getLine())
                     .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
-                    .isEqualTo(702);
+                    .isEqualTo(708);
+            });
+
+        assertThat(warnings)
+            .as("the connection-order-not-unique advisory on the keyless routine connection")
+            .anySatisfy(warning -> {
+                assertThat(warning)
+                    .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf ->
+                        assertThat(lf.rule()).isEqualTo(LintRule.CONNECTION_ORDER_NOT_UNIQUE));
+                assertThat(warning.message())
+                    .contains("connection 'Query.tilgangerConnection'")
+                    .contains("rows that tie on every listed column can be skipped between pages");
+                assertThat(warning.location()).isNotNull();
+                assertThat(warning.location().getSourceName()).endsWith("schema.graphqls");
             });
 
         assertThat(warnings)
