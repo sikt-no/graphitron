@@ -38,6 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
 | `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression <sub>blocked by: [single-table-connection-primary-key-tiebreaker](single-table-connection-primary-key-tiebreaker.md), [null-sort-keys-sort-last-and-page](null-sort-keys-sort-last-and-page.md)</sub> | Spec | 2026-10-27 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
+| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction <sub>blocked by: [mutation-field-transaction-scope](mutation-field-transaction-scope.md)</sub> | Spec | 2026-10-27 | [plan](transactional-outbox-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -606,6 +607,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1102` [**A value the session mount derives binds where a contextArgument binds today**](session-handle-component-bindings.md) — Ready, feature
+- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — Spec, feature, blocked by [mutation-field-transaction-scope](mutation-field-transaction-scope.md)
 - `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start**](mutation-field-transaction-scope.md) — Ready, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1108` [**The user manual documents the owned-connection engine as the primary path**](manual-catches-up-with-owned-connection-engine.md) — Backlog, docs
