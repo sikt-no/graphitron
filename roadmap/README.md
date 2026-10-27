@@ -50,8 +50,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
-| `R1103` | Derive the compile-graph oracle from javac and retire referencedClassNames | Ready | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](compile-graph-oracle-from-javac.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
+| `R1103` | Derive the compile-graph oracle from javac and retire referencedClassNames | In Progress | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](compile-graph-oracle-from-javac.md) |
 | `R174` | Replace the graphitron-javapoet fork with Palantir's JavaPoet <sub>blocked by: [compile-graph-oracle-from-javac](compile-graph-oracle-from-javac.md)</sub> | In Progress | 2026-10-27 <sub>created 2026-05-17</sub> | [plan](replace-javapoet-fork-with-palantir.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
@@ -816,7 +816,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R737` [**roadmap-tool stands a fact store up outside the harness, in a module the guard does not walk**](roadmap-tool-store-site-and-guard-scope.md) — Backlog, cleanup
 - `R560` [**Un-skip graphitron-javapoet test suite**](unskip-javapoet-tests.md) — Backlog, cleanup
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R1103` [**Derive the compile-graph oracle from javac and retire referencedClassNames**](compile-graph-oracle-from-javac.md) — Ready, architecture
+- `R1103` [**Derive the compile-graph oracle from javac and retire referencedClassNames**](compile-graph-oracle-from-javac.md) — In Progress, architecture
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
 - `R993` [**The pipeline-tier classpath census leaves code_method_parameter.element_class and delivery NULL although CodeCapture writes them**](pipeline-census-leaves-parameter-peel-null.md) — Backlog, bug
