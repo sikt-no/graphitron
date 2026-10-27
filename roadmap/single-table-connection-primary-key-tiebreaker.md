@@ -1,7 +1,7 @@
 ---
 id: R1106
 title: "A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows"
-status: In Review
+status: Ready
 bucket: bug
 priority: 2
 theme: codegen-correctness
@@ -165,3 +165,18 @@ R1083 (`order-by-related-table-column.md`, in Spec) states its own version of th
 - **Append the primary key to every order that does not list it, ignoring unique-key coverage.** This is one predicate, but it changes the SQL and invalidates cursors of fields that are already correct (an order on a unique `email`) and gains nothing.
 - **Record which entries were appended** (an authored count beside `Fixed.columns()`). No consumer in this item needs the distinction: emitters read one list, and the tests assert the completed list. Add it when a consumer appears, such as an LSP hover that shows the appended key.
 - **Complete plain lists too.** That would give them deterministic order between runs, but it changes the SQL and plans of every ordered list for a property no one asked for and no page boundary needs. It can be a separate item if wanted.
+
+## Reviewer findings
+
+### In Review -> Done, round 1: rework (session_01FY5UvsHjXRUmsoQf9CW431, against a12adf8)
+
+The behaviour is right and matches the approved rule, and the acceptance evidence holds. `ConnectionTiebreakerExecutionTest` walks a two-row page into the seed's 2.99 tie (films 3, 4, 5) forward and backward through the root `@defaultOrder`, the list-valued `@orderBy` in both directions and the `@splitQuery` child, and it passes. The `ConnectionOrderCompletionCase` pipeline cases cover every branch of the rule. The multitable ordering tests stay green unchanged. The docs match the first-client draft and contain no roadmap vocabulary. The verification build is green; its one red test was the pre-existing shared-database race in `GraphQLQueryTest.filmsByTitleBean_absentInput_buildsNoBeanAndLeavesTheFieldUnfiltered`, which is unrelated to this item, and a re-run of the module passed.
+
+One finding blocks approval; it fails the gate's test-tier precondition, so question 2's evidence is partly in a banned form.
+
+1. **The four new `TypeFetcherGeneratorTest` cases match strings in a generated method body:** `singleOrderByArg_appendedKeyOfUniformAscValue_flipsWithRuntimeDirection`, `singleOrderByArg_appendedKeyOfLockedValue_keepsItsDirection`, `listOrderByArg_appendRowKey_emitsCompletionAfterTheLoop` and `listOrderByArg_noCompletion_emitsNoCompletionBlock`. Each calls `method(spec, "filmsOrderBy").code().toString()` and then `contains`. `docs/architecture/how-to/testing.adoc` § Unit tier bans exactly this for generator unit tests ("code-string body matching on the generated `MethodSpec` body; that is what compilation and execution cover"). The "Intentional body-content assertions" comment does not lift the ban; older cases in the same file that carry that comment are not precedent. The spec's Tests § Unit tier bullet asked for rendering checks, and the delivery met it in the banned form. The spec should have placed that evidence at another tier.
+
+   **What satisfies it:**
+   - Remove the four body-string tests, or replace them with assertions on `TypeSpec`/`MethodSpec` shape that name no body text.
+   - Move the evidence to a tier that allows it. The list-valued arm already has it: the pipeline case `LIST_ORDER_BY_ON_CONNECTION_APPENDS_AFTER_THE_SEQUENCE` and `LIST_ORDER_BY_ON_PLAIN_LIST_IS_NOT_COMPLETED`, plus the ASC and DESC execution walks. The single-valued arm does not: once the unit test goes, nothing executes "the appended key flips with a runtime `direction:`". Add a single-valued `@orderBy` walk to `ConnectionTiebreakerExecutionTest`, for example a connection taking `FilmOrderBy` (not a list) with `{field: RENTAL_RATE, direction: DESC}`, asserting `RATE_DESC` forward and backward.
+   - Amend the Tests § Unit tier bullet, and add a line to Implementation notes, so the spec says where this evidence now lives.
