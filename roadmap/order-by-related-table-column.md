@@ -5,7 +5,7 @@ status: Spec
 bucket: architecture
 priority: 5
 theme: codegen-correctness
-depends-on: []
+depends-on: [single-table-connection-primary-key-tiebreaker]
 created: 2026-10-21
 last-updated: 2026-10-27
 ---
@@ -83,21 +83,18 @@ The rejection names the field coordinate, the enum value, the offending hop, and
 
 ## Tiebreaker rule
 
-The ordering is deterministic or it is not valid for keyset pagination, so the resolved order is completed with tiebreaker columns unless the configured columns already cover a key of the field's own table. The rule, as decided:
+R1106 owns tiebreaking. A single-table connection whose listed columns contain no identifying key of the field's table gets the table's row key appended, in the direction of the last listed entry. The row key is the primary key, else the `@node` key, else a unique key whose columns are all `NOT NULL`. The appended key goes on the order, the cursor and the seek. Two places decide it: `OrderByResolver.complete` for static orders, and the block that `TypeFetcherGenerator.buildRowKeyCompletion` emits for a list-valued `@orderBy` argument. This item adds one rule to that test and nothing else:
 
-- If the configured own-table columns (in any position) cover the primary key or a unique constraint of the field's table, add nothing.
-- Otherwise append the table's primary key columns after the configured entries, ascending.
-- Columns reached through a `path:` never count toward coverage: a to-one hop makes many parent rows share one related row, so a related-table column, even that table's primary key, cannot identify a parent row. An order made only of path columns therefore always gets the primary key appended.
-- A `method:` entry never counts toward coverage either: the build cannot see what the expression returns, so an order containing one is completed with the primary key unless its own-table columns already cover a key.
-
-Plan step 4 checks what `OrderBySpec.Fixed` and `resolveDefaultOrderSpec` do today for own-table orders and extends that mechanism to the coverage test above rather than adding a second one; if today's behaviour already is "append the PK unless covered", the work is only teaching the coverage test to ignore path columns.
+- Only own-table column entries count toward identifying a row. A column reached through `path:` never counts, even when it is the related table's primary key: a to-one hop lets many parent rows share one related row, so a related-table column cannot tell parents apart. A `method:` entry never counts either, because the build cannot see what the expression returns. An order made only of path or method entries therefore always gets the row key appended.
+- The test decides by entry kind, not by column name. Both of R1106's checks compare SQL column names today, so a path column named like one of the field's own key columns (a related table's `id` beside the field's own `id`) would pass for that key and suppress the append. The resolver check reads only own-table entries; the generated check is handed only the own-table column names.
+- Everything else is R1106's as shipped: which shapes are completed (connections only, not plain lists or multitable participants), the row-key choice, the direction, and the `connection-order-not-unique` lint finding for keyless tables.
 
 ## Plan
 
 1. SDL and docs: add `path` to `FieldSort` in `directives.graphqls`; update `docs/manual/reference/directives/order.adoc` and `defaultOrder.adoc` (including the to-one rule and its rejection), cross-linking `reference.adoc`.
 2. Resolution: in `OrderByResolver.resolveOrderEntries`, when `path` is present, resolve it through the shared `BuildContext.parsePath` (start = the field's table, terminal table taken from the last hop; reuse its error messages rather than a parallel parser), then look the column up on the terminal table.
 3. Cardinality check: a catalog query answering "is this hop to-one from its origin table", derived from FK direction plus unique/PK coverage on the holding table. No hop-level cardinality fact exists in the tree today, so this is new; keep it a single function the rejection and any later consumer share, and apply the Adding-a-relation provenance rule if it ends up stored rather than computed (it should be computed from the jOOQ catalog).
-4. Tiebreaker: apply the Tiebreaker rule above, reusing the existing completion mechanism if there is one.
+4. Tiebreaker: restrict R1106's identifying-key test to own-table column entries, in `OrderByResolver.complete` and in the check `TypeFetcherGenerator.buildRowKeyCompletion` emits, per the Tiebreaker rule above.
 5. Model: widen `OrderBySpec.ColumnOrderEntry` with the resolved join steps (empty for own-table columns) so the emitter knows which table alias the column belongs to.
 6. Emission: LEFT JOIN the path in the generated select and order by the aliased column, including the keyset-pagination cursor and the backward flip, which today assume columns of the root table.
 7. Validation: reject at classification, through the existing `OrderByResolver` rejection route, a non-to-one hop, a `condition:`-only hop, an unknown column on the landing table, and an unresolvable path.
@@ -112,7 +109,7 @@ Plan step 4 checks what `OrderBySpec.Fixed` and `resolveDefaultOrderSpec` do tod
 ## Tests
 
 - Pipeline-tier classification: accepted to-one path (child to parent), accepted one-to-one extension hop, rejected to-many hop (message names the hop and direction), rejected `condition:`-only hop, unknown column on the landing table, unresolvable `key:`.
-- Pipeline-tier tiebreaker: key already covered (no append), key not covered (PK appended), path-only order (PK appended even when the path column is the related table's PK), `method:`-only order (PK appended).
+- Pipeline-tier tiebreaker on a connection: path-only order (row key appended even when the path column is the related table's primary key), a path column whose name equals one of the field's own key columns (row key still appended), `method:`-only order (row key appended), and an own-table key beside a path entry (nothing appended). The same cases through a list-valued `@orderBy` argument, where completion happens in the generated helper.
 - Pipeline-tier `method:` classification: accepted method, missing method, wrong parameter type, non-`Field` return, `argMapping:` rejected, `method:` with `name:`, `method:` with `path:`, neither set.
 - Execution-tier: a connection ordered by a column on a to-one related table against the sakila fixtures, forward and backward pagination, a parent with no related row, and duplicate sort keys resolved by the appended primary key.
 - Execution-tier `method:`: a connection ordered by a correlated "latest related row" expression over a to-many relation in the sakila fixtures (for example customers by the date of their latest rental), forward and backward pagination, a parent with no related row, and two parents with equal sort keys resolved by the appended primary key.
