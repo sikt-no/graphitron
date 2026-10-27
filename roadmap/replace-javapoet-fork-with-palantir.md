@@ -1,13 +1,13 @@
 ---
 id: R174
 title: "Replace the graphitron-javapoet fork with Palantir's JavaPoet"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 9
 theme: tooling
 depends-on: [compile-graph-oracle-from-javac]
 created: 2026-05-17
-last-updated: 2026-10-26
+last-updated: 2026-10-27
 ---
 
 # Replace the graphitron-javapoet fork with Palantir's JavaPoet
@@ -108,7 +108,7 @@ schedule.
    unconditionally) adopts the helper is the implementer's call, not
    scope.
 2. **Adapt to Palantir's API differences.** `TypeName.OBJECT` becomes
-   `ClassName.OBJECT` (about ten code sites). Palantir rejects a format
+   `ClassName.OBJECT` (34 occurrences across eight files, seven of them in main sources). Palantir rejects a format
    string passed arguments it has no placeholder for, where Square
    ignored them silently; the trial swap hit this once, at
    `ConnectionRuntimeClassGenerator`'s multi-tenant constructor
@@ -119,7 +119,7 @@ schedule.
    exactly (0.22.0 at time of writing) as a root `pom.xml` property,
    replace the `graphitron-javapoet` dependency in `graphitron/pom.xml`
    with it, and rename `no.sikt.graphitron.javapoet` to
-   `com.palantir.javapoet` in the 289 importing files (mechanical).
+   `com.palantir.javapoet` in the 289 files that name it (mechanical; 270 import it, the rest use the FQN inline or as a string, as `ModelEmitVocabularyGuardTest` and `PackageImportDirectionTest` do).
 4. **Delete the module and its mentions.**
    - Build: the `graphitron-javapoet` entry in the root `pom.xml`
      modules list, and the module named in the comment near the
