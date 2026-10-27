@@ -64,7 +64,7 @@ account of itself.
   refreshes off a `.java` watcher, its corpus being the consumer's own sources.
 * **`CompileFacts` must stay a report, and that is not a compromise.** Its corpus is the emitted
   tree plus javac's verdict on it, and the model cannot go get either: the compile engine cannot
-  come down, `AbiSignature` naming javapoet seven times and `TypeSpecReferenceWalk` four, so moving
+  come down, `AbiSignature` naming javapoet seven times, so moving
   it would break the fact tier's no-javapoet rule outright. The one family that structurally cannot
   be gathered is also the one carrying no vocabulary, which is the rule confirming itself rather
   than bending.

@@ -45,7 +45,7 @@ import java.util.Set;
  *   <li><b>Precise edges</b> mirror references the emitted source actually makes: the relation
  *       rows' cross-unit refs and the arm-entailed wiring of the schema-dependent globals (the
  *       facade's schema-class and runtime reads, the node dispatch pair, the entity dispatch
- *       row's targets).</li>
+ *       row's targets, the context interface's carrier read).</li>
  *   <li><b>Declared superset edges</b> over-approximate deliberately, and only where the target's
  *       ABI cannot move on a schema edit (so the extra edge never fires a recompile) or the
  *       target grows per type and the leaf grain is the honest bound: the frozen-scaffold
@@ -278,9 +278,10 @@ public final class PlanCompileGraph {
         /**
          * The fixed-substrate arms' wiring, total over the kinds with no default: a new kind is
          * a compile-time wiring decision here, never a silently edge-less node. The
-         * self-contained scaffolds contribute no outbound edge (their emitted internals are
-         * schema-independent, so they never enter a schema-driven delta; the oracle exempts them
-         * as sources for the same reason). The connection-runtime substrate's internal wiring is
+         * self-contained scaffolds in the first arm contribute no outbound edge (their emitted
+         * internals are schema-independent, so they never enter a schema-driven delta; the oracle
+         * exempts them as sources for the same reason). The context interface is not one of them:
+         * its carrier read is unconditional, so it is a precise edge. The connection-runtime substrate's internal wiring is
          * declared rather than precise because parts of it are configuration-conditional (the
          * session-hook bake, the tenant-typed provider reads) while every unit in it is
          * schema-invariant, so the over-approximation can never fire a recompile.
@@ -289,9 +290,12 @@ public final class PlanCompileGraph {
             switch (kind) {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
                      CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL,
-                     SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT, GRAPHITRON_CONTEXT,
+                     SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
                      CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
+                // The context interface always names the per-operation carrier.
+                case GRAPHITRON_CONTEXT -> runtimeUnit("TenantConnections")
+                    .ifPresent(t -> precise(units.get(0), t));
                 // Every decode<Type> refuses a key value through the column trip.
                 case NODE_ID_ENCODER -> precise(units.get(0), require(GlobalUnitKind.COLUMN_VALUES));
                 case ENTITY_FETCHER_DISPATCH -> throw new IllegalStateException(

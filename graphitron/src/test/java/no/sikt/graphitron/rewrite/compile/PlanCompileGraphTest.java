@@ -174,6 +174,18 @@ class PlanCompileGraphTest {
     }
 
     @Test
+    void contextInterfaceReachesItsCarrierPrecisely() {
+        // GraphitronContext always names TenantConnections, so the edge is precise: in the graph,
+        // and not covered by the declared superset, where the oracle would stop checking it.
+        GraphitronSchemaBuilder.Bundle bundle = TestSchemaHelper.buildBundle(SDL);
+        var projection = PlanCompileGraph.project(EmitPlan.produceWithoutStore(bundle.model(),
+            bundle.federationLink(), bundle.usesOneOf(), PKG), FixedRuntimeEmitter.render(PKG), bundle.model());
+        var context = UNITS.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext");
+        assertThat(projection.graph().directReferences(context)).contains(UNITS.tenantConnections());
+        assertThat(projection.declaredSuperset().directReferences(context)).doesNotContain(UNITS.tenantConnections());
+    }
+
+    @Test
     void everyFetcherBlanketsTheFrozenScaffolding() {
         assertThat(refs(UNITS.fetchers("Query"))).contains(
             PKG + ".util.LightFetcher",

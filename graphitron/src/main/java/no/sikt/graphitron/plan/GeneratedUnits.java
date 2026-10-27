@@ -9,10 +9,9 @@ import java.nio.file.Path;
 /**
  * The plan's naming vocabulary: single source of truth for the names of graphitron's generated
  * compilation units, given the consumer's {@code outputPackage}. Every naming scheme here mirrors
- * what the generators actually emit; the
- * {@link no.sikt.graphitron.rewrite.compile.TypeSpecReferenceWalk} completeness
- * oracle pins these against the real emitted file set so a scheme drift is a test failure, not a
- * silent graph gap.
+ * what the generators actually emit; the incremental harness ({@code IncrementalCompileHarnessTest})
+ * pins the compile graph's nodes, minted here, against the real emitted unit set, so a scheme drift
+ * is a test failure, not a silent graph gap.
  *
  * <p>The scheme methods mint {@link UnitRef}s, and are meant to be the only minting site (the
  * import-direction guard pins this), so a command naming a unit outside these schemes is

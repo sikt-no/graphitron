@@ -40,10 +40,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <ul>
  *   <li>the three-leg acceptance oracle over the plan-projected graph: (1) relation to emit,
  *       every projected edge endpoint names an emitted unit; (2) emit to relation, the graph is
- *       a superset of the references the emit artifact actually contains (the
- *       {@link TypeSpecReferenceWalk}, falsifies incompleteness); (3) bounded gap, the graph's
- *       surplus over the walk sits inside {@link PlanCompileGraph}'s declared superset
- *       (falsifies silent over-collection);</li>
+ *       a superset of the references javac resolves when it compiles the files the run wrote
+ *       ({@link JavacReferenceIndex}, falsifies incompleteness); (3) bounded gap, the graph's
+ *       surplus over those references sits inside {@link PlanCompileGraph}'s declared superset
+ *       (falsifies silent over-collection). Legs 2 and 3 are {@link CompileGraphOracle}'s
+ *       functions, which the negative tests feed a graph with one edge dropped or added;</li>
  *   <li>clause (a): after a schema edit driven through the incremental engine, the
  *       {@code target/graphitron-classes} tree is byte-for-byte identical to a clean full compile of
  *       the edited sources;</li>
@@ -166,59 +167,98 @@ class IncrementalCompileHarnessTest {
         """;
 
     @Test
-    void threeLegOracle_projectedGraphMatchesTheEmitArtifact(@TempDir Path workDir) throws Exception {
-        Generated generated = generate(workDir, SCHEMA);
+    void threeLegOracle_projectedGraphMatchesTheEmitArtifact() throws Exception {
+        Generated generated = oracleRun();
         var projection = PlanCompileGraph.project(generated.plan, generated.fixedRuntime, generated.model);
         var graph = projection.graph();
-        Map<String, Set<String>> walk = TypeSpecReferenceWalk.edges(generated.emittedUnits);
-        Set<String> frozenSources = frozenScaffoldFqcns(generated);
+        var references = javacReferences(generated);
 
         // Leg 1, relation -> emit: the projected node set is exactly the emitted unit set (every
         // endpoint names an emitted unit, and every emitted unit is a node the recompile walk
         // can reach). Committed-refs-as-nodes is what retired the builder's phantom nodes.
-        Map<String, no.sikt.graphitron.command.UnitRef> nodesByFqcn = new LinkedHashMap<>();
-        graph.nodes().forEach(node -> nodesByFqcn.put(node.fqcn(), node));
-        assertThat(nodesByFqcn.keySet())
+        assertThat(fqcns(graph.nodes()))
             .as("projected nodes == emitted units")
             .containsExactlyInAnyOrderElementsOf(generated.emittedUnits.keySet());
 
-        // Leg 2, emit -> relation: every reference the walk finds between two generated units must
-        // be present in the projected graph, or the graph is incomplete (a dependency it would
-        // silently skip on an incremental recompile). Frozen-scaffold units are exempt AS SOURCES:
-        // their content is schema-independent, so they never enter a schema-driven delta and their
-        // outgoing edges never drive a recompile; modeling their template-internal references would
-        // mean reverse-engineering the fixed runtime templates, which the frozen-scaffold design
-        // deliberately avoids. They stay checked as targets.
-        var gaps = new LinkedHashMap<String, Set<String>>();
-        walk.forEach((unit, referenced) -> {
-            if (frozenSources.contains(unit)) {
-                return;
-            }
-            var missing = new java.util.LinkedHashSet<>(referenced);
-            missing.removeAll(fqcns(graph.directReferences(nodesByFqcn.get(unit))));
-            if (!missing.isEmpty()) {
-                gaps.put(unit, missing);
-            }
-        });
-        assertThat(gaps).as("projected graph gaps vs reference walk").isEmpty();
+        // Leg 2, emit -> relation: every reference javac resolves between two generated units is a
+        // projected edge, or the graph is incomplete. Frozen-scaffold units are exempt as sources;
+        // modeling their template-internal references would mean reverse-engineering the fixed
+        // runtime templates, which the frozen-scaffold design deliberately avoids.
+        assertThat(CompileGraphOracle.gaps(graph, references, frozenScaffoldFqcns(generated)))
+            .as("projected graph gaps vs javac's references")
+            .isEmpty();
 
-        // Leg 3, bounded gap: the graph's surplus over the walk must sit inside the DECLARED
+        // Leg 3, bounded gap: the graph's surplus over javac's references sits inside the DECLARED
         // over-approximation (the frozen-scaffold blanket, the wiring hub, the fetcher edge
         // relation's families, the leaf-derived write-side encoder edges), read from the same
         // code the projection uses. Silent over-collection in the precise sources fails here.
-        var declared = projection.declaredSuperset();
-        var undeclared = new LinkedHashMap<String, Set<String>>();
-        for (var node : graph.nodes()) {
-            var surplus = new java.util.LinkedHashSet<>(fqcns(graph.directReferences(node)));
-            surplus.removeAll(walk.getOrDefault(node.fqcn(), Set.of()));
-            surplus.removeAll(fqcns(declared.directReferences(node)));
-            if (!surplus.isEmpty()) {
-                undeclared.put(node.fqcn(), surplus);
-            }
-        }
-        assertThat(undeclared)
-            .as("projected edges neither emitted nor declared as superset")
+        assertThat(CompileGraphOracle.undeclared(graph, projection.declaredSuperset(), references))
+            .as("projected edges neither referenced nor declared as superset")
             .isEmpty();
+    }
+
+    /**
+     * Leg 2 exempts frozen-scaffold units as sources, which is sound only while every unit they
+     * reference keeps the members they call stable across schemas and configurations. Pinning
+     * their references makes a new edge out of a frozen unit a reviewed diff here rather than a
+     * silent pass: check the new target's members before extending the list.
+     */
+    @Test
+    void frozenScaffoldSources_referenceOnlyThePinnedUnits() throws Exception {
+        Generated generated = oracleRun();
+        var references = javacReferences(generated);
+        var frozenReferences = new java.util.TreeMap<String, Set<String>>();
+        frozenScaffoldFqcns(generated).forEach(unit -> {
+            if (!references.get(unit).isEmpty()) {
+                frozenReferences.put(unit.substring(OUTPUT_PACKAGE.length() + 1),
+                    new java.util.TreeSet<>(references.get(unit).stream()
+                        .map(ref -> ref.substring(OUTPUT_PACKAGE.length() + 1)).toList()));
+            }
+        });
+        assertThat(frozenReferences).isEqualTo(Map.of(
+            "schema.ErrorRouter", Set.of("schema.FetcherErrorLog", "schema.FetcherErrorResponse",
+                "schema.GraphitronClientException", "schema.TenantConnections"),
+            "util.ConnectionHelper", Set.of("schema.GraphitronClientException", "schema.GraphitronContext",
+                "util.ConnectionResult"),
+            "util.ConnectionResult", Set.of("util.ConnectionHelper"),
+            "util.SelectionOccurrences", Set.of("schema.GraphitronClientException")));
+    }
+
+    @Test
+    void emitLeg_reportsAnEdgeDroppedFromTheGraph() throws Exception {
+        Generated generated = oracleRun();
+        var graph = PlanCompileGraph.fromPlan(generated.plan, generated.fixedRuntime, generated.model);
+        var references = javacReferences(generated);
+        Set<String> frozen = frozenScaffoldFqcns(generated);
+        var units = new GeneratedUnits(OUTPUT_PACKAGE);
+
+        // Language.$project composes Film.$project by its same-package simple name.
+        var language = units.typeClass("Language");
+        var film = units.typeClass("Film");
+        assertThat(CompileGraphOracle.gaps(EditedGraph.dropping(graph, language, film), references, frozen))
+            .containsExactlyEntriesOf(Map.of(language.fqcn(), Set.of(film.fqcn())));
+
+        // The context interface names its carrier through a package-less ClassName, which the
+        // TypeSpec walk could not attribute; javac resolves it.
+        var context = units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronContext");
+        var tenantConnections = units.tenantConnections();
+        assertThat(CompileGraphOracle.gaps(EditedGraph.dropping(graph, context, tenantConnections), references, frozen))
+            .containsExactlyEntriesOf(Map.of(context.fqcn(), Set.of(tenantConnections.fqcn())));
+    }
+
+    @Test
+    void boundedGapLeg_reportsAnUndeclaredEdgeAddedToTheGraph() throws Exception {
+        Generated generated = oracleRun();
+        var projection = PlanCompileGraph.project(generated.plan, generated.fixedRuntime, generated.model);
+        var references = javacReferences(generated);
+        var units = new GeneratedUnits(OUTPUT_PACKAGE);
+
+        var language = units.typeClass("Language");
+        var textRating = units.schemaShape("TextRating");
+        assertThat(references.get(language.fqcn())).doesNotContain(textRating.fqcn());
+        var added = EditedGraph.adding(projection.graph(), language, textRating);
+        assertThat(CompileGraphOracle.undeclared(added, projection.declaredSuperset(), references))
+            .containsExactlyEntriesOf(Map.of(language.fqcn(), Set.of(textRating.fqcn())));
     }
 
     private static Set<String> fqcns(Set<no.sikt.graphitron.command.UnitRef> units) {
@@ -314,7 +354,72 @@ class IncrementalCompileHarnessTest {
 
     private record Generated(GraphitronSchema model, no.sikt.graphitron.plan.EmitPlan plan,
                              List<no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter.Unit> fixedRuntime,
-                             Map<String, TypeSpec> emittedUnits, Set<String> changedUnits) {}
+                             Map<String, TypeSpec> emittedUnits, Set<String> changedUnits, Path sourceRoot) {}
+
+    @TempDir
+    static Path oracleWorkDir;
+    private static Generated oracleRun;
+
+    /** One generation of {@link #SCHEMA}, shared by the oracle tests, which only read it. */
+    private static synchronized Generated oracleRun() throws Exception {
+        if (oracleRun == null) {
+            oracleRun = generate(oracleWorkDir, SCHEMA);
+        }
+        return oracleRun;
+    }
+
+    /**
+     * javac's account of what each emitted unit references, compiled from the files the run wrote
+     * and against the classpath clause (a)'s engines compile with.
+     */
+    private static Map<String, Set<String>> javacReferences(Generated generated) {
+        return JavacReferenceIndex.ofGeneratedSources(generated.sourceRoot, generated.emittedUnits.keySet(),
+            runtimeClasspath());
+    }
+
+    /** A projected graph with one edge dropped or added, to show the legs report it. */
+    private record EditedGraph(CompileDependencyGraph base, no.sikt.graphitron.command.UnitRef from,
+                               no.sikt.graphitron.command.UnitRef to, boolean add)
+            implements CompileDependencyGraph {
+
+        static CompileDependencyGraph dropping(CompileDependencyGraph base, no.sikt.graphitron.command.UnitRef from,
+                                               no.sikt.graphitron.command.UnitRef to) {
+            assertThat(base.directReferences(from)).as("edge to drop").contains(to);
+            return new EditedGraph(base, from, to, false);
+        }
+
+        static CompileDependencyGraph adding(CompileDependencyGraph base, no.sikt.graphitron.command.UnitRef from,
+                                             no.sikt.graphitron.command.UnitRef to) {
+            assertThat(base.directReferences(from)).as("edge to add").doesNotContain(to);
+            return new EditedGraph(base, from, to, true);
+        }
+
+        @Override
+        public Set<no.sikt.graphitron.command.UnitRef> nodes() {
+            return base.nodes();
+        }
+
+        @Override
+        public Set<no.sikt.graphitron.command.UnitRef> directReferences(no.sikt.graphitron.command.UnitRef node) {
+            return node.equals(from) ? edited(base.directReferences(node), to) : base.directReferences(node);
+        }
+
+        @Override
+        public Set<no.sikt.graphitron.command.UnitRef> directDependents(no.sikt.graphitron.command.UnitRef node) {
+            return node.equals(to) ? edited(base.directDependents(node), from) : base.directDependents(node);
+        }
+
+        private Set<no.sikt.graphitron.command.UnitRef> edited(Set<no.sikt.graphitron.command.UnitRef> edges,
+                                                             no.sikt.graphitron.command.UnitRef other) {
+            var out = new java.util.LinkedHashSet<>(edges);
+            if (add) {
+                out.add(other);
+            } else {
+                out.remove(other);
+            }
+            return out;
+        }
+    }
 
     private static Generated generate(Path workDir, String schemaText) throws Exception {
         Files.createDirectories(workDir);
@@ -340,7 +445,7 @@ class IncrementalCompileHarnessTest {
         TypeDefinitionRegistry registry = new SchemaParser().parse(directivesPrelude() + schemaText);
         var model = GraphitronSchemaBuilder.buildBundle(registry, ctx).model();
         return new Generated(model, result.plan(), result.fixedRuntime(), result.emittedUnits(),
-            result.changedUnits());
+            result.changedUnits(), ctx.outputDirectory());
     }
 
     /** Renders the selected emitted units to in-memory source compilation units. */
