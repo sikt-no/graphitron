@@ -1,5 +1,7 @@
 package no.sikt.graphitron.model.schema;
 
+import graphql.GraphQLError;
+import graphql.GraphQLException;
 import graphql.schema.GraphQLSchema;
 import graphql.schema.idl.EchoingWiringFactory;
 import graphql.schema.idl.ScalarInfo;
@@ -73,6 +75,17 @@ public sealed interface SchemaAssembly {
         } catch (SchemaProblem e) {
             return new Rejected(registry,
                 SchemaError.allOf(SchemaError.Stage.ASSEMBLY, e.getErrors()), e);
+        } catch (GraphQLException e) {
+            // Some refusals are thrown bare rather than collected into a SchemaProblem, an object
+            // type used where an input type belongs (NotAnInputTypeError) and its output twin among
+            // them. Each is a GraphQLError, so it is the same kind of verdict and is recorded the
+            // same way; an exception that is not one is graphql-java failing, and propagates.
+            if (!(e instanceof GraphQLError error)) {
+                throw e;
+            }
+            var problem = new SchemaProblem(List.of(error));
+            return new Rejected(registry,
+                SchemaError.allOf(SchemaError.Stage.ASSEMBLY, problem.getErrors()), problem);
         }
     }
 

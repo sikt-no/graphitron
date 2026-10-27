@@ -1,0 +1,16 @@
+# An object type where an input type belongs, which the specification forbids. graphql-java throws
+# that refusal on its own rather than collecting it with the others, and capture records it as a
+# problem like any other instead of failing the document.
+
+type Wrapper {
+  label: String
+}
+
+extend type Query {
+  wrapped(by: Wrapper): String
+}
+
+extend schema @expectEquals(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  ASSEMBLY, NotAnInputTypeError
+  """)

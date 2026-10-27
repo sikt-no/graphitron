@@ -759,10 +759,6 @@ here with a document that shows it.
   `InputOccurrencePaths.copyParentSteps` enumerates every path through an input type chain, so
   twenty levels of two fields each is a million paths and a capture that ran past fourteen minutes.
   A document holding that chain stands guard.
-* **An object type used as an input type is an assembly problem** `open`. `SchemaAssembly.of`
-  records what graphql-java refuses as a `SchemaProblem`, but `NotAnInputTypeError` and
-  `NotAnOutputTypeError` are thrown bare, so the capture dies instead of writing a
-  `graphql_schema_problem` row.
 * **The claim views keep only the presence branches capture reaches** `open`. The decodes of
   `@service`, `@externalField`, `@nodeId`, `@table` and `@error` always write an entry, so the
   branches of `intent_authored_field_claim` and `intent_authored_type_claim` reading a raw
