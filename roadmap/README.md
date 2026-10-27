@@ -23,13 +23,13 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1106` | A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows | In Progress | 2026-10-27 | [plan](single-table-connection-primary-key-tiebreaker.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1088` | A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade | Spec | 2026-10-22 | [plan](decode-graphitron-9-cursors.md) |
-| `R1105` | A multitable ORDER BY slot built from a generator column renders the generator with no table and throws | Spec | 2026-10-27 | [plan](multitable-order-slot-carries-column-generator.md) |
 | `R899` | A registration's alternative is counted from the schema, so the last lever stops being the first one reached for | Spec | 2026-09-08 <sub>created 2026-08-31</sub> | [plan](read-budget-with-nothing-materialized.md) |
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
+| `R1105` | A multitable ORDER BY slot built from a generator column renders the generator with no table and throws | Ready | 2026-10-27 | [plan](multitable-order-slot-carries-column-generator.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
@@ -655,7 +655,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R1037` [**A @reference key element can ride its key inverted**](reference-key-rides-inverted.md) — Backlog, feature
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
 - `R1074` [**A multi-table child connection pages and dispatches on the first column of a composite participant key**](multi-table-child-connection-truncates-composite-key.md) — Backlog, bug
-- `R1105` [**A multitable ORDER BY slot built from a generator column renders the generator with no table and throws**](multitable-order-slot-carries-column-generator.md) — Spec, bug
+- `R1105` [**A multitable ORDER BY slot built from a generator column renders the generator with no table and throws**](multitable-order-slot-carries-column-generator.md) — Ready, bug
 - `R1092` [**An input field's @condition without override drops the field's implicit column predicate**](input-field-condition-drops-implicit-predicate.md) — Backlog, bug
 - `R677` [**Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see**](list-ordering-invariant-enforcement.md) — Spec, validation
 - `R935` [**Lower a client-supplied ordering onto an inline child list, or refuse the shape**](inline-child-list-orderby-argument-not-lowered.md) — Backlog, architecture
