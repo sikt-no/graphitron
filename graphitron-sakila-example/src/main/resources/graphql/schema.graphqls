@@ -597,6 +597,12 @@ type Query {
     filmsByRentalRate(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(fields: [{name: "rental_rate"}])
+    # The single-valued @orderBy form: each @order value arrives completed, so RENTAL_RATE pages on
+    # rental_rate, film_id, and a runtime direction: DESC flips the appended film_id with the rate.
+    filmsOrderedByOneKeyConnection(
+        order: FilmOrderBy @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
     # argres Phase 4: @condition on INPUT_FIELD_DEFINITION, resolved on the consumer's table.
     # FilmConditionInput.filmId carries @condition; the condition method is wired
     # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access

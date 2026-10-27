@@ -22,8 +22,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * films tie at {@code rental_rate} 2.99, so a two-row page ends inside the tie, and a seek on
  * {@code rental_rate} alone would skip the rest of it. Graphitron appends {@code film_id} to such
  * an order, its cursor and its seek, so every walk below returns each seeded film exactly once:
- * forward and backward, through {@code @defaultOrder}, through a list-valued {@code @orderBy}
- * in both runtime directions (the appended key flips with the rate), and through the
+ * forward and backward, through {@code @defaultOrder}, through a single-valued and a list-valued
+ * {@code @orderBy} in both runtime directions (the appended key flips with the rate), and through the
  * {@code @splitQuery} child connection the issue was reported against.
  *
  * <p>Other classes insert films into the database this one shares, while this one runs, so a walk
@@ -95,6 +95,26 @@ class ConnectionTiebreakerExecutionTest {
             + page + ") " + SELECTION + " }";
         Function<Map<String, Object>, Map<String, Object>> connection =
             data -> (Map<String, Object>) data.get("filmsOrderedConnection");
+        assertWalk(forward(query, connection), RATE_DESC);
+        assertWalk(backward(query, connection), RATE_DESC);
+    }
+
+    @Test
+    void singleOrderByArgument_ascending_forwardAndBackward_returnEveryTiedRowOnce() {
+        Function<String, String> query = page -> "{ filmsOrderedByOneKeyConnection(order: {field: RENTAL_RATE, direction: ASC}, "
+            + page + ") " + SELECTION + " }";
+        Function<Map<String, Object>, Map<String, Object>> connection =
+            data -> (Map<String, Object>) data.get("filmsOrderedByOneKeyConnection");
+        assertWalk(forward(query, connection), RATE_ASC);
+        assertWalk(backward(query, connection), RATE_ASC);
+    }
+
+    @Test
+    void singleOrderByArgument_descending_flipsTheAppendedKey() {
+        Function<String, String> query = page -> "{ filmsOrderedByOneKeyConnection(order: {field: RENTAL_RATE, direction: DESC}, "
+            + page + ") " + SELECTION + " }";
+        Function<Map<String, Object>, Map<String, Object>> connection =
+            data -> (Map<String, Object>) data.get("filmsOrderedByOneKeyConnection");
         assertWalk(forward(query, connection), RATE_DESC);
         assertWalk(backward(query, connection), RATE_DESC);
     }
