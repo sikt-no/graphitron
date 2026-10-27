@@ -60,7 +60,7 @@
           properties. See the BOM imports in dependencyManagement. graphitron-sakila-example
           re-imports the 2.x BOM ahead of quarkus-bom so the platform cannot pull 2.x back down.
         -->
-        <version.com.fasterxml.jackson>2.22.3</version.com.fasterxml.jackson>
+        <version.com.fasterxml.jackson>2.22.4</version.com.fasterxml.jackson>
         <version.tools.jackson>3.2.3</version.tools.jackson>
         <!--
           R372 RAG foundation (graphitron-mcp only). langchain4j ships the bge ONNX embedder as a
