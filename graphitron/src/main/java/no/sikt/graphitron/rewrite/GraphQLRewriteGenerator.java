@@ -60,7 +60,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -242,7 +241,7 @@ public class GraphQLRewriteGenerator {
          * clobber silently (second write wins) and surface as a missing-symbol error at the
          * consumer's javac, the failure class this guard exists to remove.
          */
-        void record(String fqcn, TypeSpec spec, JavaFile.WriteResult result) {
+        void record(String fqcn, TypeSpec spec, IdempotentWriter.Written result) {
             emitted.add(result.path());
             if (emittedUnits.putIfAbsent(fqcn, spec) != null) {
                 throw new IllegalStateException(
@@ -652,9 +651,8 @@ public class GraphQLRewriteGenerator {
                         + " about this family's unit set");
             }
             try {
-                var result = JavaFile.builder(ref.packageName(), spec).indent("    ").build()
-                    .writeToPathReporting(ctx.outputDirectory(), StandardCharsets.UTF_8);
-                emittedThisRun.record(ref.fqcn(), spec, result);
+                String source = JavaFile.builder(ref.packageName(), spec).indent("    ").build().toString();
+                emittedThisRun.record(ref.fqcn(), spec, IdempotentWriter.write(ctx.outputDirectory(), ref, source));
             } catch (IOException e) {
                 throw new RuntimeException(e);
             }

@@ -22,7 +22,7 @@ The split is by who is waiting, not by what budget they wait under: a reader ser
 
 One JVM, two loopback ports (LSP and MCP), one process tree. There's no daemon, no client/server split, no shared cache directory. The Mojo binds, watches, regenerates, and serves; on Ctrl+C the JVM shutdown hook closes the LSP socket, the MCP server, the `WatchService` instances, and the debounce executor cleanly.
 
-The idempotent-write coupling is what makes the loop usable as an editor backend. Because `JavaFile.writeToPath` writes only files whose rendered content actually changed (SHA-256 comparison) and deletes orphans in rewrite-owned sub-packages, a schema edit that touches one type rewrites that type's files and leaves every other generated file byte-identical on disk. The IDE's incremental compiler, Quarkus `quarkus:dev`, and Spring Boot DevTools all detect changes by mtime; unchanged files keep their mtimes, so only the actually-changed files trigger an IDE recompile. Two effects fall out: editor latency is proportional to the edit (not to the schema size), and `git diff` after a `dev` session shows only what a human-readable summary of the schema edit would predict.
+The idempotent-write coupling is what makes the loop usable as an editor backend. Because `IdempotentWriter.write` writes only files whose rendered content actually changed (byte comparison) and deletes orphans in rewrite-owned sub-packages, a schema edit that touches one type rewrites that type's files and leaves every other generated file byte-identical on disk. The IDE's incremental compiler, Quarkus `quarkus:dev`, and Spring Boot DevTools all detect changes by mtime; unchanged files keep their mtimes, so only the actually-changed files trigger an IDE recompile. Two effects fall out: editor latency is proportional to the edit (not to the schema size), and `git diff` after a `dev` session shows only what a human-readable summary of the schema edit would predict.
 
 [#diagram-d7]
 [source,mermaid]
@@ -36,7 +36,7 @@ flowchart TD
         CW["classpath watcher<br/>(target/classes/&lt;jooq&gt;)"] -- .class change<br/>events --> Disp
         Disp -- run --> Gen["generator<br/>(classify + emit)"]
         Gen -- in-memory<br/>GraphitronSchema --> LSP
-        Gen -- emit results --> Writer["JavaFile.writeToPath<br/>(idempotent + orphan sweep)"]
+        Gen -- emit results --> Writer["IdempotentWriter<br/>(idempotent + orphan sweep)"]
         Writer -- only-changed<br/>files written --> Sources["target/generated-sources/graphitron"]
     end
     Sources -- mtime change --> IDE["IDE recompile<br/>(IntelliJ / Quarkus / DevTools)"]

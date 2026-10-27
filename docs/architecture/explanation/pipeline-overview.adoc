@@ -15,7 +15,7 @@ flowchart LR
     E --> F
     F --> G["EmitPlan<br/>(join facts into<br/>command relations)"]
     G --> H["Render shell<br/>(fold over committed<br/>commands)"]
-    H --> I["JavaFile.writeToPath<br/>(idempotent writes,<br/>orphan sweep)"]
+    H --> I["IdempotentWriter<br/>(idempotent writes,<br/>orphan sweep)"]
     I --> J["consumer compile<br/>(graphitron-sakila-example)"]
 ----
 
@@ -55,7 +55,7 @@ The routine-write emitter has a different shape, and it is the direction of trav
 
 == Write: the idempotency contract (unchanged)
 
-On every run, `JavaFile.writeToPath` writes only files whose rendered content differs from disk (SHA-256 comparison) and the generator deletes orphans in rewrite-owned sub-packages. Both halves run on every emit, not just full builds; this is what keeps the dev-loop's IDE-recompile times proportional and what stops a delete-a-type cycle from leaving stale files behind. Pinned by `IdempotentWriterTest` and `GeneratorDeterminismTest`.
+On every run, `IdempotentWriter.write` writes only files whose rendered content differs from disk (byte comparison) and the generator deletes orphans in rewrite-owned sub-packages. Both halves run on every emit, not just full builds; this is what keeps the dev-loop's IDE-recompile times proportional and what stops a delete-a-type cycle from leaving stale files behind. Pinned by `IdempotentWriterTest` and `GeneratorDeterminismTest`.
 
 == Consumer compile
 

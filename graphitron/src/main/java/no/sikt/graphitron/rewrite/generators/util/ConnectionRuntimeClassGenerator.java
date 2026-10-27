@@ -879,10 +879,10 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(dataSourceMapParamType, "dataSourcesByTenant")
             .addParameter(SQL_DIALECT, "dialect")
             .addStatement(multiTenant
-                    ? "this(defaultDataSource, dataSourcesByTenant, dialect, DEFAULT_FAN_OUT_CONCURRENCY,"
-                        + " DEFAULT_FAN_OUT_TIMEOUT)"
-                    : "this(new $T(defaultDataSource, dialect, null), wrapSources(dataSourcesByTenant, dialect))",
-                source)
+                    ? CodeBlock.of("this(defaultDataSource, dataSourcesByTenant, dialect, DEFAULT_FAN_OUT_CONCURRENCY,"
+                        + " DEFAULT_FAN_OUT_TIMEOUT)")
+                    : CodeBlock.of("this(new $T(defaultDataSource, dialect, null),"
+                        + " wrapSources(dataSourcesByTenant, dialect))", source))
             .addJavadoc("Builds the tenant-routing runtime from bare {@code DataSource}s sharing one dialect\n"
                 + "and default jOOQ {@code Settings}. Delegating convenience over the {@link Source} form"
                 + (multiTenant ? ",\nwith the default fan-out configuration" : "") + ".\n"
