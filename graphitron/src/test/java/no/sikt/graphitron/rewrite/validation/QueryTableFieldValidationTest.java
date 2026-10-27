@@ -68,11 +68,11 @@ class QueryTableFieldValidationTest {
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(),
-                new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "directionField",
-                    List.of(
+                new OrderBySpec.Argument("order", "FilmOrder", false,
+                    new OrderBySpec.Composition.Single(List.of(
                         new OrderBySpec.NamedOrder("TITLE", INDEX_ORDER),
-                        new OrderBySpec.NamedOrder("ID", PK_ORDER)),
-                    PK_ORDER),
+                        new OrderBySpec.NamedOrder("ID", PK_ORDER))),
+                    "sortField", "directionField", PK_ORDER),
                 null, LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
             List.of()),
 
@@ -80,11 +80,11 @@ class QueryTableFieldValidationTest {
             new QueryTableField("Query", "films", null,
                 filmReturn(new FieldWrapper.List(true, true)),
                 List.of(),
-                new OrderBySpec.Argument("order", "FilmOrder", false, false, "sortField", "directionField",
-                    List.of(
+                new OrderBySpec.Argument("order", "FilmOrder", false,
+                    new OrderBySpec.Composition.Single(List.of(
                         new OrderBySpec.NamedOrder("TITLE", INDEX_ORDER),
-                        new OrderBySpec.NamedOrder("ID", PK_ORDER)),
-                    INDEX_ORDER),
+                        new OrderBySpec.NamedOrder("ID", PK_ORDER))),
+                    "sortField", "directionField", INDEX_ORDER),
                 null, LookupResolution.None.INSTANCE, RoutineResolution.None.INSTANCE),
             List.of()),
 

@@ -12,7 +12,7 @@ The three column sources are mutually exclusive on any one directive site; the b
 * *`fields:`* when the order is "by these named columns, in this order". Optional `collate:` per column. The columns resolve against the *return-type's* `@table`, not the parent's.
 * *`index:`* when an existing database index already projects the right column list (often a multi-column index that pairs the sort key with frequently-filtered columns). Requires `<includeIndexes>true</includeIndexes>` on the jOOQ generator; otherwise the catalog lookup throws "no matching index" at startup.
 
-A field-based order with a tie-breaker on the PK is the safe default for "humans want this column":
+A field-based order is the usual choice for "humans want this column":
 
 [source,graphql]
 ----
@@ -26,7 +26,7 @@ type Query {
 }
 ----
 
-`CUSTOMER_ID` at the end pins the cursor onto a unique key so two rows with identical `(last_name, first_name)` pages deterministically. Without it, the cursor will jitter between two rows that compare equal on every preceding column. The rewrite does *not* auto-append a PK tie-breaker; it is a schema-author responsibility.
+`CUSTOMER_ID` at the end pins the cursor onto a unique key so two rows with identical `(last_name, first_name)` page deterministically. On a connection you could leave it out: graphitron appends the primary key to any order that does not already identify a row (see <<stable-cursors-and-tie-breakers>>). Listing it yourself changes nothing, and is still the way to put it somewhere other than last.
 
 == Static order: `@defaultOrder`
 
@@ -85,7 +85,9 @@ When `@orderBy` and `@defaultOrder` coexist on the same field, the dynamic argum
 xref:../reference/directives/asConnection.adoc[`@asConnection`] emits keyset pagination using the active order. The cursor is a base64-encoded NUL-separated tuple of the sort columns' values for the last row of the page; jOOQ's `.seek(Field<?>...)` consumes the decoded values. Two consequences:
 
 . *The order columns are part of the cursor's wire bytes.* Adding a column to `@defaultOrder` or to an `@order` enum value invalidates cursors clients have already issued. New cursors decode against the new column list; old cursors decode the wrong number of values and the request fails. Treat the column list and order as part of the public cursor contract.
-. *Determinism gates "the next page is always the next page".* If two rows compare equal on every order column, the seek can step over either. A field-based order without a tie-breaker on a unique key is unstable: identical-name rows shuffle between pages on retries, and a row can appear twice or be skipped. The rewrite does not synthesise a tie-breaker; append the PK explicitly to every non-PK order, on both `@defaultOrder` and per-`@order` enum values.
+. *Determinism gates "the next page is always the next page".* If two rows compare equal on every order column, a seek from the first steps over the second. Graphitron therefore makes every connection's order identify a row. When the columns you list do not include the table's primary key (or another key that identifies a row: the type's `@node` key, or a unique key whose columns are all `NOT NULL`), graphitron appends the primary key after them, in the direction of your last column. The appended columns are part of the cursor. `@defaultOrder(fields: [{name: "rental_rate", direction: DESC}, {name: "title"}])` pages on `rental_rate DESC, title ASC, film_id ASC`. Listing the key yourself changes nothing, and is still the way to put it somewhere other than last.
++
+For a list-valued `@orderBy` argument the key goes after the whole sequence the client sends, not after each value, and it takes the direction of the last value; with a single-valued argument it is part of each `@order` value and flips with a runtime `direction:` where that value does. Plain lists are not completed: without a cursor, a tie only changes the order between runs and never drops a row. A table with no key at all (a view without a synthetic primary key, a table-valued function result) has nothing to append. The build warns under the lint rule `connection-order-not-unique`, and the listed columns have to be unique on their own.
 
 Backward pagination (`last:`/`before:`) reuses the same cursor encoding; the rewrite reverses each `SortField`'s direction via jOOQ's `$field()`/`$sortOrder()` model API, runs the seek, and returns rows in the original order. This means a cursor issued from a `first:` page round-trips correctly through a `before:` request and vice versa, without any per-direction encoding split.
 
@@ -134,7 +136,7 @@ At each primary-key position the participants' columns must bind to the same Jav
 
 Every participant has to carry each order column, at the same position in the order, with the same SQL type and the same bound Java type. A participant missing the column fails the build at that participant, and so does a type disagreement: `integer` against `bigint`, `varchar` against `text`, or a column exposed through a jOOQ converter against one read without it, even when both bind to the same Java class. A converter-backed column therefore orders a union only against columns bound the same way. An `index:` order has to resolve to the same number of columns on every participant.
 
-Unlike every other field, a multi-table ordering *does* get a tie-breaker appended: the primary-key columns and then the participant typename follow the declared columns, and they flip with a runtime `direction:` where the order itself does. That deviates from the rule in <<stable-cursors-and-tie-breakers>>, and it has to. Two participants can hold equal values on every declared column (and equal primary-key values besides), and without a tie-breaker the cursor would have no defined next row across the participant boundary. On a field whose own declaration already ends in a unique key, the appended columns are inert.
+A multi-table ordering gets its tie-breaker appended differently from a single-table connection: the primary-key columns and then the participant typename follow the declared columns, on lists and connections alike, and they flip with a runtime `direction:` where the order itself does. The typename is the part specific to multitable. Two participants can hold equal values on every declared column (and equal primary-key values besides), and without it the cursor would have no defined next row across the participant boundary. On a field whose own declaration already ends in a unique key, the appended columns are inert.
 
 A child field returning a multi-table interface or union, and a single-valued root field, lower no ordering: declaring `@defaultOrder` or `@orderBy` on one fails the build rather than being ignored. Sort a single-`@table` field there instead, or narrow the field's return type to one participant.
 
@@ -147,7 +149,7 @@ For single-table polymorphism, ordering is unchanged from the non-polymorphic ca
 * Every value of an `@orderBy`-bound enum must declare a sort spec. Missing values fail the build with a per-value diagnostic.
 * `@defaultOrder.direction:` is global across the spec; per-column direction is only available through `@orderBy` (each list element carries its own `SortDirection`).
 * Cursor wire format embeds the active order's columns. Adding, removing, or reordering columns in `@defaultOrder` or in an `@order` enum value invalidates outstanding cursors.
-* The rewrite does not auto-append a PK tie-breaker on non-PK orders. Append the PK explicitly; otherwise keyset pagination is non-deterministic on equal-key rows. The one exception is a root field over a multi-table interface or union; see <<sort-across-polymorphism>>.
+* Connection orders that do not identify a row get the table's key appended, which is part of the cursor. Changing a table's primary key invalidates outstanding cursors on its connections.
 * `index:` requires jOOQ index generation. With it disabled, the lookup yields no columns and the directive fails to resolve.
 * `fields[].name` resolves against the field's return-type `@table`, not the parent's. Case-sensitive against the jOOQ-generated identifiers.
 * `collate:` is unvalidated at build time; misspellings surface as runtime database errors.

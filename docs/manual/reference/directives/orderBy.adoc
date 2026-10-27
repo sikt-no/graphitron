@@ -40,7 +40,7 @@ enum FilmSort {
 enum SortDirection { ASC, DESC }
 ----
 
-A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films sorted by `film.title` ascending. The `[FilmOrderBy]` list shape lets the client compose multi-key orderings; `FILM_ID` after `TITLE` ties the keyset cursor onto the primary key for stable pagination.
+A client requesting `order: [{ field: TITLE, direction: ASC }]` gets the films sorted by `film.title` ascending. The `[FilmOrderBy]` list shape lets the client compose multi-key orderings. On a connection, graphitron appends the primary key after the composed sequence when it does not already contain a key, so `[{ field: TITLE }]` pages on `title, film_id`; sending `FILM_ID` after `TITLE` yourself gives the same order.
 
 == Constraints
 

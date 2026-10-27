@@ -1191,6 +1191,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(field).isInstanceOf(ChildField.BatchedTableField.class);
                 assertThat(((ChildField.BatchedTableField) field).returnType().wrapper())
                     .isInstanceOf(FieldWrapper.Connection.class);
+                // last_name does not identify an actor, so the connection pages on the PK after it.
+                assertThat(orderedColumns(((ChildField.BatchedTableField) field).orderBy()))
+                    .containsExactly("last_name ASC", "actor_id ASC");
             }),
 
         NO_DEFAULT_ORDER_PK_FALLBACK(
@@ -1378,6 +1381,243 @@ class GraphitronSchemaBuilderTest {
     @EnumSource(TableFieldCase.class)
     void tableFieldClassification(TableFieldCase tc) {
         tc.assertions.accept(build(tc.sdl));
+    }
+
+    // ===== Connection orders completed to identify a row =====
+
+    /**
+     * A single-table connection whose order does not identify a row gets the table's row key
+     * appended, in the direction of its last entry, because a keyset seek steps over every row that
+     * ties with the cursor's row on all sort columns. One case per branch of the rule: which key is
+     * appended, which keys count as already identifying, and which shapes are left alone.
+     */
+    enum ConnectionOrderCompletionCase implements ClassificationCase {
+        NON_IDENTIFYING_ORDER_GETS_PRIMARY_KEY(
+            "a connection ordered on a non-unique column gets the primary key appended, ascending",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! @asConnection @defaultOrder(fields: [{name: "rental_rate"}]) }
+            """,
+            schema -> {
+                var order = (OrderBySpec.Fixed) rootOrder(schema, "films");
+                assertThat(orderedColumns(order)).containsExactly("rental_rate ASC", "film_id ASC");
+                assertThat(order.uniformAsc()).isTrue();
+            }),
+
+        DESCENDING_ORDER_GETS_DESCENDING_KEY(
+            "a descending order gets the primary key descending, so the order stays uniform",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film!]! @asConnection @defaultOrder(fields: [{name: "rental_rate"}], direction: DESC)
+            }
+            """,
+            schema -> {
+                var order = (OrderBySpec.Fixed) rootOrder(schema, "films");
+                assertThat(orderedColumns(order)).containsExactly("rental_rate DESC", "film_id DESC");
+                assertThat(order.uniformAsc()).isFalse();
+            }),
+
+        MIXED_ORDER_KEY_FOLLOWS_LAST_ENTRY(
+            "a mixed-direction order gets the key in its last entry's direction",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film!]! @asConnection
+                    @defaultOrder(fields: [{name: "rental_rate", direction: DESC}, {name: "title", direction: ASC}])
+            }
+            """,
+            schema -> {
+                var order = (OrderBySpec.Fixed) rootOrder(schema, "films");
+                assertThat(orderedColumns(order)).containsExactly("rental_rate DESC", "title ASC", "film_id ASC");
+                assertThat(order.uniformAsc()).isFalse();
+            }),
+
+        COMPOSITE_KEY_PARTLY_LISTED_GETS_ONLY_MISSING_COLUMNS(
+            "an order listing part of a composite primary key gets only the missing columns appended",
+            """
+            type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
+            type Query { filmActors: [FilmActor!]! @asConnection @defaultOrder(fields: [{name: "film_id"}]) }
+            """,
+            schema -> assertThat(orderedColumns(rootOrder(schema, "filmActors")))
+                .containsExactly("film_id ASC", "actor_id ASC")),
+
+        KEY_IN_NON_FINAL_POSITION_LEAVES_ORDER_UNCHANGED(
+            "an order that lists the primary key anywhere already identifies a row and is unchanged",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films: [Film!]! @asConnection @defaultOrder(fields: [{name: "film_id"}, {name: "title"}])
+            }
+            """,
+            schema -> assertThat(orderedColumns(rootOrder(schema, "films")))
+                .containsExactly("film_id ASC", "title ASC")),
+
+        NOT_NULL_UNIQUE_KEY_COVERED_LEAVES_ORDER_UNCHANGED(
+            "an order covering an all-NOT NULL unique key on a keyless table is unchanged and not flagged",
+            """
+            type Stint @table(name: "stint") { personId: Int @field(name: "person_id") }
+            type Query {
+                stints: [Stint!]! @asConnection @defaultOrder(fields: [{name: "valid_from"}, {name: "person_id"}])
+            }
+            """,
+            schema -> {
+                assertThat(orderedColumns(rootOrder(schema, "stints")))
+                    .containsExactly("valid_from ASC", "person_id ASC");
+                assertThat(notUniqueFindings(schema)).isEmpty();
+            }),
+
+        KEYLESS_TABLE_GETS_UNIQUE_KEY(
+            "a keyless table with a non-identifying order gets its all-NOT NULL unique key appended",
+            """
+            type StintSingle @table(name: "stint_single") { personId: Int @field(name: "person_id") }
+            type Query {
+                stints: [StintSingle!]! @asConnection @defaultOrder(fields: [{name: "valid_from"}])
+            }
+            """,
+            schema -> assertThat(orderedColumns(rootOrder(schema, "stints")))
+                .containsExactly("valid_from ASC", "person_id ASC")),
+
+        KEYLESS_TABLE_GETS_NODE_KEY(
+            "a keyless table under a type declaring @node(keyColumns:) gets the node key appended",
+            """
+            type RoleAssignment implements Node @table(name: "role_assignment")
+                    @node(keyColumns: ["holder_id", "role_code"]) {
+                id: ID! @nodeId
+                roleName: String @field(name: "role_name")
+            }
+            type Query {
+                roles: [RoleAssignment!]! @asConnection @defaultOrder(fields: [{name: "role_name"}])
+            }
+            """,
+            schema -> {
+                assertThat(orderedColumns(rootOrder(schema, "roles")))
+                    .containsExactly("role_name ASC", "holder_id ASC", "role_code ASC");
+                assertThat(notUniqueFindings(schema)).isEmpty();
+            }),
+
+        KEYLESS_TABLE_WITHOUT_ANY_KEY_IS_FLAGGED(
+            "a keyless table with no unique key and no node key keeps its order and is flagged",
+            """
+            type RoleAssignment @table(name: "role_assignment") { roleName: String @field(name: "role_name") }
+            type Query {
+                roles: [RoleAssignment!]! @asConnection @defaultOrder(fields: [{name: "role_code"}])
+            }
+            """,
+            schema -> {
+                assertThat(orderedColumns(rootOrder(schema, "roles"))).containsExactly("role_code ASC");
+                assertThat(notUniqueFindings(schema))
+                    .singleElement()
+                    .satisfies(m -> assertThat(m)
+                        .contains("Query.roles")
+                        .contains("role_assignment")
+                        .contains("@node(keyColumns")
+                        .contains("connection-order-not-unique"));
+            }),
+
+        PLAIN_LIST_IS_NOT_COMPLETED(
+            "a plain list with the same @defaultOrder has no cursor and is not completed",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! @defaultOrder(fields: [{name: "rental_rate"}]) }
+            """,
+            schema -> assertThat(orderedColumns(rootOrder(schema, "films"))).containsExactly("rental_rate ASC")),
+
+        SINGLE_ORDER_BY_COMPLETES_EACH_NAMED_ORDER_AND_BASE(
+            "a single-valued @orderBy on a connection completes each named order and the base",
+            """
+            enum FilmSortField {
+                RATE @order(fields: [{name: "rental_rate"}])
+                ID   @order(primaryKey: true)
+            }
+            input FilmSort { field: FilmSortField! direction: SortDirection }
+            type Film @table(name: "film") { title: String }
+            type Query {
+                films(order: FilmSort @orderBy): [Film!]! @asConnection @defaultOrder(fields: [{name: "title"}])
+            }
+            """,
+            schema -> {
+                var arg = (OrderBySpec.Argument) rootOrder(schema, "films");
+                assertThat(arg.composition()).isInstanceOf(OrderBySpec.Composition.Single.class);
+                assertThat(arg.namedOrders()).extracting(OrderBySpec.NamedOrder::name).containsExactly("RATE", "ID");
+                assertThat(orderedColumns(arg.namedOrders().get(0).order()))
+                    .containsExactly("rental_rate ASC", "film_id ASC");
+                assertThat(arg.namedOrders().get(0).order().uniformAsc()).isTrue();
+                assertThat(orderedColumns(arg.namedOrders().get(1).order())).containsExactly("film_id ASC");
+                assertThat(orderedColumns(arg.base())).containsExactly("title ASC", "film_id ASC");
+            }),
+
+        LIST_ORDER_BY_ON_CONNECTION_APPENDS_AFTER_THE_SEQUENCE(
+            "a list-valued @orderBy on a connection carries its named orders as declared and an "
+            + "AppendRowKey completion for the composed sequence",
+            """
+            enum FilmSortField { RATE @order(fields: [{name: "rental_rate"}]) }
+            input FilmSort { field: FilmSortField! direction: SortDirection }
+            type Film @table(name: "film") { title: String }
+            type Query { films(order: [FilmSort] @orderBy): [Film!]! @asConnection }
+            """,
+            schema -> {
+                var arg = (OrderBySpec.Argument) rootOrder(schema, "films");
+                assertThat(arg.list()).isTrue();
+                var sequence = (OrderBySpec.Composition.Sequence) arg.composition();
+                assertThat(orderedColumns(sequence.namedOrders().get(0).order())).containsExactly("rental_rate ASC");
+                var append = (OrderBySpec.SequenceCompletion.AppendRowKey) sequence.completion();
+                assertThat(append.rowKey()).extracting(ColumnRef::sqlName).containsExactly("film_id");
+                assertThat(append.identifyingKeys())
+                    .extracting(key -> key.stream().map(ColumnRef::sqlName).toList())
+                    .contains(List.of("film_id"));
+            }),
+
+        LIST_ORDER_BY_ON_PLAIN_LIST_IS_NOT_COMPLETED(
+            "the same list-valued @orderBy on a plain list carries no completion",
+            """
+            enum FilmSortField { RATE @order(fields: [{name: "rental_rate"}]) }
+            input FilmSort { field: FilmSortField! direction: SortDirection }
+            type Film @table(name: "film") { title: String }
+            type Query { films(order: [FilmSort] @orderBy): [Film!]! }
+            """,
+            schema -> {
+                var sequence = (OrderBySpec.Composition.Sequence) ((OrderBySpec.Argument) rootOrder(schema, "films"))
+                    .composition();
+                assertThat(sequence.completion()).isInstanceOf(OrderBySpec.SequenceCompletion.None.class);
+            });
+
+        final String sdl;
+        final Consumer<GraphitronSchema> assertions;
+        ConnectionOrderCompletionCase(String description, String sdl, Consumer<GraphitronSchema> assertions) {
+            this.sdl = sdl;
+            this.assertions = assertions;
+        }
+        @Override public Set<Class<?>> variants() { return Set.of(QueryField.QueryTableField.class); }
+        @Override public String toString() { return name().toLowerCase().replace('_', ' '); }
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @EnumSource(ConnectionOrderCompletionCase.class)
+    void connectionOrderCompletion(ConnectionOrderCompletionCase tc) {
+        tc.assertions.accept(build(tc.sdl));
+    }
+
+    private static OrderBySpec rootOrder(GraphitronSchema schema, String fieldName) {
+        var field = schema.field("Query", fieldName);
+        assertThat(field).isInstanceOf(QueryField.QueryTableField.class);
+        return ((QueryField.QueryTableField) field).orderBy();
+    }
+
+    /** {@code "column DIRECTION"} per entry of a {@link OrderBySpec.Fixed}, lowercased column names. */
+    private static List<String> orderedColumns(OrderBySpec spec) {
+        assertThat(spec).isInstanceOf(OrderBySpec.Fixed.class);
+        return ((OrderBySpec.Fixed) spec).columns().stream()
+            .map(e -> e.column().sqlName().toLowerCase(java.util.Locale.ROOT) + " " + e.direction())
+            .toList();
+    }
+
+    private static List<String> notUniqueFindings(GraphitronSchema schema) {
+        return schema.warnings().stream()
+            .filter(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == no.sikt.graphitron.model.lint.LintRule.CONNECTION_ORDER_NOT_UNIQUE)
+            .map(BuildWarning::message)
+            .toList();
     }
 
     // ===== NestingField =====

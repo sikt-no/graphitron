@@ -5187,10 +5187,11 @@ public class TypeFetcherGenerator {
             .addParameter(names.jooqTableClass(), tableLocal);
 
         var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal, outputPackage);
-        if (arg.list()) {
-            builder.addCode(buildListArgOrderByBody(arg, baseExpr, tableLocal, outputPackage));
-        } else {
-            builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal, outputPackage));
+        switch (arg.composition()) {
+            case OrderBySpec.Composition.Single single ->
+                builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal, outputPackage));
+            case OrderBySpec.Composition.Sequence sequence ->
+                builder.addCode(buildListArgOrderByBody(arg, sequence.completion(), baseExpr, tableLocal, outputPackage));
         }
 
         return builder.build();
@@ -5284,8 +5285,13 @@ public class TypeFetcherGenerator {
      * }
      * return parts;
      * }</pre>
+     *
+     * <p>Under {@link OrderBySpec.SequenceCompletion.AppendRowKey} the composed sequence is made to
+     * identify a row after the loop, since only the request knows which values it concatenated:
+     * see {@link #buildRowKeyCompletion}.
      */
-    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias, String outputPackage) {
+    private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, OrderBySpec.SequenceCompletion completion,
+                                                     CodeBlock baseExpr, String srcAlias, String outputPackage) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
@@ -5324,7 +5330,63 @@ public class TypeFetcherGenerator {
         code.add("}\n");
         code.unindent();
         code.add("}\n");
+        if (completion instanceof OrderBySpec.SequenceCompletion.AppendRowKey append) {
+            code.add(buildRowKeyCompletion(append, baseExpr, srcAlias));
+        }
         code.addStatement("return new $T(sortParts, colParts)", orderByResultClass);
+        return code.build();
+    }
+
+    /**
+     * The post-loop block that makes a composed list-valued ordering identify a row. Column names
+     * are compared by {@code Field.getName()}, as {@code ConnectionHelper.pageRequest} merges its
+     * extra fields. When the composed columns contain no identifying key in full, the row-key
+     * columns they lack follow, sorted like the last composed part, so a uniform direction stays
+     * uniform and a runtime {@code direction:} carries over to the key. A request whose values
+     * contributed no column at all falls back to the base ordering, as an empty argument does.
+     *
+     * <pre>{@code
+     * if (sortParts.isEmpty()) return <base>;
+     * Set<String> orderedNames = new HashSet<>();
+     * for (Field<?> orderedColumn : colParts) orderedNames.add(orderedColumn.getName());
+     * if (!(orderedNames.contains("film_id"))) {
+     *     SortOrder lastOrder = sortParts.get(sortParts.size() - 1).getOrder();
+     *     if (!orderedNames.contains("film_id")) { sortParts.add(table.FILM_ID.sort(lastOrder)); colParts.add(table.FILM_ID); }
+     * }
+     * }</pre>
+     */
+    private static CodeBlock buildRowKeyCompletion(OrderBySpec.SequenceCompletion.AppendRowKey append,
+                                                   CodeBlock baseExpr, String srcAlias) {
+        var setType = ClassName.get("java.util", "Set");
+        var hashSetType = ClassName.get("java.util", "HashSet");
+        var sortOrderType = ClassName.get("org.jooq", "SortOrder");
+        var wildcardField = ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
+            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        var code = CodeBlock.builder();
+        code.add("if (sortParts.isEmpty()) return $L;\n", baseExpr);
+        code.addStatement("$T<$T> orderedNames = new $T<>()", setType, String.class, hashSetType);
+        code.add("for ($T orderedColumn : colParts) orderedNames.add(orderedColumn.getName());\n", wildcardField);
+        var identified = CodeBlock.builder();
+        for (int k = 0; k < append.identifyingKeys().size(); k++) {
+            if (k > 0) identified.add(" || ");
+            var key = append.identifyingKeys().get(k);
+            if (key.size() == 1) {
+                identified.add("orderedNames.contains($S)", key.getFirst().sqlName());
+            } else {
+                identified.add("orderedNames.containsAll($T.of($L))", LIST, key.stream()
+                    .map(column -> CodeBlock.of("$S", column.sqlName()))
+                    .collect(CodeBlock.joining(", ")));
+            }
+        }
+        code.beginControlFlow("if (!($L))", identified.build());
+        code.addStatement("$T lastOrder = sortParts.get(sortParts.size() - 1).getOrder()", sortOrderType);
+        for (var column : append.rowKey()) {
+            code.beginControlFlow("if (!orderedNames.contains($S))", column.sqlName());
+            code.addStatement("sortParts.add($L.$L.sort(lastOrder))", srcAlias, column.javaName());
+            code.addStatement("colParts.add($L.$L)", srcAlias, column.javaName());
+            code.endControlFlow();
+        }
+        code.endControlFlow();
         return code.build();
     }
 

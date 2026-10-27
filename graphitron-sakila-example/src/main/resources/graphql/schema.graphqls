@@ -591,6 +591,12 @@ type Query {
         {name: "rental_rate", direction: DESC},
         {name: "title", direction: ASC}
     ])
+    # A connection ordered on a column that does not identify a row: three seeded films tie at
+    # rental_rate 2.99. Graphitron appends film_id after rental_rate, so a page boundary inside the
+    # tie seeks past the boundary row and not past the rest of the tie.
+    filmsByRentalRate(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(fields: [{name: "rental_rate"}])
     # argres Phase 4: @condition on INPUT_FIELD_DEFINITION, resolved on the consumer's table.
     # FilmConditionInput.filmId carries @condition; the condition method is wired
     # and called at runtime. In Phase 4, filmId arrives as null (nested-arg access
@@ -3386,6 +3392,13 @@ type Language @table(name: "language") {
     languageId: Int!    @field(name: "LANGUAGE_ID")
     name:       String! @field(name: "NAME")
     films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+    # The @splitQuery form of Query.filmsByRentalRate: language 1's partition holds the 2.99 tie,
+    # so the appended film_id has to reach the batched ROW_NUMBER() and seek as well.
+    filmsByRentalRate(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "rental_rate"}])
     # Inline @reference path (InlineTableFieldEmitter) with a mixed @nodeId + @condition filter.
     filmsByMixedFilter(filter: FilmMixedNodeIdConditionFilter): [Film!]!
         @reference(path: [{key: "film_language_id_fkey"}])
@@ -3542,6 +3555,10 @@ enum FilmSort {
         {name: "rental_rate", direction: DESC},
         {name: "title",       direction: ASC}
     ])
+    # Does not identify a row (the seed's 2.99 tie). Through the list-valued filmsOrderedConnection
+    # argument the generated helper appends film_id after the composed sequence, in the direction
+    # of its last part, so a runtime direction: DESC flips the key with the rate.
+    RENTAL_RATE @order(fields: [{name: "rental_rate"}])
 }
 
 input FilmOrderBy {

@@ -41,7 +41,8 @@ class LintRuleCatalogueTest {
             "splitquery-redundant-on-service-child",
             "redundant-record-directive",
             "asconnection-same-table-pk-in",
-            "dml-write-length-unrouted");
+            "dml-write-length-unrouted",
+            "connection-order-not-unique");
     }
 
     @Test

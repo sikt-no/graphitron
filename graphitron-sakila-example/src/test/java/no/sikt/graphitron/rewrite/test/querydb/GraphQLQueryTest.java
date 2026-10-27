@@ -2030,9 +2030,10 @@ class GraphQLQueryTest {
 
     @Test
     void filmsByRateDescTitleAsc_underSplitAfterCursor_surfacesClientError() {
-        // Failure mode 2: too few tokens. filmsByRateDescTitleAsc orders on two columns
-        // (RENTAL_RATE, TITLE), but this NUL-free cursor decodes to a single token — arity
-        // mismatch (unguarded, tokens[1] throws ArrayIndexOutOfBoundsException and redacts).
+        // Failure mode 2: too few tokens. filmsByRateDescTitleAsc's cursor carries three columns
+        // (RENTAL_RATE, TITLE, and the FILM_ID graphitron appends because rate and title do not
+        // identify a film), but this NUL-free cursor decodes to a single token: an arity mismatch
+        // (unguarded, tokens[1] throws ArrayIndexOutOfBoundsException and redacts).
         String cursor = java.util.Base64.getEncoder()
             .encodeToString("2.99".getBytes(java.nio.charset.StandardCharsets.UTF_8));
         var result = executeRaw(

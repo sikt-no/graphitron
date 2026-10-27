@@ -83,7 +83,7 @@ actorsOrderedConnection(
 ]) @defaultOrder(primaryKey: true)
 ----
 
-The cursor encodes the active order columns (the `@orderBy` selection if the client supplied one, otherwise `@defaultOrder`); decoding rejects cursors whose embedded sort doesn't match the request's effective order.
+The cursor encodes the active order columns (the `@orderBy` selection if the client supplied one, otherwise `@defaultOrder`), including the primary key graphitron appends when those columns do not identify a row, so that rows tying on the listed columns are neither skipped nor repeated between pages; decoding rejects cursors whose embedded sort doesn't match the request's effective order. See xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].
 
 == Constraints
 

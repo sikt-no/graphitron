@@ -91,7 +91,7 @@ type Query {
 * `direction` is global across the spec. Per-column direction requires xref:orderBy.adoc[`@orderBy`] (the enum input carries its own `SortDirection`).
 * `index` requires jOOQ index generation. `fields[].name` resolves against the field's return-type table, not the parent.
 * On a root field returning a list or connection of a multi-table interface or union, the columns resolve against each participant's own table, and every participant has to carry them at the same SQL type and bound Java type. A child field, or a single-valued root field, over such a type rejects the directive. See xref:../../how-to/sort-results.adoc#sort-across-polymorphism[How-to: Sort across polymorphism].
-* Stable keyset pagination depends on the order being deterministic. `primaryKey: true` is the safe default; field-based orders need a tie-breaker (typically the PK) to avoid unstable cursors.
+* Stable keyset pagination depends on the order identifying a row. On a connection, graphitron appends the table's primary key to a field-based or index-based order that does not already contain a key, in the direction of the last listed column; see xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].
 
 == See also
 

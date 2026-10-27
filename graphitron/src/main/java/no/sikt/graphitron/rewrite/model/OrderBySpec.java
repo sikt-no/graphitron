@@ -60,6 +60,11 @@ public sealed interface OrderBySpec
      * ({@link no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator}) uses it to decide
      * whether the runtime direction argument flips the whole spec (uniform-ASC) or is ignored
      * because the spec is direction-locked (any non-ASC entry).
+     *
+     * <p>On a single-table connection the resolver hands out the order already completed to
+     * identify a row: when the authored columns cover no identifying key, the table's row key
+     * follows them in the direction of the last authored entry, so {@code uniformAsc} is what it
+     * was before completion. Consumers see one list and need not know which entries were appended.
      */
     record Fixed(
         List<ColumnOrderEntry> columns,
@@ -71,23 +76,80 @@ public sealed interface OrderBySpec
      *
      * <p>{@code name} is the GraphQL argument name.
      * {@code typeName} is the GraphQL input type name (must be a valid {@code @orderBy} input).
+     * {@code composition} says whether the argument takes one sort value or a client-composed
+     * sequence of them, and carries each enum value's column-order expression (populated at
+     * build time from the enum type's {@code @order} directives).
      * {@code sortFieldName} is the input-type field that selects the sort column.
      * {@code directionFieldName} is the input-type field that selects ASC or DESC.
-     * {@code namedOrders} maps each enum value to its column-order expression (populated at
-     * build time from the enum type's {@code @order} directives).
      * {@code base} is the fallback ordering used when no argument is provided at runtime;
-     * {@link None} when the table has no primary key and no {@code @defaultOrder}.
+     * {@link None} when the table has no primary key and no {@code @defaultOrder}. On a
+     * single-table connection it is completed like any {@link Fixed}.
      */
     record Argument(
         String name,
         String typeName,
         boolean nonNull,
-        boolean list,
+        Composition composition,
         String sortFieldName,
         String directionFieldName,
-        List<NamedOrder> namedOrders,
         OrderBySpec base
-    ) implements OrderBySpec {}
+    ) implements OrderBySpec {
+
+        /** The named orders, whichever composition carries them. */
+        public List<NamedOrder> namedOrders() {
+            return composition.namedOrders();
+        }
+
+        /** Whether the argument is list-valued, so the client composes a sequence of values. */
+        public boolean list() {
+            return composition instanceof Composition.Sequence;
+        }
+    }
+
+    /**
+     * How an {@link Argument}'s values compose into one ORDER BY. The two arms differ in where a
+     * connection's row-identifying completion happens, which is why the shape is sealed rather
+     * than a flag.
+     */
+    sealed interface Composition {
+        List<NamedOrder> namedOrders();
+
+        /**
+         * A single-valued argument: the request picks exactly one named order. On a single-table
+         * connection each named order arrives already completed, so the helper renders it as is.
+         */
+        record Single(List<NamedOrder> namedOrders) implements Composition {
+            public Single { namedOrders = List.copyOf(namedOrders); }
+        }
+
+        /**
+         * A list-valued argument: the request concatenates named orders. Each one is carried as
+         * declared, because completing them one by one would repeat the key after every value;
+         * {@code completion} says what the helper appends to the composed sequence.
+         */
+        record Sequence(List<NamedOrder> namedOrders, SequenceCompletion completion) implements Composition {
+            public Sequence { namedOrders = List.copyOf(namedOrders); }
+        }
+    }
+
+    /** What the {@link Composition.Sequence} helper appends after composing the request's values. */
+    sealed interface SequenceCompletion {
+
+        /** Nothing: a plain list, a multitable participant, or a table with no row key. */
+        record None() implements SequenceCompletion {}
+
+        /**
+         * When the composed columns contain no {@code identifyingKeys} entry in full, append the
+         * {@code rowKey} columns they lack, in the direction of the last composed sort part.
+         */
+        record AppendRowKey(List<ColumnRef> rowKey, List<List<ColumnRef>> identifyingKeys)
+                implements SequenceCompletion {
+            public AppendRowKey {
+                rowKey = List.copyOf(rowKey);
+                identifyingKeys = identifyingKeys.stream().map(List::copyOf).toList();
+            }
+        }
+    }
 
     /**
      * No ordering is applicable.

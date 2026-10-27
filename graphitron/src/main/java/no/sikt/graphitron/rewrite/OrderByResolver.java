@@ -12,13 +12,19 @@ import graphql.schema.GraphQLList;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.JooqCatalog;
+import no.sikt.graphitron.model.jooq.TableRef;
+import no.sikt.graphitron.rewrite.model.FieldWrapper;
+import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.model.diagnostics.Rejection;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_COLLATE;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_DIRECTION;
@@ -43,15 +49,53 @@ import static no.sikt.graphitron.rewrite.BuildContext.baseTypeName;
  *
  * <p>Every rejection path carries exactly one message in the {@link Resolved.Rejected} arm.
  * The deeper helpers keep a nullable-return shape; their callers synthesise the message.
+ *
+ * <p>On a single-table connection the resolver also makes the order identify a row, because a
+ * keyset seek from a cursor steps over every row that ties with the cursor's row on all sort
+ * columns. It decides the table's {@link RowIdentity} once, completes every static order against
+ * it ({@link #complete}), and leaves a list-valued {@code @orderBy} argument's completion to the
+ * generated helper ({@link OrderBySpec.SequenceCompletion.AppendRowKey}), since only the request
+ * knows the composed sequence. Plain lists are not completed (no cursor, so a tie never drops a
+ * row), and neither are multitable participants, whose fold appends its own key slots.
  */
 final class OrderByResolver {
 
-    /** Outcome of {@link #resolve}: {@link Ok} carries the {@link OrderBySpec}, {@link Rejected} the failure. */
+    /**
+     * Outcome of {@link #resolve}: {@link Ok} carries the {@link OrderBySpec}, {@link Rejected} the
+     * failure. {@code keylessConnection} is {@code true} when the field is a single-table
+     * connection with a non-empty order over a table with no {@link RowIdentity.Keyed row key}, so
+     * nothing could be appended and the order's uniqueness is the author's word; the caller turns
+     * it into the {@code connection-order-not-unique} lint finding.
+     */
     sealed interface Resolved {
-        record Ok(OrderBySpec spec) implements Resolved {}
+        record Ok(OrderBySpec spec, boolean keylessConnection) implements Resolved {
+            Ok(OrderBySpec spec) { this(spec, false); }
+        }
         record Rejected(Rejection rejection) implements Resolved {
             public String message() { return rejection.message(); }
         }
+    }
+
+    /**
+     * Whether a table's rows can be told apart by key, decided once per single-table connection.
+     */
+    sealed interface RowIdentity {
+
+        /**
+         * {@code rowKey} is what completion appends: the primary key, else the element type's
+         * {@code @node} key, else the first unique key whose columns are all {@code NOT NULL}.
+         * {@code identifyingKeys} is every one of those that exists; an order whose column set
+         * contains one of them in full already identifies a row.
+         */
+        record Keyed(List<ColumnRef> rowKey, List<List<ColumnRef>> identifyingKeys) implements RowIdentity {
+            public Keyed {
+                rowKey = List.copyOf(rowKey);
+                identifyingKeys = identifyingKeys.stream().map(List::copyOf).toList();
+            }
+        }
+
+        /** No key at all: a keyless view, or a table-valued function result. */
+        record Keyless() implements RowIdentity {}
     }
 
     private final BuildContext ctx;
@@ -64,24 +108,130 @@ final class OrderByResolver {
      * Projects the classified arguments into an {@link OrderBySpec}.
      *
      * <p>Returns {@code Ok(None)} when ordering is not applicable: for single-value returns, or
-     * when {@code tableSqlName} is {@code null} (non-table-bound field). Returns {@code Ok(None)}
+     * when {@code table} is {@code null} (non-table-bound field). Returns {@code Ok(None)}
      * (not a rejection) when the table has no primary key and no {@code @defaultOrder} is
      * present. Returns {@code Rejected} when an {@code @orderBy} argument failed to classify or
      * when {@code @defaultOrder}'s column / index resolution failed.
+     *
+     * @param returnTypeName the field's element type, whose {@code @node} key can identify a row
+     * @param singleTable    {@code false} at a multitable participant, whose orders are folded
+     *                       with key slots of their own and so are never completed here
      */
-    Resolved resolve(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef, String tableSqlName) {
+    Resolved resolve(List<ArgumentRef> refs, GraphQLFieldDefinition fieldDef, TableRef table,
+                     String returnTypeName, boolean singleTable) {
         GraphQLType unwrapped = GraphQLTypeUtil.unwrapNonNull(fieldDef.getType());
         boolean isList = (unwrapped instanceof GraphQLList)
             || ctx.isConnectionType(baseTypeName(fieldDef))
             || fieldDef.hasAppliedDirective(DIR_AS_CONNECTION);
-        if (!isList || tableSqlName == null) return new Resolved.Ok(new OrderBySpec.None());
+        if (!isList || table == null) return new Resolved.Ok(new OrderBySpec.None());
+        String tableSqlName = table.tableName();
 
+        Optional<RowIdentity> identity = singleTable
+                && ctx.buildWrapper(fieldDef) instanceof FieldWrapper.Connection
+            ? Optional.of(rowIdentity(table, returnTypeName))
+            : Optional.empty();
+
+        Resolved resolved = null;
         for (var ref : refs) {
             if (ref instanceof ArgumentRef.OrderByArg ob) {
-                return resolveOrderByArgSpec(ob, fieldDef, tableSqlName);
+                resolved = resolveOrderByArgSpec(ob, fieldDef, tableSqlName, identity);
+                break;
             }
         }
-        return resolveDefaultOrderSpec(fieldDef, tableSqlName);
+        if (resolved == null) {
+            resolved = completed(resolveDefaultOrderSpec(fieldDef, tableSqlName), identity);
+        }
+        if (resolved instanceof Resolved.Ok ok
+                && identity.orElse(null) instanceof RowIdentity.Keyless
+                && !isEmpty(ok.spec())) {
+            return new Resolved.Ok(ok.spec(), true);
+        }
+        return resolved;
+    }
+
+    /**
+     * The table's {@link RowIdentity}. Keys come from the primary key the {@link TableRef}
+     * carries, the element type's {@code @node} key, and the catalog's unique keys (the
+     * enumeration {@link no.sikt.graphitron.rewrite.walker.MatchedKeys#candidates} lifts) whose
+     * columns are all {@code NOT NULL}, since PostgreSQL lets several rows hold {@code NULL} in a
+     * unique key. The node key is taken without that check: it is the identity the author
+     * declared, its node ids already break on a {@code NULL}, and jOOQ reports a view's columns
+     * as nullable whatever the data holds.
+     */
+    private RowIdentity rowIdentity(TableRef table, String returnTypeName) {
+        var identifying = new ArrayList<List<ColumnRef>>();
+        List<ColumnRef> rowKey = null;
+        if (table.hasPrimaryKey()) {
+            rowKey = table.primaryKeyColumns();
+            identifying.add(rowKey);
+        }
+        var nodeKey = ctx.nodes.forName(returnTypeName)
+            .filter(node -> node.table().denotesSameTableAs(table))
+            .map(GraphitronType.NodeType::nodeKeyColumns)
+            .filter(cols -> !cols.isEmpty());
+        if (nodeKey.isPresent()) {
+            if (rowKey == null) rowKey = nodeKey.get();
+            identifying.add(nodeKey.get());
+        }
+        for (var key : ctx.catalog.candidateKeys(table.tableName())) {
+            if (key.primary() || key.columns().stream().anyMatch(JooqCatalog.ColumnEntry::nullable)) continue;
+            var cols = key.columns().stream()
+                .map(ce -> new ColumnRef(ce.sqlName(), ce.javaName(), ce.columnClass(), ce.databaseType()))
+                .toList();
+            if (rowKey == null) rowKey = cols;
+            identifying.add(cols);
+        }
+        return rowKey == null ? new RowIdentity.Keyless() : new RowIdentity.Keyed(rowKey, identifying);
+    }
+
+    /**
+     * {@code fixed} made to identify a row against {@code keyed}. Unchanged when it is empty (the
+     * pagination-requires-ordering rejection owns that case) or when its column set already
+     * contains an identifying key in full, whatever the position, direction or collation.
+     * Otherwise the row-key columns it does not list follow it in row-key order, uncollated, in
+     * the direction of its last entry: a uniform-direction order stays uniform, so jOOQ keeps its
+     * row-value seek and an index scanned either way still serves it, and {@code uniformAsc} is
+     * unchanged, so a runtime {@code direction:} flips the appended key with the rest.
+     */
+    static OrderBySpec.Fixed complete(OrderBySpec.Fixed fixed, RowIdentity.Keyed keyed) {
+        if (fixed.columns().isEmpty()) return fixed;
+        var listed = new HashSet<String>();
+        for (var entry : fixed.columns()) listed.add(entry.column().sqlName());
+        if (identifies(listed, keyed.identifyingKeys())) return fixed;
+        var direction = fixed.columns().getLast().direction();
+        var columns = new ArrayList<>(fixed.columns());
+        for (var column : keyed.rowKey()) {
+            if (!listed.contains(column.sqlName())) {
+                columns.add(new OrderBySpec.ColumnOrderEntry(column, null, direction));
+            }
+        }
+        return new OrderBySpec.Fixed(List.copyOf(columns), fixed.uniformAsc());
+    }
+
+    private static boolean identifies(Set<String> listedSqlNames, List<List<ColumnRef>> identifyingKeys) {
+        return identifyingKeys.stream().anyMatch(key ->
+            key.stream().allMatch(column -> listedSqlNames.contains(column.sqlName())));
+    }
+
+    /** {@code spec} completed when {@code identity} is {@link RowIdentity.Keyed}; otherwise as is. */
+    private static OrderBySpec completed(OrderBySpec spec, Optional<RowIdentity> identity) {
+        return spec instanceof OrderBySpec.Fixed fixed && identity.orElse(null) instanceof RowIdentity.Keyed keyed
+            ? complete(fixed, keyed)
+            : spec;
+    }
+
+    private static Resolved completed(Resolved resolved, Optional<RowIdentity> identity) {
+        return resolved instanceof Resolved.Ok ok ? new Resolved.Ok(completed(ok.spec(), identity)) : resolved;
+    }
+
+    /** Whether {@code spec} orders by nothing, for every value a request could pick. */
+    private static boolean isEmpty(OrderBySpec spec) {
+        return switch (spec) {
+            case OrderBySpec.None n -> true;
+            case OrderBySpec.Fixed fixed -> fixed.columns().isEmpty();
+            case OrderBySpec.Argument arg -> isEmpty(arg.base())
+                && arg.namedOrders().stream().allMatch(named -> named.order().columns().isEmpty());
+        };
     }
 
     /**
@@ -301,7 +451,8 @@ final class OrderByResolver {
      * reach this resolver, so the only failure modes here are catalog-side: an {@code @order}'d
      * enum value whose columns / index don't resolve in {@code tableSqlName}.
      */
-    private Resolved resolveOrderByArgSpec(ArgumentRef.OrderByArg ob, GraphQLFieldDefinition fieldDef, String tableSqlName) {
+    private Resolved resolveOrderByArgSpec(ArgumentRef.OrderByArg ob, GraphQLFieldDefinition fieldDef,
+                                           String tableSqlName, Optional<RowIdentity> identity) {
         var errors = new ArrayList<String>();
         var inputType = (GraphQLInputObjectType) ctx.schema.getType(ob.typeName());
         var sortEnum = (GraphQLEnumType) GraphQLTypeUtil.unwrapNonNull(
@@ -324,10 +475,25 @@ final class OrderByResolver {
         if (!missingOrder.isEmpty()) {
             return new Resolved.Rejected(Rejection.sortEnumMissingOrder(sortEnum.getName(), missingOrder));
         }
-        var baseResolved = resolveDefaultOrderSpec(fieldDef, tableSqlName);
+        var baseResolved = completed(resolveDefaultOrderSpec(fieldDef, tableSqlName), identity);
         if (baseResolved instanceof Resolved.Rejected r) return r;
         OrderBySpec baseSpec = ((Resolved.Ok) baseResolved).spec();
-        return new Resolved.Ok(new OrderBySpec.Argument(ob.name(), ob.typeName(), ob.nonNull(), ob.list(),
-            ob.sortFieldName(), ob.directionFieldName(), List.copyOf(namedOrders), baseSpec));
+        var keyed = identity.orElse(null) instanceof RowIdentity.Keyed k ? k : null;
+        OrderBySpec.Composition composition;
+        if (ob.list()) {
+            // The request composes a sequence of values, so the key goes after the sequence, not
+            // after each value; the generated helper does it once the sequence is known.
+            composition = new OrderBySpec.Composition.Sequence(namedOrders, keyed == null
+                ? new OrderBySpec.SequenceCompletion.None()
+                : new OrderBySpec.SequenceCompletion.AppendRowKey(keyed.rowKey(), keyed.identifyingKeys()));
+        } else {
+            composition = new OrderBySpec.Composition.Single(keyed == null
+                ? namedOrders
+                : namedOrders.stream()
+                    .map(named -> new OrderBySpec.NamedOrder(named.name(), complete(named.order(), keyed)))
+                    .toList());
+        }
+        return new Resolved.Ok(new OrderBySpec.Argument(ob.name(), ob.typeName(), ob.nonNull(), composition,
+            ob.sortFieldName(), ob.directionFieldName(), baseSpec));
     }
 }

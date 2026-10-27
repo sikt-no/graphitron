@@ -561,20 +561,7 @@ class FieldBuilder {
      */
     private TableFieldComponents resolveTableFieldComponents(
             String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan) {
-        return resolveTableFieldComponents(parentTypeName, fieldDef, table, returnTypeName, plan, true);
-    }
-
-    /**
-     * @param emitAsConnectionAdvisory when {@code false}, the {@code @asConnection} same-table
-     *        advisory is suppressed. The multi-table polymorphic path calls this once per
-     *        participant table, so it suppresses here and emits the advisory at most once across
-     *        participants via {@link #warnAsConnectionSameTable} instead.
-     */
-    private TableFieldComponents resolveTableFieldComponents(
-            String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
-            boolean emitAsConnectionAdvisory) {
-        return resolveTableFieldComponents(parentTypeName, fieldDef, table, returnTypeName, plan,
-            emitAsConnectionAdvisory, Set.of());
+        return resolveTableFieldComponents(parentTypeName, fieldDef, table, returnTypeName, plan, Set.of());
     }
 
     /**
@@ -587,11 +574,17 @@ class FieldBuilder {
      *        any other. Non-empty only for a {@code @routine} chain, whose bindings supply the
      *        routine's IN parameters; every other caller passes the empty set and reads the whole
      *        argument list.
+     *
+     * <p>A plan built for a multitable participant ({@link NodeIdArgPlan#participant()} set) runs
+     * once per participant table, so the {@code @asConnection} same-table advisory is suppressed
+     * here and emitted at most once across participants via {@link #warnAsConnectionSameTable};
+     * its ordering is not completed either, the participant fold appending its own key slots.
      */
     private TableFieldComponents resolveTableFieldComponents(
             String parentTypeName, GraphQLFieldDefinition fieldDef, TableRef table, String returnTypeName, NodeIdArgPlan plan,
-            boolean emitAsConnectionAdvisory, Set<NodeIdDecodeCoordinate> spentInputs) {
-        if (emitAsConnectionAdvisory) {
+            Set<NodeIdDecodeCoordinate> spentInputs) {
+        boolean singleTable = plan.participant() == null;
+        if (singleTable) {
             warnAsConnectionSameTable(fieldDef, plan);
         }
         var classifyErrors = new ArrayList<String>();
@@ -599,7 +592,7 @@ class FieldBuilder {
             spentInputs, classifyErrors);
         var rejections = new ArrayList<Rejection>();
         for (String e : classifyErrors) rejections.add(Rejection.structural(e));
-        return projectForFilter(refs, parentTypeName, fieldDef, table, returnTypeName, rejections);
+        return projectForFilter(refs, parentTypeName, fieldDef, table, returnTypeName, singleTable, rejections);
     }
 
     /**
@@ -662,6 +655,25 @@ class FieldBuilder {
                 locationOf(fieldDef),
                 LintRule.ASCONNECTION_SAME_TABLE_PK_IN));
         }
+    }
+
+    /**
+     * Emits the {@link LintRule#CONNECTION_ORDER_NOT_UNIQUE} advisory for a single-table connection
+     * whose table has no key to append to its order, so whether the order identifies a row is the
+     * author's word alone. A warning rather than a rejection: the listed columns may be unique in
+     * fact, and the build has no way to be told so other than this rule being disabled.
+     */
+    private void warnConnectionOrderNotUnique(String parentTypeName, GraphQLFieldDefinition fieldDef,
+            TableRef table, String returnTypeName) {
+        ctx.addWarning(BuildWarning.LintFinding.of(
+            "connection '" + parentTypeName + "." + fieldDef.getName() + "' pages over '"
+                + table.tableName() + "', which has no primary key, no non-null unique key and no"
+                + " @node key, so graphitron cannot make its order identify a row: rows that tie on"
+                + " every listed column can be skipped between pages. Declare a primary key on the"
+                + " table (for a view, a synthetic one in jOOQ codegen), add @node(keyColumns: ...)"
+                + " on '" + returnTypeName + "', or, if the listed columns are unique in fact,"
+                + " add 'connection-order-not-unique' to <disabledRules> in the <lint> block.",
+            locationOf(fieldDef), LintRule.CONNECTION_ORDER_NOT_UNIQUE));
     }
 
     /** Outcome of lowering {@code @field} filters across a multi-table polymorphic field's participants.*/
@@ -1035,7 +1047,7 @@ class FieldBuilder {
                 warnAsConnectionSameTable(fieldDef, plan);
                 advisoryEmitted = true;
             }
-            var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), tb.typeName(), plan, false);
+            var components = resolveTableFieldComponents(parentTypeName, fieldDef, tb.table(), tb.typeName(), plan);
             if (components instanceof TableFieldComponents.Rejected rj) {
                 participantFailures.add(new ParticipantFailure(tb.typeName(), rj.rejection()));
                 continue;
@@ -2746,7 +2758,8 @@ class FieldBuilder {
      */
     private TableFieldComponents projectForFilter(List<ArgumentRef> refs, String parentTypeName,
                                                   GraphQLFieldDefinition fieldDef,
-                                                  TableRef rt, String returnTypeName, List<Rejection> errors) {
+                                                  TableRef rt, String returnTypeName, boolean singleTable,
+                                                  List<Rejection> errors) {
         var columnSlots = new ArrayList<ColumnBindingLedger.ColumnBoundSlot>();
         var suppressedSlots = new ArrayList<SuppressedSlot>();
         var filters = projectFilters(refs, parentTypeName, fieldDef, rt, returnTypeName, errors,
@@ -2811,12 +2824,16 @@ class FieldBuilder {
             errors.add(unread);
             return new TableFieldComponents.Rejected(foldRejections(errors));
         }
-        var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt.tableName());
+        var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt, returnTypeName, singleTable);
         if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
             errors.add(r.rejection());
             return new TableFieldComponents.Rejected(foldRejections(errors));
         }
-        OrderBySpec orderBy = ((OrderByResolver.Resolved.Ok) orderByResolved).spec();
+        var orderByOk = (OrderByResolver.Resolved.Ok) orderByResolved;
+        OrderBySpec orderBy = orderByOk.spec();
+        if (orderByOk.keylessConnection()) {
+            warnConnectionOrderNotUnique(parentTypeName, fieldDef, rt, returnTypeName);
+        }
         var lookup = lookupMappingResolver.resolve(refs, rt);
         // Scalar NodeId @lookupKey args fold onto ColumnMapping carrying ScalarLookupArg
         // with NodeIdDecodeKeys.ThrowOnMismatch.
@@ -4308,7 +4325,7 @@ class FieldBuilder {
         var terminus = walk.tb().returnType().table();
         return resolveTableFieldComponents(parentTypeName, fieldDef, terminus,
             walk.tb().returnType().returnTypeName(), buildNodeIdArgPlan(fieldDef, terminus, null),
-            /*emitAsConnectionAdvisory=*/true, routineSpentInputs(walk.tb().routine()));
+            routineSpentInputs(walk.tb().routine()));
     }
 
     /**
