@@ -1,7 +1,7 @@
 ---
 id: R1104
 title: "Take the open Dependabot bumps, best effort per bump"
-status: Backlog
+status: Spec
 bucket: tech-debt
 priority: 5
 theme: tooling
@@ -22,7 +22,7 @@ All ten target `main`, which only ever moves by `sync-main.yml` fast-forwarding 
 
 ## The batch
 
-Status as surveyed on 2026-10-27 against trunk `89cde04`:
+Status as surveyed on 2026-10-27. Every pull request's diff was checked with `git apply --check` against trunk `16549939c`: all apply cleanly except #518, whose one-line property change has drifted context and is applied by hand.
 
 [cols="1,3,2,2"]
 |===
@@ -36,12 +36,12 @@ Status as surveyed on 2026-10-27 against trunk `89cde04`:
 |#522
 |postcss 8.5.16 to 8.5.25 in `graphitron-jakarta-rest/tools/graphiql-build`
 |preview only
-|Lockfile only; take.
+|Take. The Maven build never runs node; this directory is the recipe for the GraphiQL bundle committed under `graphitron-jakarta-rest/src/main/resources/.../graphiql/`, and its README requires the committed output to stay in sync with the recipe. So the bump is checked by `npm ci && npm run build` in that directory: no diff under `graphiql/` means the lockfile change ships alone; a diff ships with it. If node is unavailable to the implementer, drop it from the batch rather than ship an unverified recipe.
 
 |#518
 |Testcontainers PostgreSQL 2.0.4 to 2.0.5
 |green (July)
-|Take.
+|Take; apply by hand (context drift, see above).
 
 |#519
 |`maven-plugin-api` 3.9.14 to 3.9.16
@@ -49,7 +49,7 @@ Status as surveyed on 2026-10-27 against trunk `89cde04`:
 |Take.
 
 |#550
-|`maven-plugins` group, 13 updates (surefire/failsafe 3.6.0, compiler 3.16.0, javadoc 3.10.1, invoker, enforcer, and others)
+|`maven-plugins` group, 13 updates: compiler 3.15.0 to 3.16.0, surefire and failsafe 3.5.6 to 3.6.0, plugin-plugin 3.15.2 to 3.16.0, install and deploy 3.1.4 to 3.2.0, jar 3.5.0 to 3.5.1, enforcer 3.6.2 to 3.6.3, antrun 3.1.0 to 3.2.0, versions 2.21.0 to 2.22.0, build-helper 3.6.1 to 3.6.2, exec 3.5.0 to 3.6.4 (in `docs`, `graphitron-mcp`, `roadmap-tool`), invoker 3.6.0 to 3.10.1
 |green (2026-09-28)
 |Take; it touches build tooling, so the verification build is the real check.
 
@@ -65,21 +65,30 @@ Status as surveyed on 2026-10-27 against trunk `89cde04`:
 
 |#551
 |`test-dependencies` group: JUnit 6.0.3 to 6.1.3, Mockito 5.23.0 to 5.24.0
-|red: `graphitron-mcp` surefire failures
-|Try; drop from the batch if the failure is caused by the bump and is not a one-line fix.
+|red (2026-09-28): `graphitron-mcp` surefire goal failed after every other module's tests passed; the job log names no failing test, so the cause (the bump, or a trunk-side problem at the time) is undetermined
+|Try; reproduce with `-pl :graphitron-mcp` first and read `target/surefire-reports`. Drop from the batch if the bump is the cause and the fix is more than a one-line change.
 
 |#517
 |Groovy 4.0.31 to 5.0.7 (the `maven-invoker-plugin` dependency override in `graphitron-maven-plugin/pom.xml`)
 |green, but on a much older build
-|Try last; a major version under the invoker integration tests' verify scripts, which the pin exists to keep runnable on Java 25. Drop if any script needs changes.
+|Try last; a major version under the invoker integration tests' verify scripts, which the pin exists to keep runnable on Java 25. Drop if any script needs changes. Interacts with #550's invoker bump; see below.
 |===
+
+## Interaction between #550 and #517
+
+The Groovy override exists because the invoker plugin's own bundled Groovy could not read Java 25 class files. #550 moves invoker from 3.6.0 to 3.10.1, which may bundle a Groovy recent enough that the override is no longer needed. The implementer checks this after the #550 build: if the integration tests pass with the override removed, removing it is preferred to bumping it, since it retires a pin rather than moving one; the pom comment explaining the pin goes with it. If the override is still needed, #517 is tried as written. Either outcome is in scope; a Groovy 5 failure is not a reason to hold #550.
 
 ## Implementation
 
-1. Apply the low-risk set (#522, #518, #519, #550, #541, #514, #513) on one branch off trunk and run the verification build (`mvn install -Plocal-db`). If something fails, bisect within the set and drop the offender rather than fixing forward, unless the fix is trivial (a version-pinned property, a renamed plugin parameter).
-2. Try #551 and #517 one at a time on top, each with its own build, so a failure points at one cause. Each either lands or is dropped per the goal's rule.
+1. Apply the low-risk set (#522, #518, #519, #550, #541, #514, #513) on one branch off trunk and run the verification build (`mvn install -Plocal-db`). The bumps are applied as edits to our own tree, not by merging the Dependabot branches, since those are based on stale `main` commits. If something fails, bisect within the set and drop the offender rather than fixing forward, unless the fix is trivial (a version-pinned property, a renamed plugin parameter).
+2. Try #551 and then the Groovy question (see above) one at a time on top, each with its own build, so a failure points at one cause. Each either lands or is dropped per the goal's rule. A dropped bump never blocks publishing the ones that passed: what is green ships.
 3. Retarget Dependabot: add `target-branch: "claude/graphitron-rewrite"` to every ecosystem entry in `.github/dependabot.yml`, so future pull requests run CI against the current tree and merging one cannot break the `main` sync. Decide whether `graphitron-jakarta-rest/tools/graphiql-build` deserves its own `npm` entry; today it only receives security-alert pull requests.
 4. After trunk syncs to `main`, close what Dependabot did not close itself (#554 and anything dropped), each with a one-line reason, filing a Backlog item for a dropped bump worth pursuing.
+
+## Other solutions we've considered
+
+- Merging the pull requests on GitHub into `main`: breaks `sync-main.yml`, as explained above.
+- Retargeting Dependabot first and letting it reopen fresh pull requests against trunk, then merging those: leaves ten pull requests to drive to green one by one, each with a 30+ minute CI run, for changes that are one or two lines each. One branch with one verification build is cheaper, and Dependabot closes the superseded pull requests itself.
 
 ## Tests
 
