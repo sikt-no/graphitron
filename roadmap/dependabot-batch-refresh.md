@@ -1,7 +1,7 @@
 ---
 id: R1104
 title: "Take the open Dependabot bumps, best effort per bump"
-status: Spec
+status: Ready
 bucket: tech-debt
 priority: 5
 theme: tooling
@@ -93,3 +93,13 @@ The Groovy override exists because the invoker plugin's own bundled Groovy could
 ## Tests
 
 No new tests. Acceptance is a green verification build and a green trunk CI run (including `docs-build`/`docs-deploy` for the Pages actions) on the tree carrying the taken bumps, and an open Dependabot list holding only bumps this item explicitly dropped.
+
+## Reviewer findings
+
+### Round 1 (2026-10-27, Spec -> Ready, reviewer session 012sVnS83TmVK37gGHNvqRf6)
+
+Verdict: Ready. The goal reads on its own: the build, test and CI dependencies catch up with what Dependabot has proposed, every bump that lands cleanly ships through the normal trunk flow, a bump that needs real work is parked rather than blocking the rest, and future Dependabot pull requests target the trunk so they can be merged. The plan uses the existing shapes (one feature branch, the verification build, `dependabot.yml`'s own `target-branch` key) and adds no mechanism. The facts behind it check out against the tree and GitHub: the ten pull requests are open against `main`, `sync-main.yml` refuses a non-fast-forward, `rewrite-build.yml` runs pull-request CI for `claude/graphitron-rewrite`, trunk's GraphiQL lockfile already carries markdown-it 14.3.3, and every "from" version in the batch table matches the poms and workflows.
+
+One note for the implementer, which does not change the design:
+
+1. #550 predates `exec-maven-plugin` in `graphitron/pom.xml` (added on 2026-10-26, also at 3.5.0), so applying the pull request's diff leaves that fourth site behind. Bump it with the others. Applying the diff also bumps `build-helper-maven-plugin` in `graphitron-model/pom.xml`, which the table lists by version but not by module.

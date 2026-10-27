@@ -45,9 +45,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R797` | Pull diagnostics, so a client can ask, cancel, and be told to ask again | Spec | 2026-08-21 | [plan](pull-diagnostics-so-a-client-can-ask-and-cancel.md) |
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
-| `R1104` | Take the open Dependabot bumps, best effort per bump | Spec | 2026-10-27 | [plan](dependabot-batch-refresh.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
+| `R1104` | Take the open Dependabot bumps, best effort per bump | Ready | 2026-10-27 | [plan](dependabot-batch-refresh.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
@@ -794,7 +794,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R568` [**Javadoc reference gate skips silently on rebuilds: the plugin up-to-date check compares options and file list, not source content**](javadoc-gate-incremental-skip.md) — Backlog, bug
 - `R598` [**MCP warm-degradation messages carry their tool prefix**](mcp-degradation-message-tool-prefix.md) — Backlog, cleanup
 - `R934` [**Roadmap bodies cite store relations that nothing checks**](roadmap-bodies-cite-unchecked-store-names.md) — Backlog, testing
-- `R1104` [**Take the open Dependabot bumps, best effort per bump**](dependabot-batch-refresh.md) — Spec, tech-debt
+- `R1104` [**Take the open Dependabot bumps, best effort per bump**](dependabot-batch-refresh.md) — Ready, tech-debt
 - `R910` [**The build fails on an adoc list item that renders as paragraph text**](check-adoc-lists.md) — Backlog, dx
 - `R751` [**The meta_ family states its rows as VALUES views, which take no constraints**](meta-family-relations-as-constrained-tables.md) — Backlog, dx
 - `R573` [**graphitron-tree-sitter-natives keeps the maven-archiver 3.6.4 hard-fail: it is deliberately not a child of the parent pom, so the pluginManagement override does not reach it**](natives-module-archiver-override.md) — Backlog, cleanup
