@@ -1,7 +1,7 @@
 ---
 id: R1103
 title: "Derive the compile-graph oracle from javac and retire referencedClassNames"
-status: Spec
+status: Ready
 bucket: architecture
 priority: 8
 theme: testing
@@ -109,3 +109,13 @@ The Done-gate sweep greps main and test sources, `.adoc` files and roadmap bodie
 * **Keep the walk and add javac as a fourth leg.** Keeps both oracles honest against each other, but keeps `referencedClassNames()` in the fork, which defeats the goal; and the prototype shows the walk adds nothing javac lacks.
 * **Move the walk into test sources but keep `referencedClassNames()`.** Removes it from the emitter's module, but the method still needs `CodeBlock.args()`, which Palantir keeps package-private, so R174 stays blocked.
 * **Hook the listener into `IncrementalCompileEngine`.** Reuses the dev loop's own compile, but adds a main-code seam whose only user is a test.
+
+## Reviewer findings
+
+### Round 1 (2026-10-27, Spec -> Ready, reviewer session 01JD78h7sQVcWHBqWJ6mi1SH)
+
+Verdict: Ready. The goal stands on its own (a better-founded check for the incremental compiler, and the fork addition that blocks R174 removed), and the plan stays in test sources rather than adding a main-code seam. Checked against the tree: `TypeSpecReferenceWalk`'s only caller is the harness test; `GraphitronContextInterfaceGenerator` names the carrier through `ClassName.bestGuess`; `CodeBlock.args()` is package-private in the fork; `GRAPHITRON_CONTEXT` is outside `FROZEN_SCAFFOLD_KINDS`; `MultiSchemaPipelineTest`'s helper of the same name walks `TypeSpec` members itself and does not call `referencedClassNames()`; the harness writes the run's sources to disk under its temp directory, so the index can compile the files the dev loop compiles; the retired terms appear only in the walk, this item and the changelog. Two notes for the implementer, neither blocking:
+
+- Leg 2 keeps exempting frozen-scaffold units as sources, and javac will see more of their outbound edges than the walk did, now including `ErrorRouter` to `TenantConnections` (the `isMountFailure` call a rejected session mount added). The exemption is sound only while every member a frozen unit calls on a schema-variant unit keeps one signature across schemas and configurations, which holds today. The index makes that cheap to watch: assert the frozen sources' outbound edges against a pinned list, so a new frozen-to-variant edge shows up as a reviewed diff rather than passing silently. Worth doing if it costs a line; otherwise leave it.
+- The index's compile classpath is the harness's existing `runtimeClasspath()`, the one Clause A's engines use; naming it keeps the two compiles from drifting apart.
+
