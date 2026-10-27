@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
-| `R1083` | @order: sort by a column on a related table via path | Spec | 2026-10-21 | [plan](order-by-related-table-column.md) |
+| `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression | Spec | 2026-10-27 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -668,7 +668,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1083` [**@order: sort by a column on a related table via path**](order-by-related-table-column.md) — Spec, architecture
+- `R1083` [**@order: sort by a column on a to-one related table via path, or by a method-supplied expression**](order-by-related-table-column.md) — Spec, architecture
 - `R1095` [**A computed Node.id is not checked against the node decoder**](computed-node-id-is-unchecked.md) — Backlog, bug
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
