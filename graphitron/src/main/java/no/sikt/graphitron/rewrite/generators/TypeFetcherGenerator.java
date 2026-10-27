@@ -1001,6 +1001,9 @@ public class TypeFetcherGenerator {
         if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.GRAPHITRON_CONTEXT)) {
             builder.addMethod(buildGraphitronContextHelper(outputPackage));
         }
+        if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.WITHOUT_GENERATOR)) {
+            builder.addMethod(MultiTablePolymorphicEmitter.buildWithoutGeneratorHelper());
+        }
 
         // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
         // extraction. The bean-class dedup map was collected up front (collectBeanHelpers) so the

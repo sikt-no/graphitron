@@ -7,6 +7,7 @@ import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
+import no.sikt.graphitron.javapoet.TypeVariableName;
 import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.ColumnComparison;
@@ -201,7 +202,7 @@ public final class MultiTablePolymorphicEmitter {
             methods.add(buildPerTypenameSelect(fieldName, participant, false, List.of(), outputPackage));
         }
         if (ordering.isPresent() && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildOrderingHelper(parentTypeName, fieldName, ordering.get(), outputPackage));
+            methods.add(buildOrderingHelper(ctx, parentTypeName, fieldName, ordering.get(), outputPackage));
         }
         return methods;
     }
@@ -680,7 +681,7 @@ public final class MultiTablePolymorphicEmitter {
                 outputPackage));
         }
         if (ordering.isPresent() && !tableBoundParticipants.isEmpty()) {
-            methods.add(buildOrderingHelper(parentTypeName, fieldName, ordering.get(), outputPackage));
+            methods.add(buildOrderingHelper(ctx, parentTypeName, fieldName, ordering.get(), outputPackage));
         }
         return methods;
     }
@@ -1129,7 +1130,7 @@ public final class MultiTablePolymorphicEmitter {
             .orElseGet(() -> firstParticipantKeyTypingColumns(participants,
                 participants.get(0).table().primaryKeyColumns().size()));
         int pkArity = keyTyping.size();
-        builder.addCode(declareKeyFields(keyTyping));
+        builder.addCode(declareKeyFields(ctx, keyTyping));
         var listOfSortField = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(SORT_FIELD,
             WildcardTypeName.subtypeOf(Object.class)));
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
@@ -1910,7 +1911,7 @@ public final class MultiTablePolymorphicEmitter {
         // Order and cursor columns: the first key column, typed by the first participant's, then
         // tieField for deterministic ordering of cross-participant key ties. This arm reads only
         // the first key column throughout (projection, binding and order).
-        b.add(declareKeyFields(firstParticipantKeyTypingColumns(participants, 1)));
+        b.add(declareKeyFields(ctx, firstParticipantKeyTypingColumns(participants, 1)));
         b.add(declareTieField());
         TypeName listOfSortField = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(SORT_FIELD, WildcardTypeName.subtypeOf(Object.class)));
@@ -2476,25 +2477,71 @@ public final class MultiTablePolymorphicEmitter {
 
     /**
      * Declares one {@code Field<?> key<I>} local per key position, named by the {@code __pk<I>__}
-     * alias every branch projects and typed by the position's typing column {@code DataType}, the
-     * typing {@link #buildOrderingHelper} gives declared slots: a converter on a key column rides
-     * the cursor decode, and the seek binds the database type.
+     * alias every branch projects and typed by the position's typing column {@code DataType} less
+     * its generator ({@link #typedFieldDeclaration}), the typing {@link #buildOrderingHelper} gives
+     * declared slots: a converter on a key column rides the cursor decode, and the seek binds the
+     * database type.
      */
-    private static CodeBlock declareKeyFields(List<Map.Entry<ParticipantRef.TableBound, ColumnRef>> typingColumns) {
+    private static CodeBlock declareKeyFields(TypeFetcherEmissionContext ctx,
+            List<Map.Entry<ParticipantRef.TableBound, ColumnRef>> typingColumns) {
         var b = CodeBlock.builder();
         for (int i = 0; i < typingColumns.size(); i++) {
-            b.add(typedFieldDeclaration(keyLocal(i), keyAlias(i), typingColumns.get(i)));
+            b.add(typedFieldDeclaration(ctx, keyLocal(i), keyAlias(i), typingColumns.get(i)));
         }
         return b.build();
     }
 
-    /** {@code Field<?> <local> = DSL.field(DSL.name("<alias>"), <Table>.<COLUMN>.getDataType())}. */
-    private static CodeBlock typedFieldDeclaration(String local, String alias,
+    /**
+     * {@code Field<?> <local> = DSL.field(DSL.name("<alias>"), withoutGenerator(<Table>.<COLUMN>.getDataType()))}.
+     *
+     * <p>The declared field belongs to no table: it names an alias of the derived table. The
+     * column's {@code DataType} is kept for its converter and binding, but a client-side computed
+     * column's {@code DataType} also carries its generator, which jOOQ would run against the
+     * field's owning table when it renders the field, and there is none. So the type goes through
+     * the per-class {@link #buildWithoutGeneratorHelper() withoutGenerator} helper, which drops the
+     * generator and is an equivalent copy for every other column. The branch projections keep the
+     * generator, since each one renders against its own table.
+     */
+    private static CodeBlock typedFieldDeclaration(TypeFetcherEmissionContext ctx, String local, String alias,
             Map.Entry<ParticipantRef.TableBound, ColumnRef> typing) {
         var table = typing.getKey().table();
-        return CodeBlock.builder().addStatement("$T $L = $T.field($T.name($S), $T.$L.$L.getDataType())",
+        var dataType = CodeBlock.of("$T.$L.$L.getDataType()",
+            CatalogRefs.constantsClass(table), table.javaFieldName(), typing.getValue().javaName());
+        return CodeBlock.builder().addStatement("$T $L = $T.field($T.name($S), $L)",
             ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class)), local, DSL, DSL, alias,
-            CatalogRefs.constantsClass(table), table.javaFieldName(), typing.getValue().javaName()).build();
+            ctx.withoutGeneratorCall(dataType)).build();
+    }
+
+    /** The name of the per-class helper {@link #buildWithoutGeneratorHelper()} emits. */
+    static final String WITHOUT_GENERATOR = "withoutGenerator";
+
+    /**
+     * The per-fetcher-class helper every {@link #typedFieldDeclaration} calls: the column's
+     * {@code DataType} without a client-side generator. The cast picks the {@code Generator}
+     * overload of {@code generatedAlwaysAs} without spelling the column's Java type, which a cast
+     * at each call site would have to. The call records the helper on the class's
+     * {@link TypeFetcherEmissionContext}, and class assembly drains it, so the helper is emitted
+     * exactly when some declaration on the class calls it.
+     *
+     * <pre>{@code
+     * private static <T> DataType<T> withoutGenerator(DataType<T> type) {
+     *     return type.generatedAlwaysAs((Generator<?, ?, T>) null);
+     * }
+     * }</pre>
+     */
+    public static MethodSpec buildWithoutGeneratorHelper() {
+        var t = TypeVariableName.get("T");
+        var dataType = ParameterizedTypeName.get(ClassName.get("org.jooq", "DataType"), t);
+        var generator = ParameterizedTypeName.get(ClassName.get("org.jooq", "Generator"),
+            WildcardTypeName.subtypeOf(Object.class), WildcardTypeName.subtypeOf(Object.class), t);
+        return MethodSpec.methodBuilder(WITHOUT_GENERATOR)
+            .addJavadoc("The column's type without a client-side generator, which jOOQ would run with no owning table.\n")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .addTypeVariable(t)
+            .returns(dataType)
+            .addParameter(dataType, "type")
+            .addStatement("return type.generatedAlwaysAs(($T) null)", generator)
+            .build();
     }
 
     /** {@code Field<String> tieField}, the {@code __typename} tiebreaker. */
@@ -2547,28 +2594,28 @@ public final class MultiTablePolymorphicEmitter {
      * projection stays fixed.
      *
      * <p>Each slot field, the key slots included, is typed by its first participant's column
-     * {@code DataType}, never by a class, so a converter rides the cursor decode and the seek binds
-     * the database type; the classifier's agreement rules are what make that one column's type
-     * right for every branch. The key fields and {@code __typename} follow the author's columns as
+     * {@code DataType} less its generator ({@link #typedFieldDeclaration}), never by a class, so a
+     * converter rides the cursor decode and the seek binds the database type; the classifier's
+     * agreement rules are what make that one column's type right for every branch. The key fields and {@code __typename} follow the author's columns as
      * the deterministic tiebreaker, and flip with a runtime {@code direction:} exactly where the
      * order itself does
      * (a uniformly ascending order under a single-valued argument), so a descending request is the
      * exact reverse of an ascending one, ties included. Collation is carried on the model and, as
      * on every other ordering path, not emitted.
      */
-    private static MethodSpec buildOrderingHelper(String parentTypeName, String fieldName,
-            PolymorphicOrdering ordering, String outputPackage) {
+    private static MethodSpec buildOrderingHelper(TypeFetcherEmissionContext ctx, String parentTypeName,
+            String fieldName, PolymorphicOrdering ordering, String outputPackage) {
         var resultClass = orderByResultClass(outputPackage);
         var builder = MethodSpec.methodBuilder(orderingHelperName(parentTypeName, fieldName, outputPackage))
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(resultClass)
             .addParameter(ENV, "env");
         int keyArity = keyTypingColumns(ordering).size();
-        builder.addCode(declareKeyFields(keyTypingColumns(ordering)));
+        builder.addCode(declareKeyFields(ctx, keyTypingColumns(ordering)));
         builder.addCode(declareTieField());
         var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(Object.class));
         for (var slot : ordering.slots()) {
-            builder.addCode(typedFieldDeclaration(slotLocal(slot), slotAlias(slot), slot.typingColumn()));
+            builder.addCode(typedFieldDeclaration(ctx, slotLocal(slot), slotAlias(slot), slot.typingColumn()));
         }
         var base = orderResultExpr(ordering.base(), null, resultClass, keyArity);
         switch (ordering.surface()) {

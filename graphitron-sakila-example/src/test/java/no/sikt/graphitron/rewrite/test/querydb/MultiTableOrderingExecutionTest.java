@@ -2,9 +2,13 @@ package no.sikt.graphitron.rewrite.test.querydb;
 
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
+import no.sikt.graphitron.rewrite.test.jooq.public_.Tables;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
+import org.jooq.TableField;
+import org.jooq.VisitListener;
 import org.jooq.impl.DSL;
+import org.jooq.impl.DefaultVisitListenerProvider;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
@@ -13,6 +17,7 @@ import org.testcontainers.postgresql.PostgreSQLContainer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -33,6 +38,14 @@ import static org.assertj.core.api.Assertions.assertThat;
  * <p>{@code PagedItem = PagedA | PagedB} carries a two-column key {@code (k1, k2)}. The union
  * orders and seeks on the key columns themselves, so {@code (1, 10)} sorts after {@code (1, 3)}:
  * the order a comparison of the key's text would get wrong.
+ *
+ * <p>{@code DisplayNamed = DisplayPerson | DisplayAccount} orders on {@code display_name}, whose
+ * fixture {@code DataType} carries a client-side generator. Commercial jOOQ runs such a generator
+ * against the rendered field's owning table, and the open-source runtime this build uses never
+ * runs it, so the crash a table-less order slot causes there cannot happen here. What can be
+ * checked is its precondition: a listener on {@link #dsl} records every rendered field with no
+ * owning table whose type carries a client-side generator, and those tests assert it records
+ * nothing.
  */
 @ExecutionTier
 class MultiTableOrderingExecutionTest {
@@ -45,6 +58,12 @@ class MultiTableOrderingExecutionTest {
         __typename
         ... on Customer { customerId }
         ... on Staff { staffId }
+        """;
+
+    private static final String DISPLAY_NAMED = """
+        __typename
+        ... on DisplayPerson { personId }
+        ... on DisplayAccount { accountId }
         """;
 
     private static final String PAGED_ITEM = """
@@ -62,6 +81,16 @@ class MultiTableOrderingExecutionTest {
     /** The primary-key order, the typename breaking the {@code 1 = 1} tie. */
     private static final List<String> BY_KEY = List.of("C1", "S1", "C2", "S2", "C3", "C4", "C5");
 
+    /** The display-name seed in {@code display_name} order: Aas, Berg, Dahl, Lie, Vik. */
+    private static final List<String> BY_DISPLAY_NAME = List.of("A2", "P2", "A1", "P3", "P1");
+
+    /**
+     * The name of every rendered {@code TableField} with no owning table whose {@code DataType}
+     * carries a client-side generator: the condition under which commercial jOOQ runs a generator
+     * with no table to run it against.
+     */
+    private static final List<String> TABLELESS_GENERATOR_FIELDS = new CopyOnWriteArrayList<>();
+
     @BeforeAll
     static void startDatabase() {
         var localUrl = System.getProperty("test.db.url");
@@ -74,6 +103,13 @@ class MultiTableOrderingExecutionTest {
             postgres.start();
             dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
         }
+        dsl.configuration().set(new DefaultVisitListenerProvider(VisitListener.onVisitStart(context -> {
+            if (context.queryPart() instanceof TableField<?, ?> field
+                    && field.getTable() == null
+                    && field.getDataType().computedOnClient()) {
+                TABLELESS_GENERATOR_FIELDS.add(field.getName());
+            }
+        })));
         graphql = Graphitron.newGraphQL().build();
     }
 
@@ -223,6 +259,43 @@ class MultiTableOrderingExecutionTest {
         assertThat(pageBackward("pagedItems", "", 2, PAGED_ITEM)).containsExactlyElementsOf(expected);
     }
 
+    // ===== A client-side computed order column =====
+
+    /** Without this the listener tests below would pass whether or not the slot keeps the generator. */
+    @Test
+    void fixture_displayNameColumnsCarryAClientSideGenerator() {
+        assertThat(Tables.DISPLAY_NAME_PERSON.DISPLAY_NAME.getDataType().computedOnClient()).isTrue();
+        assertThat(Tables.DISPLAY_NAME_ACCOUNT.DISPLAY_NAME.getDataType().computedOnClient()).isTrue();
+    }
+
+    @Test
+    void connection_overAComputedOrderColumn_firstPage_rendersNoGeneratorWithoutATable() {
+        TABLELESS_GENERATOR_FIELDS.clear();
+        var connection = displayNamedPage("first: 3");
+        assertThat(nodes(connection)).containsExactly("A2", "P2", "A1");
+        assertThat(TABLELESS_GENERATOR_FIELDS).as("table-less fields typed with a generator").isEmpty();
+    }
+
+    @Test
+    void connection_overAComputedOrderColumn_descending_rendersNoGeneratorWithoutATable() {
+        TABLELESS_GENERATOR_FIELDS.clear();
+        var connection = displayNamedPage("orderBy: {field: DISPLAY_NAME, direction: DESC}");
+        assertThat(nodes(connection)).containsExactlyElementsOf(reversed(BY_DISPLAY_NAME));
+        assertThat(TABLELESS_GENERATOR_FIELDS).as("table-less fields typed with a generator").isEmpty();
+    }
+
+    /** A page after the first seeks on the order slot, so the slot renders in the seek predicate too. */
+    @Test
+    @SuppressWarnings("unchecked")
+    void connection_overAComputedOrderColumn_secondPage_rendersNoGeneratorWithoutATable() {
+        var first = displayNamedPage("first: 3");
+        var endCursor = (String) ((Map<String, Object>) first.get("pageInfo")).get("endCursor");
+        TABLELESS_GENERATOR_FIELDS.clear();
+        var second = displayNamedPage("first: 3, after: \"" + endCursor + "\"");
+        assertThat(nodes(second)).containsExactly("P3", "P1");
+        assertThat(TABLELESS_GENERATOR_FIELDS).as("table-less fields typed with a generator").isEmpty();
+    }
+
     // ===== The child that shares the stage-1 builder =====
 
     /**
@@ -254,6 +327,20 @@ class MultiTableOrderingExecutionTest {
     private List<String> occupants(String query, String field) {
         var rows = (List<Map<String, Object>>) execute(query).get(field);
         return rows.stream().map(MultiTableOrderingExecutionTest::label).toList();
+    }
+
+    @SuppressWarnings("unchecked")
+    private Map<String, Object> displayNamedPage(String arguments) {
+        return (Map<String, Object>) execute("{ displayNamedConnection(" + arguments + ") {"
+            + " edges { node { " + DISPLAY_NAMED + " } }"
+            + " pageInfo { hasNextPage endCursor } } }").get("displayNamedConnection");
+    }
+
+    @SuppressWarnings("unchecked")
+    private static List<String> nodes(Map<String, Object> connection) {
+        return ((List<Map<String, Object>>) connection.get("edges")).stream()
+            .map(edge -> label((Map<String, Object>) edge.get("node")))
+            .toList();
     }
 
     /** Pages forward from the start in pages of {@code size}, collecting every node in order. */
@@ -302,13 +389,18 @@ class MultiTableOrderingExecutionTest {
         throw new AssertionError("paging did not terminate: " + pages);
     }
 
-    /** {@code C<id>} / {@code S<id>} for an occupant, typename plus id for a place, the name for a paged item. */
+    /**
+     * {@code C<id>} / {@code S<id>} for an occupant, typename plus id for a place, {@code P<id>} /
+     * {@code A<id>} for a display-named row, the name for a paged item.
+     */
     private static String label(Map<String, Object> node) {
         return switch ((String) node.get("__typename")) {
             case "Customer" -> "C" + node.get("customerId");
             case "Staff" -> "S" + node.get("staffId");
             case "ConverterCampus" -> "ConverterCampus" + node.get("campusId");
             case "ConverterSite" -> "ConverterSite" + node.get("siteId");
+            case "DisplayPerson" -> "P" + node.get("personId");
+            case "DisplayAccount" -> "A" + node.get("accountId");
             default -> (String) node.get("name");
         };
     }

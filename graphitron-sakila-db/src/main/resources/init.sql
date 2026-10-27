@@ -1299,6 +1299,33 @@ CREATE TABLE plain_org_site (
     campus_count int         NOT NULL DEFAULT 0
 );
 
+-- A client-side computed sort column on two union participants. display_name is a stored column
+-- here, but the fixture catalog types it with a client-side generator (DisplayNameGenerator,
+-- family_name || ', ' || given_name), the shape of a consumer's computed column, so a union
+-- ordered by it declares its order slot from a DataType carrying that generator. The open-source
+-- runtime never runs the generator, so the stored value, seeded to what the generator computes,
+-- is what sorts. The seed interleaves the two tables and differs from key order.
+CREATE TABLE display_name_person (
+    person_id    serial      PRIMARY KEY,
+    given_name   varchar(50) NOT NULL,
+    family_name  varchar(50) NOT NULL,
+    display_name varchar(50) NOT NULL
+);
+INSERT INTO display_name_person (person_id, given_name, family_name, display_name) VALUES
+    (1, 'Anna', 'Vik',  'Vik, Anna'),
+    (2, 'Ola',  'Berg', 'Berg, Ola'),
+    (3, 'Kari', 'Lie',  'Lie, Kari');
+
+CREATE TABLE display_name_account (
+    account_id   serial      PRIMARY KEY,
+    given_name   varchar(50) NOT NULL,
+    family_name  varchar(50) NOT NULL,
+    display_name varchar(50) NOT NULL
+);
+INSERT INTO display_name_account (account_id, given_name, family_name, display_name) VALUES
+    (1, 'Per', 'Dahl', 'Dahl, Per'),
+    (2, 'Liv', 'Aas',  'Aas, Liv');
+
 -- Tenant column behind a converter, the sis shape: owner_org is the org_code_domain the
 -- type-selected forcedType maps to java.lang.String through OrgCodeStringConverter, so a client's
 -- "0186" binds as 186 and reads back as "186". The converted-tenant fixture in

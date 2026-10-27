@@ -2,6 +2,10 @@ package no.sikt.graphitron.rewrite.fixtures.codegen;
 
 import org.jooq.codegen.JavaGenerator;
 import org.jooq.codegen.JavaWriter;
+import org.jooq.meta.ColumnDefinition;
+import org.jooq.meta.DataTypeDefinition;
+import org.jooq.meta.Database;
+import org.jooq.meta.DefaultDataTypeDefinition;
 import org.jooq.meta.TableDefinition;
 
 import java.util.List;
@@ -18,6 +22,10 @@ import java.util.Locale;
  * output. The point is that the rewrite's classifier is exercised against real generator output
  * rather than a hand-edited approximation of it, so jOOQ upgrades can't silently drift the
  * fixture away from the generator contract.
+ *
+ * <p>It also types the columns in {@link #CLIENT_GENERATORS} as client-side computed columns,
+ * which open-source jOOQ neither configures nor emits; see {@link #generateTable} and
+ * {@link #getJavaTypeReference}.
  *
  * <p>This class is loaded by the {@code jooq-codegen-maven} plugin in
  * {@code graphitron-sakila-db} and must therefore live in its own module (the plugin
@@ -119,6 +127,58 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         Map.entry("node_metadata_foreign", new Metadata("NodeMetadataForeign",
             List.of("no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film.FILM.FILM_ID")))
     );
+
+    /**
+     * Appends a column's generator to its type, so the generated {@code DataType} reports
+     * {@code computedOnClient()} as a commercial-distribution catalog's does. The location is
+     * spelled out because a {@code DataType} given only a generator defaults to {@code SERVER}.
+     * Types without a generator keep the stock reference.
+     */
+    @Override
+    protected String getJavaTypeReference(Database db, DataTypeDefinition type, JavaWriter out) {
+        String reference = super.getJavaTypeReference(db, type, out);
+        if (type.getGenerator() == null) {
+            return reference;
+        }
+        return reference
+            + ".generatedAlwaysAs(" + type.getGenerator() + ")"
+            + ".generationLocation(org.jooq.impl.QOM.GenerationLocation.CLIENT)"
+            + ".generationOption(org.jooq.impl.QOM.GenerationOption.VIRTUAL)";
+    }
+
+    /**
+     * Fixture columns typed as client-side computed columns: table SQL name (lowercase) → column
+     * SQL name (lowercase) → the generator expression. A commercial-distribution catalog gets this
+     * from a {@code <forcedType>} carrying a {@code <generator>}; open-source jooq-meta drops such a
+     * forced type at configuration, so the designation lives here, beside {@link #METADATA}.
+     */
+    private static final Map<String, Map<String, String>> CLIENT_GENERATORS = Map.of(
+        "display_name_person", Map.of("display_name", "new " + DisplayNameGenerator.class.getName() + "()"),
+        "display_name_account", Map.of("display_name", "new " + DisplayNameGenerator.class.getName() + "()")
+    );
+
+    /**
+     * Sets the configured generator on each {@link #CLIENT_GENERATORS} column's resolved type, as a
+     * matching {@code <forcedType>} does in the commercial distribution. The resolved type is
+     * cached per output file, so this is the instance the table class's {@code createField} call
+     * takes its type text from, through {@link #getJavaTypeReference}.
+     */
+    @Override
+    protected void generateTable(TableDefinition table, JavaWriter out) {
+        var generators = CLIENT_GENERATORS.getOrDefault(table.getOutputName().toLowerCase(Locale.ROOT), Map.of());
+        for (ColumnDefinition column : table.getColumns()) {
+            String generator = generators.get(column.getOutputName().toLowerCase(Locale.ROOT));
+            if (generator == null) {
+                continue;
+            }
+            if (!(column.getType(resolver(out)) instanceof DefaultDataTypeDefinition type)) {
+                throw new IllegalStateException("Cannot set a generator on " + column.getQualifiedName()
+                    + ": its resolved type is not a DefaultDataTypeDefinition");
+            }
+            type.generator(generator);
+        }
+        super.generateTable(table, out);
+    }
 
     @Override
     protected void generateTableClassFooter(TableDefinition table, JavaWriter out) {

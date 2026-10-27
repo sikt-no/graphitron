@@ -1147,6 +1147,14 @@ type Query {
         @asConnection(defaultFirstValue: 10)
         @defaultOrder(fields: [{name: "org_code"}])
 
+    # A client-side computed order column: display_name's DataType carries a jOOQ generator on both
+    # participants. The order slot is a field of the derived table with no owning table, so it is
+    # typed by the column's DataType less its generator, which jOOQ would otherwise run there.
+    displayNamedConnection(orderBy: DisplayNamedOrderBy @orderBy,
+            first: Int, after: String, last: Int, before: String): [DisplayNamed!]!
+        @asConnection(defaultFirstValue: 100)
+        @defaultOrder(fields: [{name: "display_name"}])
+
     # Composite-key participants: the order slot composes with the (k1, k2) key-column tiebreaker.
     pagedItemsByName(first: Int, after: String, last: Int, before: String): [PagedItem!]!
         @asConnection(defaultFirstValue: 2)
@@ -2321,6 +2329,28 @@ type ConverterSite @table(name: "converter_site") {
 }
 
 union ConverterPlace = ConverterCampus | ConverterSite
+
+# The participants of displayNamedConnection, both carrying the client-side computed display_name.
+type DisplayPerson @table(name: "display_name_person") {
+    personId:    Int!    @field(name: "PERSON_ID")
+    displayName: String! @field(name: "DISPLAY_NAME")
+}
+
+type DisplayAccount @table(name: "display_name_account") {
+    accountId:   Int!    @field(name: "ACCOUNT_ID")
+    displayName: String! @field(name: "DISPLAY_NAME")
+}
+
+union DisplayNamed = DisplayPerson | DisplayAccount
+
+enum DisplayNamedSort {
+    DISPLAY_NAME @order(fields: [{name: "display_name"}])
+}
+
+input DisplayNamedOrderBy {
+    field: DisplayNamedSort!
+    direction: SortDirection
+}
 
 type ConverterCampusTerm implements Node @table(name: "converter_campus_term") @node {
     id:       ID!     @nodeId

@@ -21,7 +21,12 @@ final class TypeFetcherEmissionContext {
     /** Helpers a {@code *Fetchers} class may emit at assembly time. */
     enum HelperKind {
         /** {@code private static GraphitronContext graphitronContext(DataFetchingEnvironment env)}. */
-        GRAPHITRON_CONTEXT
+        GRAPHITRON_CONTEXT,
+        /**
+         * {@code private static <T> DataType<T> withoutGenerator(DataType<T> type)}, see
+         * {@link MultiTablePolymorphicEmitter#buildWithoutGeneratorHelper()}.
+         */
+        WITHOUT_GENERATOR
     }
 
     private final EnumSet<HelperKind> requested = EnumSet.noneOf(HelperKind.class);
@@ -88,6 +93,16 @@ final class TypeFetcherEmissionContext {
      */
     no.sikt.graphitron.render.RequestContextRead requestContextRead() {
         return this::graphitronContextCall;
+    }
+
+    /**
+     * Returns the {@code withoutGenerator(<dataType>)} call expression and records that the class
+     * needs the {@code withoutGenerator} helper, the way {@link #graphitronContextCall()} records
+     * its own.
+     */
+    CodeBlock withoutGeneratorCall(CodeBlock dataType) {
+        requested.add(HelperKind.WITHOUT_GENERATOR);
+        return CodeBlock.of("$L($L)", MultiTablePolymorphicEmitter.WITHOUT_GENERATOR, dataType);
     }
 
     boolean isRequested(HelperKind kind) {
