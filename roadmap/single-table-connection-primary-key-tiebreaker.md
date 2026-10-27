@@ -1,7 +1,7 @@
 ---
 id: R1106
 title: "A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 2
 theme: codegen-correctness
