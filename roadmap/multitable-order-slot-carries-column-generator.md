@@ -1,7 +1,7 @@
 ---
 id: R1105
 title: "A multitable ORDER BY slot built from a generator column renders the generator with no table and throws"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 3
 theme: codegen-correctness
