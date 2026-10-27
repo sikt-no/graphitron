@@ -18,9 +18,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-21 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
-| `R1106` | A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows | Spec | 2026-10-27 | [plan](single-table-connection-primary-key-tiebreaker.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
 | `R872` | The keys say what a source owns, and the gatherer decides how to refresh it | Spec | 2026-09-25 <sub>created 2026-08-28</sub> | [plan](warm-capture-empties-unpartitioned-catalog-relations.md) |
+| `R1106` | A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows | Ready | 2026-10-27 | [plan](single-table-connection-primary-key-tiebreaker.md) |
 | `R877` | The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation | In Progress | 2026-09-01 <sub>created 2026-08-29</sub> | [plan](graphitron-model-house-cleaning.md) |
 | `R1088` | A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade | Spec | 2026-10-22 | [plan](decode-graphitron-9-cursors.md) |
 | `R1105` | A multitable ORDER BY slot built from a generator column renders the generator with no table and throws | Spec | 2026-10-27 | [plan](multitable-order-slot-carries-column-generator.md) |
@@ -649,7 +649,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### codegen-correctness
 
-- `R1106` [**A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows**](single-table-connection-primary-key-tiebreaker.md) — Spec, bug
+- `R1106` [**A single-table connection whose order is not unique gets the table's row key as tiebreaker, so keyset pages stop dropping rows**](single-table-connection-primary-key-tiebreaker.md) — Ready, bug
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R1037` [**A @reference key element can ride its key inverted**](reference-key-rides-inverted.md) — Backlog, feature
