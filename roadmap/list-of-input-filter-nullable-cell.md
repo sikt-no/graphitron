@@ -1,7 +1,7 @@
 ---
 id: R1116
 title: "A nullable element field in a list-of-input filter does not constrain when absent"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 depends-on: []
@@ -129,6 +129,16 @@ Cell reads reuse `readCell` (nested descent, `JooqConvert`, `EnumValueOf`) as th
 * `filmsByLanguagePairs(filter: {pairs: [FilmLanguageInput]})`, the sis shape (`languageId: Int!`, `originalLanguageId: Int`): `[{languageId: 1}]` returns films 1 to 5, film 4 included (pins NULL-column inclusion); `[{languageId: 1, originalLanguageId: 2}]` returns 2 and 3; `originalLanguageId: null` reads as absent; `[{languageId: 2}, {languageId: 1, originalLanguageId: 3}]` returns 1 (the union, with the partial element widening nothing); `[{languageId: 1, originalLanguageId: 3}, null]` returns 1 and `[null]` returns nothing.
 * `filmsByOptionalLanguages(filter: {languages: [FilmOptionalLanguageInput]})`, every cell optional, one through a nullable nested input (`languageId: Int`, `original: FilmOriginalLanguageIdInput` with `id: Int! @field(name: "original_language_id")`): `[{}]` returns every film; `[{original: {id: 2}}]` returns 2 and 3; `[{languageId: 2, original: null}]` returns nothing; `[{original: {id: 1}}, {original: {id: 3}}]` returns 1 and 5.
 * `filmsByOriginalLanguages(filter: {languages: [FilmOriginalLanguageInput]})`, reached through `film_original_language_id_fkey` (`name: String`, `languageId: Int`, both `@reference`d): `[{name: "Italian"}]` returns 2 and 3; `[{languageId: 3}, {name: "English"}]` returns 1 and 5; `[{}]` returns 1, 2, 3 and 5 but not film 4, which reaches no language (pins the reached empty-element reading).
+
+## Implementation notes
+
+Shipped as planned, in one commit. Deviations a reviewer should know about:
+
+* The match helper emits `anyOf.add(DSL.and(cells))` without the empty-list ternary when the element has a required cell, since `cells` can then never be empty; the `trueCondition()` arm is emitted only for an element type with no required cell.
+* `ElementRowsHelperRegistry.rowsType` became `localType(ElementRows)`, answering `Condition` for a partial read; the glue renderer's `localType` delegates to it.
+* `FixtureWarningsGateTest` pins a schema line number; the three new fixtures sit above it, so the pin moved from 767 to 777.
+
+Where the goal is demonstrated: `ListOfInputFilterPipelineTest` (classification, including the nullable nested input), `ConditionGlueRendererTest` (own-table and reached glue, the helper's `trueCondition` / `falseCondition` arms), and the eight `partialListOfInputFilter_*`, `allOptionalListOfInputFilter_*` and `reachedPartialListOfInputFilter_*` cases in `GraphQLQueryTest`.
 
 ## Retired vocabulary
 
