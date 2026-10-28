@@ -64,10 +64,11 @@ under the caller's own RLS; a voucher only ever adds access. This is federation 
 ## How it works
 
 1. *Issue (A).* A's field is an ordinary read; the `voucher` column of each returned row is not selected
-   but computed. For each returned row Graphitron signs `(scope, caller, expires, the entity type name, the row's key fields)`
-   with the runtime's signing key and writes the token (version, scope, caller, expires, key id, signature)
-   into that row. `expires` is the operation's start plus `ttl`, fixed per operation, so all rows of an
-   operation share the same scope, caller and expiry. The decision is the read itself: a row A's rules hide
+   but computed. For each returned row Graphitron signs `(vouch id, scope, caller, expires, the entity type name, the row's key fields)`
+   with the runtime's signing key and writes the token (version, vouch id, scope, caller, expires, key id,
+   signature) into that row. The *vouch id* is a random 128-bit value Graphitron mints once per operation
+   and scope, and every row issued under them carries it, signed. `expires` is the operation's start plus
+   `ttl`, fixed per operation, so all rows of a vouch share scope, caller, expiry and id. The decision is the read itself: a row A's rules hide
    is never returned and never signed.
 2. *Carry.* The router fetches the key fields from A and sends `_entities` representations `{id, voucher}`
    to B. The voucher stays out of the client schema because the field is `@inaccessible`.
@@ -76,26 +77,28 @@ under the caller's own RLS; a voucher only ever adds access. This is federation 
    caller and expiry plus the type name and key fields of *this representation*, against the runtime's verification keys;
    expiry; scope against the field's `@accept(scope:)`; and the caller against the caller of this request.
    Because the signature covers the representation's own key, a voucher cannot be paired with another row.
-   Every voucher-bearing representation is checked and its context extracted (scope, caller, expiry); a
+   Every voucher-bearing representation is checked and its vouch extracted (vouch id, scope, caller, expiry); vouchers
+   with the same vouch id that disagree on scope, caller or expiry are a failure too; a
    single failure fails the whole `_entities` call with an error, before any connection is taken.
    Representations that carry no voucher use the plain key and are not part of this check.
-4. *Route.* The extracted contexts group the representations by tenant, scope, caller and expiry. For each group the runtime takes one connection keyed by `(tenant, context)`, runs the ordinary
-   mount (identity from the caller's JWT), then the consumer's accept method once with the context and
-   every key the group covers. The accept method sets session state for the connection and returns a
-   boolean; `false` unmounts and releases the connection and fails the whole call, like a verification failure.
+4. *Route.* The extracted vouch ids group the representations. For each group the runtime takes one
+   connection keyed by `(tenant, vouch id)`, runs the ordinary mount (identity from the caller's JWT),
+   then the consumer's accept method once with the vouch id, scope, expiry and every key the group
+   covers. The accept method sets session state for the connection and returns a boolean; `false`
+   unmounts and releases the connection and fails the whole call, like a verification failure.
 5. *Read below.* The group's SELECT runs on the vouched connection, and each resolved row is returned as a
    `DataFetcherResult` whose `localContext` carries the routing key. graphql-java hands that value to
-   every field below, so child acquisitions and their DataLoader batches are keyed by the context, so
-   each field below loads in one batch per context on the vouched connection; a batch never mixes two contexts and a field outside the subtree uses the base connection, as tenants already do.
+   every field below, so child acquisitions and their DataLoader batches are keyed by the vouch id, so
+   each field below loads in one batch per vouch on the vouched connection; a batch never mixes two vouches and a field outside the subtree uses the base connection, as tenants already do.
 6. *Release.* At operation end every vouched connection is unmounted and released.
 
-An operation takes at most one vouched connection for now. Rows issued in one operation share a context, so
-a list of results, or several parents' lists, is one connection. A second distinct context in the same
-operation, which needs a second operation on A, fails its entities with an error that names the limit, not
+An operation takes at most one vouched connection for now. Rows issued in one operation and scope share a vouch id, so
+a list of results, or several parents' lists, is one connection. A second distinct vouch id in the same
+operation, which needs a second operation on A or a second scope, fails its entities with an error that names the limit, not
 `null`, so the limit is not mistaken for a denial. The constant lives in one place so it can become
 configuration later.
 
-One connection per context means every entity of the group reads through a connection that covers all the
+One connection per vouch means every entity of the group reads through a connection that covers all the
 group's keys, so a subtree is scoped to its entities by the graph it was reached through, not by the
 connection. All the keys were vouched by the same issuer for the same caller, so nothing is granted that
 the issuer did not already vouch for. Strict isolation, a connection per row, would cost one connection per
@@ -114,10 +117,10 @@ child to its result row.
 | The caller the voucher is bound to | The mount's payload becomes contextArguments on the factory. | One named context value both subgraphs read as the caller, so the voucher is useless to another user. Named once, in plugin configuration. |
 | Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. | `@issue` is a computed, non-column projection whose value comes from the codec, one signature per returned row, computed from the row's own key fields. |
 | Per-subtree routing value | The tenant rides down an entity's subtree in `localContext`; loaders and acquisitions read it. | The slot is reserved for the tenant and a guard test keeps every other writer out. It becomes a small routing record (tenant, voucher), and the guard, the loader naming and the acquisition path read both parts. |
-| One connection per routing key | Per-tenant acquisition, lazily, one mount per connection, unmount at release. | Key the acquisition by `(tenant, voucher context)`; an accept step after the ordinary mount; the cap of one. |
+| One connection per routing key | Per-tenant acquisition, lazily, one mount per connection, unmount at release. | Key the acquisition by `(tenant, vouch id)`; an accept step after the ordinary mount; the cap of one. |
 | Entity with a non-column key field | Every `@key` field must resolve to a column. | An `@accept` field: in the key, in the SDL, excluded from the SELECT and projection; a key with it must also name at least one column field. |
 | Schema alteration from one marker | `@node` types get a synthesised `@key`; applied federation directives are imported into the `@link`. | A synthesiser that adds a second key (the authored key's fields plus the marked field) beside the authored one and applies `@inaccessible` to the marked field, same pass, same import handling. A marker on a type with no `@key` is rejected. |
-| Session state from a verified voucher | `<sessionState>` mount sets identity. | `<voucher><accept>` method: receives the connection configuration and the group's voucher context (scope, expiry) with every covered key, sets session state, returns a boolean; an exception evicts the connection and errors the entities. Same session-scoped contract as the mount. |
+| Session state from a verified voucher | `<sessionState>` mount sets identity. | `<voucher><accept>` method: receives the connection configuration and the group's vouch (id, scope, expiry) with every covered key, sets session state, returns a boolean; an exception evicts the connection and errors the entities. Same session-scoped contract as the mount. |
 | Children of the entity | Table-bound children run through generated fetchers that honour the inherited routing. | Verify that a `@service` child and a connection-typed child under the entity also acquire from the inherited key. |
 
 ## Implementation
@@ -126,7 +129,7 @@ child to its result row.
   `@accept(scope:)` on a field of a table-bound, resolvable type (B). Graphitron defines both, as it
   does `@node`; consumers do not write the definitions. Reject: either marker on a type with no `@key`, on
   a field that is also a column, both markers on one type, and `@accept` in a build with no `<accept>`.
-* *Voucher codec.* One class owns the format: version byte, scope, caller, expiry, key id, signature. The
+* *Voucher codec.* One class owns the format: version byte, vouch id, scope, caller, expiry, key id, signature. The
   signature input adds the entity type name and the row's key fields in their own scalar form, which the
   token does not carry: B recomputes them from the representation, so a voucher for one type's key cannot
   be presented as another type's with the same key value. A decode failure, unknown version or unknown key id is a
@@ -138,9 +141,9 @@ child to its result row.
 * *Issue.* The fetcher that reads an `@issue` row computes the token after the rows are read, one signature
   per row. Expiry is fixed per operation. It works at any position, root or child.
 * *Verify and group.* The dispatcher's voucher handler decodes and checks as in step 3, groups by voucher
-  context, and hands the accept method every key of a group in one call.
+  vouch id, and hands the accept method every key of a group in one call.
 * *Routing record.* Replace the bare tenant in the `localContext` slot with a record carrying the optional
-  tenant and the optional voucher context. `TenantHandDown` becomes the one writer of the record; the ownership
+  tenant and the optional vouch id. `TenantHandDown` becomes the one writer of the record; the ownership
   guard test is updated. Single-tenant, voucher-free builds emit exactly what they emit today.
 * *Acquisition.* The runtime's acquire path takes the routing record; a record with a voucher takes a
   separate connection, runs mount then accept, and remembers the outcome per key so a repeat presentation
@@ -166,17 +169,18 @@ once the spellings are chosen, the design is wrong.
 ## Tests
 
 * Codec: round trip; tampered signature, wrong key id, unknown version, expired, wrong scope, wrong caller
-  and a voucher presented with another row's key each fail verification and nothing else does.
+  a voucher presented with another row's key, and two vouchers sharing a vouch id but disagreeing on scope,
+  caller or expiry each fail verification and nothing else does.
 * Pipeline tier: classification of both markers and each rejection above; the synthesised key and
   `@inaccessible` on a table-bound entity and on a reference-only row type; the routing record in emitted
   fetchers; single-tenant output unchanged; the generated runtime constructor gains the key parameter only
   when a marker is present.
 * Compilation tier: generated issue, dispatcher and acquisition code compiles at Java 17.
 * Execution tier (real Postgres, RLS fixture beside the existing session-mount fixture, A and B in one
-  fixture): each returned row gets its own token and all share one context; a valid voucher exposes the
+  fixture): each returned row gets its own token and all share one vouch id; a valid voucher exposes the
   entity and a three-level nested read under a policy that otherwise hides the rows; a list of results, or
   several parents' lists, takes one connection and the accept method sees every key once; a second
-  distinct context fails its entities with the limit error; a field outside the entities' subtrees cannot
+  distinct vouch id fails the call with the limit error; a field outside the entities' subtrees cannot
   read the covered rows; every verification failure above, and an accept method returning `false`, fails the whole call with an
   error and the policy hides the rows;
   connections are unmounted and released at the end.
@@ -193,17 +197,16 @@ once the spellings are chosen, the design is wrong.
 * The caller: one context value read by name on both sides (as written), or taken from the mount's handle.
 * Key provider shape and default: Ed25519 over JDK keys, with the public key distributed to B; whether the
   default also reads PEM from configuration or only takes key objects.
-* A nonce: none is proposed. A voucher is bound to scope, caller, type, key and a short expiry, and the
+* Replay: no per-voucher nonce. A voucher is bound to scope, caller, type, key and a short expiry, and the
   same voucher is legitimately presented more than once (router retries, several fetches in one plan), so
-  single use would need shared state across B's instances and would break those. Open: an unsigned-secret
-  token id in the signed payload, logged at A and B, for audit correlation; and, for a consumer that wants
-  single use, handing the id to the accept method so it can record it in B's own database.
+  single use would need shared state across B's instances and would break those. The vouch id is the group
+  key and the audit handle, not a replay guard: A logs it when issuing and B logs it on every accept and
+  every rejection, so a redemption traces back to an issuance. A consumer that wants single use can record
+  the id the accept method receives in B's own database, accepting that router retries then fail.
 * One signature per returned row: negligible for Ed25519 at page sizes, but a connection over thousands of
   rows signs thousands; set a ceiling or sign lazily only for rows the router actually asks the key of.
-* Isolation: one connection per context scopes a subtree by graph shape, not by connection. If a consumer
+* Isolation: one connection per vouch scopes a subtree by graph shape, not by connection. If a consumer
   needs a connection per row, the routing key can include the key fields at the cost of the cap.
-* Expiry fixed per operation means two operations on A inside one router query plan produce two contexts;
-  rounding expiry to the `ttl` boundary would merge them. Decide when a consumer shows it.
 * Multi-tenant: confirm a voucher cannot widen the tenant set the request may touch.
 
 ## Other solutions we've considered
