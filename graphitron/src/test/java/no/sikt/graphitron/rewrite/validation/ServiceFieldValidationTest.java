@@ -123,7 +123,7 @@ class ServiceFieldValidationTest {
                     TestFixtures.tableRef("film", "FILM", "Film", List.of()),
                     new FieldWrapper.Single(true)),
                 List.of(), List.of(), new OrderBySpec.None(), null,
-                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT, List.of()),
+                TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", ClassName.OBJECT, List.of()),
                 RECORD_SOURCE_KEY, RECORD_KEY_SOURCE, null,
                 Optional.empty()),
             List.of("Field 'Film.externalChild': @service on a table-bound return type requires a Sources parameter for DataLoader batching"));
@@ -208,7 +208,7 @@ class ServiceFieldValidationTest {
             : LoaderRegistration.Container.POSITIONAL_LIST;
         return new ServiceTableField("Film", "externalChild", null, returnType,
             List.of(), List.of(), new OrderBySpec.None(), null,
-            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", ClassName.OBJECT,
                 List.of(TestFixtures.sourced("filmKeys", wrap, keyColumns, container))),
             TestFixtures.serviceSourceKey(wrap, keyColumns),
             new ServiceKeySource.FromTableRow(keyOwner),
@@ -237,7 +237,7 @@ class ServiceFieldValidationTest {
             List.of(errorType));
         var field = new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
-            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", ClassName.OBJECT,
                 List.of(TestFixtures.sourced("filmKeys", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),
             TestFixtures.serviceSourceKey(wrap, keyCols),
             new ServiceKeySource.FromTableRow(FILM_TABLE_SINGLE_PK),
@@ -256,7 +256,7 @@ class ServiceFieldValidationTest {
         var wrap = new SourceKey.Wrap.Row();
         return new ServiceTableField("Film", "externalChild", null, FILM_RETURN,
             List.of(), List.of(), new OrderBySpec.None(), null,
-            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", TypeName.OBJECT,
+            TestFixtures.staticServiceMethodRef("com.example.FilmService", "getFilms", ClassName.OBJECT,
                 List.of(
                     TestFixtures.sourced("filmKeys1", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST),
                     TestFixtures.sourced("filmKeys2", wrap, keyCols, LoaderRegistration.Container.POSITIONAL_LIST))),

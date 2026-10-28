@@ -83,11 +83,11 @@ public class ColumnValuesClassGenerator {
         var t = TypeVariableName.get("T");
         var d = TypeVariableName.get("D");
         TypeName dataTypeOfT = ParameterizedTypeName.get(DATA_TYPE, t);
-        TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(ClassName.OBJECT));
         TypeName tripOfT = ParameterizedTypeName.get(TRIP, t);
-        TypeName tripWildcard = ParameterizedTypeName.get(TRIP, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        TypeName tripWildcard = ParameterizedTypeName.get(TRIP, WildcardTypeName.subtypeOf(ClassName.OBJECT));
         TypeName classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
-            WildcardTypeName.subtypeOf(TypeName.OBJECT));
+            WildcardTypeName.subtypeOf(ClassName.OBJECT));
 
         var exact = MethodSpec.methodBuilder("exact")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)

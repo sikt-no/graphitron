@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
+import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -292,10 +292,10 @@ class TenantRoutedFetcherPipelineTest {
     }
 
     private static void assertIsTenantSlotHelper(MethodSpec helper) {
-        assertThat(helper.returnType()).isEqualTo(TypeName.OBJECT);
+        assertThat(helper.returnType()).isEqualTo(ClassName.OBJECT);
         assertThat(helper.parameters())
             .singleElement()
-            .satisfies(p -> assertThat(p.type()).isEqualTo(TypeName.OBJECT));
+            .satisfies(p -> assertThat(p.type()).isEqualTo(ClassName.OBJECT));
         assertThat(helper.modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
     }
 

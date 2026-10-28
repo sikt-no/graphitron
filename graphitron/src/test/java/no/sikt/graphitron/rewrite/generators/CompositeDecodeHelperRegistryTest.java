@@ -2,7 +2,6 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;
@@ -209,10 +208,10 @@ class CompositeDecodeHelperRegistryTest {
             .extracting(MethodSpec::name)
             .containsExactly("decodeFilmActorTenantSlot1OrThrow", "decodeFilmTenantSlot0OrThrow");
         for (MethodSpec helper : registry.emit()) {
-            assertThat(helper.returnType()).isEqualTo(TypeName.OBJECT);
+            assertThat(helper.returnType()).isEqualTo(ClassName.OBJECT);
             assertThat(helper.parameters())
                 .singleElement()
-                .satisfies(p -> assertThat(p.type()).isEqualTo(TypeName.OBJECT));
+                .satisfies(p -> assertThat(p.type()).isEqualTo(ClassName.OBJECT));
         }
     }
 

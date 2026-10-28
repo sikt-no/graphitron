@@ -1,7 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -35,7 +34,7 @@ class MethodRefCallShapeTest {
         // to the emit form would also break the compile-tier fixture in graphitron-sakila-example.
         var serviceClass = ClassName.get("com.example", "Service");
         var staticService = new MethodRef.Service(
-            "com.example.Service", "doThing", TypeName.OBJECT,
+            "com.example.Service", "doThing", ClassName.OBJECT,
             List.of(), List.of(), new MethodRef.CallShape.Static(false));
 
         var code = TypeFetcherGenerator.serviceCallTarget(staticService, serviceClass);
@@ -48,7 +47,7 @@ class MethodRefCallShapeTest {
     void serviceCallTarget_instanceWithDslHolderArm_routesToNewServiceWithDsl() {
         var serviceClass = ClassName.get("com.example", "Service");
         var instanceService = new MethodRef.Service(
-            "com.example.Service", "doThing", TypeName.OBJECT,
+            "com.example.Service", "doThing", ClassName.OBJECT,
             List.of(), List.of(), new MethodRef.CallShape.InstanceWithDslHolder());
 
         var code = TypeFetcherGenerator.serviceCallTarget(instanceService, serviceClass);
@@ -70,7 +69,7 @@ class MethodRefCallShapeTest {
                 ClassName.get(String.class),
                 new no.sikt.graphitron.rewrite.model.ParamSource.Context())));
         var instanceService = new MethodRef.Service(
-            "com.example.Service", "doThing", TypeName.OBJECT, List.of(), List.of(), holder);
+            "com.example.Service", "doThing", ClassName.OBJECT, List.of(), List.of(), holder);
 
         var code = TypeFetcherGenerator.serviceCallTarget(instanceService, serviceClass);
         assertThat(code.toString())

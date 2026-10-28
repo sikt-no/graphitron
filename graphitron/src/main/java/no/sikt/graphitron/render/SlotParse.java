@@ -91,7 +91,7 @@ public sealed interface SlotParse {
                 : CodeBlock.of("null"))
             .collect(CodeBlock.joining(", "));
         TypeName classOfWildcard = ParameterizedTypeName.get(
-            ClassName.get(Class.class), WildcardTypeName.subtypeOf(TypeName.OBJECT));
+            ClassName.get(Class.class), WildcardTypeName.subtypeOf(ClassName.OBJECT));
         return CodeBlock.of("new $T { $L }", ArrayTypeName.of(classOfWildcard), literals);
     }
 }

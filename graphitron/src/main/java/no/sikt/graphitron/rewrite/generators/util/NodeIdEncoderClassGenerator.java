@@ -180,9 +180,9 @@ public class NodeIdEncoderClassGenerator {
             .addStatement("return parts")
             .build();
 
-        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        var fieldWildcard = ParameterizedTypeName.get(FIELD, WildcardTypeName.subtypeOf(ClassName.OBJECT));
         var classWildcard = ParameterizedTypeName.get(ClassName.get(Class.class),
-            WildcardTypeName.subtypeOf(TypeName.OBJECT));
+            WildcardTypeName.subtypeOf(ClassName.OBJECT));
         var decodeColumns = MethodSpec.methodBuilder("decodeColumns")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(Object[].class)
@@ -401,7 +401,7 @@ public class NodeIdEncoderClassGenerator {
      * transitive).
      */
     private static MethodSpec buildRequireColumnAgreement() {
-        TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(TypeName.OBJECT));
+        TypeName dataTypeWildcard = ParameterizedTypeName.get(DATA_TYPE, WildcardTypeName.subtypeOf(ClassName.OBJECT));
         return MethodSpec.methodBuilder("requireColumnAgreement")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .addParameter(String.class, "conflictLabel")

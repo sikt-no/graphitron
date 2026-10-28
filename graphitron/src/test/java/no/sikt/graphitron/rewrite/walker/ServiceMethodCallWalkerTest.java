@@ -47,7 +47,7 @@ class ServiceMethodCallWalkerTest {
 
     @Test
     void walk_staticMethod_dslSlot_producesStaticCarrierWithFromDsl() {
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(true),
             param("dslCtx", ClassName.get("org.jooq", "DSLContext"), new ParamSource.DslContext()));
 
@@ -61,7 +61,7 @@ class ServiceMethodCallWalkerTest {
 
     @Test
     void walk_instanceWithDslHolder_addsFromDslCtorArg() {
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.InstanceWithDslHolder());
 
         var call = ok(walker.walk("Query", STUB_FIELD, method));
@@ -81,7 +81,7 @@ class ServiceMethodCallWalkerTest {
         var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
             param("ctx", dslType, new ParamSource.DslContext()),
             param("tenantId", stringType, new ParamSource.Context())));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT, holder);
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT, holder);
 
         var call = ok(walker.walk("Query", STUB_FIELD, method));
 
@@ -101,7 +101,7 @@ class ServiceMethodCallWalkerTest {
         var holder = new MethodRef.CallShape.InstanceWithDslHolder(List.of(
             param("a", dslType, new ParamSource.DslContext()),
             param("b", dslType, new ParamSource.DslContext())));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT, holder);
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT, holder);
 
         var result = walker.walk("Query", STUB_FIELD, method);
 
@@ -115,7 +115,7 @@ class ServiceMethodCallWalkerTest {
     @Test
     void walk_contextParam_producesFromContextEntry() {
         var stringType = ClassName.get(String.class);
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("userId", stringType, new ParamSource.Context()));
 
@@ -132,7 +132,7 @@ class ServiceMethodCallWalkerTest {
     void walk_argParam_directLeaf_producesFromArgWithScalarShape() {
         var stringType = ClassName.get(String.class);
         var arg = new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head("title"));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("title", stringType, arg));
 
@@ -153,7 +153,7 @@ class ServiceMethodCallWalkerTest {
         var arg = new ParamSource.Arg(
             new CallSiteExtraction.EnumValueOf("com.example.Genre"),
             new PathExpr.Head("genre"));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("genre", enumType, arg));
 
@@ -175,7 +175,7 @@ class ServiceMethodCallWalkerTest {
                 List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
                 "BeanInput.name")));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("beans"));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("beans", listOfBean, arg));
 
@@ -196,7 +196,7 @@ class ServiceMethodCallWalkerTest {
                 List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
                 "BeanInput.name")));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("input"));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("input", beanClass, arg));
 
@@ -216,7 +216,7 @@ class ServiceMethodCallWalkerTest {
                 List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
                 "BeanInput.name")));
         var arg = new ParamSource.Arg(bean, new PathExpr.Head("input"));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("input", beanClass, arg));
 
@@ -229,7 +229,7 @@ class ServiceMethodCallWalkerTest {
     @Test
     void walk_multipleDslSlots_inMethodRound_raisesError() {
         var dslType = ClassName.get("org.jooq", "DSLContext");
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(true),
             param("dsl1", dslType, new ParamSource.DslContext()),
             param("dsl2", dslType, new ParamSource.DslContext()));
@@ -264,7 +264,7 @@ class ServiceMethodCallWalkerTest {
         var nested = new CallSiteExtraction.NestedInputField("input",
             List.of("where", "id"), new CallSiteExtraction.Direct());
         var arg = new ParamSource.Arg(nested, path);
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("id", stringType, arg));
 
@@ -301,7 +301,7 @@ class ServiceMethodCallWalkerTest {
             List.of(new CallSiteExtraction.FieldBinding(
                 List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
                 "BeanInput.name")));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("id", ClassName.get(String.class),
                 new ParamSource.Arg(new CallSiteExtraction.Direct(), new PathExpr.Head("id"))),
@@ -326,7 +326,7 @@ class ServiceMethodCallWalkerTest {
             List.of(new CallSiteExtraction.FieldBinding(
                 List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
                 "BeanInput.name")));
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("bean", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))));
 
@@ -349,7 +349,7 @@ class ServiceMethodCallWalkerTest {
                 "BeanInput.name")));
         var nested = new CallSiteExtraction.NestedInputField("input", List.of("name"),
             new CallSiteExtraction.Direct());
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
+        var method = service("com.example.Svc", "doThing", ClassName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("one", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))),
             param("many", ParameterizedTypeName.get(ClassName.get(List.class), beanClass),
