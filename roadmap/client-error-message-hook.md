@@ -1,7 +1,7 @@
 ---
 id: R1118
 title: "FetcherErrorResponse can rewrite the message of an unclaimed GraphitronClientException"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: error-channel
