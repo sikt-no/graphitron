@@ -48,7 +48,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start | Ready | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](mutation-field-transaction-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression | In Review | 2026-10-28 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
 | `R1104` | Take the open Dependabot bumps, best effort per bump | In Review | 2026-10-27 | [plan](dependabot-batch-refresh.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
@@ -677,7 +676,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1083` [**@order: sort by a column on a to-one related table via path, or by a method-supplied expression**](order-by-related-table-column.md) — In Review, architecture
 - `R1095` [**A computed Node.id is not checked against the node decoder**](computed-node-id-is-unchecked.md) — Backlog, bug
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug
