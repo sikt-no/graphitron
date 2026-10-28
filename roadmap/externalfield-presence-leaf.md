@@ -1,7 +1,7 @@
 ---
 id: R1117
 title: "A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: codegen-correctness
