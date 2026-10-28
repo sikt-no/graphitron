@@ -2095,14 +2095,20 @@ class GraphQLQueryTest {
 
     @Test
     void filmsConnection_emptyBeforeCursor_returnsLastPage() {
-        // Compared against the same query without before rather than against fixed rows: which rows
-        // `last` addresses is a property of the table (see filmsConnection_backward_returnsLastNFilms).
+        // Compared against the same query without before. Both reads run over the seeded films
+        // (an ids filter), so a film another class inserts between them cannot move the window;
+        // the unfiltered connection's tail is a property of the table and no read of it is stable.
+        String ids = java.util.stream.Stream.of(1, 2, 3, 4, 5)
+            .map(i -> "\"" + no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", i) + "\"")
+            .collect(java.util.stream.Collectors.joining(", ", "[", "]"));
         String selection = "{ nodes { filmId } pageInfo { hasNextPage hasPreviousPage } } }";
-        Map<String, Object> absent = execute("{ filmsConnection(last: 2) " + selection);
-        Map<String, Object> empty = execute("{ filmsConnection(last: 2, before: \"\") " + selection);
+        Map<String, Object> absent = execute("{ filmsConnectionByOptionalIds(ids: " + ids + ", last: 2) " + selection);
+        Map<String, Object> empty = execute("{ filmsConnectionByOptionalIds(ids: " + ids + ", last: 2, before: \"\") " + selection);
         assertThat(empty).isEqualTo(absent);
-        assertThat(empty).extractingByKey("filmsConnection", as(MAP))
-            .extractingByKey("pageInfo", as(MAP))
+        var conn = assertThat(empty).extractingByKey("filmsConnectionByOptionalIds", as(MAP));
+        conn.extractingByKey("nodes", as(list(Map.class)))
+            .extracting(n -> n.get("filmId")).containsExactly(4, 5);
+        conn.extractingByKey("pageInfo", as(MAP))
             .containsEntry("hasPreviousPage", true)
             .containsEntry("hasNextPage", false);
     }
@@ -7414,6 +7420,13 @@ class GraphQLQueryTest {
 
     // ===== Routine write: @routine on Mutation commits before the follow-up query =====
 
+    /** Rentals of one (inventory, customer) pair: a count over rows the calling test names, not the table. */
+    private int rentalCount(int inventoryId, int customerId) {
+        return dsl.fetchCount(org.jooq.impl.DSL.table("rental"),
+            org.jooq.impl.DSL.field("inventory_id", Integer.class).eq(inventoryId)
+                .and(org.jooq.impl.DSL.field("customer_id", Integer.class).eq(customerId)));
+    }
+
     @Test
     @SuppressWarnings("unchecked")
     void rentFilm_routineWriteCommitsAndReturnsReReadRow() {
@@ -7422,7 +7435,7 @@ class GraphQLQueryTest {
         // returned rental_id; step 2 re-reads the committed row from the rental table after the
         // commit. The response row and the independent jOOQ read below both observe the
         // committed state.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         Integer rentalId = null;
         try {
             Map<String, Object> data = execute("""
@@ -7445,7 +7458,7 @@ class GraphQLQueryTest {
 
             // Independent read on the same DSLContext, outside the mutation's transaction:
             // the row is committed, not merely visible inside a still-open transaction.
-            int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+            int countAfter = rentalCount(2, 3);
             assertThat(countAfter)
                 .as("rentFilm committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
@@ -7467,7 +7480,7 @@ class GraphQLQueryTest {
         // An SQL error from the routine (an FK violation: inventory 999999 does not exist)
         // rolls the transaction back at the transactionResult boundary and surfaces on the
         // mutation field through the same channel as DML errors; no row is committed.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(999999, 3);
 
         graphql.ExecutionResult result = executeRaw(
             "mutation { rentFilm(inventoryId: 999999, customerId: 3) { rentalId } }");
@@ -7482,7 +7495,7 @@ class GraphQLQueryTest {
                     .matches("An error occurred\\. Reference: [0-9a-f-]{36}\\.");
                 assertThat(error.getPath()).containsExactly("rentFilm");
             });
-        int countAfter = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countAfter = rentalCount(999999, 3);
         assertThat(countAfter)
             .as("the failed routine write committed nothing")
             .isEqualTo(countBefore);
@@ -7501,7 +7514,7 @@ class GraphQLQueryTest {
     void rentFilmPayload_happyPath_dataFieldReReadsCommittedRow() {
         // Outcome: the routine succeeded and the row is visible. The data field's post-commit
         // SELECT projects the committed rental; errors stays null (the Outcome is a Success).
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         Integer rentalId = null;
         try {
             var rawResult = executeRaw("""
@@ -7522,7 +7535,7 @@ class GraphQLQueryTest {
             assertThat(rentalId).isNotNull();
 
             // Committed, not merely visible inside a still-open transaction.
-            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            assertThat(rentalCount(2, 3))
                 .as("rentFilmPayload committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
@@ -7542,7 +7555,7 @@ class GraphQLQueryTest {
         // the input map, the routine commits, and the post-commit re-read observes the row the
         // nested bindings produced. A descent that walked wrongly would bind null and the write
         // would fail on the NOT NULL columns rather than return a rental.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         Integer rentalId = null;
         try {
             var rawResult = executeRaw("""
@@ -7562,7 +7575,7 @@ class GraphQLQueryTest {
             rentalId = (Integer) rental.get("rentalId");
             assertThat(rentalId).isNotNull();
 
-            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            assertThat(rentalCount(2, 3))
                 .as("rentFilmPayloadNested committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
@@ -7587,7 +7600,7 @@ class GraphQLQueryTest {
         // must be 3, the key the node id encodes. A binding that passed the wire form through would
         // fail the insert on the integer column rather than write the wrong number, so a green
         // round trip here is the decode working and not merely the call arriving.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         Integer rentalId = null;
         try {
             var rawResult = executeRaw("""
@@ -7610,7 +7623,7 @@ class GraphQLQueryTest {
             rentalId = (Integer) rental.get("rentalId");
             assertThat(rentalId).isNotNull();
 
-            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            assertThat(rentalCount(2, 3))
                 .as("rentFilmPayloadProjected committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
@@ -7634,7 +7647,7 @@ class GraphQLQueryTest {
         // path's end whatever the store said, so this shape decoded env.getArgument("input") — the
         // whole input object — which the decode helper's wire-shape guard turns into a null record and
         // the next line into an NPE on every request, whatever id the client sent.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         Integer rentalId = null;
         try {
             var rawResult = executeRaw("""
@@ -7657,7 +7670,7 @@ class GraphQLQueryTest {
             rentalId = (Integer) rental.get("rentalId");
             assertThat(rentalId).isNotNull();
 
-            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            assertThat(rentalCount(2, 3))
                 .as("rentFilmPayloadInferred committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
@@ -7680,7 +7693,7 @@ class GraphQLQueryTest {
         //
         // A pass here is the decode and not merely the call arriving: p_customer_id is an integer
         // parameter, so a base64 string reaching it fails the call rather than writing a wrong number.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         Integer rentalId = null;
         try {
             var rawResult = executeRaw("""
@@ -7703,7 +7716,7 @@ class GraphQLQueryTest {
             rentalId = (Integer) rental.get("rentalId");
             assertThat(rentalId).isNotNull();
 
-            assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+            assertThat(rentalCount(2, 3))
                 .as("rentFilmPayloadBareNodeId committed exactly one rental row")
                 .isEqualTo(countBefore + 1);
         } finally {
@@ -7724,7 +7737,7 @@ class GraphQLQueryTest {
         // before that try opens, it surfaces as a request-level error, the data field renders null,
         // and nothing is committed. Both bad shapes take that path: a string that is not a node id
         // at all, and a well-formed id encoding another type.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(2, 3);
         for (String customerId : new String[] {
                 "not-a-node-id",
                 no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3)}) {
@@ -7744,7 +7757,7 @@ class GraphQLQueryTest {
                 .as("the payload renders null; its errors field never sees the decode")
                 .isNull();
         }
-        assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+        assertThat(rentalCount(2, 3))
             .as("nothing was committed")
             .isEqualTo(countBefore);
     }
@@ -7756,7 +7769,7 @@ class GraphQLQueryTest {
         // catch arm returns Outcome.ErrorList, so graphql-java traverses into the errors field;
         // the data field renders null on the error arm, and the typed error surfaces inside
         // data, not as a top-level field error. Nothing is committed.
-        int countBefore = dsl.fetchCount(org.jooq.impl.DSL.table("rental"));
+        int countBefore = rentalCount(999999, 3);
         graphql.ExecutionResult result = executeRaw("""
             mutation {
                 rentFilmPayload(inventoryId: 999999, customerId: 3) {
@@ -7780,7 +7793,7 @@ class GraphQLQueryTest {
             .containsExactly("rentFilmPayload", "errors", "0", "path");
         only.extractingByKey("message", as(STRING))
             .containsIgnoringCase("foreign key");
-        assertThat(dsl.fetchCount(org.jooq.impl.DSL.table("rental")))
+        assertThat(rentalCount(999999, 3))
             .as("the failed routine write committed nothing")
             .isEqualTo(countBefore);
     }

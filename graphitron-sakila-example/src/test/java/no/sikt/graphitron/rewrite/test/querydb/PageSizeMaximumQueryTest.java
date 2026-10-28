@@ -64,11 +64,18 @@ class PageSizeMaximumQueryTest {
 
     @Test
     void aLastAboveTheMaximumIsServedAtTheMaximumFromTheEnd() {
-        var page = connection(execute("""
-            { filmsConnection(last: 3) { nodes { filmId } pageInfo { hasPreviousPage } } }
-            """), "filmsConnection");
+        // The before cursor comes off two forward pages, so it is cursor(4) whatever films other
+        // classes have added after the seeded ones; asking for the end of the table would address
+        // their rows.
+        var first = connection(execute(
+            "{ filmsConnection(first: 2) { pageInfo { endCursor } } }"), "filmsConnection");
+        var second = connection(execute("{ filmsConnection(first: 2, after: \""
+            + pageInfo(first).get("endCursor") + "\") { pageInfo { endCursor } } }"), "filmsConnection");
+        var page = connection(execute("{ filmsConnection(last: 3, before: \""
+            + pageInfo(second).get("endCursor") + "\") { nodes { filmId } pageInfo { hasPreviousPage } } }"),
+            "filmsConnection");
 
-        assertThat(filmIds(page)).containsExactly(4, 5);
+        assertThat(filmIds(page)).containsExactly(2, 3);
         assertThat(pageInfo(page)).containsEntry("hasPreviousPage", true);
     }
 
@@ -117,10 +124,11 @@ class PageSizeMaximumQueryTest {
     void followingTheCursorVisitsEveryRowOnce() {
         var seen = new ArrayList<Integer>();
         String after = null;
-        for (int request = 0; request < 10; request++) {
+        for (int request = 0; request < 200; request++) {
             var arguments = after == null ? "first: 100" : "first: 100, after: \"" + after + "\"";
             var page = connection(execute("{ films(" + arguments + ")"
                 + " { nodes { filmId } pageInfo { hasNextPage endCursor } } }"), "films");
+            assertThat(filmIds(page)).as("every page is served at the maximum").hasSizeLessThanOrEqualTo(2);
             seen.addAll(filmIds(page));
             if (!(Boolean) pageInfo(page).get("hasNextPage")) {
                 break;
@@ -128,7 +136,11 @@ class PageSizeMaximumQueryTest {
             after = (String) pageInfo(page).get("endCursor");
         }
 
-        assertThat(seen).containsExactly(1, 2, 3, 4, 5);
+        // Other classes add films above the seeded ones, so the walk is checked over the seeded
+        // rows and for order and repetition across everything it visited.
+        assertThat(seen).as("no row is repeated and the walk stays in key order")
+            .doesNotHaveDuplicates().isSorted();
+        assertThat(seen.stream().filter(id -> id <= 5).toList()).containsExactly(1, 2, 3, 4, 5);
     }
 
     /**

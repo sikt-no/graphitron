@@ -185,10 +185,10 @@ class ResultKeyScopeExecutionTest {
         // mostly differs from it. Film 4 has none, and an all-null nesting object collapses to
         // null, which is how its original side answers. `original` is selected first, so a
         // collapse of the two terms onto one alias would hand `spoken` the original's term.
-        var films = list(execute(
+        var films = seeded(list(execute(
             "{ filmsOrdered { filmId original { language { name } } spoken { language { name } } } }"),
-            "filmsOrdered");
-        assertThat(films).isNotEmpty().allSatisfy(film ->
+            "filmsOrdered"));
+        assertThat(films).hasSize(5).allSatisfy(film ->
             assertThat(name(map(map(film, "spoken"), "language"))).isEqualTo("English"));
         var originals = new java.util.HashMap<Object, String>();
         for (var film : films) {
@@ -205,10 +205,10 @@ class ResultKeyScopeExecutionTest {
 
     @Test
     void oneNestingFieldUnderTwoAliases_eachAliasReadsItsOwnSubSelection() {
-        var films = list(execute(
-            "{ filmsOrdered { a: spoken { language { name } } b: spoken { language { languageId } } } }"),
-            "filmsOrdered");
-        assertThat(films).isNotEmpty().allSatisfy(film -> {
+        var films = seeded(list(execute(
+            "{ filmsOrdered { filmId a: spoken { language { name } } b: spoken { language { languageId } } } }"),
+            "filmsOrdered"));
+        assertThat(films).hasSize(5).allSatisfy(film -> {
             assertThat(map(map(film, "a"), "language")).containsOnlyKeys("name");
             assertThat(name(map(map(film, "a"), "language"))).isEqualTo("English");
             assertThat(map(map(film, "b"), "language")).containsExactly(Map.entry("languageId", 1));
@@ -219,9 +219,9 @@ class ResultKeyScopeExecutionTest {
     void nestedNesting_aKeyReusedAtTwoDepthsOfOneRow() {
         // projected and projected.inner both splice into the film's row; the outer `a` and the
         // inner `a` are different fields.
-        var films = list(execute(
-            "{ filmsOrdered { projected { a: languageName inner { a: isEnglish } } } }"), "filmsOrdered");
-        assertThat(films).isNotEmpty().allSatisfy(film -> {
+        var films = seeded(list(execute(
+            "{ filmsOrdered { filmId projected { a: languageName inner { a: isEnglish } } } }"), "filmsOrdered"));
+        assertThat(films).hasSize(5).allSatisfy(film -> {
             assertThat(((String) map(film, "projected").get("a")).trim()).isEqualTo("English");
             assertThat(map(map(film, "projected"), "inner").get("a")).isEqualTo(true);
         });
@@ -279,6 +279,14 @@ class ResultKeyScopeExecutionTest {
     }
 
     // ===== helpers =====
+
+    /**
+     * The seeded films (ids 1 to 5): other classes commit films in other languages while this one
+     * runs, so the per-language cases name the rows they read.
+     */
+    private static List<Map<String, Object>> seeded(List<Map<String, Object>> films) {
+        return films.stream().filter(f -> (Integer) f.get("filmId") <= 5).toList();
+    }
 
     /** {@code language.name} is a fixed-width {@code char(20)} column. */
     private static String name(Map<String, Object> language) {

@@ -119,13 +119,27 @@ class RootFieldExecutionTest {
 
     @Test
     void interfaceRootConnection_totalCountAgreesWithTheUnpagedRoot() {
-        int unpaged = list(execute("{ allContent { title } }"), "allContent").size();
-        var connection = (Map<String, Object>) execute(
-            "{ allContentConnection(first: 2) { totalCount edges { node { title } } } }")
-            .get("allContentConnection");
-        assertThat(connection.get("totalCount"))
+        // The two roots are read at different instants and another class may commit a content row
+        // between them. An attempt counts when the unpaged root holds still around the connection
+        // read; a count that disagrees with the rows fails every attempt.
+        int unpaged = -1;
+        Object totalCount = null;
+        Map<String, Object> connection = null;
+        boolean agreed = false;
+        for (int attempt = 0; attempt < 10 && !agreed; attempt++) {
+            int before = list(execute("{ allContent { title } }"), "allContent").size();
+            connection = (Map<String, Object>) execute(
+                "{ allContentConnection(first: 2) { totalCount edges { node { title } } } }")
+                .get("allContentConnection");
+            int after = list(execute("{ allContent { title } }"), "allContent").size();
+            unpaged = before;
+            totalCount = connection.get("totalCount");
+            agreed = before == after && totalCount.equals(before);
+        }
+        assertThat(totalCount)
             .as("the count is restricted to known discriminators, as the rows are")
             .isEqualTo(unpaged);
+        assertThat(agreed).as("totalCount agrees with an unpaged root that did not change around it").isTrue();
         assertThat((List<Map<String, Object>>) connection.get("edges"))
             .extracting(e -> ((Map<String, Object>) e.get("node")).get("title"))
             .containsExactly("ACADEMY DINOSAUR (extended)", "ACE GOLDFINGER (extended)");
