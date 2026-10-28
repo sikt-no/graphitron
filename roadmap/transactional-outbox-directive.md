@@ -140,7 +140,7 @@ Phased, since each phase is observable on its own.
 
 ### The generated code
 
-Two additions to a mutation's fetchers class, and no other change to what is emitted today: a companion method that writes the field's messages, and one call to it inside the write's transaction. Both are shown for `createFilm` from the example above (the table target, two `@outbox`, the common payload from the configuration), against the fetcher the generator emits today.
+Two additions to a mutation's fetchers class: a companion method that writes the field's messages, and one call to it inside the write's transaction. A field without `@outbox` emits exactly what it emits today; an `@outbox` field changes only where its write was not already in a transaction (the `ID`-returning arm, below). Both are shown for `createFilm` from the example above (the table target, two `@outbox`, the common payload from the configuration), against the fetcher the generator emits today.
 
 The call. Today the write is an expression lambda; with `@outbox` it becomes a block lambda that writes, emits, and returns the same keys, so the emit is in the write's transaction on both paths and the code after the lambda is unchanged:
 
@@ -168,6 +168,34 @@ public static DataFetcherResult<Record> createFilm(DataFetchingEnvironment env) 
     }
 }
 ```
+
+The `ID`-returning arm. A `DmlTableField` that returns `ID` or `[ID]` (`DmlReturnExpression.EncodedSingle` / `EncodedList`, rendered by `emitEncoded`) has no transaction and no key records today: it runs the write on the bare `dsl` and encodes each `RETURNING` row in the fetch lambda, so on the escape hatch the write autocommits. `@outbox` on such a field gives the write a `transactionResult` that captures the key records, emits, and returns them, with the encoding moved after the lambda, the shape `emitKeysTransaction` already renders for the re-select arms. This is the spec's own `deleteFilms` example:
+
+```java
+public static DataFetcherResult<List<String>> deleteFilms(DataFetchingEnvironment env) {
+    try {
+        List<Map<?, ?>> in = env.getArgument("in");
+        if (in.isEmpty()) { /* empty batch: no connection, no write, no message, unchanged */ }
+        DSLContext dsl = graphitronContext(env).getDslContext(env);
+        Film filmTable = Tables.FILM;
+        Result<Record1<Integer>> keys = dsl.transactionResult(tx -> {          // new: the arm had no transaction
+            Result<Record1<Integer>> deleted = DSL.using(tx)
+                .deleteFrom(filmTable)
+                .where(/* unchanged */)
+                .returningResult(Tables.FILM.FILM_ID)
+                .fetch();                                                        // was: .fetch(r -> NodeIdEncoder.encodeFilm(...))
+            outboxDeleteFilms(DSL.using(tx), env, deleted);                     // films: $result, the ids encoded in Java from the captured keys
+            return deleted;
+        });
+        List<String> payload = keys.map(r -> NodeIdEncoder.encodeFilm(r.get(Tables.FILM.FILM_ID)));   // encoding moves after the lambda
+        return DataFetcherResult.<List<String>>newResult().data(payload).build();
+    } catch (Exception e) {
+        return ErrorRouter.surfaceClientErrorOrRedact(e, env);
+    }
+}
+```
+
+On the owned path this is a nested scope inside the field's transaction (a savepoint today, a joined scope once R1101's join rule lands); on the escape hatch it is what makes the write and its messages commit together. After a `DELETE` the rows are gone, so `outboxDeleteFilms` has nothing to select from and builds its payload from the captured keys alone, which is why `$result` on a `DELETE` is limited to the node id.
 
 The method. One per `@outbox`-carrying coordinate, a sibling of the `rows<Name>` re-select companion on the same class, named from the field by the generated-names vocabulary like it. It takes the transaction's `DSLContext`, the environment and the captured rows, and reads each argument its mappings name from the environment by that argument's name (the `in` local is the field's argument called `in`, as in the fetcher, not the whole arguments map), and writes every message of the field in directive order. The JSON is built with jOOQ's `jsonbObject` from entries added under the same `containsKey` presence guards the write uses, so an omitted input field is an absent key and an explicit `null` is `null`; the table target is one `INSERT ... SELECT` per message. A message with a `$result` column selects it `FROM` the written table `WHERE` the captured key matches, so the read is part of the insert and the write statement keeps its key-only `RETURNING`; a message without one selects bind values only:
 
@@ -219,12 +247,12 @@ The function target differs only in the last statement: one `new OutboxEmit()` p
 
 What varies by coordinate, and so is the generator's work:
 
-* *The call site.* The three DML emit sites (`renderTransactionalKeyFetch` for the direct-return and record-carrier fetchers, the hand-written `transactionResult` loop of the bulk fetcher) each gain the same optional step. A list result passes the `Result<RecordN>`, and the subselect's `WHERE` becomes a key `IN` over it, with the columns aggregated into an array (`jsonbArrayAgg`), so one message still carries the whole call; a single-row UPDATE or DELETE that matched nothing passes `null` (open decision 2 says whether the method then writes anyway).
+* *The call site.* The four DML emit sites (`renderTransactionalKeyFetch` for the re-select arms and the record-carrier fetchers, the hand-written `transactionResult` loop of the bulk fetcher, and `emitEncoded` for the `ID`-returning arm, which gains a `transactionResult` of its own as shown above) each gain the same optional step. A list result passes the `Result<RecordN>`, and the subselect's `WHERE` becomes a key `IN` over it, with the columns aggregated into an array (`jsonbArrayAgg`), so one message still carries the whole call; a single-row UPDATE or DELETE that matched nothing passes `null` (open decision 2 says whether the method then writes anyway).
 * *The `RETURNING` list.* Unchanged: the key columns the write captures today, which are also the method's parameter type and the subselect's key.
 * *The method body.* One block per message, one `if (in.containsKey(...))` per optional argument leaf, one entry per `$result` leaf (a bind from the captured key for the node id, a column of the written table through the message's subselect for the rest), the common entries shared.
 * *No `@outbox`, no change:* a field without the directive emits exactly what it emits today.
 
-In the generator a new emitter beside `RoutineWriteEmitter` renders the method from the coordinate's outbox rows, and `TypeFetcherGenerator` makes the one seam call at each of the three sites (`ctx.addCompanionMethod`, as `emitReentry` does for the re-select).
+In the generator a new emitter beside `RoutineWriteEmitter` renders the method from the coordinate's outbox rows, and `TypeFetcherGenerator` makes the one seam call at each of the four sites (`ctx.addCompanionMethod`, as `emitReentry` does for the re-select).
 
 ### Phase 1: the table target, for generated DML mutations
 
@@ -233,7 +261,7 @@ In the generator a new emitter beside `RoutineWriteEmitter` renders the method f
 * **The outcome.** The DML fetchers already capture the written rows' keys through `RETURNING` for the payload's re-fetch (`Returning.primaryKey`, `Returning.nodeKeyTail`), and the write statement is left as it is. A message's `$result` columns are read by a subselect in the message's own `INSERT ... SELECT` (`FROM` the written table, `WHERE` its key in the captured keys), so the outcome costs no statement of its own; a message that names no `$result` column selects bind values only. The node id is encoded from the captured keys. A `DELETE` has no rows to select from, so there only the node id is addressable.
 * **Configuration.** An `<outbox>` mojo parameter with exactly one of `<table>` or `<function>` (the function target lands in phase 2), an optional `<payload>`, and `<columns>` mapping the roles `type`, `aggregatetype`, `aggregateid` and `payload` to columns, defaulting to the Debezium names. The table and its columns are resolved against the jOOQ catalog when the model is built, and every rejection in the draft is a build failure naming the table and column. `payload` takes a JSON or JSONB column directly; a CLOB or text column takes the JSON rendered as text, which on Oracle needs `JSON_OBJECT(... RETURNING CLOB)` to lift the 4000-byte `VARCHAR2` default (confirm jOOQ 3.20 renders the `RETURNING` form at pickup).
 * **The call.** In the generated fetcher, right after the write statement returns and inside the same `transactionResult` (which joins the field's transaction on the owned path, R1101 phase 2, and is the fetcher's own transaction on the escape hatch), the fetcher renders each message's payload tree into nested JSON constructors, each leaf guarded by presence so an absent argument contributes no key, and emits the field's messages in directive order, one statement per message: the table target as an `INSERT ... SELECT`, the function target as one call per message (so directive order is the statement order, which a single `UNION ALL` insert would not promise). `$scope` values come from the field's `DataFetchingEnvironment` (the coordinate from `env.getFieldDefinition()` and its parent type, the operation name from `env.getOperationDefinition()`, the alias from `env.getField()`) and, for `tenant`, from the tenant the fetcher already resolved for its write, on both paths, so the owned path and the escape hatch read one source and nothing waits on R1101's `MutationScope`. Should R1101's join rule land first, the emit sits in the fetcher's own `transactionResult` and joins the field's transaction with no change here; if that rule emits a mark on that call to silence its nested-scope warning, whichever of the two items lands second adds the mark to the emit's call site, which is the same call site. A field whose exception an `@error` channel claims never reaches the emit.
-* **Failure routing.** The emit's exception, and a request-time source failure (a missing context value, an unserializable one, `$session` on the escape hatch), is wrapped in an emitted `OutboxEmitException`; `ErrorRouter.claim` declines a chain carrying it, beside R1101's `MutationHookException` decline, so the field takes the redacted path and rolls back.
+* **Failure routing.** The emit's exception, and a request-time source failure (a missing context value, an unserializable one, `$session` on the escape hatch), is wrapped in an emitted `OutboxEmitException`; `ErrorRouter.claim` declines a chain carrying it, through a sibling of `TenantConnections.isMountFailure` of its own (R1101's `MutationHookException` decline is a different exception, and whichever item lands second merges the two declines into one place), so the field takes the redacted path and rolls back.
 
 ### Phase 2: the function target
 
@@ -257,7 +285,7 @@ Execution tier, against an `outbox` table in Debezium's layout that `graphitron-
 * Outcome: `$result.id` equals the id the field returns; a `$result` column is in the payload, read by the message's own insert with the write's `RETURNING` unchanged (a recording `ExecuteListener` counts one statement per message beside the write and the re-select), and a column the client's request did not select is still there; `$result` on a `DELETE` accepts the node id and rejects a column at build; `deleteFilms` with `$result` yields the deleted ids as one array in one message, and under `missingAsDeleted` only the rows deleted.
 * A field whose exception an `@error` channel claims writes no message.
 * The emit failing (a check constraint on the outbox table rejects the row): the field fails redacted, an `@error` channel on the field does not claim it, the film row is gone, the next field commits.
-* Escape hatch: the message commits with the write; a `$session` source fails the field.
+* Escape hatch: the message commits with the write, on the `ID`-returning arm (`deleteFilms`) as well as the re-select arms; a failing emit (a check constraint on the outbox table) leaves the deleted row in place on none of them; a `$session` source fails the field.
 * `ROLLBACK_ONLY`: emitted and discarded with the field.
 * Multi-tenant: the message is written in the tenant database the field wrote on, `$scope.tenant` set.
 * Phase 2, against a fixture `outbox_emit` function that writes its arguments to a second table: the committed field's call carries the same payload the table target writes, a rolled-back field leaves none, a role parameter the routine lacks is not passed, a `<parameters>` mapping binds a differently named one, and a routine that raises fails the field redacted with the write gone. A procedure is called the same way. The logical-message recipe from the docs is run with a replication slot (`pg_logical_slot_get_changes` with `test_decoding`) where the test database has `wal_level = logical`; check the local-db and CI databases at pickup, and keep it out of the suite if they do not.
@@ -288,6 +316,8 @@ Because a message's `$result` values are read by a subselect in its own insert, 
 ## Reviewer findings
 
 ### Round 1 (2026-10-28, Spec -> Ready, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
+
+Author response: finding 1 is right (verified against `emitEncoded` and the generated `deleteFilms`, which writes on the bare `dsl` and encodes in the fetch lambda). Taken the first way: the `ID`-returning arm is the fourth call site and gains a `transactionResult` that captures the keys, emits and returns them, with the encoding after the lambda (see "The generated code"); the "no other change" sentence, the call-site list, the seam count, and the escape-hatch test are updated. Rejecting `@outbox` on that arm would have removed `deleteFilms` from the Goal and left delete events, the natural outbox case, unreachable. The non-blocking note is taken: the decline is its own sibling of `TenantConnections.isMountFailure`.
 
 Verdict: withhold. One blocking finding, bearing on both questions; one non-blocking note. The goal reads on its own: a schema author adds `@outbox` to a mutation field, and every successful call writes one Debezium-style outbox row (or one call to their own emit routine) per directive, carrying a JSON payload they mapped from arguments, the written rows, the session and the context, committed or rolled back with the write. The plan extends shapes already in the tree (the `argMapping` parser behind `ArgBindingMap`, `Returning`, `JooqCatalog`, the `rows<Name>` companion registered through `addCompanionMethod`, the `ErrorRouter.claim` declines) rather than standing a parallel mechanism beside them, and every symbol it names exists as named, except `MutationHookException`, which is R1101 phase 3 and not yet on trunk (see the note).
 
