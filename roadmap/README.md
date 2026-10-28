@@ -16,7 +16,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 |---|---|---|---|---|
 | `R863` | Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it | Spec | 2026-10-21 <sub>created 2026-08-27</sub> | [plan](execution-tier-shared-db-cross-talk.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-21 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
-| `R1115` | A child returning a @table type on its parent's own table, with no @reference, is rejected instead of reading the parent's own row | Spec | 2026-10-28 | [plan](same-table-table-child-without-reference-is-rejected.md) |
+| `R1115` | A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key | Spec | 2026-10-28 | [plan](same-table-table-child-without-reference-is-rejected.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
 | `R923` | A grain declares its corpora, so a cross-corpus grain can say so | Spec | 2026-09-05 | [plan](grain-declares-its-corpora.md) |
 | `R776` | An agent cannot run SQL against the fact store, only the queries we anticipated | Spec | 2026-08-21 | [plan](store-query-mcp-tool.md) |
@@ -422,7 +422,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 ### classification-model
 
 - `R234` [**Support jOOQ embedded and UDT records as non-table input backings**](jooq-embedded-and-udt-input-backings.md) — Backlog, architecture
-- `R1115` [**A child returning a @table type on its parent's own table, with no @reference, is rejected instead of reading the parent's own row**](same-table-table-child-without-reference-is-rejected.md) — Spec, bug
+- `R1115` [**A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key**](same-table-table-child-without-reference-is-rejected.md) — Spec, bug
 - `R846` [**A field returning an author-declared connection type has no scope table**](authored-connection-type-scope-silence.md) — Backlog, bug
 - `R523` [**Carry field SourceLocations through the tenant-binding fold rejections**](tenant-fold-rejection-source-locations.md) — Backlog, tech-debt
 - `R852` [**A field-site terminal condition hop resolves only through its signature, never the declared target**](field-walk-declared-target-condition-rung.md) — Backlog, bug
