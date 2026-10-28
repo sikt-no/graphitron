@@ -57,8 +57,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
 | `R92` | Surface database CHECK constraints as Jakarta validation rules | Spec | 2026-08-06 | [plan](catalog-check-constraint-validation.md) |
 | `R427` | Type-ahead search backed by native database indexes | Ready | 2026-08-06 <sub>created 2026-07-02</sub> | [plan](relevance-ranked-search.md) |
-| `R1103` | Derive the compile-graph oracle from javac and retire referencedClassNames | In Review | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](compile-graph-oracle-from-javac.md) |
-| `R174` | Replace the graphitron-javapoet fork with Palantir's JavaPoet <sub>blocked by: [compile-graph-oracle-from-javac](compile-graph-oracle-from-javac.md)</sub> | In Progress | 2026-10-27 <sub>created 2026-05-17</sub> | [plan](replace-javapoet-fork-with-palantir.md) |
+| `R174` | Replace the graphitron-javapoet fork with Palantir's JavaPoet | In Progress | 2026-10-28 <sub>created 2026-05-17</sub> | [plan](replace-javapoet-fork-with-palantir.md) |
 | `R242` | DML payload positional input/output alignment | Spec | 2026-07-15 <sub>created 2026-05-26</sub> | [plan](dml-payload-positional-alignment.md) |
 | `R115` | Enumerate the capabilities graphitron delivers | Spec | 2026-07-14 | [plan](capability-catalog.md) |
 | `R109` | How-to recipe and Sakila fixture for grouped collections via Field<Result<R>> @externalField + multiset | Spec | 2026-07-14 | [plan](list-valued-external-field-multiset.md) |
@@ -812,7 +811,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R506` [**Roadmap tool as statechart driver, items as machine instances**](roadmap-tool-statechart-driver.md) — Backlog, architecture
 - `R730` [**The javadoc reference gate reaches test sources, and the capture-API residue it missed**](capture-api-residue-after-nodehood-move.md) — Ready, cleanup
 - `R806` [**Derive the docs staging css/docinfo fan-out from the staged tree**](derive-docs-staging-asset-fanout.md) — Backlog, dx
-- `R174` [**Replace the graphitron-javapoet fork with Palantir's JavaPoet**](replace-javapoet-fork-with-palantir.md) — In Progress, architecture, blocked by [compile-graph-oracle-from-javac](compile-graph-oracle-from-javac.md)
+- `R174` [**Replace the graphitron-javapoet fork with Palantir's JavaPoet**](replace-javapoet-fork-with-palantir.md) — In Progress, architecture
 - `R168` [**Sub-agent classifier for blast-radius effort (Low/Medium/High) at Spec stage**](effort-blast-radius-classification.md) — Backlog, cleanup
 - `R107` [**Classify leaf mentions in inference-axis-coverage report**](leaf-coverage-mention-classification.md) — Backlog, validation
 - `R115` [**Enumerate the capabilities graphitron delivers**](capability-catalog.md) — Spec, architecture
@@ -839,7 +838,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R737` [**roadmap-tool stands a fact store up outside the harness, in a module the guard does not walk**](roadmap-tool-store-site-and-guard-scope.md) — Backlog, cleanup
 - `R560` [**Un-skip graphitron-javapoet test suite**](unskip-javapoet-tests.md) — Backlog, cleanup
 - `R116` [**Cover composite-key Row2 path-keyed @sourceRow classification**](composite-key-row2-source-row-coverage.md) — Backlog, cleanup
-- `R1103` [**Derive the compile-graph oracle from javac and retire referencedClassNames**](compile-graph-oracle-from-javac.md) — In Review, architecture
 - `R544` [**Declarative mechanism for the rejection rows the classified corpus cannot hold**](rejection-spec-by-example.md) — Backlog, testing
 - `R252` [**Multi-file federation fixture coverage for schema.graphqls emission**](multi-file-federation-fixture-coverage.md) — Backlog
 - `R993` [**The pipeline-tier classpath census leaves code_method_parameter.element_class and delivery NULL although CodeCapture writes them**](pipeline-census-leaves-parameter-peel-null.md) — Backlog, bug

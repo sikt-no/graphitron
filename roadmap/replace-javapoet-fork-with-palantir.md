@@ -5,9 +5,9 @@ status: In Progress
 bucket: architecture
 priority: 9
 theme: tooling
-depends-on: [compile-graph-oracle-from-javac]
+depends-on: []
 created: 2026-05-17
-last-updated: 2026-10-27
+last-updated: 2026-10-28
 ---
 
 # Replace the graphitron-javapoet fork with Palantir's JavaPoet
