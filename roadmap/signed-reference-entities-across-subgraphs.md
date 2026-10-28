@@ -31,14 +31,14 @@ what the session state means to the policies.
 
 ```graphql
 # Subgraph A: the issuer. VgsResultat is A's own table of references to results; `id` is the result's id.
-# Graphitron computes `voucher` per row, the way it computes a @nodeId; no service.
+# Graphitron computes `voucher` per parent, the way it computes a @nodeId; no service.
 type Soknad @table(name: "soknad") @key(fields: "id") {
   id: ID! @nodeId
   vgsResultater: [VgsResultat!]! @reference(path: [{key: "soknad_vgs_resultat_soknad_fkey"}])
 }
 type VgsResultat @table(name: "soknad_vgs_resultat") @key(fields: "id", resolvable: false) {
   id: ID! @field(name: "vgs_resultat_id")
-  voucher: String! @issue(scope: "vgs-resultater", subject: "fodselsnummer", ttl: "PT5M")
+  voucher: String! @issue(scope: "vgs-resultater", ttl: "PT5M")
 }
 
 # Subgraph B: the owner. The real, table-bound entity. `voucher` is the proof field: not a column, not selected.
@@ -51,23 +51,24 @@ type VgsResultat @table(name: "vgs_resultat") @key(fields: "id") {
 }
 ```
 
-What both subgraphs publish is derived, not written. Graphitron rewrites every `@key` on a type that has a
-`@issue` or `@accept` field so it gains that field (`@key(fields: "id voucher")`) and puts `@inaccessible`
-on the field, importing `@inaccessible` into the `@link` as it does for the other directives it applies.
+What both subgraphs publish is derived, not written. Graphitron adds a second key beside the authored one on
+a type that has an `@issue` or `@accept` field, `@key(fields: "id voucher")`, and puts `@inaccessible` on the
+voucher field, importing `@inaccessible` into the `@link` as it does for the other directives it applies.
 The author writes neither, and A and B cannot disagree about the key shape because both derive it from
-their marker. Because every authored key gains the voucher, the type is reachable from other subgraphs
-only with one; a type that must also resolve by plain `id` under the caller's own RLS needs the escape in
-the open questions.
+their marker. The authored `@key(fields: "id")` is untouched, so the type still resolves by plain `id`
+under the caller's own RLS; a voucher only ever adds access. This is federation only: `Query.node`,
+`@node` and the relay id are unaffected and know nothing about vouchers.
 
 ## How it works
 
 1. *Issue (A).* A's field is an ordinary read; the `voucher` column of each returned row is not selected
-   but computed. For each distinct `subject` value among the rows the operation returns (a column of the
-   row, here the applicant's id number), Graphitron calls the configured issue method once with
-   `(scope, subject, expires)` plus whatever identity payload the method declares, and writes the token
-   into every row with that subject. `expires` is the operation's start plus `ttl`, fixed per operation,
-   so a deterministic signature gives every row of one subject the same token. The decision is the read
-   itself: a row A's rules hide never gets a voucher.
+   but computed. Graphitron calls the configured issue method once per distinct parent row the operation
+   reached these rows from, with `(scope, parent key, expires)` plus whatever identity payload the method
+   declares, and writes the token into every returned row of that parent. What the token says about the
+   parent (for instance the applicant's id number, looked up in A's database) is the issue method's
+   business; Graphitron has no notion of what the voucher is about. `expires` is the operation's start
+   plus `ttl`, fixed per operation, so a deterministic signature gives one parent one token. The decision
+   is the read itself: a row A's rules hide never gets a voucher.
 2. *Carry.* The router fetches the key fields from A and sends `_entities` representations `{id, voucher}`
    to B. The voucher stays out of the client schema because the field is `@inaccessible`.
 3. *Route (B).* The dispatcher resolves the representations through the voucher-bearing key and groups them
@@ -84,36 +85,40 @@ the open questions.
    mixes two vouchers and a field outside the subtree uses the base connection, as tenants already do.
 6. *Release.* At operation end every vouched connection is unmounted and released.
 
-A cap on vouched connections per operation fails the excess entities closed instead of exhausting the
-pool. How many connections a query takes follows from the issue side: one per distinct subject.
+An operation takes at most one vouched connection for now. A second distinct voucher in the same operation
+fails its entities with an error that names the limit, not `null`, so the limit is not mistaken for a
+denial. The constant lives in one place so it can become configuration later. Consequence: one operation
+can vouch for one parent only. A query that returns several parents' references gets results for the first
+voucher's parent and errors for the others.
 
 ## What exists today, and what is missing
 
 | Need | Today | Gap |
 |---|---|---|
-| Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. | `@issue` is a computed, non-column projection whose value comes from the issue method; rows are grouped by subject so the method is called once per distinct subject per operation. |
+| Computed field on a table-bound row | `@nodeId` and other computed projections are emitted into the select list. | `@issue` is a computed, non-column projection whose value comes from the issue method; rows are grouped by parent so the method is called once per distinct parent per operation, and the fetcher already holds the parent key. |
 | Signing | None, and Graphitron should not hold keys. | A top-level `<voucher>` block naming an `<issue>` method, read at build time like the mount: extra parameters become contextArguments on the factory, and it may be a jOOQ-generated routine method so A has no Java at all. |
 | Per-subtree routing value | The tenant rides down an entity's subtree in `localContext`; loaders and acquisitions read it. | The slot is reserved for the tenant and a guard test keeps every other writer out. It becomes a small routing record (tenant, voucher), and the guard, the loader naming and the acquisition path read both parts. |
-| One connection per routing key | Per-tenant acquisition, lazily, one mount per connection, unmount at release. | Key the acquisition by `(tenant, voucher)`; an accept step after the ordinary mount; the per-operation cap. |
+| One connection per routing key | Per-tenant acquisition, lazily, one mount per connection, unmount at release. | Key the acquisition by `(tenant, voucher)`; an accept step after the ordinary mount; the cap of one. |
 | Entity with a non-column key field | Every `@key` field must resolve to a column. | An `@accept` field: in the key, in the SDL, excluded from the SELECT and projection; a key with it must also name at least one column field. |
-| Schema alteration from one marker | `@node` types get a synthesised `@key`; applied federation directives are imported into the `@link`. | A synthesiser that adds the marked field to every `@key` on the type and applies `@inaccessible`, same pass, same import handling. A marker on a type with no `@key` is rejected. |
-| Verification | None. | `<voucher><accept>` method: receives the connection configuration, the voucher and the scope, and, by type, the mount's handle; reports accepted or rejected. Same session-scoped contract as the mount. |
+| Schema alteration from one marker | `@node` types get a synthesised `@key`; applied federation directives are imported into the `@link`. | A synthesiser that adds a second key (the authored key's fields plus the marked field) beside the authored one and applies `@inaccessible` to the marked field, same pass, same import handling. A marker on a type with no `@key` is rejected. |
+| Verification | None. | `<voucher><accept>` method: receives the connection configuration, the voucher and the scope, and, by type, the mount's handle; returns a boolean, accepted or rejected; an exception evicts the connection and errors the entities. Same session-scoped contract as the mount. |
 | Reference-only stub on a table | Accepted. | An `@issue` row type keeps `@key(resolvable: false)`; reject `@issue` on a resolvable key. |
 | Children of the entity | Table-bound children run through generated fetchers that honour the inherited routing. | Verify that a `@service` child and a connection-typed child under the entity also acquire from the inherited key. |
 
 ## Implementation
 
-* *Directives.* `@issue(scope:, subject:, ttl:)` on a field of a table-bound, reference-only type (A);
+* *Directives.* `@issue(scope:, ttl:)` on a field of a table-bound, reference-only type (A);
   `@accept(scope:)` on a field of a table-bound, resolvable type (B). Graphitron defines both, as it
-  does `@node`; consumers do not write the definitions. `subject` names a column of the same row. Reject:
-  either marker on a type with no `@key`, on a field that is also a column, both markers on one type, and
+  does `@node`; consumers do not write the definitions. Reject:
+  either marker on a type with no `@key`, on a field that is also a column, `@issue` on a type reached from a
+  root field (no parent to issue for), both markers on one type, and
   `@accept` in a build with no `<accept>`, `@issue` in a build with no `<issue>`.
-* *Key synthesis.* Beside the node-key synthesiser: each `@key` on a type with a marked field is extended
-  with it, the field gains `@inaccessible`, and both show in the served `_service.sdl`. A `@node` type's
-  synthesised id key is extended the same way, which needs the node-id alternative to accept a proof field
-  beside `id`.
-* *Issue.* The select list for an `@issue` row computes the token after the rows are read, grouped by
-  subject, calling the configured method once per distinct subject. Expiry is fixed per operation.
+* *Key synthesis.* Beside the node-key synthesiser: a type with a marked field gains a second `@key`, the
+  authored key's fields plus the marked field, and the marked field gains `@inaccessible`; both show in
+  the served `_service.sdl`. Authored keys, `@node` and the relay id are not touched. The voucher key's
+  `id` part decodes the way the plain key's does.
+* *Issue.* The fetcher that reads an `@issue` row computes the token after the rows are read, grouped by
+  parent, calling the configured method once per distinct parent. Expiry is fixed per operation.
 * *Routing record.* Replace the bare tenant in the `localContext` slot with a record carrying the optional
   tenant and the optional voucher. `TenantHandDown` becomes the one writer of the record; the ownership
   guard test is updated. Single-tenant, voucher-free builds emit exactly what they emit today.
@@ -147,30 +152,26 @@ the design is wrong.
   fetchers; single-tenant output unchanged.
 * Compilation tier: generated issue, dispatcher and acquisition code compiles at Java 17.
 * Execution tier (real Postgres, RLS fixture beside the existing session-mount fixture, A and B in one
-  fixture): rows of one subject get one token and the issue method runs once for them; a valid voucher
+  fixture): the rows of one parent get one token and the issue method runs once for them; a valid voucher
   exposes the entity and a three-level nested read under a policy that otherwise hides the rows; the same
-  voucher twice takes one connection and two vouchers take two; a sibling entity or a field outside the
+  voucher twice takes one connection and a second distinct voucher fails its entities with the limit error; a sibling entity or a field outside the
   subtree cannot read the first voucher's rows; tampered, expired, wrong-scope and wrong-user vouchers
-  give `null`; the cap fails the excess closed; connections are unmounted and released at the end.
+  give `null`;  connections are unmounted and released at the end.
 * Served SDL: `_service { sdl }` shows `@key(fields: "id voucher")` and `@inaccessible` on the voucher
   field on both sides, with the `@link` importing `@inaccessible`.
 
 ## Open questions
 
-* Names: `@issue` and `@accept` name the two acts; `@issue` and `@accept` are generic words for directives in an SDL
-  that may carry other meanings, so check it against the directive vocabulary before it ships.
-* Strict or additive: every authored key gains the voucher (recommended, nothing is reachable without one),
-  or the type keeps its plain keys. If a type needs both, `@issue`/`@accept(keepPlainKeys: true)` would
-  add the voucher key beside the authored ones.
-* A `@node` type: does the voucher join the relay id key, and does `Query.node` still resolve the id
-  without one?
+* Names: `@issue` and `@accept` name the two acts; both are generic words for directives in an SDL that may
+  carry other meanings, so check them against the directive vocabulary before they ship.
 * The issue method's identity payload: the caseworker comes from a contextArgument (as mount payloads do)
   or from the mount's handle; recommendation is the same by-type recognition the mount uses.
-* The accept method's result: boolean (recommended), with exceptions evicting the connection and erroring
-  the entities.
-* Cap default and whether it is per operation or per runtime.
+* The limit of one vouched connection per operation means a query over several parents vouches for only
+  the first. Raising it is configuration plus the pool-exhaustion question; revisit when a consumer
+  needs a list of parents.
 * Multi-tenant: confirm a voucher cannot widen the tenant set the request may touch.
-* Is `subject` always a column of the row, or does the stub sometimes need a value from the parent?
+* `@issue` hands the issue method the parent row's key. Confirm the fetchers that read a reference-only
+  row type under a parent (nested select or DataLoader) hold that key at the point the token is computed.
 
 ## Other solutions we've considered
 
