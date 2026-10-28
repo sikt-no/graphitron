@@ -2501,33 +2501,34 @@ class GraphQLQueryTest {
 
     @Test
     void filmsFaceted_junctionReferenceFacet_countsFilmsPerActor() {
-        // Bounded to the seeded films (see filmsFaceted_noFacetFilter_countsMatchPlainAggregates).
-        // The counts sum to seven over five films: a film with two actors is in two buckets.
+        // Bounded to seeded films 1 and 2 by length (see filmsFaceted_noFacetFilter_countsMatchPlainAggregates):
+        // a sibling class writes film_actor pairs to films 3 to 5, so those are outside the bound.
+        // The counts sum to four over two films: a film with two actors is in two buckets.
         Map<String, Object> data = execute(
-            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            "{ filmsFaceted(extra: {lengthIs: [86, 48]}) "
             + "{ facets { actor { value count } } } }");
         assertThat(buckets(facetValues(data, "filmsFaceted", "actor"))).containsExactly(
-            org.assertj.core.groups.Tuple.tuple("GUINESS", 3),
-            org.assertj.core.groups.Tuple.tuple("CHASE", 2),
-            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 2));
+            org.assertj.core.groups.Tuple.tuple("GUINESS", 2),
+            org.assertj.core.groups.Tuple.tuple("CHASE", 1),
+            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 1));
     }
 
     @Test
     void filmsFaceted_junctionReferenceFacet_restrictedBySiblingFacet() {
         Map<String, Object> data = execute("""
-            { filmsFaceted(filter: { rating: [G] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+            { filmsFaceted(filter: { rating: [G] }, extra: {lengthIs: [86, 48]}) {
                 facets { actor { value count } }
             } }""");
+        // Bounded to films 1 and 2, whose casts no other class writes; of those only film 2 is rated G.
         assertThat(buckets(facetValues(data, "filmsFaceted", "actor"))).containsExactly(
             org.assertj.core.groups.Tuple.tuple("CHASE", 1),
-            org.assertj.core.groups.Tuple.tuple("GUINESS", 1),
-            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 1));
+            org.assertj.core.groups.Tuple.tuple("GUINESS", 1));
     }
 
     @Test
     void filmsFaceted_junctionReferenceFacet_bucketValueRoundTrips() {
         Map<String, Object> data = execute("""
-            { filmsFaceted(filter: { actor: ["CHASE"] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+            { filmsFaceted(filter: { actor: ["CHASE"] }, extra: {lengthIs: [48, 169]}) {
                 facets { rating { value count } }
                 nodes { title }
             } }""");
@@ -2542,16 +2543,18 @@ class GraphQLQueryTest {
 
     @Test
     void filmsFaceted_conditionJoinHopFacet_countsAndRoundTrips() {
+        // Length bounds keep the read to films whose casts no other class writes: films 1 and 2 for
+        // the counts, films 1 and 4 for the NICK filter (a sibling casts NICK in film 3, not in 1 or 4).
         Map<String, Object> data = execute(
-            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            "{ filmsFaceted(extra: {lengthIs: [86, 48]}) "
             + "{ facets { actorFirstName { value count } } } }");
         assertThat(buckets(facetValues(data, "filmsFaceted", "actorFirstName"))).containsExactly(
-            org.assertj.core.groups.Tuple.tuple("PENELOPE", 3),
-            org.assertj.core.groups.Tuple.tuple("ED", 2),
-            org.assertj.core.groups.Tuple.tuple("NICK", 2));
+            org.assertj.core.groups.Tuple.tuple("PENELOPE", 2),
+            org.assertj.core.groups.Tuple.tuple("ED", 1),
+            org.assertj.core.groups.Tuple.tuple("NICK", 1));
 
         Map<String, Object> picked = execute("""
-            { filmsFaceted(filter: { actorFirstName: ["NICK"] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
+            { filmsFaceted(filter: { actorFirstName: ["NICK"] }, extra: {lengthIs: [86, 117]}) {
                 facets { rating { value count } }
                 nodes { filmId }
             } }""");
@@ -2567,13 +2570,14 @@ class GraphQLQueryTest {
     @Test
     void filmsFaceted_hopConditionFacet_conditionNarrowsTheJoin() {
         // The hop's condition keeps actors not named ED, so ED CHASE never joins and no CHASE
-        // bucket appears; without it CHASE 2 would. The filter honours the same condition.
+        // bucket appears; without it CHASE 1 would. The filter honours the same condition.
+        // Counts are bounded to films 1 and 2, whose casts no other class writes.
         Map<String, Object> data = execute(
-            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            "{ filmsFaceted(extra: {lengthIs: [86, 48]}) "
             + "{ facets { castExceptEd { value count } } } }");
         assertThat(buckets(facetValues(data, "filmsFaceted", "castExceptEd"))).containsExactly(
-            org.assertj.core.groups.Tuple.tuple("GUINESS", 3),
-            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 2));
+            org.assertj.core.groups.Tuple.tuple("GUINESS", 2),
+            org.assertj.core.groups.Tuple.tuple("WAHLBERG", 1));
 
         Map<String, Object> picked = execute("""
             { filmsFaceted(filter: { castExceptEd: ["CHASE"] }, extra: {lengthIs: [48, 50, 86, 117, 169]}) {
@@ -2588,12 +2592,19 @@ class GraphQLQueryTest {
     void filmActorsFaceted_compositeKeyRoot_countsDistinctOverBothKeyColumns() {
         Map<String, Object> data = execute(
             "{ filmActorsFaceted { facets { filmTitle { value count } } } }");
-        assertThat(buckets(facetValues(data, "filmActorsFaceted", "filmTitle"))).containsExactly(
-            org.assertj.core.groups.Tuple.tuple("ACADEMY DINOSAUR", 2),
-            org.assertj.core.groups.Tuple.tuple("ACE GOLDFINGER", 2),
-            org.assertj.core.groups.Tuple.tuple("ADAPTATION HOLES", 1),
-            org.assertj.core.groups.Tuple.tuple("AFFAIR PREJUDICE", 1),
-            org.assertj.core.groups.Tuple.tuple("AGENT TRUMAN", 1));
+        // The facet counts the whole film_actor table, which a sibling class also writes to (films 3
+        // to 5, and films of its own), so only the seeded titles are read. Films 1 and 2 take no
+        // sibling pairs and keep their exact counts; films 3 to 5 are floors (one seeded pair each).
+        java.util.Map<Object, Object> counts = new java.util.HashMap<>();
+        for (var b : facetValues(data, "filmActorsFaceted", "filmTitle")) {
+            if (SEEDED_FILM_TITLES.contains(b.get("value"))) counts.put(b.get("value"), b.get("count"));
+        }
+        assertThat(counts).containsOnlyKeys(SEEDED_FILM_TITLES.toArray())
+            .containsEntry("ACADEMY DINOSAUR", 2)
+            .containsEntry("ACE GOLDFINGER", 2);
+        for (String title : SEEDED_FILM_TITLES.subList(2, 5)) {
+            assertThat(((Number) counts.get(title)).longValue()).as(title).isGreaterThanOrEqualTo(1L);
+        }
 
         Map<String, Object> picked = execute("""
             { filmActorsFaceted(filter: { filmTitle: ["ACE GOLDFINGER"] }) {
@@ -2843,20 +2854,21 @@ class GraphQLQueryTest {
 
     @Test
     void inlineLookupTableField_acrossMultipleParents_perFilmFiltering() {
-        // Film 2 (ACE GOLDFINGER) cast: PENELOPE (1), ED (3). Film 3 cast: PENELOPE only.
-        // Same input [1, 3] on both → film 2 has both; film 3 has only PENELOPE.
+        // Film 1 cast: PENELOPE (1), NICK (2). Film 2 cast: PENELOPE (1), ED (3). Films 1 and 2 are
+        // the seeded films no other class writes cast rows to.
+        // Same input [1, 3] on both → film 1 has only PENELOPE; film 2 has both.
         Map<String, Object> data = execute(
-            "{ filmById(film_id: [\"2\", \"3\"]) { filmId actors(actor_id: [1, 3]) { firstName } } }");
+            "{ filmById(film_id: [\"1\", \"2\"]) { filmId actors(actor_id: [1, 3]) { firstName } } }");
         var films = assertThat(data).extractingByKey("filmById", as(list(Map.class))).hasSize(2);
 
-        var film2 = films.element(0, as(MAP)).containsEntry("filmId", 2);
+        var film1 = films.element(0, as(MAP)).containsEntry("filmId", 1);
+        film1.extractingByKey("actors", as(list(Map.class)))
+            .extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
+
+        var film2 = films.element(1, as(MAP)).containsEntry("filmId", 2);
         film2.extractingByKey("actors", as(list(Map.class)))
             .extracting(a -> a.get("firstName"))
             .containsExactlyInAnyOrder("PENELOPE", "ED");
-
-        var film3 = films.element(1, as(MAP)).containsEntry("filmId", 3);
-        film3.extractingByKey("actors", as(list(Map.class)))
-            .extracting(a -> a.get("firstName")).containsExactly("PENELOPE");
     }
 
     // ===== @splitQuery Batched(Lookup)TableField DataLoader fan-out =====
@@ -3239,7 +3251,8 @@ class GraphQLQueryTest {
 
         assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactly(1);
-        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
+        // Film 3 is cast by a sibling class too (actor 2 among others), so only the seeded pair is named.
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).contains(1);
     }
 
     @SuppressWarnings("unchecked")
@@ -3254,10 +3267,12 @@ class GraphQLQueryTest {
         var byId = films.stream().collect(java.util.stream.Collectors.toMap(
             f -> (Integer) f.get("filmId"), f -> (List<Map<String, Object>>) f.get("actorsBySplitLookup")));
 
+        // Films 3 and 4 are cast by a sibling class too (actor 3 among others), so for those two
+        // the filter is proven by no actor other than 3 coming back, whether the list is empty or holds 3.
         assertThat(byId.get(1)).isEmpty();
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactly(3);
-        assertThat(byId.get(3)).isEmpty();
-        assertThat(byId.get(4)).isEmpty();
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).isSubsetOf(3);
+        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).isSubsetOf(3);
         assertThat(byId.get(5)).extracting(a -> a.get("actorId")).containsExactly(3);
     }
 
@@ -3424,12 +3439,13 @@ class GraphQLQueryTest {
         // Both dispatch points in one path: an FK hop-0 correlation, then a bridging join whose ON
         // is the developer's predicate. Actor 1 plays in films 1, 2 and 3, and film 1 has two
         // actors, so the EXISTS must return film 1 exactly once: no row multiplication however
-        // many junction rows the path reaches.
+        // many junction rows the path reaches. A sibling class also casts actor 1 in film 4, so
+        // film 4 is allowed but not required; film 5 never has actor 1.
         Map<String, Object> data = execute(
             "{ filmsByBridgedActorFirstName(firstName: \"PENELOPE\") { filmId } }");
-        assertThat(data).extractingByKey("filmsByBridgedActorFirstName", as(list(Map.class)))
+        assertThat(seededById(data, "filmsByBridgedActorFirstName"))
             .extracting(f -> f.get("filmId"))
-            .containsExactly(1, 2, 3);
+            .contains(1, 2, 3).doesNotHaveDuplicates().isSubsetOf(1, 2, 3, 4);
     }
 
     @SuppressWarnings("unchecked")
@@ -3449,11 +3465,12 @@ class GraphQLQueryTest {
         // A reverse-direction FK hop: film reaches into film_actor, which holds the key, so the
         // path matches many rows per parent. Nothing pinned this grain, and the case for admitting
         // condition hops rests on it: foreign-key-ness was never buying at-most-one-row here
-        // either. Actor 1 plays in films 1, 2 and 3, each returned once.
+        // either. Actor 1 plays in films 1, 2 and 3, each returned once. A sibling class also casts
+        // actor 1 in film 4, so film 4 is allowed but not required; film 5 never has actor 1.
         Map<String, Object> data = execute("{ filmsByJunctionActorId(actorId: 1) { filmId } }");
-        assertThat(data).extractingByKey("filmsByJunctionActorId", as(list(Map.class)))
+        assertThat(seededById(data, "filmsByJunctionActorId"))
             .extracting(f -> f.get("filmId"))
-            .containsExactly(1, 2, 3);
+            .contains(1, 2, 3).doesNotHaveDuplicates().isSubsetOf(1, 2, 3, 4);
     }
 
     @SuppressWarnings("unchecked")
@@ -3493,12 +3510,13 @@ class GraphQLQueryTest {
     @Test
     void scalarLeafReference_interiorConditionHop_projectsThroughTheBridge() {
         // The other scalar-leaf shape: the condition hop is interior (film -> film_actor) and an
-        // FK hop lands on actor, where the column lives. Film 3 has exactly one actor, so the
-        // subselect's one-row cap is deterministic here.
-        Map<String, Object> data = execute("{ filmById(film_id: [\"3\"]) { filmId soleActorFirstName } }");
+        // FK hop lands on actor, where the column lives. Film 1 is cast by PENELOPE and NICK only
+        // (no other class writes its cast), so the subselect's one-row cap yields one of the two;
+        // a bridge reaching any other actor fails the membership check.
+        Map<String, Object> data = execute("{ filmById(film_id: [\"1\"]) { filmId soleActorFirstName } }");
         assertThat(data).extractingByKey("filmById", as(list(Map.class)))
             .singleElement(as(map(String.class, Object.class)))
-            .extractingByKey("soleActorFirstName").isEqualTo("PENELOPE");
+            .extractingByKey("soleActorFirstName").isIn("PENELOPE", "NICK");
     }
 
     @SuppressWarnings("unchecked")
@@ -3681,9 +3699,10 @@ class GraphQLQueryTest {
             f -> (List<Map<String, Object>>) f.get("actorsByCondition")));
         assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
-        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
-        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).containsExactly(2);
-        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).containsExactly(3);
+        // Films 3 to 5 are cast by a sibling class too, so those name their seeded actor only.
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).contains(1);
+        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).contains(2);
+        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).contains(3);
     }
 
     @SuppressWarnings("unchecked")
@@ -3710,9 +3729,10 @@ class GraphQLQueryTest {
             f -> (List<Map<String, Object>>) f.get("actorsViaJunctionCondition")));
         assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 2);
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
-        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
-        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).containsExactly(2);
-        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).containsExactly(3);
+        // Films 3 to 5 are cast by a sibling class too, so those name their seeded actor only.
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).contains(1);
+        assertThat(byId.get(4)).extracting(a -> a.get("actorId")).contains(2);
+        assertThat(byId.get(5)).extracting(a -> a.get("actorId")).contains(3);
     }
 
     @SuppressWarnings("unchecked")
@@ -3812,11 +3832,12 @@ class GraphQLQueryTest {
 
     @Test
     void compositeKeyLookup_mismatchedPairExcluded() {
-        // (film 4, actor 1) is NOT a row in film_actor (film 4's cast is actor 2 only). Both
-        // film 4 and actor 1 exist individually, but the composite JOIN rejects the pair, so its
-        // slot holds null. (film 1, actor 1) is a real pair and lands at its own index.
+        // (film 5, actor 1) is NOT a row in film_actor (film 5's seeded cast is actor 3 only, and no
+        // class writes this pair). Both film 5 and actor 1 exist individually, but the composite JOIN
+        // rejects the pair, so its slot holds null. (film 1, actor 1) is a real pair and lands at its
+        // own index.
         Map<String, Object> data = execute(
-            "{ filmActorsByKey(key: [{filmId: 4, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
+            "{ filmActorsByKey(key: [{filmId: 5, actorId: 1}, {filmId: 1, actorId: 1}]) { filmId actorId } }");
         assertThat(data).extractingByKey("filmActorsByKey", as(LIST))
             .hasSize(2)
             .satisfies(rows -> assertThat(rows.get(0)).as("the rejected pair keeps its slot").isNull())
@@ -4063,7 +4084,8 @@ class GraphQLQueryTest {
 
         assertThat(byId.get(1)).extracting(a -> a.get("actorId")).containsExactly(1);
         assertThat(byId.get(2)).extracting(a -> a.get("actorId")).containsExactlyInAnyOrder(1, 3);
-        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).containsExactly(1);
+        // A sibling class may also cast actor 3 in film 3, so film 3 names its seeded actor and the filter's bound.
+        assertThat(byId.get(3)).extracting(a -> a.get("actorId")).contains(1).isSubsetOf(1, 3);
     }
 
     @Test
@@ -4693,6 +4715,14 @@ class GraphQLQueryTest {
         return rows.stream().map(r -> r.get("actorId") + "/" + r.get("filmId")).sorted().toList();
     }
 
+    /** The film_actor pairs {@code init.sql} seeds, as actor/film, sorted. */
+    private static final List<String> SEEDED_FILM_ACTOR_PAIRS =
+        List.of("1/1", "1/2", "1/3", "2/1", "2/4", "3/2", "3/5");
+
+    private static List<String> seededPairs(List<String> pairs) {
+        return pairs.stream().filter(SEEDED_FILM_ACTOR_PAIRS::contains).toList();
+    }
+
     @Test
     void listOfInputFilter_matchesRowsEqualToAnElement() {
         // (actor_id, film_id) IN ((1, 1), (3, 2)). Two independent IN lists would also admit
@@ -4710,11 +4740,13 @@ class GraphQLQueryTest {
 
     @Test
     void listOfInputFilter_emptyNullOrAbsentListAppliesNoFilter() {
-        var all = List.of("1/1", "1/2", "1/3", "2/1", "2/4", "3/2", "3/5");
-        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {pairs: []})")).isEqualTo(all);
-        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {pairs: null})")).isEqualTo(all);
-        assertThat(filmActorPairs("filmActorsByPairs", "(filter: {})")).isEqualTo(all);
-        assertThat(filmActorPairs("filmActorsByPairs", "")).isEqualTo(all);
+        // The seeded pairs only: a sibling class also writes film_actor rows, so the unfiltered read
+        // is narrowed to the pairs init.sql seeds before it is compared.
+        var all = SEEDED_FILM_ACTOR_PAIRS;
+        assertThat(seededPairs(filmActorPairs("filmActorsByPairs", "(filter: {pairs: []})"))).isEqualTo(all);
+        assertThat(seededPairs(filmActorPairs("filmActorsByPairs", "(filter: {pairs: null})"))).isEqualTo(all);
+        assertThat(seededPairs(filmActorPairs("filmActorsByPairs", "(filter: {})"))).isEqualTo(all);
+        assertThat(seededPairs(filmActorPairs("filmActorsByPairs", ""))).isEqualTo(all);
     }
 
     @Test

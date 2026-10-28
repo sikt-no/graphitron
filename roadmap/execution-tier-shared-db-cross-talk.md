@@ -110,18 +110,19 @@ inventory in this item, so the plan is a rule applied at once, not a patch per f
   names. Without it, one container per test JVM, started on first use and seeded from `init.sql`,
   replacing today's container per class. This is the only branch between the two paths, so they
   behave identically by construction. Nothing is cloned, reset or dropped between classes.
-* **Access.** `dsl()`, `url()`, `user()` and `password()`, for the `DSLContext` the class reads
-  through and for the owned-path classes that build their own `DataSource`. Registered as
-  `@RegisterExtension static final SakilaDatabase db = ...` so the connection exists before the
-  class's own `@BeforeAll`.
+* **Access.** A static facade, `SakilaDatabase`: `dsl()`, `url()`, `user()` and `password()` for
+  the shared database, built lazily on first use, so a class builds its `DSLContext` in its own
+  `@BeforeAll` and no extension has to be registered. `connect(...)` opens a plain JDBC connection
+  for the tests that build their own `DataSource`.
 * **Quarkus.** `SmokeTestPostgresResource` takes its database from the harness. The five
   `@QuarkusTest` classes already run one at a time under `QuarkusTestLock.KEY`.
 
 **Cluster-scoped names are minted per run.** The tenant classes create and drop databases with
 fixed names (`tenant_1`/`tenant_2`, `fanout_t1`/`fanout_t2`, `scatter_t1`/`scatter_t2`, the
 `org_tenant_*` pair), which collide across two runs on one server, two sessions on one laptop for
-instance. The harness hands them a name from `tenantDatabase(String stem)`: the stem plus a token
-unique to the run, with its URL, dropped by the class that created it. This is the shared-database
+instance. The harness names them: `tenantName(stem)` is the stem plus a token unique to the run,
+`tenantUrl(stem)` reaches it, and `createTenantDatabase(stem)` and `dropTenantDatabase(stem)` are
+called by the class that owns it. This is the shared-database
 rule applied to names; the four classes lose their private `tenantUrl` rewrites. The two fixed-name
 roles, `carrier_rls_probe` (`RoutineCarrierRlsExecutionTest`) and `rls_probe_user`
 (`SessionHookExecutionTest`), each belong to one class, which already creates and drops them, and
@@ -168,11 +169,11 @@ hit the interleaving. The In Review evidence below uses it.
 * `graphitron-sakila-example/src/test/java/.../test/SakilaDatabase.java` (new): the extension
   above.
 * The 74 execution-tier classes (66 under `test/querydb`, eight under `test/internal`: `AddressOccupantsListBatchingTest`, `AccessorDerivedSourceTest`, `OutcomePolymorphicChildExecutionTest`, `AddressOccupantCarrierSingleCardinalityTest`, `MultiTablePolymorphicSelfFkOrientationExecutionTest`, `MultiTablePolymorphicJoinedCorrelationExecutionTest`, `MultiTablePolymorphicParentHoldsFkExecutionTest`, `MutationPayloadLifterTest`): the copied `@BeforeAll` and `@AfterAll` blocks become the
-  extension field and a `db.dsl()` read. Mechanical; a class's own setup after the connection (for
+  `SakilaDatabase.dsl()` read. Mechanical; a class's own setup after the connection (for
   example `TenantFanOutExecutionTest` seeding its tenant tables) stays in its own `@BeforeAll`.
   `DmlBulkMutationsExecutionTest.seedFilmActor`'s second-connection check opens its second
   connection through the harness.
-* The four tenant classes: names and URLs from `db.tenantDatabase(...)`; the `tenantUrl` helpers
+* The four tenant classes: names and URLs from `SakilaDatabase`; the `tenantUrl` helpers
   go, the create and drop of the database stays in the class.
 * `SmokeTestPostgresResource`: takes its database from the harness.
 * The exposed set under "Design", rewritten test by test to the rule; the two leaking tests delete
@@ -190,7 +191,7 @@ hit the interleaving. The In Review evidence below uses it.
 
 * `SakilaDatabaseTest` (unit-tagged where it needs no server, execution-tagged where it does): the
   harness connects to the database `test.db.url` names, else starts one container per JVM and seeds
-  it from `init.sql`; `tenantDatabase` names differ between two runs and are dropped by the class
+  it from `init.sql`; tenant database names carry a token unique to the run and are dropped by the class
   that created them.
 * `SakilaDatabaseGuardTest` fails on a planted `new PostgreSQLContainer` and a planted
   `System.getProperty("test.db.url")` outside the harness (its own negative case), and passes on
