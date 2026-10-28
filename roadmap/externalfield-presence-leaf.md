@@ -1,7 +1,7 @@
 ---
 id: R1117
 title: "A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: codegen-correctness
@@ -142,6 +142,13 @@ No carrier record, renderer slot or fetcher shape changes.
 ## Provenance
 
 Requested 2026-10-28 by the sis Graphitron 10 port session, which tracks it as C23 in `GRAPHITRON10_STATUS.md`. It is not a port blocker: until this lands, sis accepts and announces the object-with-nulls answer.
+
+## Implementation notes
+
+* The shared `@externalField` call is `render/ExternalFieldCall`, used by `ProjectionUnitRenderer`'s `HelperCall` arm and `PresenceProbeFragments`' `NotNull` arm.
+* "Its fetcher reads the probe alias with no column checks" is pinned in `NestingFieldPipelineTest` on the fetcher's inputs (an empty `columnLeaves()` and a non-empty `probed()`, the predicate `FetcherEmitter.presenceCheck` reads), since body-string assertions are banned at the pipeline tier; the generated fetcher is covered by compilation and execution.
+* Beyond § Tests: `HostLanguageNames`, a `@table` child of two `@externalField`s on `language`, reached inline and `@splitQuery` from `PivotNestingHost`, so the inline multiset's and the batched rows method's null terms compile and execute too. The root arm compiles through the existing `Query.computedTitleFilm`, whose type now collapses.
+* `PlanCompileGraph` filters a root check's probe terms to `Exists` before reading glue edges; a `NotNull` term's helper is consumer code and adds no edge.
 
 ## Reviewer findings
 
