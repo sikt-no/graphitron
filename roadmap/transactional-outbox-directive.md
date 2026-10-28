@@ -95,7 +95,7 @@ Draft for a new directive reference page, `docs/manual/reference/directives/outb
 >
 > **Where messages go.** Configure the target once in the plugin configuration. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
 >
-> * **An outbox table**, on PostgreSQL and Oracle: `<outbox><table>outbox</table></outbox>`. Graphitron resolves the table in your jOOQ catalog and inserts one row per message. By default it expects Debezium's outbox layout and fills `type` (the event), `aggregatetype` (the written table), `aggregateid` (see `aggregateId` below) and `payload`; name other columns with `<columns><type>event_type</type><payload>body</payload>...</columns>`. Leave `id` and any timestamp to column defaults. The build fails when the table or a configured column is missing, when `payload` is not a JSON, JSONB, CLOB or text column, or when another `NOT NULL` column has no default.
+> * **An outbox table**, on PostgreSQL and Oracle: `<outbox><table>outbox</table></outbox>`. Graphitron resolves the table in your jOOQ catalog and inserts one row per message. By default it expects Debezium's outbox layout and fills `type` (the event), `aggregatetype` (the written table), `aggregateid` (the message key; open decision 1 settles how a message names it) and `payload`; name other columns with `<columns><type>event_type</type><payload>body</payload>...</columns>`. Leave `id` and any timestamp to column defaults. The build fails when the table or a configured column is missing, when `payload` is not a JSON, JSONB, CLOB or text column, or when another `NOT NULL` column has no default.
 > * **An outbox function**, on PostgreSQL and Oracle: `<outbox><function>outbox_emit</function></outbox>`. Graphitron resolves the function or procedure in your jOOQ catalog and calls it once per message, binding the same roles as the table's columns to its parameters: `payload` is required, `type`, `aggregatetype` and `aggregateid` are passed when the routine has parameters of those names, and `<parameters>` maps other names. A return value is ignored. The build fails when the routine is missing or overloaded, when it has a parameter that is neither mapped nor defaulted, or when `payload`'s type is not JSON, JSONB, CLOB or text. What the routine does is yours, and it runs inside the mutation's transaction, so keep it to the emit. On PostgreSQL, to publish through logical decoding without a table:
 >
 > ```sql
@@ -128,7 +128,7 @@ Settled with the user:
 Open, each with the recommendation the draft is written to:
 
 1. **`aggregateid`.** Debezium uses the column as the Kafka message key, which decides partitioning and so per-aggregate ordering, and with one message per call there is no automatic choice. Recommended: an optional `aggregateId` argument on each `@outbox`, one scalar source in `argMapping`'s right-hand form (`aggregateId: "$result.id"`); `NULL` when it is absent or yields an array, documented as losing per-aggregate ordering.
-2. **A successful call that wrote no rows** (an `UPDATE` that matched nothing). Recommended, now that `$result` columns come from a subselect over the written rows: the call writes no messages (the method returns at once when it is handed `null`), since a message with a `$result` column would select nothing and a binds-only one would describe a change that did not happen, and the two must not differ; the alternative writes every message with an empty `$result`.
+2. **A successful call that wrote no rows** (an `UPDATE` that matched nothing, or one whose input sets no column, which the fetcher answers with a key read and no write). Recommended, now that `$result` columns come from a subselect over the written rows: the call writes no messages (the method returns at once when it is handed `null`), since a message with a `$result` column would select nothing and a binds-only one would describe a change that did not happen, and the two must not differ; the alternative writes every message with an empty `$result`.
 3. **Multi-tenant fields.** A message is written on the connection the field wrote on. Recommended: confirm at pickup that a mutation field writes on one tenant connection (a `@service` batch naming two tenants is already refused) and reject `@outbox` on any variant that can write on two, rather than split one call into two messages.
 4. **`@service` mutations.** Recommended: supported on the owned-connection engine, with `$result` reading the service's returned value in memory (accessors on a record or bean, columns on a jOOQ record), and refused on the escape hatch at request time, where the service's writes run in transactions graphitron cannot join.
 5. **Where the directive may sit.** Recommended: Mutation fields only. A type-level `@outbox` hides the emission from the field that causes it.
@@ -157,7 +157,7 @@ public static DataFetcherResult<Record> createFilm(DataFetchingEnvironment env) 
                 .values(insertCols.values())
                 .returningResult(Tables.FILM.FILM_ID)                          // unchanged
                 .fetchOne();
-            outboxCreateFilm(DSL.using(tx), env, in, written);                  // the new call
+            outboxCreateFilm(DSL.using(tx), env, written);                     // the new call
             return written;
         });
         if (keys == null) return DataFetcherResult.<Record>newResult().data(null).build();
@@ -169,12 +169,13 @@ public static DataFetcherResult<Record> createFilm(DataFetchingEnvironment env) 
 }
 ```
 
-The method. One per `@outbox`-carrying coordinate, a sibling of the `rows<Name>` re-select companion on the same class, named from the field by the generated-names vocabulary like it. It takes the transaction's `DSLContext`, the environment, the argument map and the captured rows, and writes every message of the field in directive order. The JSON is built with jOOQ's `jsonbObject` from entries added under the same `containsKey` presence guards the write uses, so an omitted input field is an absent key and an explicit `null` is `null`; the table target is one `INSERT ... SELECT` per message. A message with a `$result` column selects it `FROM` the written table `WHERE` the captured key matches, so the read is part of the insert and the write statement keeps its key-only `RETURNING`; a message without one selects bind values only:
+The method. One per `@outbox`-carrying coordinate, a sibling of the `rows<Name>` re-select companion on the same class, named from the field by the generated-names vocabulary like it. It takes the transaction's `DSLContext`, the environment and the captured rows, and reads each argument its mappings name from the environment by that argument's name (the `in` local is the field's argument called `in`, as in the fetcher, not the whole arguments map), and writes every message of the field in directive order. The JSON is built with jOOQ's `jsonbObject` from entries added under the same `containsKey` presence guards the write uses, so an omitted input field is an absent key and an explicit `null` is `null`; the table target is one `INSERT ... SELECT` per message. A message with a `$result` column selects it `FROM` the written table `WHERE` the captured key matches, so the read is part of the insert and the write statement keeps its key-only `RETURNING`; a message without one selects bind values only:
 
 ```java
 private static void outboxCreateFilm(DSLContext tx, DataFetchingEnvironment env,
-                                     Map<?, ?> in, Record1<Integer> written) {
+                                     Record1<Integer> written) {
     Film film = Tables.FILM;
+    Map<?, ?> in = (Map<?, ?>) env.getArgument("in");                           // the argument the mapping names as `in`
     try {
         // common payload: <outbox><payload>, from $session, $context and $scope only
         List<JSONEntry<?>> common = List.of(
