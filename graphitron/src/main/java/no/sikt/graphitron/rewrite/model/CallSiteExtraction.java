@@ -115,49 +115,43 @@ public sealed interface CallSiteExtraction
     }
 
     /**
-     * Read a filter field typed as a list of input objects as one row per element. Each element
-     * is a {@code Map} whose {@link #cells()} are the scalar leaves the element binds onto columns
-     * of the resolving table; the binding local is {@code List<Row<N><T1, ..., TN>>} built by a
-     * per-class helper ({@code ElementRowsHelperRegistry}), or {@code List<T>} for a one-cell
-     * element, so the predicate is {@code DSL.row(c1, ..., cN).in(rows)} or {@code c1.in(values)}.
+     * Read a filter field typed as a list of input objects one element at a time. Each element is a
+     * {@code Map} whose {@link #cells()} are the scalar leaves the element binds onto columns of the
+     * resolving table; a row matches when it equals any one element on the cells that element
+     * carries. When the list is the argument itself the arm is the extraction directly; when the
+     * list sits inside an input object it is the leaf of a {@link NestedInputField} whose path is the
+     * descent to the list.
      *
-     * <p>Rides {@link BodyParam.RowIn} at two or more cells and {@link BodyParam.In} at one. When
-     * the list is the argument itself the arm is the extraction directly; when the list sits inside
-     * an input object it is the leaf of a {@link NestedInputField} whose path is the descent to the
-     * list. Both predicates pin their columns to {@link #columns()} in their compact constructors.
-     *
-     * <p>A {@code null} element contributes a row of typed nulls, which no row matches; it is not
-     * dropped, so {@code [null]} is a filter that matches nothing rather than an empty list that
-     * filters nothing.
+     * <p>Two shapes, decided once by the classifier from the cells' {@link Cell#required()} facts:
+     * {@link Whole} when every cell is required, so every element is one whole row, and
+     * {@link Partial} when at least one cell is optional, so each element compares only the cells it
+     * carries. Every consumer forks on the arm rather than re-reading the cells.
      *
      * <p>Only the condition glue reads this arm. Every other exhaustive switch over
      * {@link CallSiteExtraction} treats it as unreachable by construction.
      */
-    record ElementRows(List<Cell> cells) implements CallSiteExtraction {
-        public ElementRows {
-            if (cells == null || cells.isEmpty()) {
-                throw new IllegalArgumentException("ElementRows requires at least one cell");
-            }
-            cells = List.copyOf(cells);
-        }
+    sealed interface ElementRows extends CallSiteExtraction permits ElementRows.Whole, ElementRows.Partial {
+
+        /** The cells one element contributes, in element-field order. */
+        List<Cell> cells();
 
         /** The cells' columns in cell order: the tuple the predicate compares. */
-        public List<ColumnRef> columns() {
-            return cells.stream().map(Cell::column).toList();
+        default List<ColumnRef> columns() {
+            return cells().stream().map(Cell::column).toList();
         }
 
         /**
          * True when {@code extraction} is an {@link ElementRows}, bare or as a
          * {@link NestedInputField}'s leaf, whose {@link #columns()} differ from {@code columns}.
-         * The check {@link BodyParam.In} and {@link BodyParam.RowIn} run on their own columns.
+         * The check the predicates reading element rows run on their own columns.
          */
-        public static boolean disagrees(CallSiteExtraction extraction, List<ColumnRef> columns) {
+        static boolean disagrees(CallSiteExtraction extraction, List<ColumnRef> columns) {
             ElementRows rows = of(extraction);
             return rows != null && !rows.columns().equals(columns);
         }
 
         /** The {@link ElementRows} {@code extraction} carries, bare or as a nested leaf; else null. */
-        public static ElementRows of(CallSiteExtraction extraction) {
+        static ElementRows of(CallSiteExtraction extraction) {
             if (extraction instanceof ElementRows rows) {
                 return rows;
             }
@@ -165,6 +159,52 @@ public sealed interface CallSiteExtraction
                 return rows;
             }
             return null;
+        }
+
+        private static List<Cell> requireCells(List<Cell> cells) {
+            if (cells == null || cells.isEmpty()) {
+                throw new IllegalArgumentException("ElementRows requires at least one cell");
+            }
+            return List.copyOf(cells);
+        }
+
+        /**
+         * Every cell required: every element carries every cell, so the list reads as one row per
+         * element, {@code List<Row<N><T1, ..., TN>>} built by a per-class helper
+         * ({@code ElementRowsHelperRegistry}), or {@code List<T>} for a one-cell element, and the
+         * predicate is {@code DSL.row(c1, ..., cN).in(rows)} or {@code c1.in(values)}. Rides
+         * {@link BodyParam.RowIn} at two or more cells and {@link BodyParam.In} at one.
+         *
+         * <p>A {@code null} element contributes a row of typed nulls, which no row matches; it is not
+         * dropped, so {@code [null]} is a filter that matches nothing rather than an empty list that
+         * filters nothing.
+         */
+        record Whole(List<Cell> cells) implements ElementRows {
+            public Whole {
+                cells = requireCells(cells);
+                if (cells.stream().anyMatch(c -> !c.required())) {
+                    throw new IllegalArgumentException(
+                        "ElementRows.Whole requires every cell to be required; an optional cell makes it Partial");
+                }
+            }
+        }
+
+        /**
+         * At least one cell optional: an element constrains only the cells it carries, so it reads as
+         * the conjunction of those cells' comparisons and the list as the disjunction over its
+         * elements. A left-out cell matches every row, including rows whose column is {@code NULL};
+         * an element carrying no cell matches every row. A per-class match helper
+         * ({@code ElementRowsHelperRegistry}) builds the finished {@code Condition}. Rides
+         * {@link BodyParam.PartialRowIn} at any arity.
+         */
+        record Partial(List<Cell> cells) implements ElementRows {
+            public Partial {
+                cells = requireCells(cells);
+                if (cells.stream().allMatch(Cell::required)) {
+                    throw new IllegalArgumentException(
+                        "ElementRows.Partial requires an optional cell; every cell required makes it Whole");
+                }
+            }
         }
     }
 
@@ -174,8 +214,12 @@ public sealed interface CallSiteExtraction
      * non-list nested input), the {@code column} the cell compares against, and the {@code leaf}
      * transform reading the wire value, which is the one a scalar field at that position takes:
      * {@link Direct}, {@link JooqConvert} for an {@code ID}, or {@link EnumValueOf}.
+     *
+     * <p>{@code required} is true when the cell's own field and every nested input field on the way
+     * down to it from the element are non-null, so graphql-java's input coercion guarantees every
+     * element carries it; the match helper compares a required cell without a null test.
      */
-    record Cell(List<String> path, ColumnRef column, CallSiteExtraction leaf) {
+    record Cell(List<String> path, ColumnRef column, CallSiteExtraction leaf, boolean required) {
         public Cell {
             if (path == null || path.isEmpty()) {
                 throw new IllegalArgumentException("ElementRows.Cell path must be non-empty");

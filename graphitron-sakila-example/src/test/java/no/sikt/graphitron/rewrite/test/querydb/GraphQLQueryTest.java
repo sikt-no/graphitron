@@ -4741,6 +4741,82 @@ class GraphQLQueryTest {
             .containsExactly("1/1", "3/2");
     }
 
+    // ===== A nullable element field does not constrain when left out =====
+
+    @SuppressWarnings("unchecked")
+    private List<Integer> filmIdsOf(String field, String argument) {
+        Map<String, Object> data = execute("{ " + field + argument + " { filmId } }");
+        var rows = (List<Map<String, Object>>) data.get(field);
+        return rows.stream().map(r -> (Integer) r.get("filmId")).sorted().toList();
+    }
+
+    @Test
+    void partialListOfInputFilter_leftOutCellMatchesEveryValueIncludingNull() {
+        // Every film is in language 1; film 4 has no original language and still matches.
+        assertThat(filmIdsOf("filmsByLanguagePairs", "(filter: {pairs: [{languageId: 1}]})"))
+            .containsExactly(1, 2, 3, 4, 5);
+        assertThat(filmIdsOf("filmsByLanguagePairs",
+            "(filter: {pairs: [{languageId: 1, originalLanguageId: 2}]})"))
+            .containsExactly(2, 3);
+    }
+
+    @Test
+    void partialListOfInputFilter_explicitNullReadsAsAbsent() {
+        assertThat(filmIdsOf("filmsByLanguagePairs",
+            "(filter: {pairs: [{languageId: 1, originalLanguageId: null}]})"))
+            .containsExactly(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void partialListOfInputFilter_isTheUnionOverElements() {
+        // No film is in language 2, so the partial element widens nothing.
+        assertThat(filmIdsOf("filmsByLanguagePairs",
+            "(filter: {pairs: [{languageId: 2}, {languageId: 1, originalLanguageId: 3}]})"))
+            .containsExactly(1);
+    }
+
+    @Test
+    void partialListOfInputFilter_nullElementMatchesNothing() {
+        assertThat(filmIdsOf("filmsByLanguagePairs",
+            "(filter: {pairs: [{languageId: 1, originalLanguageId: 3}, null]})"))
+            .containsExactly(1);
+        assertThat(filmIdsOf("filmsByLanguagePairs", "(filter: {pairs: [null]})")).isEmpty();
+    }
+
+    @Test
+    void allOptionalListOfInputFilter_elementGivingNothingMatchesEveryRow() {
+        assertThat(filmIdsOf("filmsByOptionalLanguages", "(filter: {languages: [{}]})"))
+            .containsExactly(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void allOptionalListOfInputFilter_readsThroughANullableNestedInput() {
+        assertThat(filmIdsOf("filmsByOptionalLanguages", "(filter: {languages: [{original: {id: 2}}]})"))
+            .containsExactly(2, 3);
+        assertThat(filmIdsOf("filmsByOptionalLanguages", "(filter: {languages: [{languageId: 2, original: null}]})"))
+            .isEmpty();
+        assertThat(filmIdsOf("filmsByOptionalLanguages",
+            "(filter: {languages: [{original: {id: 1}}, {original: {id: 3}}]})"))
+            .containsExactly(1, 5);
+    }
+
+    @Test
+    void reachedPartialListOfInputFilter_comparesTheCellsAnElementGives() {
+        // Italian is language 2 (films 2 and 3), English language 1 (film 5).
+        assertThat(filmIdsOf("filmsByOriginalLanguages", "(filter: {languages: [{name: \"Italian\"}]})"))
+            .containsExactly(2, 3);
+        assertThat(filmIdsOf("filmsByOriginalLanguages",
+            "(filter: {languages: [{languageId: 3}, {name: \"English\"}]})"))
+            .containsExactly(1, 5);
+    }
+
+    @Test
+    void reachedPartialListOfInputFilter_elementGivingNothingMatchesRowsThatReachOne() {
+        // Film 4 reaches no original language, so no reached row can equal even the empty element.
+        assertThat(filmIdsOf("filmsByOriginalLanguages", "(filter: {languages: [{}]})"))
+            .containsExactly(1, 2, 3, 5);
+    }
+
     @SuppressWarnings("unchecked")
     private List<String> names(String field, String argument, String nameField) {
         Map<String, Object> data = execute("{ " + field + argument + " { " + nameField + " } }");

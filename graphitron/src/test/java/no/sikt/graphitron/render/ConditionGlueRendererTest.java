@@ -160,9 +160,9 @@ class ConditionGlueRendererTest {
         // the helper must take actor's class; what the call passes is pinned by compilation.
         var firstName = TestFixtures.col("first_name", "FIRST_NAME", "java.lang.String");
         var lastName = TestFixtures.col("last_name", "LAST_NAME", "java.lang.String");
-        var rows = new CallSiteExtraction.ElementRows(List.of(
-            new CallSiteExtraction.Cell(List.of("firstName"), firstName, new CallSiteExtraction.Direct()),
-            new CallSiteExtraction.Cell(List.of("lastName"), lastName, new CallSiteExtraction.Direct())));
+        var rows = new CallSiteExtraction.ElementRows.Whole(List.of(
+            new CallSiteExtraction.Cell(List.of("firstName"), firstName, new CallSiteExtraction.Direct(), true),
+            new CallSiteExtraction.Cell(List.of("lastName"), lastName, new CallSiteExtraction.Direct(), true)));
         var reached = new ArgBinding(new CallParam("names", rows, true, "org.jooq.Row2"), "names")
             .reachedAt(ACTOR);
         var term = new ColumnTerm(List.of(firstName, lastName), MatchKind.MEMBERSHIP, false, reached,
@@ -174,15 +174,87 @@ class ConditionGlueRendererTest {
 
     @Test
     void ownTableListLevel_declaresItsRowHelperOverTheGluesTable() {
-        var rows = new CallSiteExtraction.ElementRows(List.of(
-            new CallSiteExtraction.Cell(List.of("actorId"), ACTOR_ID, new CallSiteExtraction.Direct()),
-            new CallSiteExtraction.Cell(List.of("filmId"), FILM_ID, new CallSiteExtraction.Direct())));
+        var rows = new CallSiteExtraction.ElementRows.Whole(List.of(
+            new CallSiteExtraction.Cell(List.of("actorId"), ACTOR_ID, new CallSiteExtraction.Direct(), true),
+            new CallSiteExtraction.Cell(List.of("filmId"), FILM_ID, new CallSiteExtraction.Direct(), true)));
         var own = new ArgBinding(new CallParam("pairs", rows, true, "org.jooq.Row2"), "pairs");
         var term = new ColumnTerm(List.of(ACTOR_ID, FILM_ID), MatchKind.MEMBERSHIP, false, own,
             ReachPath.none());
 
         var helper = rowHelperOf(render(term));
         assertThat(helper.parameters().get(1).type()).isEqualTo(CatalogRefs.tableClass(FILM_ACTOR));
+    }
+
+    // ===== Partial list-of-input reads: the match helper's local is the finished condition =====
+
+    @Test
+    void ownTablePartialLevel_declaresItsConditionFromTheMatchHelperOverTable() {
+        var rows = new CallSiteExtraction.ElementRows.Partial(List.of(
+            new CallSiteExtraction.Cell(List.of("actorId"), ACTOR_ID, new CallSiteExtraction.Direct(), true),
+            new CallSiteExtraction.Cell(List.of("filmId"), FILM_ID, new CallSiteExtraction.Direct(), false)));
+        var own = new ArgBinding(new CallParam("pairs", rows, true, "org.jooq.Condition"), "pairs");
+        var term = new ColumnTerm(List.of(ACTOR_ID, FILM_ID), MatchKind.PARTIAL_MEMBERSHIP, true, own,
+            ReachPath.none());
+
+        var conditions = render(term);
+        var glue = glueOf(conditions).code().toString();
+        assertThat(glue)
+            .contains("org.jooq.Condition pairs = pairsMatch(args.get(\"pairs\"), table);")
+            // Guarded as a scalar even though the list is non-null: an empty list answers null.
+            .contains("if (pairs != null) condition = condition.and(pairs);");
+
+        var helper = matchHelperOf(conditions);
+        assertThat(helper.parameters().get(1).type()).isEqualTo(CatalogRefs.tableClass(FILM_ACTOR));
+        var body = helper.code().toString();
+        assertThat(body)
+            .contains("anyOf.add(org.jooq.impl.DSL.falseCondition());")
+            // The required cell is compared unguarded, the optional one only when present.
+            .contains("cells.add(table.ACTOR_ID.eq(cell1));")
+            .contains("if (cell2 != null) {\n    cells.add(table.FILM_ID.eq(cell2));")
+            .contains("anyOf.add(org.jooq.impl.DSL.and(cells));")
+            .contains("return org.jooq.impl.DSL.or(anyOf);");
+    }
+
+    @Test
+    void allOptionalPartialLevel_matchesEveryRowForAnElementCarryingNoCell() {
+        // DSL.and over an empty list is noCondition(), an identity for or too, which would drop the
+        // element from the disjunction; the helper must answer trueCondition() instead.
+        var rows = new CallSiteExtraction.ElementRows.Partial(List.of(
+            new CallSiteExtraction.Cell(List.of("actorId"), ACTOR_ID, new CallSiteExtraction.Direct(), false)));
+        var own = new ArgBinding(new CallParam("pairs", rows, true, "org.jooq.Condition"), "pairs");
+        var term = new ColumnTerm(List.of(ACTOR_ID), MatchKind.PARTIAL_MEMBERSHIP, false, own,
+            ReachPath.none());
+
+        var body = matchHelperOf(render(term)).code().toString();
+        assertThat(body)
+            .contains("anyOf.add(cells.isEmpty() ? org.jooq.impl.DSL.trueCondition() : org.jooq.impl.DSL.and(cells));")
+            .contains("anyOf.add(org.jooq.impl.DSL.falseCondition());");
+    }
+
+    @Test
+    void reachedPartialLevel_comparesAgainstTheTerminalHopAliasInsideTheExists() {
+        var firstName = TestFixtures.col("first_name", "FIRST_NAME", "java.lang.String");
+        var lastName = TestFixtures.col("last_name", "LAST_NAME", "java.lang.String");
+        var rows = new CallSiteExtraction.ElementRows.Partial(List.of(
+            new CallSiteExtraction.Cell(List.of("firstName"), firstName, new CallSiteExtraction.Direct(), false),
+            new CallSiteExtraction.Cell(List.of("lastName"), lastName, new CallSiteExtraction.Direct(), false)));
+        var reached = new ArgBinding(new CallParam("names", rows, true, "org.jooq.Condition"), "names")
+            .reachedAt(ACTOR);
+        var term = new ColumnTerm(List.of(firstName, lastName), MatchKind.PARTIAL_MEMBERSHIP, false, reached,
+            new ReachPath(List.of(actorFkHop())));
+
+        var conditions = render(term);
+        var glue = glueOf(conditions).code().toString();
+        String alias = " table_fkt0_0 = ";
+        String local = "org.jooq.Condition names = namesMatch(args.get(\"names\"), table_fkt0_0);";
+        assertThat(glue).contains(alias).contains(local);
+        // The alias the helper reads is declared before the local that reads it.
+        assertThat(glue.indexOf(alias)).isLessThan(glue.indexOf(local));
+        // The guard stays outside the EXISTS; the local is its last conjunct.
+        assertThat(glue)
+            .contains("if (names != null) condition = condition.and(org.jooq.impl.DSL.exists(")
+            .contains(".where(table_fkt0_0.ACTOR_ID.eq(table.ACTOR_ID).and(names))));");
+        assertThat(matchHelperOf(conditions).parameters().get(1).type()).isEqualTo(CatalogRefs.tableClass(ACTOR));
     }
 
     private static TypeSpec render(ColumnTerm term) {
@@ -195,6 +267,17 @@ class ConditionGlueRendererTest {
             KeyProjectionRelation.empty());
         assertThat(classes).hasSize(1);
         return classes.get(0);
+    }
+
+    private static MethodSpec glueOf(TypeSpec conditions) {
+        return conditions.methodSpecs().stream()
+            .filter(m -> m.name().equals("filmActorsCondition")).findFirst().orElseThrow();
+    }
+
+    private static MethodSpec matchHelperOf(TypeSpec conditions) {
+        var helpers = conditions.methodSpecs().stream().filter(m -> m.name().endsWith("Match")).toList();
+        assertThat(helpers).hasSize(1);
+        return helpers.get(0);
     }
 
     private static MethodSpec rowHelperOf(TypeSpec conditions) {

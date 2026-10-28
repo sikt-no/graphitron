@@ -38,7 +38,7 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
      * A column-shaped predicate body. The operator and value-arity are captured by the variant
      * identity rather than a {@code boolean list} flag plus a uniform record, and each arm
      * carries exactly the columns it needs, so the body emitter switches exhaustively over the
-     * four arms with no arity or list ladders; a new operator is a new sealed arm plus an
+     * five arms with no arity or list ladders; a new operator is a new sealed arm plus an
      * emitter switch arm.
      *
      * <p>Every arm's binding local is declared at the predicate column's own Java type
@@ -49,8 +49,13 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
      * {@code receiver.eq(local)} and still bind at the receiving column's {@code DataType}, with
      * no explicit {@code DSL.val}. An arm answering a wire type instead would still compile there
      * and bind at the wrong type, silently.
+     *
+     * <p>{@link PartialRowIn} is the one arm whose local is not a value: it is the finished
+     * {@code Condition}, and the bind happens inside the match helper, which compares
+     * {@code table.COL.eq(cellN)} with {@code cellN} declared at the column's Java type, so the
+     * same guarantee holds one step earlier and a column converter still runs.
      */
-    sealed interface ColumnPredicate extends BodyParam permits Eq, In, RowEq, RowIn {}
+    sealed interface ColumnPredicate extends BodyParam permits Eq, In, RowEq, RowIn, PartialRowIn {}
 
     /** Single-column scalar equality. Emits {@code table.col.eq(arg)}. */
     record Eq(
@@ -72,6 +77,7 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
         CallSiteExtraction extraction
     ) implements ColumnPredicate {
         public In {
+            requireWhole(name, "In", extraction);
             if (CallSiteExtraction.ElementRows.disagrees(extraction, List.of(column))) {
                 throw new IllegalArgumentException("BodyParam.In '" + name + "' reads element rows"
                     + " whose cells do not name exactly its column " + column.javaName());
@@ -107,7 +113,7 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
 
     /**
      * Composite-key row-IN. Emits {@code DSL.row(c1, ..., cN).in(rows)}. Two extractions feed it: a
-     * composite {@code @nodeId} list decode, and {@link CallSiteExtraction.ElementRows} for a
+     * composite {@code @nodeId} list decode, and {@link CallSiteExtraction.ElementRows.Whole} for a
      * filter field typed as a list of input objects, whose cell columns must be these columns.
      * {@code columns.size() >= 2}; the arity-1 case routes to {@link In}. The method parameter
      * type is {@code List<Row<N><T1, ..., TN>>} computed from {@code columns} at emit time.
@@ -125,6 +131,7 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
                 throw new IllegalArgumentException(
                     "BodyParam.RowIn requires arity >= 2 (got " + columns.size() + "); arity-1 routes to In");
             }
+            requireWhole(name, "RowIn", extraction);
             if (CallSiteExtraction.ElementRows.disagrees(extraction, columns)) {
                 throw new IllegalArgumentException("BodyParam.RowIn '" + name + "' reads element rows"
                     + " whose cell columns are not its columns in order");
@@ -132,6 +139,46 @@ public sealed interface BodyParam permits BodyParam.ColumnPredicate, BodyParam.R
         }
 
         @Override public boolean list() { return true; }
+    }
+
+    /**
+     * Membership where each element compares only the cells it carries: the OR over the list's
+     * elements of the AND over each element's carried cells, built by the per-class match helper
+     * as the finished {@code Condition}. Feeds only from {@link CallSiteExtraction.ElementRows.Partial}
+     * (bare or as a {@link CallSiteExtraction.NestedInputField} leaf), whose columns must be these
+     * columns in order. Any arity: it builds no {@code Row<N>}, so it has no single-column twin.
+     */
+    record PartialRowIn(
+        String name,
+        List<ColumnRef> columns,
+        boolean nonNull,
+        CallSiteExtraction extraction
+    ) implements ColumnPredicate {
+
+        public PartialRowIn {
+            columns = List.copyOf(columns);
+            if (!(CallSiteExtraction.ElementRows.of(extraction) instanceof CallSiteExtraction.ElementRows.Partial)) {
+                throw new IllegalArgumentException("BodyParam.PartialRowIn '" + name
+                    + "' requires a partial element-rows extraction; got " + extraction);
+            }
+            if (CallSiteExtraction.ElementRows.disagrees(extraction, columns)) {
+                throw new IllegalArgumentException("BodyParam.PartialRowIn '" + name + "' reads element"
+                    + " rows whose cell columns are not its columns in order");
+            }
+        }
+
+        @Override public boolean list() { return true; }
+    }
+
+    /**
+     * Refuses a {@link CallSiteExtraction.ElementRows.Partial} read on a predicate that compares whole
+     * rows: an element missing a cell would bind a typed null, which matches no row.
+     */
+    private static void requireWhole(String name, String arm, CallSiteExtraction extraction) {
+        if (CallSiteExtraction.ElementRows.of(extraction) instanceof CallSiteExtraction.ElementRows.Partial) {
+            throw new IllegalArgumentException("BodyParam." + arm + " '" + name + "' reads partial element"
+                + " rows, which compare per element; they ride PartialRowIn");
+        }
     }
 
     /**

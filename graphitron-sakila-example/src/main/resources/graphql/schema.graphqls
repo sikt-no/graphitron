@@ -492,6 +492,16 @@ type Query {
     filmsByCastNames(names: [FilmCastNameInput!]): [Film!]!
     customersByCityId(cityId: ID @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])): [Customer!]!
     customersByCityFilter(filter: CustomerCityFilter): [Customer!]!
+    # A nullable element field: an element that leaves it out places no constraint on that
+    # column, rows where it is NULL included, so each element compares only the fields it gives.
+    # film.original_language_id is nullable and seeded 3, 2, 2, none, 1 on films 1 to 5.
+    filmsByLanguagePairs(filter: FilmLanguagePairFilter): [Film!]!
+    # Every element field optional, one through a nullable nested input: an element giving
+    # nothing matches every film.
+    filmsByOptionalLanguages(filter: FilmOptionalLanguageFilter): [Film!]!
+    # The same, reached through the original-language FK: an element giving nothing matches the
+    # films that reach an original language, so not film 4.
+    filmsByOriginalLanguages(filter: FilmOriginalLanguageFilter): [Film!]!
     # ConnectionSynthesis: directive-driven @asConnection on a bare list. The generator
     # synthesises QueryStoresConnectionType, QueryStoresConnectionEdgeType and wires them into
     # GraphitronSchema.build() via .additionalType(...). Hand-written Connection types
@@ -3459,6 +3469,37 @@ input CustomerAddressFilter {
 
 input CustomerCityFilter {
     cityId: ID @field(name: "city_id") @reference(path: [{key: "customer_address_id_fkey"}])
+}
+
+input FilmLanguageInput {
+    languageId: Int! @field(name: "language_id")
+    originalLanguageId: Int @field(name: "original_language_id")
+}
+
+input FilmLanguagePairFilter {
+    pairs: [FilmLanguageInput]
+}
+
+input FilmOriginalLanguageIdInput {
+    id: Int! @field(name: "original_language_id")
+}
+
+input FilmOptionalLanguageInput {
+    languageId: Int @field(name: "language_id")
+    original: FilmOriginalLanguageIdInput
+}
+
+input FilmOptionalLanguageFilter {
+    languages: [FilmOptionalLanguageInput]
+}
+
+input FilmOriginalLanguageInput {
+    name: String @field(name: "name") @reference(path: [{key: "film_original_language_id_fkey"}])
+    languageId: Int @field(name: "language_id") @reference(path: [{key: "film_original_language_id_fkey"}])
+}
+
+input FilmOriginalLanguageFilter {
+    languages: [FilmOriginalLanguageInput]
 }
 
 input FilmCastNameInput {

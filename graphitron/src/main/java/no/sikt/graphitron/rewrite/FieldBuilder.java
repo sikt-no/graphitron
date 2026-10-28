@@ -3547,12 +3547,15 @@ class FieldBuilder {
                              String coordinate, SourceLocation location) {}
 
     /**
-     * Classifies one list level: the element's fields become the cells of one row-{@code IN}
-     * ({@link BodyParam.RowIn} at two or more cells, {@link BodyParam.In} at one) over a
-     * {@link CallSiteExtraction.ElementRows} read, so a row matches when it equals any one element.
-     * When every cell reaches its column through one {@code @reference} path, the predicate is
-     * wrapped in a {@link BodyParam.RemoteColumnPredicate} over that path, so one row reached
-     * through it must equal the whole element; cells on different paths, or own-table cells mixed
+     * Classifies one list level: the element's fields become the cells of one membership test, so a
+     * row matches when it equals any one element. When every cell is required (its field and every
+     * nested input above it non-null) that is one row-{@code IN} ({@link BodyParam.RowIn} at two or
+     * more cells, {@link BodyParam.In} at one) over a {@link CallSiteExtraction.ElementRows.Whole}
+     * read; otherwise it is a {@link BodyParam.PartialRowIn} over a
+     * {@link CallSiteExtraction.ElementRows.Partial} read, where each element compares only the cells
+     * it carries. When every cell reaches its column through one {@code @reference} path, the
+     * predicate is wrapped in a {@link BodyParam.RemoteColumnPredicate} over that path, so one row
+     * reached through it must equal the element; cells on different paths, or own-table cells mixed
      * with reached ones, are refused at the cell that disagrees with the first.
      *
      * <p>Every element field's column slot is recorded exactly as the plain walk records it, ahead
@@ -3612,7 +3615,7 @@ class FieldBuilder {
             }
         }
         var collected = new ArrayList<CollectedCell>();
-        offending += collectCells(level, elementFields, List.of(), useSiteCoordinate, outerArgName,
+        offending += collectCells(level, elementFields, List.of(), true, useSiteCoordinate, outerArgName,
             level.listPath(), suppressed, lookupBoundNames, columnSlots, collected, resolvingTable,
             containerSummary);
         if (!suppressed) {
@@ -3636,16 +3639,21 @@ class FieldBuilder {
                 + MAX_ROW_DEGREE + " columns"));
             return;
         }
-        var rows = new CallSiteExtraction.ElementRows(
-            collected.stream().map(CollectedCell::cell).toList());
+        var cells = collected.stream().map(CollectedCell::cell).toList();
+        boolean whole = cells.stream().allMatch(CallSiteExtraction.Cell::required);
+        CallSiteExtraction.ElementRows rows = whole
+            ? new CallSiteExtraction.ElementRows.Whole(cells)
+            : new CallSiteExtraction.ElementRows.Partial(cells);
         CallSiteExtraction extraction = level.listPath().isEmpty()
             ? rows
             : new CallSiteExtraction.NestedInputField(outerArgName, level.listPath(), rows);
         var columns = rows.columns();
-        BodyParam.ColumnPredicate inner = columns.size() == 1
-            ? new BodyParam.In(level.name(), columns.get(0), columns.get(0).columnClass(), listNonNull,
-                extraction)
-            : new BodyParam.RowIn(level.name(), columns, listNonNull, extraction);
+        BodyParam.ColumnPredicate inner = !whole
+            ? new BodyParam.PartialRowIn(level.name(), columns, listNonNull, extraction)
+            : columns.size() == 1
+                ? new BodyParam.In(level.name(), columns.get(0), columns.get(0).columnClass(), listNonNull,
+                    extraction)
+                : new BodyParam.RowIn(level.name(), columns, listNonNull, extraction);
         // The cells agree on one reach (checked above), so the first one's is the level's. A reached
         // level is one correlated EXISTS whose last conjunct compares the terminal row.
         var reach = collected.isEmpty() ? List.<JoinStep>of() : collected.get(0).reach();
@@ -3659,10 +3667,11 @@ class FieldBuilder {
      * minting a located diagnostic for every field a row cannot express. Returns the number of
      * offending fields. {@code elementPrefix} is the descent from the element's {@code Map};
      * {@code slotPrefix} the same position from the outer argument, which is where the column slots
-     * and the cascade verdict address the field.
+     * and the cascade verdict address the field. {@code pathRequired} is true while every nested
+     * input from the element down to here is non-null; a cell below a nullable one is optional.
      */
     private int collectCells(ListLevel level, List<InputField> fields, List<String> elementPrefix,
-            String useSiteCoordinate, String outerArgName, List<String> slotPrefix,
+            boolean pathRequired, String useSiteCoordinate, String outerArgName, List<String> slotPrefix,
             boolean suppressed, Set<String> lookupBoundNames,
             List<ColumnBindingLedger.ColumnBoundSlot> columnSlots,
             List<CollectedCell> cells,
@@ -3685,8 +3694,8 @@ class FieldBuilder {
                     if (cf.isComposite() || leaf instanceof CallSiteExtraction.NodeIdDecodeKeys) {
                         yield NODE_ID_IN_ELEMENT;
                     }
-                    yield addCell(cells, f, cf.list(), cf.nonNull(), leafPath, cellPath, column, leaf,
-                        List.of());
+                    yield addCell(cells, f, cf.list(), cf.nonNull() && pathRequired, leafPath, cellPath,
+                        column, leaf, List.of());
                 }
                 case InputField.ColumnBackedReferenceField rf when rf.condition().isPresent() -> CONDITION_IN_ELEMENT;
                 case InputField.ColumnBackedReferenceField rf when suppressed -> null;
@@ -3698,8 +3707,8 @@ class FieldBuilder {
                     // empty-path @reference) binds the filter's own column, as the plain walk does.
                     var column = predicateColumns(rf.binding(), rf.columns()).get(0);
                     var reach = rf.binding() instanceof FilterBinding.Remote ? rf.joinPath() : List.<JoinStep>of();
-                    yield addCell(cells, f, rf.list(), rf.nonNull(), leafPath, cellPath, column,
-                        implicitLeaf(rf.extraction(), rf.typeName(), column), reach);
+                    yield addCell(cells, f, rf.list(), rf.nonNull() && pathRequired, leafPath, cellPath,
+                        column, implicitLeaf(rf.extraction(), rf.typeName(), column), reach);
                 }
                 case InputField.ConditionOwnedField cof -> CONDITION_IN_ELEMENT;
                 case InputField.NestingField nf when nf.condition().isPresent() -> CONDITION_IN_ELEMENT;
@@ -3708,16 +3717,11 @@ class FieldBuilder {
                     "it is a list of input objects inside a list of input objects, which one row"
                         + " cannot express";
                 case InputField.NestingField nf -> {
-                    if (!suppressed && !nf.nonNull()) {
-                        offending += collectCells(level, nf.fields(), cellPath, useSiteCoordinate,
-                            outerArgName, leafPath, true, lookupBoundNames, columnSlots, cells,
-                            resolvingTable, containerSummary);
-                        yield "it is nullable; a left-out nested input would leave its cells null and the"
-                            + " element would match no row, so declare it non-null";
-                    }
-                    offending += collectCells(level, nf.fields(), cellPath, useSiteCoordinate,
-                        outerArgName, leafPath, suppressed, lookupBoundNames, columnSlots, cells,
-                        resolvingTable, containerSummary);
+                    // Left out, a nullable nested input leaves every cell below it out, so those
+                    // cells are optional whatever their own nullability.
+                    offending += collectCells(level, nf.fields(), cellPath, pathRequired && nf.nonNull(),
+                        useSiteCoordinate, outerArgName, leafPath, suppressed, lookupBoundNames,
+                        columnSlots, cells, resolvingTable, containerSummary);
                     yield null;
                 }
                 case InputField.UnboundField uf when uf.condition().isPresent() -> CONDITION_IN_ELEMENT;
@@ -3752,17 +3756,14 @@ class FieldBuilder {
 
     /**
      * The checks every column-bound element field takes, whichever table its column is on; adds the
-     * cell and returns {@code null} when it passes, or returns the refusal.
+     * cell and returns {@code null} when it passes, or returns the refusal. {@code required} is the
+     * field's own non-nullness conjoined with every nested input's on the way down from the element.
      */
     private static String addCell(List<CollectedCell> cells, InputField field, boolean list,
-            boolean nonNull, List<String> leafPath, List<String> cellPath, ColumnRef column,
+            boolean required, List<String> leafPath, List<String> cellPath, ColumnRef column,
             CallSiteExtraction leaf, List<JoinStep> reach) {
         if (list) {
             return "it is itself a list, and one cell of a row holds one value";
-        }
-        if (!nonNull) {
-            return "it is nullable; a left-out cell would compare as null and the element"
-                + " would match no row, so declare it non-null";
         }
         if (!(leaf instanceof CallSiteExtraction.Direct
                 || leaf instanceof CallSiteExtraction.JooqConvert
@@ -3770,8 +3771,8 @@ class FieldBuilder {
             return "its value is read as " + leaf.getClass().getSimpleName()
                 + ", which a row cell does not take";
         }
-        cells.add(new CollectedCell(new CallSiteExtraction.Cell(cellPath, column, leaf), reach, field,
-            List.copyOf(leafPath)));
+        cells.add(new CollectedCell(new CallSiteExtraction.Cell(cellPath, column, leaf, required), reach,
+            field, List.copyOf(leafPath)));
         return null;
     }
 
@@ -4091,6 +4092,8 @@ class FieldBuilder {
             case BodyParam.In in -> in.javaType();
             case BodyParam.RowEq req -> "org.jooq.Row" + req.columns().size();
             case BodyParam.RowIn rin -> "org.jooq.Row" + rin.columns().size();
+            // The match helper returns the finished condition, which is what the local holds.
+            case BodyParam.PartialRowIn ignored -> "org.jooq.Condition";
             // A remote predicate's call-site type is the inner predicate's: the value arrives the
             // same way (env.getArgument), only the SQL shape differs.
             case BodyParam.RemoteColumnPredicate r -> bodyParamCallTypeName(r.inner());

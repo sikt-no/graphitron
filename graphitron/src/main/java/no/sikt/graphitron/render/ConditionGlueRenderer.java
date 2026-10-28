@@ -155,21 +155,28 @@ public final class ConditionGlueRenderer {
             builder.addStatement("$T<?, ?> $L = args.get($S) instanceof $T<?, ?> map ? map : null",
                 MAP, lift.localName(), lift.outerArgName(), MAP);
         }
+        // Ahead of the binding locals: a partial list-of-input local compares against its term's
+        // own table, which for a reached term is the terminal hop alias. Aliases read only table.
+        var aliasesByReach = declareReachAliases(builder, predicates);
+        var partialTables = partialMatchTables(predicates, aliasesByReach);
+
         // Composed before it is emitted: a projected binding registers a node-id decode with the
         // sink, and that materialisation has to be declared ahead of every local reading it. With no
         // projection the sink contributes nothing and this emits exactly what the loop used to.
         var bindingLocals = new ArrayList<CodeBlock>();
         for (var binding : bindings) {
-            bindingLocals.add(extractionExpr(binding.param(), ValueTable.of(binding, jooqTableClass),
-                liftLocals, hosts, keys));
+            var valueTable = ValueTable.of(binding, jooqTableClass);
+            String matchTable = partialTables.get(binding.localName());
+            if (matchTable != null) {
+                valueTable = new ValueTable(valueTable.tableClass(), CodeBlock.of("$L", matchTable));
+            }
+            bindingLocals.add(extractionExpr(binding.param(), valueTable, liftLocals, hosts, keys));
         }
         builder.addCode(keys.declarations());
         for (int i = 0; i < bindings.size(); i++) {
             builder.addStatement("$T $L = $L",
                 localType(bindings.get(i).param()), bindings.get(i).localName(), bindingLocals.get(i));
         }
-
-        var aliasesByReach = declareReachAliases(builder, predicates);
 
         builder.addStatement("$T condition = $T.noCondition()", CONDITION, DSL);
         for (var predicate : predicates) {
@@ -211,6 +218,49 @@ public final class ConditionGlueRenderer {
             }
         }
         return List.copyOf(byLocal.values());
+    }
+
+    /**
+     * The table each partial list-of-input binding's match helper compares against, keyed by the
+     * binding's local: {@code table} for an own-table term, the terminal hop alias of the term's own
+     * reach for a reached one. The binding knows its reached table but not which reach occurrence
+     * its term owns, so the term that mints it resolves the alias. A partial local is the finished
+     * condition of one term, so a second occurrence of it is a producer bug: an authored
+     * {@code @condition} on the list field binds the raw list under its own extraction.
+     */
+    private static Map<String, String> partialMatchTables(List<Predicate> predicates,
+            Map<ReachPath, List<String>> aliasesByReach) {
+        var tables = new LinkedHashMap<String, String>();
+        var occurrences = new ArrayList<ArgBinding>();
+        for (var predicate : predicates) {
+            switch (predicate) {
+                case Predicate.Generated generated -> {
+                    for (var term : generated.terms()) {
+                        if (!isPartial(term.binding())) {
+                            continue;
+                        }
+                        occurrences.add(term.binding());
+                        var hopAliases = aliasesByReach.get(term.reach());
+                        tables.put(term.binding().localName(),
+                            term.reach().isEmpty() ? "table" : hopAliases.get(hopAliases.size() - 1));
+                    }
+                }
+                case Predicate.Authored authored ->
+                    authored.bindings().stream().filter(ConditionGlueRenderer::isPartial).forEach(occurrences::add);
+            }
+        }
+        if (occurrences.size() != tables.size()
+                || occurrences.stream().anyMatch(b -> !tables.containsKey(b.localName()))) {
+            throw new IllegalStateException("a partial list-of-input local is read by more than one"
+                + " occurrence (" + occurrences.stream().map(ArgBinding::localName).toList()
+                + "); it is the finished condition of one generated term");
+        }
+        return tables;
+    }
+
+    private static boolean isPartial(ArgBinding binding) {
+        return CallSiteExtraction.ElementRows.of(binding.param().extraction())
+            instanceof CallSiteExtraction.ElementRows.Partial;
     }
 
     // ------------------------------------------------------------------------------------------
@@ -270,7 +320,9 @@ public final class ConditionGlueRenderer {
 
     /**
      * The four shapes a column term lowers to, as {@code receiver.op(local)} over shape times
-     * arity: single-column {@code eq} / {@code in}, and the row-value forms of both.
+     * arity: single-column {@code eq} / {@code in}, and the row-value forms of both. A partial
+     * membership term renders its local itself: the match helper already compared each carried
+     * cell against {@code alias}'s columns, so the local is the finished condition.
      *
      * <p>No shape spells a bind. jOOQ types every comparison operand at the receiving column's
      * {@code DataType} ({@code Field.eq} and {@code Field.in} route each value through
@@ -283,6 +335,9 @@ public final class ConditionGlueRenderer {
      */
     private static CodeBlock columnCompare(ColumnTerm term, String alias) {
         String local = term.binding().localName();
+        if (term.match() == MatchKind.PARTIAL_MEMBERSHIP) {
+            return CodeBlock.of("$L", local);
+        }
         if (term.columns().size() == 1) {
             String col = term.columns().get(0).javaName();
             return term.match() == MatchKind.EQUALITY
@@ -303,7 +358,9 @@ public final class ConditionGlueRenderer {
      * ANDs {@code expr} into the {@code condition} local under the term's presence guard: scalar
      * terms guard on {@code != null} unless the binding is proven non-null; list terms
      * additionally skip the empty list (an empty {@code IN ()} would render constant false and
-     * zero the query rather than contributing no conjunct).
+     * zero the query rather than contributing no conjunct). A partial membership term guards as a
+     * scalar whatever its nullability, since its match helper answers {@code null} for an absent or
+     * empty list; the guard sits outside a reached term's {@code EXISTS}.
      *
      * <p>A pruning NodeId binding ({@link CallSiteExtraction.PruneOnMismatch}) forks off first: for
      * it, a {@code null} local can mean "the caller supplied an id this branch cannot decode", which
@@ -315,6 +372,10 @@ public final class ConditionGlueRenderer {
         boolean list = term.binding().param().list();
         if (decodeLeafOf(term.binding().param().extraction()) instanceof CallSiteExtraction.PruneOnMismatch) {
             appendPruningAnd(builder, term, expr);
+            return;
+        }
+        if (term.match() == MatchKind.PARTIAL_MEMBERSHIP) {
+            builder.addStatement("if ($L != null) condition = condition.and($L)", local, expr);
             return;
         }
         if (list) {
@@ -482,10 +543,11 @@ public final class ConditionGlueRenderer {
      * {@code -Xlint:rawtypes -Werror} compile), with the list axis wrapping the element type
      * exactly as the retired entity signatures did.
      *
-     * <p>A list-of-input row read derives its type from its cells' columns and never from
-     * {@link CallParam#typeName()}, whose row-shaped value is the bare {@code org.jooq.Row<N>}
-     * string: falling through would declare a raw {@code List<Row2>}, which a consumer compiling
-     * under {@code -Xlint:rawtypes -Werror} rejects.
+     * <p>A list-of-input element read takes its type from its arm and never from
+     * {@link CallParam#typeName()}: a whole read derives it from its cells' columns, since the
+     * row-shaped call type is the bare {@code org.jooq.Row<N>} string and falling through would
+     * declare a raw {@code List<Row2>}, which a consumer compiling under
+     * {@code -Xlint:rawtypes -Werror} rejects; a partial read is the finished {@code Condition}.
      */
     private static TypeName localType(CallParam param) {
         var decode = decodeLeafOf(param.extraction());
@@ -494,7 +556,7 @@ public final class ConditionGlueRenderer {
         }
         var elementRows = CallSiteExtraction.ElementRows.of(param.extraction());
         if (elementRows != null) {
-            return ElementRowsHelperRegistry.rowsType(elementRows);
+            return ElementRowsHelperRegistry.localType(elementRows);
         }
         if (!param.list() && param.javaType() instanceof ParameterizedTypeName full) {
             return full;
@@ -611,9 +673,11 @@ public final class ConditionGlueRenderer {
     }
 
     /**
-     * The row-read helper call for a filter field typed as a list of input objects: the helper takes
-     * the uncast wire list and the table the cells' columns belong to (the glue's own, or a reach's
-     * terminal table), as the decode arm hands its descent to the decode helper.
+     * The element-read helper call for a filter field typed as a list of input objects: the helper
+     * takes the uncast wire list and the table the cells' columns belong to (the glue's own, or a
+     * reach's terminal table), as the decode arm hands its descent to the decode helper. A whole
+     * read only lifts values at that table's column types, so the unaliased constant serves; a
+     * partial read compares against it, so it is the term's own table or hop alias.
      */
     private static CodeBlock rowsCall(ElementRowsHelperRegistry registry,
             CallSiteExtraction.ElementRows rows, CallParam param, ValueTable valueTable,

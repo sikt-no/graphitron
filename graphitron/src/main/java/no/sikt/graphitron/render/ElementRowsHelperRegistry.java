@@ -15,20 +15,34 @@ import java.util.List;
 import java.util.Map;
 
 /**
- * Per-class collector for the row reads of filter fields typed as a list of input objects
+ * Per-class collector for the element reads of filter fields typed as a list of input objects
  * ({@link CallSiteExtraction.ElementRows}). The glue local such a filter binds is built by a private
  * static helper on the conditions class, and the call site collapses to
  * {@code <name>(<wire>, <table>)}.
  *
  * <p>The helper takes the uncast wire value and the table the cells' columns belong to (the glue's
- * own table, or the terminal table a {@code @reference} path reaches), and returns one entry per
- * element: {@code List<Row<N><T1, ..., TN>>} for two or more cells, each cell lifted through
- * {@code DSL.val(value, table.COL.getDataType())} so a converter on the column runs, or
- * {@code List<T>} for a one-cell element, which {@code table.COL.in(values)} binds itself. A wire
- * value that is not a {@code List} yields {@code null}, which the glue's presence guard reads as no
- * filter. An element that is not a {@code Map} (graphql-java's coercion leaves only {@code null})
- * yields a row of typed nulls, which matches no row; it is never dropped, since dropping it would
- * turn {@code [null]} into an empty list that filters nothing.
+ * own table, or the terminal table a {@code @reference} path reaches). Its shape forks on the arm:
+ *
+ * <ul>
+ *   <li>{@link CallSiteExtraction.ElementRows.Whole}: a rows helper ({@code <stem>Rows}) returning
+ *       one entry per element, {@code List<Row<N><T1, ..., TN>>} for two or more cells, each cell
+ *       lifted through {@code DSL.val(value, table.COL.getDataType())} so a converter on the column
+ *       runs, or {@code List<T>} for a one-cell element, which {@code table.COL.in(values)} binds
+ *       itself. A wire value that is not a {@code List} yields {@code null}, which the glue's
+ *       presence guard reads as no filter. An element that is not a {@code Map} (graphql-java's
+ *       coercion leaves only {@code null}) yields a row of typed nulls, which matches no row; it is
+ *       never dropped, since dropping it would turn {@code [null]} into an empty list that filters
+ *       nothing.</li>
+ *   <li>{@link CallSiteExtraction.ElementRows.Partial}: a match helper ({@code <stem>Match})
+ *       returning the finished {@code Condition}, the OR over elements of the AND over the cells each
+ *       element carries, compared as {@code table.COL.eq(cellN)} at the column's Java type so a
+ *       converter still runs. An absent, non-list or empty wire value yields {@code null}. A
+ *       non-{@code Map} element contributes {@code DSL.falseCondition()}, for the reason a whole
+ *       read contributes a row of typed nulls; an element carrying no cell contributes
+ *       {@code DSL.trueCondition()}, never {@code DSL.and} over an empty list, since jOOQ's
+ *       {@code noCondition()} is an identity for {@code or} too and would drop the element from the
+ *       disjunction.</li>
+ * </ul>
  *
  * <p>A registry of its own because none of the existing ones has this key: the node-id decode
  * registry keys on a decode helper and a mode, the routine descent registry takes no table, and the
@@ -43,9 +57,13 @@ public final class ElementRowsHelperRegistry {
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName ARRAY_LIST = ClassName.get("java.util", "ArrayList");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
+    private static final ClassName CONDITION = ClassName.get("org.jooq", "Condition");
 
-    /** Two reads share a helper when they build the same cells against the same table class. */
-    private record Key(TypeName tableClass, List<CallSiteExtraction.Cell> cells) {}
+    /**
+     * Two reads share a helper when they are the same read (arm and cells) against the same table
+     * class.
+     */
+    private record Key(TypeName tableClass, CallSiteExtraction.ElementRows rows) {}
 
     private final Map<Key, String> helperNames = new LinkedHashMap<>();
     private final Map<Key, MethodSpec> helpers = new LinkedHashMap<>();
@@ -64,20 +82,26 @@ public final class ElementRowsHelperRegistry {
     }
 
     /**
-     * Registers the row read for one list-of-input filter and returns the helper's name.
+     * Registers the element read for one list-of-input filter and returns the helper's name.
      *
      * @param stem       the filter's parameter name, which names the helper
      * @param tableClass the class of the table the cells' columns belong to, the helper's second
      *                   parameter
-     * @param rows       the cells one element contributes
+     * @param rows       the element read, whose arm picks the rows or the match helper
      */
     public String register(String stem, TypeName tableClass, CallSiteExtraction.ElementRows rows) {
-        var key = new Key(tableClass, rows.cells());
+        var key = new Key(tableClass, rows);
         String existing = helperNames.get(key);
         if (existing != null) return existing;
-        String name = uniqueName(stem + "Rows");
+        String name = uniqueName(stem + switch (rows) {
+            case CallSiteExtraction.ElementRows.Whole ignored -> "Rows";
+            case CallSiteExtraction.ElementRows.Partial ignored -> "Match";
+        });
         helperNames.put(key, name);
-        helpers.put(key, buildHelper(key, name));
+        helpers.put(key, switch (rows) {
+            case CallSiteExtraction.ElementRows.Whole whole -> buildRowsHelper(tableClass, whole, name);
+            case CallSiteExtraction.ElementRows.Partial partial -> buildMatchHelper(tableClass, partial, name);
+        });
         return name;
     }
 
@@ -87,10 +111,18 @@ public final class ElementRowsHelperRegistry {
     }
 
     /**
-     * The type the helper returns and the glue local is declared as: {@code List<T>} for one cell,
-     * {@code List<Row<N><T1, ..., TN>>} for more, computed from the cells' columns.
+     * The type the helper returns and the glue local is declared as: for a whole read
+     * {@code List<T>} for one cell and {@code List<Row<N><T1, ..., TN>>} for more, computed from the
+     * cells' columns; for a partial read the finished {@code Condition}.
      */
-    public static TypeName rowsType(CallSiteExtraction.ElementRows rows) {
+    public static TypeName localType(CallSiteExtraction.ElementRows rows) {
+        return switch (rows) {
+            case CallSiteExtraction.ElementRows.Whole whole -> rowsType(whole);
+            case CallSiteExtraction.ElementRows.Partial ignored -> CONDITION;
+        };
+    }
+
+    private static TypeName rowsType(CallSiteExtraction.ElementRows.Whole rows) {
         var columns = rows.columns();
         TypeName element = columns.size() == 1
             ? CatalogRefs.columnType(columns.get(0))
@@ -107,9 +139,10 @@ public final class ElementRowsHelperRegistry {
         return candidate;
     }
 
-    private static MethodSpec buildHelper(Key key, String name) {
-        var cells = key.cells();
-        TypeName returnType = rowsType(new CallSiteExtraction.ElementRows(cells));
+    private static MethodSpec buildRowsHelper(TypeName tableClass, CallSiteExtraction.ElementRows.Whole rows,
+            String name) {
+        var cells = rows.cells();
+        TypeName returnType = rowsType(rows);
         TypeName elementType = ((ParameterizedTypeName) returnType).typeArguments().get(0);
         boolean single = cells.size() == 1;
 
@@ -147,7 +180,59 @@ public final class ElementRowsHelperRegistry {
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .returns(returnType)
             .addParameter(Object.class, "wire")
-            .addParameter(key.tableClass(), "table")
+            .addParameter(tableClass, "table")
+            .addCode(body.build())
+            .build();
+    }
+
+    /**
+     * The match helper for a partial read: per element, the AND over the cells it carries, a
+     * required cell compared unguarded and an optional one only when present; the list is the OR over
+     * its elements.
+     */
+    private static MethodSpec buildMatchHelper(TypeName tableClass, CallSiteExtraction.ElementRows.Partial rows,
+            String name) {
+        var cells = rows.cells();
+        TypeName conditions = ParameterizedTypeName.get(LIST, CONDITION);
+        boolean anyRequired = cells.stream().anyMatch(CallSiteExtraction.Cell::required);
+
+        var body = CodeBlock.builder();
+        body.beginControlFlow("if (!(wire instanceof $T<?> elements) || elements.isEmpty())", LIST)
+            .addStatement("return null")
+            .endControlFlow();
+        body.addStatement("$T anyOf = new $T<>(elements.size())", conditions, ARRAY_LIST);
+        body.beginControlFlow("for ($T element : elements)", Object.class);
+        body.beginControlFlow("if (!(element instanceof $T<?, ?> fields))", MAP)
+            .addStatement("anyOf.add($T.falseCondition())", DSL)
+            .addStatement("continue")
+            .endControlFlow();
+        for (int i = 0; i < cells.size(); i++) {
+            readCell(body, cells.get(i), i + 1);
+        }
+        body.addStatement("$T cells = new $T<>($L)", conditions, ARRAY_LIST, cells.size());
+        for (int i = 0; i < cells.size(); i++) {
+            var cell = cells.get(i);
+            var compare = CodeBlock.of("cells.add(table.$L.eq(cell$L))", cell.column().javaName(), i + 1);
+            if (cell.required()) {
+                body.addStatement(compare);
+            } else {
+                body.beginControlFlow("if (cell$L != null)", i + 1)
+                    .addStatement(compare)
+                    .endControlFlow();
+            }
+        }
+        if (anyRequired) {
+            body.addStatement("anyOf.add($T.and(cells))", DSL);
+        } else {
+            body.addStatement("anyOf.add(cells.isEmpty() ? $T.trueCondition() : $T.and(cells))", DSL, DSL);
+        }
+        body.endControlFlow();
+        body.addStatement("return $T.or(anyOf)", DSL);
+        return MethodSpec.methodBuilder(name)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(CONDITION)
+            .addParameter(Object.class, "wire")
+            .addParameter(tableClass, "table")
             .addCode(body.build())
             .build();
     }

@@ -514,6 +514,7 @@ class NodeIdParticipantRoutePipelineTest {
                 case BodyParam.In in -> in.column().sqlName();
                 case BodyParam.RowEq rowEq -> rowEq.columns().getFirst().sqlName();
                 case BodyParam.RowIn rowIn -> rowIn.columns().getFirst().sqlName();
+                case BodyParam.PartialRowIn partialRowIn -> partialRowIn.columns().getFirst().sqlName();
             })
             .findFirst()
             .orElseThrow(() -> new AssertionError("participant '" + participant

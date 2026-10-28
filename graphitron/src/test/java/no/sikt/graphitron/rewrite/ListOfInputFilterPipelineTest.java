@@ -31,10 +31,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 /**
  * A filter field typed as a list of input objects classifies as one row-{@code IN} over its
- * element fields: {@link BodyParam.RowIn} at two or more cells and {@link BodyParam.In} at one,
- * reading the wire list through {@link CallSiteExtraction.ElementRows}. Before this, each element
- * field classified as an independent scalar {@code .eq} whose read treated the list as one
- * {@code Map}, so the filter was silently dropped.
+ * element fields when every element field is required: {@link BodyParam.RowIn} at two or more cells
+ * and {@link BodyParam.In} at one, reading the wire list through
+ * {@link CallSiteExtraction.ElementRows.Whole}. With an optional element field it classifies as one
+ * {@link BodyParam.PartialRowIn} over {@link CallSiteExtraction.ElementRows.Partial}, where each
+ * element compares only the cells it carries. Before this, each element field classified as an
+ * independent scalar {@code .eq} whose read treated the list as one {@code Map}, so the filter was
+ * silently dropped.
  *
  * <p>When every element field reaches its column through one {@code @reference} path, the
  * row-{@code IN} is wrapped in a {@link BodyParam.RemoteColumnPredicate} over that path, compared
@@ -98,11 +101,12 @@ class ListOfInputFilterPipelineTest {
         var nif = (CallSiteExtraction.NestedInputField) rowIn.extraction();
         assertThat(nif.outerArgName()).isEqualTo("filter");
         assertThat(nif.path()).containsExactly("pairs");
-        var rows = (CallSiteExtraction.ElementRows) nif.leaf();
+        var rows = (CallSiteExtraction.ElementRows.Whole) nif.leaf();
         assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::path)
             .containsExactly(List.of("actorId"), List.of("filmId"));
         assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::leaf)
             .allMatch(CallSiteExtraction.Direct.class::isInstance);
+        assertThat(rows.cells()).allMatch(CallSiteExtraction.Cell::required);
     }
 
     @Test
@@ -117,7 +121,68 @@ class ListOfInputFilterPipelineTest {
         var in = (BodyParam.In) single(bodyParams(schema, "filmActors"));
         assertThat(in.column().sqlName()).isEqualTo("actor_id");
         assertThat(in.nonNull()).as("non-null argument and non-null list").isTrue();
-        assertThat(CallSiteExtraction.ElementRows.of(in.extraction()).cells()).hasSize(1);
+        assertThat(CallSiteExtraction.ElementRows.of(in.extraction()))
+            .isInstanceOf(CallSiteExtraction.ElementRows.Whole.class)
+            .satisfies(rows -> assertThat(rows.cells()).hasSize(1));
+    }
+
+    @Test
+    void nullableElementField_classifiesAsPartialRowIn() {
+        var schema = build("""
+            input PairInput {
+                actorId: Int! @field(name: "actor_id")
+                filmId: Int @field(name: "film_id")
+            }
+            input PairFilter { pairs: [PairInput] }
+            """ + FILM_ACTOR + """
+            type Query { filmActors(filter: PairFilter): [FilmActor!]! }
+            """);
+
+        var partial = (BodyParam.PartialRowIn) single(bodyParams(schema, "filmActors"));
+        assertThat(partial.name()).isEqualTo("pairs");
+        assertThat(partial.columns()).extracting(c -> c.sqlName()).containsExactly("actor_id", "film_id");
+        var nif = (CallSiteExtraction.NestedInputField) partial.extraction();
+        assertThat(nif.path()).containsExactly("pairs");
+        var rows = (CallSiteExtraction.ElementRows.Partial) nif.leaf();
+        assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::required).containsExactly(true, false);
+    }
+
+    @Test
+    void oneNullableCell_classifiesAsPartialRowInAtArityOne() {
+        var schema = build("""
+            input ActorInput { actorId: Int @field(name: "actor_id") }
+            input ActorFilter { actors: [ActorInput!]! }
+            """ + FILM_ACTOR + """
+            type Query { filmActors(filter: ActorFilter!): [FilmActor!]! }
+            """);
+
+        var partial = (BodyParam.PartialRowIn) single(bodyParams(schema, "filmActors"));
+        assertThat(partial.columns()).extracting(c -> c.sqlName()).containsExactly("actor_id");
+        assertThat(CallSiteExtraction.ElementRows.of(partial.extraction()))
+            .isInstanceOf(CallSiteExtraction.ElementRows.Partial.class)
+            .satisfies(rows -> assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::required)
+                .containsExactly(false));
+    }
+
+    @Test
+    void nullableNestedInput_makesItsCellsOptional() {
+        // filmId is non-null inside FilmPart, but FilmPart itself may be left out of an element.
+        var schema = build("""
+            input FilmPart { filmId: Int! @field(name: "film_id") }
+            input PairInput {
+                actorId: Int! @field(name: "actor_id")
+                film: FilmPart
+            }
+            input PairFilter { pairs: [PairInput!] }
+            """ + FILM_ACTOR + """
+            type Query { filmActors(filter: PairFilter): [FilmActor!]! }
+            """);
+
+        var partial = (BodyParam.PartialRowIn) single(bodyParams(schema, "filmActors"));
+        var rows = (CallSiteExtraction.ElementRows.Partial) CallSiteExtraction.ElementRows.of(partial.extraction());
+        assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::path)
+            .containsExactly(List.of("actorId"), List.of("film", "filmId"));
+        assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::required).containsExactly(true, false);
     }
 
     @Test
@@ -134,6 +199,8 @@ class ListOfInputFilterPipelineTest {
             """);
 
         var rowIn = (BodyParam.RowIn) single(bodyParams(schema, "filmActors"));
+        assertThat(CallSiteExtraction.ElementRows.of(rowIn.extraction()))
+            .isInstanceOf(CallSiteExtraction.ElementRows.Whole.class);
         assertThat(CallSiteExtraction.ElementRows.of(rowIn.extraction()).cells())
             .extracting(CallSiteExtraction.Cell::path)
             .containsExactly(List.of("actorId"), List.of("film", "filmId"));
@@ -152,7 +219,7 @@ class ListOfInputFilterPipelineTest {
 
         var rowIn = (BodyParam.RowIn) single(bodyParams(schema, "filmActors"));
         assertThat(rowIn.name()).isEqualTo("pairs");
-        assertThat(rowIn.extraction()).isInstanceOf(CallSiteExtraction.ElementRows.class);
+        assertThat(rowIn.extraction()).isInstanceOf(CallSiteExtraction.ElementRows.Whole.class);
     }
 
     @Test
@@ -221,7 +288,7 @@ class ListOfInputFilterPipelineTest {
         assertThat(rowIn.columns()).extracting(c -> c.sqlName()).containsExactly("first_name", "last_name");
         var nif = (CallSiteExtraction.NestedInputField) rowIn.extraction();
         assertThat(nif.path()).containsExactly("names");
-        var rows = (CallSiteExtraction.ElementRows) nif.leaf();
+        var rows = (CallSiteExtraction.ElementRows.Whole) nif.leaf();
         assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::path)
             .containsExactly(List.of("firstName"), List.of("lastName"));
     }
@@ -372,9 +439,24 @@ class ListOfInputFilterPipelineTest {
     }
 
     @Test
-    void nullableReachedCell_isRejected() {
-        assertRejected("actorId: String @field(name: \"first_name\") " + ACTOR_KEY,
-            "PairInput.actorId", "pairs/actorId");
+    void nullableReachedCell_classifiesAsRemotePartialRowIn() {
+        var schema = build("""
+            input NameInput {
+                firstName: String! @field(name: "first_name") %s
+                lastName: String @field(name: "last_name") %s
+            }
+            input NameFilter { names: [NameInput] }
+            """.formatted(ACTOR_KEY, ACTOR_KEY) + FILM_ACTOR + """
+            type Query { filmActors(filter: NameFilter): [FilmActor!]! }
+            """);
+
+        var remote = (BodyParam.RemoteColumnPredicate) single(bodyParams(schema, "filmActors"));
+        assertThat(remote.joinPath()).extracting(s -> ((JoinStep.Hop) s).targetTable().tableName())
+            .containsExactly("actor");
+        var partial = (BodyParam.PartialRowIn) remote.inner();
+        assertThat(partial.columns()).extracting(c -> c.sqlName()).containsExactly("first_name", "last_name");
+        var rows = (CallSiteExtraction.ElementRows.Partial) CallSiteExtraction.ElementRows.of(partial.extraction());
+        assertThat(rows.cells()).extracting(CallSiteExtraction.Cell::required).containsExactly(true, false);
     }
 
     @Test
@@ -502,11 +584,6 @@ class ListOfInputFilterPipelineTest {
     }
 
     // ===== Rejections, one per case =====
-
-    @Test
-    void nullableElementField_isRejectedAtItsOwnCoordinate() {
-        assertRejected("actorId: Int @field(name: \"actor_id\")", "PairInput.actorId", "pairs/actorId");
-    }
 
     @Test
     void listTypedElementField_isRejected() {

@@ -224,6 +224,7 @@ public final class ColumnBindingLedger {
             case BodyParam.In in -> List.of(in.column());
             case BodyParam.RowEq rowEq -> rowEq.columns();
             case BodyParam.RowIn rowIn -> rowIn.columns();
+            case BodyParam.PartialRowIn partialRowIn -> partialRowIn.columns();
         };
     }
 

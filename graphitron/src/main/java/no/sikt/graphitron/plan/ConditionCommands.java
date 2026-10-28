@@ -243,6 +243,9 @@ public final class ConditionCommands {
                 new ColumnTerm(req.columns(), MatchKind.EQUALITY, req.nonNull(), binding, ReachPath.none());
             case BodyParam.RowIn rin ->
                 new ColumnTerm(rin.columns(), MatchKind.MEMBERSHIP, rin.nonNull(), binding, ReachPath.none());
+            case BodyParam.PartialRowIn prin ->
+                new ColumnTerm(prin.columns(), MatchKind.PARTIAL_MEMBERSHIP, prin.nonNull(), binding,
+                    ReachPath.none());
             case BodyParam.RemoteColumnPredicate r -> {
                 var inner = termOf(r.inner(), binding, fieldName);
                 var reach = ReachPath.narrow(r.joinPath(),
