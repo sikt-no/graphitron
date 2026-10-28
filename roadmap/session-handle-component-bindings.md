@@ -7,7 +7,7 @@ priority: 4
 theme: runtime-connection
 depends-on: []
 created: 2026-10-26
-last-updated: 2026-10-26
+last-updated: 2026-10-28
 ---
 
 # A value the session mount derives binds where a contextArgument binds today
@@ -59,7 +59,7 @@ fs-plattform's opptak subgraph, moving from the escape hatch to the owned-connec
 
 ### The handle's members, decoded once
 
-* `ServiceCatalog.resolveSessionHooks`, where the mount's class is live, decodes the handle type's readable members and carries them on `SessionHooks.Handled` as values: member name, accessor form (method call or field read, by name) and `TypeName`. No `Method` or `Field` object enters the model.
+* `ServiceCatalog.resolveSessionHooks`, where the mount's class is live, decodes the handle type's readable members and carries them on `SessionHooks.Handled` as values: member name, accessor form (method call or field read, by name) and `TypeName`. No `Method` or `Field` object enters the model. The decode is a function of the handle *class* alone, written as its own method taking that class, so the mount's return type is merely where the class comes from today; the supplied-per-request form of session identity takes the same class from a declared `<handle>` and reuses the decode unchanged.
 * **The readable members are the ones the handle type declares, not the ones it inherits.** For a Java record, its record components, read through their accessors. For any other class: the public, non-static, zero-argument methods declared on the class itself (`getDeclaredMethods`) named `get<Name>`, or `is<Name>` returning `boolean`, giving member `<name>` (first letter lowercased), plus the public non-static fields declared on the class itself. Inherited members are excluded. The rule is deliberately not `ClassAccessorResolver`'s, which enumerates `getMethods()` and so includes inherited API: on a jOOQ record handle that would admit `$session.changed` and list the whole `Record` API (`size()`, `fields()`, `getUDT()`, ...) in the unknown-member message. Under this rule the sakila fixture's `SessionHandleRecord`, a jOOQ UDT record that declares `getPrincipal()` and `getSessionNo()` and inherits everything else from `UDTRecordImpl`, has exactly the members `principal` and `sessionNo`. A consumer whose handle inherits its accessors from a base class it owns re-declares them or wraps the handle in a record; widening the rule (for example, walking superclasses up to the first `org.jooq` or `java.` type) is left to a successor if one asks.
 * A binding carries only the authored member name. The resolved accessor is the join of binding and `Handled` members, read by both the validator and the emitters.
 
@@ -100,6 +100,12 @@ fs-plattform's opptak subgraph, moving from the escape hatch to the owned-connec
 
 * `docs/manual/reference/mojo-configuration.adoc`, "Consuming the handle in services", becomes "Consuming the handle": the member form, `@condition` beside `@service` with its placements, the build-time checks, the fan-out limit for conditions, and the opptak-shaped example from the Goal.
 * The `@condition` directive reference names `$session` among the `argMapping` sources.
+
+## Relation to other items
+
+* **R1120** (Spec, depends on this item): moves the mount to per-request callbacks and sources the handle type from a declared `<handle>`. It lands after this item and changes only where the handle class comes from and the validator's wording (see the decode note above). Nothing here assumes a static mount beyond that one resolution point.
+* **R1119** (Spec): a vouched connection runs the base mount and then a voucher mount that does not replace the handle, so the connection's published handle is the base mount's. `$session.<member>` reads through the statement's own `dsl`, hence through the connection the statement runs on, so a session-reading condition inside a voucher-routed subtree reads that connection's handle with no change here. This is the same property that rules out reading the handle from `env`.
+* **R1098** (Backlog): no code dependency; opptak needs this item alongside it.
 
 ## Other solutions we've considered
 

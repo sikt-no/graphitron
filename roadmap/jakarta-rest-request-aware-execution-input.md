@@ -118,6 +118,6 @@ Changes to `GraphitronApplication`, `AbstractGraphitronApplication` and `Graphql
 
 * **R1120** (`owned-session-state-supplied-per-request`): the core item this depends on.
 * **R1097** (Done): added `clientFault` and documented the instrumentation footgun; this item removes the footgun and may narrow the hook.
-* **R1102** (Spec): `$session` by member; opptak needs it alongside this item.
+* **R1102** (Ready): `$session` by member; opptak needs it alongside this item.
 * **R1108** (Backlog): the manual describes the shape this item lands.
 * **R1096** (Spec): consumes the request-value path for `Accept-Language`.

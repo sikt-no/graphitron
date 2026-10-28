@@ -37,7 +37,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R1120` | The POM switches session identity on; the consumer supplies it per request as code <sub>blocked by: [session-handle-component-bindings](session-handle-component-bindings.md)</sub> | Spec | 2026-10-28 | [plan](owned-session-state-supplied-per-request.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
+| `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-28 <sub>created 2026-10-26</sub> | [plan](session-handle-component-bindings.md) |
 | `R1116` | A nullable element field in a list-of-input filter does not constrain when absent | In Review | 2026-10-28 | [plan](list-of-input-filter-nullable-cell.md) |
 | `R1117` | A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null | In Review | 2026-10-28 | [plan](externalfield-presence-leaf.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
