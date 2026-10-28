@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.NestingReach;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;

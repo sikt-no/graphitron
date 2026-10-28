@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 
 import java.util.List;
 import java.util.Objects;
@@ -12,7 +12,7 @@ import java.util.Objects;
  * leaves). One {@link InputComponent} per SDL
  * field, in declaration order. The "record" terminology in this carrier's name and slot
  * names is forward-looking: the emitted artifact is a plain Java class today and becomes a
- * Java {@code record} once graphitron-javapoet gains record emission support.
+ * Java {@code record}.
  *
  * <p>The compact constructor enforces the structural invariants consumers rely on:
  * a builder site that fails to construct a shape (null {@code recordClass}, empty

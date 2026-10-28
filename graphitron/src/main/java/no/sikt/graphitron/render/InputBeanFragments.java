@@ -1,11 +1,11 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import javax.lang.model.element.Modifier;

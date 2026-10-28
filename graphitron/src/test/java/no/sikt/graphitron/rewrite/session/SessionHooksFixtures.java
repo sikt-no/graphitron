@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.session;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -94,7 +94,7 @@ public final class SessionHooksFixtures {
 
     /** The mount's tenant slot ({@link ParamSource.SessionTenant}-sourced), typed {@code Optional<tenantType>}. */
     public static MethodRef.Param.Typed tenantSlot(String name, TypeName tenantType) {
-        TypeName optional = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+        TypeName optional = com.palantir.javapoet.ParameterizedTypeName.get(
             ClassName.get(Optional.class), tenantType);
         return new MethodRef.Param.Typed(name, optional.toString(), optional, new ParamSource.SessionTenant());
     }

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.plan.ProjectionCommands;
 import no.sikt.graphitron.render.ProjectionUnitRenderer;

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 
 /**
  * A resolved reference to a developer-supplied static lifter method that extracts a

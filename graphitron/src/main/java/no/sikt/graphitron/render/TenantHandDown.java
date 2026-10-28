@@ -1,6 +1,6 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 
 /**
  * The routed-tenant rider a fetcher's success envelope carries: {@code .localContext(<key>)} when

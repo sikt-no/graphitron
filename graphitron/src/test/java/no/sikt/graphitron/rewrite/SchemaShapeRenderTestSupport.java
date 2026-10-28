@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite;
 
 import no.sikt.graphitron.command.TypeUnitCommand;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.SchemaShapePlanner;
 import graphql.schema.GraphQLSchema;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.generators.schema.EnumTypeGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronSchemaClassGenerator;

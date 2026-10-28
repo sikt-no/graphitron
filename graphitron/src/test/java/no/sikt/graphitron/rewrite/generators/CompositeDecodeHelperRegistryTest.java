@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.HelperRef;

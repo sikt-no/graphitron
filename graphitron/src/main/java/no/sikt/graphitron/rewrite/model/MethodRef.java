@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 
 import java.util.List;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -253,7 +253,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
              *  ctor parameter named {@code "dsl"}. Used by test fixtures. */
             public InstanceWithDslHolder() {
                 this(List.of(new Param.Typed("dsl", "org.jooq.DSLContext",
-                    no.sikt.graphitron.javapoet.ClassName.get("org.jooq", "DSLContext"),
+                    com.palantir.javapoet.ClassName.get("org.jooq", "DSLContext"),
                     new ParamSource.DslContext())));
             }
         }
@@ -301,7 +301,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
             /**
              * Convenience constructor for test scaffolding that builds a {@link Typed} without the
              * full reflected {@link TypeName}: {@code javaType} is best-effort-derived from the
-             * {@code typeName} string via {@link no.sikt.graphitron.javapoet.ClassName#bestGuess}.
+             * {@code typeName} string via {@link com.palantir.javapoet.ClassName#bestGuess}.
              * Production paths in {@code ServiceCatalog} always pass the structured {@code javaType}
              * captured from reflection.
              */
@@ -312,7 +312,7 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
             private static TypeName deriveJavaType(String typeName) {
                 int lt = typeName.indexOf('<');
                 String raw = lt < 0 ? typeName : typeName.substring(0, lt);
-                return no.sikt.graphitron.javapoet.ClassName.bestGuess(raw);
+                return com.palantir.javapoet.ClassName.bestGuess(raw);
             }
         }
 

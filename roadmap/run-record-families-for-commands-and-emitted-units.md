@@ -52,8 +52,8 @@ side of it. Two things settle it.
 **Positions.** The use case is jumping from a schema coordinate to a list of candidate sites in
 generated code, which needs a target file, line and column, and a description telling the
 candidates apart. The render fold cannot know a line or a column: a position exists only once a
-`TypeSpec` becomes text, and `JavaFile.writeToPathReporting` renders and writes in one step. Getting
-positions from the fold means teaching `graphitron-javapoet` to report per-member offsets as it
+`TypeSpec` becomes text, and the emitter's `JavaFile` renders to a string and the writer then lands it. Getting
+positions from the fold means teaching the emitter library to report per-member offsets as it
 emits, a new contract in a library whose value is knowing nothing about meaning. Read from the
 emitted tree instead and `SourceWalker` already reports 1-based line and column per declaration.
 

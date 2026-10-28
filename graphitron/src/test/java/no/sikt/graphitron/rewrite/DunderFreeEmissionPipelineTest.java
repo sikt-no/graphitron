@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.JavaFile;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;

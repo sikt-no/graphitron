@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.render.CatalogRefs;
 import org.junit.jupiter.api.Test;
 

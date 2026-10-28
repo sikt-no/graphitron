@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronConnectionInstrumentationGenerator;
@@ -113,7 +113,7 @@ public final class GraphitronDevExecutorGenerator {
             return List.of(degradedClass.build());
         }
         if (contextArgs.stream().anyMatch(arg -> arg.javaType() instanceof ParameterizedTypeName)) {
-            execute.addAnnotation(no.sikt.graphitron.javapoet.AnnotationSpec
+            execute.addAnnotation(com.palantir.javapoet.AnnotationSpec
                 .builder(SuppressWarnings.class).addMember("value", "$S", "unchecked").build());
         }
         execute
@@ -253,7 +253,7 @@ public final class GraphitronDevExecutorGenerator {
             .addParameter(mapStringObject, "contextArgs")
             .addParameter(ClassName.get(String.class), "name")
             .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class),
-                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)), "type")
+                com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)), "type")
             .addStatement("$T value = contextArgs == null ? null : contextArgs.get(name)", Object.class)
             .beginControlFlow("if (value == null)")
             .addStatement("throw new $T(\"contextArgs is missing required entry '\" + name + \"' (expected \" + type.getName() + \")\")",
@@ -283,7 +283,7 @@ public final class GraphitronDevExecutorGenerator {
         var dataSource = ClassName.get("javax.sql", "DataSource");
         var sqlException = ClassName.get("java.sql", "SQLException");
         var printWriter = ClassName.get("java.io", "PrintWriter");
-        var typeVariable = no.sikt.graphitron.javapoet.TypeVariableName.get("T");
+        var typeVariable = com.palantir.javapoet.TypeVariableName.get("T");
         return TypeSpec.classBuilder(DATA_SOURCE_WRAPPER)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .addSuperinterface(dataSource)
@@ -341,7 +341,7 @@ public final class GraphitronDevExecutorGenerator {
                 .addModifiers(Modifier.PUBLIC).addAnnotation(Override.class)
                 .returns(TypeName.BOOLEAN)
                 .addParameter(ParameterizedTypeName.get(ClassName.get(Class.class),
-                    no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)), "iface")
+                    com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)), "iface")
                 .addStatement("return false")
                 .build())
             .build();

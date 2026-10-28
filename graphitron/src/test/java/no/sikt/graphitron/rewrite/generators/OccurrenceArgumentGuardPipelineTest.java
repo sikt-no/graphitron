@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite.generators;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ProjectionCommand;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.plan.ProjectionCommands;
 import no.sikt.graphitron.rewrite.GraphitronSchema;

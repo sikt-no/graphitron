@@ -112,7 +112,7 @@ class LauncherRelationClosureTest {
     private static GraphitronSchema model;
     private static EmittedMethodClosure walk;
     private static LauncherRelation launchers;
-    private static Map<String, no.sikt.graphitron.javapoet.TypeSpec> emittedUnits;
+    private static Map<String, com.palantir.javapoet.TypeSpec> emittedUnits;
 
     @BeforeAll
     static void generateAndWalk(@TempDir Path workDir) throws Exception {

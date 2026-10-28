@@ -1,7 +1,7 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 
 /**
  * The one failure a generated node-id decode raises, and the message it carries.

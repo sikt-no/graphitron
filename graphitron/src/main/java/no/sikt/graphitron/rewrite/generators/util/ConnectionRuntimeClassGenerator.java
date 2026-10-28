@@ -1,13 +1,13 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
@@ -1858,7 +1858,7 @@ public final class ConnectionRuntimeClassGenerator {
      * it is no general-purpose way into the slot.
      */
     private static MethodSpec handDown(TypeName tenantKey) {
-        var t = no.sikt.graphitron.javapoet.TypeVariableName.get("T");
+        var t = com.palantir.javapoet.TypeVariableName.get("T");
         return MethodSpec.methodBuilder(HAND_DOWN_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .addTypeVariable(t)
@@ -1886,7 +1886,7 @@ public final class ConnectionRuntimeClassGenerator {
      * {@code collapseFanOut} turns the markers into null elements plus path-bearing errors.
      */
     private static MethodSpec fanOutRows(ClassName self, TypeName tenantKey) {
-        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var r = com.palantir.javapoet.TypeVariableName.get("R");
         var outcome = self.nestedClass("Outcome");
         var listOfR = ParameterizedTypeName.get(LIST, r);
         return MethodSpec.methodBuilder("fanOutRows")
@@ -1934,7 +1934,7 @@ public final class ConnectionRuntimeClassGenerator {
      * parent's fetcher collapses its own list against its own path.
      */
     private static MethodSpec fanOutBatchRows(ClassName self, TypeName tenantKey) {
-        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var r = com.palantir.javapoet.TypeVariableName.get("R");
         var outcome = self.nestedClass("Outcome");
         var listOfListOfR = ParameterizedTypeName.get(LIST, ParameterizedTypeName.get(LIST, r));
         var listOfObject = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
@@ -2337,7 +2337,7 @@ public final class ConnectionRuntimeClassGenerator {
      * tenant means.
      */
     private static MethodSpec scatterMethod(ClassName self, TypeName tenantKey) {
-        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var r = com.palantir.javapoet.TypeVariableName.get("R");
         var outcome = self.nestedClass("Outcome");
         var outcomeOfR = ParameterizedTypeName.get(outcome, r);
         return MethodSpec.methodBuilder("scatter")
@@ -2424,7 +2424,7 @@ public final class ConnectionRuntimeClassGenerator {
 
     /** The scatter worker body: marker for the re-entrancy guard, Success/Failed fold, never throws. */
     private static MethodSpec scatterWorkerMethod(ClassName self, TypeName tenantKey) {
-        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var r = com.palantir.javapoet.TypeVariableName.get("R");
         var outcome = self.nestedClass("Outcome");
         return MethodSpec.methodBuilder("scatterWorker")
             .addModifiers(Modifier.PRIVATE)
@@ -2457,7 +2457,7 @@ public final class ConnectionRuntimeClassGenerator {
      * compilation unit, so the sealed interface needs no {@code permits} clause.
      */
     private static TypeSpec outcomeType(ClassName self, TypeName tenantKey) {
-        var r = no.sikt.graphitron.javapoet.TypeVariableName.get("R");
+        var r = com.palantir.javapoet.TypeVariableName.get("R");
         var outcome = self.nestedClass("Outcome");
         var outcomeOfR = ParameterizedTypeName.get(outcome, r);
 

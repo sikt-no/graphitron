@@ -6,7 +6,7 @@ import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.model.diagnostics.WireCoercionError;
 

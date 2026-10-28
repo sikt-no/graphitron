@@ -971,13 +971,13 @@ class TenantBindingClassificationTest {
     @Test
     void aServiceCallRecordsItsReturnContainer() {
         var film = TestFixtures.tableRef("film", "FILM", "Film", List.of());
-        java.util.function.Function<no.sikt.graphitron.javapoet.ClassName,
+        java.util.function.Function<com.palantir.javapoet.ClassName,
                 java.util.Optional<no.sikt.graphitron.model.jooq.TableRef>> filmTable =
             record -> java.util.Optional.of(film);
-        var filmRecord = no.sikt.graphitron.javapoet.ClassName.get("com.example", "FilmRecord");
-        java.util.function.Function<String, no.sikt.graphitron.javapoet.TypeName> of = raw ->
-            no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
-                no.sikt.graphitron.javapoet.ClassName.bestGuess(raw), filmRecord);
+        var filmRecord = com.palantir.javapoet.ClassName.get("com.example", "FilmRecord");
+        java.util.function.Function<String, com.palantir.javapoet.TypeName> of = raw ->
+            com.palantir.javapoet.ParameterizedTypeName.get(
+                com.palantir.javapoet.ClassName.bestGuess(raw), filmRecord);
 
         assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("java.util.List"), filmTable))
             .isInstanceOf(ServiceMethodCall.ReturnContainer.ListLike.class);
@@ -986,7 +986,7 @@ class TenantBindingClassificationTest {
         assertThat(ServiceMethodCall.ReturnContainer.of(of.apply("org.jooq.Result"), filmTable))
             .isEqualTo(new ServiceMethodCall.ReturnContainer.JooqResult(film));
         assertThat(ServiceMethodCall.ReturnContainer.of(
-                no.sikt.graphitron.javapoet.ClassName.get("com.example", "RateFilmsPayload"), filmTable))
+                com.palantir.javapoet.ClassName.get("com.example", "RateFilmsPayload"), filmTable))
             .isInstanceOf(ServiceMethodCall.ReturnContainer.Other.class);
 
         // The walker resolves the Result's record class against the catalog.

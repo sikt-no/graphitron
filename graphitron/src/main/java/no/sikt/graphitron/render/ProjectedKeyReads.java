@@ -3,8 +3,8 @@ package no.sikt.graphitron.render;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.KeyProjection;
 import no.sikt.graphitron.command.KeyProjectionRelation;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 
 import java.util.LinkedHashMap;

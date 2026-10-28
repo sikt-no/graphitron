@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.CoercingDeclarationKind;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 import no.sikt.graphitron.rewrite.scalarfixture.Money;

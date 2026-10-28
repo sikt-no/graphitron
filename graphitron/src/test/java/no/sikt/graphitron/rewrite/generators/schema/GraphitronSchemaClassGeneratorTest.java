@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import org.junit.jupiter.api.Test;
 
@@ -712,9 +712,9 @@ class GraphitronSchemaClassGeneratorTest {
         var router = new no.sikt.graphitron.plan.GeneratedUnits(OUTPUT_PKG)
             .errorRouter();
         return no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
-            .generateFor(errorType, no.sikt.graphitron.javapoet.ClassName.get(
+            .generateFor(errorType, com.palantir.javapoet.ClassName.get(
                 mappings.packageName(), mappings.simpleName()),
-                no.sikt.graphitron.javapoet.ClassName.get(router.packageName(), router.simpleName()),
+                com.palantir.javapoet.ClassName.get(router.packageName(), router.simpleName()),
                 bundle.model().errorFieldReads(typeName))
             .toString();
     }

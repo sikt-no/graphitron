@@ -2,10 +2,10 @@ package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.ReservedAliases;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 
 import java.util.ArrayList;

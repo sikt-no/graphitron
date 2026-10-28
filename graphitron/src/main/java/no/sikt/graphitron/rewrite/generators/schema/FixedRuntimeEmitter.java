@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.model.read.StoreHandle;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;

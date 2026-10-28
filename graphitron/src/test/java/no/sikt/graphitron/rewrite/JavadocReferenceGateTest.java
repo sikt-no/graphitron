@@ -35,7 +35,6 @@ class JavadocReferenceGateTest {
      */
     private static final List<String> GATE_COVERED_MODULES = List.of(
         "graphitron",
-        "graphitron-javapoet",
         "graphitron-jakarta-rest",
         "graphitron-mcp",
         "graphitron-lsp",

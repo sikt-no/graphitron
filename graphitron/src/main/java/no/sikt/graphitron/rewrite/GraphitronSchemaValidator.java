@@ -385,7 +385,7 @@ public class GraphitronSchemaValidator {
     }
 
     /** One session binding of a field: the member bound ({@code null} for the whole handle) and the declared type. */
-    private record SessionBinding(String name, String member, no.sikt.graphitron.javapoet.TypeName declared) {}
+    private record SessionBinding(String name, String member, com.palantir.javapoet.TypeName declared) {}
 
     /**
      * The {@code $session} sigil's located rejections, checked against the resolved session-hook
@@ -611,7 +611,7 @@ public class GraphitronSchemaValidator {
         // code compiles but is silently wrong, so reject at validate time instead.
         if (field instanceof no.sikt.graphitron.rewrite.model.BatchKeyField bk && bk.sourceKey() != null) {
             for (var col : bk.sourceKey().columns()) {
-                if (CatalogRefs.columnType(col) instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
+                if (CatalogRefs.columnType(col) instanceof com.palantir.javapoet.ArrayTypeName) {
                     errors.add(new ValidationError(
                         field.qualifiedName(),
                         Rejection.structural("Field '" + field.qualifiedName() + "': DataLoader key column '"
@@ -818,7 +818,7 @@ public class GraphitronSchemaValidator {
         // compared by array reference identity, so distinct rows with equal element content mis-match.
         // Reject at validate time rather than emitting a NodeId encoder that mis-identifies at runtime.
         for (var col : type.nodeKeyColumns()) {
-            if (CatalogRefs.columnType(col) instanceof no.sikt.graphitron.javapoet.ArrayTypeName) {
+            if (CatalogRefs.columnType(col) instanceof com.palantir.javapoet.ArrayTypeName) {
                 errors.add(ValidationError.forType(
                     type.name(),
                     Rejection.structural("@node key column '" + col.sqlName() + "' is array-typed ("
@@ -995,7 +995,7 @@ public class GraphitronSchemaValidator {
         // (query path) cannot tell them apart — with or without a @discriminator. Reject at
         // build time rather than misdispatch (validator mirrors classifier invariants); one shared
         // site guards both the @service-return fetcher and the query path.
-        var byRecordClass = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+        var byRecordClass = new java.util.LinkedHashMap<com.palantir.javapoet.ClassName,
             List<no.sikt.graphitron.rewrite.model.ParticipantRef.TableBound>>();
         for (var tb : tableBound) {
             byRecordClass.computeIfAbsent(CatalogRefs.recordClass(tb.table()), k -> new java.util.ArrayList<>()).add(tb);

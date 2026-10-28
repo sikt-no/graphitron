@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.render.ConditionGlueRenderer;
 import no.sikt.graphitron.model.derive.ResolvedKeyProjections;
 import no.sikt.graphitron.model.jooq.ColumnRef;

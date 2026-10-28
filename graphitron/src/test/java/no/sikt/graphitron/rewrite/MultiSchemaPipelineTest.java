@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.JavaFile;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;

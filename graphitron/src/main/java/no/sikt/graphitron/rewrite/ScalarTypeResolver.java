@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.Coercing;
 import graphql.schema.GraphQLScalarType;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CoercingDeclarationKind;
 import no.sikt.graphitron.rewrite.model.ScalarResolution;
 

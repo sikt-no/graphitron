@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 
 import java.util.Optional;
 import java.util.regex.Pattern;

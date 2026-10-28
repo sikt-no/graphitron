@@ -1,6 +1,6 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.On;
 
 /**

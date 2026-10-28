@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.rewrite.TypeFetcherRenderTestSupport;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -169,10 +169,10 @@ class TenantRoutedFetcherPipelineTest {
     /** {@code DataFetcherResult<Outcome<…>>}: the fetcher's declared value is the typed wrapper. */
     static void assertReturnsOutcome(MethodSpec fetcher) {
         assertThat(fetcher.returnType())
-            .isInstanceOfSatisfying(no.sikt.graphitron.javapoet.ParameterizedTypeName.class, result -> {
+            .isInstanceOfSatisfying(com.palantir.javapoet.ParameterizedTypeName.class, result -> {
                 assertThat(result.rawType().canonicalName()).isEqualTo("graphql.execution.DataFetcherResult");
                 assertThat(result.typeArguments()).singleElement()
-                    .isInstanceOfSatisfying(no.sikt.graphitron.javapoet.ParameterizedTypeName.class,
+                    .isInstanceOfSatisfying(com.palantir.javapoet.ParameterizedTypeName.class,
                         outcome -> assertThat(outcome.rawType().canonicalName())
                             .isEqualTo(DEFAULT_OUTPUT_PACKAGE + ".schema.Outcome"));
             });

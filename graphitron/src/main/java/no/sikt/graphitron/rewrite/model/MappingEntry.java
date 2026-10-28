@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 
 /**
  * One Java parameter slot's binding inside a {@link ServiceMethodCall}'s {@code methodArgs}

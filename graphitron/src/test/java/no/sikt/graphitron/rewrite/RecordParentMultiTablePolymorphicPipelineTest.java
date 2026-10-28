@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;
 import no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator;
 import no.sikt.graphitron.rewrite.model.ChildField;
@@ -362,7 +362,7 @@ class RecordParentMultiTablePolymorphicPipelineTest {
             .filter(t -> t.name().equals("FilmFetchers"))
             .findFirst().orElseThrow();
         var helperNames = filmFetchers.methodSpecs().stream()
-            .map(no.sikt.graphitron.javapoet.MethodSpec::name)
+            .map(com.palantir.javapoet.MethodSpec::name)
             .toList();
         assertThat(helperNames)
             .contains("selectInventoryForReferrers", "selectContentForReferrers");

@@ -3,8 +3,8 @@ package no.sikt.graphitron.render;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.command.UnitRef;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 
 /**
  * The shared {@code $project} call-expression emitter every projection consumer reads: the

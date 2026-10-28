@@ -8,9 +8,6 @@ The repository is a single Maven reactor rooted at the `graphitron-rewrite-paren
 |===
 | Module | Purpose
 
-| `graphitron-javapoet`
-| Internal fork of Square JavaPoet; the emit-time API every generator builds through.
-
 | `graphitron-model`
 | The fact tier: the DDL that defines the generator's fact base, the jOOQ compile-time surface generated from it, the in-memory H2 bootstrap a run captures into, and capture itself, which reads the consumer's three sources (their GraphQL schema, their jOOQ-generated database classes, their compiled Java) and writes down what it found. Builds before the core, so editing the DDL fails javac in every consumer that touched the changed relation and the core cannot reach back into the tier that feeds it.
 

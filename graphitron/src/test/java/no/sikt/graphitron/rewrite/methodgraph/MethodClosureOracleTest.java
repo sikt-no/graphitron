@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite.methodgraph;
 
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.schema.input.SchemaInput;

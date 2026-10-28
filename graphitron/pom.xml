@@ -21,9 +21,9 @@
 
     <dependencies>
         <dependency>
-            <groupId>${project.groupId}</groupId>
-            <artifactId>graphitron-javapoet</artifactId>
-            <version>${project.version}</version>
+            <groupId>com.palantir.javapoet</groupId>
+            <artifactId>javapoet</artifactId>
+            <version>${version.com.palantir.javapoet}</version>
         </dependency>
         <!--
             The fact store: its jOOQ compile-time surface is what the capture package writes

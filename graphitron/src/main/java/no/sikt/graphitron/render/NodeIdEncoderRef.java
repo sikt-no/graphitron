@@ -1,6 +1,6 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 
 /**
  * Where the generated node-id encoder lives, as a function of the one thing that decides it: the

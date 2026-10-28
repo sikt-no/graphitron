@@ -12,7 +12,7 @@ import no.sikt.graphitron.model.diagnostics.MatchedKey;
 import no.sikt.graphitron.rewrite.model.MutationField.DmlTableField;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
 

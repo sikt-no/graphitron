@@ -29,10 +29,9 @@ R94's original spec bundled three layered enforcement mechanisms:
    service code".
 3. A scanning audit test that walks consumer sources for references to the package.
 
-graphitron-javapoet does not currently support records, sealed
-classes/interfaces, `permits` clauses, or `package-info.java` emission;
-(1) and (2) are blocked on a graphitron-javapoet upgrade and were
-deferred out of R94. R94 ships with the package boundary plus per-class
+The emitter library (Palantir's JavaPoet) supports records and sealed
+types but has no `package-info.java` support; (1) and (2) were deferred
+out of R94 before that switch and are a follow-on slice. R94 ships with the package boundary plus per-class
 Javadoc carrying the "graphitron-internal" intent.
 
 This item adds the audit (3) as a standalone check. The audit walks
@@ -57,8 +56,8 @@ structurally carried even without a sealed marker.
 ## Out of scope
 
 - Restoring R94's sealed marker / `package-info.java` (those return
-  when graphitron-javapoet learns records + sealed; see the
-  rewrite-internal graphitron-javapoet roadmap).
+  as a follow-on slice now that the emitter supports records and
+  sealed types).
 - Compile-time language-level prevention (we accept that reflection
   can bypass any audit; the audit is the cheap upstream signal).
 

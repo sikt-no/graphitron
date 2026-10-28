@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLSchema;
 import no.sikt.graphitron.command.KeyProjectionRelation;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.plan.FetchersPlanner;
 import no.sikt.graphitron.plan.LauncherCommands;

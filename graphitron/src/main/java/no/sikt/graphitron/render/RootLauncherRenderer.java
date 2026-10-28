@@ -10,11 +10,11 @@ import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ReservedAliases;
 import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
 
 import javax.lang.model.element.Modifier;
 
@@ -57,12 +57,12 @@ public final class RootLauncherRenderer {
     private static final TypeName RESULT_OF_RECORD = ParameterizedTypeName.get(RESULT, RECORD);
     private static final TypeName TABLE_WILDCARD = ParameterizedTypeName.get(
         ClassName.get("org.jooq", "Table"),
-        no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
     private static final TypeName FIELD_WILDCARD = ParameterizedTypeName.get(FIELD,
-        no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
     private static final TypeName SORT_FIELD_LIST = ParameterizedTypeName.get(
         LIST, ParameterizedTypeName.get(SORT_FIELD,
-            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
+            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)));
 
     /** Renders one launcher method from its row and the run's carrier-routing fact. */
     public static MethodSpec render(LauncherCommand row, CarrierDsl carrierDsl,
@@ -370,7 +370,7 @@ public final class RootLauncherRenderer {
         }
         var listOfField = ParameterizedTypeName.get(LIST,
             ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
-                no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class)));
+                com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class)));
         code.addStatement("$T selectFields = $L", listOfField,
             ProjectionCall.fromLauncher(className(anchor.projection()), tableLocal, row));
         code.add("return $T.fanOutRows(env, dsl -> $L$L);\n", className(fanned.carrier()),

@@ -85,8 +85,8 @@ capture-time to on-demand, and the API needs no vocabulary: a path is not a mode
 model knows which corpus a path belongs to because it recorded the `source_root`s and the
 `store_source` rows itself.
 
-The emit side already computes the precise trigger for free. `JavaFile.writeToPathReporting` is
-content-idempotent, hashing rendered content against the file on disk and writing only on a
+The emit side already computes the precise trigger for free. `IdempotentWriter` is
+content-idempotent, comparing rendered content against the file on disk and writing only on a
 difference, and it returns `changed()` per file. So "these files moved" is a list of paths the
 incremental compiler had to compute anyway. A regeneration that changes nothing changes no file on
 disk, leaves every stamp valid, and costs the refresh nothing.

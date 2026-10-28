@@ -1,11 +1,11 @@
 package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.Ordering;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.WildcardTypeName;
 
 /**
  * The two-view ordering block a paginated composition declares: {@code orderBy} (the sort view)

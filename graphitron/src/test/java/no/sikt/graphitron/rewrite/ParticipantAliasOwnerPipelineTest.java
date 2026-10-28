@@ -4,7 +4,7 @@ import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ProjectionCommand;
 import no.sikt.graphitron.command.ReservedAliases;
 import no.sikt.graphitron.command.SelectTerm;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.plan.LauncherCommands;

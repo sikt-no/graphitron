@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.methodgraph;
 
-import no.sikt.graphitron.javapoet.JavaFile;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.TypeSpec;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;

@@ -1,8 +1,8 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.model.HelperRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 
@@ -179,7 +179,7 @@ public final class RecordDecodeFragments {
      *                      reached
      */
     public static MethodSpec polymorphicDecodeHelper(String name,
-            no.sikt.graphitron.javapoet.TypeName slotType,
+            com.palantir.javapoet.TypeName slotType,
             ClassName encoderClass, java.util.List<String> candidateTypeIds,
             java.util.List<String> candidateHelpers, java.util.List<ClassName> candidateRecords,
             String candidates, String outputPackage) {
@@ -218,8 +218,8 @@ public final class RecordDecodeFragments {
      * @param scalarName the scalar container helper's name, which each element goes through
      */
     public static MethodSpec polymorphicDecodeHelperList(String name,
-            no.sikt.graphitron.javapoet.TypeName slotType, String scalarName) {
-        var listType = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+            com.palantir.javapoet.TypeName slotType, String scalarName) {
+        var listType = com.palantir.javapoet.ParameterizedTypeName.get(
             ClassName.get(java.util.List.class), slotType);
         return MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)

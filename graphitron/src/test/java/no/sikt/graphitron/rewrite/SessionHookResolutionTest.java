@@ -50,7 +50,7 @@ class SessionHookResolutionTest {
     /** Resolves as a {@code <tenantColumn>} build whose tenant column is {@code Integer}. */
     private static ServiceCatalog.SessionHookResolution resolveMultiTenant(String mount) {
         return newCatalog().resolveSessionHooks(SessionStateConfig.from(mount, null),
-            no.sikt.graphitron.javapoet.ClassName.get(Integer.class));
+            com.palantir.javapoet.ClassName.get(Integer.class));
     }
 
     private static String ref(String method) {
@@ -122,7 +122,7 @@ class SessionHookResolutionTest {
     @Test
     void optionalOfTenantType_primitiveTenantColumn_comparesBoxed() {
         var result = newCatalog().resolveSessionHooks(
-            SessionStateConfig.from(ref("mountTenantSlot"), null), no.sikt.graphitron.javapoet.TypeName.INT);
+            SessionStateConfig.from(ref("mountTenantSlot"), null), com.palantir.javapoet.TypeName.INT);
 
         assertThat(result.rejections()).isEmpty();
         assertThat(result.hooks().tenantSlot()).isPresent();

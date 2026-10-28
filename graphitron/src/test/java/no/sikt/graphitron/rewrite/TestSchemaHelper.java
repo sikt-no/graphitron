@@ -219,13 +219,13 @@ public final class TestSchemaHelper {
      * routine write then meets a dispatch with no row to render from. That is the generator's own
      * drift guard firing, correctly, on a fixture that simply never opened a store.
      */
-    public static java.util.List<no.sikt.graphitron.javapoet.TypeSpec> storeBackedFetchers(
+    public static java.util.List<com.palantir.javapoet.TypeSpec> storeBackedFetchers(
             java.nio.file.Path directory, String schemaText) {
         return storeBackedFetchers(directory, schemaText, TestConfiguration.testContext());
     }
 
     /** {@link #storeBackedFetchers(java.nio.file.Path, String)} under a context the caller names. */
-    public static java.util.List<no.sikt.graphitron.javapoet.TypeSpec> storeBackedFetchers(
+    public static java.util.List<com.palantir.javapoet.TypeSpec> storeBackedFetchers(
             java.nio.file.Path directory, String schemaText, RunContext ctx) {
         var bundle = buildBundle(schemaText, ctx);
         var plan = storeBackedPlan(directory, schemaText, ctx);

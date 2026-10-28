@@ -1,9 +1,9 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -99,7 +99,7 @@ final class HandleMethodBody {
     }
 
     private static void emitGroupingMaps(CodeBlock.Builder b, boolean perTenant) {
-        var objectArray = no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class));
+        var objectArray = com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class));
         var listOfBindings = ParameterizedTypeName.get(LIST, objectArray);
         if (perTenant) {
             var byTenant = ParameterizedTypeName.get(MAP, ClassName.get(Object.class), listOfBindings);
@@ -265,7 +265,7 @@ final class HandleMethodBody {
 
     private static void emitGroupDispatch(CodeBlock.Builder b, EntityResolution entity, TenantRouting routing) {
         var listOfBindings = ParameterizedTypeName.get(LIST,
-            no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
+            com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class)));
         boolean perTenant = routing != null && routing.bound() != null;
         if (perTenant) {
             var byTenant = ParameterizedTypeName.get(MAP, ClassName.get(Object.class), listOfBindings);

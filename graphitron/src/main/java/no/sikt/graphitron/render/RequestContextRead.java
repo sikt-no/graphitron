@@ -1,6 +1,6 @@
 package no.sikt.graphitron.render;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 
 /**
  * One emission host's {@code graphitronContext(env)} seam, handed to a renderer as a value so

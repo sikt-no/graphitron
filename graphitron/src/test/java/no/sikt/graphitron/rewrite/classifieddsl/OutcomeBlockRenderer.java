@@ -5,7 +5,7 @@ import no.sikt.graphitron.model.test.CatalogInput;
 import no.sikt.graphitron.model.test.CorpusDocuments;
 import no.sikt.graphitron.model.run.GraphitronStore;
 import no.sikt.graphitron.common.configuration.TestConfiguration;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.model.test.CapturedStore;
 import no.sikt.graphitron.rewrite.GraphQLRewriteGenerator;
 import no.sikt.graphitron.model.config.RunContext;
@@ -199,7 +199,7 @@ final class OutcomeBlockRenderer {
         for (var parent : touched.entrySet()) {
             String fetchers = OUTPUT_PACKAGE + ".fetchers." + parent.getKey() + "Fetchers";
             Object unit = units.get(fetchers);
-            if (!(unit instanceof no.sikt.graphitron.javapoet.TypeSpec spec)) continue;
+            if (!(unit instanceof com.palantir.javapoet.TypeSpec spec)) continue;
             for (String field : parent.getValue()) {
                 List<String> names = spec.methodSpecs().stream()
                     .filter(method -> method.name().equals(field))

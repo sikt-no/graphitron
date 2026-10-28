@@ -1,14 +1,14 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.AnnotationSpec;
-import no.sikt.graphitron.javapoet.ArrayTypeName;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.AnnotationSpec;
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -558,7 +558,7 @@ public class ConnectionHelperClassGenerator {
             ClassName.get("org.jooq", "SelectOrderByStep"), record3);
         var conditionClass = ClassName.get("org.jooq", "Condition");
         var jooqFieldWildcard = ParameterizedTypeName.get(JOOQ_FIELD,
-            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
         var facetsMethod = MethodSpec.methodBuilder("facets")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(facetsReturn)
@@ -766,7 +766,7 @@ public class ConnectionHelperClassGenerator {
             .build());
     }
 
-    private static void accessor(TypeSpec.Builder cls, String name, no.sikt.graphitron.javapoet.TypeName type) {
+    private static void accessor(TypeSpec.Builder cls, String name, com.palantir.javapoet.TypeName type) {
         cls.addMethod(MethodSpec.methodBuilder(name)
             .addModifiers(Modifier.PUBLIC)
             .returns(type)

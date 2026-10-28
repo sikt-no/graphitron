@@ -2,8 +2,8 @@ package no.sikt.graphitron.rewrite.generators.schema;
 
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.emit.ErrorChannelRelation;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;

@@ -1,15 +1,15 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.AnnotationSpec;
-import no.sikt.graphitron.javapoet.ArrayTypeName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.AnnotationSpec;
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
@@ -188,8 +188,8 @@ public class NodeIdEncoderClassGenerator {
             .returns(Object[].class)
             .addParameter(String.class, "expectedTypeId")
             .addParameter(String.class, "base64Id")
-            .addParameter(no.sikt.graphitron.javapoet.ArrayTypeName.of(classWildcard), "parseClasses")
-            .addParameter(no.sikt.graphitron.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
+            .addParameter(com.palantir.javapoet.ArrayTypeName.of(classWildcard), "parseClasses")
+            .addParameter(com.palantir.javapoet.ArrayTypeName.of(fieldWildcard), "columns")
             .varargs(true)
             .addJavadoc("The id's key values as values of {@code columns}, in key order, or {@code null} when\n"
                 + "the id is malformed, names another type, has the wrong arity, or carries a value that\n"

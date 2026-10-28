@@ -2,8 +2,8 @@ package no.sikt.graphitron.render;
 
 import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.SelectTerm;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.model.JoinConditionRef;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.On;

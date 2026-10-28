@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -157,7 +157,7 @@ class GraphitronFacadeGeneratorTest {
             .doesNotContain("CLAIMS_KEY");
     }
 
-    private static no.sikt.graphitron.javapoet.MethodSpec ownedFactory(no.sikt.graphitron.rewrite.GraphitronSchema schema) {
+    private static com.palantir.javapoet.MethodSpec ownedFactory(no.sikt.graphitron.rewrite.GraphitronSchema schema) {
         return GraphitronFacadeGenerator.generate(schema, "com.example").get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("newOwnedExecutionInput"))
             .findFirst()
@@ -248,7 +248,7 @@ class GraphitronFacadeGeneratorTest {
             "return com.example.schema.GraphitronSchema.build(schemaCustomizer, federationCustomizer)");
     }
 
-    private static no.sikt.graphitron.javapoet.MethodSpec findFirstMethod(String name, boolean federation) {
+    private static com.palantir.javapoet.MethodSpec findFirstMethod(String name, boolean federation) {
         return GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federation, false).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals(name))
             .findFirst()

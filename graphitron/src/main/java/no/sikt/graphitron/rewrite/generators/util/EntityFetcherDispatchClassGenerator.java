@@ -1,13 +1,13 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.EntityResolution;
 import no.sikt.graphitron.rewrite.model.KeyAlternative;
@@ -160,7 +160,7 @@ public final class EntityFetcherDispatchClassGenerator {
             ParameterizedTypeName.get(MAP, ClassName.get(String.class), ClassName.get(Object.class)));
         return MethodSpec.methodBuilder(RESOLVE_BY_REPS_METHOD)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(no.sikt.graphitron.javapoet.ArrayTypeName.of(ClassName.get(Object.class)))
+            .returns(com.palantir.javapoet.ArrayTypeName.of(ClassName.get(Object.class)))
             .addParameter(listOfMap, "reps")
             .addParameter(ENV, "env")
             .addJavadoc("Synchronous dispatch core. Takes a representations list directly\n"

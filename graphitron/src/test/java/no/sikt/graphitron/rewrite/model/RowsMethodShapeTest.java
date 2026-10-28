@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -61,7 +61,7 @@ class RowsMethodShapeTest {
         // A bare List where the mapped (Set-keyed) batch shape requires a Map<K, V>: unpeelable,
         // so the inverse reports null and the validator turns that into a classify-time rejection
         // rather than peeling the wrong slot.
-        TypeName bareList = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+        TypeName bareList = com.palantir.javapoet.ParameterizedTypeName.get(
             ClassName.get("java.util", "List"), LEAF);
         assertThat(RowsMethodShape.perKeyFromOuter(bareList, scalar(false), true)).isNull();
     }
@@ -71,7 +71,7 @@ class RowsMethodShapeTest {
         // A list-cardinality field whose mapped value is Map<K, V> instead of Map<K, List<V>>:
         // the inner list-nesting outerRowsReturnType adds for list fields is absent, so peeling
         // the inner List fails and the inverse reports null.
-        TypeName mapOfLeaf = no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+        TypeName mapOfLeaf = com.palantir.javapoet.ParameterizedTypeName.get(
             ClassName.get("java.util", "Map"), KEY, LEAF);
         assertThat(RowsMethodShape.perKeyFromOuter(mapOfLeaf, scalar(true), true)).isNull();
     }

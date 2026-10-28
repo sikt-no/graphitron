@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.ArgPath;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.MappingEntry;
@@ -90,7 +90,7 @@ class ServiceMethodCallEmitterTest {
             ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, handleType, FetchersHelperNames.bare(),
-            no.sikt.graphitron.javapoet.CodeBlock.of("graphitronContext(env).getDslContext(env)"),
+            com.palantir.javapoet.CodeBlock.of("graphitronContext(env).getDslContext(env)"),
             OUTPUT_PACKAGE, "Query.sessionPrincipal", null);
 
         assertThat(stmts.get(0).toString())

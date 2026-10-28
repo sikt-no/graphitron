@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.model.diagnostics.Arity;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -488,7 +488,7 @@ public final class TestFixtures {
     public static ChildField.ColumnBackedField compositeNodeIdField(String parentType, String name,
                                                                        String nodeTypeName,
                                                                        List<ColumnRef> keyColumns) {
-        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get("test.util", "NodeIdEncoder");
+        var encoderClass = com.palantir.javapoet.ClassName.get("test.util", "NodeIdEncoder");
         var enc = new no.sikt.graphitron.rewrite.model.HelperRef.Encode(
             encoderClass, "encode" + nodeTypeName, keyColumns);
         return new ChildField.ColumnBackedField(parentType, name, null, keyColumns,

@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.ErrorChannel;

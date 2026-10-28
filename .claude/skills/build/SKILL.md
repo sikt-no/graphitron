@@ -24,15 +24,14 @@ largest module at 7:24, which led to a recommendation to go optimise the wrong o
 | 3 | graphitron-sakila-db | 52 s |
 | 4 | graphitron-sakila-service | 9 s |
 | 5 | **graphitron-model** | **5:54** |
-| 6 | graphitron-javapoet | 3 s |
-| 7 | **graphitron** | **4:43** |
-| 8 | graphitron-mcp | 1:15 |
-| 9 | graphitron-jakarta-rest | 2 s |
-| 10 | graphitron-lsp | 1:23 |
-| 11 | graphitron-maven-plugin | 1:46 |
-| 12 | **graphitron-sakila-example** | **3:46** |
-| 13 | graphitron-roadmap-tool | 32 s |
-| 14 | graphitron-docs | 22 s |
+| 6 | **graphitron** | **4:43** |
+| 7 | graphitron-mcp | 1:15 |
+| 8 | graphitron-jakarta-rest | 2 s |
+| 9 | graphitron-lsp | 1:23 |
+| 10 | graphitron-maven-plugin | 1:46 |
+| 11 | **graphitron-sakila-example** | **3:46** |
+| 12 | graphitron-roadmap-tool | 32 s |
+| 13 | graphitron-docs | 22 s |
 
 Four modules are 18 of the 21 minutes. Everything else is noise.
 

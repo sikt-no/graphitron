@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
 import graphql.language.SourceLocation;
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 
 import java.util.List;
 import java.util.Optional;
@@ -1302,7 +1302,7 @@ public sealed interface ChildField extends OutputField
          * isn't peelable, which {@code ServiceDirectiveResolver.validateChildServiceReturnType}
          * rejects at classify time.
          */
-        public no.sikt.graphitron.javapoet.TypeName elementType() {
+        public com.palantir.javapoet.TypeName elementType() {
             var grounded = groundedElementType();
             return grounded != null ? grounded : method().returnType();
         }
@@ -1314,8 +1314,8 @@ public sealed interface ChildField extends OutputField
          * as before, while {@link #domainReturnType()} answers
          * {@link DomainReturnType.NoClaim} rather than claiming a class no child fetcher sees.
          */
-        private no.sikt.graphitron.javapoet.TypeName groundedElementType() {
-            no.sikt.graphitron.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
+        private com.palantir.javapoet.TypeName groundedElementType() {
+            com.palantir.javapoet.TypeName strict = RowsMethodShape.strictPerKeyType(returnType());
             if (strict != null) return strict;
             // Non-built-in scalar leaf: the service method already declares the outer
             // Map<K, V> / List<V>, so peel V off it; handing back the whole reflected type

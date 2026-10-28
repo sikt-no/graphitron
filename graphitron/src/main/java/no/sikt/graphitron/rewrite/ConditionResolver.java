@@ -2,7 +2,7 @@ package no.sikt.graphitron.rewrite;
 
 import graphql.schema.GraphQLArgument;
 import graphql.schema.GraphQLFieldDefinition;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ConditionFilter;
 import no.sikt.graphitron.rewrite.model.HelperRef;

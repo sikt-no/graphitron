@@ -21,7 +21,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  *
  * <ul>
  *   <li>{@code no.sikt.graphitron.command} holds pure data. It may import nothing of the emit
- *       library ({@code no.sikt.graphitron.javapoet}), nothing of {@code plan} or {@code render},
+ *       library ({@code com.palantir.javapoet}), nothing of {@code plan} or {@code render},
  *       and from the legacy tree only the named borrow dial below. The dial is the migration
  *       dial: entries leave it as the refs move to a shared pure-data floor, and the list is
  *       enforced instead of a blanket ban so the model's ref vocabulary is borrowed, never
@@ -191,7 +191,7 @@ class PackageImportDirectionTest {
         var findings = new ArrayList<Finding>();
 
         int commandFiles = scan(sourceRoot.resolve("command"), findings, (file, imp) -> {
-            if (imp.startsWith("no.sikt.graphitron.javapoet")) {
+            if (imp.startsWith("com.palantir.javapoet")) {
                 return "command never imports the emit library";
             }
             if (imp.startsWith("no.sikt.graphitron.plan") || imp.startsWith("no.sikt.graphitron.render")) {
@@ -208,7 +208,7 @@ class PackageImportDirectionTest {
         });
 
         int planFiles = scan(sourceRoot.resolve("plan"), findings, (file, imp) -> {
-            if (imp.startsWith("no.sikt.graphitron.javapoet")) {
+            if (imp.startsWith("com.palantir.javapoet")) {
                 return "plan never imports the emit library";
             }
             if (imp.startsWith("no.sikt.graphitron.render")) {
@@ -246,7 +246,7 @@ class PackageImportDirectionTest {
             }
             if (ref.startsWith("java.") || ref.startsWith("javax.") || ref.startsWith("org.jooq.")
                     || ref.startsWith("no.sikt.graphitron.model.")
-                    || ref.startsWith("no.sikt.graphitron.javapoet.")
+                    || ref.startsWith("com.palantir.javapoet.")
                     || ref.startsWith("no.sikt.graphitron.emit.")) {
                 return null;
             }

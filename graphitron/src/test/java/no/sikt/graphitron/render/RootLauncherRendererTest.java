@@ -10,7 +10,7 @@ import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.plan.GeneratedUnits;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;

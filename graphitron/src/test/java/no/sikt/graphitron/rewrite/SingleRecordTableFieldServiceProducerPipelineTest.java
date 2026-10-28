@@ -604,7 +604,7 @@ class SingleRecordTableFieldServiceProducerPipelineTest {
         assertThat(field).isInstanceOf(MutationField.MutationServiceRecordField.class);
         assertThat(((OutputField) field).domainReturnType())
             .isEqualTo(new no.sikt.graphitron.rewrite.model.DomainReturnType.Plain(
-                no.sikt.graphitron.javapoet.ClassName.bestGuess(
+                com.palantir.javapoet.ClassName.bestGuess(
                     "no.sikt.graphitron.codereferences.dummyreferences.SharedValueTypeFixtures.SharedPayload")));
     }
 

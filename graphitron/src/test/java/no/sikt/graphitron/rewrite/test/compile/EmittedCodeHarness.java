@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.test.compile;
 
-import no.sikt.graphitron.javapoet.JavaFile;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.JavaFile;
+import com.palantir.javapoet.TypeSpec;
 
 import javax.tools.Diagnostic;
 import javax.tools.DiagnosticCollector;

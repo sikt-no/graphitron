@@ -92,7 +92,7 @@ class QualifiedReturnTypeReferencePipelineTest {
         // The terminal hop genuinely lands on widget: the classification is not vacuous.
         var terminal = ((ChildField.TableField) widgetField).joinPath().getLast();
         assertThat(CatalogRefs.tableClass(TestFixtures.fkHop(terminal).targetTable()))
-            .isEqualTo(no.sikt.graphitron.javapoet.ClassName.get(
+            .isEqualTo(com.palantir.javapoet.ClassName.get(
                 DEFAULT_JOOQ_PACKAGE + ".multischema_a.tables", "Widget"));
     }
 

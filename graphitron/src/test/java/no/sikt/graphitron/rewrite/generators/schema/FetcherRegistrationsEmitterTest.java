@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.rewrite.SchemaShapeRenderTestSupport;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;

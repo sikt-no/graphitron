@@ -1,11 +1,11 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.util.LightFetcherClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator;
@@ -1005,7 +1005,7 @@ public final class FetcherEmitter {
      * The sole key column's type on a read-side encode. Single-key by the carrier's constructor
      * invariant, a read yielding one value.
      */
-    private static no.sikt.graphitron.javapoet.TypeName encodeKeyType(CallSiteCompaction.NodeIdEncodeKeys encode) {
+    private static com.palantir.javapoet.TypeName encodeKeyType(CallSiteCompaction.NodeIdEncodeKeys encode) {
         return CatalogRefs.columnType(encode.encodeMethod().paramSignature().get(0));
     }
 

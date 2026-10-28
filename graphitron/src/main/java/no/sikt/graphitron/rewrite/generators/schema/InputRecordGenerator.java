@@ -1,14 +1,14 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import no.sikt.graphitron.javapoet.AnnotationSpec;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.AnnotationSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.HasInputRecordShape;
@@ -27,8 +27,7 @@ import java.util.Map;
  * bound the input to, not an emitted one.
  *
  * <p>The emitted shape is intentionally a plain Java class (not a Java {@code record}) and the
- * package contains no sealed marker / {@code package-info.java} pending a
- * {@code graphitron-javapoet} upgrade that can emit them. A build-time audit of service-side
+ * package contains no sealed marker / {@code package-info.java} yet. A build-time audit of service-side
  * references is deferred as a follow-on; in the meantime the "graphitron-internal" intent rides
  * on the package boundary and the per-class Javadoc this generator stamps on every emitted carrier.
  *

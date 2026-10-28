@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import org.junit.jupiter.api.Test;
 
 import javax.lang.model.element.Modifier;
@@ -105,7 +105,7 @@ class GraphitronContextInterfaceGeneratorTest {
         assertThat(nested.fieldSpecs()).extracting(f -> f.name()).contains("INSTANCE");
     }
 
-    private static no.sikt.graphitron.javapoet.MethodSpec findMethod(String name) {
+    private static com.palantir.javapoet.MethodSpec findMethod(String name) {
         return GraphitronContextInterfaceGenerator.generate().get(0).methodSpecs().stream()
             .filter(m -> m.name().equals(name))
             .findFirst()

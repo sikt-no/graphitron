@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.compile;
 
-import no.sikt.graphitron.javapoet.AnnotationSpec;
-import no.sikt.graphitron.javapoet.FieldSpec;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterSpec;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.TypeVariableName;
+import com.palantir.javapoet.AnnotationSpec;
+import com.palantir.javapoet.FieldSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterSpec;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeVariableName;
 
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;

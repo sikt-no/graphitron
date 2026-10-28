@@ -236,7 +236,7 @@ class SharedDomainTypeProducerPipelineTest {
         var mutation = (OutputField) schema.field("Mutation", "writeFilm");
         assertThat(query.domainReturnType())
             .isEqualTo(new DomainReturnType.TableRecord(
-                no.sikt.graphitron.javapoet.ClassName.get(
+                com.palantir.javapoet.ClassName.get(
                     "no.sikt.graphitron.rewrite.test.jooq.public_.tables.records", "FilmRecord")))
             .isEqualTo(mutation.domainReturnType());
         assertNoDisagreement(schema);
@@ -278,14 +278,14 @@ class SharedDomainTypeProducerPipelineTest {
             .isInstanceOf(no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType.class);
         assertThat(((OutputField) root).domainReturnType())
             .isEqualTo(new DomainReturnType.Plain(
-                no.sikt.graphitron.javapoet.ClassName.get(String.class)));
+                com.palantir.javapoet.ClassName.get(String.class)));
 
         var child = schema.field("Film", "detail");
         assertThat(child).isInstanceOf(ChildField.ServiceRecordField.class);
         assertThat(((OutputField) child).domainReturnType())
             .as("the per-key V the loader is typed with, peeled off the rows method's outer Map")
             .isEqualTo(new DomainReturnType.Plain(
-                no.sikt.graphitron.javapoet.ClassName.get(String.class)));
+                com.palantir.javapoet.ClassName.get(String.class)));
 
         assertThat(TestSchemaHelper.diagnosticMessages(schema))
             .as("the nesting producer's generic Record really does disagree with a String")
@@ -298,7 +298,7 @@ class SharedDomainTypeProducerPipelineTest {
             no.sikt.graphitron.rewrite.model.GraphitronField b,
             String expectedCanonicalClass) {
         var expected = new DomainReturnType.Plain(
-            no.sikt.graphitron.javapoet.ClassName.bestGuess(expectedCanonicalClass));
+            com.palantir.javapoet.ClassName.bestGuess(expectedCanonicalClass));
         assertThat(((OutputField) a).domainReturnType())
             .as("producer claim")
             .isEqualTo(expected)

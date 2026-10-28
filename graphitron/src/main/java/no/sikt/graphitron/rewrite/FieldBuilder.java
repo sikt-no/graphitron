@@ -14,7 +14,7 @@ import graphql.schema.GraphQLScalarType;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import graphql.schema.GraphQLUnionType;
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.lint.LintFix;
@@ -5291,8 +5291,8 @@ class FieldBuilder {
         } catch (ClassNotFoundException e) {
             payloadClassName = ClassName.bestGuess(result.fqClassName());
         }
-        no.sikt.graphitron.javapoet.TypeName sdlPayloadTypeName = isList
-            ? no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+        com.palantir.javapoet.TypeName sdlPayloadTypeName = isList
+            ? com.palantir.javapoet.ParameterizedTypeName.get(
                 ClassName.get("java.util", "List"), payloadClassName)
             : payloadClassName;
         if (method.returnType().equals(sdlPayloadTypeName)) return null;
@@ -5474,7 +5474,7 @@ class FieldBuilder {
      * admission site. Runs when an {@code @service} mutation returns a structurally carrier-
      * shaped payload (single {@code @table}-typed data field) whose data field opts into the
      * {@code $source} sigil via {@code @field(name: "$source")}: compares the producer's
-     * reflected return {@link no.sikt.graphitron.javapoet.TypeName} against the data table's
+     * reflected return {@link com.palantir.javapoet.TypeName} against the data table's
      * record class through {@link FieldSourceSigil#sourceSigilTypeMatches}.
      *
      * <p>The detection is structural (consults the payload SDL directly), so no
@@ -5614,9 +5614,9 @@ class FieldBuilder {
         if (shape == null) return null;
         var target = shape.table();
         var arrival = shape.arrival();
-        no.sikt.graphitron.javapoet.TypeName expectedReturnType = arrival == Arity.ONE
+        com.palantir.javapoet.TypeName expectedReturnType = arrival == Arity.ONE
             ? CatalogRefs.recordClass(target)
-            : no.sikt.graphitron.javapoet.ParameterizedTypeName.get(
+            : com.palantir.javapoet.ParameterizedTypeName.get(
                 ClassName.get(java.util.List.class), CatalogRefs.recordClass(target));
         if (!expectedReturnType.equals(method.returnType())) {
             return "method '" + method.methodName() + "' in class '" + method.className()
@@ -8046,7 +8046,7 @@ class FieldBuilder {
             // check; resolved at this field's edge, not read from the in-progress registry.
             var classified = typeBuilder.lookAheadVerdict(s.getName());
             if (classified instanceof GraphitronType.ScalarType st
-                    && st.resolution().javaType() instanceof no.sikt.graphitron.javapoet.ClassName cn) {
+                    && st.resolution().javaType() instanceof com.palantir.javapoet.ClassName cn) {
                 // nameability: exempt (Java type from an already-classified scalar verdict)
                 try { return Class.forName(cn.reflectionName(), false, ctx.codegenLoader()); }
                 catch (ClassNotFoundException e) { return Object.class; }

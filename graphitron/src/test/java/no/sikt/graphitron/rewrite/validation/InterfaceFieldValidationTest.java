@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.validation;
 
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.model.diagnostics.RejectionKind;
 import no.sikt.graphitron.rewrite.model.AccessorRef;

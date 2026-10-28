@@ -3,7 +3,7 @@ package no.sikt.graphitron.rewrite;
 import graphql.language.SourceLocation;
 import graphql.schema.FieldCoordinates;
 import no.sikt.graphitron.command.LaunchSource.DiscriminatedTable.BaseSliceTerm;
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.CallSiteCompaction;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.jooq.ColumnRef;

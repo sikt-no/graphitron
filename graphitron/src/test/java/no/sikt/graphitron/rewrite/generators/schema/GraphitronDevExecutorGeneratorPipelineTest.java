@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.session.SessionHooks;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;

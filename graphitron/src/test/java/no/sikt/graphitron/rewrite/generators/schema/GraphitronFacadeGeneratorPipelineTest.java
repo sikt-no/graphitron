@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -115,7 +115,7 @@ class GraphitronFacadeGeneratorPipelineTest {
         var schema = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.withHooks(
             TestSchemaHelper.buildSchema(sdl),
             no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
-                no.sikt.graphitron.javapoet.ClassName.get(String.class),
+                com.palantir.javapoet.ClassName.get(String.class),
                 no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims")));
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
 
@@ -148,7 +148,7 @@ class GraphitronFacadeGeneratorPipelineTest {
         var schema = no.sikt.graphitron.rewrite.session.SessionHooksFixtures.withHooks(
             TestSchemaHelper.buildSchema(sdl),
             no.sikt.graphitron.rewrite.session.SessionHooksFixtures.handled(
-                no.sikt.graphitron.javapoet.ClassName.get(String.class),
+                com.palantir.javapoet.ClassName.get(String.class),
                 no.sikt.graphitron.rewrite.session.SessionHooksFixtures.stringPayload("claims")));
         var spec = GraphitronFacadeGenerator.generate(schema, "com.example").get(0);
 

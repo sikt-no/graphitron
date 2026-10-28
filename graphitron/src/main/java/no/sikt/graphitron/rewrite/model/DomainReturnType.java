@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 
 import java.util.Objects;
 import no.sikt.graphitron.render.CatalogRefs;
@@ -77,7 +77,7 @@ public sealed interface DomainReturnType
      * generated POJOs). {@link TypeName} (not {@link Class}) so the
      * validator does not classload to compute equality; arm equality is {@code TypeName} string
      * equality (a bare FQN for a {@link ClassName} scalar, {@code Foo[]} for an
-     * {@link no.sikt.graphitron.javapoet.ArrayTypeName} column type, so array-typed column
+     * {@link com.palantir.javapoet.ArrayTypeName} column type, so array-typed column
      * scalars carry their real type).
      */
     record Plain(TypeName javaClass) implements Claim {

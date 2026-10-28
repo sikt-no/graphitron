@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 
 import java.util.EnumSet;
 
@@ -228,14 +228,14 @@ final class TypeFetcherEmissionContext {
     // into the TypeSpec after the field loop, mirroring the HelperKind drain: a companion can
     // never be silently dropped because the only way to reference one is through the name the
     // declaring call returned.
-    private final java.util.List<no.sikt.graphitron.javapoet.MethodSpec> companionMethods =
+    private final java.util.List<com.palantir.javapoet.MethodSpec> companionMethods =
         new java.util.ArrayList<>();
 
-    void addCompanionMethod(no.sikt.graphitron.javapoet.MethodSpec method) {
+    void addCompanionMethod(com.palantir.javapoet.MethodSpec method) {
         companionMethods.add(method);
     }
 
-    java.util.List<no.sikt.graphitron.javapoet.MethodSpec> drainCompanionMethods() {
+    java.util.List<com.palantir.javapoet.MethodSpec> drainCompanionMethods() {
         var out = java.util.List.copyOf(companionMethods);
         companionMethods.clear();
         return out;

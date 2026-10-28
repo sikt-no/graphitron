@@ -85,9 +85,9 @@ Structure your analysis like this:
 - Generates DataFetcher classes at `DataFetcherGenerator.java:30`
 - Creates jOOQ query builders at `QueryGenerator.java:45`
 
-#### 3. Output Writing (`graphitron-javapoet/src/main/java/no/sikt/graphitron/javapoet/`)
-- Uses JavaPoet library to build Java source files
-- Writes to configured output directory at `CodeWriter.java:80`
+#### 3. Output Writing (`graphitron/src/main/java/no/sikt/graphitron/rewrite/`)
+- Uses Palantir's JavaPoet (`com.palantir.javapoet`) to build Java source files
+- Writes to configured output directory at `IdempotentWriter.java`
 - Generates package structure matching GraphQL type hierarchy
 
 ### Data Flow

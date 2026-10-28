@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
+import com.palantir.javapoet.ClassName;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
@@ -17,8 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * methods to {@link MethodRef.Service#callShape()} arms is covered separately by
  * {@code ServiceCatalogTest} (which has same-package access to {@code ServiceCatalog}); the two
  * tests together pin the model→emit dispatch end to end without re-using {@code CodeBlock.equals}
- * (which is {@code toString}-based at
- * {@code graphitron-javapoet/src/main/java/no/sikt/graphitron/javapoet/CodeBlock.java:107}, the
+ * (which is {@code toString}-based, the
  * same fragility class as substring-on-emitted-code).
  *
  * <p>Emit-shape regression backstop is the {@code graphitron-sakila-example} compilation tier.

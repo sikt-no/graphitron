@@ -17,7 +17,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * No emit-library vocabulary in the model, installed as an allowlisted guard: a fact holding a
  * {@code TypeName} is comparable only through the renderer's equality, and a model type carrying
  * a {@code CodeBlock} is output the core already rendered. The allowlist below enumerates the
- * model files that import {@code no.sikt.graphitron.javapoet} today, which converts a growing
+ * model files that import {@code com.palantir.javapoet} today, which converts a growing
  * surface into a shrinking one: a file outside the list gaining the import fails here, and a
  * listed file shedding its last emit import must leave the list in the same commit, so the list
  * is the migration dial and emptying it is the enforcer.
@@ -33,7 +33,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 @UnitTier
 class ModelEmitVocabularyGuardTest {
 
-    private static final String EMIT_IMPORT_PREFIX = "import no.sikt.graphitron.javapoet.";
+    private static final String EMIT_IMPORT_PREFIX = "import com.palantir.javapoet.";
 
     /**
      * Model files importing the emit library, file names relative to

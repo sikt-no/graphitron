@@ -1,10 +1,10 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.GraphitronContextInterfaceGenerator;
@@ -107,7 +107,7 @@ public final class GraphitronFacadeGenerator {
         // namespace. Both forms carry it so their signatures stay identical; on the escape-hatch
         // form nothing reads it, since TenantConnections.of(env) fails before any routed or
         // fanned field runs there.
-        no.sikt.graphitron.javapoet.TypeName requestTenantKey = schema.requestTenantKeyType().orElse(null);
+        com.palantir.javapoet.TypeName requestTenantKey = schema.requestTenantKeyType().orElse(null);
         var tenantConnections = ClassName.get(schemaPackage,
             no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
         var requestTenants = ClassName.get(schemaPackage,
@@ -172,11 +172,11 @@ public final class GraphitronFacadeGenerator {
         var logger = ClassName.get("org.slf4j", "Logger");
         var loggerFactory = ClassName.get("org.slf4j", "LoggerFactory");
         var atomicBoolean = ClassName.get("java.util.concurrent.atomic", "AtomicBoolean");
-        var loggerField = no.sikt.graphitron.javapoet.FieldSpec.builder(
+        var loggerField = com.palantir.javapoet.FieldSpec.builder(
                 logger, LOGGER_FIELD, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .initializer("$T.getLogger($T.class)", loggerFactory, self)
             .build();
-        var escapeHatchNoticeField = no.sikt.graphitron.javapoet.FieldSpec.builder(
+        var escapeHatchNoticeField = com.palantir.javapoet.FieldSpec.builder(
                 atomicBoolean, ESCAPE_HATCH_NOTICE_FIELD, Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
             .initializer("new $T(false)", atomicBoolean)
             .addJavadoc("Guards the escape-hatch caller-owns-everything notice so {@link #newGraphQL()}\n"
@@ -296,7 +296,7 @@ public final class GraphitronFacadeGenerator {
             ClassName graphitronContext, ClassName graphitronContextImpl,
             ClassName executionInput, ClassName executionInputBuilder,
             ClassName dataLoaderRegistry, List<ResolvedContextArg> contextArgs,
-            no.sikt.graphitron.javapoet.TypeName requestTenantKey, ClassName tenantConnections,
+            com.palantir.javapoet.TypeName requestTenantKey, ClassName tenantConnections,
             ClassName requestTenants, boolean typedRequestTenants, String javadoc) {
         String tenantsParam = typedRequestTenants ? REQUEST_TENANTS_PARAM : TENANTS_PARAM;
         var method = MethodSpec.methodBuilder(methodName)

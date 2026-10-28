@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.render.ArgumentValueSource;
 import no.sikt.graphitron.render.PathFragments;
 import no.sikt.graphitron.render.PreviousNodeRef;

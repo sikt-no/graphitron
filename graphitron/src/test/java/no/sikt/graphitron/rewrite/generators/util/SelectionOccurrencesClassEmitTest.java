@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -93,7 +93,7 @@ class SelectionOccurrencesClassEmitTest {
             .isEqualTo("graphql.schema.SelectedField");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("java.lang.String", SELECTED_FIELD_LIST);
-        assertThat(m.parameters()).extracting(no.sikt.graphitron.javapoet.ParameterSpec::name)
+        assertThat(m.parameters()).extracting(com.palantir.javapoet.ParameterSpec::name)
             .containsExactly("resultKey", "occurrences");
     }
 
@@ -104,7 +104,7 @@ class SelectionOccurrencesClassEmitTest {
         assertThat(m.returnType().toString()).isEqualTo("void");
         assertThat(m.parameters()).extracting(p -> p.type().toString())
             .containsExactly("java.lang.String", SELECTED_FIELD_LIST);
-        assertThat(m.parameters()).extracting(no.sikt.graphitron.javapoet.ParameterSpec::name)
+        assertThat(m.parameters()).extracting(com.palantir.javapoet.ParameterSpec::name)
             .containsExactly("resultKey", "occurrences");
     }
 

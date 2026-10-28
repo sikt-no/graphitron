@@ -3,8 +3,8 @@ package no.sikt.graphitron.rewrite.generators.schema;
 import graphql.language.AstPrinter;
 import graphql.language.Value;
 import graphql.schema.InputValueWithState;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 
 import java.util.List;
 import java.util.Map;

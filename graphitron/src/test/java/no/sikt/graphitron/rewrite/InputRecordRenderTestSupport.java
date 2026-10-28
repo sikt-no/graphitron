@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.plan.InputRecordPlanner;
 import no.sikt.graphitron.rewrite.generators.schema.InputRecordGenerator;
 

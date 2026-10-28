@@ -1,8 +1,8 @@
 package no.sikt.graphitron.rewrite.generators.schema;
 
 import no.sikt.graphitron.command.TypeUnitCommand;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.generators.FetcherEmitter;
 import no.sikt.graphitron.rewrite.generators.ParentSourceBinding;

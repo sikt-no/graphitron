@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
 import no.sikt.graphitron.render.TenantHandDown;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.rewrite.model.OutputField;
@@ -593,7 +593,7 @@ final class TenantDslEmitter {
     }
 
     /** {@code <K> _divinedTenant = TenantConnections.<method>(<slot reads>);} */
-    private static CodeBlock fold(no.sikt.graphitron.javapoet.TypeName keyType, String method,
+    private static CodeBlock fold(com.palantir.javapoet.TypeName keyType, String method,
                                   List<CodeBlock> reads, ClassName tenantConnections) {
         var divined = CodeBlock.builder()
             .add("$T $L = $T.$L(", keyType, TENANT_KEY_LOCAL, tenantConnections, method);

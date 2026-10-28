@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.model;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.TypeName;
 
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -561,7 +561,7 @@ public sealed interface CallSiteExtraction
      * (or the bean class name for nested {@link InputBean} leaves), used to emit casts. For lists
      * it is the element type, not the wrapping {@code List}. Invariant: always a real class name,
      * never a Java primitive literal: primitives are boxed to their wrapper FQN at the resolver
-     * boundary so that the {@link no.sikt.graphitron.javapoet.ClassName#bestGuess(String)} consumers
+     * boundary so that the {@link com.palantir.javapoet.ClassName#bestGuess(String)} consumers
      * in {@code InputBeanInstantiationEmitter} can rely on the string being a class name.
      *
      * <p>{@code definition} is the schema coordinate ({@code Input.field}) of the SDL input field

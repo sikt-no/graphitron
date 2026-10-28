@@ -99,7 +99,7 @@ class TablePipelineTest {
 
     // ===== Helpers =====
 
-    private no.sikt.graphitron.javapoet.TypeSpec findSpec(String className, String sdl) {
+    private com.palantir.javapoet.TypeSpec findSpec(String className, String sdl) {
         return ProjectionRenderTestSupport.renderProjections(buildSchema(sdl), DEFAULT_OUTPUT_PACKAGE).stream()
             .filter(t -> t.name().equals(className))
             .findFirst()

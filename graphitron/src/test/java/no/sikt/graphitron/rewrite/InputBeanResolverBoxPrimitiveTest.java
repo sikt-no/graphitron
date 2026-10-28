@@ -11,7 +11,7 @@ import static org.assertj.core.api.Assertions.assertThat;
  * Unit coverage for {@link InputBeanResolver#boxPrimitive(String)}: pins the full 8-arm
  * primitive→wrapper mapping that the {@code FieldBinding.javaElementTypeName} invariant
  * ("real class name, never a primitive literal") depends on. The two
- * {@link no.sikt.graphitron.javapoet.ClassName#bestGuess(String)} consumers in
+ * {@link com.palantir.javapoet.ClassName#bestGuess(String)} consumers in
  * {@code InputBeanInstantiationEmitter} would throw on any primitive literal that slipped through;
  * this is the structural assertion that every primitive is covered, without growing the pipeline
  * fixture surface to one input bean per primitive.

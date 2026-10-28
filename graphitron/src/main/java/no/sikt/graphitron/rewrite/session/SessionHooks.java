@@ -1,6 +1,6 @@
 package no.sikt.graphitron.rewrite.session;
 
-import no.sikt.graphitron.javapoet.TypeName;
+import com.palantir.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 
 import java.util.List;

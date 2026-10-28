@@ -24,7 +24,6 @@ public final class GuardScope {
     static final List<String> IN_SCOPE_MODULES = List.of(
         "graphitron",
         "graphitron-model",
-        "graphitron-javapoet",
         "graphitron-jakarta-rest",
         "graphitron-mcp",
         "graphitron-lsp",

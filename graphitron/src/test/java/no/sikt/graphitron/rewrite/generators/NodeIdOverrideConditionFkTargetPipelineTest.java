@@ -138,7 +138,7 @@ class NodeIdOverrideConditionFkTargetPipelineTest {
         return no.sikt.graphitron.rewrite.ConditionRenderTestSupport
             .renderCommittedConditions(schema, DEFAULT_OUTPUT_PACKAGE).stream()
             .flatMap(spec -> spec.methodSpecs().stream())
-            .map(no.sikt.graphitron.javapoet.MethodSpec::name)
+            .map(com.palantir.javapoet.MethodSpec::name)
             .filter(name -> name.startsWith(prefix))
             .toList();
     }

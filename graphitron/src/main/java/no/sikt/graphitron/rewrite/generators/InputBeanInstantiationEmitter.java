@@ -1,7 +1,7 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.MethodSpec;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.MethodSpec;
 import no.sikt.graphitron.render.InputBeanFragments;
 import no.sikt.graphitron.render.RecordDecodeFragments;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;

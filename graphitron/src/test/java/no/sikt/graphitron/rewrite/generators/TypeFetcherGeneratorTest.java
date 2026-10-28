@@ -1,12 +1,12 @@
 package no.sikt.graphitron.rewrite.generators;
 
-import no.sikt.graphitron.javapoet.ArrayTypeName;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ArrayTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.rewrite.ArgumentRef;
 import no.sikt.graphitron.rewrite.TestFixtures;
 import no.sikt.graphitron.rewrite.model.BodyParam;
@@ -1347,7 +1347,7 @@ class TypeFetcherGeneratorTest {
     // each variant.
 
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField scalarServiceRecordField(
-            String parentType, String name, boolean isList, ServiceSourceShape shape, no.sikt.graphitron.javapoet.TypeName perKeyType) {
+            String parentType, String name, boolean isList, ServiceSourceShape shape, com.palantir.javapoet.TypeName perKeyType) {
         var returnWrapper = isList ? (FieldWrapper) listWrapper() : single();
         var returnType = new no.sikt.graphitron.rewrite.model.ReturnTypeRef.ScalarReturnType("String", returnWrapper);
         return serviceRecordField(parentType, name, "getValues", returnType, shape, perKeyType);
@@ -1365,7 +1365,7 @@ class TypeFetcherGeneratorTest {
     private static no.sikt.graphitron.rewrite.model.ChildField.ServiceRecordField serviceRecordField(
             String parentType, String name, String methodName,
             no.sikt.graphitron.rewrite.model.ReturnTypeRef returnType, ServiceSourceShape shape,
-            no.sikt.graphitron.javapoet.TypeName perKeyType) {
+            com.palantir.javapoet.TypeName perKeyType) {
         var container = shape.mapped()
             ? no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.MAPPED_SET
             : no.sikt.graphitron.rewrite.model.LoaderRegistration.Container.POSITIONAL_LIST;

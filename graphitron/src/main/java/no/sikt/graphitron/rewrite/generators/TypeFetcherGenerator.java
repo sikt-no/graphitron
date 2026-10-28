@@ -2,13 +2,13 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.render.TenantHandDown;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
-import no.sikt.graphitron.javapoet.ClassName;
-import no.sikt.graphitron.javapoet.CodeBlock;
-import no.sikt.graphitron.javapoet.MethodSpec;
-import no.sikt.graphitron.javapoet.ParameterizedTypeName;
-import no.sikt.graphitron.javapoet.TypeName;
-import no.sikt.graphitron.javapoet.TypeSpec;
-import no.sikt.graphitron.javapoet.WildcardTypeName;
+import com.palantir.javapoet.ClassName;
+import com.palantir.javapoet.CodeBlock;
+import com.palantir.javapoet.MethodSpec;
+import com.palantir.javapoet.ParameterizedTypeName;
+import com.palantir.javapoet.TypeName;
+import com.palantir.javapoet.TypeSpec;
+import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
@@ -189,9 +189,9 @@ public class TypeFetcherGenerator {
                     + " renderer have drifted");
             }
             result.add(no.sikt.graphitron.rewrite.generators.util.ErrorTypeFetcherClassGenerator
-                .generateFor(et, no.sikt.graphitron.javapoet.ClassName.get(
+                .generateFor(et, com.palantir.javapoet.ClassName.get(
                     row.errorMappings().packageName(), row.errorMappings().simpleName()),
-                    no.sikt.graphitron.javapoet.ClassName.get(
+                    com.palantir.javapoet.ClassName.get(
                         row.errorRouter().packageName(), row.errorRouter().simpleName()),
                     schema.errorFieldReads(row.typeName())));
         }
@@ -714,7 +714,7 @@ public class TypeFetcherGenerator {
                     var dslDeclaration = batchedRow.tenancy()
                             instanceof no.sikt.graphitron.command.TenantStrategy.Single
                         ? TenantDslEmitter.resolve(ctx, btf, outputPackage).declaration()
-                        : no.sikt.graphitron.javapoet.CodeBlock.of("");
+                        : com.palantir.javapoet.CodeBlock.of("");
                     builder.addMethod(no.sikt.graphitron.render.RootLauncherRenderer
                         .render(batchedRow, launchers.carrierDsl(), dslDeclaration, CodeBlock.of(""),
                             TenantDslEmitter.fanOutNarrowing(ctx, batchedRow, outputPackage),
@@ -1016,7 +1016,7 @@ public class TypeFetcherGenerator {
         for (var ib : beanHelpers.values()) {
             builder.addMethod(InputBeanInstantiationEmitter.buildSingularHelper(ib, fetchersHelperNames));
             builder.addMethod(InputBeanInstantiationEmitter.buildPluralHelper(ib,
-                no.sikt.graphitron.javapoet.ClassName.bestGuess(outputPackage + "." + className),
+                com.palantir.javapoet.ClassName.bestGuess(outputPackage + "." + className),
                 fetchersHelperNames));
         }
         // One create<Record> / create<Record>List pair per distinct binding shape, named through
@@ -2117,7 +2117,7 @@ public class TypeFetcherGenerator {
      */
     private static void collectBeanHelpersFromCarrier(
             ServiceMethodCall carrier,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<com.palantir.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
         if (carrier instanceof ServiceMethodCall.Instance inst) {
             for (var e : inst.ctorArgs()) collectFromMappingEntry(e, out);
         }
@@ -2126,7 +2126,7 @@ public class TypeFetcherGenerator {
 
     private static void collectFromMappingEntry(
             no.sikt.graphitron.rewrite.model.MappingEntry entry,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<com.palantir.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
         if (entry instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromArg fromArg) {
             collectFromValueShape(fromArg.shape(), out);
         }
@@ -2134,7 +2134,7 @@ public class TypeFetcherGenerator {
 
     private static void collectFromValueShape(
             no.sikt.graphitron.rewrite.model.ValueShape shape,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<com.palantir.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
         switch (shape) {
             case no.sikt.graphitron.rewrite.model.ValueShape.Scalar ignored -> { /* leaf */ }
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> collectFromValueShape(l.elementShape(), out);
@@ -2155,10 +2155,10 @@ public class TypeFetcherGenerator {
     }
 
     private static void registerBeanHelper(
-            no.sikt.graphitron.javapoet.ClassName beanClass,
+            com.palantir.javapoet.ClassName beanClass,
             CallSiteExtraction.InputBean.Target target,
             List<no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding> vsFields,
-            java.util.Map<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
+            java.util.Map<com.palantir.javapoet.ClassName, CallSiteExtraction.InputBean> out) {
         if (out.containsKey(beanClass)) return;
         var fieldBindings = new java.util.ArrayList<CallSiteExtraction.FieldBinding>(vsFields.size());
         for (var vfb : vsFields) {
@@ -2183,7 +2183,7 @@ public class TypeFetcherGenerator {
     /**
      * Collect every bean (POJO / {@code @record}) class reached by an {@code InputBean} extraction on
      * this {@code <Type>Fetchers} class, across both coordinates, into a dedup map keyed by bean
-     * {@link no.sikt.graphitron.javapoet.ClassName} in first-encounter order. Nested beans are
+     * {@link com.palantir.javapoet.ClassName} in first-encounter order. Nested beans are
      * collected transitively so a single bean class appears exactly once. The child / root-permit
      * coordinate is the {@link MethodBackedField#method() callParams} walk; the root coordinate is the
      * {@link no.sikt.graphitron.rewrite.model.ServiceField} carrier's composite {@code ValueShape}
@@ -2191,9 +2191,9 @@ public class TypeFetcherGenerator {
      * the union of these bean classes and the jOOQ-record carrier classes before any name is emitted;
      * the drain reuses the returned map for emission.
      */
-    private static java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName, CallSiteExtraction.InputBean>
+    private static java.util.LinkedHashMap<com.palantir.javapoet.ClassName, CallSiteExtraction.InputBean>
             collectBeanHelpers(List<GraphitronField> fields) {
-        var beanHelpers = new java.util.LinkedHashMap<no.sikt.graphitron.javapoet.ClassName,
+        var beanHelpers = new java.util.LinkedHashMap<com.palantir.javapoet.ClassName,
             CallSiteExtraction.InputBean>();
         fields.stream()
             .filter(f -> f instanceof MethodBackedField)
@@ -2305,21 +2305,21 @@ public class TypeFetcherGenerator {
      * Whether a slot's declared Java type is {@code List<elementType>}, for an element type that is
      * not a plain class name: the polymorphic leaf's admitted slot type is a wildcard-parameterized
      * form ({@code UpdatableRecord<?>}), so the sibling below, which is keyed on a
-     * {@link no.sikt.graphitron.javapoet.ClassName}, cannot answer for it.
+     * {@link com.palantir.javapoet.ClassName}, cannot answer for it.
      */
-    private static boolean isListOfTypeName(no.sikt.graphitron.javapoet.TypeName javaType,
-            no.sikt.graphitron.javapoet.TypeName elementType) {
-        return javaType instanceof no.sikt.graphitron.javapoet.ParameterizedTypeName ptn
-            && ptn.rawType().equals(no.sikt.graphitron.javapoet.ClassName.get(List.class))
+    private static boolean isListOfTypeName(com.palantir.javapoet.TypeName javaType,
+            com.palantir.javapoet.TypeName elementType) {
+        return javaType instanceof com.palantir.javapoet.ParameterizedTypeName ptn
+            && ptn.rawType().equals(com.palantir.javapoet.ClassName.get(List.class))
             && ptn.typeArguments().size() == 1
             && ptn.typeArguments().getFirst().equals(elementType);
     }
 
     /** Whether a slot's declared Java type is {@code List<elementClass>}. */
-    private static boolean isListTypeName(no.sikt.graphitron.javapoet.TypeName javaType,
-            no.sikt.graphitron.javapoet.ClassName elementClass) {
-        return javaType instanceof no.sikt.graphitron.javapoet.ParameterizedTypeName ptn
-            && ptn.rawType().equals(no.sikt.graphitron.javapoet.ClassName.get(List.class))
+    private static boolean isListTypeName(com.palantir.javapoet.TypeName javaType,
+            com.palantir.javapoet.ClassName elementClass) {
+        return javaType instanceof com.palantir.javapoet.ParameterizedTypeName ptn
+            && ptn.rawType().equals(com.palantir.javapoet.ClassName.get(List.class))
             && ptn.typeArguments().size() == 1
             && ptn.typeArguments().getFirst().equals(elementClass);
     }
@@ -5456,7 +5456,7 @@ public class TypeFetcherGenerator {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
-            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
         var orderByResultClass = ClassName.get(
             outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
         code.addStatement("$T<$T<$T, $T>> orderArgs = env.getArgument($S)",
@@ -5522,7 +5522,7 @@ public class TypeFetcherGenerator {
         var hashSetType = ClassName.get("java.util", "HashSet");
         var sortOrderType = ClassName.get("org.jooq", "SortOrder");
         var wildcardField = ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"),
-            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
+            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
         var code = CodeBlock.builder();
         code.add("if (sortParts.isEmpty()) return $L;\n", baseExpr);
         code.addStatement("$T<$T> orderedNames = new $T<>()", setType, String.class, hashSetType);

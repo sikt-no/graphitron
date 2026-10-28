@@ -78,7 +78,7 @@ class NodeIdDecodeArmCoverageTest {
     void aDescentInstallsExactlyWhatItsLeafInstalls() {
         var decoding = new CallSiteExtraction.NestedInputField("filter", java.util.List.of("id"),
             new CallSiteExtraction.ThrowOnMismatch(new HelperRef.Decode(
-                no.sikt.graphitron.javapoet.ClassName.bestGuess("a.B"), "decodeFilm",
+                com.palantir.javapoet.ClassName.bestGuess("a.B"), "decodeFilm",
                 java.util.List.of(), "Film", no.sikt.graphitron.rewrite.TestFixtures.filmTable())));
         var plain = new CallSiteExtraction.NestedInputField("filter", java.util.List.of("title"),
             new CallSiteExtraction.Direct());

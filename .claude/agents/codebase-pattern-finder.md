@@ -177,7 +177,6 @@ class QueryDataFetcherGeneratorTest {
 ### Related Utilities
 - `graphitron-java-codegen/src/main/java/no/sikt/graphitron/configuration/GeneratorConfig.java:15` - Configuration holder
 - `graphitron-java-codegen/src/main/java/no/sikt/graphitron/definitions/helpers/DirectiveHelper.java:20` - Directive extraction utilities
-- `graphitron-javapoet/src/main/java/no/sikt/graphitron/javapoet/TypeNameResolver.java:30` - GraphQL to Java type mapping
 ```
 
 ## Pattern Categories to Search

@@ -134,7 +134,7 @@ public record GraphitronSchema(
      * so they cannot disagree. Deliberately not gated on the schema having a routed or fanned
      * field: that would put an evolving schema property on a public factory signature.
      */
-    public java.util.Optional<no.sikt.graphitron.javapoet.TypeName> requestTenantKeyType() {
+    public java.util.Optional<com.palantir.javapoet.TypeName> requestTenantKeyType() {
         if (!(tenantScopes instanceof TenantScopes.Configured configured)) {
             return java.util.Optional.empty();
         }

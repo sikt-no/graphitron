@@ -3399,7 +3399,7 @@ class BuildContext {
      */
     no.sikt.graphitron.rewrite.model.HelperRef.Decode catalogNodeDecode(
             String refTypeName, TableRef targetTable, TargetKeys.OfCatalog keys) {
-        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
+        var encoderClass = com.palantir.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
         var decode = new no.sikt.graphitron.rewrite.model.HelperRef.Decode(
@@ -3537,7 +3537,7 @@ class BuildContext {
      * on it. Two types can back one table, so the table cannot stand in for the name.
      */
     sealed interface NodeIdRecordDecode {
-        record Resolved(no.sikt.graphitron.javapoet.ClassName encoderClass, String typeName,
+        record Resolved(com.palantir.javapoet.ClassName encoderClass, String typeName,
                         String typeId, List<ColumnRef> keyColumns,
                         no.sikt.graphitron.model.jooq.TableRef table) implements NodeIdRecordDecode {}
 
@@ -3571,7 +3571,7 @@ class BuildContext {
          * one type plus the member's own GraphQL name, which the dispatch message quotes and the
          * per-member decode helper is named from.
          */
-        record Candidate(String typeName, no.sikt.graphitron.javapoet.ClassName encoderClass,
+        record Candidate(String typeName, com.palantir.javapoet.ClassName encoderClass,
                          String typeId, List<ColumnRef> keyColumns,
                          no.sikt.graphitron.model.jooq.TableRef table) {
             public Candidate {
@@ -3638,7 +3638,7 @@ class BuildContext {
                 "@nodeId(typeName: '" + typeName + "') targets table '" + targetTableName
                 + "' which is not in the jOOQ catalog");
         }
-        var encoderClass = no.sikt.graphitron.javapoet.ClassName.get(
+        var encoderClass = com.palantir.javapoet.ClassName.get(
             ctx.outputPackage() + ".util",
             no.sikt.graphitron.rewrite.generators.util.NodeIdEncoderClassGenerator.CLASS_NAME);
         return new NodeIdRecordDecode.Resolved(encoderClass, typeName, keys.typeId(),
@@ -3813,19 +3813,19 @@ class BuildContext {
      * admitted as {@code UpdatableRecord<?>}, which is both what the author declared at the slot and
      * what keeps a raw type out of the consumer's generated sources.
      */
-    private static no.sikt.graphitron.javapoet.TypeName admittedTypeName(Class<?> slotClass) {
+    private static com.palantir.javapoet.TypeName admittedTypeName(Class<?> slotClass) {
         // A nested type's binary name carries $ where javapoet spells the nesting with a dot;
         // bestGuess reads the dotted form and reconstructs the enclosing chain.
-        var raw = no.sikt.graphitron.javapoet.ClassName.bestGuess(
+        var raw = com.palantir.javapoet.ClassName.bestGuess(
             slotClass.getName().replace('$', '.'));
         int arity = slotClass.getTypeParameters().length;
         if (arity == 0) {
             return raw;
         }
-        var args = new no.sikt.graphitron.javapoet.TypeName[arity];
+        var args = new com.palantir.javapoet.TypeName[arity];
         java.util.Arrays.fill(args,
-            no.sikt.graphitron.javapoet.WildcardTypeName.subtypeOf(Object.class));
-        return no.sikt.graphitron.javapoet.ParameterizedTypeName.get(raw, args);
+            com.palantir.javapoet.WildcardTypeName.subtypeOf(Object.class));
+        return com.palantir.javapoet.ParameterizedTypeName.get(raw, args);
     }
 
     /**
