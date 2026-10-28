@@ -142,3 +142,16 @@ No carrier record, renderer slot or fetcher shape changes.
 ## Provenance
 
 Requested 2026-10-28 by the sis Graphitron 10 port session, which tracks it as C23 in `GRAPHITRON10_STATUS.md`. It is not a port blocker: until this lands, sis accepts and announces the object-with-nulls answer.
+
+## Reviewer findings
+
+### Round 1 (2026-10-28, Spec -> Ready, reviewer session 01FY5UvvNysRz4bcbqeYnAGT)
+
+Verdict: stays in Spec, on question 2, for one test the plan names that cannot be written. Question 1 passes: a nullable field returning an object made of scalar `@externalField`s, alone or beside columns, resolves to `null` when every one of them is `null`, where today the `@externalField` blocks the collapse and the client gets an object of nulls. The rest of the design fits the tree. It adds a disjunct to the probe column that already exists rather than standing up a second read path, and the five carriers do inherit it through `PresenceProbes.of` as claimed.
+
+- **The validation-tier negative test is unreachable.** The plan has `NestingFieldValidationTest` reject "a twin whose inner wrapper holds a computed field at one site and a column at the other ... with the `value of <field>` wording from `comparePresenceColumns`". That rejection never reaches `comparePresenceColumns`. Its only caller is the `NestingField` arm of `compareNestedFieldsShape`, which first recurses into the inner wrapper and calls `comparePresenceColumns` only when the recursion added no error. The recursion compares the inner fields by name and class, so a `ComputedField` at one site against a `ColumnBackedField` at the other is reported as "classifies as ComputedField on the first but ColumnBackedField on the second", and the presence comparison is skipped. If the field names differ, the "exists on the first but not the second" error fires the same way. The plan's own Shared wrappers section says this ("`compareNestedFieldsShape` rejects a class mismatch per field name before presence is compared"), and its argument that two sites holding one field name hold one declaration leaves the `value of` arm with no reachable schema. To satisfy this, settle what the validation tier pins for a computed leaf on a shared inner wrapper. Either drop the negative case, keep the positive one, and say the `value of` arm exists for exhaustiveness, or name a reachable divergence (for instance, two `ComputedField`s of one name and class where only one site's leaf is a `Computed`) and the message it asserts.
+
+Non-blocking, for the implementer:
+
+- `PresenceTest.blockedInnerNesting_blocksEveryEnclosingWrapper` also uses `computed("label")` as its blocker, so it moves along with `otherChild_blocksTheWrapperNamingThatChild`.
+- `ScalarReturnType` is a fallback as well as the scalar arm: `BuildContext.resolveReturnType` returns it for any target that is not table-backed, polymorphic or a result type, so a nesting or connection type lands there too. An object-returning `@externalField` grounds its return as a result type through `RecordBindingResolver.groundComputedField`, so in today's tree the `Computed` constructor's guard does mean "scalar or enum". If grounding ever stops covering a return, the guard silently admits it, and the constructor's message should not promise more than the type checks.
