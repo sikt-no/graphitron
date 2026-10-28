@@ -26,7 +26,7 @@ at a time, and trunk CI fails about once a day on a test that is correct: on 202
 counted a film another class had inserted, and `filmsConnection_emptyBeforeCursor_returnsLastPage`
 compared two reads of the table's tail across a sibling's insert and cleanup. When this lands, a
 test author knows the one rule (a reader asserts over rows it can name, a writer touches only rows
-it created), the exposed tests follow it, and the provisioning code that is copied 67 times lives in
+it created), the exposed tests follow it, and the provisioning code that is copied 75 times lives in
 one harness.
 
 The execution tier is the tier that runs a real GraphQL request through generated code to
@@ -38,7 +38,7 @@ JVM, never reset, tests resilient rather than isolated.
 
 Measured against the tree at `387bdf7`.
 
-* **Provisioning is copied, 67 times.** Each of 66 test classes carries the same `@BeforeAll`: if
+* **Provisioning is copied, 75 times.** Each of 74 test classes (66 under `test/querydb`, eight under `test/internal`) carries the same `@BeforeAll`: if
   `test.db.url` is set it connects there, otherwise it starts its own
   `PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql")`, then builds a
   `DriverManager`-backed `DSLContext` in autocommit. `SmokeTestPostgresResource` makes the same
@@ -48,6 +48,9 @@ Measured against the tree at `387bdf7`.
   `local-db` every class shares `rewrite_test`, which CI and the sandbox seed from
   `graphitron-sakila-db`'s `init.sql` and which jOOQ code generation also reads. Class
   parallelism is four (`junit-platform.properties`).
+* **The eight `test/internal` classes were surveyed too.** None inserts, updates or deletes a row.
+  Their reads are keyed (by id, by seeded key) or assert a statement count over their own query, so
+  none joins the exposed inventory below; they migrate to the harness with the rest.
 * **27 classes write to that shared server.** Eleven commit `film` rows (marker titles, sequence
   ids above 100, `language_id = 1`); `GraphQLQueryTest.updateFilmWithErrors_existingFilm_returnsTheUpdatedRow`
   commits a new title on seeded film 1 and restores it in `finally`; `rental`, `content`, `email`,
@@ -164,7 +167,7 @@ hit the interleaving. The In Review evidence below uses it.
 
 * `graphitron-sakila-example/src/test/java/.../test/SakilaDatabase.java` (new): the extension
   above.
-* The 66 execution-tier classes: the copied `@BeforeAll` and `@AfterAll` blocks become the
+* The 74 execution-tier classes (66 under `test/querydb`, eight under `test/internal`: `AddressOccupantsListBatchingTest`, `AccessorDerivedSourceTest`, `OutcomePolymorphicChildExecutionTest`, `AddressOccupantCarrierSingleCardinalityTest`, `MultiTablePolymorphicSelfFkOrientationExecutionTest`, `MultiTablePolymorphicJoinedCorrelationExecutionTest`, `MultiTablePolymorphicParentHoldsFkExecutionTest`, `MutationPayloadLifterTest`): the copied `@BeforeAll` and `@AfterAll` blocks become the
   extension field and a `db.dsl()` read. Mechanical; a class's own setup after the connection (for
   example `TenantFanOutExecutionTest` seeding its tenant tables) stays in its own `@BeforeAll`.
   `DmlBulkMutationsExecutionTest.seedFilmActor`'s second-connection check opens its second
@@ -198,7 +201,7 @@ hit the interleaving. The In Review evidence below uses it.
   is the demonstration the item is complete, since each failed on CI with a sibling's row in it.
 * Evidence at In Review: five consecutive full `mvn install -Plocal-db` runs green on one tree, one
   of them at doubled class parallelism, and the module's wall clock before and after, so a reviewer
-  can see what one container per JVM saves against 66 containers.
+  can see what one container per JVM saves against 74 containers.
 
 ## Documentation
 
