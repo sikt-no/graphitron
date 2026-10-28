@@ -46,7 +46,7 @@ public final class DirectivePolicy {
      * type rather than a method) skip method validation.
      */
     private static final Set<String> METHOD_BINDING_DIRECTIVES = Set.of(
-        "service", "condition", "externalField", "reference", "sourceRow"
+        "service", "condition", "externalField", "reference", "sourceRow", "order", "defaultOrder"
     );
 
     /**

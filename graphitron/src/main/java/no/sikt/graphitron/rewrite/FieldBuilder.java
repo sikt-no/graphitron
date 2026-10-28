@@ -231,7 +231,7 @@ class FieldBuilder {
         this.routineResolver = new RoutineDirectiveResolver(ctx, this);
         this.externalFieldResolver = new ExternalFieldDirectiveResolver(ctx, svc, this);
         this.lookupKeyResolver = new LookupKeyDirectiveResolver();
-        this.orderByResolver = new OrderByResolver(ctx);
+        this.orderByResolver = new OrderByResolver(ctx, svc);
         this.lookupMappingResolver = new LookupMappingResolver();
         this.paginationResolver = new PaginationResolver();
         this.conditionResolver = new ConditionResolver(ctx, svc);
@@ -1318,8 +1318,19 @@ class FieldBuilder {
         return new PolymorphicOrdering.SlotOrder.OnSlots(orderName, entries, first.uniformAsc());
     }
 
+    /**
+     * The participant order's column entries. A participant admits no sort-key entry (the order
+     * resolver refuses one there), so every entry is an own-table column.
+     */
     private static List<OrderBySpec.ColumnOrderEntry> columnsOf(OrderBySpec spec) {
-        return spec instanceof OrderBySpec.Fixed fixed ? fixed.columns() : List.of();
+        if (!(spec instanceof OrderBySpec.Fixed fixed)) return List.of();
+        return fixed.entries().stream().map(entry -> switch (entry) {
+            case OrderBySpec.ColumnOrderEntry column -> column;
+            case OrderBySpec.SortKeyEntry key -> throw new IllegalStateException(
+                "Graphitron generator bug (multitable ordering fold): a participant order carries the"
+                + " sort-key entry " + key.ordinal() + ", which the order resolver refuses at a"
+                + " participant");
+        }).toList();
     }
 
     private static String describeColumns(List<OrderBySpec.ColumnOrderEntry> cols) {
@@ -1338,7 +1349,7 @@ class FieldBuilder {
             if (e.getValue() instanceof OrderBySpec.None) continue;
             if (!(e.getValue() instanceof OrderBySpec.Fixed fixed)) return null;
             var pk = e.getKey().table().primaryKeyColumns();
-            var cols = fixed.columns();
+            var cols = columnsOf(fixed);
             if (pk.isEmpty() || cols.size() != pk.size()) return null;
             for (int i = 0; i < cols.size(); i++) {
                 if (!cols.get(i).column().sqlName().equalsIgnoreCase(pk.get(i).sqlName())) return null;
@@ -2827,7 +2838,7 @@ class FieldBuilder {
             errors.add(unread);
             return new TableFieldComponents.Rejected(foldRejections(errors));
         }
-        var orderByResolved = orderByResolver.resolve(refs, fieldDef, rt, returnTypeName, singleTable);
+        var orderByResolved = orderByResolver.resolve(refs, parentTypeName, fieldDef, rt, returnTypeName, singleTable);
         if (orderByResolved instanceof OrderByResolver.Resolved.Rejected r) {
             errors.add(r.rejection());
             return new TableFieldComponents.Rejected(foldRejections(errors));

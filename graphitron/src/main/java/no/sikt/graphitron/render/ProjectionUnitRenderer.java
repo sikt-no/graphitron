@@ -83,6 +83,20 @@ public final class ProjectionUnitRenderer {
                     row.unit().simpleName() + "." + contribution.field()));
             }
         }
+        // The emitted method behind each path: sort key of an inline child list's order; the
+        // subselect's .orderBy(...) calls it unqualified, so it lives here too.
+        var sortKeyMethods = new java.util.HashSet<String>();
+        for (var contribution : row.contributions()) {
+            if (contribution instanceof Contribution.Call call
+                    && call.wrap() instanceof CallWrap.Multiset m) {
+                for (var sortKey : m.sortKeyMethods()) {
+                    if (sortKeyMethods.add(sortKey.method().methodName())) {
+                        builder.addMethod(SortKeyFragments.method(sortKey.method().methodName(),
+                            (OrderBySpec.SortKey.Path) sortKey.entry().key()));
+                    }
+                }
+            }
+        }
         return builder.build();
     }
 
@@ -407,8 +421,9 @@ public final class ProjectionUnitRenderer {
         }
         sel.add("\n        .where($L)", where.build());
 
-        if (m.orderBy() instanceof OrderBySpec.Fixed fixed && !fixed.columns().isEmpty()) {
-            sel.add("\n        .orderBy($L)", OrderByFragments.fixedSortParts(fixed, terminalAlias));
+        if (m.orderBy() instanceof OrderBySpec.Fixed fixed && !fixed.entries().isEmpty()) {
+            sel.add("\n        .orderBy($L)", OrderByFragments.fixedSortParts(fixed, terminalAlias,
+                SortKeyFragments.names(m.sortKeyMethods())));
         }
 
         if (m.arity() == Arity.SINGLE) {

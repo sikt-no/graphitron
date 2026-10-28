@@ -56,7 +56,8 @@ class DriftDetectionTest {
     @Test
     void fieldSortNameResolvesAndBindsToColumnBehavior() {
         // The @defaultOrder(fields: [{name: ...}]) coordinate. That it resolves against the shipped
-        // directives.graphqls (input FieldSort { name: String! ... }) is the case above; this pins
+        // directives.graphqls (input FieldSort { name: String ... }, optional since an entry may
+        // name a method: instead) is the case above; this pins
         // the binding.
         var vocab = BundledVocabulary.get();
         var coord = new SchemaCoordinate.InputField("FieldSort", "name");

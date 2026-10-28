@@ -119,7 +119,9 @@ public final class Definitions {
             case Behavior.CatalogTableBinding ignored ->
                 tableDefinition(location, store, file.source());
             case Behavior.CatalogColumnBinding ignored ->
-                fieldDefinition(directive, location, store, file.source());
+                vocabulary.namesRelatedColumn(directive, pos, location.coordinate(), file.source())
+                    ? Optional.empty()
+                    : fieldDefinition(directive, location, store, file.source());
             case Behavior.CatalogFkBinding ignored ->
                 referenceKeyDefinition(store,
                     Nodes.unquote(Nodes.text(location.leafNode(), file.source())));

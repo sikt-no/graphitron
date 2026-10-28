@@ -38,7 +38,8 @@ public final class OrderingBlock {
         return switch (ordering) {
             case Ordering.Columns columns -> CodeBlock.builder()
                 .addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST,
-                    OrderByFragments.fixedSortParts(columns.spec(), tableLocal))
+                    OrderByFragments.fixedSortParts(columns.spec(), tableLocal,
+                        SortKeyFragments.names(columns.sortKeyMethods())))
                 .build();
             case Ordering.Helper helper -> CodeBlock.builder()
                 .addStatement("$T orderBy = $L(env, $L).sortFields()",
@@ -52,10 +53,11 @@ public final class OrderingBlock {
         var code = CodeBlock.builder();
         switch (ordering) {
             case Ordering.Columns columns -> {
+                var sortKeys = SortKeyFragments.names(columns.sortKeyMethods());
                 code.addStatement("$T orderBy = $T.of($L)", SORT_FIELD_LIST, LIST,
-                    OrderByFragments.fixedSortParts(columns.spec(), tableLocal));
+                    OrderByFragments.fixedSortParts(columns.spec(), tableLocal, sortKeys));
                 code.addStatement("$T extraFields = $T.of($L)", FIELD_LIST, LIST,
-                    OrderByFragments.fixedColumnParts(columns.spec(), tableLocal));
+                    OrderByFragments.fixedColumnParts(columns.spec(), tableLocal, sortKeys));
             }
             case Ordering.Helper helper -> {
                 code.addStatement("$T ordering = $L(env, $L)",

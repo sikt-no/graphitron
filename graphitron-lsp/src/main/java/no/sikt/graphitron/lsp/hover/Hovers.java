@@ -187,7 +187,9 @@ public final class Hovers {
                     vocabulary, directive, file, s, pos, rangeNode, mnb.classNameCoord()));
             case Behavior.CatalogTableBinding ignored -> store.flatMap(s -> tableHover(file, s, rangeNode));
             case Behavior.CatalogColumnBinding ignored ->
-                store.flatMap(s -> columnHover(directive, file, s, rangeNode));
+                vocabulary.namesRelatedColumn(directive, pos, coord, file.source())
+                    ? Optional.empty()
+                    : store.flatMap(s -> columnHover(directive, file, s, rangeNode));
             case Behavior.CatalogFkBinding ignored -> store.flatMap(s -> fkHover(file, s, rangeNode));
             case Behavior.ArgMappingBinding ignored -> Optional.empty();
             case Behavior.ScalarTypeBinding ignored -> Optional.empty();

@@ -538,8 +538,11 @@ public final class Diagnostics {
                 questions.tableName(spelling);
                 findings.add(new Finding.TableName(rangeOf(file, leaf.valueNode()), spelling));
             }
-            case Behavior.CatalogColumnBinding ignored ->
-                collectMemberName(directive, leaf.valueNode(), file, findings, questions);
+            case Behavior.CatalogColumnBinding ignored -> {
+                if (!vocabulary.namesRelatedColumn(directive, leaf.valueNode(), leaf.coord(), file.source())) {
+                    collectMemberName(directive, leaf.valueNode(), file, findings, questions);
+                }
+            }
             case Behavior.CatalogFkBinding ignored -> {
                 String spelling = value(leaf.valueNode(), file);
                 if (spelling.isEmpty()) return;

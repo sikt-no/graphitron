@@ -92,6 +92,9 @@ public sealed interface CallWrap {
      * @param orderBy         the field's authoritative ordering; only the
      *                        {@link OrderBySpec.Fixed} arm renders inline, matching the emit
      *                        this command replaced
+     * @param sortKeyMethods  the emitted method behind each {@code path:} sort key of a fixed
+     *                        {@code orderBy}, minted on the projection unit that renders the
+     *                        subselect and so hosts the methods; empty for any other order
      * @param limitByFirstArgument whether the inner select honours a runtime {@code first}
      *                        argument read off the canonical occurrence (list cardinality only)
      * @param filter          the coordinate's condition glue call, or {@code null} when the
@@ -113,6 +116,7 @@ public sealed interface CallWrap {
         TableRef terminalTable,
         Arity arity,
         OrderBySpec orderBy,
+        List<SortKeyMethod> sortKeyMethods,
         boolean limitByFirstArgument,
         GlueCall filter,
         boolean guardArguments,
@@ -121,6 +125,13 @@ public sealed interface CallWrap {
     ) implements CallWrap {
         public Multiset {
             path = List.copyOf(path);
+            sortKeyMethods = orderBy instanceof OrderBySpec.Fixed fixed
+                ? SortKeyMethod.requireCovering(sortKeyMethods, fixed)
+                : List.copyOf(sortKeyMethods);
+            if (!(orderBy instanceof OrderBySpec.Fixed) && !sortKeyMethods.isEmpty()) {
+                throw new IllegalArgumentException(
+                    "Multiset sort-key methods belong to a fixed order, the only arm the subselect renders");
+            }
             presence = List.copyOf(presence);
             Objects.requireNonNull(probe, "probe");
             if (arity == Arity.LIST && (!presence.isEmpty() || probe.isPresent())) {

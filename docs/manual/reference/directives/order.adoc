@@ -15,8 +15,11 @@ directive @order(
 ) on ENUM_VALUE
 
 input FieldSort {
-    name:    String!
-    collate: String
+    name:      String
+    path:      [ReferenceElement!]
+    method:    ExternalCodeReference
+    collate:   String
+    direction: SortDirection
 }
 ----
 
@@ -26,7 +29,7 @@ input FieldSort {
 |===
 | Name | Type | Default | Description
 | `index` | `String` | none | Name of a database index. The generator looks up the index on the parent table at build time and emits its column list. Index code generation must be enabled in jOOQ (`<includeIndexes>true</includeIndexes>`).
-| `fields` | `[FieldSort!]` | none | One or more column specifications. Each `FieldSort` carries a required `name` (the column name in the jOOQ table) and an optional `collate` (database-specific collation name, e.g. `"xdanish_ai"`).
+| `fields` | `[FieldSort!]` | none | One or more sort specifications. Each `FieldSort` sets exactly one of `name` (a column of the jOOQ table) and `method` (a static method returning the sort key), with an optional `collate` (database-specific collation name, e.g. `"xdanish_ai"`) and `direction`. Beside `name`, an optional `path` resolves the column on a to-one related table instead; see <<sorting-by-a-related-value>>.
 | `primaryKey` | `Boolean` | `false` | When `true`, sorts by the parent table's primary key columns in declaration order. Useful for stable pagination cursors.
 |===
 
@@ -72,13 +75,32 @@ enum PersonOrderByField {
 }
 ----
 
+[#sorting-by-a-related-value]
+=== Sorting by a related value
+
+`path:` sorts by a column on a table reached through to-one hops, in the element shape of xref:reference.adoc[`@reference(path:)`]; `method:` sorts by a key a static method derives, with xref:externalField.adoc[`@externalField`]'s calling convention (the field's table in, a `Field<X>` out):
+
+[source,graphql]
+----
+enum FilmLanguageSort {
+    ORIGINAL_LANGUAGE @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    LATEST_STOCK      @order(fields: [{method: {className: "com.example.FilmSortKeys", method: "latestStockStore"}}])
+}
+----
+
+`ORIGINAL_LANGUAGE` sorts films by the name of their original language, a film with none sorting last; `LATEST_STOCK` by a value the method computes from a film's many inventory rows. On a connection neither counts toward identifying a row, so both page on the key and then `film_id`. See xref:../../how-to/sort-results.adoc#sort-by-a-related-value[How-to: Sort by a value on another table] for the to-one rule and the no-code alternative.
+
 The enum's parent type is determined by where the enum is referenced from (the xref:orderBy.adoc[`@orderBy`] argument); column names resolve against that type's `@table`.
 
 == Constraints
 
 * Exactly one of `index`, `fields`, or `primaryKey` must be set per enum value. Setting two, or none, fails the build.
 * `index` requires jOOQ index generation. With `<includeIndexes>true</includeIndexes>` disabled, the lookup throws at startup with a "no matching index" error.
-* `fields[].name` must be a real column on the bound table. Resolution mirrors xref:field.adoc[`@field`]: case-sensitive against the jOOQ-generated identifiers.
+* `fields[].name` must be a real column on the bound table, or on the table its `path` lands on. Resolution mirrors xref:field.adoc[`@field`]: case-sensitive against the jOOQ-generated identifiers.
+* Each `FieldSort` sets exactly one of `name` and `method`, and `path` only beside `name`. Any other combination fails the build.
+* Every hop of a `path` must be to-one, proven from the jOOQ catalog: the hop's join columns cover a primary or unique key of the table it reaches. A to-many hop or a hop with a `condition:` fails the build and points at `method`.
+* A `method` names a public static method taking the field's jOOQ table and returning a parameterised `Field<X>`. `method` is required inside the reference and `argMapping` is rejected.
+* `path` and `method` are not available on a multi-table interface or union, or over a table-valued function result.
 * `collate` is passed verbatim to the database; misspelled collations surface only at query time.
 * `@order` applies to enum values only. Use it on every value of an enum referenced by xref:orderBy.adoc[`@orderBy`]; missing values fail the build.
 * xref:index-directive.adoc[`@index`] is the deprecated single-purpose alias for `@order(index:)`. New code should use `@order`.

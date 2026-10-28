@@ -2800,7 +2800,7 @@ CREATE TABLE graphitron_ast_default_order_field_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   touched_at    TIMESTAMP NOT NULL,
-  name_ref      VARCHAR NOT NULL,
+  name_ref      VARCHAR,
   collate       VARCHAR,
   direction     VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
@@ -2815,7 +2815,7 @@ COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_name IS 'the f
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_line IS 'source line of the element this row decodes, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.source_column IS 'source column of the same. The four columns are the element''s own key in graphql_ast_value_entry, so the list it sits in, the index it was written at and the application holding it are one join away rather than columns here. The index that join reads is dense: FieldSort is the element type the directive definition declares, so an element of some other shape makes the whole application one the definition does not admit and none of it is transcribed';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant; an element whose whole application went is swept with the row it hangs on';
-COMMENT ON COLUMN graphitron_ast_default_order_field_entry.name_ref IS 'the name field of the element as written, naming a column of the jOOQ table. NOT NULL because FieldSort declares name as String!, so an element without one is not a FieldSort and its application is not transcribed; the constraint is the directive definition, enforced';
+COMMENT ON COLUMN graphitron_ast_default_order_field_entry.name_ref IS 'the name field of the element as written, naming a column of the jOOQ table, or of the table its path field lands on. NULL where the element names none, which is the element that sorts by a method field instead; that reference is a row of graphitron_ast_code_reference_entry, and the path field''s elements are rows of graphql_ast_value_entry';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.collate IS 'the collate field of the same, as written, or NULL where none was; a collation name is database-specific and resolves against nothing here';
 COMMENT ON COLUMN graphitron_ast_default_order_field_entry.direction IS 'the direction field of the same, as the author spelled it, or NULL where none was. A NULL is what says the element takes the directive-level direction, so nothing is filled in for it here';
 
@@ -3769,7 +3769,7 @@ CREATE TABLE graphitron_default_order_field_entry (
   type_name  VARCHAR NOT NULL,
   field_name VARCHAR NOT NULL,
   position   INT     NOT NULL,
-  name_ref   VARCHAR NOT NULL,
+  name_ref   VARCHAR,
   collate    VARCHAR,
   direction  VARCHAR,
   touched_at       TIMESTAMP NOT NULL,
@@ -3782,7 +3782,7 @@ COMMENT ON COLUMN graphitron_default_order_field_entry.graph_name IS 'the owning
 COMMENT ON COLUMN graphitron_default_order_field_entry.type_name IS 'the GraphQL type this row is about';
 COMMENT ON COLUMN graphitron_default_order_field_entry.field_name IS 'the field name within the owning type';
 COMMENT ON COLUMN graphitron_default_order_field_entry.position IS '0-based position within the owning list';
-COMMENT ON COLUMN graphitron_default_order_field_entry.name_ref IS 'the name argument as written';
+COMMENT ON COLUMN graphitron_default_order_field_entry.name_ref IS 'the name argument as written, or NULL for an element that sorts by a method instead';
 COMMENT ON COLUMN graphitron_default_order_field_entry.collate IS 'the collation as written, when declared';
 COMMENT ON COLUMN graphitron_default_order_field_entry.direction IS 'the sort direction as written; author-spelled enum literal, open column';
 COMMENT ON COLUMN graphitron_default_order_field_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a coordinate that still stands; a coordinate the author removed takes its rows with it through the cascade on the reference below, so the two together are what makes this relation total without a pass emptying it first';

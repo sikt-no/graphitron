@@ -23,6 +23,7 @@ import no.sikt.graphitron.rewrite.model.GraphitronField;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.LookupMapping;
+import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.OperationMember;
 import no.sikt.graphitron.rewrite.model.OperationMembers;
 import no.sikt.graphitron.rewrite.model.ParamSource;
@@ -321,6 +322,9 @@ public final class ProjectionCommands {
                 ttf.returnType().table(),
                 ttf.returnType().wrapper() instanceof FieldWrapper.Single ? Arity.SINGLE : Arity.LIST,
                 ttf.orderBy(),
+                ttf.orderBy() instanceof OrderBySpec.Fixed fixed
+                    ? LauncherCommands.sortKeyMethods(fixed, owner, ttf.name(), units)
+                    : List.of(),
                 !(ttf.returnType().wrapper() instanceof FieldWrapper.Single)
                     && ttf.pagination() != null && ttf.pagination().first() != null,
                 glueFor(ttf.parentTypeName(), ttf.name(), ttf.filters(), units, glueEnvByMethod),

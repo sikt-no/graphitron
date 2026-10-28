@@ -1064,14 +1064,19 @@ public class TypeFetcherGenerator {
         // disagree (the unmigrated fetcher bodies still spell the call inline through
         // buildOrderByCode until their own migration).
         var namingVocabulary = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        // The method behind each path: sort key this class's orders call: the launcher rows'
+        // (minted on the rows) and the @orderBy helpers' (collected as each helper is emitted).
+        var sortKeyMethods = launcherSortKeyMethods(typeName, fields, launchers);
         for (var field : fields) {
             if (field instanceof QueryField.QueryTableField qtf
                     && qtf.orderBy() instanceof OrderBySpec.Argument arg) {
                 var tableRef = qtf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtf.returnType().returnTypeName(), outputPackage);
+                var sortKeys = sortKeyNames(typeName, qtf.name(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(
                     namingVocabulary.orderByHelperMethod(typeName, qtf.name()).methodName(),
-                    arg, names, tableRef, outputPackage));
+                    arg, names, tableRef, outputPackage, sortKeys));
+                collectSortKeyMethods(sortKeyMethods, helperOrders(arg), sortKeys);
             } else if (field instanceof QueryField.QueryTableInterfaceField qtif
                     && qtif.orderBy() instanceof OrderBySpec.Argument arg) {
                 // The interface root's launcher references the same minted helper ref as the
@@ -1080,9 +1085,11 @@ public class TypeFetcherGenerator {
                 // coordinate produced uncompilable output. Emitting it here closes that gap.
                 var tableRef = qtif.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, qtif.returnType().returnTypeName(), outputPackage);
+                var sortKeys = sortKeyNames(typeName, qtif.name(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(
                     namingVocabulary.orderByHelperMethod(typeName, qtif.name()).methodName(),
-                    arg, names, tableRef, outputPackage));
+                    arg, names, tableRef, outputPackage, sortKeys));
+                collectSortKeyMethods(sortKeyMethods, helperOrders(arg), sortKeys);
             } else if (field instanceof ChildField.BatchedTableInterfaceField btif
                     && btif.orderBy() instanceof OrderBySpec.Argument arg) {
                 // The batched discriminated child orders the whole batch through the launcher's
@@ -1090,9 +1097,11 @@ public class TypeFetcherGenerator {
                 // the interface root's arm above does for its own coordinate.
                 var tableRef = btif.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, btif.returnType().returnTypeName(), outputPackage);
+                var sortKeys = sortKeyNames(typeName, btif.name(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(
                     namingVocabulary.orderByHelperMethod(typeName, btif.name()).methodName(),
-                    arg, names, tableRef, outputPackage));
+                    arg, names, tableRef, outputPackage, sortKeys));
+                collectSortKeyMethods(sortKeyMethods, helperOrders(arg), sortKeys);
             } else if (field instanceof ChildField.BatchedTableField btf
                     && !btf.emitsSingleRecordPerKey()
                     && btf.orderBy() instanceof OrderBySpec.Argument arg) {
@@ -1106,10 +1115,16 @@ public class TypeFetcherGenerator {
                 // the same predicate keeps the two sites from disagreeing about which arm it is.
                 var tableRef = btf.returnType().table();
                 var names = GeneratorUtils.ResolvedTableNames.of(tableRef, btf.returnType().returnTypeName(), outputPackage);
+                var sortKeys = sortKeyNames(typeName, btf.name(), outputPackage);
                 builder.addMethod(buildOrderByHelperMethod(
                     namingVocabulary.orderByHelperMethod(typeName, btf.name()).methodName(),
-                    arg, names, tableRef, outputPackage));
+                    arg, names, tableRef, outputPackage, sortKeys));
+                collectSortKeyMethods(sortKeyMethods, helperOrders(arg), sortKeys);
             }
+        }
+
+        for (var sortKey : sortKeyMethods.entrySet()) {
+            builder.addMethod(no.sikt.graphitron.render.SortKeyFragments.method(sortKey.getKey(), sortKey.getValue()));
         }
 
         if (lookupScatterNeeded[0]) {
@@ -1345,7 +1360,14 @@ public class TypeFetcherGenerator {
             tif.knownDiscriminatorValues(), List.of(), tableLocal, outputPackage));
 
         if (isList) {
-            builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal));
+            var sortKeys = sortKeyNames(tif.parentTypeName(), tif.name(), outputPackage);
+            builder.addCode(buildOrderByCode(tif.orderBy(), tif.name(), tableLocal, sortKeys));
+            // This fetcher renders its own fixed order, so the methods its path: keys call are
+            // its companions on the same class.
+            var sortKeyMethods = new java.util.LinkedHashMap<String, OrderBySpec.SortKey.Path>();
+            collectSortKeyMethods(sortKeyMethods, List.of(tif.orderBy()), sortKeys);
+            sortKeyMethods.forEach((name, path) ->
+                ctx.addCompanionMethod(no.sikt.graphitron.render.SortKeyFragments.method(name, path)));
             builder.addStatement("$T payload = step.where(condition).orderBy(orderBy).fetch()", valueType);
         } else {
             builder.addStatement("$T payload = step.where(condition).fetchOne()", valueType);
@@ -5125,15 +5147,16 @@ public class TypeFetcherGenerator {
      * emits a call to the {@code <fieldName>OrderBy} helper method. Otherwise, inlines the
      * fixed or empty list.
      */
-    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, String fieldName, String srcAlias) {
+    private static CodeBlock buildOrderByCode(OrderBySpec orderBy, String fieldName, String srcAlias,
+                                              java.util.function.IntFunction<String> sortKeys) {
         var code = CodeBlock.builder();
         switch (orderBy) {
             case OrderBySpec.Fixed fixed -> {
-                if (fixed.columns().isEmpty()) {
+                if (fixed.entries().isEmpty()) {
                     code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
                 } else {
                     code.addStatement("$T<$T<?>> orderBy = $T.of($L)", LIST, SORT_FIELD, LIST,
-                        no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias));
+                        no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias, sortKeys));
                 }
             }
             case OrderBySpec.Argument arg -> {
@@ -5142,13 +5165,75 @@ public class TypeFetcherGenerator {
                     // Pass srcAlias so the helper's column refs bind to the caller's aliased Table instance.
                     code.addStatement("$T orderBy = $LOrderBy(env, $L).sortFields()", SORT_FIELD_LIST, fieldName, srcAlias);
                 } else {
-                    code.add(buildOrderByCode(arg.base(), null, srcAlias));
+                    code.add(buildOrderByCode(arg.base(), null, srcAlias, sortKeys));
                 }
             }
             case OrderBySpec.None none ->
                 code.addStatement("$T<$T<?>> orderBy = $T.of()", LIST, SORT_FIELD, LIST);
         }
         return code.build();
+    }
+
+    /**
+     * The emitted name of each {@code path:} sort key of the coordinate's orders, by ordinal,
+     * through the naming vocabulary the launcher producer mints the same names from.
+     */
+    private static java.util.function.IntFunction<String> sortKeyNames(String typeName, String fieldName,
+                                                                        String outputPackage) {
+        var units = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage);
+        var owner = units.fetchers(typeName);
+        return ordinal -> units.sortKeyMethod(owner, fieldName, ordinal).methodName();
+    }
+
+    /**
+     * The {@code path:} sort-key methods this fetchers class's launcher rows call, by emitted
+     * name: the producer mints one onto the row's fixed order per path entry, on the class that
+     * renders the row. An inline child list renders its order in its projection unit, which hosts
+     * its own methods.
+     */
+    private static java.util.Map<String, OrderBySpec.SortKey.Path> launcherSortKeyMethods(String typeName,
+            List<? extends GraphitronField> fields, no.sikt.graphitron.plan.LauncherRelation launchers) {
+        var methods = new java.util.LinkedHashMap<String, OrderBySpec.SortKey.Path>();
+        for (var field : fields) {
+            var row = launchers.rowFor(typeName, field.name());
+            if (row.isEmpty()) continue;
+            var ordering = switch (row.get().result()) {
+                case no.sikt.graphitron.command.ResultShape.RecordList list -> list.ordering();
+                case no.sikt.graphitron.command.ResultShape.Connection connection -> connection.ordering();
+                default -> null;
+            };
+            if (ordering instanceof no.sikt.graphitron.command.Ordering.Columns columns) {
+                for (var sortKey : columns.sortKeyMethods()) {
+                    methods.putIfAbsent(sortKey.method().methodName(),
+                        (OrderBySpec.SortKey.Path) sortKey.entry().key());
+                }
+            }
+        }
+        return methods;
+    }
+
+    /**
+     * The {@code path:} sort-key methods an order rendered on this class calls, under the names
+     * {@link #sortKeyNames} gives them: every path entry of {@code specs}.
+     */
+    private static void collectSortKeyMethods(java.util.Map<String, OrderBySpec.SortKey.Path> into,
+            List<OrderBySpec> specs, java.util.function.IntFunction<String> names) {
+        for (var spec : specs) {
+            if (!(spec instanceof OrderBySpec.Fixed fixed)) continue;
+            for (var key : fixed.sortKeys()) {
+                if (key.key() instanceof OrderBySpec.SortKey.Path path) {
+                    into.putIfAbsent(names.apply(key.ordinal()), path);
+                }
+            }
+        }
+    }
+
+    /** The orders an {@code @orderBy} helper renders: its base and every named order. */
+    private static List<OrderBySpec> helperOrders(OrderBySpec.Argument arg) {
+        var specs = new ArrayList<OrderBySpec>();
+        specs.add(arg.base());
+        arg.namedOrders().forEach(named -> specs.add(named.order()));
+        return specs;
     }
 
     // -----------------------------------------------------------------------
@@ -5177,7 +5262,8 @@ public class TypeFetcherGenerator {
             String methodName,
             OrderBySpec.Argument arg,
             GeneratorUtils.ResolvedTableNames names,
-            TableRef tableRef, String outputPackage) {
+            TableRef tableRef, String outputPackage,
+            java.util.function.IntFunction<String> sortKeys) {
 
         var orderByResultClass = ClassName.get(
             outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
@@ -5189,12 +5275,12 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env")
             .addParameter(names.jooqTableClass(), tableLocal);
 
-        var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal, outputPackage);
+        var baseExpr = buildBaseReturnExpr(arg.base(), tableLocal, outputPackage, sortKeys);
         switch (arg.composition()) {
             case OrderBySpec.Composition.Single single ->
-                builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal, outputPackage));
+                builder.addCode(buildSingleArgOrderByBody(arg, baseExpr, tableLocal, outputPackage, sortKeys));
             case OrderBySpec.Composition.Sequence sequence ->
-                builder.addCode(buildListArgOrderByBody(arg, sequence.completion(), baseExpr, tableLocal, outputPackage));
+                builder.addCode(buildListArgOrderByBody(arg, sequence.completion(), baseExpr, tableLocal, outputPackage, sortKeys));
         }
 
         return builder.build();
@@ -5205,16 +5291,17 @@ public class TypeFetcherGenerator {
      * or {@code new OrderByResult(List.of(), List.of())}) used when no {@code @orderBy} argument is
      * supplied at runtime.
      */
-    private static CodeBlock buildBaseReturnExpr(OrderBySpec base, String srcAlias, String outputPackage) {
+    private static CodeBlock buildBaseReturnExpr(OrderBySpec base, String srcAlias, String outputPackage,
+                                                 java.util.function.IntFunction<String> sortKeys) {
         var orderByResultClass = ClassName.get(
             outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
         return switch (base) {
-            case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() ->
+            case OrderBySpec.Fixed fixed when !fixed.entries().isEmpty() ->
                 CodeBlock.of("new $T($T.of($L), $T.of($L))",
                     orderByResultClass, LIST,
-                    no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias),
+                    no.sikt.graphitron.render.OrderByFragments.fixedSortParts(fixed, srcAlias, sortKeys),
                     LIST,
-                    no.sikt.graphitron.render.OrderByFragments.fixedColumnParts(fixed, srcAlias));
+                    no.sikt.graphitron.render.OrderByFragments.fixedColumnParts(fixed, srcAlias, sortKeys));
             default -> CodeBlock.of("new $T($T.of(), $T.of())", orderByResultClass, LIST, LIST);
         };
     }
@@ -5234,7 +5321,8 @@ public class TypeFetcherGenerator {
      * };
      * }</pre>
      */
-    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias, String outputPackage) {
+    private static CodeBlock buildSingleArgOrderByBody(OrderBySpec.Argument arg, CodeBlock baseExpr, String srcAlias, String outputPackage,
+                                                       java.util.function.IntFunction<String> sortKeys) {
         var code = CodeBlock.builder();
         var orderByResultClass = ClassName.get(
             outputPackage + ".util", OrderByResultClassGenerator.CLASS_NAME);
@@ -5245,7 +5333,7 @@ public class TypeFetcherGenerator {
         code.add("return switch (field) {\n");
         code.indent();
         for (var namedOrder : arg.namedOrders()) {
-            var cols = namedOrder.order().columns();
+            var cols = namedOrder.order().entries();
             var sortParts = CodeBlock.builder();
             var colParts = CodeBlock.builder();
             for (int i = 0; i < cols.size(); i++) {
@@ -5254,9 +5342,10 @@ public class TypeFetcherGenerator {
                 // Uniform-ASC: runtime `dir` flips the whole spec. Direction-locked: the SDL author
                 // baked in per-entry directions, so the runtime dir is ignored.
                 sortParts.add(no.sikt.graphitron.render.OrderByFragments.sortTerm(
-                    CodeBlock.of("$L.$L", srcAlias, col.column().javaName()), col.direction(), col.nullable(),
+                    no.sikt.graphitron.render.OrderByFragments.sortExpression(col, srcAlias, sortKeys),
+                    col.direction(), col.nullable(),
                     namedOrder.order().uniformAsc() ? CodeBlock.of("$S.equals(dir)", "DESC") : null));
-                colParts.add("$L.$L", srcAlias, col.column().javaName());
+                colParts.add(no.sikt.graphitron.render.OrderByFragments.cursorColumn(col, srcAlias, sortKeys));
             }
             code.add("case $S -> new $T($T.of($L), $T.of($L));\n",
                 namedOrder.name(), orderByResultClass, LIST, sortParts.build(), LIST, colParts.build());
@@ -5290,7 +5379,8 @@ public class TypeFetcherGenerator {
      * see {@link #buildRowKeyCompletion}.
      */
     private static CodeBlock buildListArgOrderByBody(OrderBySpec.Argument arg, OrderBySpec.SequenceCompletion completion,
-                                                     CodeBlock baseExpr, String srcAlias, String outputPackage) {
+                                                     CodeBlock baseExpr, String srcAlias, String outputPackage,
+                                                     java.util.function.IntFunction<String> sortKeys) {
         var code = CodeBlock.builder();
         var JOOQ_FIELD = ClassName.get("org.jooq", "Field");
         var WILDCARD_FIELD = ParameterizedTypeName.get(JOOQ_FIELD,
@@ -5309,14 +5399,16 @@ public class TypeFetcherGenerator {
         code.add("switch (f) {\n");
         code.indent();
         for (var namedOrder : arg.namedOrders()) {
-            var cols = namedOrder.order().columns();
+            var cols = namedOrder.order().entries();
             code.add("case $S -> {\n", namedOrder.name());
             code.indent();
             for (var col : cols) {
                 code.addStatement("sortParts.add($L)", no.sikt.graphitron.render.OrderByFragments.sortTerm(
-                    CodeBlock.of("$L.$L", srcAlias, col.column().javaName()), col.direction(), col.nullable(),
+                    no.sikt.graphitron.render.OrderByFragments.sortExpression(col, srcAlias, sortKeys),
+                    col.direction(), col.nullable(),
                     namedOrder.order().uniformAsc() ? CodeBlock.of("$S.equals(d)", "DESC") : null));
-                code.addStatement("colParts.add($L.$L)", srcAlias, col.column().javaName());
+                code.addStatement("colParts.add($L)",
+                    no.sikt.graphitron.render.OrderByFragments.cursorColumn(col, srcAlias, sortKeys));
             }
             code.unindent();
             code.add("}\n");

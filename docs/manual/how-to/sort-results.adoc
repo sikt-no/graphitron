@@ -9,7 +9,7 @@ Three directives carry the sort surface: xref:../reference/directives/defaultOrd
 The three column sources are mutually exclusive on any one directive site; the build rejects setting two or none. Pick by which kind of identity the sort needs:
 
 * *`primaryKey: true`* when the order is "stable, in declaration order". This is the default for any paginated `@table` field that omits `@defaultOrder`, so most fields do not need to spell it out. Spell it out explicitly when you want the intent to survive a refactor that adds `@orderBy`.
-* *`fields:`* when the order is "by these named columns, in this order". Optional `collate:` per column. The columns resolve against the *return-type's* `@table`, not the parent's.
+* *`fields:`* when the order is "by these named columns, in this order". Optional `collate:` per column. The columns resolve against the *return-type's* `@table`, not the parent's; an entry can also sort by a column on a related table or by a key a method derives (see <<sort-by-a-related-value>>).
 * *`index:`* when an existing database index already projects the right column list (often a multi-column index that pairs the sort key with frequently-filtered columns). Requires `<includeIndexes>true</includeIndexes>` on the jOOQ generator; otherwise the catalog lookup throws "no matching index" at startup.
 
 A field-based order is the usual choice for "humans want this column":
@@ -100,6 +100,70 @@ On a connection the seek pages through the `NULL` rows too: after the last non-n
 
 For an index to serve such an order: `ASC NULLS LAST` is what a plain b-tree index stores, so it serves an ascending order scanned forward for `first:` and backward for `last:`. `DESC NULLS LAST` is not the mirror of that index; on a table large enough for the sort to matter, declare the index `DESC NULLS LAST` to serve a descending order on a nullable column.
 
+[#sort-by-a-related-value]
+== Sort by a value on another table
+
+A `FieldSort` entry normally names a column of the field's own table. Two more forms sort by a value that lives elsewhere, without copying it into that table: `path:` for a column on a related table, and `method:` for a key you derive in Java. Both work in `@defaultOrder` and in `@order` enum values, on lists and connections, and graphitron keeps owning the direction, the cursor and keyset paging.
+
+=== A column on a to-one related table: `path:`
+
+`path:` walks from the field's table to the table that holds the column, in the same element shape as xref:../reference/directives/reference.adoc[`@reference(path:)`]; `name:` is then resolved against the table the path lands on. In the example schema `film.original_language_id` is a nullable foreign key to `language`:
+
+[source,graphql]
+----
+type Query {
+    filmsByOriginalLanguage(first: Int, last: Int, after: String, before: String): FilmsConnection!
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+}
+
+enum FilmLanguageSort {
+    ORIGINAL_LANGUAGE @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+}
+----
+
+A film with no original language sorts on `NULL`, which sorts last in both directions (see <<where-null-sorts>>).
+
+Every hop must be *to-one*: each row reaches at most one related row, so each row has exactly one sort key. The build checks this against the jOOQ catalog: a hop is to-one when the columns it joins on cover the primary key or a unique key of the table it reaches. A child-to-parent foreign key passes, and so does a one-to-one extension whose foreign key is itself unique, even when that key admits `NULL`. A hop that can reach several rows fails the build, naming the hop and the direction it fans out in, because ordering by one of many related rows would pick an arbitrary one. There is no opt-out.
+
+A hop may not carry a `condition:`, and every hop names a `key:` or a `table:`; there is no inferred or empty path, so a column name never silently changes table. `method:` is the form for any rule about which related row counts.
+
+=== A key you derive: `method:`
+
+When the value has to come from several related rows (the latest of a film's copies, the current one of a record's names), supply the sort key through `method:`, a static method with xref:../reference/directives/externalField.adoc[`@externalField`]'s calling convention: it takes the field's jOOQ table, receives the alias the generated query uses, and returns a `Field<X>` that is that row's sort key.
+
+[source,graphql]
+----
+type Query {
+    filmsByLatestStock(first: Int, last: Int, after: String, before: String): FilmsConnection!
+        @defaultOrder(fields: [{
+            method: {className: "com.example.FilmSortKeys", method: "latestStockStore"},
+            direction: DESC
+        }])
+}
+----
+
+[source,java]
+----
+public static Field<Integer> latestStockStore(Film film) {
+    var stock = INVENTORY.as("latest_stock");
+    return DSL.field(DSL.select(stock.STORE_ID).from(stock)
+        .where(stock.FILM_ID.eq(film.FILM_ID))
+        .orderBy(stock.INVENTORY_ID.desc())
+        .limit(1));
+}
+----
+
+The rule for which related row counts lives once, in the method, and the same method can back an `@externalField` when the value should also be selectable. `method` is required inside the reference, since there is no field name to default it from, and `argMapping:` is not supported. The build cannot see inside the method: if it returns more than one row per parent, the database rejects the query at runtime, as it does any scalar subquery that does.
+
+If you would rather keep the rule in the database, a view with a unique key on the parent's id plus a jOOQ synthetic foreign key to it makes the hop to-one, and `path:` then serves the same case with no Java code.
+
+=== How they combine
+
+* An entry sets exactly one of `name:` and `method:`; `path:` is only valid beside `name:`. `method:` with `path:` fails the build, since the method already receives the field's table.
+* On a connection, only the field's own columns count toward identifying a row. A related-table column never does, even when it is that table's primary key, because many rows can share one related row; a `method:` key never does either. An order made only of such entries therefore always has the primary key appended (see <<stable-cursors-and-tie-breakers>>).
+* Neither form is available on a multi-table interface or union, or over a table-valued function result.
+* A to-one `path:` key is an indexed key lookup per row, evaluated for the sort; a `method:` key costs what its query costs.
+
 == Collation pitfalls
 
 `fields[].collate:` is passed verbatim to the database. PostgreSQL applies the collation per column at sort time:
@@ -160,7 +224,8 @@ For single-table polymorphism, ordering is unchanged from the non-polymorphic ca
 * Cursor wire format embeds the active order's columns. Adding, removing, or reordering columns in `@defaultOrder` or in an `@order` enum value invalidates outstanding cursors.
 * Connection orders that do not identify a row get the table's key appended, which is part of the cursor. Changing a table's primary key invalidates outstanding cursors on its connections.
 * `index:` requires jOOQ index generation. With it disabled, the lookup yields no columns and the directive fails to resolve.
-* `fields[].name` resolves against the field's return-type `@table`, not the parent's. Case-sensitive against the jOOQ-generated identifiers.
+* `fields[].name` resolves against the field's return-type `@table`, not the parent's, or against the table its `path:` lands on. Case-sensitive against the jOOQ-generated identifiers.
+* A `path:` follows to-one hops only, and carries no `condition:`; a key derived from many related rows goes through `method:` (see <<sort-by-a-related-value>>).
 * `collate:` is unvalidated at build time; misspellings surface as runtime database errors.
 
 == See also

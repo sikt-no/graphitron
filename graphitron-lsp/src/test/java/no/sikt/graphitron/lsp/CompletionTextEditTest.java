@@ -130,7 +130,7 @@ class CompletionTextEditTest {
         Point cursor = new Point(line, innerStart + 1);
 
         var items = runValueProvider(source, cursor,
-            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, store.handle(), ctx, dir, bytes));
+            (ctx, dir, bytes) -> FieldCompletions.generate(VOCAB, store.handle(), ctx, dir, cursor, bytes));
 
         // The candidate is the generated Java field name, which is what the census carries and what
         // an author types; the typed prefix it replaces is their own lowercase "ti".

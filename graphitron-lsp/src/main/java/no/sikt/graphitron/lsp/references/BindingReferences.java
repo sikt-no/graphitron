@@ -67,7 +67,9 @@ public final class BindingReferences {
                     file.source());
             case Behavior.CatalogTableBinding ignored -> tableUses(location, store, file.source());
             case Behavior.CatalogColumnBinding ignored ->
-                columnUses(directive, location, store, file.source());
+                vocabulary.namesRelatedColumn(directive, pos, location.coordinate(), file.source())
+                    ? List.of()
+                    : columnUses(directive, location, store, file.source());
             case Behavior.CatalogFkBinding ignored -> keyUses(location, store, file.source());
             // A @nodeId(typeName:) names an SDL type, so its uses are that type's. The population
             // is the type arm's rather than a second one of this arm's own: an author asking who

@@ -2,6 +2,7 @@ package no.sikt.graphitron.command;
 
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 
+import java.util.List;
 import java.util.Objects;
 
 /**
@@ -26,14 +27,24 @@ import java.util.Objects;
  */
 public sealed interface Ordering {
 
-    /** A statically resolved column order, rendered inline as {@code table.COL.asc(), ...}. */
-    record Columns(OrderBySpec.Fixed spec) implements Ordering {
+    /**
+     * A statically resolved order, rendered inline as {@code table.COL.asc(), ...}. A
+     * {@code path:} sort key in it renders as a call to an emitted method on the launcher's own
+     * class, named by {@code sortKeyMethods}; a {@code method:} key calls the consumer's method.
+     */
+    record Columns(OrderBySpec.Fixed spec, List<SortKeyMethod> sortKeyMethods) implements Ordering {
         public Columns {
             Objects.requireNonNull(spec, "spec");
-            if (spec.columns().isEmpty()) {
+            if (spec.entries().isEmpty()) {
                 throw new IllegalArgumentException(
                     "an empty fixed order is unordered; model it as an absent Ordering, not an empty Columns arm");
             }
+            sortKeyMethods = SortKeyMethod.requireCovering(sortKeyMethods, spec);
+        }
+
+        /** An order with no {@code path:} sort key, so no emitted method to name. */
+        public Columns(OrderBySpec.Fixed spec) {
+            this(spec, List.of());
         }
     }
 

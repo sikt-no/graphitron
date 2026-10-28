@@ -406,6 +406,13 @@ INSERT INTO film (title, description, release_year, language_id, rental_rate, ra
     ('AFFAIR PREJUDICE', 'A Classic Romance',    2006, 1, 2.99, 'G',     'G',    117),
     ('AGENT TRUMAN',     'An Action Adventure',  2006, 1, 2.99, 'PG',    'PG',   169);
 
+-- Original languages for ordering by a column on a related table (film.original_language_id is a
+-- nullable FK to language). By language name that is English (5), Italian (2 and 3, a tie the
+-- appended film_id breaks), Japanese (1), and film 4 has none, so it sorts on NULL, last.
+UPDATE film SET original_language_id = 3 WHERE film_id = 1;
+UPDATE film SET original_language_id = 2 WHERE film_id IN (2, 3);
+UPDATE film SET original_language_id = 1 WHERE film_id = 5;
+
 -- Self-referential category hierarchy for G5 depth-2 recursion tests:
 --   Genre          (id=1)
 --   ├── Action     (id=2, parent=1)
@@ -2066,6 +2073,16 @@ CREATE TABLE stint_single (
     CONSTRAINT stint_single_person_key UNIQUE (person_id),
     CONSTRAINT stint_single_person_fkey FOREIGN KEY (person_id) REFERENCES stint_person(person_id),
     CONSTRAINT stint_single_crew_fkey FOREIGN KEY (person_id) REFERENCES stint_crew(person_id)
+);
+
+-- A one-to-one extension whose unique foreign key admits NULL: an equality join never matches a
+-- NULL, so the unique key still lets each stint_person reach at most one badge, which is what an
+-- ordering path from stint_person may follow. No seed rows; the classification is what reads it.
+CREATE TABLE stint_badge (
+    badge_id   serial       PRIMARY KEY,
+    person_id  int          UNIQUE,
+    label      varchar(50)  NOT NULL,
+    CONSTRAINT stint_badge_person_fkey FOREIGN KEY (person_id) REFERENCES stint_person(person_id)
 );
 
 CREATE TABLE film_price (

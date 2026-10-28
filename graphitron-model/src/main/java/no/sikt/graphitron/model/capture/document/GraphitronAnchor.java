@@ -1108,9 +1108,10 @@ public final class GraphitronAnchor {
      * an element the decode could not use took its index and contributed no row, so the anchor
      * renumbered densely from zero to close the gap, which is what the walk this replaces did by
      * counting as it wrote. Under the rule that an entry holds what the directive definition
-     * admits, that gap cannot open: an element of the wrong shape or missing its required name is
-     * not a {@code FieldSort}, so its whole application is refused and the elements of an admitted
-     * one are the elements the author wrote, numbered from zero without a hole.
+     * admits, that gap cannot open: an element of the wrong shape is not a {@code FieldSort}, so
+     * its whole application is refused and the elements of an admitted one are the elements the
+     * author wrote, numbered from zero without a hole. An element without a name is still a
+     * {@code FieldSort} (it sorts by a method), and it is copied with its {@code NULL} name.
      *
      * <p>So the two strata agree about this number as they agree about the rows, and the statement
      * says so by selecting the index instead of ranking over it. The index is the element's own,

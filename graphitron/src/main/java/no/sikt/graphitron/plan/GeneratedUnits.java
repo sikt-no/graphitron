@@ -246,6 +246,17 @@ public final class GeneratedUnits {
     }
 
     /**
+     * {@code <owner>#<field>SortKey<n>}: the emitted method a {@code path:} sort key of a
+     * coordinate's order renders through, {@code n} being the entry's ordinal among the field's
+     * sort keys. Hosted on the unit that renders the field's order (the parent's fetchers class,
+     * or the projection unit for an inline child list), so its call is unqualified; the producers
+     * mint the ref onto the command row and the hosts emit the method under this same name.
+     */
+    public UnitMethodRef sortKeyMethod(UnitRef owner, String fieldName, int ordinal) {
+        return new UnitMethodRef(owner, fieldName + "SortKey" + ordinal);
+    }
+
+    /**
      * {@code <owner>#<field>InputRows}: a lookup coordinate's generated VALUES-rows helper,
      * hosted on the projection unit whose {@code $project} arm consumes it. One formula for both
      * ends: the projection producer mints the ref onto the lookup wrap, and the legacy hosts'

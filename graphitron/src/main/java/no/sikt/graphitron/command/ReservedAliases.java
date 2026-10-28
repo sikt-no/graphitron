@@ -124,6 +124,18 @@ public final class ReservedAliases {
     public static final String TYPENAME = "__typename";
 
     /**
+     * The cursor column of an order's sort key: a {@code path:} or {@code method:} entry's
+     * expression projected under this alias so the connection's cursor reads exactly that value.
+     * Keyed by the entry's ordinal among the field's sort keys, which is unique per field. A
+     * catalog column the field also selects keeps its own name, so the selection merge (which
+     * dedupes by {@code Field.getName()}) never drops the sort key in its favour, and a
+     * list-valued {@code @orderBy}'s row-key coverage check (which compares names) never counts it.
+     */
+    public static String sortKey(int ordinal) {
+        return "__sk_" + ordinal;
+    }
+
+    /**
      * The presence probe column of a nullable single-object field ({@link PresenceProbe}): written
      * by the projection beside the field's object, read back by the field's fetcher. Keyed on
      * the field's declaring type and name, both build-time SDL names, because one fetcher serves

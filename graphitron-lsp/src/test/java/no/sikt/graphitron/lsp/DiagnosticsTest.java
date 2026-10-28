@@ -646,6 +646,42 @@ class DiagnosticsTest {
     }
 
     @Test
+    void defaultOrderFieldNameBesideAPathIsSilent() {
+        // Beside a path: the name is a column of the table the path lands on (language), which the
+        // field's own scope (film) does not answer, so the editor says nothing rather than checking
+        // it against the wrong table: NAME, valid on language and not on film, is not reported.
+        // The same name without a path is still checked against film.
+        String sdl = """
+            type Language @table(name: "language") {
+                films: [Film!]! @defaultOrder(fields: [
+                    {name: "NAME", path: [{key: "film_original_language_id_fkey"}]}
+                ])
+                filmsByOwnColumn: [Film!]! @defaultOrder(fields: [{name: "NAME"}])
+            }
+            type Film @table(name: "film") { title: String }
+            type Query { languages: [Language] }
+            """;
+
+        assertThat(computeCaptured(sdl))
+            .singleElement()
+            .satisfies(d -> assertThat(d.getMessage()).contains("Unknown column 'NAME' on table 'film'"));
+    }
+
+    @Test
+    void defaultOrderMethodNamingAMissingMethodProducesError() {
+        var file = file("""
+            type Query {
+                x: Int @defaultOrder(fields: [{method: {className: "%s", method: "missing"}}])
+            }
+            """.formatted(FIELDS));
+
+        var diags = compute(file, withClasses);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("missing").contains("FilmFields");
+    }
+
+    @Test
     void emptyArgumentValueProducesNoError() {
         // Mid-edit state: cursor sits in an empty quoted value. We
         // suggest completions but do not yelp at the empty string.

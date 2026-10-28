@@ -1,5 +1,6 @@
 package no.sikt.graphitron.lsp.completions;
 
+import io.github.treesitter.jtreesitter.Point;
 import no.sikt.graphitron.lsp.facts.CarrierDataField;
 import no.sikt.graphitron.lsp.facts.CatalogColumns;
 import no.sikt.graphitron.lsp.facts.CatalogTable;
@@ -51,10 +52,14 @@ public final class FieldCompletions {
         StoreHandle store,
         CompletionContext context,
         Directives.Directive directive,
+        Point pos,
         byte[] source
     ) {
         var behavior = vocabulary.behaviorAt(context.coordinate());
         if (behavior.isEmpty() || !(behavior.get() instanceof Behavior.CatalogColumnBinding)) {
+            return List.of();
+        }
+        if (vocabulary.namesRelatedColumn(directive, pos, context.coordinate(), source)) {
             return List.of();
         }
         var typeDecl = DeclarationKind.enclosing(directive.outer());

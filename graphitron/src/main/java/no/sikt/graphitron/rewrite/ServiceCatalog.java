@@ -1222,11 +1222,22 @@ class ServiceCatalog {
      */
     ServiceReflectionResult reflectExternalField(String className, String methodName,
             TableRef parentTable) {
+        return reflectExternalField(className, methodName, parentTable, "@externalField");
+    }
+
+    /**
+     * {@link #reflectExternalField(String, String, TableRef)} reached from another directive that
+     * shares the calling convention ({@code FieldSort.method:} on {@code @order} and
+     * {@code @defaultOrder}); {@code directiveLabel} is the directive the nameability rejection
+     * names, so the author is pointed at the site they wrote.
+     */
+    ServiceReflectionResult reflectExternalField(String className, String methodName,
+            TableRef parentTable, String directiveLabel) {
         if (ctx.nameability().verdictFor(className)
                 instanceof ClasspathNameability.Verdict.Rejected rejected) {
-            return new ServiceReflectionResult(null, Rejection.structural("@externalField " + rejected.reason()));
+            return new ServiceReflectionResult(null, Rejection.structural(directiveLabel + " " + rejected.reason()));
         }
-        // nameability: checked (author-written @externalField className, gated above)
+        // nameability: checked (author-written className, gated above)
         var load = ConsumerClassLoad.reflect(className, ctx.codegenLoader());
         if (!(load instanceof ConsumerClassLoad.Loaded loaded)) {
             return new ServiceReflectionResult(null, load.rejection());

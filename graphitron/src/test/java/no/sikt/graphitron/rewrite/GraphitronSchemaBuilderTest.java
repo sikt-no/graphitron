@@ -1024,9 +1024,9 @@ class GraphitronSchemaBuilderTest {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.uniformAsc()).isTrue();
-                assertThat(order.columns()).hasSize(1);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(order.entries()).hasSize(1);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
             }),
 
         DEFAULT_ORDER_INDEX_DESC(
@@ -1042,9 +1042,9 @@ class GraphitronSchemaBuilderTest {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.uniformAsc()).isFalse();
-                assertThat(order.columns()).hasSize(1);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(order.entries()).hasSize(1);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
             }),
 
         DEFAULT_ORDER_PRIMARY_KEY(
@@ -1059,8 +1059,8 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
-                assertThat(order.columns()).hasSize(1);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
+                assertThat(order.entries()).hasSize(1);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("actor_id");
             }),
 
         DEFAULT_ORDER_FIELDS(
@@ -1074,11 +1074,11 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.columns()).hasSize(2);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
-                assertThat(order.columns().get(0).collation()).isEqualTo("C");
-                assertThat(order.columns().get(1).column().sqlName()).isEqualToIgnoringCase("first_name");
-                assertThat(order.columns().get(1).collation()).isNull();
+                assertThat(order.entries()).hasSize(2);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.entries().get(0).collation()).isEqualTo("C");
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(1)).column().sqlName()).isEqualToIgnoringCase("first_name");
+                assertThat(order.entries().get(1).collation()).isNull();
             }),
 
         DEFAULT_ORDER_DIRECTION_DESC(
@@ -1096,7 +1096,7 @@ class GraphitronSchemaBuilderTest {
                 // PrimaryKey-mode honours the directive-level direction:, so DESC is stamped
                 // onto each synthesised PK entry and uniformAsc reflects it.
                 assertThat(order.uniformAsc()).isFalse();
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
             }),
 
         // Per-field direction in @defaultOrder(fields: [...]).
@@ -1115,12 +1115,12 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.columns()).hasSize(2);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("last_name");
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
-                assertThat(order.columns().get(1).column().sqlName()).isEqualToIgnoringCase("first_name");
+                assertThat(order.entries()).hasSize(2);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
+                assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(1)).column().sqlName()).isEqualToIgnoringCase("first_name");
                 // Per-entry direction omitted → fallback to directive-level (ASC default).
-                assertThat(order.columns().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(order.entries().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
                 assertThat(order.uniformAsc()).isFalse();
             }),
 
@@ -1140,9 +1140,9 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.columns()).hasSize(2);
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
-                assertThat(order.columns().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(order.entries()).hasSize(2);
+                assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(order.entries().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
                 assertThat(order.uniformAsc()).isFalse();
             }),
 
@@ -1168,9 +1168,9 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders()).hasSize(1);
                 var named = orderBy.namedOrders().get(0);
                 assertThat(named.name()).isEqualTo("LASTNAME_DESC_FIRSTNAME_ASC");
-                assertThat(named.order().columns()).hasSize(2);
-                assertThat(named.order().columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
-                assertThat(named.order().columns().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(named.order().entries()).hasSize(2);
+                assertThat(named.order().entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
+                assertThat(named.order().entries().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
                 assertThat(named.order().uniformAsc()).isFalse();
             }),
 
@@ -1209,9 +1209,9 @@ class GraphitronSchemaBuilderTest {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.uniformAsc()).isTrue();
-                assertThat(order.columns()).hasSize(1);
-                assertThat(order.columns().get(0).column().sqlName()).isEqualToIgnoringCase("actor_id");
-                assertThat(order.columns().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
+                assertThat(order.entries()).hasSize(1);
+                assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("actor_id");
+                assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
             }),
 
         NO_DEFAULT_ORDER_PKLESS_TABLE(
@@ -1607,8 +1607,8 @@ class GraphitronSchemaBuilderTest {
     /** {@code "column DIRECTION"} per entry of a {@link OrderBySpec.Fixed}, lowercased column names. */
     private static List<String> orderedColumns(OrderBySpec spec) {
         assertThat(spec).isInstanceOf(OrderBySpec.Fixed.class);
-        return ((OrderBySpec.Fixed) spec).columns().stream()
-            .map(e -> e.column().sqlName().toLowerCase(java.util.Locale.ROOT) + " " + e.direction())
+        return ((OrderBySpec.Fixed) spec).entries().stream()
+            .map(e -> ((OrderBySpec.ColumnOrderEntry) e).column().sqlName().toLowerCase(java.util.Locale.ROOT) + " " + e.direction())
             .toList();
     }
 
@@ -1718,8 +1718,8 @@ class GraphitronSchemaBuilderTest {
     /** {@code "column nullable"} or {@code "column not null"} per entry of a {@link OrderBySpec.Fixed}. */
     private static List<String> nullability(OrderBySpec spec) {
         assertThat(spec).isInstanceOf(OrderBySpec.Fixed.class);
-        return ((OrderBySpec.Fixed) spec).columns().stream()
-            .map(e -> e.column().sqlName().toLowerCase(java.util.Locale.ROOT) + (e.nullable() ? " nullable" : " not null"))
+        return ((OrderBySpec.Fixed) spec).entries().stream()
+            .map(e -> ((OrderBySpec.ColumnOrderEntry) e).column().sqlName().toLowerCase(java.util.Locale.ROOT) + (e.nullable() ? " nullable" : " not null"))
             .toList();
     }
 
@@ -7898,7 +7898,7 @@ class GraphitronSchemaBuilderTest {
         // The catalog terminus takes the ordinary primary-key fallback, pinned rather than
         // assumed: the source axis does not reach the ordering slot.
         var ordering = (OrderBySpec.Fixed) f.orderBy();
-        assertThat(ordering.columns()).extracting(c -> c.column().sqlName()).containsExactly("film_id");
+        assertThat(ordering.entries()).extracting(c -> ((OrderBySpec.ColumnOrderEntry) c).column().sqlName()).containsExactly("film_id");
     }
 
     @Test
@@ -8773,8 +8773,8 @@ class GraphitronSchemaBuilderTest {
         assertThat(f.filters()).isEmpty();
         var orderBy = (OrderBySpec.Argument) f.orderBy();
         assertThat(orderBy.namedOrders()).hasSize(1);
-        assertThat(orderBy.namedOrders().get(0).order().columns())
-            .extracting(c -> c.column().sqlName())
+        assertThat(orderBy.namedOrders().get(0).order().entries())
+            .extracting(c -> ((OrderBySpec.ColumnOrderEntry) c).column().sqlName())
             .containsExactly("rollekode");
     }
 
@@ -8866,7 +8866,7 @@ class GraphitronSchemaBuilderTest {
         assertThat(routineChainOf(f).hops()).hasSize(1);
         assertThat(f.pagination()).isNotNull();
         var ordering = (OrderBySpec.Fixed) f.orderBy();
-        assertThat(ordering.columns()).extracting(c -> c.column().sqlName()).containsExactly("film_id");
+        assertThat(ordering.entries()).extracting(c -> ((OrderBySpec.ColumnOrderEntry) c).column().sqlName()).containsExactly("film_id");
     }
 
     @Test

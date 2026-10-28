@@ -1241,7 +1241,7 @@ public class GraphitronSchemaValidator {
         if (field.returnType().wrapper() instanceof no.sikt.graphitron.rewrite.model.FieldWrapper.Connection) {
             var orderBy = field.orderBy();
             boolean empty = orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.None
-                || (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed f && f.columns().isEmpty());
+                || (orderBy instanceof no.sikt.graphitron.rewrite.model.OrderBySpec.Fixed f && f.entries().isEmpty());
             if (empty) {
                 errors.add(new ValidationError(
                     field.qualifiedName(),

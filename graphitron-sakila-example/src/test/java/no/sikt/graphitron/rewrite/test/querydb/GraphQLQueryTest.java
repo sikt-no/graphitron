@@ -2384,8 +2384,9 @@ class GraphQLQueryTest {
 
     @Test
     void filmsFaceted_nullableFacet_preservesTheNullBucket() {
-        // original_language_id is NULL for every seeded film; the nullable-element facet
-        // preserves the NULL group as its own bucket and the decoded value round-trips as null.
+        // original_language_id is NULL for film 4 alone among the seeded films; the
+        // nullable-element facet preserves that NULL group as its own bucket beside the three
+        // languages, and the decoded value round-trips as null.
         // The non-facet `extra.lengthIs` bound keeps the bucket's count about the seeded films
         // rather than about every film in the table; see
         // filmsFaceted_noFacetFilter_countsMatchPlainAggregates.
@@ -2394,17 +2395,28 @@ class GraphQLQueryTest {
             + "{ facets { originalLanguage { value count } } } }");
         assertThat(facetValues(data, "originalLanguage"))
             .extracting(v -> v.get("value"), v -> v.get("count"))
-            .containsExactly(org.assertj.core.groups.Tuple.tuple(null, 5));
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(1, 1),
+                org.assertj.core.groups.Tuple.tuple(2, 2),
+                org.assertj.core.groups.Tuple.tuple(3, 1),
+                org.assertj.core.groups.Tuple.tuple(null, 1));
     }
 
     @Test
     void filmsFaceted_nonNullFacet_scrubsTheNullGroup() {
-        // The non-null-element facet over the same all-NULL column appends AND col IS NOT NULL
-        // to its arm, so no NULL key can reach the non-null value field: the facet returns an
-        // empty list, with no GraphQL errors (execute() asserts none).
+        // The non-null-element facet over the same column appends AND col IS NOT NULL to its
+        // arm, so no NULL key can reach the non-null value field: film 4's NULL group is scrubbed
+        // and only the three languages come back, with no GraphQL errors (execute() asserts
+        // none). The extra.lengthIs bound keeps the counts about the seeded films.
         Map<String, Object> data = execute(
-            "{ filmsFaceted { facets { originalLanguageRequired { value count } } } }");
-        assertThat(facetValues(data, "originalLanguageRequired")).isEmpty();
+            "{ filmsFaceted(extra: {lengthIs: [48, 50, 86, 117, 169]}) "
+            + "{ facets { originalLanguageRequired { value count } } } }");
+        assertThat(facetValues(data, "originalLanguageRequired"))
+            .extracting(v -> v.get("value"), v -> v.get("count"))
+            .containsExactlyInAnyOrder(
+                org.assertj.core.groups.Tuple.tuple(1, 1),
+                org.assertj.core.groups.Tuple.tuple(2, 2),
+                org.assertj.core.groups.Tuple.tuple(3, 1));
     }
 
     @Test

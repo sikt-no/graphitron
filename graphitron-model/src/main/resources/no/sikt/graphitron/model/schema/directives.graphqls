@@ -418,10 +418,30 @@ directive @order(
   primaryKey: Boolean = false
 ) on ENUM_VALUE
 
-"""Field sort specification for @order and @defaultOrder directives"""
+"""
+Field sort specification for @order and @defaultOrder directives. An entry sets
+exactly one of `name` and `method`; `path` is only valid beside `name`.
+"""
 input FieldSort {
-  """Database field name (as defined in the jOOQ table)"""
-  name: String!
+  """
+  Database field name (as defined in the jOOQ table). Resolved against the
+  field's own table, or against the table `path` lands on when `path` is set.
+  """
+  name: String
+  """
+  Walk from the field's table to the table that holds `name`, in the same
+  element shape as `@reference(path:)`. Every hop must be to-one (each row
+  reaches at most one related row), and no hop may carry a `condition`. A row
+  with no related row sorts on NULL, which sorts last.
+  """
+  path: [ReferenceElement!]
+  """
+  A static method that returns the sort key, with `@externalField`'s calling
+  convention: it takes the field's jOOQ table and returns a `Field<X>`. Use it
+  when the key is derived from many related rows. `method` is required inside
+  the reference, and `argMapping` is not supported.
+  """
+  method: ExternalCodeReference
   """Collation to apply (e.g., "xdanish_ai"). Database-specific."""
   collate: String
   """

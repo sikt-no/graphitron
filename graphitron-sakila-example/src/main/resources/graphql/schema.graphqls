@@ -597,6 +597,44 @@ type Query {
     filmsByRentalRate(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @defaultOrder(fields: [{name: "rental_rate"}])
+    # Orders by a column on a to-one related table: film.original_language_id is a nullable FK to
+    # language, so the sort key is the original language's name. Film 4 has none and sorts on NULL,
+    # last; the Italian tie (films 2 and 3) is broken by the appended film_id.
+    filmsByOriginalLanguage(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    # The same sort key on a plain list root.
+    filmsByOriginalLanguageList: [Film!]!
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    # The related column is language_id, named like the film's own languageId: the sort key rides
+    # the cursor under a reserved alias, so selecting languageId keeps both and the cursor reads the
+    # related one.
+    filmsByOriginalLanguageId(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(fields: [{name: "language_id", path: [{key: "film_original_language_id_fkey"}]}])
+    # Two path keys whose first hops both reach language, in the @orderBy helper's base return and
+    # its switch arms, beside a method: key.
+    filmsByLanguages(
+        order: FilmLanguageOrderBy @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(fields: [
+        {name: "name", path: [{key: "film_language_id_fkey"}]},
+        {name: "name", path: [{key: "film_original_language_id_fkey"}], direction: DESC}
+    ])
+    # The list-valued form: the composed sequence is completed with film_id in the helper.
+    filmsByLanguagesComposed(
+        order: [FilmLanguageOrderBy!] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(primaryKey: true)
+    # A sort key a method derives from a to-many relation: the store of the film's latest stocked
+    # copy. Films 1 to 3 are all stocked at store 1, a tie the appended film_id breaks in the
+    # entry's direction; films 4 and 5 have no inventory and sort on NULL, last.
+    filmsByLatestStock(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @defaultOrder(fields: [{
+        method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"},
+        direction: DESC
+    }])
     # The single-valued @orderBy form: each @order value arrives completed, so RENTAL_RATE pages on
     # rental_rate, film_id, and a runtime direction: DESC flips the appended film_id with the rate.
     filmsOrderedByOneKeyConnection(
@@ -3450,6 +3488,18 @@ type Language @table(name: "language") {
     ): FilmsConnection! @splitQuery
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "rental_rate"}])
+    # A related-table sort key on a @splitQuery child connection: the batched ROW_NUMBER() window,
+    # the seek and the cursor all carry it. The field's own path and the ordering path both reach
+    # language, and the ordering path's aliases are locals of its emitted method, so the two never meet.
+    filmsByOriginalLanguage(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    # The same sort key on an inline child list, rendered in the correlated subselect.
+    filmsInlineByOriginalLanguage: [Film!]!
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
     # Inline @reference path (InlineTableFieldEmitter) with a mixed @nodeId + @condition filter.
     filmsByMixedFilter(filter: FilmMixedNodeIdConditionFilter): [Film!]!
         @reference(path: [{key: "film_language_id_fkey"}])
@@ -3614,6 +3664,20 @@ enum FilmSort {
 
 input FilmOrderBy {
     field: FilmSort!
+    direction: SortDirection
+}
+
+# Sort keys the film's table does not hold: a column on a to-one related table, and a key a method
+# derives. ORIGINAL_LANGUAGE pages on the name, then film_id; LATEST_STOCK on the store of the
+# latest stocked copy, then film_id.
+enum FilmLanguageSort {
+    ORIGINAL_LANGUAGE @order(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    LANGUAGE_UPDATED @order(fields: [{name: "last_update", path: [{key: "film_language_id_fkey"}]}])
+    LATEST_STOCK @order(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}}])
+}
+
+input FilmLanguageOrderBy {
+    field: FilmLanguageSort!
     direction: SortDirection
 }
 

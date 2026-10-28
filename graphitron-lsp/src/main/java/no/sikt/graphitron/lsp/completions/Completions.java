@@ -96,7 +96,7 @@ public final class Completions {
                 r -> r.fromStore(s -> TableCompletions.generate(r.vocabulary(), s, r.context())));
             case Behavior.CatalogColumnBinding ignored -> List.of(
                 r -> r.fromStore(s -> FieldCompletions.generate(
-                    r.vocabulary(), s, r.context(), r.directive(), r.source())));
+                    r.vocabulary(), s, r.context(), r.directive(), r.pos(), r.source())));
             case Behavior.CatalogFkBinding ignored -> List.of(
                 r -> r.fromStore(s -> ReferenceCompletions.generate(
                     r.vocabulary(), s, r.context(), r.directive(), r.source())));

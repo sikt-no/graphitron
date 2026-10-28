@@ -232,8 +232,8 @@ class LauncherCommandsPipelineTest {
         assertThat(row.where()).isNull();
         var ordering = (no.sikt.graphitron.command.Ordering.Columns)
             ((ResultShape.RecordList) row.result()).ordering();
-        assertThat(ordering.spec().columns())
-            .extracting(c -> c.column().sqlName())
+        assertThat(ordering.spec().entries())
+            .extracting(c -> ((no.sikt.graphitron.rewrite.model.OrderBySpec.ColumnOrderEntry) c).column().sqlName())
             .containsExactly("film_id");
         assertThat(row.invocation()).isInstanceOf(no.sikt.graphitron.command.Invocation.Direct.class);
     }
@@ -383,8 +383,8 @@ class LauncherCommandsPipelineTest {
             .as("the plain batched list arm's ordering slot")
             .isInstanceOf(Ordering.Columns.class);
         var plainOrdering = (Ordering.Columns) ((ResultShape.RecordList) plain.result()).ordering();
-        assertThat(plainOrdering.spec().columns())
-            .extracting(c -> c.column().sqlName())
+        assertThat(plainOrdering.spec().entries())
+            .extracting(c -> ((no.sikt.graphitron.rewrite.model.OrderBySpec.ColumnOrderEntry) c).column().sqlName())
             .containsExactly("actor_id");
 
         var lookup = relation.rowFor("Film", "actorsByLookup").orElseThrow();
@@ -394,8 +394,8 @@ class LauncherCommandsPipelineTest {
             .as("the @lookupKey batched list arm's ordering slot")
             .isInstanceOf(Ordering.Columns.class);
         var lookupOrdering = (Ordering.Columns) ((ResultShape.RecordList) lookup.result()).ordering();
-        assertThat(lookupOrdering.spec().columns())
-            .extracting(c -> c.column().sqlName())
+        assertThat(lookupOrdering.spec().entries())
+            .extracting(c -> ((no.sikt.graphitron.rewrite.model.OrderBySpec.ColumnOrderEntry) c).column().sqlName())
             .containsExactly("actor_id");
 
         // One record per key carries no ordering: there is nothing to sort, and the arm says so

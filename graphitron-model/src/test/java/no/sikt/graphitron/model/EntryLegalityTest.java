@@ -22,12 +22,16 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CODE_REFERENCE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ENUM_VALUE_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -48,30 +52,70 @@ import static org.assertj.core.api.Assertions.assertThat;
 class EntryLegalityTest {
 
     /**
-     * The shape the rule was measured on. {@code FieldSort.name} is {@code String!}, so an element
-     * omitting it is not a {@code FieldSort} and the application is not one {@code @defaultOrder}
-     * admits, whole. The element's own relation and its parent's are both empty as a result, which
-     * is the difference between this rule and a filter over elements.
+     * The shape the rule was measured on. {@code ErrorHandler.handler} is
+     * {@code ErrorHandlerType!}, so an element omitting it is not an {@code ErrorHandler} and the
+     * application is not one {@code @error} admits, whole. The element's own relation and its
+     * parent's are both empty as a result, which is the difference between this rule and a filter
+     * over elements.
      */
     @Test
-    @DisplayName("an order element missing the required name withdraws the whole application")
-    void anElementMissingItsRequiredNameWithdrawsTheApplication(@TempDir Path tmp) {
+    @DisplayName("an element missing a required field withdraws the whole application")
+    void anElementMissingARequiredFieldWithdrawsTheApplication(@TempDir Path tmp) {
         ThreadConfinedStore.run(dsl -> {
-            read(dsl, corpus(tmp, "missing-name", """
-                type Query { films: [Film!] @defaultOrder(fields: [{collate: "xdanish_ai"}]) }
+            read(dsl, corpus(tmp, "missing-handler", """
+                type Query { film: Film }
                 type Film { title: String }
+                type FilmNotFound @error(handlers: [{className: "java.lang.IllegalStateException"}]) {
+                    message: String
+                }
                 """));
-            assertApplicationWasWritten(dsl, "missing-name", "defaultOrder");
-            assertRefusedByAssembly(dsl, "missing-name");
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY.GRAPH_NAME.eq("missing-name")))
-                .as("the element is not a FieldSort, so it is not transcribed")
+            var d = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+            assertThat(dsl.fetchCount(d, d.GRAPH_NAME.eq("missing-handler").and(d.NAME.eq("error"))))
+                .as("the generic census holds the application, so an empty decode below is the rule "
+                    + "rather than a corpus that never arrived")
+                .isPositive();
+            assertRefusedByAssembly(dsl, "missing-handler");
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ERROR_HANDLER_ENTRY,
+                GRAPHITRON_AST_ERROR_HANDLER_ENTRY.GRAPH_NAME.eq("missing-handler")))
+                .as("the element is not an ErrorHandler, so it is not transcribed")
                 .isZero();
-            assertThat(dsl.fetchCount(GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
-                GRAPHITRON_AST_DEFAULT_ORDER_ENTRY.GRAPH_NAME.eq("missing-name")))
+            assertThat(dsl.fetchCount(GRAPHITRON_AST_ERROR_ENTRY,
+                GRAPHITRON_AST_ERROR_ENTRY.GRAPH_NAME.eq("missing-handler")))
                 .as("and neither is the application holding it, the rule being about the "
                     + "application rather than about the element")
                 .isZero();
+        });
+    }
+
+    /**
+     * {@code FieldSort.name} is optional, because an element may sort by a {@code method:}
+     * instead, so an element naming no column is a {@code FieldSort} and is transcribed with a
+     * {@code NULL} name. Its reference is a row of the code-reference relation like any other.
+     */
+    @Test
+    @DisplayName("an order element naming a method instead of a column is transcribed with no name")
+    void anOrderElementNamingAMethodIsTranscribed(@TempDir Path tmp) {
+        ThreadConfinedStore.run(dsl -> {
+            read(dsl, corpus(tmp, "method-entry", """
+                type Query {
+                    films: [Film!] @defaultOrder(fields: [{method: {className: "com.example.FilmKeys", method: "latest"}}])
+                }
+                type Film { title: String }
+                """));
+            assertThat(dsl.select(GRAPHQL_SCHEMA_PROBLEM.STAGE, GRAPHQL_SCHEMA_PROBLEM.MESSAGE)
+                .from(GRAPHQL_SCHEMA_PROBLEM)
+                .where(GRAPHQL_SCHEMA_PROBLEM.GRAPH_NAME.eq("method-entry")).fetch())
+                .as("the corpus assembles")
+                .isEmpty();
+            var e = GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY;
+            assertThat(dsl.select(e.NAME_REF).from(e).where(e.GRAPH_NAME.eq("method-entry")).fetch(e.NAME_REF))
+                .as("the element is transcribed, with no name")
+                .containsExactly((String) null);
+            var c = GRAPHITRON_AST_CODE_REFERENCE_ENTRY;
+            assertThat(dsl.select(c.CLASS_NAME, c.METHOD).from(c).where(c.GRAPH_NAME.eq("method-entry"))
+                .fetch(r -> r.value1() + "#" + r.value2()))
+                .as("and its method is a code reference")
+                .containsExactly("com.example.FilmKeys#latest");
         });
     }
 

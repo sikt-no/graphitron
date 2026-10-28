@@ -196,16 +196,26 @@ class ResultKeyScopeExecutionTest {
     @Test
     void siblingNestingFields_eachReadTheirOwnSameNamedLeaf() {
         // Both nesting types declare `language` and both are spliced into the film's row; every
-        // seeded film has an English language and no original language. An all-null nesting
-        // object collapses to null, which is how the original side answers. `original` is selected
-        // first, so a collapse of the two terms onto one alias would hand `spoken` its null term.
+        // seeded film has an English language, and films 1, 2, 3 and 5 an original language that
+        // mostly differs from it. Film 4 has none, and an all-null nesting object collapses to
+        // null, which is how its original side answers. `original` is selected first, so a
+        // collapse of the two terms onto one alias would hand `spoken` the original's term.
         var films = list(execute(
-            "{ filmsOrdered { original { language { name } } spoken { language { name } } } }"),
+            "{ filmsOrdered { filmId original { language { name } } spoken { language { name } } } }"),
             "filmsOrdered");
-        assertThat(films).isNotEmpty().allSatisfy(film -> {
-            assertThat(name(map(map(film, "spoken"), "language"))).isEqualTo("English");
-            assertThat(map(film, "original")).isNull();
-        });
+        assertThat(films).isNotEmpty().allSatisfy(film ->
+            assertThat(name(map(map(film, "spoken"), "language"))).isEqualTo("English"));
+        var originals = new java.util.HashMap<Object, String>();
+        for (var film : films) {
+            var original = map(film, "original");
+            originals.put(film.get("filmId"), original == null ? null : name(map(original, "language")));
+        }
+        assertThat(originals)
+            .containsEntry(1, "Japanese")
+            .containsEntry(2, "Italian")
+            .containsEntry(3, "Italian")
+            .containsEntry(4, null)
+            .containsEntry(5, "English");
     }
 
     @Test

@@ -16,6 +16,8 @@ import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.NullCheck;
 import no.sikt.graphitron.command.ResultShape;
+import no.sikt.graphitron.command.SortKeyMethod;
+import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.model.jooq.ColumnRef;
@@ -1451,11 +1453,24 @@ public final class LauncherCommands {
     private static Ordering orderingOf(OrderBySpec orderBy, String parentTypeName, String fieldName,
             GeneratedUnits units) {
         return switch (orderBy) {
-            case OrderBySpec.Fixed fixed when !fixed.columns().isEmpty() -> new Ordering.Columns(fixed);
+            case OrderBySpec.Fixed fixed when !fixed.entries().isEmpty() -> new Ordering.Columns(fixed,
+                sortKeyMethods(fixed, units.fetchers(parentTypeName), fieldName, units));
             case OrderBySpec.Argument ignored -> new Ordering.Helper(
                 units.orderByHelperMethod(parentTypeName, fieldName), units.orderByResult());
             default -> null;
         };
+    }
+
+    /**
+     * The emitted method behind each {@code path:} sort key of {@code fixed}, minted on
+     * {@code owner}, the unit that renders the order and so hosts the methods its calls name.
+     */
+    static List<SortKeyMethod> sortKeyMethods(OrderBySpec.Fixed fixed, UnitRef owner, String fieldName,
+            GeneratedUnits units) {
+        return fixed.sortKeys().stream()
+            .filter(key -> key.key() instanceof OrderBySpec.SortKey.Path)
+            .map(key -> new SortKeyMethod(key, units.sortKeyMethod(owner, fieldName, key.ordinal())))
+            .toList();
     }
 
     /**

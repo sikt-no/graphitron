@@ -133,7 +133,7 @@ class R157PipelineTest {
         // Both halves of the arm come from the one root this test read: the store captured it,
         // and names the backing class and what it offers off the same rows.
         try (var store = storeOver(sdl)) {
-            return FieldCompletions.generate(vocab, store.handle(), context, directive, bytes);
+            return FieldCompletions.generate(vocab, store.handle(), context, directive, cursor, bytes);
         }
     }
 

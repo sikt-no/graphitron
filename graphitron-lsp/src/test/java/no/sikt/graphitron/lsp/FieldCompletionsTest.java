@@ -635,7 +635,7 @@ class FieldCompletionsTest {
         var locOpt = VOCAB.locateAt(directive, cursor, bytes);
         if (locOpt.isEmpty()) return List.of();
         var context = CompletionContext.from(locOpt.get(), bytes);
-        return FieldCompletions.generate(VOCAB, store, context, directive, bytes);
+        return FieldCompletions.generate(VOCAB, store, context, directive, cursor, bytes);
     }
 
 }

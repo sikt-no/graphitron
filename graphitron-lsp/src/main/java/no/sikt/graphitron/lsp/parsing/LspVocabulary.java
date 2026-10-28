@@ -120,6 +120,25 @@ public record LspVocabulary(
         };
     }
 
+    private static final SchemaCoordinate.InputField FIELD_SORT_NAME = new SchemaCoordinate.InputField("FieldSort", "name");
+    private static final SchemaCoordinate.InputField FIELD_SORT_PATH = new SchemaCoordinate.InputField("FieldSort", "path");
+
+    /**
+     * Whether the column-bound leaf at {@code coord} names a column on a table the site's own scope
+     * does not answer: a {@code FieldSort.name} beside a {@code path:} is a column of the table the
+     * path lands on, and the store carries no relation for that landing table yet. Every consumer
+     * of the column binding answers silent there (no completion, no diagnostic, no hover, no
+     * definition, no references) rather than checking the name against the field's own table.
+     */
+    public boolean namesRelatedColumn(Directives.Directive directive, Point pos, SchemaCoordinate coord, byte[] source) {
+        return FIELD_SORT_NAME.equals(coord) && siblingStringAt(directive, pos, FIELD_SORT_PATH, source).isPresent();
+    }
+
+    /** Node-anchored overload; see {@link #namesRelatedColumn(Directives.Directive, Point, SchemaCoordinate, byte[])}. */
+    public boolean namesRelatedColumn(Directives.Directive directive, Node anchor, SchemaCoordinate coord, byte[] source) {
+        return FIELD_SORT_NAME.equals(coord) && siblingStringAt(directive, anchor, FIELD_SORT_PATH, source).isPresent();
+    }
+
     private static Optional<String> readDirectiveArgString(
         Directives.Directive directive, String argName, byte[] source
     ) {
@@ -486,7 +505,9 @@ public record LspVocabulary(
             // field's target (element-type) table. The FieldSort.name coordinate binds to the
             // same column behavior; which table that is comes from the site's own resolved scope
             // ({@link no.sikt.graphitron.lsp.facts.FieldColumnTable}, whose named-type rule
-            // answers the element table) rather than the enclosing type's backing.
+            // answers the element table) rather than the enclosing type's backing. Beside a
+            // path: the name is on the path's landing table instead, and every consumer answers
+            // silent there (namesRelatedColumn).
             out.put(new SchemaCoordinate.InputField("FieldSort", "name"),
                 new Behavior.CatalogColumnBinding());
             out.put(new SchemaCoordinate.InputField("ReferenceElement", "key"),

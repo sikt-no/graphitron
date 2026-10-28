@@ -1,14 +1,16 @@
 package no.sikt.graphitron.rewrite.model;
 
 import java.util.List;
+import java.util.Objects;
 import no.sikt.graphitron.model.jooq.ColumnRef;
+import no.sikt.graphitron.model.jooq.TableRef;
 
 /**
  * Authoritative ordering specification for a SQL-generating field.
  *
  * <p>Every list/connection field carries a non-null {@link OrderBySpec}; single-value fields
  * carry {@link None} (the database does not require an ORDER BY for scalar lookups).
- * {@link ColumnOrderEntry} and {@link NamedOrder} are value types used within {@link Fixed}
+ * {@link OrderEntry} and {@link NamedOrder} are value types used within {@link Fixed}
  * and {@link Argument} respectively.
  */
 public sealed interface OrderBySpec
@@ -17,7 +19,7 @@ public sealed interface OrderBySpec
     /**
      * Per-entry sort direction. Decoupled from the SDL {@code SortDirection} enum on purpose:
      * this is the resolved truth the emitter consumes, not the directive-argument value the
-     * resolver reads. Direction lives on each {@link ColumnOrderEntry}, so a single fixed spec
+     * resolver reads. Direction lives on each {@link OrderEntry}, so a single fixed spec
      * can carry heterogeneous directions (e.g. {@code year DESC, key ASC}).
      */
     enum SortDirection {
@@ -32,7 +34,19 @@ public sealed interface OrderBySpec
     }
 
     /**
-     * A single entry in a column-order list.
+     * One entry of a {@link Fixed} order: an own-table column ({@link ColumnOrderEntry}) or a sort
+     * key the field's table does not hold ({@link SortKeyEntry}). Every entry carries the three
+     * facts every order rendering reads: the optional {@code COLLATE} name, the resolved
+     * direction and whether the sort value admits {@code NULL}.
+     */
+    sealed interface OrderEntry permits ColumnOrderEntry, SortKeyEntry {
+        String collation();
+        SortDirection direction();
+        boolean nullable();
+    }
+
+    /**
+     * An own-table column entry.
      *
      * <p>{@code column} is the resolved jOOQ {@link ColumnRef}.
      * {@code collation} is the optional {@code COLLATE} clause (e.g. {@code "C"}), or {@code null}
@@ -45,7 +59,71 @@ public sealed interface OrderBySpec
      * jOOQ's keyset seek step through the {@code NULL} rows. The row-key columns
      * {@code OrderByResolver.complete} appends carry {@code false}: they identify the row.
      */
-    record ColumnOrderEntry(ColumnRef column, String collation, SortDirection direction, boolean nullable) {}
+    record ColumnOrderEntry(ColumnRef column, String collation, SortDirection direction, boolean nullable)
+            implements OrderEntry {}
+
+    /**
+     * An entry whose sort value is not a column of the field's table: a column reached through
+     * to-one hops ({@link SortKey.Path}), or an expression a consumer method derives
+     * ({@link SortKey.Method}). Both render as one call expression over the alias the site orders
+     * on, so no site's {@code FROM} changes.
+     *
+     * <p>{@code ordinal} numbers the field's sort-key entries across its fixed order, its default
+     * order and every named order of its {@code @orderBy} enum, so it is unique per field. The
+     * emitted method a path key renders through and the reserved alias the key is projected under
+     * for the cursor are both minted from it.
+     *
+     * <p>The key is always {@link #nullable()}: a path key is {@code NULL} for a parent with no
+     * related row, and a method key's nullability is not visible to the build.
+     */
+    record SortKeyEntry(SortKey key, String collation, SortDirection direction, int ordinal)
+            implements OrderEntry {
+        public SortKeyEntry {
+            Objects.requireNonNull(key, "key");
+            Objects.requireNonNull(direction, "direction");
+            if (ordinal < 0) {
+                throw new IllegalArgumentException("SortKeyEntry.ordinal must be non-negative; got " + ordinal);
+            }
+        }
+
+        @Override public boolean nullable() { return true; }
+    }
+
+    /** What a {@link SortKeyEntry} sorts by. */
+    sealed interface SortKey {
+
+        /**
+         * {@code column} on the table the to-one {@code hops} land on, walked from the field's
+         * table. Every hop is an {@link On.ColumnPairs} hop with no filter, so the first hop
+         * correlates on its FK slots and the subquery returns at most one row.
+         */
+        record Path(List<JoinStep.Hop> hops, ColumnRef column) implements SortKey {
+            public Path {
+                hops = List.copyOf(hops);
+                if (hops.isEmpty()) {
+                    throw new IllegalArgumentException("SortKey.Path requires at least one hop");
+                }
+                Objects.requireNonNull(column, "column");
+                for (var hop : hops) {
+                    if (!(hop.on() instanceof On.ColumnPairs) || hop.filter() != null) {
+                        throw new IllegalArgumentException(
+                            "SortKey.Path hops are unfiltered key joins; the resolver rejects every other hop");
+                    }
+                }
+            }
+
+            /** The field's table, where the walk starts. */
+            public TableRef startTable() { return hops.getFirst().originTable(); }
+        }
+
+        /**
+         * A consumer static method taking the field's table and returning the sort key as a
+         * {@code Field<?>}, the {@code @externalField} calling convention.
+         */
+        record Method(MethodRef.StaticOnly method) implements SortKey {
+            public Method { Objects.requireNonNull(method, "method"); }
+        }
+    }
 
     /**
      * Maps an {@code @orderBy} enum value name to the SQL ORDER BY it represents.
@@ -66,14 +144,26 @@ public sealed interface OrderBySpec
      * because the spec is direction-locked (any non-ASC entry).
      *
      * <p>On a single-table connection the resolver hands out the order already completed to
-     * identify a row: when the authored columns cover no identifying key, the table's row key
-     * follows them in the direction of the last authored entry, so {@code uniformAsc} is what it
-     * was before completion. Consumers see one list and need not know which entries were appended.
+     * identify a row: when the authored own-table columns cover no identifying key, the table's row
+     * key follows them in the direction of the last authored entry, so {@code uniformAsc} is what
+     * it was before completion. A {@link SortKeyEntry} never counts toward that coverage, since a
+     * related row or a derived value can be shared by many parents. Consumers see one list and need
+     * not know which entries were appended.
      */
     record Fixed(
-        List<ColumnOrderEntry> columns,
+        List<OrderEntry> entries,
         boolean uniformAsc
-    ) implements OrderBySpec {}
+    ) implements OrderBySpec {
+        public Fixed { entries = List.copyOf(entries); }
+
+        /** The sort-key entries, in order. */
+        public List<SortKeyEntry> sortKeys() {
+            return entries.stream()
+                .filter(e -> e instanceof SortKeyEntry)
+                .map(e -> (SortKeyEntry) e)
+                .toList();
+        }
+    }
 
     /**
      * A dynamic ordering driven by a GraphQL {@code @orderBy} argument.

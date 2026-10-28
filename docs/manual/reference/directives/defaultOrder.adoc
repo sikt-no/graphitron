@@ -16,8 +16,11 @@ directive @defaultOrder(
 ) on FIELD_DEFINITION
 
 input FieldSort {
-    name:    String!
-    collate: String
+    name:      String
+    path:      [ReferenceElement!]
+    method:    ExternalCodeReference
+    collate:   String
+    direction: SortDirection
 }
 
 enum SortDirection { ASC, DESC }
@@ -29,7 +32,7 @@ enum SortDirection { ASC, DESC }
 |===
 | Name | Type | Default | Description
 | `index` | `String` | none | Name of a database index. The generator emits the index's column list as the sort specification. Requires `<includeIndexes>true</includeIndexes>` in the jOOQ generator.
-| `fields` | `[FieldSort!]` | none | Explicit column list. Each `FieldSort` has a required `name` (the column on the field's parent table) and an optional `collate` (database-specific collation).
+| `fields` | `[FieldSort!]` | none | Explicit sort list. Each `FieldSort` sets exactly one of `name` (a column on the field's return-type table) and `method` (a static method returning the sort key), with an optional `collate` (database-specific collation) and `direction`. Beside `name`, an optional `path` resolves the column on a to-one related table instead; see xref:order.adoc#sorting-by-a-related-value[`@order`: Sorting by a related value].
 | `primaryKey` | `Boolean` | `false` | When `true`, sorts by the parent table's primary key columns in declaration order. Common choice for stable keyset pagination.
 | `direction` | `SortDirection` | `ASC` | Sort direction applied to every column in the spec. `ASC` or `DESC`.
 |===
@@ -72,6 +75,16 @@ type Query {
 }
 ----
 
+By a column on a related table, here the name of each film's original language:
+
+[source,graphql]
+----
+type Query {
+    filmsByOriginalLanguage(first: Int, last: Int, after: String, before: String): FilmsConnection!
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+}
+----
+
 Index-based with descending direction:
 
 [source,graphql]
@@ -89,7 +102,8 @@ type Query {
 * Applies to fields only. Apply it to the connection-bearing field, not the synthesised `Connection` / `Edge` types.
 * When combined with xref:orderBy.adoc[`@orderBy`] on the same field, the client's argument value (when present) takes precedence; `@defaultOrder` is the fallback.
 * `direction` is global across the spec. Per-column direction requires xref:orderBy.adoc[`@orderBy`] (the enum input carries its own `SortDirection`).
-* `index` requires jOOQ index generation. `fields[].name` resolves against the field's return-type table, not the parent.
+* `index` requires jOOQ index generation. `fields[].name` resolves against the field's return-type table, not the parent, or against the table its `path` lands on.
+* A `path` follows to-one hops only and carries no `condition:`; a `method` takes the field's table and returns a `Field<X>`. Neither counts toward a connection's row identity, and neither is available on a multi-table interface or union or over a table-valued function result. See xref:../../how-to/sort-results.adoc#sort-by-a-related-value[How-to: Sort by a value on another table].
 * On a root field returning a list or connection of a multi-table interface or union, the columns resolve against each participant's own table, and every participant has to carry them at the same SQL type and bound Java type. A child field, or a single-valued root field, over such a type rejects the directive. See xref:../../how-to/sort-results.adoc#sort-across-polymorphism[How-to: Sort across polymorphism].
 * Stable keyset pagination depends on the order identifying a row. On a connection, graphitron appends the table's primary key to a field-based or index-based order that does not already contain a key, in the direction of the last listed column; see xref:../../how-to/sort-results.adoc#stable-cursors-and-tie-breakers[Stable cursors and tie-breakers].
 * A column that admits `NULL` sorts its `NULL` rows last whatever the `direction:`, on lists and connections alike; see xref:../../how-to/sort-results.adoc#where-null-sorts[Where `NULL` sorts].
