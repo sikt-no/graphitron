@@ -26,8 +26,9 @@ field is marked `@accept`. B takes a *vouched connection* for each verified vouc
 mounted with the caller's identity, then handed what the voucher covers so B's row-level security (RLS:
 Postgres policies deciding per row what a connection may read) admits exactly those rows. Every field
 below that entity reads through the same vouched connection and nothing else does. A voucher that fails
-verification, has expired, or was issued for another caller, scope or key makes
-that entity `null` and no SQL on the covered tables runs. The consumer supplies the signing and verifying
+verification, has expired, or was issued for another caller, scope or key fails the whole `_entities`
+call with an error, and no SQL on the covered tables runs: a bad voucher means tampering or a deployment
+fault, so nothing in that call is answered. The consumer supplies the signing and verifying
 keys, the RLS policies, and one small method that turns a verified voucher into session state.
 
 ```graphql
@@ -75,16 +76,17 @@ under the caller's own RLS; a voucher only ever adds access. This is federation 
    caller and expiry plus the type name and key fields of *this representation*, against the runtime's verification keys;
    expiry; scope against the field's `@accept(scope:)`; and the caller against the caller of this request.
    Because the signature covers the representation's own key, a voucher cannot be paired with another row.
-   A failure makes that representation `null`.
-4. *Route.* Verified representations are grouped by their voucher context: tenant, scope, caller and
-   expiry. For each group the runtime takes one connection keyed by `(tenant, context)`, runs the ordinary
+   Every voucher-bearing representation is checked and its context extracted (scope, caller, expiry); a
+   single failure fails the whole `_entities` call with an error, before any connection is taken.
+   Representations that carry no voucher use the plain key and are not part of this check.
+4. *Route.* The extracted contexts group the representations by tenant, scope, caller and expiry. For each group the runtime takes one connection keyed by `(tenant, context)`, runs the ordinary
    mount (identity from the caller's JWT), then the consumer's accept method once with the context and
    every key the group covers. The accept method sets session state for the connection and returns a
-   boolean; `false` unmounts and releases the connection and nulls the group.
+   boolean; `false` unmounts and releases the connection and fails the whole call, like a verification failure.
 5. *Read below.* The group's SELECT runs on the vouched connection, and each resolved row is returned as a
    `DataFetcherResult` whose `localContext` carries the routing key. graphql-java hands that value to
-   every field below, so child acquisitions and their DataLoader batches are keyed by it; a batch never
-   mixes two contexts and a field outside the subtree uses the base connection, as tenants already do.
+   every field below, so child acquisitions and their DataLoader batches are keyed by the context, so
+   each field below loads in one batch per context on the vouched connection; a batch never mixes two contexts and a field outside the subtree uses the base connection, as tenants already do.
 6. *Release.* At operation end every vouched connection is unmounted and released.
 
 An operation takes at most one vouched connection for now. Rows issued in one operation share a context, so
@@ -175,7 +177,8 @@ once the spellings are chosen, the design is wrong.
   entity and a three-level nested read under a policy that otherwise hides the rows; a list of results, or
   several parents' lists, takes one connection and the accept method sees every key once; a second
   distinct context fails its entities with the limit error; a field outside the entities' subtrees cannot
-  read the covered rows; every verification failure above gives `null` and the policy hides the rows;
+  read the covered rows; every verification failure above, and an accept method returning `false`, fails the whole call with an
+  error and the policy hides the rows;
   connections are unmounted and released at the end.
 * Served SDL: `_service { sdl }` shows `@key(fields: "id voucher")` and `@inaccessible` on the voucher
   field on both sides, with the `@link` importing `@inaccessible`.
