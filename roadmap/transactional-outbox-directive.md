@@ -1,7 +1,7 @@
 ---
 id: R1113
 title: "@outbox: emit a transactional outbox message in the mutation field transaction"
-status: Ready
+status: Spec
 bucket: feature
 priority: 5
 theme: runtime-connection
@@ -335,3 +335,20 @@ What would satisfy it: name the encoded arm as a fourth call site, and state its
 **Non-blocking.**
 
 - Failure routing says `OutboxEmitException`'s claim decline sits "beside R1101's `MutationHookException` decline". That exception is R1101 phase 3's and is not on trunk, so if this item lands first there is nothing beside it yet. Relation to other items already says whichever lands second merges, so this is a wording point only: the decline needs its own sibling of `TenantConnections.isMountFailure` regardless of order.
+
+### Round 2 (2026-10-28, Ready -> Spec reopen, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
+
+Verdict: reopened. I signed this item off in an earlier pass the same day. That pass missed that the plan rests on the `<sessionState>` mechanism R1120 replaces, and on R1102's unshipped member binding. One blocking finding on question two (fit). The rest of the plan is unaffected: the `<outbox>` table and function targets name catalog objects (data, not code), which is the shape R1120 itself keeps in the POM, and `$result`, `$scope`, argument sources, the four call sites and failure routing stand as signed off.
+
+**Finding 2 (question two: fit). `$session` and `$context` are resolved against the reflected static mount, which R1120 replaces, and `$session.<member>` is R1102's feature, which this item neither depends on nor names.**
+
+The Phase 1 mapping bullet resolves "`$session` paths against the `<sessionState>` mount's return type (accessors reflected at build time, as the mount is)" and types "`$context.<name>` ... when the name is a mount payload parameter". R1120 (now Spec) moves session identity to a per-request callback (`SessionState.of(mount, unmount)`). In that form there is no mount method to reflect: the handle type is named as data (`<sessionState><handle>fqcn</handle>`), `SessionHooks.Handled` carries it under a `MountSource` of `Reflected` or `Supplied`, and the mount contributes no payload parameters, because its inputs are captured by closure. R1120 also depends on R1102 for `$session.<member>`, the member decode this item uses (`$session.userId` in the Goal, the common payload and the generated code) but does not list. Today `$session` binds only the whole handle, and only on `@service`.
+
+So the plan names a typing source that disappears in the form R1120 makes the default, and a binding syntax it does not own:
+
+- `$session.<member>`: resolve it through R1102's member decode of `SessionHooks.Handled`'s handle type, which holds for both mount sources, rather than by reflecting the mount's return type. Add R1102 to `depends-on:` for whichever phase first admits a `$session` source, or keep `$session` out of phase 1 until R1102 lands.
+- Where the handle is read: R1102 reads `$session.<member>` through the statement's own `dsl`, so from the connection the statement runs on, and rules out reading the handle from `env` (it matters under R1119's vouched connections). The generated companion's `session(env).userId()` should read it from the emit's `tx` instead.
+- `$context.<name>`: with a supplied mount there are no mount payload parameters, so state what `$context` reads and how it is typed. Today's schema-declared `contextArguments` is one answer; a `GraphQLContext` key checked at request time is another, and it is the string-keyed lookup R1120 argues against. The Goal example and the common payload's `$context.requestId` should be consistent with whichever is chosen.
+- Relation to other items: add R1102 and R1120, and say whether this item lands before or after R1120's `Supplied` source. If before, say what `$session` and `$context` do on a build that later switches forms.
+
+What would satisfy it: the mapping bullet, the source table in the user-documentation draft (the `$session.userId` and `$context.requestId` rows, and the sentence on build-time type checks) and the pipeline-tier rejections ("an unknown `$session` accessor", "a session or context type known not to serialize") restated against the handle type R1102 and R1120 define, with the dependency recorded in front-matter or the phase that needs it.
