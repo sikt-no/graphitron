@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.derive.CarrierDataChannels;
 import no.sikt.graphitron.model.derive.FieldSourceTables;
 import no.sikt.graphitron.model.derive.FieldTargetColumns;
 import no.sikt.graphitron.model.derive.FieldTargetTables;
@@ -80,6 +81,9 @@ public final class GraphitronAssemblyCapture {
         // Then the bindings, which the routine arm reaches through the hops just written, and then
         // the walk, which seeds from those bindings and steps through those hops.
         ResolvedTypeBindings.derive(dsl, graph);
+        // Which @service payloads pass the service's object through to their one data field, read
+        // off the methods and the classes' read slots, before the backing that will read it.
+        CarrierDataChannels.derive(dsl, graph, readAt);
         // Then which class stands for each type: the table binding just written read through its
         // record class, and what the producers' resolved methods ground, closed over the members
         // each backed class offers. The classpath was read before this gatherer ran.

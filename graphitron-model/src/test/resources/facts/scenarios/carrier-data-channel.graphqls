@@ -1,0 +1,36 @@
+# A @service field's payload with exactly one object data field bound to no table holds the service's
+# value there. Where the class the service returns has no member the data field names, the object
+# itself is the data element and passes through; where it has one, the data field reads that member.
+
+type Film @table(name: "film") { title: String }
+type Actor @table(name: "actor") { lastName: String @field(name: "last_name") }
+
+type FilmWithActorsResult {
+  film: Film! @field(name: "filmRecord")
+  actors: [Actor!] @field(name: "actorRecords")
+}
+
+# FilmWithActors has no results member: each FilmWithActors passes through to FilmWithActorsResult.
+type FilmsWithActorsPayload {
+  results: [FilmWithActorsResult]
+}
+
+type FilmBlurb { description: String }
+
+# FilmBlurbHolder's blurb() is the member the data field reads.
+type FilmBlurbHolder {
+  blurb: FilmBlurb
+}
+
+extend type Query {
+  filmBlurbHolder(filmId: Int!): FilmBlurbHolder
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmBlurbHolderService", method: "byId"})
+  createFilmsWithActors(filmIds: [Int!]!): FilmsWithActorsPayload
+    @service(service: {className: "no.sikt.graphitron.rewrite.test.services.FilmsWithActorsService", method: "create"})
+}
+
+extend schema @expectEquals(relation: "graphitron_carrier_data_channel", rows: """
+  type_name, field_name,            payload_type_name,      data_field_name, passes_through
+  Query,     createFilmsWithActors, FilmsWithActorsPayload, results,         TRUE
+  Query,     filmBlurbHolder,       FilmBlurbHolder,        blurb,           FALSE
+  """)

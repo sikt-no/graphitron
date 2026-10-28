@@ -94,6 +94,7 @@ A service call is emitted from the store
 ├── A service's holder is its one widest buildable constructor
 │   └── A service class's construction is stated
 └── A producer's carrier is its one data channel
+    ├── A `@service` payload's one data field is stated
     └── A field's source is its parent's result
         └── The result and path model is stated before it is built
 ```
@@ -430,6 +431,10 @@ classified records have no reader left and can go with the walk.
   `graphitron_carrier_data_channel` state each payload field's role and the one data field per
   producer, what stops a payload being a carrier is a defect at its site, and the carrier's
   readers move onto them while `graphitron_carrier_data_field` goes.
+  * **A `@service` payload's one data field is stated** `done`. `graphitron_carrier_data_channel`
+    holds, per `@service` field whose payload has exactly one object data field bound to no table,
+    that field and whether the service's object passes through it, the generator's
+    `BindsDataFieldElement` read off the method and its read slots alone.
 * **The matched key is stated** `open`. `graphitron_producer_matched_key` holds one row per `ONE`
   write and each key its input columns cover, keyed to the producer and `sql_constraint`.
 * **A field's key row is stated** `done`. `graphitron_field_key_row` holds, per field
