@@ -284,3 +284,24 @@ Because a message's `$result` values are read by a subselect in its own insert, 
 * **Built-in targets per mechanism** (a PostgreSQL logical message, an Oracle Transactional Event Queue). Each needs mechanism-specific configuration (a prefix; a queue name and payload object type), and the first exists on one database only. The function target reaches both with a few lines of the deployment's own SQL.
 * **The R1101 mutation hook alone.** It runs before the field's SQL, so it cannot know what the field wrote.
 * **Change data capture without an outbox** (publishing every row change from the WAL or LogMiner). It publishes the table's shape, not an event the schema chose to publish, and does not exist the same way on both databases.
+
+## Reviewer findings
+
+### Round 1 (2026-10-28, Spec -> Ready, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
+
+Verdict: withhold. One blocking finding, bearing on both questions; one non-blocking note. The goal reads on its own: a schema author adds `@outbox` to a mutation field, and every successful call writes one Debezium-style outbox row (or one call to their own emit routine) per directive, carrying a JSON payload they mapped from arguments, the written rows, the session and the context, committed or rolled back with the write. The plan extends shapes already in the tree (the `argMapping` parser behind `ArgBindingMap`, `Returning`, `JooqCatalog`, the `rows<Name>` companion registered through `addCompanionMethod`, the `ErrorRouter.claim` declines) rather than standing a parallel mechanism beside them, and every symbol it names exists as named, except `MutationHookException`, which is R1101 phase 3 and not yet on trunk (see the note).
+
+**Finding 1 (question one: viability, and question two: fit). The call-site list misses the `ID`-returning DML arm, which is the spec's own `deleteFilms` example, and on that arm the write runs in no transaction and captures no key record.**
+
+The spec names three emit sites: `renderTransactionalKeyFetch` for the direct-return and record-carrier fetchers, and the bulk fetcher's `transactionResult` loop. A `DmlTableField` that returns `ID` or `[ID]` (`DmlReturnExpression.EncodedSingle` / `EncodedList`) goes through neither. `TypeFetcherGenerator.emitEncoded` renders through `renderKeyFetch` on the bare `dsl`, with no `transactionResult`, and maps each `RETURNING` row straight to an encoded string in the fetch lambda (`.fetch(r -> encodeFilm(r.get(...)))`). So there is no `written` / `Result<RecordN>` of keys to hand the emit method, and no lambda to put the call in. The sakila schema's real `deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film")` is exactly this arm, and it is the Goal example whose `films: $result` array the spec promises.
+
+Two promises in the spec do not hold for this arm as written:
+
+- "No other change to what is emitted today ... one call to it inside the write's transaction": the arm has to be restructured to capture key records, emit, and then encode. That is a different emit shape from the one shown, and the implementer would have to design it.
+- The escape-hatch promise ("On `Graphitron.newGraphQL()` an `@mutation` field emits inside its own transaction too", and the Tests bullet "Escape hatch: the message commits with the write"): on this arm the write is an autocommitted statement on the escape hatch. Without a transaction added there, the outbox insert commits separately, and a failing emit leaves the write in place. That is the event-without-write / write-without-event split the item exists to rule out.
+
+What would satisfy it: name the encoded arm as a fourth call site, and state its shape. Either it gains a `transactionResult` that captures the key records, emits, and returns them, with the encoding moved after the lambda (the same shape as `emitKeysTransaction`), or `@outbox` on an `ID`-returning DML field is a phase 1 rejection. In the second case, the Goal example and the `deleteFilms` tests move to a field that phase 1 admits. Update the "no other change" sentence and the escape-hatch test to match whichever is chosen.
+
+**Non-blocking.**
+
+- Failure routing says `OutboxEmitException`'s claim decline sits "beside R1101's `MutationHookException` decline". That exception is R1101 phase 3's and is not on trunk, so if this item lands first there is nothing beside it yet. Relation to other items already says whichever lands second merges, so this is a wording point only: the decline needs its own sibling of `TenantConnections.isMountFailure` regardless of order.
