@@ -1,7 +1,7 @@
 ---
 id: R863
 title: "Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 1
 theme: testing
@@ -229,6 +229,22 @@ the commit that moves this item to Spec, with `Discarded:` entries in `changelog
   `NestedInputDmlExecutionTest`'s renamed film.
 
 R959, the sixth, already shipped (`f7b051e`) as one of the filters this item removes.
+
+## Delivered
+
+Shipped as `SakilaDatabase` (static facade), the 74 classes and `SmokeTestPostgresResource` migrated, the
+four tenant classes on per-run database names, `SakilaDatabaseGuardTest` and `SakilaDatabaseTest`, the
+exposed set rewritten to the rule (with the two leaking tests deleting their rows and the one seeded-row
+writer inserting its own film), and `testing.adoc` carrying the rule. Evidence gathered: the full
+`mvn install -Plocal-db` is green on the delivered tree (the reactor stopped once at
+`ArchitectureDocSymbolGuardTest`, fixed by exempting the two sibling-module types the doc now names, and
+the install resumed from `graphitron` green), and the module's execution tier ran green twice at class
+parallelism 8 on the shared database. The spec's five-consecutive-runs and before/after wall-clock
+evidence was not gathered; the reviewer decides whether the doubled-parallelism runs stand in for it.
+Known soft spots, named by the rewrites: `RootFieldExecutionTest.interfaceRootConnection_totalCountAgreesWithTheUnpagedRoot`
+retries because `allContent` has no key-range argument; the `rentalCount` assertions in `GraphQLQueryTest`
+are deltas over one (inventory, customer) pair and assume no sibling rents that pair; some film 3 to 5 cast
+assertions give up "exactly this cast" for `contains`.
 
 ## Other solutions we've considered
 
