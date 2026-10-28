@@ -137,6 +137,83 @@ Open, each with the recommendation the draft is written to:
 
 Phased, since each phase is observable on its own.
 
+### The generated code
+
+Two additions to a mutation's fetchers class, and no other change to what is emitted today: a companion method that writes the field's messages, and one call to it inside the write's transaction. Both are shown for `createFilm` from the example above (the table target, two `@outbox`, the common payload from the configuration), against the fetcher the generator emits today.
+
+The call. Today the write is an expression lambda; with `@outbox` it becomes a block lambda that writes, emits, and returns the same keys, so the emit is in the write's transaction on both paths and the code after the lambda is unchanged:
+
+```java
+public static DataFetcherResult<Record> createFilm(DataFetchingEnvironment env) {
+    try {
+        DSLContext dsl = graphitronContext(env).getDslContext(env);
+        Map<?, ?> in = (Map<?, ?>) env.getArgument("in");
+        // ... length check and insertCols, unchanged ...
+        Film filmTable = Tables.FILM;
+        Record2<Integer, String> keys = dsl.transactionResult(tx -> {          // was: tx -> DSL.using(tx)...fetchOne()
+            Record2<Integer, String> written = DSL.using(tx)
+                .insertInto(filmTable, insertCols.keySet())
+                .values(insertCols.values())
+                .returningResult(Tables.FILM.FILM_ID, Tables.FILM.TITLE)       // widened by the $result columns the payloads name
+                .fetchOne();
+            outboxCreateFilm(DSL.using(tx), env, in, written);                  // the new call
+            return written;
+        });
+        if (keys == null) return DataFetcherResult.<Record>newResult().data(null).build();
+        Record payload = rowsCreateFilm(keys, env);                             // companion's keys type follows the widened RETURNING
+        return DataFetcherResult.<Record>newResult().data(payload).build();
+    } catch (Exception e) {
+        return ErrorRouter.surfaceClientErrorOrRedact(e, env);
+    }
+}
+```
+
+The method. One per `@outbox`-carrying coordinate, a sibling of the `rows<Name>` re-select companion on the same class, named from the field by the generated-names vocabulary like it. It takes the transaction's `DSLContext`, the environment, the argument map and the captured rows, and writes every message of the field in directive order. The JSON is built with jOOQ's `jsonbObject` from entries added under the same `containsKey` presence guards the write uses, so an omitted input field is an absent key and an explicit `null` is `null`; the table target is one multi-row insert:
+
+```java
+private static void outboxCreateFilm(DSLContext tx, DataFetchingEnvironment env,
+                                     Map<?, ?> in, Record2<Integer, String> written) {
+    try {
+        // common payload: <outbox><payload>, from $session, $context and $scope only
+        List<JSONEntry<?>> common = List.of(
+            key("actor").value(session(env).userId()),
+            key("requestId").value(requestContext(env).<String>get("requestId")),
+            key("operation").value(env.getOperationDefinition().getName()));
+
+        // message 1, event "FilmCreated": film.id: $result.id, film.title: in.title, film.languageId: in.languageId
+        List<JSONEntry<?>> film = new ArrayList<>();
+        film.add(key("id").value(encodeFilm(written.value1())));               // $result.id: the API's node id
+        if (in.containsKey("title")) film.add(key("title").value(in.get("title")));
+        if (in.containsKey("languageId")) film.add(key("languageId").value(in.get("languageId")));
+        List<JSONEntry<?>> created = new ArrayList<>(common);
+        created.add(key("film").value(DSL.jsonbObject(film)));
+
+        // message 2, event "FilmCatalogued": filmId: $result.id, releaseYear: in.releaseYear
+        List<JSONEntry<?>> catalogued = new ArrayList<>(common);
+        catalogued.add(key("filmId").value(encodeFilm(written.value1())));
+        if (in.containsKey("releaseYear")) catalogued.add(key("releaseYear").value(in.get("releaseYear")));
+
+        tx.insertInto(Tables.OUTBOX, Tables.OUTBOX.TYPE, Tables.OUTBOX.AGGREGATETYPE, Tables.OUTBOX.PAYLOAD)
+            .values(DSL.val("FilmCreated"), DSL.val("film"), DSL.jsonbObject(created))
+            .values(DSL.val("FilmCatalogued"), DSL.val("film"), DSL.jsonbObject(catalogued))
+            .execute();
+    } catch (RuntimeException e) {
+        throw new OutboxEmitException(e);                                       // ErrorRouter.claim declines it
+    }
+}
+```
+
+The function target differs only in the last statement: one `new OutboxEmit()` per message, with the role setters the routine has, `execute(tx.configuration())`. Value rendering shown here (`session(env)`, `requestContext(env)`, leaf conversion through the types' `Coercing`) uses the helpers the generated fetchers already carry for `@service` bindings; the exact helper names are the implementer's to settle, the shape is the commitment.
+
+What varies by coordinate, and so is the generator's work:
+
+* *The call site.* The three DML emit sites (`renderTransactionalKeyFetch` for the direct-return and record-carrier fetchers, the hand-written `transactionResult` loop of the bulk fetcher) each gain the same optional step. A list result passes the `Result<RecordN>`; a single-row UPDATE or DELETE that matched nothing passes `null` (open decision 2 says whether the method then writes anyway).
+* *The `RETURNING` list.* The union of the write's key columns and the columns any message's `$result` path names, which fixes the captured record's type and so the method's parameter type.
+* *The method body.* One block per message, one `if (in.containsKey(...))` per optional argument leaf, one entry per `$result` leaf, the common entries shared; nothing is read from the database.
+* *No `@outbox`, no change:* a field without the directive emits exactly what it emits today.
+
+In the generator a new emitter beside `RoutineWriteEmitter` renders the method from the coordinate's outbox rows, and `TypeFetcherGenerator` makes the one seam call at each of the three sites (`ctx.addCompanionMethod`, as `emitReentry` does for the re-select).
+
 ### Phase 1: the table target, for generated DML mutations
 
 * **Directive.** `@outbox(event: String, argMapping: String) repeatable on FIELD_DEFINITION` in `directives.graphqls`. Classification attaches a list of outbox messages, one per occurrence in directive order, to the `MutationField` variants that write a known `@table` with a primary key (`DmlTableField`, `MutationDmlRecordField`, `MutationBulkDmlRecordField`); every other placement is a validate-time rejection naming the field and the reason (a Query field; a `@service` or routine write until phase 3; an empty `event`; two occurrences in the schema with the same event, given or defaulted; a key bound twice in one `argMapping`).
