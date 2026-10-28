@@ -39,9 +39,9 @@ import java.util.Map;
  *       converter still runs. An absent, non-list or empty wire value yields {@code null}. A
  *       non-{@code Map} element contributes {@code DSL.falseCondition()}, for the reason a whole
  *       read contributes a row of typed nulls; an element carrying no cell contributes
- *       {@code DSL.trueCondition()}, never {@code DSL.and} over an empty list, since jOOQ's
- *       {@code noCondition()} is an identity for {@code or} too and would drop the element from the
- *       disjunction.</li>
+ *       {@code DSL.trueCondition()}, stated rather than left to what {@code DSL.and} answers for
+ *       an empty list, since an arm answering {@code noCondition()} would drop the element from the
+ *       disjunction ({@code noCondition()} is an identity for {@code or} as well as {@code and}).</li>
  * </ul>
  *
  * <p>A registry of its own because none of the existing ones has this key: the node-id decode
