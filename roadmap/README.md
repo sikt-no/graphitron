@@ -31,7 +31,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1112` | A NULL sort key sorts last in both directions, and keyset paging returns the rows that carry one | In Review | 2026-10-27 | [plan](null-sort-keys-sort-last-and-page.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
@@ -47,7 +46,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start | Ready | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](mutation-field-transaction-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression <sub>blocked by: [null-sort-keys-sort-last-and-page](null-sort-keys-sort-last-and-page.md)</sub> | In Progress | 2026-10-28 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
+| `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression | In Progress | 2026-10-28 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
 | `R1104` | Take the open Dependabot bumps, best effort per bump | In Review | 2026-10-27 | [plan](dependabot-batch-refresh.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
@@ -657,7 +656,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R756` [**The orphan sweep never visits four subpackages the generator emits into**](orphan-sweep-misses-emitted-subpackages.md) — Backlog, correctness
 - `R480` [**@oneOf definition augment defeated by descriptions quoting the definition; federated SDL fails Apollo composition**](oneof-augment-defeated-by-descriptions.md) — Backlog, bug
 - `R1037` [**A @reference key element can ride its key inverted**](reference-key-rides-inverted.md) — Backlog, feature
-- `R1112` [**A NULL sort key sorts last in both directions, and keyset paging returns the rows that carry one**](null-sort-keys-sort-last-and-page.md) — In Review, bug
 - `R679` [**A child lookup is rejected for a positional contract it does not have**](child-lookup-positional-rationale.md) — Backlog, bug
 - `R1074` [**A multi-table child connection pages and dispatches on the first column of a composite participant key**](multi-table-child-connection-truncates-composite-key.md) — Backlog, bug
 - `R1110` [**A single-valued field over a to-many path returns an arbitrary row, and @defaultOrder on it is silently ignored**](single-field-over-to-many-path-returns-arbitrary-row.md) — Backlog, bug
@@ -674,7 +672,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R288` [**Inline TableInterfaceField children (currently N+1)**](inline-interface-and-tablemethod-children.md) — Backlog, bug
 - `R886` [**ParentSourceBinding.of is the single producer of the last step only; both call sites splice its inputs by hand**](parent-source-binding-splice-duplicated-at-both-mint-sites.md) — Backlog, cleanup
 - `R556` [**Shared pivot/nesting projection type: fetcher read name diverges under @field(name:) remap**](pivot-nesting-representative-read-divergence.md) — Backlog, bug
-- `R1083` [**@order: sort by a column on a to-one related table via path, or by a method-supplied expression**](order-by-related-table-column.md) — In Progress, architecture, blocked by [null-sort-keys-sort-last-and-page](null-sort-keys-sort-last-and-page.md)
+- `R1083` [**@order: sort by a column on a to-one related table via path, or by a method-supplied expression**](order-by-related-table-column.md) — In Progress, architecture
 - `R1095` [**A computed Node.id is not checked against the node decoder**](computed-node-id-is-unchecked.md) — Backlog, bug
 - `R534` [**Record key decodes erase explicit-null column writes via jOOQ from() flag reset**](record-key-decode-null-write-erasure.md) — Backlog, architecture
 - `R754` [**A String-typed field over a jOOQ-enum column reads the Java constant name, not the database literal**](string-field-over-enum-column-reads-java-constant.md) — Backlog, bug

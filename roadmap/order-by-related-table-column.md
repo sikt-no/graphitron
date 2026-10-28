@@ -5,7 +5,7 @@ status: In Progress
 bucket: architecture
 priority: 5
 theme: codegen-correctness
-depends-on: [null-sort-keys-sort-last-and-page]
+depends-on: []
 created: 2026-10-21
 last-updated: 2026-10-28
 ---
