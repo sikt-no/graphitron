@@ -63,7 +63,7 @@ under the caller's own RLS; a voucher only ever adds access. This is federation 
 ## How it works
 
 1. *Issue (A).* A's field is an ordinary read; the `voucher` column of each returned row is not selected
-   but computed. For each returned row Graphitron signs `(scope, caller, expires, the row's key fields)`
+   but computed. For each returned row Graphitron signs `(scope, caller, expires, the entity type name, the row's key fields)`
    with the runtime's signing key and writes the token (version, scope, caller, expires, key id, signature)
    into that row. `expires` is the operation's start plus `ttl`, fixed per operation, so all rows of an
    operation share the same scope, caller and expiry. The decision is the read itself: a row A's rules hide
@@ -72,7 +72,7 @@ under the caller's own RLS; a voucher only ever adds access. This is federation 
    to B. The voucher stays out of the client schema because the field is `@inaccessible`.
 3. *Verify (B).* The dispatcher resolves the representations through the voucher-bearing key. Graphitron
    decodes each voucher and checks, before any connection is taken: the signature over the token's scope,
-   caller and expiry plus the key fields of *this representation*, against the runtime's verification keys;
+   caller and expiry plus the type name and key fields of *this representation*, against the runtime's verification keys;
    expiry; scope against the field's `@accept(scope:)`; and the caller against the caller of this request.
    Because the signature covers the representation's own key, a voucher cannot be paired with another row.
    A failure makes that representation `null`.
@@ -125,8 +125,9 @@ child to its result row.
   does `@node`; consumers do not write the definitions. Reject: either marker on a type with no `@key`, on
   a field that is also a column, both markers on one type, and `@accept` in a build with no `<accept>`.
 * *Voucher codec.* One class owns the format: version byte, scope, caller, expiry, key id, signature. The
-  signature input adds the row's key fields in their own scalar form, which the token does not carry:
-  B recomputes them from the representation. A decode failure, unknown version or unknown key id is a
+  signature input adds the entity type name and the row's key fields in their own scalar form, which the
+  token does not carry: B recomputes them from the representation, so a voucher for one type's key cannot
+  be presented as another type's with the same key value. A decode failure, unknown version or unknown key id is a
   verification failure, not an exception to the caller.
 * *Key synthesis.* Beside the node-key synthesiser: a type with a marked field gains a second `@key`, the
   authored key's fields plus the marked field, and the marked field gains `@inaccessible`; both show in
@@ -189,6 +190,11 @@ once the spellings are chosen, the design is wrong.
 * The caller: one context value read by name on both sides (as written), or taken from the mount's handle.
 * Key provider shape and default: Ed25519 over JDK keys, with the public key distributed to B; whether the
   default also reads PEM from configuration or only takes key objects.
+* A nonce: none is proposed. A voucher is bound to scope, caller, type, key and a short expiry, and the
+  same voucher is legitimately presented more than once (router retries, several fetches in one plan), so
+  single use would need shared state across B's instances and would break those. Open: an unsigned-secret
+  token id in the signed payload, logged at A and B, for audit correlation; and, for a consumer that wants
+  single use, handing the id to the accept method so it can record it in B's own database.
 * One signature per returned row: negligible for Ed25519 at page sizes, but a connection over thousands of
   rows signs thousands; set a ceiling or sign lazily only for rows the router actually asks the key of.
 * Isolation: one connection per context scopes a subtree by graph shape, not by connection. If a consumer
