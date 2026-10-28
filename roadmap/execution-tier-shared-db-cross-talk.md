@@ -320,3 +320,44 @@ parallelism, or two runs at once against one server, surfaces a non-resilient te
 waiting for CI to hit the interleaving. "Keep patching per test" under "Other solutions" then
 stops describing the plan, since the plan is a rule applied to the whole inventory at once, not
 a patch per flake.
+
+### Round 2 (2026-10-28, Spec -> Ready, reviewer session 01WkW2JGRvjf1KLUB4vdRJMT)
+
+Verdict: withhold, narrowly. The round 1 inversion landed: the goal is now a property of the tests, the
+design is one harness plus a rule applied to the whole inventory, and "Other solutions" states why the
+template-clone design was dropped. I can say what changes for a consumer: a red execution test stops
+meaning "a sibling committed a row", provisioning lives in one extension, and the rule is written down
+once. The architecture fit is sound (it extends `TestDatabase`'s one-database-per-JVM shape and
+`StoreFixtureGuardTest`'s guard shape rather than standing a parallel mechanism). Every test, class and
+symbol the spec names exists as named. Two checkable claims do not hold, and one of them leaves the
+guard and the migration list disagreeing.
+
+**1. (Question 1, claims about code that exists) The provisioning inventory is short by eight classes.**
+The spec counts "67 times" (66 classes plus `SmokeTestPostgresResource`) and scopes the migration to
+"the 66 execution-tier classes". `grep -rl 'new PostgreSQLContainer' graphitron-sakila-example/src/test`
+finds 75 files: 66 under `test/querydb`, `SmokeTestPostgresResource`, and eight under `test/internal`
+(`AddressOccupantsListBatchingTest`, `AccessorDerivedSourceTest`, `OutcomePolymorphicChildExecutionTest`,
+`AddressOccupantCarrierSingleCardinalityTest`, `MultiTablePolymorphicSelfFkOrientationExecutionTest`,
+`MultiTablePolymorphicJoinedCorrelationExecutionTest`, `MultiTablePolymorphicParentHoldsFkExecutionTest`,
+`MutationPayloadLifterTest`). Each carries the same `test.db.url` branch. As written, the guard forbids
+`new PostgreSQLContainer` and `test.db.*` reads in the module's test sources outside `SakilaDatabase`,
+while the Implementation list migrates only the 66, so the guard would fail on the eight at the first
+build. Restate the count, bring the eight into the Implementation list (or name why they are exempt and
+add them to the guard's closed list), and say whether the survey under "What is true today" (the 27
+writing classes, the 19 exposed methods, the 65 convention-safe assertions) covered them. It reads as
+if it did not, and any of the eight that writes `film`, `film_actor` or `rental` rows, or reads a whole
+table, belongs in the exposed inventory, since "applied to the whole exposed inventory" is the item's
+claim. Satisfied by a corrected count, a scope statement for those eight, and a survey that has looked
+at them.
+
+**2. (Question 1, a stated claim that is false) The five absorbed items' changelog entries describe the
+rejected design.** "Roadmap entries" says the `Discarded:` entries in `changelog.md` name R863. They do,
+but each says R863 "gives every execution-tier class its own database cloned from `init.sql`, so the
+colliding pair this item recorded cannot meet", which is the round 1 design, not this one. Anyone
+following R823, R825, R843, R946 or R1028 to R863 is told the opposite of what it does (a shared database
+with resilient tests). Reword those five entries to match the plan; the five items' own collisions should
+now be named as tests rewritten to the rule.
+
+Nothing else blocks. The guard's name-the-limits paragraph, the `nextval` argument against a read-only
+database, and the per-run tenant names (including leaving the two single-class roles alone) all check
+out against the tree.
