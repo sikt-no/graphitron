@@ -235,6 +235,7 @@ public final class GraphQLAstCapture {
      * index, so the index is reachable on its own below.
      */
     public static void anchor(DSLContext dsl, String graph, LocalDateTime readAt) {
+        releaseSources(dsl, graph);
         elements(dsl, graph, readAt);
         typeElements(dsl, graph, readAt);
         fieldElements(dsl, graph, readAt);
@@ -257,6 +258,7 @@ public final class GraphQLAstCapture {
         directiveApplications(dsl, graph, readAt);
         directiveApplicationArguments(dsl, graph, readAt);
         sweep(dsl, graph, readAt);
+        pointAtSources(dsl, graph);
     }
 
 
@@ -1314,6 +1316,67 @@ public final class GraphQLAstCapture {
         GRAPHQL_IMPLEMENTS_INTERFACE, GRAPHQL_DIRECTIVE,
         GRAPHQL_DIRECTIVE_LOCATION, GRAPHQL_DIRECTIVE_ARGUMENT, GRAPHQL_ROOT_OPERATION,
         GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_DIRECTIVE_APPLICATION_ARG);
+
+    /**
+     * The anchors that name the written position they were read from, with the column naming the
+     * declaring type where an anchor also names a declaration site.
+     */
+    private static final Map<Table<?>, String> SITED = Map.of(
+        GRAPHQL_FIELD, "TYPE_NAME", GRAPHQL_ENUM_VALUE, "TYPE_NAME",
+        GRAPHQL_UNION_MEMBER, "UNION_NAME", GRAPHQL_IMPLEMENTS_INTERFACE, "TYPE_NAME",
+        GRAPHQL_ARGUMENT, "", GRAPHQL_DIRECTIVE, "", GRAPHQL_DIRECTIVE_ARGUMENT, "",
+        GRAPHQL_ROOT_OPERATION, "", GRAPHQL_DIRECTIVE_APPLICATION, "");
+
+    /**
+     * Lets go of every reference the graph's anchors hold, before any writer moves a row's site:
+     * a reference is a copy of the columns it names, held equal to them, so a row whose site
+     * changes cannot keep the old copy. {@link #pointAtSources} hands them back after the sweep.
+     */
+    private static void releaseSources(DSLContext dsl, String graph) {
+        SITED.forEach((table, typeColumn) -> {
+            var update = dsl.update(table)
+                .set(field(name("SITE_GRAPH_REF"), String.class), (String) null)
+                .set(field(name("SITE_SOURCE_REF"), String.class), (String) null)
+                .set(field(name("SITE_LINE_REF"), Integer.class), (Integer) null)
+                .set(field(name("SITE_COLUMN_REF"), Integer.class), (Integer) null);
+            if (!typeColumn.isEmpty()) {
+                update = update
+                    .set(field(name("DECLARATION_GRAPH_REF"), String.class), (String) null)
+                    .set(field(name("DECLARATION_TYPE_REF"), String.class), (String) null)
+                    .set(field(name("DECLARATION_SOURCE_REF"), String.class), (String) null)
+                    .set(field(name("DECLARATION_LINE_REF"), Integer.class), (Integer) null)
+                    .set(field(name("DECLARATION_COLUMN_REF"), Integer.class), (Integer) null);
+            }
+            update.where(field(name("GRAPH_NAME"), String.class).eq(graph)).execute();
+        });
+    }
+
+    /**
+     * Points every anchor that survived the sweep at the entries it was read from, through the
+     * nullable copies its references run on. A rewrite of a document deletes its entries, and the
+     * references to them are nulled rather than the anchors deleted, so what hangs off an anchor
+     * outlives its document being read again; this is where the reading that re-derived the anchor
+     * hands it its entries back. After the sweep, so a row this reading did not derive is never
+     * pointed at a position no entry holds.
+     */
+    private static void pointAtSources(DSLContext dsl, String graph) {
+        SITED.forEach((table, typeColumn) -> {
+            var update = dsl.update(table)
+                .set(field(name("SITE_GRAPH_REF"), String.class), field(name("GRAPH_NAME"), String.class))
+                .set(field(name("SITE_SOURCE_REF"), String.class), field(name("SOURCE_NAME"), String.class))
+                .set(field(name("SITE_LINE_REF"), Integer.class), field(name("SOURCE_LINE"), Integer.class))
+                .set(field(name("SITE_COLUMN_REF"), Integer.class), field(name("SOURCE_COLUMN"), Integer.class));
+            if (!typeColumn.isEmpty()) {
+                update = update
+                    .set(field(name("DECLARATION_GRAPH_REF"), String.class), field(name("GRAPH_NAME"), String.class))
+                    .set(field(name("DECLARATION_TYPE_REF"), String.class), field(name(typeColumn), String.class))
+                    .set(field(name("DECLARATION_SOURCE_REF"), String.class), field(name("SOURCE_NAME"), String.class))
+                    .set(field(name("DECLARATION_LINE_REF"), Integer.class), field(name("DECLARATION_LINE"), Integer.class))
+                    .set(field(name("DECLARATION_COLUMN_REF"), Integer.class), field(name("DECLARATION_COLUMN"), Integer.class));
+            }
+            update.where(field(name("GRAPH_NAME"), String.class).eq(graph)).execute();
+        });
+    }
 
     /**
      * Deletes this graph's anchor rows that this reading did not derive.

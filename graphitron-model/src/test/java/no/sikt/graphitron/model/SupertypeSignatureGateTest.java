@@ -318,10 +318,6 @@ class SupertypeSignatureGateTest {
         // first for the one link that opts the graph in, plus what graphitron applies itself. Decided:
         // the entry is per application, and the anchor per graph.
         Set.of("graphitron_ast_link_import_entry", "graphitron_federation_link_import"),
-        // The arguments of the directives documents define, and of the composed vocabulary, which
-        // is those plus what the federation link brings in. Decided: the written relation is the
-        // transcription and the composed one the anchor the editor reads, at one grain on purpose.
-        Set.of("graphql_directive_argument", "graphitron_directive_argument"),
         // The enum-value site's two sorting pairs, on the terms every pair above is on: an
         // as-written relation beside the resolved one it will be derived into, both coming off this
         // roster together on the day that derivation lands.

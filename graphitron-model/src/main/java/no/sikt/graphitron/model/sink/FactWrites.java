@@ -330,8 +330,17 @@ final class FactWrites {
                          t.SOURCE_NAME,
                          t.SOURCE_LINE,
                          t.SOURCE_COLUMN,
+                         t.SITE_GRAPH_REF,
+                         t.SITE_SOURCE_REF,
+                         t.SITE_LINE_REF,
+                         t.SITE_COLUMN_REF,
+                         t.DECLARATION_GRAPH_REF,
+                         t.DECLARATION_TYPE_REF,
+                         t.DECLARATION_SOURCE_REF,
+                         t.DECLARATION_LINE_REF,
+                         t.DECLARATION_COLUMN_REF,
                          t.TOUCHED_AT)
-                .values(markers(18)));
+                .values(markers(27)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -350,6 +359,15 @@ final class FactWrites {
                                row.get(t.SOURCE_NAME),
                                row.get(t.SOURCE_LINE),
                                row.get(t.SOURCE_COLUMN),
+                               row.get(t.SITE_GRAPH_REF),
+                               row.get(t.SITE_SOURCE_REF),
+                               row.get(t.SITE_LINE_REF),
+                               row.get(t.SITE_COLUMN_REF),
+                               row.get(t.DECLARATION_GRAPH_REF),
+                               row.get(t.DECLARATION_TYPE_REF),
+                               row.get(t.DECLARATION_SOURCE_REF),
+                               row.get(t.DECLARATION_LINE_REF),
+                               row.get(t.DECLARATION_COLUMN_REF),
                                row.get(t.TOUCHED_AT));
         }
         batch.execute();
@@ -374,8 +392,12 @@ final class FactWrites {
                          t.SOURCE_NAME,
                          t.SOURCE_LINE,
                          t.SOURCE_COLUMN,
+                         t.SITE_GRAPH_REF,
+                         t.SITE_SOURCE_REF,
+                         t.SITE_LINE_REF,
+                         t.SITE_COLUMN_REF,
                          t.TOUCHED_AT)
-                .values(markers(17)));
+                .values(markers(21)));
         for (TableRecord<?> row : rows) {
             batch = batch.bind(row.get(t.GRAPH_NAME),
                                row.get(t.TYPE_NAME),
@@ -393,6 +415,10 @@ final class FactWrites {
                                row.get(t.SOURCE_NAME),
                                row.get(t.SOURCE_LINE),
                                row.get(t.SOURCE_COLUMN),
+                               row.get(t.SITE_GRAPH_REF),
+                               row.get(t.SITE_SOURCE_REF),
+                               row.get(t.SITE_LINE_REF),
+                               row.get(t.SITE_COLUMN_REF),
                                row.get(t.TOUCHED_AT));
         }
         batch.execute();

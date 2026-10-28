@@ -1515,13 +1515,36 @@ CREATE TABLE graphql_field (
   source_column     INT,
   touched_at        TIMESTAMP NOT NULL,
   field_name_upper  VARCHAR GENERATED ALWAYS AS (UPPER(field_name)),
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
+  declaration_graph_ref  VARCHAR,
+  declaration_type_ref   VARCHAR,
+  declaration_source_ref VARCHAR,
+  declaration_line_ref   INT,
+  declaration_column_ref INT,
   PRIMARY KEY (graph_name, type_name, field_name),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphql_field_element (graph_name, type_name, field_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE,
+  FOREIGN KEY (declaration_graph_ref, declaration_type_ref, declaration_source_ref,
+               declaration_line_ref, declaration_column_ref)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (declaration_graph_ref IS NULL OR declaration_graph_ref = graph_name),
+  CHECK (declaration_type_ref IS NULL OR declaration_type_ref = type_name),
+  CHECK (declaration_source_ref IS NULL OR declaration_source_ref = source_name),
+  CHECK (declaration_line_ref IS NULL OR declaration_line_ref = declaration_line),
+  CHECK (declaration_column_ref IS NULL OR declaration_column_ref = declaration_column),
   CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0))
+  CHECK (is_list = (list_depth > 0)),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_field IS 'What a field at a coordinate is: its type expression, its description, its default and the site that contributed it. For example title: String! on type Film is the row (Film, title) with type_sdl String! and non_null true.';
 COMMENT ON COLUMN graphql_field.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1543,6 +1566,15 @@ COMMENT ON COLUMN graphql_field.source_line IS 'source line, 1-based per the gra
 COMMENT ON COLUMN graphql_field.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_field.field_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper where @field(name:) was omitted and the field name stands in as a column spelling. Generated, so nothing writes it and nothing can. A GraphQL field name is folded here for that crossing alone; nothing compares one to another case-insensitively';
 COMMENT ON COLUMN graphql_field.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_field.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_field.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_field.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_field.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
+COMMENT ON COLUMN graphql_field.declaration_graph_ref IS 'the graph, copied beside graph_name so the reference to the declaration site this row hangs off can be nulled without touching the key; NULL once that site is gone';
+COMMENT ON COLUMN graphql_field.declaration_type_ref IS 'the declaring type, a copy of type_name nulled with the reference';
+COMMENT ON COLUMN graphql_field.declaration_source_ref IS 'the file of the declaration site, a copy of source_name nulled with the reference';
+COMMENT ON COLUMN graphql_field.declaration_line_ref IS 'the line of the declaration site, a copy of declaration_line nulled with the reference';
+COMMENT ON COLUMN graphql_field.declaration_column_ref IS 'the column of the declaration site, a copy of declaration_column nulled with the reference. The site is a declaration entry, so a rewrite of its document deletes it; this row outlives that delete with its reference nulled, which is what keeps what hangs off it, and the next anchoring re-points or sweeps it';
 
 CREATE TABLE graphql_argument (
   graph_name        VARCHAR NOT NULL,
@@ -1563,11 +1595,22 @@ CREATE TABLE graphql_argument (
   source_column     INT,
   touched_at        TIMESTAMP NOT NULL,
   argument_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(argument_name)),
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
   PRIMARY KEY (graph_name, type_name, field_name, argument_name),
   FOREIGN KEY (graph_name, type_name, field_name, argument_name)
     REFERENCES graphql_argument_element (graph_name, type_name, field_name, argument_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
-  CHECK (is_list = (list_depth > 0))
+  CHECK (is_list = (list_depth > 0)),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_argument IS 'What an argument on a field is: its type expression, its default, its description and the site that declared it. For example films(rating: String = "G") on Query is the row (Query, films, rating) with default_value_sdl "G".';
 COMMENT ON COLUMN graphql_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1588,6 +1631,10 @@ COMMENT ON COLUMN graphql_argument.source_line IS 'source line, 1-based per the 
 COMMENT ON COLUMN graphql_argument.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_argument.argument_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_column''s column_name_upper and jooq_name_upper where @field(name:) was omitted and the argument name stands in as a column spelling. Generated, so nothing writes it and nothing can. The argument-site counterpart of graphql_field.field_name_upper, folded for the same one crossing and for no other: nothing compares one argument name to another case-insensitively';
 COMMENT ON COLUMN graphql_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_argument.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_argument.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_argument.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_argument.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
 
 CREATE TABLE graphql_enum_value (
   graph_name          VARCHAR NOT NULL,
@@ -1601,11 +1648,34 @@ CREATE TABLE graphql_enum_value (
   source_line         INT,
   source_column       INT,
   touched_at          TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
+  declaration_graph_ref  VARCHAR,
+  declaration_type_ref   VARCHAR,
+  declaration_source_ref VARCHAR,
+  declaration_line_ref   INT,
+  declaration_column_ref INT,
   PRIMARY KEY (graph_name, type_name, value_name),
   FOREIGN KEY (graph_name, type_name, value_name)
     REFERENCES graphql_enum_value_element (graph_name, type_name, value_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
+  FOREIGN KEY (declaration_graph_ref, declaration_type_ref, declaration_source_ref,
+               declaration_line_ref, declaration_column_ref)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (declaration_graph_ref IS NULL OR declaration_graph_ref = graph_name),
+  CHECK (declaration_type_ref IS NULL OR declaration_type_ref = type_name),
+  CHECK (declaration_source_ref IS NULL OR declaration_source_ref = source_name),
+  CHECK (declaration_line_ref IS NULL OR declaration_line_ref = declaration_line),
+  CHECK (declaration_column_ref IS NULL OR declaration_column_ref = declaration_column),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_enum_value IS 'What a value an enum declares is: its place in the enum, its description and the site that declared it. For example the PG of enum Rating { G PG } is the row (Rating, PG) at ordinal 1.';
 COMMENT ON COLUMN graphql_enum_value.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1619,6 +1689,15 @@ COMMENT ON COLUMN graphql_enum_value.source_name IS 'NOT NULL for the same reaso
 COMMENT ON COLUMN graphql_enum_value.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_value.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_enum_value.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_enum_value.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_enum_value.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_enum_value.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_enum_value.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
+COMMENT ON COLUMN graphql_enum_value.declaration_graph_ref IS 'the graph, copied beside graph_name so the reference to the declaration site this row hangs off can be nulled without touching the key; NULL once that site is gone';
+COMMENT ON COLUMN graphql_enum_value.declaration_type_ref IS 'the declaring type, a copy of type_name nulled with the reference';
+COMMENT ON COLUMN graphql_enum_value.declaration_source_ref IS 'the file of the declaration site, a copy of source_name nulled with the reference';
+COMMENT ON COLUMN graphql_enum_value.declaration_line_ref IS 'the line of the declaration site, a copy of declaration_line nulled with the reference';
+COMMENT ON COLUMN graphql_enum_value.declaration_column_ref IS 'the column of the declaration site, a copy of declaration_column nulled with the reference. The site is a declaration entry, so a rewrite of its document deletes it; this row outlives that delete with its reference nulled, which is what keeps what hangs off it, and the next anchoring re-points or sweeps it';
 
 CREATE TABLE graphql_union_member (
   graph_name          VARCHAR NOT NULL,
@@ -1631,10 +1710,33 @@ CREATE TABLE graphql_union_member (
   source_line         INT,
   source_column       INT,
   touched_at          TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
+  declaration_graph_ref  VARCHAR,
+  declaration_type_ref   VARCHAR,
+  declaration_source_ref VARCHAR,
+  declaration_line_ref   INT,
+  declaration_column_ref INT,
   PRIMARY KEY (graph_name, union_name, member_type_name),
   FOREIGN KEY (graph_name, union_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, union_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
+  FOREIGN KEY (declaration_graph_ref, declaration_type_ref, declaration_source_ref,
+               declaration_line_ref, declaration_column_ref)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (declaration_graph_ref IS NULL OR declaration_graph_ref = graph_name),
+  CHECK (declaration_type_ref IS NULL OR declaration_type_ref = union_name),
+  CHECK (declaration_source_ref IS NULL OR declaration_source_ref = source_name),
+  CHECK (declaration_line_ref IS NULL OR declaration_line_ref = declaration_line),
+  CHECK (declaration_column_ref IS NULL OR declaration_column_ref = declaration_column),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 
 CREATE TABLE graphql_implements_interface (
@@ -1648,10 +1750,33 @@ CREATE TABLE graphql_implements_interface (
   source_line         INT,
   source_column       INT,
   touched_at          TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
+  declaration_graph_ref  VARCHAR,
+  declaration_type_ref   VARCHAR,
+  declaration_source_ref VARCHAR,
+  declaration_line_ref   INT,
+  declaration_column_ref INT,
   PRIMARY KEY (graph_name, type_name, interface_name),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, type_name, source_name, declaration_line, declaration_column)
-    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column) ON DELETE CASCADE
+  FOREIGN KEY (declaration_graph_ref, declaration_type_ref, declaration_source_ref,
+               declaration_line_ref, declaration_column_ref)
+    REFERENCES graphql_type_declaration (graph_name, type_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (declaration_graph_ref IS NULL OR declaration_graph_ref = graph_name),
+  CHECK (declaration_type_ref IS NULL OR declaration_type_ref = type_name),
+  CHECK (declaration_source_ref IS NULL OR declaration_source_ref = source_name),
+  CHECK (declaration_line_ref IS NULL OR declaration_line_ref = declaration_line),
+  CHECK (declaration_column_ref IS NULL OR declaration_column_ref = declaration_column),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 
 COMMENT ON TABLE graphql_union_member IS 'A union names a member: one row per member type the union declares, in the order it wrote them. For example union Result = Film | Actor is two rows, (Result, Film) at position 0 and (Result, Actor) at 1.';
@@ -1665,6 +1790,15 @@ COMMENT ON COLUMN graphql_union_member.declaration_column IS 'column of the same
 COMMENT ON COLUMN graphql_union_member.source_name IS 'the file the member or interface token itself was written in; NOT NULL as on graphql_field';
 COMMENT ON COLUMN graphql_union_member.source_line IS 'source line of that token, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_union_member.source_column IS 'source column of that token, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_union_member.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_union_member.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_union_member.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_union_member.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
+COMMENT ON COLUMN graphql_union_member.declaration_graph_ref IS 'the graph, copied beside graph_name so the reference to the declaration site this row hangs off can be nulled without touching the key; NULL once that site is gone';
+COMMENT ON COLUMN graphql_union_member.declaration_type_ref IS 'the declaring type, a copy of union_name nulled with the reference';
+COMMENT ON COLUMN graphql_union_member.declaration_source_ref IS 'the file of the declaration site, a copy of source_name nulled with the reference';
+COMMENT ON COLUMN graphql_union_member.declaration_line_ref IS 'the line of the declaration site, a copy of declaration_line nulled with the reference';
+COMMENT ON COLUMN graphql_union_member.declaration_column_ref IS 'the column of the declaration site, a copy of declaration_column nulled with the reference. The site is a declaration entry, so a rewrite of its document deletes it; this row outlives that delete with its reference nulled, which is what keeps what hangs off it, and the next anchoring re-points or sweeps it';
 COMMENT ON TABLE graphql_implements_interface IS 'A type answers to an interface: one row per interface the type declares it implements. For example type Film implements Node & Named is two rows, (Film, Node) and (Film, Named).';
 COMMENT ON COLUMN graphql_implements_interface.type_name IS 'the implementing type, which is the declaration this row hangs off';
 COMMENT ON COLUMN graphql_implements_interface.interface_name IS 'the interface named in the implements clause, author-spelled and unanchored';
@@ -1676,6 +1810,15 @@ COMMENT ON COLUMN graphql_implements_interface.declaration_column IS 'column of 
 COMMENT ON COLUMN graphql_implements_interface.source_name IS 'the file the member or interface token itself was written in; NOT NULL as on graphql_field';
 COMMENT ON COLUMN graphql_implements_interface.source_line IS 'source line of that token, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_implements_interface.source_column IS 'source column of that token, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphql_implements_interface.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_implements_interface.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_implements_interface.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_implements_interface.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
+COMMENT ON COLUMN graphql_implements_interface.declaration_graph_ref IS 'the graph, copied beside graph_name so the reference to the declaration site this row hangs off can be nulled without touching the key; NULL once that site is gone';
+COMMENT ON COLUMN graphql_implements_interface.declaration_type_ref IS 'the declaring type, a copy of type_name nulled with the reference';
+COMMENT ON COLUMN graphql_implements_interface.declaration_source_ref IS 'the file of the declaration site, a copy of source_name nulled with the reference';
+COMMENT ON COLUMN graphql_implements_interface.declaration_line_ref IS 'the line of the declaration site, a copy of declaration_line nulled with the reference';
+COMMENT ON COLUMN graphql_implements_interface.declaration_column_ref IS 'the column of the declaration site, a copy of declaration_column nulled with the reference. The site is a declaration entry, so a rewrite of its document deletes it; this row outlives that delete with its reference nulled, which is what keeps what hangs off it, and the next anchoring re-points or sweeps it';
 -- The container end of each arm, which is what a reader arriving with a container name probes by
 -- and what the graphql_poly_member view unions. One index apiece rather than one shared, the two
 -- containers being different columns of different relations.
@@ -1692,9 +1835,20 @@ CREATE TABLE graphql_root_operation (
   source_line   INT,
   source_column INT,
   touched_at    TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
   PRIMARY KEY (graph_name, operation),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION'))
+  CHECK (operation IN ('QUERY', 'MUTATION', 'SUBSCRIPTION')),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_root_operation IS 'The schema binds a root operation to a type: one row per operation it names. For example schema { query: Query mutation: Mutation } is two rows, (QUERY, Query) and (MUTATION, Mutation).';
 COMMENT ON COLUMN graphql_root_operation.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1704,6 +1858,10 @@ COMMENT ON COLUMN graphql_root_operation.source_name IS 'position of the binding
 COMMENT ON COLUMN graphql_root_operation.source_line IS 'line of the binding; NULL with the siblings when the binding is the name-convention default';
 COMMENT ON COLUMN graphql_root_operation.source_column IS 'column of the binding; NULL with the siblings when the binding is the name-convention default';
 COMMENT ON COLUMN graphql_root_operation.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_root_operation.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_root_operation.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_root_operation.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_root_operation.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
 
 -- ==== Directive definitions =======================================================
 -- The definition side of the directive surface: what a directive is, where it may sit, what
@@ -1722,8 +1880,19 @@ CREATE TABLE graphql_directive (
   source_line    INT,
   source_column  INT,
   touched_at     TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
   PRIMARY KEY (graph_name, directive_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_directive IS 'A directive is defined: whether it repeats, its description and the site that declared it. For example directive @paged repeatable on FIELD_DEFINITION is the row (paged) with repeatable true.';
 COMMENT ON COLUMN graphql_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1734,6 +1903,10 @@ COMMENT ON COLUMN graphql_directive.source_name IS 'the SDL file the row was cap
 COMMENT ON COLUMN graphql_directive.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_directive.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_directive.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_directive.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_directive.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
 
 CREATE TABLE graphql_directive_location (
   graph_name     VARCHAR NOT NULL,
@@ -1765,9 +1938,20 @@ CREATE TABLE graphql_directive_argument (
   source_line       INT,
   source_column     INT,
   touched_at        TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
   PRIMARY KEY (graph_name, directive_name, argument_name),
   FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE,
-  CHECK (is_list OR item_non_null IS NULL)
+  CHECK (is_list OR item_non_null IS NULL),
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_directive_argument IS 'A directive definition declares a formal argument: its type expression, its default, its description and the site that declared it. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName) with type_sdl String.';
 COMMENT ON COLUMN graphql_directive_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1785,6 +1969,10 @@ COMMENT ON COLUMN graphql_directive_argument.source_name IS 'position of the for
 COMMENT ON COLUMN graphql_directive_argument.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_argument.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
+COMMENT ON COLUMN graphql_directive_argument.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_directive_argument.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_directive_argument.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_directive_argument.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
 
 -- ==== Directive applications ======================================================
 -- One row per application the author wrote, one child row per argument the author passed.
@@ -1808,9 +1996,20 @@ CREATE TABLE graphql_directive_application (
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
+  site_graph_ref  VARCHAR,
+  site_source_ref VARCHAR,
+  site_line_ref   INT,
+  site_column_ref INT,
   PRIMARY KEY (graph_name, coordinate, directive_name, ordinal),
   FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate)
-    ON DELETE CASCADE
+    ON DELETE CASCADE,
+  FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
+    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE SET NULL,
+  CHECK (site_graph_ref IS NULL OR site_graph_ref = graph_name),
+  CHECK (site_source_ref IS NULL OR site_source_ref = source_name),
+  CHECK (site_line_ref IS NULL OR site_line_ref = source_line),
+  CHECK (site_column_ref IS NULL OR site_column_ref = source_column)
 );
 COMMENT ON TABLE graphql_directive_application IS 'One directive an author applied, at the coordinate they applied it to: one row per application, however many sites the corpus writes them at. For example type Film @key(fields: "id") is one row at coordinate Film, and the @external on Film.title is another at Film.title.';
 COMMENT ON COLUMN graphql_directive_application.graph_name IS 'the owning graph''s partition, anchored by store_graph through the element below; the leading key dimension that keeps one workspace''s graphs apart';
@@ -1821,6 +2020,10 @@ COMMENT ON COLUMN graphql_directive_application.source_name IS 'the file the app
 COMMENT ON COLUMN graphql_directive_application.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_application.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_application.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total. The sweep is what collects an application an author deleted from a coordinate that still stands; a coordinate the author deleted takes its applications with it through the cascade above';
+COMMENT ON COLUMN graphql_directive_application.site_graph_ref IS 'the graph, copied beside graph_name so the reference to the entry this row was read from can be nulled without touching the key; NULL once that entry is gone';
+COMMENT ON COLUMN graphql_directive_application.site_source_ref IS 'the file of the entry this row was read from, a copy of source_name the delete of that entry nulls rather than deletes this row by. NULL marks a row whose source went and that the next anchoring re-derives or sweeps';
+COMMENT ON COLUMN graphql_directive_application.site_line_ref IS 'the line of that entry, a copy of source_line nulled with it';
+COMMENT ON COLUMN graphql_directive_application.site_column_ref IS 'the column of that entry, a copy of source_column nulled with it';
 -- The position of the at sign, which is what GraphQLAstCapture.directiveApplicationArguments joins
 -- an argument entry to its application by. The position is no prefix of the key, so without this
 -- every entry scans every application. touched_at stays out: it is a residual on the rows the

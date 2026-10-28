@@ -1,0 +1,16 @@
+# The second reading moves every position in the file down by three lines, so the rewrite deletes
+# every entry the first reading wrote. The field anchor's references to them are nulled, not the
+# anchor, and the reading that re-derives it points it at the positions it was read from now.
+#
+#
+
+type Film {
+  title: String
+}
+
+extend type Query { films: [Film] }
+
+extend schema @expectEquals(relation: "graphql_field", where: "type_name = 'Film'", rows: """
+  field_name, declaration_line, source_line, site_line_ref, declaration_line_ref
+  title,      7,                8,           8,             7
+  """)
