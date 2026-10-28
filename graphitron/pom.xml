@@ -276,6 +276,11 @@
                             <workingDirectory>${project.basedir}</workingDirectory>
                             <classpathScope>test</classpathScope>
                             <arguments>
+                                <!-- This phase runs before process-test-resources, so on a clean build
+                                     target/test-classes holds no logback-test.xml yet and Logback falls
+                                     back to DEBUG, where jOOQ's LoggerListener writes every store
+                                     statement to the reactor console. Point it at the source copy. -->
+                                <argument>-Dlogback.configurationFile=${project.basedir}/src/test/resources/logback-test.xml</argument>
                                 <argument>-classpath</argument>
                                 <classpath/>
                                 <argument>no.sikt.graphitron.rewrite.test.generate.GenerateTestSchemas</argument>
