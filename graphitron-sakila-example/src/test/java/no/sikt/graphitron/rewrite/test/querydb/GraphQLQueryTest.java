@@ -4743,11 +4743,12 @@ class GraphQLQueryTest {
 
     // ===== A nullable element field does not constrain when left out =====
 
+    /** The seeded films the query returned, sorted by id; other classes' films are not this case's. */
     @SuppressWarnings("unchecked")
     private List<Integer> filmIdsOf(String field, String argument) {
         Map<String, Object> data = execute("{ " + field + argument + " { filmId } }");
         var rows = (List<Map<String, Object>>) data.get(field);
-        return rows.stream().map(r -> (Integer) r.get("filmId")).sorted().toList();
+        return seededById(rows).stream().map(r -> (Integer) r.get("filmId")).sorted().toList();
     }
 
     @Test
