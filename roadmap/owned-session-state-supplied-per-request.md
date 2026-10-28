@@ -40,44 +40,78 @@ Owned and motivated by fs-plattform (tilgangsstyring !6441 on 10.0.0-RC46, oppta
 
 R1101 met the same limit for its mutation hook and moved it to the runtime as an emitted functional interface (`MutationHook`, `GraphitronRuntime.withMutationHook`), rejecting the reflected static form because a class compiled before generation cannot see emitted types. This item does the same for session identity, per request.
 
+## Decisions
+
+The four questions the Backlog text left open, answered:
+
+* **The handle type is optional data in the switch.** `<sessionState><handle>fqcn</handle></sessionState>` names the type a mount callback returns; omit it and the mount is handle-less (a `Consumer`-shaped callback, no `$session` to bind). Generation loads only that one class, a leaf value type (a record such as opptak's `Identitet`, or a jOOQ UDT record), to read its members for `$session.<member>` bindings and to type the emitted callback; it never loads the mount code or the types the mount's signature mentions, which is what forced the module move. The alternatives lose something real: a generic `SessionState<H>` checked at runtime moves a build-time error to production, and dropping the handle strands `$session` consumers. This is the one place the "classes must exist before generation" constraint survives, now confined to a type the consumer chose to bind from, and the docs say so. The handle's declared members are what the existing member decoding reads; see Relation to other items.
+* **Context arguments stay positional and alphabetical.** With the mount payload gone, the biggest source of same-typed swaps (the mount's own parameters, which the consumer controlled by renaming) is removed; what remains are the schema's declared `contextArguments`, unchanged by this item. A named record or builder for them is a separate, schema-wide change and gets its own item when this lands.
+* **R1101 and this item deliberately differ, and the docs say why.** `MutationHook` is application-wide behaviour registered once on the runtime; it receives the request as a `GraphQLContext` view because it must read values the request carries. A session callback is a per-request value-bearing object whose inputs the consumer already holds when it builds the input, so it captures them by closure and travels in the context under its own typed key. Forcing one shape on both would make the hook look up what the callback already holds, or make the callback re-register per request.
+* **The escape hatch is unchanged.** `newExecutionInput(dsl, ...)` neither takes nor reads a `SessionState`; the consumer owns identity there. `mojo-configuration.adoc` says so beside the new form.
+
+One question the Backlog text missed: the dev tools (`mvn graphitron:dev`, the MCP `execute` tool) construct the mount's payload from `<devDatabase><claims>` through the reflected signature, so a callback build gives them nothing to call. Decided in Dev tooling below.
+
 ## Plan
 
-* **Configuration.** `<sessionState/>` (or an equivalent switch; the spec round names it) turns the feature on with no method references. The emitted session hook, `SessionMountException` and the owned factory are generated as today. `<mount>` and `<unmount>` are deprecated; see Breaking change.
-* **Emitted types**, in `<outputPackage>.schema`, gated on the switch:
-  * `MountedSession`: what graphitron knows about the connection being mounted. `configuration()` (provider-free, carrying the source's dialect and `Settings`, as the `Configuration` parameter does today), and `tenant()` as an `Optional` of the tenant column's type in a multi-tenant build.
-  * `SessionState`: the per-request pair of a mount callback and an optional unmount callback, built with `SessionState.of(mount)` / `SessionState.of(mount, unmount)`. A mount that returns a handle passes it to unmount and to `$session` bindings (see Open questions).
-* **Factory.** `Graphitron.newOwnedExecutionInput(SessionState session, <schema context arguments>)`. The context arguments are only those the schema declares (`@service` / `@condition` `contextArguments`); the mount no longer contributes any. A build with the switch off keeps today's `newOwnedExecutionInput(<schema context arguments>)`.
-* **Lifecycle unchanged.** Lazy acquisition, one mount per pinned connection and tenant key, unmount at release on every completion path, autocommit asserted before the mount, eviction on a throwing mount or unmount, and the request-level rejection already in place: an exception from the mount callback is wrapped in `SessionMountException` exactly as an exception from the static mount is today.
-* **Carrier.** The per-request `SessionState` travels in the `GraphQLContext` under a typed key the factory writes and `GraphitronConnectionInstrumentation` reads, the way the payload context arguments travel today.
+### Configuration
 
-## Open questions for the spec round
+* `SessionStateConfig` gains a third arm, `Callbacks(Optional<String> handleType)`, strings only like its siblings. A `<sessionState>` block with neither `<mount>` nor `<unmount>` yields it; `<handle>` is read only on this arm. `<handle>` beside `<mount>`, or an `<unmount>` without a `<mount>`, fails the build naming the element, as the existing shape rejections do. The form is therefore chosen by presence: `<mount>` set is the method-reference form, absent is this one.
+* An execution that inherits a plugin-level `<mount>` and writes a bare `<sessionState/>` merges to the method-reference form; the docs name `combine.self="override"`, which the sakila pom already uses for the same reason.
+* `SessionStateWarnings.forConfig` yields no advisory for `Callbacks`, as for `MethodHooks`; it adds a deprecation warning for `MethodHooks` (see Breaking change).
 
-* **The handle type.** Today `$session` bindings are type-checked against the static mount's return type at build time. With a callback, generation needs the handle type from somewhere: a type named in the switch (data, not code), a generic `SessionState<H>` with `$session` checked at runtime, or dropping the handle in favour of R1102's member binding. Decide together with R1102.
-* **Context arguments by name.** The schema context arguments remain positional and alphabetical on the factory, with the same swap risk for same-typed values. Whether to give the factory a generated record or builder with named components belongs here or in a follow-on.
-* **Alignment with R1101.** `MutationHook` is registered once on the runtime and reads request values from `GraphQLContext` by string key. A per-request session callback captures them by closure instead. Either both items take the same shape, or the docs say why they differ.
-* **Escape hatch.** Nothing changes for `newExecutionInput(dsl, ...)`, where the consumer owns identity; confirm the docs say so.
+### The resolved carrier
 
-## Breaking change
+* `SessionHooks` keeps the handle axis as its seal and gains the supplied arms beside the reflected ones: `SuppliedHandleLess` and `SuppliedHandled(TypeName handleType)`. `resolveSessionHooks` loads the `<handle>` class and reflects nothing else; an unloadable class drains as a schema-wide `ValidationError`, as a mount reflection failure does today, and mints `NotConfigured`.
+* The mount-derived defaults (`mountRef`, `unmountRef`, `payloadParams`, `tenantSlot`, `stringConstructiblePayload`) are empty on the supplied arms, so nothing downstream of them (the classifier's mount-payload root, the factory's payload slots) fires for this form. A new `suppliesPerRequest()` fact is the one predicate the factory, the connection runtime and the instrumentation read to choose the supplied emit shape; `emitsHookImplementation()` stays true for both forms so the plan membership fact does not fork.
 
-Consumers naming `<mount>` / `<unmount>` today: tilgangsstyring (!6441), graphitron-sakila-example's fixtures, and opptak once migrated. Either both forms live side by side for one release with a deprecation warning at build, or the change follows the breaking-change convention in one commit with those consumers checked and `changelog.md` updated.
+### Emitted types
+
+In `<outputPackage>.schema`, emitted exactly when `suppliesPerRequest()`, at a Java 17 floor (the sakila example compiles them at 17):
+
+* `MountedSession`: a final value type. `configuration()` is the provider-free `Configuration` carrying the source's dialect and `Settings`, as the legacy seam parameter does; `tenant()` exists only in a `<tenantColumn>` build, as `Optional<K>` for the tenant column's type, so a single-tenant consumer cannot call it. A `Connection` seam is not offered: the callback form is `Configuration` only.
+* `SessionState`: the per-request pair, shaped by the carrier arm so each build has one `of` form and lambdas never face overload ambiguity. Handle-less: `of(Mount)` and `of(Mount, Unmount)` with `Mount` taking a `MountedSession`. Handled: `Mount<H>` returning the handle type and `Unmount` taking `(MountedSession, handle)`. The functional interfaces may throw `Exception`; any throwable from either becomes the cause the runtime reports, as for the static form. `of` null-checks its arguments.
+* `SessionMountException` and the hook machinery are emitted as today. The generated `SessionHookImpl` no longer has static `mount`/`unmount` for this form; `PinnedConnection` calls the carried `SessionState` directly.
+
+### Factory and carrier
+
+* `Graphitron.newOwnedExecutionInput(<tenants, multi-tenant only>, SessionState session, <schema context arguments>)`: the tenants parameter keeps its leading place so existing multi-tenant call sites change by one inserted argument, not a reorder. The context arguments are only those the schema declares; the mount contributes none. The escape-hatch factory and the build with `NotConfigured` keep their signatures.
+* The factory null-checks `session` and writes it to the `GraphQLContext` under the key `SessionState.class`, as the carrier is written under `TenantConnections.class`. `GraphitronConnectionInstrumentation.beginExecuteOperation` reads it and hands it to the `TenantConnections` carrier in place of the payload values. A context lacking it (an input built without the factory) fails the operation before any SQL with an `IllegalStateException` naming `newOwnedExecutionInput`; a request that touches no database is still never mounted.
+* The handle's `HANDLE_DATA_KEY` publication and `TenantConnections.sessionHandle` are unchanged; the handle is typed by the declared `<handle>` instead of a reflected return type.
+
+### Lifecycle (unchanged)
+
+Lazy acquisition on whatever thread first needs a connection (the callback's captured values make that thread irrelevant), one mount per pinned connection and tenant key, autocommit asserted before the mount, unmount at release on every completion path, eviction on a throwing mount or unmount, and the request-level rejection already in place: a throwable from the mount callback is wrapped in `SessionMountException` exactly as the static mount's is today.
+
+### Dev tooling
+
+The dev executor runs the consumer's compiled classes at dev time, so a reflected reference there does not have the before-generation problem. In a `Callbacks` build, `<devDatabase>` gains an optional `<session>fqcn#method</session>` naming a public static method `SessionState method(String claims)` (a build with a different handle shape still has exactly one generated `SessionState`, so the signature is the emitted type). The dev executor resolves it at run time, builds the `SessionState` from `<claims>`, and runs it up front exactly as it runs the legacy pair today, so a rejected payload fails loud. Without `<session>`, dev execution in a `Callbacks` build fails with a message naming `<devDatabase><session>`, the same fail-loud posture the legacy path has for claims it cannot construct; it never executes unmounted. The legacy path keeps `stringConstructiblePayload`.
+
+### The store
+
+`StoreEntries.sessionState` is exhaustive over the seal, so `Callbacks` forces a decision. It transcribes the switch and the optional handle type into one new provenance relation, `store_graph_session_supplied` (grain: one row per graph that supplies session identity per request, carrying the handle type as authored when one is named), with the same primary key on `graph_name`, `touched_at` mark and sweep, and `meta_relation` owner as `store_graph_session_mount`. The implementer follows the `adding-a-relation` skill; the authored string only lands here, never a reflected fact.
+
+## Breaking change (decided)
+
+Both forms live side by side for one release: `<mount>` / `<unmount>` keep working, byte-for-byte, and emit a build warning (a `BuildWarning` from `SessionStateWarnings.forConfig`) naming the replacement. The reasons are the consumers that cannot move in one commit: tilgangsstyring (!6441) is on 10.0.0-RC46 with a green 856-test suite and migrates in its own merge request, opptak migrates onto the callback form from the start, and graphitron-sakila-example's existing executions double as the regression suite for the legacy form. The cost is two emit shapes in the connection runtime and the factory; they are mutually exclusive by configuration and share the lifecycle, so the fork is one `suppliesPerRequest()` read at each of three sites. Removing the legacy form is a follow-on item filed when this ships, with `changelog.md` and the consumers checked then.
 
 ## Tests
 
-* Execution tier, extending `SessionHookExecutionTest`: a callback mount sees the values captured when the input was built, on the connection being mounted; unmount runs at release; a throwing callback rejects the request once as `SessionMountException` with the callback's exception as cause; a request touching no database never calls the mount.
-* Multi-tenant: one mount per tenant key with that key in `MountedSession.tenant()`, including scatter workers on other threads.
-* Pipeline tier: with the switch on and no method references, the emitted types and factory signature; the factory carries only schema context arguments.
-* Consumer acceptance: tilgangsstyring !6441 moved to the callback form keeps `SessionIdentity`, `AuthenticationResult` and `Orgtilganger` in `tilgangsstyring-app`, needs no `-parameters` dependency for the factory, and its suite (856 tests, green on the method-reference form) stays green.
+* Unit: `SessionStateConfig` accepts a bare block as `Callbacks`; `<handle>` beside `<mount>` and `<unmount>` alone reject by element name; `SessionStateWarnings` warns on `MethodHooks` and not on `Callbacks`; `resolveSessionHooks` mints `SuppliedHandled` for a loadable handle, `SuppliedHandleLess` without one, and drains an unloadable class as a `ValidationError`.
+* Pipeline: with a bare `<sessionState/>` and no method references, the emitted `MountedSession`, `SessionState` (one `of` form per arm) and the factory signature, which carries `SessionState` plus only the schema context arguments; a multi-tenant build keeps the tenants parameter first and gives `MountedSession` its `tenant()`; a single-tenant build does not; a legacy build emits none of the new types and keeps its factory.
+* Execution, new fixture executions in graphitron-sakila-example (single-tenant handled with a jOOQ record handle, and a multi-tenant one), extending `SessionHookExecutionTest`: a callback sees the values captured when the input was built, on the connection being mounted; unmount runs at release with the mounted handle; a throwing callback rejects the request once as `SessionMountException` with the callback's throwable as cause; a request touching no database never calls the mount; an input built without the factory fails before any SQL; a mount running on a scatter worker thread still sees its captured values, and under multi-tenancy each tenant key mounts once with that key in `MountedSession.tenant()`.
+* Dev tooling: `<devDatabase><session>` builds the state from claims and runs it up front; its absence fails loud, never unmounted.
+* Consumer acceptance, not part of this repository's build: tilgangsstyring !6441 moved to the callback form keeps `SessionIdentity`, `AuthenticationResult` and `Orgtilganger` in `tilgangsstyring-app`, needs no `-parameters` for the factory, and its 856 tests stay green.
 
 ## Documentation
 
-The session identity section of `mojo-configuration.adoc` and `runtime-extension-points.adoc`: the switch, the callback form, why values are captured rather than looked up, and the thread the mount runs on.
+`mojo-configuration.adoc`, Session identity: the bare switch, `<handle>`, the callback form with the Goal's example, the `combine.self` note, why values are captured rather than looked up, the thread the mount runs on, and the unchanged escape hatch; the `<mount>` form is marked deprecated with the migration. `runtime-extension-points.adoc`: the same contract from the contributor's side, including why this differs from `MutationHook`. `docs/manual` for the dev tool's `<session>`.
 
 ## Relation to other items
 
 * **R1098**: graphitron-jakarta-rest's simpler flow depends on this item.
 * **R1097** (Done): request-level rejection applies unchanged to the callback.
-* **R1102** (Spec): `$session` by member; the handle question above is shared.
-* **R1101** (Spec): same move for the mutation hook; see Alignment.
+* **R1102** (Ready): `$session` by member decodes the handle's declared members onto `SessionHooks.Handled`. That decode runs over any arm that carries a handle type; whichever item lands second extends it to the other's arm (`SuppliedHandled` here), and nothing in R1102's sigil, validation or emission changes, since they read the handle type and members and not the mount's reflection.
+* **R1101** (Ready): see Decisions; no code dependency.
 * **R1108** (Backlog): the manual describes the callback form, not the method reference.
 
 ## Other solutions we've considered
