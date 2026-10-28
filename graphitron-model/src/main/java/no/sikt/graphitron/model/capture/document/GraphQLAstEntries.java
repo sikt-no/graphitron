@@ -60,6 +60,7 @@ import no.sikt.graphitron.model.vocabulary.EntryKind;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TOUCHED_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
@@ -117,9 +118,14 @@ public final class GraphQLAstEntries {
      * was deleted still has rows to sweep and no nodes left to say which file it was. The instant is
      * the caller's for the same reason, the eighteen relations having to agree on which reading is
      * current.
+     *
+     * <p>Every coordinate the file named before the write and after it is left in
+     * {@code graphql_ast_touched_coordinate}: before, because the write deletes what the file no
+     * longer names, and after, for what it names now. That is the scope the anchors re-derive.
      */
     public static void write(DSLContext dsl, String graph, String source,
                              TypeDefinitionRegistry document, LocalDateTime touchedAt) {
+        touch(dsl, graph, source, touchedAt);
         typeDeclarations(dsl, graph, touchedAt, document);
         directiveDefinitions(dsl, graph, touchedAt, document);
         schemaDefinitions(dsl, graph, touchedAt, document);
@@ -140,6 +146,20 @@ public final class GraphQLAstEntries {
         appliedArguments(dsl, graph, touchedAt, document);
         values(dsl, graph, touchedAt, document);
         sweep(dsl, graph, source, touchedAt);
+        touch(dsl, graph, source, touchedAt);
+    }
+
+    /** Marks every coordinate {@code source} names now as touched by this reading. */
+    static void touch(DSLContext dsl, String graph, String source, LocalDateTime readAt) {
+        var e = GRAPHQL_AST_ELEMENT_ENTRY;
+        var t = GRAPHQL_AST_TOUCHED_COORDINATE;
+        dsl.insertInto(t, t.GRAPH_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .select(org.jooq.impl.DSL.selectDistinct(e.GRAPH_NAME, e.COORDINATE, val(readAt, t.TOUCHED_AT))
+                .from(e)
+                .where(e.GRAPH_NAME.eq(graph))
+                .and(e.SOURCE_NAME.eq(source)))
+            .onConflictDoNothing()
+            .execute();
     }
 
     /**

@@ -1,0 +1,14 @@
+# The second reading rewrites the first file with the bytes it had, moving its time past this
+# graph's other declaration of @tag. No byte of either declaration changed, but the older one now
+# wins, so the reading re-derives what the moved file names and @tag takes the other file's
+# location. A file of its own, so the moved file keeps its bytes.
+
+extend schema @expectEquals(relation: "graphql_directive_location", where: "directive_name = 'tag'", rows: """
+  location
+  OBJECT
+  """)
+
+extend schema @assertContains(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  REGISTRY, DirectiveRedefinitionError
+  """)

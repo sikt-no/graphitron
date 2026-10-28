@@ -11,6 +11,15 @@ type Film {
 
 extend type Query { films: [Film] }
 
+# The anchors re-derive only what that reaches: the edited file's fields carry this reading's mark,
+# and the untouched file's keep the first reading's.
+extend schema @assertContains(relation: "graphql_field", rows: """
+  type_name, field_name, touched_at
+  Actor,     name,       1000000000
+  Film,      name,       1000000060
+  Film,      year,       1000000060
+  """)
+
 extend schema @expectEquals(relation: "graphql_ast_touched_coordinate", rows: """
   coordinate
   $schema

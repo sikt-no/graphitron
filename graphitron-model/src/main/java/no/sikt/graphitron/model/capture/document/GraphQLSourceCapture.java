@@ -101,8 +101,14 @@ public final class GraphQLSourceCapture {
          * of them last transcribed these bytes and changed for the other, so the comparison is
          * against {@code store_graph_source}'s stamp rather than the shared one on
          * {@code store_source}.
+         *
+         * <p>{@code moved} says its modification time is not the one the store last recorded. The
+         * merge order ranks documents oldest first, so a file whose time moved can change which
+         * declaration of a name wins without a byte changing. The time is the shared one on
+         * {@code store_source}, so a file two graphs read can have its move recorded by the other.
          */
-        record Unchanged(String sourceName, TypeDefinitionRegistry registry) implements Stated {}
+        record Unchanged(String sourceName, TypeDefinitionRegistry registry, boolean moved)
+            implements Stated {}
 
         /**
          * A source this graph read last time and does not read now: the file is gone, or the
@@ -271,13 +277,18 @@ public final class GraphQLSourceCapture {
                                        TypeDefinitionRegistry registry,
                                        Map<String, String> held, LocalDateTime readAt) {
         String stamp = stampOf(sourceName);
+        // Read before it is recorded, the question being whether this reading's time differs.
+        var recorded = dsl.select(STORE_SOURCE.MTIME).from(STORE_SOURCE)
+            .where(STORE_SOURCE.SOURCE_NAME.eq(sourceName))
+            .fetchOne(STORE_SOURCE.MTIME);
         recordSource(dsl, sourceName, stamp, readAt);
         // Unknown counts as changed: a source this graph has not transcribed, or one whose bytes
         // could not be hashed, is not one this reading may skip on the strength of a comparison.
         if (stamp != null && stamp.equals(held.get(sourceName))) {
             // The claim stands untouched, rows and all. Restamping it here would date a
             // transcription this reading is about to decide not to perform.
-            return new SourceDocument.Unchanged(sourceName, registry);
+            return new SourceDocument.Unchanged(sourceName, registry,
+                !java.util.Objects.equals(recorded, modifiedAt(sourceName)));
         }
         claimMembership(dsl, graph, sourceName, stamp, readAt);
         return new SourceDocument.Changed(sourceName, registry);

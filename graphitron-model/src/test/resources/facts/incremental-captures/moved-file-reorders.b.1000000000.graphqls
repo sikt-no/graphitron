@@ -1,0 +1,15 @@
+# The other declaration of @tag, as old as the first and sorting after it by name, so the first
+# reading honours the other file's.
+
+directive @tag on OBJECT
+
+extend schema @expectEquals(relation: "graphql_directive_location", where: "directive_name = 'tag'", rows: """
+  location
+  FIELD_DEFINITION
+  """)
+
+# The toolchain refuses the second declaration of a name, and capture records that.
+extend schema @assertContains(relation: "graphql_schema_problem", rows: """
+  stage,    error_class
+  REGISTRY, DirectiveRedefinitionError
+  """)

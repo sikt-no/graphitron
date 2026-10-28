@@ -997,6 +997,10 @@ COMMENT ON COLUMN graphql_ast_implements_entry.parent_line IS 'source line of th
 COMMENT ON COLUMN graphql_ast_implements_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_implements_entry.interface_name IS 'the interface name written here. Nothing says a type of this name was declared anywhere: an implements clause naming an absent interface is exactly the state this row exists to hold';
 COMMENT ON COLUMN graphql_ast_implements_entry.type_name IS 'the name the declaration this node was written inside gives itself, held here as well as on that row so the anchor keyed by it needs no join to spell. Named for what it holds rather than for the hop, which is how the anchors spell it too. Not a second key: the key is the parent''s position, and one method writes both rows out of one parse of one file';
+-- The interface end, which is what anchoring probes by when a touched type re-derives every
+-- implementor of the interfaces it names.
+CREATE INDEX graphql_ast_implements_entry_interface_ix
+  ON graphql_ast_implements_entry (graph_name, interface_name);
 
 CREATE TABLE graphql_ast_union_member_entry (
   graph_name     VARCHAR NOT NULL,

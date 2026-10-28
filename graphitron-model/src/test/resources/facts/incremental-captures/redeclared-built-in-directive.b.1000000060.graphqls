@@ -1,7 +1,7 @@
 # A second reading that writes only this file, leaving the redeclarations' bytes as they were:
 # nothing about it changes which declaration holds the name. The redeclaring file's entries keep the
 # first reading's mark, and so do the specification's, its bundled bytes being stamped and unmoved;
-# the anchor is derived again under this reading's, a document having been written.
+# and so does the anchor, this file naming no directive for the reading to re-derive.
 
 extend schema @assertAbsent(relation: "graphql_directive", rows: """
   directive_name, source_name
@@ -22,5 +22,5 @@ extend schema @assertContains(relation: "graphql_ast_directive_definition_entry"
 
 extend schema @assertContains(relation: "graphql_directive", rows: """
   directive_name, touched_at
-  oneOf,          1000000060
+  oneOf,          1000000000
   """)

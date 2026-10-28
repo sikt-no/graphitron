@@ -1,0 +1,4 @@
+# One of two files declaring @tag. At the first reading both are as old, so this one wins on its
+# name; the second reading writes it again with these same bytes, which moves only its time.
+
+directive @tag on FIELD_DEFINITION

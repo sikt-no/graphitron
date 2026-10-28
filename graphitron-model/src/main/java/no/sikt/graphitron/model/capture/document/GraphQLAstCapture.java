@@ -4,6 +4,7 @@ import no.sikt.graphitron.model.sink.Progress;
 import graphql.schema.idl.TypeDefinitionRegistry;
 import no.sikt.graphitron.model.run.GraphIdentity;
 import no.sikt.graphitron.model.vocabulary.EntryKind;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
@@ -60,11 +61,13 @@ import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.castNull;
 import static org.jooq.impl.DSL.choose;
 import static org.jooq.impl.DSL.excluded;
+import static org.jooq.impl.DSL.exists;
 import static org.jooq.impl.DSL.field;
 import static org.jooq.impl.DSL.inline;
 import static org.jooq.impl.DSL.name;
 import static org.jooq.impl.DSL.partitionBy;
 import static org.jooq.impl.DSL.rowNumber;
+import static org.jooq.impl.DSL.selectOne;
 import static org.jooq.impl.DSL.upper;
 import static org.jooq.impl.DSL.val;
 import static org.jooq.impl.DSL.when;
@@ -192,6 +195,10 @@ public final class GraphQLAstCapture {
                 case GraphQLSourceCapture.SourceDocument.Specification specification ->
                     rewrite(dsl, graph.name(), specification.sourceName(),
                         specification.registry(), readAt);
+                // Its bytes stand, so its entries do too, but its place in the merge order moved,
+                // which can change which declaration of a name it shares wins.
+                case GraphQLSourceCapture.SourceDocument.Unchanged unchanged when unchanged.moved() ->
+                    GraphQLAstEntries.touch(dsl, graph.name(), unchanged.sourceName(), readAt);
                 case GraphQLSourceCapture.SourceDocument.Unchanged _,
                      GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> { }
                 case GraphQLSourceCapture.SourceDocument.Dropped _ ->
@@ -201,29 +208,10 @@ public final class GraphQLAstCapture {
         }
     }
 
-    /**
-     * One document's entries rewritten from {@code registry}, with the coordinates it named read
-     * on both sides of the write: before, because the write deletes what it no longer names, and
-     * after, for what it names now.
-     */
+    /** One document's entries rewritten from {@code registry}. */
     private static void rewrite(DSLContext dsl, String graph, String source,
                                 TypeDefinitionRegistry registry, LocalDateTime readAt) {
-        touch(dsl, graph, source, readAt);
         GraphQLAstEntries.write(dsl, graph, source, registry, readAt);
-        touch(dsl, graph, source, readAt);
-    }
-
-    /** Marks every coordinate {@code source} names now as touched by this reading. */
-    private static void touch(DSLContext dsl, String graph, String source, LocalDateTime readAt) {
-        var e = GRAPHQL_AST_ELEMENT_ENTRY;
-        var t = GRAPHQL_AST_TOUCHED_COORDINATE;
-        dsl.insertInto(t, t.GRAPH_NAME, t.COORDINATE, t.TOUCHED_AT)
-            .select(org.jooq.impl.DSL.selectDistinct(e.GRAPH_NAME, e.COORDINATE, val(readAt, t.TOUCHED_AT))
-                .from(e)
-                .where(e.GRAPH_NAME.eq(graph))
-                .and(e.SOURCE_NAME.eq(source)))
-            .onConflictDoNothing()
-            .execute();
     }
 
     /**
@@ -235,7 +223,10 @@ public final class GraphQLAstCapture {
      * index, so the index is reachable on its own below.
      */
     public static void anchor(DSLContext dsl, String graph, LocalDateTime readAt) {
-        releaseSources(dsl, graph);
+        if (!dsl.fetchExists(GRAPHQL_AST_TOUCHED_COORDINATE,
+                GRAPHQL_AST_TOUCHED_COORDINATE.GRAPH_NAME.eq(graph))) {
+            return;
+        }
         elements(dsl, graph, readAt);
         typeElements(dsl, graph, readAt);
         fieldElements(dsl, graph, readAt);
@@ -258,7 +249,6 @@ public final class GraphQLAstCapture {
         directiveApplications(dsl, graph, readAt);
         directiveApplicationArguments(dsl, graph, readAt);
         sweep(dsl, graph, readAt);
-        pointAtSources(dsl, graph);
     }
 
 
@@ -312,7 +302,9 @@ public final class GraphQLAstCapture {
             .from(d)
             .join(n).on(n.GRAPH_NAME.eq(d.GRAPH_NAME), n.SOURCE_NAME.eq(d.SOURCE_NAME),
                 n.SOURCE_LINE.eq(d.SOURCE_LINE), n.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-            .where(d.GRAPH_NAME.eq(graph))
+            // Before the rank, which is per coordinate, so a touched coordinate keeps every
+            // candidate it has.
+            .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, d.COORDINATE))
             .asTable("candidates");
         var ranked = dsl
             .select(candidates.field(COORDINATE), candidates.field(ELEMENT_KIND),
@@ -360,14 +352,14 @@ public final class GraphQLAstCapture {
                 .from(f).join(ef).on(ef.GRAPH_NAME.eq(f.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(f.SOURCE_NAME), ef.SOURCE_LINE.eq(f.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(f.SOURCE_COLUMN))
-                .where(f.GRAPH_NAME.eq(graph))
+                .where(f.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE))
                 .union(dsl
                     .select(val(graph, t.GRAPH_NAME), i.TYPE_NAME, i.NAME, ef.COORDINATE,
                         val(touchedAt, t.TOUCHED_AT))
                     .from(i).join(ef).on(ef.GRAPH_NAME.eq(i.GRAPH_NAME),
                         ef.SOURCE_NAME.eq(i.SOURCE_NAME), ef.SOURCE_LINE.eq(i.SOURCE_LINE),
                         ef.SOURCE_COLUMN.eq(i.SOURCE_COLUMN))
-                    .where(i.GRAPH_NAME.eq(graph))))
+                    .where(i.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE))))
             // On the key, not onDuplicateKeyUpdate: with the UNIQUE coordinate beside the key jOOQ
             // renders H2's MERGE ON as key-or-coordinate, which no index serves. The CHECK that
             // the coordinate spells the key keeps the coordinate arm from ever matching alone.
@@ -391,7 +383,7 @@ public final class GraphQLAstCapture {
                 .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-                .where(d.GRAPH_NAME.eq(graph)))
+                .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -411,7 +403,7 @@ public final class GraphQLAstCapture {
                 .from(e).join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(e.SOURCE_NAME), ef.SOURCE_LINE.eq(e.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
-                .where(e.GRAPH_NAME.eq(graph)))
+                .where(e.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -435,7 +427,7 @@ public final class GraphQLAstCapture {
                 .from(d).join(ef).on(ef.GRAPH_NAME.eq(d.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-                .where(d.GRAPH_NAME.eq(graph)))
+                .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
             .onDuplicateKeyUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
@@ -464,7 +456,7 @@ public final class GraphQLAstCapture {
                 .join(ef).on(ef.GRAPH_NAME.eq(a.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-                .where(a.GRAPH_NAME.eq(graph)))
+                .where(a.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
             // The primary key named; the coordinate the unique key holds spells the same names.
             .onConflict(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME)
             .doUpdate()
@@ -487,7 +479,7 @@ public final class GraphQLAstCapture {
                 .from(a).join(ef).on(ef.GRAPH_NAME.eq(a.GRAPH_NAME),
                     ef.SOURCE_NAME.eq(a.SOURCE_NAME), ef.SOURCE_LINE.eq(a.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
-                .where(a.GRAPH_NAME.eq(graph)))
+                .where(a.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
             // The primary key named; the coordinate the unique key holds spells the same names.
             .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME)
             .doUpdate()
@@ -573,7 +565,7 @@ public final class GraphQLAstCapture {
                         .minus(inline(1)),
                     d.IS_EXTENSION, d.KIND, val(touchedAt, t.TOUCHED_AT))
                 .from(d).join(s).on(s.SOURCE_NAME.eq(d.SOURCE_NAME))
-                .where(d.GRAPH_NAME.eq(graph)))
+                .where(d.GRAPH_NAME.eq(graph)).and(typeInScope(graph, d.NAME)))
             .onDuplicateKeyUpdate()
             .set(t.MERGE_ORDINAL, excluded(t.MERGE_ORDINAL))
             .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
@@ -605,7 +597,7 @@ public final class GraphQLAstCapture {
                     .and(m.SOURCE_NAME.eq(d.SOURCE_NAME))
                     .and(m.SOURCE_LINE.eq(d.SOURCE_LINE))
                     .and(m.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-                .where(d.GRAPH_NAME.eq(graph))
+                .where(d.GRAPH_NAME.eq(graph)).and(typeInScope(graph, d.NAME))
                 // Zero, because merge order is 0-based: the base declaration leads the chain and
                 // a base-less chain's first extension holds 0, which the column's own comment and
                 // the density gate both state.
@@ -656,7 +648,7 @@ public final class GraphQLAstCapture {
                 .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
-            .where(f.GRAPH_NAME.eq(graph))
+            .where(f.GRAPH_NAME.eq(graph)).and(typeInScope(graph, f.TYPE_NAME))
             .unionAll(dsl
                 .select(i.TYPE_NAME, i.NAME, i.PARENT_LINE, i.PARENT_COLUMN, i.TYPE_SDL,
                     i.NAMED_TYPE, i.NON_NULL, i.IS_LIST, i.ITEM_NON_NULL, i.LIST_DEPTH, i.DEFAULT_VALUE_SDL,
@@ -667,7 +659,7 @@ public final class GraphQLAstCapture {
                     .and(m.SOURCE_NAME.eq(i.SOURCE_NAME))
                     .and(m.SOURCE_LINE.eq(i.PARENT_LINE))
                     .and(m.SOURCE_COLUMN.eq(i.PARENT_COLUMN))
-                .where(i.GRAPH_NAME.eq(graph)))
+                .where(i.GRAPH_NAME.eq(graph)).and(typeInScope(graph, i.TYPE_NAME)))
             .asTable("candidates");
         var ranked = dsl
             .select(candidates.asterisk(),
@@ -684,7 +676,10 @@ public final class GraphQLAstCapture {
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ORDINAL, t.DECLARATION_LINE,
                 t.DECLARATION_COLUMN, t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST,
                 t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF,
+                t.DECLARATION_GRAPH_REF, t.DECLARATION_TYPE_REF, t.DECLARATION_SOURCE_REF,
+                t.DECLARATION_LINE_REF, t.DECLARATION_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(TYPE_NAME), ranked.field(FIELD_NAME),
                     ranked.field(ORDINAL), ranked.field(DECLARATION_LINE),
@@ -692,7 +687,11 @@ public final class GraphQLAstCapture {
                     ranked.field(NAMED_TYPE), ranked.field(NON_NULL), ranked.field(IS_LIST),
                     ranked.field(ITEM_NON_NULL), ranked.field(LIST_DEPTH), ranked.field(DEFAULT_VALUE_SDL),
                     ranked.field(DESCRIPTION), ranked.field(SITE_NAME), ranked.field(SITE_LINE),
-                    ranked.field(SITE_COLUMN), val(touchedAt, t.TOUCHED_AT))
+                    ranked.field(SITE_COLUMN), val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(SITE_NAME),
+                    ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
+                    val(graph, t.DECLARATION_GRAPH_REF), ranked.field(TYPE_NAME), ranked.field(SITE_NAME),
+                    ranked.field(DECLARATION_LINE), ranked.field(DECLARATION_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.ORDINAL, excluded(t.ORDINAL))
@@ -710,6 +709,15 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
+            .set(t.DECLARATION_GRAPH_REF, excluded(t.DECLARATION_GRAPH_REF))
+            .set(t.DECLARATION_TYPE_REF, excluded(t.DECLARATION_TYPE_REF))
+            .set(t.DECLARATION_SOURCE_REF, excluded(t.DECLARATION_SOURCE_REF))
+            .set(t.DECLARATION_LINE_REF, excluded(t.DECLARATION_LINE_REF))
+            .set(t.DECLARATION_COLUMN_REF, excluded(t.DECLARATION_COLUMN_REF))
             .execute();
     }
 
@@ -732,18 +740,25 @@ public final class GraphQLAstCapture {
                 .and(m.SOURCE_NAME.eq(e.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(e.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(e.PARENT_COLUMN))
-            .where(e.GRAPH_NAME.eq(graph))
+            .where(e.GRAPH_NAME.eq(graph)).and(typeInScope(graph, e.TYPE_NAME))
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.ORDINAL, t.DECLARATION_LINE,
                 t.DECLARATION_COLUMN, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT)
+                t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF,
+                t.DECLARATION_GRAPH_REF, t.DECLARATION_TYPE_REF, t.DECLARATION_SOURCE_REF,
+                t.DECLARATION_LINE_REF, t.DECLARATION_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(e.TYPE_NAME), ranked.field(e.NAME),
                     ranked.field(ORDINAL), ranked.field(e.PARENT_LINE),
                     ranked.field(e.PARENT_COLUMN), ranked.field(e.DESCRIPTION),
                     ranked.field(e.SOURCE_NAME), ranked.field(e.SOURCE_LINE),
-                    ranked.field(e.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
+                    ranked.field(e.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(e.SOURCE_NAME),
+                    ranked.field(e.SOURCE_LINE), ranked.field(e.SOURCE_COLUMN),
+                    val(graph, t.DECLARATION_GRAPH_REF), ranked.field(e.TYPE_NAME), ranked.field(e.SOURCE_NAME),
+                    ranked.field(e.PARENT_LINE), ranked.field(e.PARENT_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.ORDINAL, excluded(t.ORDINAL))
@@ -754,6 +769,15 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
+            .set(t.DECLARATION_GRAPH_REF, excluded(t.DECLARATION_GRAPH_REF))
+            .set(t.DECLARATION_TYPE_REF, excluded(t.DECLARATION_TYPE_REF))
+            .set(t.DECLARATION_SOURCE_REF, excluded(t.DECLARATION_SOURCE_REF))
+            .set(t.DECLARATION_LINE_REF, excluded(t.DECLARATION_LINE_REF))
+            .set(t.DECLARATION_COLUMN_REF, excluded(t.DECLARATION_COLUMN_REF))
             .execute();
     }
 
@@ -789,13 +813,14 @@ public final class GraphQLAstCapture {
                 .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
-            .where(a.GRAPH_NAME.eq(graph))
+            .where(a.GRAPH_NAME.eq(graph)).and(typeInScope(graph, a.TYPE_NAME))
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.ARGUMENT_NAME, t.ORDINAL,
                 t.TYPE_SDL, t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
                 t.DEFAULT_VALUE_SDL, t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                t.TOUCHED_AT)
+                t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(a.TYPE_NAME),
                     ranked.field(a.FIELD_NAME), ranked.field(a.NAME), ranked.field(ORDINAL),
@@ -804,7 +829,9 @@ public final class GraphQLAstCapture {
                     ranked.field(a.LIST_DEPTH),
                     ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
                     ranked.field(a.SOURCE_NAME), ranked.field(a.SOURCE_LINE),
-                    ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
+                    ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(a.SOURCE_NAME),
+                    ranked.field(a.SOURCE_LINE), ranked.field(a.SOURCE_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.ORDINAL, excluded(t.ORDINAL))
@@ -820,6 +847,10 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
             .execute();
     }
 
@@ -852,17 +883,24 @@ public final class GraphQLAstCapture {
                 .and(m.SOURCE_NAME.eq(u.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(u.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(u.PARENT_COLUMN))
-            .where(u.GRAPH_NAME.eq(graph))
+            .where(u.GRAPH_NAME.eq(graph)).and(typeInScope(graph, u.TYPE_NAME))
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.UNION_NAME, t.MEMBER_TYPE_NAME, t.POSITION, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.DECLARATION_COLUMN, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF,
+                t.DECLARATION_GRAPH_REF, t.DECLARATION_TYPE_REF, t.DECLARATION_SOURCE_REF,
+                t.DECLARATION_LINE_REF, t.DECLARATION_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(u.TYPE_NAME),
                     ranked.field(u.MEMBER_NAME), ranked.field(ORDINAL), ranked.field(u.PARENT_LINE),
                     ranked.field(u.PARENT_COLUMN), ranked.field(u.SOURCE_NAME),
                     ranked.field(u.SOURCE_LINE), ranked.field(u.SOURCE_COLUMN),
-                    val(touchedAt, t.TOUCHED_AT))
+                    val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(u.SOURCE_NAME),
+                    ranked.field(u.SOURCE_LINE), ranked.field(u.SOURCE_COLUMN),
+                    val(graph, t.DECLARATION_GRAPH_REF), ranked.field(u.TYPE_NAME), ranked.field(u.SOURCE_NAME),
+                    ranked.field(u.PARENT_LINE), ranked.field(u.PARENT_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.POSITION, excluded(t.POSITION))
@@ -872,6 +910,15 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
+            .set(t.DECLARATION_GRAPH_REF, excluded(t.DECLARATION_GRAPH_REF))
+            .set(t.DECLARATION_TYPE_REF, excluded(t.DECLARATION_TYPE_REF))
+            .set(t.DECLARATION_SOURCE_REF, excluded(t.DECLARATION_SOURCE_REF))
+            .set(t.DECLARATION_LINE_REF, excluded(t.DECLARATION_LINE_REF))
+            .set(t.DECLARATION_COLUMN_REF, excluded(t.DECLARATION_COLUMN_REF))
             .execute();
     }
 
@@ -905,17 +952,24 @@ public final class GraphQLAstCapture {
                 .and(m.SOURCE_NAME.eq(i.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(i.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(i.PARENT_COLUMN))
-            .where(i.GRAPH_NAME.eq(graph))
+            .where(i.GRAPH_NAME.eq(graph)).and(interfaceInScope(graph, i.INTERFACE_NAME))
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.INTERFACE_NAME, t.POSITION, t.DECLARATION_LINE,
-                t.DECLARATION_COLUMN, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.DECLARATION_COLUMN, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF,
+                t.DECLARATION_GRAPH_REF, t.DECLARATION_TYPE_REF, t.DECLARATION_SOURCE_REF,
+                t.DECLARATION_LINE_REF, t.DECLARATION_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(i.TYPE_NAME),
                     ranked.field(i.INTERFACE_NAME), ranked.field(ORDINAL),
                     ranked.field(i.PARENT_LINE), ranked.field(i.PARENT_COLUMN),
                     ranked.field(i.SOURCE_NAME), ranked.field(i.SOURCE_LINE),
-                    ranked.field(i.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
+                    ranked.field(i.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(i.SOURCE_NAME),
+                    ranked.field(i.SOURCE_LINE), ranked.field(i.SOURCE_COLUMN),
+                    val(graph, t.DECLARATION_GRAPH_REF), ranked.field(i.TYPE_NAME), ranked.field(i.SOURCE_NAME),
+                    ranked.field(i.PARENT_LINE), ranked.field(i.PARENT_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.POSITION, excluded(t.POSITION))
@@ -925,6 +979,15 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
+            .set(t.DECLARATION_GRAPH_REF, excluded(t.DECLARATION_GRAPH_REF))
+            .set(t.DECLARATION_TYPE_REF, excluded(t.DECLARATION_TYPE_REF))
+            .set(t.DECLARATION_SOURCE_REF, excluded(t.DECLARATION_SOURCE_REF))
+            .set(t.DECLARATION_LINE_REF, excluded(t.DECLARATION_LINE_REF))
+            .set(t.DECLARATION_COLUMN_REF, excluded(t.DECLARATION_COLUMN_REF))
             .execute();
     }
 
@@ -947,16 +1010,19 @@ public final class GraphQLAstCapture {
                     s.MTIME.asc(),
                     d.SOURCE_NAME.asc(), d.SOURCE_LINE.asc(), d.SOURCE_COLUMN.asc())).as(RANK))
             .from(d).join(s).on(s.SOURCE_NAME.eq(d.SOURCE_NAME))
-            .where(d.GRAPH_NAME.eq(graph))
+            .where(d.GRAPH_NAME.eq(graph)).and(directiveInScope(graph, d.NAME))
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.REPEATABLE, t.DESCRIPTION, t.SOURCE_NAME,
-                t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(d.NAME), ranked.field(d.REPEATABLE),
                     ranked.field(d.DESCRIPTION), ranked.field(d.SOURCE_NAME),
                     ranked.field(d.SOURCE_LINE), ranked.field(d.SOURCE_COLUMN),
-                    val(touchedAt, t.TOUCHED_AT))
+                    val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(d.SOURCE_NAME),
+                    ranked.field(d.SOURCE_LINE), ranked.field(d.SOURCE_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.REPEATABLE, excluded(t.REPEATABLE))
@@ -965,6 +1031,10 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
             .execute();
     }
 
@@ -991,7 +1061,7 @@ public final class GraphQLAstCapture {
                     .and(w.SOURCE_NAME.eq(l.SOURCE_NAME))
                     .and(w.SOURCE_LINE.eq(l.PARENT_LINE))
                     .and(w.SOURCE_COLUMN.eq(l.PARENT_COLUMN))
-                .where(l.GRAPH_NAME.eq(graph)))
+                .where(l.GRAPH_NAME.eq(graph)).and(directiveInScope(graph, w.DIRECTIVE_NAME)))
             .onDuplicateKeyUpdate()
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
@@ -1021,12 +1091,13 @@ public final class GraphQLAstCapture {
                 .and(w.SOURCE_NAME.eq(a.SOURCE_NAME))
                 .and(w.SOURCE_LINE.eq(a.PARENT_LINE))
                 .and(w.SOURCE_COLUMN.eq(a.PARENT_COLUMN))
-            .where(a.GRAPH_NAME.eq(graph))
+            .where(a.GRAPH_NAME.eq(graph)).and(directiveInScope(graph, w.DIRECTIVE_NAME))
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.ORDINAL, t.TYPE_SDL,
                 t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL,
-                t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(w.DIRECTIVE_NAME),
                     ranked.field(ARGUMENT_NAME), ranked.field(ORDINAL),
@@ -1034,7 +1105,9 @@ public final class GraphQLAstCapture {
                     ranked.field(a.IS_LIST), ranked.field(a.ITEM_NON_NULL),
                     ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
                     ranked.field(a.SOURCE_NAME), ranked.field(a.SOURCE_LINE),
-                    ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT))
+                    ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(a.SOURCE_NAME),
+                    ranked.field(a.SOURCE_LINE), ranked.field(a.SOURCE_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.ORDINAL, excluded(t.ORDINAL))
@@ -1049,6 +1122,10 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
             .execute();
     }
 
@@ -1110,11 +1187,14 @@ public final class GraphQLAstCapture {
 
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.OPERATION, t.TYPE_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(OPERATION), ranked.field(TYPE_NAME),
                     ranked.field(SITE_NAME), ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
-                    val(touchedAt, t.TOUCHED_AT))
+                    val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(SITE_NAME),
+                    ranked.field(SITE_LINE), ranked.field(SITE_COLUMN))
                 .from(ranked).where(ranked.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
             .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -1122,6 +1202,10 @@ public final class GraphQLAstCapture {
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
             .execute();
     }
 
@@ -1208,7 +1292,7 @@ public final class GraphQLAstCapture {
             .leftJoin(m).on(m.GRAPH_NAME.eq(graph), m.SOURCE_NAME.eq(ed.SOURCE_NAME),
                 m.SOURCE_LINE.eq(ed.DECLARATION_LINE), m.SOURCE_COLUMN.eq(ed.DECLARATION_COLUMN))
             .join(s).on(s.SOURCE_NAME.eq(a.SOURCE_NAME))
-            .where(a.GRAPH_NAME.eq(graph))
+            .where(a.GRAPH_NAME.eq(graph)).and(touched(graph, e.COORDINATE))
             .asTable("candidates");
         var ranked = dsl
             .select(candidates.asterisk(),
@@ -1222,18 +1306,25 @@ public final class GraphQLAstCapture {
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.DIRECTIVE_NAME, t.ORDINAL,
-                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT)
+                t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
+                t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), ranked.field(COORDINATE),
                     ranked.field(DIRECTIVE_NAME), ranked.field(ORDINAL), ranked.field(SITE_NAME),
                     ranked.field(SITE_LINE), ranked.field(SITE_COLUMN),
-                    val(touchedAt, t.TOUCHED_AT))
+                    val(touchedAt, t.TOUCHED_AT),
+                    val(graph, t.SITE_GRAPH_REF), ranked.field(SITE_NAME),
+                    ranked.field(SITE_LINE), ranked.field(SITE_COLUMN))
                 .from(ranked))
             .onDuplicateKeyUpdate()
             .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))
             .set(t.SOURCE_LINE, excluded(t.SOURCE_LINE))
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(t.SITE_GRAPH_REF, excluded(t.SITE_GRAPH_REF))
+            .set(t.SITE_SOURCE_REF, excluded(t.SITE_SOURCE_REF))
+            .set(t.SITE_LINE_REF, excluded(t.SITE_LINE_REF))
+            .set(t.SITE_COLUMN_REF, excluded(t.SITE_COLUMN_REF))
             .execute();
     }
 
@@ -1301,81 +1392,101 @@ public final class GraphQLAstCapture {
      * rows the corpus stopped declaring, and a list that has to be edited alongside is the cheapest
      * way to make that visible.
      *
-     * <p>In filling order, which the writes above need and the sweep below does not. What a
-     * coordinate's dependents do when it goes is the schema's to say, and it says it: the keys
-     * within this family cascade, so deleting a coordinate takes the rows that named it whatever
-     * order this list is walked in. A sweep that had to be ordered would be one statement's
-     * ordering standing in for a rule every other deleter of these relations would also have to
-     * know.
+     * <p>The element relations last. What a coordinate's dependents do when it goes is the
+     * schema's to say, and the keys within this family cascade, so deleting a coordinate takes the
+     * rows that named it. The order is the scope's: the sweep reaches a type or a directive
+     * through its element row, so a type or directive this reading removed has to keep that row
+     * until every relation keyed by its name has been swept.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHQL_ELEMENT, GRAPHQL_TYPE_ELEMENT, GRAPHQL_FIELD_ELEMENT, GRAPHQL_ENUM_VALUE_ELEMENT,
-        GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ELEMENT, GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT,
         GRAPHQL_TYPE_DECLARATION, GRAPHQL_TYPE, GRAPHQL_FIELD,
         GRAPHQL_ENUM_VALUE, GRAPHQL_ARGUMENT, GRAPHQL_UNION_MEMBER,
         GRAPHQL_IMPLEMENTS_INTERFACE, GRAPHQL_DIRECTIVE,
         GRAPHQL_DIRECTIVE_LOCATION, GRAPHQL_DIRECTIVE_ARGUMENT, GRAPHQL_ROOT_OPERATION,
-        GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_DIRECTIVE_APPLICATION_ARG);
+        GRAPHQL_DIRECTIVE_APPLICATION, GRAPHQL_DIRECTIVE_APPLICATION_ARG,
+        GRAPHQL_ELEMENT, GRAPHQL_TYPE_ELEMENT, GRAPHQL_FIELD_ELEMENT, GRAPHQL_ENUM_VALUE_ELEMENT,
+        GRAPHQL_ARGUMENT_ELEMENT, GRAPHQL_DIRECTIVE_ELEMENT, GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT);
 
     /**
-     * The anchors that name the written position they were read from, with the column naming the
-     * declaring type where an anchor also names a declaration site.
+     * Whether {@code coordinate} is one this reading touched. The element relations, the
+     * applications and their arguments are keyed at a coordinate, so a touched coordinate
+     * re-derives its own rows.
      */
-    private static final Map<Table<?>, String> SITED = Map.of(
-        GRAPHQL_FIELD, "TYPE_NAME", GRAPHQL_ENUM_VALUE, "TYPE_NAME",
-        GRAPHQL_UNION_MEMBER, "UNION_NAME", GRAPHQL_IMPLEMENTS_INTERFACE, "TYPE_NAME",
-        GRAPHQL_ARGUMENT, "", GRAPHQL_DIRECTIVE, "", GRAPHQL_DIRECTIVE_ARGUMENT, "",
-        GRAPHQL_ROOT_OPERATION, "", GRAPHQL_DIRECTIVE_APPLICATION, "");
-
-    /**
-     * Lets go of every reference the graph's anchors hold, before any writer moves a row's site:
-     * a reference is a copy of the columns it names, held equal to them, so a row whose site
-     * changes cannot keep the old copy. {@link #pointAtSources} hands them back after the sweep.
-     */
-    private static void releaseSources(DSLContext dsl, String graph) {
-        SITED.forEach((table, typeColumn) -> {
-            var update = dsl.update(table)
-                .set(field(name("SITE_GRAPH_REF"), String.class), (String) null)
-                .set(field(name("SITE_SOURCE_REF"), String.class), (String) null)
-                .set(field(name("SITE_LINE_REF"), Integer.class), (Integer) null)
-                .set(field(name("SITE_COLUMN_REF"), Integer.class), (Integer) null);
-            if (!typeColumn.isEmpty()) {
-                update = update
-                    .set(field(name("DECLARATION_GRAPH_REF"), String.class), (String) null)
-                    .set(field(name("DECLARATION_TYPE_REF"), String.class), (String) null)
-                    .set(field(name("DECLARATION_SOURCE_REF"), String.class), (String) null)
-                    .set(field(name("DECLARATION_LINE_REF"), Integer.class), (Integer) null)
-                    .set(field(name("DECLARATION_COLUMN_REF"), Integer.class), (Integer) null);
-            }
-            update.where(field(name("GRAPH_NAME"), String.class).eq(graph)).execute();
-        });
+    private static Condition touched(String graph, Field<String> coordinate) {
+        var c = GRAPHQL_AST_TOUCHED_COORDINATE.as("scope_touched");
+        return exists(selectOne().from(c)
+            .where(c.GRAPH_NAME.eq(graph)).and(c.COORDINATE.eq(coordinate)));
     }
 
     /**
-     * Points every anchor that survived the sweep at the entries it was read from, through the
-     * nullable copies its references run on. A rewrite of a document deletes its entries, and the
-     * references to them are nulled rather than the anchors deleted, so what hangs off an anchor
-     * outlives its document being read again; this is where the reading that re-derived the anchor
-     * hands it its entries back. After the sweep, so a row this reading did not derive is never
-     * pointed at a position no entry holds.
+     * Whether {@code typeName} names a type a touched coordinate sits in. A field's ordinal, an
+     * enum value's, an argument's and a union member's are numbered across every declaration of
+     * the type, so a touched coordinate re-derives everything its type holds. A document declaring
+     * {@code Film.title} declares {@code Film} too, base or extension, so the touched type
+     * coordinates are enough. Read through {@code graphql_type_element}, which holds the types the
+     * corpus declared before this reading until the sweep and the ones it declares now once the
+     * element writers have run.
      */
-    private static void pointAtSources(DSLContext dsl, String graph) {
-        SITED.forEach((table, typeColumn) -> {
-            var update = dsl.update(table)
-                .set(field(name("SITE_GRAPH_REF"), String.class), field(name("GRAPH_NAME"), String.class))
-                .set(field(name("SITE_SOURCE_REF"), String.class), field(name("SOURCE_NAME"), String.class))
-                .set(field(name("SITE_LINE_REF"), Integer.class), field(name("SOURCE_LINE"), Integer.class))
-                .set(field(name("SITE_COLUMN_REF"), Integer.class), field(name("SOURCE_COLUMN"), Integer.class));
-            if (!typeColumn.isEmpty()) {
-                update = update
-                    .set(field(name("DECLARATION_GRAPH_REF"), String.class), field(name("GRAPH_NAME"), String.class))
-                    .set(field(name("DECLARATION_TYPE_REF"), String.class), field(name(typeColumn), String.class))
-                    .set(field(name("DECLARATION_SOURCE_REF"), String.class), field(name("SOURCE_NAME"), String.class))
-                    .set(field(name("DECLARATION_LINE_REF"), Integer.class), field(name("DECLARATION_LINE"), Integer.class))
-                    .set(field(name("DECLARATION_COLUMN_REF"), Integer.class), field(name("DECLARATION_COLUMN"), Integer.class));
-            }
-            update.where(field(name("GRAPH_NAME"), String.class).eq(graph)).execute();
-        });
+    private static Condition typeInScope(String graph, Field<String> typeName) {
+        var te = GRAPHQL_TYPE_ELEMENT.as("scope_type");
+        return exists(selectOne().from(te)
+            .where(te.GRAPH_NAME.eq(graph)).and(te.TYPE_NAME.eq(typeName))
+            .and(touched(graph, te.COORDINATE)));
+    }
+
+    /** The same for a directive, whose arguments are only ever declared beside it. */
+    private static Condition directiveInScope(String graph, Field<String> directiveName) {
+        var de = GRAPHQL_DIRECTIVE_ELEMENT.as("scope_directive");
+        return exists(selectOne().from(de)
+            .where(de.GRAPH_NAME.eq(graph)).and(de.DIRECTIVE_NAME.eq(directiveName))
+            .and(touched(graph, de.COORDINATE)));
+    }
+
+    /**
+     * Whether a type in scope implements {@code interfaceName}, as the entries say now or as the
+     * anchors said before. An implementor's position is numbered across the interface, so an interface any
+     * touched type names re-derives every implementor it has.
+     */
+    private static Condition interfaceInScope(String graph, Field<String> interfaceName) {
+        var e = GRAPHQL_AST_IMPLEMENTS_ENTRY.as("scope_implements_entry");
+        var a = GRAPHQL_IMPLEMENTS_INTERFACE.as("scope_implements");
+        return exists(selectOne().from(e)
+                .where(e.GRAPH_NAME.eq(graph)).and(e.INTERFACE_NAME.eq(interfaceName))
+                .and(typeInScope(graph, e.TYPE_NAME)))
+            .or(exists(selectOne().from(a)
+                .where(a.GRAPH_NAME.eq(graph)).and(a.INTERFACE_NAME.eq(interfaceName))
+                .and(typeInScope(graph, a.TYPE_NAME))));
+    }
+
+    /**
+     * The rows of {@code table} this reading's scope reaches, for a statement over the table
+     * itself: by its coordinate where it is keyed at one, by its type or union, by its directive,
+     * or, for the implementors, by the interfaces in scope. The root operations are two rows and
+     * re-derive whole.
+     */
+    private static Condition scopeOf(Table<?> table, String graph) {
+        if (table.equals(GRAPHQL_ROOT_OPERATION)) {
+            return org.jooq.impl.DSL.trueCondition();
+        }
+        if (table.equals(GRAPHQL_IMPLEMENTS_INTERFACE)) {
+            return interfaceInScope(graph, column(table, "INTERFACE_NAME"));
+        }
+        if (table.field("COORDINATE") != null) {
+            return touched(graph, column(table, "COORDINATE"));
+        }
+        if (table.field("UNION_NAME") != null) {
+            return typeInScope(graph, column(table, "UNION_NAME"));
+        }
+        if (table.field("TYPE_NAME") != null) {
+            return typeInScope(graph, column(table, "TYPE_NAME"));
+        }
+        return directiveInScope(graph, column(table, "DIRECTIVE_NAME"));
+    }
+
+    /** {@code table}'s own column, qualified, so a correlated scope reads it and not its own. */
+    @SuppressWarnings("unchecked")
+    private static Field<String> column(Table<?> table, String name) {
+        return (Field<String>) table.field(name);
     }
 
     /**
@@ -1396,6 +1507,7 @@ public final class GraphQLAstCapture {
             dsl.deleteFrom(table)
                 .where(table.field(named.GRAPH_NAME).eq(graph))
                 .and(table.field(named.TOUCHED_AT).ne(touchedAt))
+                .and(scopeOf(table, graph))
                 .execute();
         }
     }
