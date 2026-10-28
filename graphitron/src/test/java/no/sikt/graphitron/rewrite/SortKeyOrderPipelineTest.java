@@ -10,7 +10,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 import java.util.Locale;
 
-import static no.sikt.graphitron.common.configuration.TestConfiguration.DEFAULT_OUTPUT_PACKAGE;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
@@ -413,31 +412,6 @@ class SortKeyOrderPipelineTest {
         assertThat(sequence.completion()).isInstanceOf(OrderBySpec.SequenceCompletion.AppendRowKey.class);
         assertThat(sequence.namedOrders()).allSatisfy(named ->
             assertThat(named.order().entries()).singleElement().isInstanceOf(OrderBySpec.SortKeyEntry.class));
-    }
-
-    @Test
-    void theListValuedHelpersCoverageCheckNeverCountsASortKey() {
-        // Both path columns are named like film_actor's key columns. The generated helper decides
-        // coverage by Field.getName(), so a sort key has to reach colParts under its reserved
-        // alias; a bare call would be named film_id and actor_id and suppress the appended key.
-        var schema = build("""
-            type FilmActor @table(name: "film_actor") { lastUpdate: String @field(name: "last_update") }
-            enum FilmActorSort {
-                ACTOR @order(fields: [{name: "actor_id", path: [{key: "film_actor_actor_id_fkey"}]}])
-                FILM @order(fields: [{name: "film_id", path: [{key: "film_actor_film_id_fkey"}]}])
-            }
-            input FilmActorOrder { field: FilmActorSort!  direction: SortDirection }
-            type Query { filmActors(order: [FilmActorOrder!] @orderBy): [FilmActor!]! @asConnection }
-            """);
-        var helper = TypeFetcherRenderTestSupport.generate(schema, DEFAULT_OUTPUT_PACKAGE).stream()
-            .filter(type -> type.name().equals("QueryFetchers"))
-            .flatMap(type -> type.methodSpecs().stream())
-            .filter(method -> method.name().equals("filmActorsOrderBy"))
-            .findFirst().orElseThrow();
-        assertThat(helper.code().toString())
-            .contains("colParts.add(filmActorsSortKey0(", ").as(\"__sk_0\"));")
-            .contains("colParts.add(filmActorsSortKey1(", ").as(\"__sk_1\"));")
-            .contains("orderedNames.containsAll(java.util.List.of(\"actor_id\", \"film_id\"))");
     }
 
     @Test

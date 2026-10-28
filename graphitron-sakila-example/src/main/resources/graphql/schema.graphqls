@@ -1460,6 +1460,24 @@ type Query {
             }
         }])
     ): [SplitFilterParent!]!
+
+    # A list-valued @orderBy whose only sort key is a related column named like the field's own
+    # key: squad.member_id against squad_member.member_id. The helper decides by name whether the
+    # composed order already identifies a row, so the sort key has to reach it under its reserved
+    # alias; a key it mistook for member_id would leave the ties on squad.member_id unbroken and a
+    # walk would skip rows at the page boundaries.
+    squadMembers(
+        order: [SquadMemberOrderBy!] @orderBy,
+        first: Int, last: Int, after: String, before: String
+    ): [SquadMember!]! @asConnection
+        @defaultOrder(primaryKey: true)
+    # A path: sort key at the discriminated single-table interface root, as a list and as a
+    # connection. FilmContent rows reach their film to-one; ShortContent rows have none and sort
+    # on NULL, last.
+    allContentByFilmTitle: [Content!]!
+        @defaultOrder(fields: [{name: "title", path: [{key: "content_film_id_fkey"}]}])
+    allContentConnectionByFilmTitle: [Content!]! @asConnection
+        @defaultOrder(fields: [{name: "title", path: [{key: "content_film_id_fkey"}]}])
 }
 
 # Surface 1 fixture: a filter input whose countryName field references country.country through the
@@ -3025,6 +3043,9 @@ type Film implements Node & Searchable @table(name: "film") @node {
     # ORDER BY observable; the __idx__ scatter preserves it inside each film's bucket.
     filmContents: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
         @defaultOrder(primaryKey: true)
+    # A path: sort key on the batched discriminated interface child.
+    filmContentsByFilmTitle: [Content!]! @reference(path: [{key: "content_film_id_fkey"}])
+        @defaultOrder(fields: [{name: "title", path: [{key: "content_film_id_fkey"}]}])
     # The paginated twin: the same batched discriminated re-projection cut into per-parent
     # pages, ROW_NUMBER-partitioned by the __idx__ scatter key so one batch statement serves
     # every film's page. The cross-table participant field (FilmContent.rating) rides the
@@ -3500,6 +3521,20 @@ type Language @table(name: "language") {
     filmsInlineByOriginalLanguage: [Film!]!
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    # The path: key on a @splitQuery list, and the method: key on a @splitQuery connection and
+    # an inline child list. A plain list appends no row key, so the inline one lists film_id
+    # itself to order the store-1 tie.
+    filmsSplitByOriginalLanguageList: [Film!]! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    filmsByLatestStock(
+        first: Int, last: Int, after: String, before: String
+    ): FilmsConnection! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC}])
+    filmsInlineByLatestStock: [Film!]!
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{method: {className: "no.sikt.graphitron.rewrite.test.extensions.FilmSortKeys", method: "latestStockStore"}, direction: DESC}, {name: "film_id", direction: DESC}])
     # Inline @reference path (InlineTableFieldEmitter) with a mixed @nodeId + @condition filter.
     filmsByMixedFilter(filter: FilmMixedNodeIdConditionFilter): [Film!]!
         @reference(path: [{key: "film_language_id_fkey"}])
@@ -3678,6 +3713,21 @@ enum FilmLanguageSort {
 
 input FilmLanguageOrderBy {
     field: FilmLanguageSort!
+    direction: SortDirection
+}
+
+type SquadMember @table(name: "squad_member") {
+    memberId: Int! @field(name: "member_id")
+}
+
+# SQUAD_FOUNDER sorts members by their squad's member_id, a column named like squad_member's own
+# key; the composed order is completed with squad_member.member_id in the helper.
+enum SquadMemberSort {
+    SQUAD_FOUNDER @order(fields: [{name: "member_id", path: [{key: "squad_member_squad_id_fkey"}]}])
+}
+
+input SquadMemberOrderBy {
+    field: SquadMemberSort!
     direction: SortDirection
 }
 

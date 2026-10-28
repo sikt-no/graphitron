@@ -2085,6 +2085,25 @@ CREATE TABLE stint_badge (
     CONSTRAINT stint_badge_person_fkey FOREIGN KEY (person_id) REFERENCES stint_person(person_id)
 );
 
+-- Ordering by a related column named like the parent's own key: squad.member_id (the squad's
+-- founding member) shares its name with squad_member's primary key, and every member of a squad
+-- reads the same value through the to-one squad_member -> squad hop. Members 1 and 2 tie on 1,
+-- members 3 to 5 on 3, so a connection ordered by that key alone pages correctly only when the
+-- member's own key is appended to break the ties.
+CREATE TABLE squad (
+    squad_id   int  PRIMARY KEY,
+    member_id  int  NOT NULL
+);
+
+CREATE TABLE squad_member (
+    member_id  int  PRIMARY KEY,
+    squad_id   int  NOT NULL,
+    CONSTRAINT squad_member_squad_id_fkey FOREIGN KEY (squad_id) REFERENCES squad(squad_id)
+);
+
+INSERT INTO squad (squad_id, member_id) VALUES (1, 1), (2, 3);
+INSERT INTO squad_member (member_id, squad_id) VALUES (1, 1), (2, 1), (3, 2), (4, 2), (5, 2);
+
 CREATE TABLE film_price (
     film_id       int          NOT NULL REFERENCES film(film_id),
     currency_code varchar(3)   NOT NULL,

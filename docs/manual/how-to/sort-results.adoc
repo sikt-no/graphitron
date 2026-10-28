@@ -160,7 +160,7 @@ If you would rather keep the rule in the database, a view with a unique key on t
 === How they combine
 
 * An entry sets exactly one of `name:` and `method:`; `path:` is only valid beside `name:`. `method:` with `path:` fails the build, since the method already receives the field's table.
-* On a connection, only the field's own columns count toward identifying a row. A related-table column never does, even when it is that table's primary key, because many rows can share one related row; a `method:` key never does either. An order made only of such entries therefore always has the primary key appended (see <<stable-cursors-and-tie-breakers>>).
+* On a connection, only the field's own columns count toward identifying a row. A related-table column never does, even when it is that table's primary key, because many rows can share one related row; a `method:` key never does either. An order made only of such entries therefore always has the key appended, even when a related column is named like one of the field's own key columns (see <<stable-cursors-and-tie-breakers>>).
 * Neither form is available on a multi-table interface or union, or over a table-valued function result.
 * A to-one `path:` key is an indexed key lookup per row, evaluated for the sort; a `method:` key costs what its query costs.
 

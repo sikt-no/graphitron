@@ -28,6 +28,11 @@ import static org.assertj.core.api.Assertions.assertThat;
  * renders at: a root connection, an {@code @orderBy} helper in either composition, a
  * {@code @splitQuery} child connection, an inline child list and a plain list root.
  *
+ * <p>A third key sorts squad members by their squad's {@code member_id}, a related column named
+ * like {@code squad_member}'s own key, through a list-valued {@code @orderBy}: members 1 and 2 tie
+ * on it, as do 3 to 5, so the walk returns every member only if the helper appends the member's
+ * own key rather than taking the same-named sort key for it.
+ *
  * <p>Other classes insert films into the database this one shares, so a walk is judged on the
  * seeded rows, as {@code ConnectionTiebreakerExecutionTest} judges its own.
  */
@@ -52,6 +57,8 @@ class SortKeyOrderExecutionTest {
     private static final List<Integer> STOCK_ASC = List.of(1, 2, 3, 4, 5);
 
     private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
+
+    private static final List<Integer> SEEDED_MEMBER_IDS = List.of(1, 2, 3, 4, 5);
 
     private static final String SELECTION =
         "{ nodes { filmId } pageInfo { startCursor endCursor hasNextPage hasPreviousPage } }";
@@ -166,18 +173,55 @@ class SortKeyOrderExecutionTest {
         assertWalks(query.apply("DESC"), connection, STOCK_DESC);
     }
 
+    @Test
+    void methodKey_splitQueryChildConnection_forwardAndBackward() {
+        Function<String, String> query = page -> "{ languageBySingleKey(language_id: 1) { filmsByLatestStock("
+            + page + ") " + SELECTION + " } }";
+        assertWalks(query, data -> (Map<String, Object>)
+            ((Map<String, Object>) data.get("languageBySingleKey")).get("filmsByLatestStock"), STOCK_DESC);
+    }
+
+    @Test
+    void methodKey_inlineChildList_ordersInTheSubselect() {
+        var language = (Map<String, Object>) execute(
+            "{ languageBySingleKey(language_id: 1) { filmsInlineByLatestStock { filmId } } }")
+            .get("languageBySingleKey");
+        var films = (List<Map<String, Object>>) language.get("filmsInlineByLatestStock");
+        assertThat(seeded(filmIdsOf(films))).containsExactlyElementsOf(STOCK_DESC);
+    }
+
+    // ===== a sort key named like the row key =====
+
+    @Test
+    void pathKeyNamedLikeTheRowKey_composedOrderByArgument_stillAppendsTheRowKey() {
+        Function<String, Function<String, String>> query = direction -> page ->
+            "{ squadMembers(order: [{field: SQUAD_FOUNDER, direction: " + direction + "}], " + page + ") "
+                + "{ nodes { memberId } pageInfo { startCursor endCursor hasNextPage hasPreviousPage } } }";
+        Function<Map<String, Object>, Map<String, Object>> connection =
+            data -> (Map<String, Object>) data.get("squadMembers");
+        assertWalks(query.apply("ASC"), connection, "memberId", SEEDED_MEMBER_IDS, List.of(1, 2, 3, 4, 5));
+        assertWalks(query.apply("DESC"), connection, "memberId", SEEDED_MEMBER_IDS, List.of(5, 4, 3, 2, 1));
+    }
+
     // ===== walks =====
 
     private static void assertWalks(Function<String, String> query,
                                     Function<Map<String, Object>, Map<String, Object>> connection,
                                     List<Integer> expected) {
-        assertWalk(forward(query, connection), expected, "forward");
-        assertWalk(backward(query, connection), expected, "backward");
+        assertWalks(query, connection, "filmId", SEEDED_FILM_IDS, expected);
+    }
+
+    private static void assertWalks(Function<String, String> query,
+                                    Function<Map<String, Object>, Map<String, Object>> connection,
+                                    String idKey, List<Integer> seededIds, List<Integer> expected) {
+        assertWalk(forward(query, connection, idKey), seededIds, expected, "forward");
+        assertWalk(backward(query, connection, idKey), seededIds, expected, "backward");
     }
 
     /** Every row of a {@code first: 2} walk from the start, in the order the pages returned them. */
     private static List<Integer> forward(Function<String, String> query,
-                                         Function<Map<String, Object>, Map<String, Object>> connection) {
+                                         Function<Map<String, Object>, Map<String, Object>> connection,
+                                         String idKey) {
         var ids = new ArrayList<Integer>();
         String after = null;
         Map<String, Object> pageInfo;
@@ -185,7 +229,7 @@ class SortKeyOrderExecutionTest {
         do {
             var conn = connection.apply(execute(query.apply(
                 "first: 2" + (after == null ? "" : ", after: \"" + after + "\""))));
-            ids.addAll(filmIdsOf((List<Map<String, Object>>) conn.get("nodes")));
+            ids.addAll(idsOf((List<Map<String, Object>>) conn.get("nodes"), idKey));
             pageInfo = (Map<String, Object>) conn.get("pageInfo");
             after = (String) pageInfo.get("endCursor");
         } while (Boolean.TRUE.equals(pageInfo.get("hasNextPage")) && ++pages < 100);
@@ -194,7 +238,8 @@ class SortKeyOrderExecutionTest {
 
     /** Every row of a {@code last: 2} walk from the end, put back in forward order. */
     private static List<Integer> backward(Function<String, String> query,
-                                          Function<Map<String, Object>, Map<String, Object>> connection) {
+                                          Function<Map<String, Object>, Map<String, Object>> connection,
+                                          String idKey) {
         var ids = new ArrayList<Integer>();
         String before = null;
         Map<String, Object> pageInfo;
@@ -202,19 +247,20 @@ class SortKeyOrderExecutionTest {
         do {
             var conn = connection.apply(execute(query.apply(
                 "last: 2" + (before == null ? "" : ", before: \"" + before + "\""))));
-            ids.addAll(0, filmIdsOf((List<Map<String, Object>>) conn.get("nodes")));
+            ids.addAll(0, idsOf((List<Map<String, Object>>) conn.get("nodes"), idKey));
             pageInfo = (Map<String, Object>) conn.get("pageInfo");
             before = (String) pageInfo.get("startCursor");
         } while (Boolean.TRUE.equals(pageInfo.get("hasPreviousPage")) && ++pages < 100);
         return ids;
     }
 
-    private static void assertWalk(List<Integer> walked, List<Integer> expected, String direction) {
+    private static void assertWalk(List<Integer> walked, List<Integer> seededIds, List<Integer> expected,
+                                   String direction) {
         assertThat(walked)
             .as(direction + " walk: no row arrives twice across the page boundaries")
             .doesNotHaveDuplicates();
-        assertThat(seeded(walked))
-            .as(direction + " walk: every seeded film arrives exactly once, in sort-key-then-id order")
+        assertThat(walked.stream().filter(seededIds::contains).toList())
+            .as(direction + " walk: every seeded row arrives exactly once, in sort-key-then-id order")
             .containsExactlyElementsOf(expected);
     }
 
@@ -223,7 +269,11 @@ class SortKeyOrderExecutionTest {
     }
 
     private static List<Integer> filmIdsOf(List<Map<String, Object>> films) {
-        return films.stream().map(node -> (Integer) node.get("filmId")).toList();
+        return idsOf(films, "filmId");
+    }
+
+    private static List<Integer> idsOf(List<Map<String, Object>> nodes, String idKey) {
+        return nodes.stream().map(node -> (Integer) node.get(idKey)).toList();
     }
 
     private static Map<String, Object> execute(String query) {
