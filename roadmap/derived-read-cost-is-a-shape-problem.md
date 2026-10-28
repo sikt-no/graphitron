@@ -107,7 +107,7 @@ subtract's prerequisite, and a node that adds says which line it retires.
   "`graphitron_routine_entry` is gone".
 * `graphitron_path_element_*` beside the step hops. Ends at "Nothing resolves a path but the walk".
 * A routine-ended field's function in `graphitron_routine_result` and in
-  `graphitron_field_path_landing`'s row with no place. Ends at "The landing does not restate a routine's function".
+  `graphitron_field_path_landing`'s row with no place. Ends at "A routine's result is an object of its function's record class".
 * Argument and input-field walks from `graphitron_field_scope_table` beside the target. Ends at
   "The argument readers read the target and its walk".
 * `intent_field_producer_method` beside `graphitron_code_reference`. Ends at "Every producer reader reads `graphitron_code_reference`".
@@ -207,16 +207,13 @@ resolutions and links built beside it are gone.
 * **Capture states each field's path in the order it was written** `done`.
 * **A path is resolved by a deterministic forward walk over what each element names** `done`.
 * **A table-bound type no field returns is walked from its binding** `done`.
-* **The landing does not restate a routine's function** `open`. `graphitron_field_path_landing`'s row
-  with no place, a path a `@routine` ends with nothing after it, goes, and a reader wanting that
-  function reads `graphitron_routine_result`, which states it once before the walk.
 * **A round of the walk steps only its newest layer** `open`. Each round re-reads the rule from every
   start and keys, columns and stops read it again after the fixpoint, about 9 rule evaluations per
   capture and 1.4 to 1.6 s on sis at load 5 to 13; a round that steps only the steps the last one
   added, and writes their keys, columns and stops as it goes, reads each step once.
 * **A child `@routine` is a lateral step of the path** `open`, E's. Only a root's first `@routine` is
-  a producer; any other is a step from the table the walk stands on to its function, called with
-  that table's columns and the field's arguments. Each parameter's source is a row of the step,
+  called as a producer; any other is a step from the table the walk stands on to its function, called with
+  that table's columns and the field's arguments, and still produces its result where the field's type is unbound. Each parameter's source is a row of the step,
   `graphitron_field_path_parameter`, read off `graphitron_field_path_parameter_binding`.
   `columnMapping` is gone: an `argMapping` entry names an argument, or with `$source.<column>` a
   column of the standing table, and one that binds nothing is `ROUTINE_PARAMETER_UNBOUND`. A path ending on a `@routine` whose field returns a table-bound type
@@ -236,6 +233,14 @@ resolutions and links built beside it are gone.
   neither a result table nor a key row starts the walk, so `@sourceRow` fields and
   `FilmDetailsCarrier.language` have none until "An object result is lifted onto a key row".
   * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
+  * **`CHAIN_WITHOUT_TARGET` reads the target table** `blocked`, on "A path starts at its parent's table and targets a table".
+    A written path after a `@routine` to an unbound type, or on a field returning an unbound
+    object, names no target table, which the defect already says through its own routine probes;
+    every path past a `@routine` on the six stores ends on a bound type (2026-10-27).
+  * **A table-bound child is a join, and `SameRowTableField` goes** `blocked`, on "The result and path model is stated before it is built", breaking. A child whose
+    type is bound to its parent's own table joins as any bound child does, its key inferred or
+    written and its absence a defect, so a same-row read is the author's condition on the primary
+    key; this reverts R1045's leaf and its uncorrelated narrowed read, first released in RC44.
 * **The field grain reads only the walk** `done`.
 * **A key element states which name it matched by** `done`.
 * **The step targets' readers read the walk** `done`.
@@ -437,11 +442,11 @@ classified records have no reader left and can go with the walk.
   * **A record's method beside its components is a read slot** `open`. A record offers only its
     components, so `FilmCardData.example()` backs nothing and `RecordExample` holds an OBJECT of no
     class, where the classifier reads it through that accessor.
-  * **An error-carrying payload's data element holds its class** `open`. `FilmWithActorsResult` has
+  * **An error-carrying payload's data element holds its class** `blocked`, on "The result and path model is stated before it is built". `FilmWithActorsResult` has
     no `graphitron_result_class` row, so its fields are readers where the classifier fetches.
   * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
     its kind, so their accessors are unknown.
-  * **A plain object's first key is read off its members** `open`. The classifier's `FkColumns`
+  * **A plain object's first key is read off its members** `blocked`, on "The result and path model is stated before it is built". The classifier's `FkColumns`
     reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
@@ -458,6 +463,44 @@ classified records have no reader left and can go with the walk.
     bound type's table from every candidate of its binding, so a type bound to a bare name two
     schemas declare held a ROW of both; it is still a ROW, of no table, the ambiguity being the
     binding's own defect.
+  * **A `@pivot` gives an OBJECT result** `blocked`, on "The result and path model is stated before it is built". A `@pivot` field's type holds an OBJECT, so
+    `graphitron_result_pivot` goes, and a type both nested under a table's field and pivoted holds
+    two shapes, `RESULT_SHAPES_CONFLICT`; R1096 plans `@localized`
+    on a constructed row, which this replaces.
+* **The result and path model is stated before it is built** `open`. Results, key rows and path starts are written down as relations with
+  their grains, keys and readers, in the store's own terms, and reviewed before any node it blocks
+  changes code; it settles where an OBJECT's class lives, whether an OBJECT may have none, and
+  whether a field states the result it gives in a relation of its own.
+* **`@sourceRow` dissolves** `blocked`, on "The result and path model is stated before it is built". No schema in the FS-plattform checkout uses it, so the
+  directive, its `SOURCE_ROW` key row and its lifter methods go, an object's key row read off its
+  class and members instead.
+* **The bindings are resolved before the targets** `blocked`, on "The result and path model is stated before it is built". `ResolvedTypeBindings` reads only the
+  written `@table`, so its place after the hops is accidental; it runs before
+  `graphitron_field_target` and is marked and swept rather than cleared and rewritten.
+* **A routine's result is an object of its function's record class** `blocked`, on "The result and path model is stated before it is built". An unbound type a
+  `@routine` returns is a result, an OBJECT whose class is the function's record off
+  `sql_table.record_class_fqn`, whether the routine is a producer (a root, `@splitQuery`, under an
+  object) or a lateral step inline, while one returning a bound type gives a row of that table; this
+  supersedes the row of its function that a `@routine` read with nothing after it has handed since
+  `0428ef411`, and `graphitron_routine_result` and the landing's row with no place go. Today Tilgang
+  holds a ROW and an OBJECT, and Brukertilgang's three bound children have no start and no key.
+* **A path starts at its parent's table and targets a table** `blocked`, on "The result and path model is stated before it is built", "A routine's result is an object
+  of its function's record class", "Every field has a path, the written one or the one discovery implies",
+  "An error-carrying payload's data element holds its class" and "A plain object's first key is read off its members".
+  A table-bound parent starts every field's path on its binding, whatever its result, so for almost
+  every field the start is known before the results and the editor completes on an unreached type;
+  only an unbound parent asks its result, a nested type starting on its result's tables and an
+  OBJECT lifted into a derived table by mapping it onto a key row, and a root `@routine`
+  establishes a result, a path to the field's target where that is table-bound. The target is
+  `graphitron_field_target_table`'s or a scalar's written path's, so the start rule, the result
+  rule and the column match read the binding, the result and the target instead of probing
+  whether a `@reference` was written, and the RESULT start narrows to unbound parents. A paginated
+  field's path runs from its parent to its items' table, its connection and edge types passing the
+  cursored result forward with no path of their own, and a field on an unbound type nothing returns
+  has nothing to start from and gets no help. On the stores of 2026-10-28, 45 to 59 percent of the
+  non-root fields that need a path start on their parent's binding, and the 29 bound children of
+  service results with no key row (27 on sis, 2 on sakila) sit under a payload data element whose
+  class is not carried down.
 * **The candidates are one family** `open`. What a coordinate could name, from the argMapping,
   node id, `@referenceFor` participant and catalog-name askers, is one rule view read by the
   rejection messages, the language server's completions and the MCP server.
