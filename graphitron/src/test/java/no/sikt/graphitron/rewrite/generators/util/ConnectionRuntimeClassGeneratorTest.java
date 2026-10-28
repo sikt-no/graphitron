@@ -264,7 +264,7 @@ class ConnectionRuntimeClassGeneratorTest {
     }
 
     @Test
-    void fetcherErrorResponse_hasThreeDefaultMethodsAndNoAbstractOne() {
+    void fetcherErrorResponse_hasFourDefaultMethodsAndNoAbstractOne() {
         TypeSpec response = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),
             ConnectionRuntimeClassGenerator.FETCHER_ERROR_RESPONSE_CLASS_NAME);
 
@@ -273,7 +273,7 @@ class ConnectionRuntimeClassGeneratorTest {
             .isEmpty();
         assertThat(abstractMethodNames(response)).isEmpty();
         assertThat(response.methodSpecs()).extracting(MethodSpec::name)
-            .containsExactly("reference", "matchedMessage", "unmatchedMessage");
+            .containsExactly("reference", "matchedMessage", "clientErrorMessage", "unmatchedMessage");
         assertThat(response.methodSpecs()).allSatisfy(m -> {
             assertThat(m.modifiers()).contains(Modifier.DEFAULT);
             assertThat(m.returnType().toString()).isEqualTo("java.lang.String");
@@ -282,6 +282,8 @@ class ConnectionRuntimeClassGeneratorTest {
             "java.lang.Throwable", "graphql.schema.DataFetchingEnvironment");
         assertThat(parameterTypes(method(response, "matchedMessage"))).containsExactly(
             "java.lang.Throwable", "java.lang.String", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
+        assertThat(parameterTypes(method(response, "clientErrorMessage"))).containsExactly(
+            SCHEMA_PACKAGE + ".GraphitronClientException", "graphql.schema.DataFetchingEnvironment");
         assertThat(parameterTypes(method(response, "unmatchedMessage"))).containsExactly(
             "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
     }

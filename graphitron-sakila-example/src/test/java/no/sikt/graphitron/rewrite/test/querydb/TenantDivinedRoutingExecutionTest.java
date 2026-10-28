@@ -4,7 +4,10 @@ import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import graphql.GraphQLError;
+import graphql.schema.DataFetchingEnvironment;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
+import no.sikt.graphitron.generated.multitenant.schema.FetcherErrorResponse;
+import no.sikt.graphitron.generated.multitenant.schema.GraphitronClientException;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
 import no.sikt.graphitron.generated.multitenant.util.NodeIdEncoder;
@@ -26,6 +29,7 @@ import java.sql.DriverManager;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.regex.Pattern;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -59,6 +63,21 @@ class TenantDivinedRoutingExecutionTest {
     static final AtomicInteger TENANT_2_OPENED = new AtomicInteger();
     static final AtomicInteger DEFAULT_OPENED = new AtomicInteger();
     static GraphQL graphql;
+    /** The same runtime given {@link #REFUSAL_REWORDING}, so its tenant refusals read sis's Graphitron 9 text. */
+    static GraphQL rewordingGraphql;
+
+    private static final Pattern TENANT_REFUSAL = Pattern.compile("Tenant '(.*)' is not permitted for this request\\.");
+
+    /** Rewords the tenant refusal to sis's Graphitron 9 text and leaves every other client error alone. */
+    private static final FetcherErrorResponse REFUSAL_REWORDING = new FetcherErrorResponse() {
+        @Override
+        public String clientErrorMessage(GraphitronClientException error, DataFetchingEnvironment env) {
+            var refusal = TENANT_REFUSAL.matcher(error.getMessage());
+            return refusal.matches()
+                ? "You do not have access to data from institusjonsnrEier = " + refusal.group(1)
+                : FetcherErrorResponse.super.clientErrorMessage(error, env);
+        }
+    };
 
     static final String ENDORSEMENT_NOTE =
         no.sikt.graphitron.rewrite.test.conditions.ReferencePathConditionFixtures.TENANT_ENDORSEMENT_NOTE;
@@ -160,6 +179,8 @@ class TenantDivinedRoutingExecutionTest {
         var runtime = new GraphitronRuntime(
             countingDataSource(null, DEFAULT_OPENED), byTenant, SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+        rewordingGraphql = runtime.withFetcherErrorResponse(REFUSAL_REWORDING)
+            .newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
     @AfterAll
@@ -1132,6 +1153,51 @@ class TenantDivinedRoutingExecutionTest {
                 });
             });
         assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    // ===== FetcherErrorResponse.clientErrorMessage rewords an unclaimed client error =====
+
+    private static ExecutionResult executeReworded(String query, java.util.Collection<Integer> tenants) {
+        return rewordingGraphql.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"test-user\"}")
+            .query(query).build());
+    }
+
+    @Test
+    void query_tenantOutsideTheSet_readsTheConfiguredClientErrorMessage() {
+        var result = executeReworded("{ films(filmId: 2) { title } }", List.of(1));
+        assertThat(result.getErrors())
+            .singleElement()
+            .satisfies(e -> {
+                assertThat(e.getMessage()).isEqualTo("You do not have access to data from institusjonsnrEier = 2");
+                assertThat(e.getPath()).containsExactly("films");
+            });
+        assertThat(TENANT_2_OPENED.get()).as("no connection to a refused tenant is taken").isZero();
+    }
+
+    @Test
+    void dmlPayload_onTheErrorChannel_anUnclaimedClientErrorReadsTheConfiguredClientErrorMessage() {
+        var result = executeReworded("mutation { retitleFilmsChecked(in: [{ id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"Refused\" }])"
+            + " { films { title } errors { __typename } } }", List.of(1));
+        assertUnclaimedClientErrorSurfaced(result, "retitleFilmsChecked",
+            "You do not have access to data from institusjonsnrEier = 2");
+        assertThat(result.getErrors())
+            .noneSatisfy(e -> assertThat(e.getMessage()).contains("is not permitted for this request"));
+    }
+
+    @Test
+    void dmlPayload_aClaimedClientError_isNotReadThroughClientErrorMessage() {
+        var result = executeReworded("mutation { retitleFilmsClaimed(in: [{ id: \""
+            + NodeIdEncoder.encodeFilm(2) + "\", title: \"Never Written\" }])"
+            + " { films { title } errors { __typename ... on FilmWriteClientError { message } } } }",
+            List.of(1));
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("retitleFilmsClaimed");
+        assertThat((List<Map<String, Object>>) payload.get("errors"))
+            .singleElement()
+            .satisfies(error -> assertThat(error.get("message"))
+                .as("a claimed client error goes through matchedMessage, which this response leaves alone")
+                .isEqualTo("Tenant '2' is not permitted for this request."));
     }
 
     @Test

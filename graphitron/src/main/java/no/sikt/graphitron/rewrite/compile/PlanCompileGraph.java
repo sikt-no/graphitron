@@ -312,6 +312,9 @@ public final class PlanCompileGraph {
                     var fetcherErrorResponse = runtimeUnit("FetcherErrorResponse");
                     pinned.ifPresent(p -> hookImpl.ifPresent(h -> declared(p, h)));
                     pinned.ifPresent(p -> mountException.ifPresent(m -> declared(p, m)));
+                    // The response's clientErrorMessage takes the client exception.
+                    fetcherErrorResponse.ifPresent(l -> refOf(GlobalUnitKind.CLIENT_EXCEPTION)
+                        .ifPresent(ce -> declared(l, ce)));
                     runtime.ifPresent(r -> {
                         pinned.ifPresent(p -> declared(r, p));
                         fetcherErrorLog.ifPresent(l -> declared(r, l));
@@ -330,6 +333,8 @@ public final class PlanCompileGraph {
                         refOf(GlobalUnitKind.TRANSACTION_PROVIDER).ifPresent(tp -> declared(t, tp));
                         // The tenant key's canonical form is the column trip's.
                         refOf(GlobalUnitKind.COLUMN_VALUES).ifPresent(cv -> declared(t, cv));
+                        // The tenant refusal throws the client exception.
+                        refOf(GlobalUnitKind.CLIENT_EXCEPTION).ifPresent(ce -> declared(t, ce));
                     });
                 }
                 case TRANSACTION_PROVIDER -> runtimeUnit("PinnedConnection")

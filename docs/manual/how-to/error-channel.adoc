@@ -106,6 +106,8 @@ Only the name in this execution's own output package is recognised this way. A p
 
 Coming from Graphitron 9: this is how to keep the in-payload shape Graphitron 9 gave these errors on mutations.
 
+To change only the wording, and keep the error at the top level, override `FetcherErrorResponse.clientErrorMessage` instead; see <<fetcher-error-response,Choosing what the client reads>>.
+
 == `description:` overrides `message:`, and nothing else
 
 Set `description:` on a handler entry and the `message:` field of that entry's `@error` type reads the authored string instead of the matched exception's `getMessage()`. Leave it off and `message:` reads the source's own message. Nothing else about the error changes.
@@ -156,7 +158,7 @@ If you want a localised or sanitised message and `description:` is too static fo
 [#unmatched-exceptions]
 == Unmatched exceptions: redact and correlate
 
-When no handler matches, the router first walks the exception's cause chain for a `GraphitronClientException`, the error graphitron itself raises for a client mistake: a tenant outside the request's tenant set, a malformed or wrong-type node id, an out-of-range page size or an invalid cursor. If it finds one, that error reaches the response's top-level `errors` with its own message and with the failing field's `path` and `locations`, and the field resolves to `null`; on a non-null field it is the only error at that path, as with a redacted error, and the null bubbles to the nearest nullable parent. All of this is exactly as on a field without an error channel, and nothing is logged. A handler you declare still wins, because handlers are tried first. Every other unmatched exception runs the redact path (`ErrorRouterClassGenerator.redactBody`):
+When no handler matches, the router first walks the exception's cause chain for a `GraphitronClientException`, the error graphitron itself raises for a client mistake: a tenant outside the request's tenant set, a malformed or wrong-type node id, an out-of-range page size or an invalid cursor. If it finds one, that error reaches the response's top-level `errors` with its own message, or the one your `FetcherErrorResponse.clientErrorMessage` returns, and with the failing field's `path` and `locations`, and the field resolves to `null`; on a non-null field it is the only error at that path, as with a redacted error, and the null bubbles to the nearest nullable parent. All of this is exactly as on a field without an error channel, and nothing is logged (unless your `clientErrorMessage` throws or returns `null`, which logs one ERROR line naming the field's path). A handler you declare still wins, because handlers are tried first. Every other unmatched exception runs the redact path (`ErrorRouterClassGenerator.redactBody`):
 
 [source,java]
 ----
@@ -254,7 +256,7 @@ var runtime = Graphitron.runtime(dataSource, SQLDialect.ORACLE)
     .withFetcherErrorResponse(new FsErrorResponse());
 ----
 
-All three of its methods have defaults that reproduce what Graphitron does without one, so override only what you need:
+All four of its methods have defaults that reproduce what Graphitron does without one, so override only what you need:
 
 [source,java]
 ----
@@ -273,6 +275,11 @@ final class FsErrorResponse implements FetcherErrorResponse {
         return FsMessages.describe(source, defaultMessage) + " Referanse: " + reference;
     }
     @Override
+    public String clientErrorMessage(GraphitronClientException error, DataFetchingEnvironment env) {
+        return FsMessages.tenantRefusal(error.getMessage())
+            .orElseGet(() -> FetcherErrorResponse.super.clientErrorMessage(error, env));
+    }
+    @Override
     public String unmatchedMessage(Throwable thrown, String reference, DataFetchingEnvironment env) {
         return "An exception occurred. The error has been logged with id " + reference
             + FsMessages.hint(thrown).map(h -> ": " + h).orElse(".");
@@ -280,11 +287,12 @@ final class FsErrorResponse implements FetcherErrorResponse {
 }
 ----
 
-* `reference` mints the text that joins a client's report to your log line. The default is a random UUID. Return a trace id to let an operator go straight from a support ticket to the trace. Read it from somewhere the fetcher's thread can see: a fetcher may run on a thread that does not carry your request's tracing context, so put the trace id into the request's `GraphQLContext` when you build the execution input, and read it here. Graphitron hands the same reference to your `FetcherErrorLog` and to the two message methods, so they always agree. A runtime with a log and no response uses the default reference.
+* `reference` mints the text that joins a client's report to your log line. The default is a random UUID. Return a trace id to let an operator go straight from a support ticket to the trace. Read it from somewhere the fetcher's thread can see: a fetcher may run on a thread that does not carry your request's tracing context, so put the trace id into the request's `GraphQLContext` when you build the execution input, and read it here. Graphitron hands the same reference to your `FetcherErrorLog` and to `matchedMessage` and `unmatchedMessage`, so they always agree. A runtime with a log and no response uses the default reference.
 * `matchedMessage` is called when a payload error's `message:` is read, with the exception the handler caught, the message Graphitron would return (the handler's `description:`, else the exception's own message), the reference and the `message` field's environment. `env.getParentType()` is the `@error` type, which is how to change the message of one type only. Return `defaultMessage` for errors you leave alone.
+* `clientErrorMessage` is the top-level error's message for a `GraphitronClientException` no handler caught, for example a tenant outside the request's tenant set. It receives the exception and the failing field's environment. The default is the exception's own message. There is no reference: Graphitron neither logs these errors nor gives them one. All of Graphitron's client errors are one class, so tell them apart by message; that text is Graphitron's and may be reworded in a release, so match it loosely and fall back to `FetcherErrorResponse.super.clientErrorMessage(error, env)` when nothing matches.
 * `unmatchedMessage` is the top-level error's message when no handler caught the exception. The default is "An error occurred. Reference: <reference>.". It is the client-facing text of a fault you did not plan for, so do not put the exception's message in it unless you know what it contains.
 
-If a method throws or returns `null`, the client gets the default text, and Graphitron logs one ERROR line naming your class, the class of what it threw and the reference. As with `FetcherErrorLog`, the escape-hatch engine has no runtime: put the response into each request's context under its class, `graphQLContext(b -> b.put(FetcherErrorResponse.class, response))`.
+If a method throws or returns `null`, the client gets the default text, and Graphitron logs one ERROR line naming your class, the class of what it threw and the reference (the field's path, for `clientErrorMessage`). As with `FetcherErrorLog`, the escape-hatch engine has no runtime: put the response into each request's context under its class, `graphQLContext(b -> b.put(FetcherErrorResponse.class, response))`.
 
 With `graphitron-jakarta-rest`, a fault thrown while building the execution input (the database down when `newExecutionInput` opens a connection) never reaches a fetcher, and `GraphqlHttpHandler` answers it itself. Override `GraphitronApplication.newReference(Throwable)` and `redactedMessage(Throwable, String)` to give it the same reference and text as your `FetcherErrorResponse`; the library cannot see the generated interface, so have both call the same helper of yours.
 
@@ -299,7 +307,7 @@ With `graphitron-jakarta-rest`, a fault thrown while building the execution inpu
 * *`VALIDATION` runs pre-execution.* The Bean-Validation handler intercepts before the service method runs, and the <<column-length-check,column-length check>> before a payload-returning `@mutation` writes; their results bypass the dispatch loop and route straight into the errors field. There's at most one `VALIDATION` handler per channel.
 * *Cause-chain unwrap is per mapping, not per source-order step.* If a wrapping exception declares a handler at the channel and the wrapped exception declares a different one, the *wrapping* exception wins for any mapping it matches first — even if the wrapped exception would match a later mapping more specifically. Keep handler tuples disjoint across the wrap boundary.
 * *A catch-all can leak.* A broad handler without `description:` returns the exception's own message, jOOQ's SQL text included, unless a `matchedMessage` replaces it; see <<fetcher-error-response,Choosing what the client reads>>.
-* *Unmatched flows redact, except graphitron's own client errors.* A `GraphitronClientException` no handler claims surfaces as a top-level error with its own message, as described under <<unmatched-exceptions,unmatched exceptions>>. If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log (or your `FetcherErrorLog`) for a correlation ID, then add the handler.
+* *Unmatched flows redact, except graphitron's own client errors.* A `GraphitronClientException` no handler claims surfaces as a top-level error with its own message (or your `clientErrorMessage`'s), as described under <<unmatched-exceptions,unmatched exceptions>>. If a developer expects a specific exception class to surface to the client and it doesn't, the most likely cause is "no `@error` type covers it"; check the redaction log (or your `FetcherErrorLog`) for a correlation ID, then add the handler.
 * *On the escape-hatch path, an error payload from a `@service` field says the call failed, not that nothing was written.* On the owned-connection path it does say nothing was written: a claimed exception still fails the field, and the field's one transaction rolls back (xref:../../architecture/reference/runtime-extension-points.adoc#owned-path-transactions[Transactions on the owned-connection path]). Elsewhere graphitron opens no transaction around a `@service` invocation (see xref:../reference/directives/service.adoc#transaction-demarcation[the `@service` constraint]), so a method that threw partway through a batch may already have committed the rows it got to, and the payload is well-formed either way. A payload-returning DML xref:../reference/directives/mutation.adoc[`@mutation`] carrier does carry the rollback promise: its per-row writes run inside one transaction graphitron opens, so an error payload from one means nothing was written. A payload-returning xref:../reference/directives/routine.adoc[`@routine`] Mutation write carries it for statement 1 only, the caveat that page already publishes. A service that needs the promise must open the transaction itself; the trap is a service whose own javadoc claims all-or-nothing, since believing the contract is satisfied somewhere is what makes a partial commit invisible rather than merely surprising.
 * *No payload, no channel.* `@error` only takes effect when the type appears as (or in a union behind) an `errors:` field on a payload one of the three producer families returns: a `@service` field, at a root or below one, a payload-returning DML `@mutation`, or a payload-returning `@routine` Mutation write. A standalone `@error` type with no carrier is rejected at classify time.
 

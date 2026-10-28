@@ -17,9 +17,10 @@ import java.util.List;
  * malformed or wrong-type {@code @nodeId} filter value throws it carrying a human-readable
  * message. The no-channel fetcher catch arm routes it through the generated
  * {@code ErrorRouter.surfaceClientErrorOrRedact} (see {@link ErrorRouterClassGenerator}), which
- * surfaces its message as a field error carrying the failing field's path and locations instead of
- * redacting it to a correlation id; genuine internal faults still redact. The stable name is also the
- * {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches with zero change at
+ * surfaces it as a field error carrying the failing field's path and locations instead of
+ * redacting it to a correlation id; the message is its own unless the configured
+ * {@code FetcherErrorResponse.clientErrorMessage} rewords it. Genuine internal faults still
+ * redact. The stable name is also the {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches with zero change at
  * the throw site: the classifier recognises the name before the class has ever compiled and
  * records it as a {@link GeneratedClientException}.
  *
@@ -57,8 +58,9 @@ public final class GraphitronClientExceptionClassGenerator {
             .superclass(GRAPHQL_ERROR_EXCEPTION)
             .addJavadoc("Marker for a client-side input mistake surfaced from a generated fetcher\n"
                 + "(e.g. a malformed or wrong-type {@code @nodeId} filter value).\n"
-                + "{@code ErrorRouter.surfaceClientErrorOrRedact} surfaces its message as a field\n"
-                + "error carrying the field's path and locations rather than redacting it; the\n"
+                + "{@code ErrorRouter.surfaceClientErrorOrRedact} surfaces it as a field error\n"
+                + "carrying the field's path and locations rather than redacting it, with its message\n"
+                + "unless the configured {@code FetcherErrorResponse.clientErrorMessage} rewords it; the\n"
                 + "stable {@code instanceof} anchor a {@code GENERIC} {@code @error} handler matches.\n")
             .addField(serialVersionUID)
             .addMethod(ctor)

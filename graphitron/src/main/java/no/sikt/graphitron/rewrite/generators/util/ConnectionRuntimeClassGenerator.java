@@ -258,6 +258,8 @@ public final class ConnectionRuntimeClassGenerator {
         var requestTenants = ClassName.get(schemaPackage, REQUEST_TENANTS_CLASS_NAME);
         var fetcherErrorLog = ErrorRouterClassGenerator.fetcherErrorLogClass(outputPackage);
         var fetcherErrorResponse = ErrorRouterClassGenerator.fetcherErrorResponseClass(outputPackage);
+        var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
+        var clientException = ClassName.get(clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
         var errorRouter = ClassName.get(schemaPackage, ErrorRouterClassGenerator.CLASS_NAME);
         var instrumentation = ClassName.get(schemaPackage, GraphitronConnectionInstrumentationGenerator.CLASS_NAME);
         var provider = ClassName.get(schemaPackage, GraphitronTransactionProviderGenerator.CLASS_NAME);
@@ -277,7 +279,7 @@ public final class ConnectionRuntimeClassGenerator {
             units.add(requestTenants(requestTenants, tenantConnections, tenantKey));
         }
         units.add(fetcherErrorLog(fetcherErrorLog, multiTenant ? tenantKey : null));
-        units.add(fetcherErrorResponse(fetcherErrorResponse));
+        units.add(fetcherErrorResponse(fetcherErrorResponse, clientException));
         if (sessionHooks.emitsHookImplementation()) {
             units.add(sessionHookImpl(sessionHooks, tenantKey, multiTenant));
             units.add(sessionMountException(sessionMountException));
@@ -2184,13 +2186,13 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * The consumer-implemented {@code FetcherErrorResponse}: three default methods and no abstract
+     * The consumer-implemented {@code FetcherErrorResponse}: default methods only, no abstract
      * one, so it is deliberately not a functional interface and a consumer overrides only what it
      * needs. The defaults are the only spelling of Graphitron's client-facing text for a fetcher
      * exception: {@code ErrorRouter} calls a default instance when none is configured rather than
      * restating them.
      */
-    private static TypeSpec fetcherErrorResponse(ClassName self) {
+    private static TypeSpec fetcherErrorResponse(ClassName self, ClassName clientException) {
         var reference = MethodSpec.methodBuilder("reference")
             .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
             .returns(String.class)
@@ -2198,9 +2200,9 @@ public final class ConnectionRuntimeClassGenerator {
             .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
             .addStatement("return $T.randomUUID().toString()", UUID_CLASS)
             .addJavadoc("Mints the text that joins a client's report to your log line, once per exception and\n"
-                + "request. The same reference reaches the {@code FetcherErrorLog} and the two message\n"
-                + "methods. The default is a random UUID; a trace id lets an operator go straight from a\n"
-                + "support ticket to the trace. A fetcher may run on a thread that does not carry the\n"
+                + "request. The same reference reaches the {@code FetcherErrorLog}, {@code matchedMessage}\n"
+                + "and {@code unmatchedMessage}. The default is a random UUID; a trace id lets an operator\n"
+                + "go straight from a support ticket to the trace. A fetcher may run on a thread that does not carry the\n"
                 + "request's tracing context, so read the trace id from the request's {@code GraphQLContext}.\n"
                 + "@param thrown the exception the reference is for: a caught error's source, or the\n"
                 + "exception no handler caught\n"
@@ -2225,6 +2227,23 @@ public final class ConnectionRuntimeClassGenerator {
                 + "{@code @error} type\n"
                 + "@return the client's message; {@code null} falls back to {@code defaultMessage}\n")
             .build();
+        var clientErrorMessage = MethodSpec.methodBuilder("clientErrorMessage")
+            .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
+            .returns(String.class)
+            .addParameter(clientException, "error")
+            .addParameter(DATA_FETCHING_ENVIRONMENT, "env")
+            .addStatement("return error.getMessage()")
+            .addJavadoc("The top-level error's message for a client error no handler caught, for example a\n"
+                + "tenant outside the request's tenant set. Called once per such error, with the client\n"
+                + "exception found on the cause chain. All of Graphitron's client errors are one class,\n"
+                + "so tell them apart by message; that text is Graphitron's and may be reworded in a\n"
+                + "release, so match it loosely and return\n"
+                + "{@code FetcherErrorResponse.super.clientErrorMessage(error, env)} when nothing matches.\n"
+                + "There is no reference: Graphitron neither logs these errors nor gives them one.\n"
+                + "@param error the client exception no handler caught\n"
+                + "@param env the failing field's environment\n"
+                + "@return the client's message; {@code null} falls back to the exception's own message\n")
+            .build();
         var unmatchedMessage = MethodSpec.methodBuilder("unmatchedMessage")
             .addModifiers(Modifier.PUBLIC, Modifier.DEFAULT)
             .returns(String.class)
@@ -2243,17 +2262,20 @@ public final class ConnectionRuntimeClassGenerator {
         return TypeSpec.interfaceBuilder(self)
             .addModifiers(Modifier.PUBLIC)
             .addJavadoc("Decides what the client reads for a fetcher exception: its reference, the\n"
-                + "{@code message:} of an error a handler caught, and the top-level message of one none\n"
-                + "caught. Every method has a default reproducing what Graphitron does without one, so\n"
-                + "override only what you need. Give the runtime one of these\n"
+                + "{@code message:} of an error a handler caught, the top-level message of a client error\n"
+                + "none caught, and of anything else none caught. Every method has a default reproducing\n"
+                + "what Graphitron does without one, so override only what you need. Give the runtime one\n"
+                + "of these\n"
                 + "({@code GraphitronRuntime.withFetcherErrorResponse}); on the escape-hatch engine, which\n"
                 + "has no runtime, put it into each request's {@code GraphQLContext} under this class.\n"
                 + "\n"
                 + "<p>If a method throws or returns {@code null}, the client gets the default text and\n"
                 + "Graphitron logs one ERROR line naming the response's class, the class of what it threw\n"
-                + "and the reference; only JVM-fatal errors propagate.\n")
+                + "and the reference (the field's path, for {@code clientErrorMessage}); only JVM-fatal errors\n"
+                + "propagate.\n")
             .addMethod(reference)
             .addMethod(matchedMessage)
+            .addMethod(clientErrorMessage)
             .addMethod(unmatchedMessage)
             .build();
     }

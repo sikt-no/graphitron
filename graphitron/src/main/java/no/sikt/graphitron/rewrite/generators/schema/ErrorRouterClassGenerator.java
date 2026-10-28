@@ -23,8 +23,9 @@ import java.util.function.Supplier;
  * {@code <outputPackage>.schema.ErrorRouter}, once per code-generation run: the runtime
  * entry points the per-fetcher try/catch wrappers call ({@code redact},
  * {@code surfaceClientErrorOrRedact}, {@code claim}), the consumer-hook calls every error path
- * goes through ({@code toConfiguredLog} for {@code FetcherErrorLog}, {@code newReference} and
- * {@code clientMessage} for {@code FetcherErrorResponse}, all contained by one private helper),
+ * goes through ({@code toConfiguredLog} for {@code FetcherErrorLog}, {@code newReference},
+ * {@code clientMessage} and the client-error arm of {@code surfaceClientErrorOrRedact} for
+ * {@code FetcherErrorResponse}, all contained by one private helper),
  * plus the nested {@code Mapping} taxonomy the dispatch arms match against. Per-method
  * contracts live in the emitted javadoc (the {@code addJavadoc} strings below).
  *
@@ -92,8 +93,9 @@ public final class ErrorRouterClassGenerator {
 
     /**
      * The emitted {@code FetcherErrorResponse} interface, a {@code CONNECTION_RUNTIME} unit beside
-     * {@code FetcherErrorLog} that {@code newReference}, {@code redact} and {@code clientMessage}
-     * name; resolved through the plan's naming vocabulary like the router.
+     * {@code FetcherErrorLog} that {@code newReference}, {@code redact}, {@code clientMessage} and
+     * {@code surfaceClientErrorOrRedact} name; resolved through the plan's naming vocabulary like
+     * the router.
      */
     public static ClassName fetcherErrorResponseClass(String outputPackage) {
         return connectionRuntimeUnit(outputPackage,
@@ -154,7 +156,8 @@ public final class ErrorRouterClassGenerator {
         var fetcherErrorResponse = fetcherErrorResponseClass(outputPackage);
         var toConfiguredLog = buildToConfiguredLogMethod(fetcherErrorLog);
 
-        var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage);
+        var surfaceClientErrorOrRedact = buildSurfaceClientErrorOrRedactMethod(typeP, resultOfP, outputPackage,
+            fetcherErrorResponse);
         var claim = buildClaimMethod(tenantConnectionsClass(outputPackage));
         var defaultResponse = FieldSpec.builder(fetcherErrorResponse, DEFAULT_RESPONSE,
                 Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
@@ -172,8 +175,9 @@ public final class ErrorRouterClassGenerator {
                 + "through this class: either onto the {@code Outcome} wrapper's error arm\n"
                 + "({@code claim}, with a {@code Mapping[]} constant from {@code ErrorMappings})\n"
                 + "or, when there is no channel or no mapping claims the throw, to\n"
-                + "{@code surfaceClientErrorOrRedact}: a client exception's message surfaces as a\n"
-                + "field error carrying the field's path and locations, anything else becomes a\n"
+                + "{@code surfaceClientErrorOrRedact}: a client exception surfaces as a field error\n"
+                + "carrying the field's path and locations and its message, or the configured\n"
+                + "{@code FetcherErrorResponse.clientErrorMessage}'s, anything else becomes a\n"
                 + "redacted {@code DataFetcherResult} carrying only\n"
                 + "a correlation ID ({@code redact}).\n"
                 + "\n"
@@ -581,7 +585,8 @@ public final class ErrorRouterClassGenerator {
     private static MethodSpec buildSurfaceClientErrorOrRedactMethod(
             TypeVariableName typeP,
             ParameterizedTypeName resultOfP,
-            String outputPackage) {
+            String outputPackage,
+            ClassName fetcherErrorResponse) {
         var clientExceptionUnit = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).clientException();
         var clientException = ClassName.get(
             clientExceptionUnit.packageName(), clientExceptionUnit.simpleName());
@@ -596,11 +601,13 @@ public final class ErrorRouterClassGenerator {
                 + "has no {@code @error} channel, and the fall-through after the channel's mappings\n"
                 + "when it has one and none claims the throw. Walks the cause chain\n"
                 + "outermost-first; if a {@link $T} is found, returns a {@link $T} with\n"
-                + "{@code data=null} and one error carrying that exception's message, classification\n"
-                + "and extensions plus the failing field's path and locations, read from {@code env}\n"
+                + "{@code data=null} and one error carrying that exception's classification and\n"
+                + "extensions plus the failing field's path and locations, read from {@code env}\n"
                 + "as {@link #redact} does, so the real client-facing message reaches the response\n"
-                + "{@code errors} array at the field it belongs to. On no match\n"
-                + "falls through to {@link #redact}: genuine internal faults keep the privacy\n"
+                + "{@code errors} array at the field it belongs to. The message is the configured\n"
+                + "{@link $T#clientErrorMessage}'s, else the exception's own; a failure of the\n"
+                + "configured method is contained to one ERROR line naming the field's path. On no\n"
+                + "match falls through to {@link #redact}: genuine internal faults keep the privacy\n"
                 + "contract (logged + correlation id only).\n"
                 + "\n"
                 + "<p>Surfacing is narrowed to the client-error marker type, so an unclaimed client\n"
@@ -610,7 +617,7 @@ public final class ErrorRouterClassGenerator {
                 + "<p>A rejected session mount answers a fixed placeholder error, unlogged and with no\n"
                 + "reference: the operation throws it out of {@code GraphQL.execute} when it completes,\n"
                 + "so this result is discarded and the consumer decides what the request answers.\n",
-                clientException, DATA_FETCHER_RESULT)
+                clientException, DATA_FETCHER_RESULT, fetcherErrorResponse)
             .addCode(CodeBlock.builder()
                 .add("// Every arm below fails the field: its mutation transaction, if any, rolls back.\n")
                 .addStatement("$T.markFieldFailed(env)", tenantConnectionsClass(outputPackage))
@@ -623,10 +630,13 @@ public final class ErrorRouterClassGenerator {
                 .endControlFlow()
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
                 .beginControlFlow("if (t instanceof $T clientError)", clientException)
+                .addStatement("$T message = answer(configured(env, $T.class),"
+                    + " response -> response.clientErrorMessage(clientError, env), () -> $S + pathOf(env))",
+                    STRING_CN, fetcherErrorResponse, "path = ")
                 .add("return $T.<P>newResult()\n", DATA_FETCHER_RESULT)
                 .add("    .data(null)\n")
                 .add("    .error($T.newError(env)\n", GRAPHQL_ERROR_BUILDER)
-                .add("        .message(clientError.getMessage())\n")
+                .add("        .message(message)\n")
                 .add("        .errorType(clientError.getErrorType())\n")
                 .add("        .extensions(clientError.getExtensions())\n")
                 .add("        .build())\n")
