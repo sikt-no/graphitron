@@ -22,10 +22,12 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_BINDING;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_LIFTED;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_RESULT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_ROUTINE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_START_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PATH_STOP;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_KEY_ROW;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_METHOD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PATH_ELEMENT_ROUTINE;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT_COLUMN;
@@ -121,6 +123,16 @@ public final class FieldPaths {
             dsl.select(cols(r, kinded)).from(r).where(r.GRAPH_NAME.eq(graph))
                 .and(r.KIND.eq("ROUTINE")).asTable("s"),
             FIELD, concat(START, List.of("KIND")), touchedAt);
+        // The lifted start names the key row it starts on, by the kind the key is taken as.
+        var k = GRAPHITRON_FIELD_KEY_ROW;
+        var lifted = new ArrayList<Field<?>>(cols(r, kinded));
+        lifted.add(k.KIND.as("KEY_KIND"));
+        merge(dsl, GRAPHITRON_FIELD_PATH_START_LIFTED,
+            dsl.select(lifted).from(r)
+                .join(k).on(k.GRAPH_NAME.eq(r.GRAPH_NAME), k.TYPE_NAME.eq(r.TYPE_NAME),
+                    k.FIELD_NAME.eq(r.FIELD_NAME))
+                .where(r.GRAPH_NAME.eq(graph)).and(r.KIND.eq("LIFTED")).asTable("s"),
+            FIELD, concat(START, List.of("KIND", "KEY_KIND")), touchedAt);
     }
 
     /** The rule's rows for this graph, each with how many moves its step allows. */
@@ -270,7 +282,8 @@ public final class FieldPaths {
                 GRAPHITRON_FIELD_PATH_METHOD, GRAPHITRON_FIELD_PATH_PARAMETER,
                 GRAPHITRON_FIELD_PATH_ROUTINE, GRAPHITRON_FIELD_PATH_STOP, GRAPHITRON_FIELD_PATH,
                 GRAPHITRON_FIELD_PATH_START_RESULT, GRAPHITRON_FIELD_PATH_START_BINDING,
-                GRAPHITRON_FIELD_PATH_START_ROUTINE, GRAPHITRON_FIELD_PATH_START)) {
+                GRAPHITRON_FIELD_PATH_START_ROUTINE, GRAPHITRON_FIELD_PATH_START_LIFTED,
+                GRAPHITRON_FIELD_PATH_START)) {
             dsl.deleteFrom(t).where(f(t, "GRAPH_NAME").eq(graph))
                 .and(f(t, "TOUCHED_AT", LocalDateTime.class).ne(touchedAt)).execute();
         }

@@ -235,8 +235,7 @@ resolutions and links built beside it are gone.
 * **A broken or refused path is a defect at its position** `open`. A walk that stops, ends at the wrong
   table or has no source, an element naming nothing, and `@reference` beside `@referenceFor` or
   `@referenceFor` on a non-abstract type each draw a code at their position. No source means
-  neither a result table nor a key row starts the walk, so `@sourceRow` fields and
-  `FilmDetailsCarrier.language` have none until "An object result is lifted onto a key row".
+  neither a result table nor a key row starts the walk.
   * **A root field's `@reference` with no `@routine` is refused at the `@reference`** `done`.
   * **`CHAIN_WITHOUT_TARGET` reads the target table** `blocked`, on "A path starts at its parent's table and targets a table".
     A written path after a `@routine` to an unbound type, or on a field returning an unbound
@@ -464,12 +463,19 @@ classified records have no reader left and can go with the walk.
 * **A field's source is its parent's result** `open`. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **An object result is lifted onto a key row** `open`. Under an
+* **An object result is lifted onto a key row** `blocked`, on "`graphitron_field_source_table` dissolves into the results". Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
   dissolves into `graphitron_result_table` with its interim record and source-row rules. Only a key
   on the source side starts one, a `SOURCE_ROW` key or a `COLUMNS` key on the parent's record
   table: a path is written from the source, so a field whose key re-fetches its own target gets no
   start. The hover's departing table for an input type's record binding is kept, not dropped.
+  * **A field under an object starts its path on its key row** `done`. `graphitron_field_path_start`
+    gains `LIFTED` and its subtype `graphitron_field_path_start_lifted`, referencing the key row, so
+    `FilmDetailsCarrier.language` starts on film and the `@sourceRow` fields on customer; an
+    `ACCESSOR` key row, the target's own record, starts none.
+  * **`graphitron_field_source_table` dissolves into the results** `open`. The column match and
+    the hover read the parent's result and the key row where they read the source table's interim
+    rules, and the source table, its rule and its stage go.
   * **A binding that names several tables is a row of none of them** `done`. The result rule took a
     bound type's table from every candidate of its binding, so a type bound to a bare name two
     schemas declare held a ROW of both; it is still a ROW, of no table, the ambiguity being the

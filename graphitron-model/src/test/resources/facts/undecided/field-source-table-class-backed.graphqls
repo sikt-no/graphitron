@@ -74,3 +74,22 @@ extend schema @assertAbsent(relation: "graphitron_entry_defect_site", rows: """
   NO_ROUTE_FROM_DEPARTURE, CustomerAddressSummary.qualifiedAddress
   NO_ROUTE_FROM_DEPARTURE, CustomerAddressSummary.constantAddress
   """)
+
+# A field under an object that wrote a path starts it on the key row it lifts the object onto: the
+# columns of the table record the object is, or the columns a @sourceRow lifter returns.
+extend schema @expectEquals(relation: "graphitron_field_path_start_lifted", rows: """
+  type_name,              field_name,       start_table, kind,   key_kind
+  FilmDetailsCarrier,     language,         film,        LIFTED, COLUMNS
+  CustomerAddressSummary, address,          customer,    LIFTED, SOURCE_ROW
+  CustomerAddressSummary, qualifiedAddress, customer,    LIFTED, SOURCE_ROW
+  CustomerAddressSummary, constantAddress,  customer,    LIFTED, SOURCE_ROW
+  CustomerAddressSummary, chainedAddress,   customer,    LIFTED, SOURCE_ROW
+  """)
+
+# And the path lands where it goes from there.
+extend schema @assertContains(relation: "graphitron_field_path_landing", rows: """
+  type_name,              field_name,     start_table, table_name
+  FilmDetailsCarrier,     language,       film,        language
+  CustomerAddressSummary, address,        customer,    address
+  CustomerAddressSummary, chainedAddress, customer,    city
+  """)

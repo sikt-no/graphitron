@@ -8689,6 +8689,8 @@ CREATE TABLE graphitron_field_key_row (
   touched_at        TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, field_name),
   UNIQUE (graph_name, type_name, field_name, kind),
+  -- What a path started on the key row references, so the start goes when the key or its table does.
+  UNIQUE (graph_name, type_name, field_name, kind, table_source_name, table_schema, table_name),
   FOREIGN KEY (graph_name, type_name, field_name)
     REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   FOREIGN KEY (table_source_name, table_schema, table_name)
@@ -8933,16 +8935,16 @@ CREATE TABLE graphitron_field_path_start (
     REFERENCES graphitron_field (graph_name, type_name, field_name) ON DELETE CASCADE,
   FOREIGN KEY (start_source_name, start_schema, start_table)
     REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
-  CHECK (kind IN ('RESULT', 'BINDING', 'ROUTINE'))
+  CHECK (kind IN ('RESULT', 'BINDING', 'ROUTINE', 'LIFTED'))
 );
-COMMENT ON TABLE graphitron_field_path_start IS 'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, or a root''s routine. For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.';
+COMMENT ON TABLE graphitron_field_path_start IS 'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, a root''s routine, or the key row a field under an object lifts its parent onto. For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.';
 COMMENT ON COLUMN graphitron_field_path_start.graph_name IS 'the owning graph''s partition, carried from the field';
 COMMENT ON COLUMN graphitron_field_path_start.type_name IS 'the type owning the field';
 COMMENT ON COLUMN graphitron_field_path_start.field_name IS 'the field whose path starts here';
 COMMENT ON COLUMN graphitron_field_path_start.start_source_name IS 'the catalog partition of the table the walk starts on';
 COMMENT ON COLUMN graphitron_field_path_start.start_schema IS 'the SQL schema of the table the walk starts on';
 COMMENT ON COLUMN graphitron_field_path_start.start_table IS 'the table the walk starts on. A field under a parent whose result is a row of several tables is walked once from each';
-COMMENT ON COLUMN graphitron_field_path_start.kind IS 'what the start is: RESULT, a table the parent type''s result is a row of; BINDING, the table bound to a parent type no field returns, so its fields'' paths are walked for the editor as they would be were it returned; or ROUTINE, the table of the routine a root field''s query starts with. Each has its subtype, which says why the walk starts there';
+COMMENT ON COLUMN graphitron_field_path_start.kind IS 'what the start is: RESULT, a table the parent type''s result is a row of; BINDING, the table bound to a parent type no field returns, so its fields'' paths are walked for the editor as they would be were it returned; ROUTINE, the table of the routine a root field''s query starts with; or LIFTED, the table of the key row a field under an object lifts its parent onto. Each has its subtype, which says why the walk starts there';
 COMMENT ON COLUMN graphitron_field_path_start.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads, so a start a reading no longer finds goes with its path';
 
 CREATE TABLE graphitron_field_path_start_result (
@@ -9027,6 +9029,39 @@ COMMENT ON COLUMN graphitron_field_path_start_routine.start_schema IS 'the SQL s
 COMMENT ON COLUMN graphitron_field_path_start_routine.start_table IS 'the function''s table, which shares the routine''s key';
 COMMENT ON COLUMN graphitron_field_path_start_routine.kind IS 'ROUTINE, the start''s kind, carried so the reference into the start names it';
 COMMENT ON COLUMN graphitron_field_path_start_routine.touched_at IS 'when the reading that last started this walk ran: the mark the sweep reads';
+
+CREATE TABLE graphitron_field_path_start_lifted (
+  graph_name        VARCHAR   NOT NULL,
+  type_name         VARCHAR   NOT NULL,
+  field_name        VARCHAR   NOT NULL,
+  start_source_name VARCHAR   NOT NULL,
+  start_schema      VARCHAR   NOT NULL,
+  start_table       VARCHAR   NOT NULL,
+  kind              VARCHAR   NOT NULL,
+  key_kind          VARCHAR   NOT NULL,
+  touched_at        TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, field_name),
+  FOREIGN KEY (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind)
+    REFERENCES graphitron_field_path_start (graph_name, type_name, field_name, start_source_name,
+                                            start_schema, start_table, kind) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, type_name, field_name, key_kind, start_source_name, start_schema,
+               start_table)
+    REFERENCES graphitron_field_key_row (graph_name, type_name, field_name, kind,
+                                         table_source_name, table_schema, table_name)
+      ON DELETE CASCADE,
+  CHECK (kind = 'LIFTED'),
+  CHECK (key_kind IN ('COLUMNS', 'SOURCE_ROW'))
+);
+COMMENT ON TABLE graphitron_field_path_start_lifted IS 'A field''s path started on the key row it lifts the object its parent holds onto: one row per field under an object that wrote a path and takes a key on the source side, on the key''s table. For example FilmDetailsCarrier.language, under a FilmRecord, starts on film, and CustomerAddressSummary.address, whose @sourceRow lifter returns customer''s address_id, starts on customer.';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.graph_name IS 'the owning graph''s partition, carried from the key row';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.type_name IS 'the type owning the field';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.field_name IS 'the field whose path starts on its key row; with the two columns before it, a reference into graphitron_field_key_row';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.start_source_name IS 'the catalog partition of the key''s table';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.start_schema IS 'the SQL schema of the key''s table';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.start_table IS 'the key''s table, where the path the field wrote leaves from';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.kind IS 'LIFTED, the start''s kind, carried so the reference into the start names it';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.key_kind IS 'how the field takes its key, as graphitron_field_key_row.kind states it, carried so the reference into the key names it: SOURCE_ROW, columns a lifter returns, or COLUMNS, the columns of the table record the parent holds. Never ACCESSOR, whose records are the target''s own and no place a path leaves from';
+COMMENT ON COLUMN graphitron_field_path_start_lifted.touched_at IS 'when the reading that last started this path ran: the mark the sweep reads';
 
 CREATE TABLE graphitron_field_path (
   graph_name             VARCHAR NOT NULL,
@@ -10072,7 +10107,8 @@ COMMENT ON COLUMN graphitron_producer_write.touched_at IS 'the reading that last
 CREATE VIEW graphitron_field_path_start_rule
   (graph_name, type_name, field_name, start_source_name, start_schema, start_table, kind) AS
 -- A field that wrote a path is walked from each table its parent's result is a row of, unless its
--- query starts on a routine, or from the table bound to its parent where nothing returns it. The path read is the one the declaration graphql_field anchored.
+-- query starts on a routine, from the table bound to its parent where nothing returns it, or from
+-- the key row it lifts an object its parent holds onto. The path read is the one the declaration graphql_field anchored.
 SELECT p.graph_name, gf.type_name, gf.field_name,
        rt.table_source_name, rt.table_schema, rt.table_name, 'RESULT'
   FROM graphitron_ast_field_path_entry p
@@ -10119,7 +10155,35 @@ SELECT pr.graph_name, pr.type_name, pr.field_name,
   FROM graphitron_producer_routine pr
   JOIN sql_table st
     ON st.source_name = pr.routine_source_name AND st.table_schema = pr.table_schema
-   AND st.table_name = pr.routine_name;
+   AND st.table_name = pr.routine_name
+UNION ALL
+-- A field under an object, which holds no row to start from, starts on the key row it lifts that
+-- object onto, where the key is on the source side: a @sourceRow lifter's, or the columns of the
+-- table whose record the parent holds. A key a payload re-fetches its target by is the target's
+-- own, no place a path leaves from.
+SELECT k.graph_name, k.type_name, k.field_name,
+       k.table_source_name, k.table_schema, k.table_name, 'LIFTED'
+  FROM graphitron_ast_field_path_entry p
+  JOIN graphql_ast_field_definition_entry fd
+    ON fd.graph_name = p.graph_name AND fd.source_name = p.source_name
+   AND fd.source_line = p.field_line AND fd.source_column = p.field_column
+  JOIN graphql_field gf
+    ON gf.graph_name = fd.graph_name AND gf.type_name = fd.type_name
+   AND gf.field_name = fd.name AND gf.source_name = fd.source_name
+   AND gf.source_line = fd.source_line AND gf.source_column = fd.source_column
+  JOIN graphitron_field_key_row k
+    ON k.graph_name = gf.graph_name AND k.type_name = gf.type_name AND k.field_name = gf.field_name
+ WHERE p.position = 0
+   AND (k.kind = 'SOURCE_ROW'
+        OR k.kind = 'COLUMNS'
+           AND EXISTS (SELECT 1 FROM graphitron_result_class rc
+                       JOIN sql_table st
+                         ON st.record_class_fqn = rc.class_name
+                        AND st.source_name = k.table_source_name
+                        AND st.table_schema = k.table_schema AND st.table_name = k.table_name
+                       WHERE rc.graph_name = k.graph_name AND rc.type_name = k.type_name))
+   AND NOT EXISTS (SELECT 1 FROM graphitron_result_table rt
+                    WHERE rt.graph_name = k.graph_name AND rt.type_name = k.type_name);
 COMMENT ON VIEW graphitron_field_path_start_rule IS 'Where each field''s path is walked from, with why: one row per field and start table. For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.graph_name IS 'the owning graph''s partition';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.type_name IS 'the type owning the field';
@@ -10127,7 +10191,7 @@ COMMENT ON VIEW graphitron_field_path_start_rule IS 'Where each field''s path is
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.start_source_name IS 'the catalog partition of the table the walk starts on';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.start_schema IS 'the SQL schema of the table the walk starts on';
 -- COMMENT ON COLUMN graphitron_field_path_start_rule.start_table IS 'the table the walk starts on';
--- COMMENT ON COLUMN graphitron_field_path_start_rule.kind IS 'RESULT or ROUTINE, which subtype the start is written to';
+-- COMMENT ON COLUMN graphitron_field_path_start_rule.kind IS 'RESULT, BINDING, ROUTINE or LIFTED, which subtype the start is written to';
 
 CREATE VIEW graphitron_field_path_rule
   (graph_name, type_name, field_name, start_source_name, start_schema, start_table, position,
@@ -10148,7 +10212,7 @@ WITH frontier (graph_name, type_name, field_name, start_source_name, start_schem
     JOIN graphql_field gf
       ON gf.graph_name = s.graph_name AND gf.type_name = s.type_name
      AND gf.field_name = s.field_name
-   WHERE s.kind IN ('RESULT', 'BINDING')
+   WHERE s.kind IN ('RESULT', 'BINDING', 'LIFTED')
   UNION ALL
   SELECT s.graph_name, s.type_name, s.field_name,
          s.start_source_name, s.start_schema, s.start_table, w.position + 1,
@@ -17004,7 +17068,7 @@ INSERT INTO meta_relation VALUES
    'For example Film.language lands on language at place 0, and Query.tilganger over a @routine nothing follows lands on the function''s own table with no place; a walk that stopped short, an element reaching nothing or offering several steps, lands nowhere and has no row.',
    'The question a chain''s readers ask of the walk, where its rows come from at the end, stated once rather than as a last-place probe in each. A step the walk took is never ambiguous, so a landing is one table per start with no count beside it.'),
   ('graphitron_field_path_start', 'field-path-start', 'graphitron',
-   'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, or a root''s routine.',
+   'Where a field''s path is walked from: one row per field and table its rows start on, a field''s parent''s result table, a table-bound parent''s own table where no field returns it, a root''s routine, or the key row a field under an object lifts its parent onto.',
    'For example Film.language starts on film, the table Film''s result is a row of, and Query.hopped over @routine(name: "films_for_actor") starts on the function''s table, films_for_actor.',
    'The two ways a walk starts take the same steps from there, so the start is the supertype and the path one relation under it rather than two mirrored ones; each subtype says why the walk starts where it does and goes when that stops being so.'),
   ('graphitron_field_path_start_binding', 'field-path-start', 'graphitron',
@@ -17019,6 +17083,10 @@ INSERT INTO meta_relation VALUES
    'A field''s path walked from the routine its query starts with: one row per routine producer, on the function''s table, the FUNCTION row of sql_table sharing the routine''s key.',
    'For example Query.hopped over @routine(name: "films_for_actor") then @reference(path: [{table: "film"}]) starts on films_for_actor, and its walk begins at the place after the routine.',
    'The start a routine producer gives, referencing graphitron_producer_routine. Only the first @routine at a root is the producer; a later one is a place in the path, a step the walk does not take yet.'),
+  ('graphitron_field_path_start_lifted', 'graph-field', 'graphitron',
+   'A field''s path started on the key row it lifts the object its parent holds onto: one row per field under an object that wrote a path and takes a key on the source side, on the key''s table.',
+   'For example FilmDetailsCarrier.language, under a FilmRecord, starts on film, and CustomerAddressSummary.address, whose @sourceRow lifter returns customer''s address_id, starts on customer.',
+   'The start an object parent gives, which has no table of its own to start from: the key row the field lifts its parent''s object onto is where its rows are fetched from, so it is where the path it wrote leaves. Referencing graphitron_field_key_row, so the start goes when the key does. Only a key on the source side starts one, a @sourceRow lifter''s or the columns of the table whose record the parent holds: a key a payload re-fetches its target by is the target''s own, no place a path leaves from, so such a field gets no start.'),
   ('graphitron_field_path_start_rule', 'field-path-start', 'graphitron',
    'Where each field''s path is walked from, with why: one row per field and start table.',
    'For example a capture merges these into graphitron_field_path_start and its two subtypes before the walk''s first round; naming this relation instead asks for on-demand evaluation and gets it, which is a performance bug rather than a wrong answer.',
