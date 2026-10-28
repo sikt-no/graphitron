@@ -14,7 +14,7 @@ last-updated: 2026-10-27
 
 ## Goal
 
-A schema author marks a mutation field with `@outbox(event: "FilmCreated", arguments: "{ in { title languageId } }")`, configures once where the deployment's outbox lives, and every successful call of that field writes one outbox message in the same database transaction as its write: the message exists if and only if the write committed. A *transactional outbox* is the pattern where a service records "this happened" in its own database, in the transaction that made it happen, and a separate relay (a poller, or change data capture such as Debezium) publishes it to a message broker afterwards; it is how a service tells other systems about a change without a two-phase commit and without losing or inventing events. Graphitron generates the emit itself, as one jOOQ statement right after the write that builds the JSON message in SQL, against one of two targets the deployment configures, both on PostgreSQL and Oracle: an *outbox table* graphitron inserts into, or an *outbox function*, a database function or procedure graphitron calls with the message, which does whatever the deployment's relay needs (a `pg_logical_emit_message` on PostgreSQL, a `DBMS_AQ.ENQUEUE` on Oracle). Both are checked against the jOOQ catalog when you build, and no Java is written for either. The message holds the arguments the schema selected and the success outcome, the ids of the rows the write produced; graphitron reads nothing to build it, so emitting adds one statement and no read to the mutation. Builds on R1101, which gives every top-level mutation field exactly one transaction on the owned-connection engine and the `MutationScope` that names the field and its operation.
+A schema author marks a mutation field with `@outbox`, and every successful call of that field writes exactly one outbox message in the same database transaction as its write: the message exists if and only if the write committed. A *transactional outbox* is the pattern where a service records "this happened" in its own database, in the transaction that made it happen, and a separate relay (a poller, or change data capture such as Debezium) publishes it to a message broker afterwards; it is how a service tells other systems about a change without a two-phase commit and without losing or inventing events. The author builds the message's JSON payload with `argMapping`, the binding syntax graphitron already uses on `@service` and `@routine`, from the field's arguments, its success outcome (the result the write produced), the session and the request context; a common payload, configured once, is added to every message. `@outbox` is repeatable and every occurrence adds keys to the same message, so a payload grows by adding a line, never by editing one. Graphitron generates the emit as one jOOQ statement right after the write, building the JSON in SQL, against one of two targets the deployment configures, both on PostgreSQL and Oracle: an *outbox table* graphitron inserts into, or an *outbox function*, a database function or procedure graphitron calls with the message (a `pg_logical_emit_message` on PostgreSQL, a `DBMS_AQ.ENQUEUE` on Oracle). Nothing is read to build the message, so emitting adds one statement to the mutation and no query. Builds on R1101, which gives every top-level mutation field exactly one transaction on the owned-connection engine and the `MutationScope` that names the field and its operation.
 
 Against the sakila example schema:
 
@@ -22,23 +22,22 @@ Against the sakila example schema:
 type Mutation {
   createFilm(in: FilmCreateInput!): Film
     @mutation(typeName: INSERT)
-    @outbox(event: "FilmCreated", arguments: "{ in { title releaseYear languageId } }")
-
-  updateFilm(in: FilmUpdateInput!): Film
-    @mutation(typeName: UPDATE)
-    @outbox(event: "FilmChanged", arguments: "{ in { title releaseYear } }")
+    @outbox(event: "FilmCreated",
+            argMapping: "film.id: $result.id, film.title: in.title, film.languageId: in.languageId")
+    @outbox(argMapping: "film.releaseYear: in.releaseYear")      # added in a later release
 
   deleteFilms(in: [FilmDeleteInput!]!): [ID!]!
     @mutation(typeName: DELETE, table: "film")
-    @outbox(event: "FilmsDeleted")
+    @outbox(event: "FilmsDeleted", argMapping: "films: $result")
 }
 ```
 
-with, in the plugin configuration,
+with, in the plugin configuration (the `<sessionState>` mount here returns a handle with a `userId()` accessor),
 
 ```xml
 <outbox>
   <table>outbox</table>
+  <payload>actor: $session.userId, requestId: $context.requestId, operation: $scope.operationName</payload>
 </outbox>
 ```
 
@@ -51,34 +50,50 @@ mutation AddFilms {
 }
 ```
 
-inserts one `outbox` row for field `a`, committed with the film row, whose payload is
+inserts one `outbox` row for field `a`, of type `FilmCreated`, committed with the film row, whose payload is
 
 ```json
-{"v": 1, "event": "FilmCreated", "coordinate": "Mutation.createFilm", "operationName": "AddFilms",
- "table": "film", "keys": [{"film_id": 1001}], "nodeIds": ["RmlsbToxMDAx"],
- "arguments": {"in": {"title": "A", "languageId": 1}}}
+{"actor": "u-42", "requestId": "r-9", "operation": "AddFilms",
+ "film": {"id": "RmlsbToxMDAx", "title": "A", "languageId": 1}}
 ```
 
-(no `releaseYear`: the client did not send one). Field `b` violates a foreign key, so its write and its message roll back together and nothing about `b` reaches the relay. `updateFilm(in: {id: "...", title: "B2"})` emits `"arguments": {"in": {"title": "B2"}}`: an omitted input field is absent and an explicit `null` is `null`, so an update's message says what the client changed.
+(no `releaseYear`: the client did not send one). Field `b` violates a foreign key, so its write and its message roll back together and nothing about `b` reaches the relay. `deleteFilms` with three ids writes one message whose `films` is the array of the three deleted ids: one message per mutation call, however many rows it touched.
 
 ## User documentation (first-client check)
 
-Draft for a new directive reference page, `docs/manual/reference/directives/outbox.adoc`, a `<outbox>` row and section in `docs/manual/reference/mojo-configuration.adoc`, and a how-to in `docs/manual/how-to/` for relaying the messages:
+Draft for a new directive reference page, `docs/manual/reference/directives/outbox.adoc`, an `<outbox>` row and section in `docs/manual/reference/mojo-configuration.adoc`, and a how-to in `docs/manual/how-to/` for relaying the messages:
 
-> **`@outbox`** tells graphitron to write a message to your transactional outbox every time a mutation field succeeds, inside the transaction that made the change.
+> **`@outbox`** tells graphitron to write one message to your transactional outbox every time a mutation field succeeds, inside the transaction that made the change.
 >
 > ```graphql
-> directive @outbox(event: String!, arguments: String) on FIELD_DEFINITION
+> directive @outbox(event: String, argMapping: String) repeatable on FIELD_DEFINITION
 > ```
 >
-> `event` is the message's event type, the name your downstream consumers subscribe to. It is required rather than defaulted to the field's name, so renaming a GraphQL field never silently renames a published event.
+> `event` is the message's event type, the name your downstream consumers subscribe to. Exactly one `@outbox` on a field names it; it is required rather than defaulted to the field's name, so renaming a GraphQL field never silently renames a published event.
 >
-> `arguments` is a selection over the field's arguments, written like a GraphQL selection set and rooted at the argument names: `"{ in { title releaseYear languageId } }"` takes three fields of the `in` argument. It descends into nested input objects, applies to every element of a list, and is checked against the input types when you build. Leave it out and the message carries no arguments. Only what you select is emitted, so personal data in the input reaches your outbox only when you name it.
+> `argMapping` adds keys to the message's JSON payload, `jsonKey: source`, comma-separated, the same form `@service` and `@routine` use. Every `@outbox` on the field adds to the same message, so you extend a published payload by adding a line rather than editing one, and a consumer that ignores unknown keys keeps working. A key may be a dot path (`film.title`) to nest objects. The same key twice on a field, or a key that is also in the common payload, fails the build: keys are only ever added.
 >
-> **Where messages go.** Configure the target once, in the plugin configuration. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
+> **Where a value comes from.**
 >
-> * **An outbox table**, on PostgreSQL and Oracle: `<outbox><table>outbox</table></outbox>`. Graphitron resolves the table in your jOOQ catalog and inserts one row per message. By default it expects Debezium's outbox layout and fills `type` (the event), `aggregatetype` (the written table), `aggregateid` and `payload` (the message below); name other columns with `<columns><type>event_type</type><payload>body</payload>...</columns>`. Leave `id` and any timestamp to column defaults. The build fails when the table or a configured column is missing, when `payload` is not a JSON, JSONB, CLOB or text column, or when another `NOT NULL` column has no default.
-> * **An outbox function**, on PostgreSQL and Oracle: `<outbox><function>outbox_emit</function></outbox>`. Graphitron resolves the function or procedure in your jOOQ catalog and calls it once per message, in the field's transaction, binding the same roles as the table's columns to its parameters: `payload` is required, `type`, `aggregatetype` and `aggregateid` are passed when the routine has parameters of those names, and `<parameters>` maps other names. A return value is ignored. The build fails when the routine is missing or overloaded, when it has a parameter that is neither mapped nor defaulted, or when `payload`'s type is not JSON, JSONB, CLOB or text. What the routine does is yours, and it runs inside the mutation's transaction, so keep it to the emit. On PostgreSQL, to publish through logical decoding without a table:
+> [cols="1,3"]
+> |===
+> | `in.title` | A field argument, walking into nested input fields with dots, as in every `argMapping`. A path through a list yields an array; an input object yields an object of the fields the client sent. A field the client left out is absent from the payload; a field set to `null` is `null`.
+> | `$result`, `$result.id` | The field's success outcome: what the field returns, or a field of it, read from what the write produced. For an `@mutation` field that is the written type's node id and its own column fields, captured by the write itself; a field that would need another query (a `@reference`, a `@splitQuery` field, a `@service` child) is rejected at build. For a `@service` mutation it is the value your service returned. A list result yields an array. Through a payload type, address its data field: `$result.film.id`.
+> | `$session.userId` | Your `<sessionState>` mount's handle, or an accessor on it.
+> | `$context.requestId` | A value from the request's `GraphQLContext`, as `contextArguments` read them; a missing value fails the field.
+> | `$scope.coordinate`, `$scope.operationName`, `$scope.alias`, `$scope.tenant` | The field and its operation (`operationName` and `alias` are absent when there is none; `tenant` only in a `<tenantColumn>` build).
+> |===
+>
+> Values appear in your API's own representation: an `ID` as your clients see it, an enum by its GraphQL name. Session and context values must be strings, numbers, booleans, enums, dates and times (as ISO-8601 strings), UUIDs, or maps and lists of those; a type that cannot be written as JSON fails the build when graphitron knows the type, and fails the field when it only learns it at request time.
+>
+> **The common payload.** `<outbox><payload>` takes an `argMapping` that every message carries, for what belongs on every event: who, which request, which operation. It reads `$session`, `$context` and `$scope`; arguments and `$result` belong to a field and are not available there.
+>
+> Nothing is read from the database to build a message: arguments and context are in memory, and the outcome is what the write returned. The message describes the call, not the stored row; a consumer that needs a row's current state reads it by id after the event arrives.
+>
+> **Where messages go.** Configure the target once in the plugin configuration. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
+>
+> * **An outbox table**, on PostgreSQL and Oracle: `<outbox><table>outbox</table></outbox>`. Graphitron resolves the table in your jOOQ catalog and inserts one row per message. By default it expects Debezium's outbox layout and fills `type` (the event), `aggregatetype` (the written table), `aggregateid` (see `aggregateId` below) and `payload`; name other columns with `<columns><type>event_type</type><payload>body</payload>...</columns>`. Leave `id` and any timestamp to column defaults. The build fails when the table or a configured column is missing, when `payload` is not a JSON, JSONB, CLOB or text column, or when another `NOT NULL` column has no default.
+> * **An outbox function**, on PostgreSQL and Oracle: `<outbox><function>outbox_emit</function></outbox>`. Graphitron resolves the function or procedure in your jOOQ catalog and calls it once per message, binding the same roles as the table's columns to its parameters: `payload` is required, `type`, `aggregatetype` and `aggregateid` are passed when the routine has parameters of those names, and `<parameters>` maps other names. A return value is ignored. The build fails when the routine is missing or overloaded, when it has a parameter that is neither mapped nor defaulted, or when `payload`'s type is not JSON, JSONB, CLOB or text. What the routine does is yours, and it runs inside the mutation's transaction, so keep it to the emit. On PostgreSQL, to publish through logical decoding without a table:
 >
 > ```sql
 > create function outbox_emit(type text, aggregateid text, payload jsonb) returns void
@@ -90,40 +105,30 @@ Draft for a new directive reference page, `docs/manual/reference/directives/outb
 >
 > A change data capture relay then reads the message from the write-ahead log once the transaction commits; the database must be set up for logical decoding. On Oracle, a procedure that calls `DBMS_AQ.ENQUEUE` with the default `ON_COMMIT` visibility publishes to a Transactional Event Queue, transactionally.
 >
-> **The message.** One message per successful call of the field, a JSON object graphitron builds in the same statement that writes it:
+> **When.** Right after the field's write succeeds and before its payload is resolved, as one more statement in the field's transaction. A field that failed writes no message: its transaction rolls back, and a failure an `@error` channel turned into a typed payload is a failure. If the emit fails, the field fails and rolls back, write included; the error is logged and redacted, and no `@error` channel can claim it, since an outbox fault is not business data.
 >
-> [cols="1,3"]
-> |===
-> | `v` | The format version, `1`. A change to the format raises it.
-> | `event` | The directive's `event`.
-> | `coordinate`, `operationName` | The field (`Mutation.createFilm`) and the operation's name, absent for an anonymous operation.
-> | `tenant` | In a `<tenantColumn>` build, the tenant whose connection the write ran on.
-> | `table` | The written table's SQL name.
-> | `keys` | The outcome: the primary key of every row the write produced, as objects of key column to value, in the order the field's result reports them. For `INSERT`, `UPDATE` and `UPSERT` the rows the statement wrote; for `DELETE` the rows it deleted (an input key under `missingAsDeleted` that matched no row is not among them).
-> | `nodeIds` | The same rows' global ids when the type is a `@node`, as your API's clients see them; absent otherwise.
-> | `arguments` | The selected arguments, in the API's own representation: an `ID` as your clients send it, an enum by its GraphQL name. A field the client left out is absent; a field set to `null` is `null`.
-> |===
->
-> The message describes the call, not the stored row. Values the database filled in (column defaults, trigger-computed columns) are not in it, apart from generated keys in `keys`. A consumer that needs the row's current state reads it by id after the event arrives.
->
-> **When.** Right after the field's write succeeds and before its payload is resolved, as one more statement in the field's transaction. A field that failed emits nothing: its transaction rolls back, and a failure an `@error` channel turned into a typed payload is a failure. A field that succeeded without writing a row (an `UPDATE` that matched nothing) emits nothing. In a multi-tenant build each tenant connection the field wrote on gets its own message, holding that connection's keys. If the emit fails, the field fails and rolls back, write included; the error is logged and redacted, and no `@error` channel can claim it, since an outbox fault is not business data.
+> **Escape hatch.** On `Graphitron.newGraphQL()` an `@mutation` field emits inside its own transaction too. A `$session` source there fails the field, as a `$session` service parameter does, since graphitron mounted nothing on your connection; a common payload that reads `$session` therefore fails every `@outbox` field on the escape hatch.
 
 ## Design decisions
 
 Settled with the user:
 
-* **The message holds the selected arguments and the success outcome, nothing read.** A payload built by a query after the write (a GraphQL selection over the written type, resolved in the transaction) was considered and rejected: it makes a read fault fail the write, holds the write's locks for as long as the read runs, grows with the rows written and with any list in the selection (past broker message limits), picks up requester-dependent `@condition(contextArguments:)` filters so the same change emits different events for different callers, can run `@service` or `@externalField` code inside the transaction, and reads nothing at all after a `DELETE`. The arguments are in memory and bounded by the request; the outcome is the keys the write captured.
-* **Graphitron generates the emit; there is no consumer emitter.** The target is a property of the deployment and is known at build time, so it is plugin configuration, and the emit is a jOOQ statement the generator renders like any other: the table target is checked against the catalog when you build, and the consumer writes and tests no code. The cost is that the message format becomes graphitron's public contract, versioned by `v`. A Java emitter the consumer registers on the runtime would put the dialect knowledge in consumer code that nothing checks, and need a JSON library on the consumer side.
+* **The payload is built from the arguments, the success outcome, the session and the context, nothing read.** A payload built by a query after the write (a GraphQL selection over the written type, resolved in the transaction) was considered and rejected: it makes a read fault fail the write, holds the write's locks for as long as the read runs, grows with the rows written and with any list in the selection (past broker message limits), picks up requester-dependent `@condition(contextArguments:)` filters so the same change emits different events for different callers, can run `@service` or `@externalField` code inside the transaction, and reads nothing at all after a `DELETE`. `$result` stays inside that line: on an `@mutation` field it reaches only the node id and the written table's own columns, which the write statement's `RETURNING` captures, so addressing them widens the write's `RETURNING` and adds no statement.
+* **`argMapping` constructs the payload.** It is the binding syntax every graphitron directive that binds values already uses (dot paths into inputs, `$session`, `$source` on `@routine`), so `@outbox` adds the `$result`, `$context` and `$scope` sources and a dot-path left-hand side for nesting, not a second syntax.
+* **`@outbox` is repeatable, and occurrences are additive.** Every occurrence adds keys to one message; a key bound twice fails the build. A published payload then changes only by addition, which is the change a consumer that ignores unknown keys survives, and the schema diff shows it as a new line.
+* **A common payload, configured once.** `<outbox><payload>` carries what every event needs (actor, request, operation) from `$session`, `$context` and `$scope`, so no field repeats it and no field forgets it. It has no arguments or outcome to read.
+* **One message per mutation call, not per result.** The message describes the call; a list result or a multi-row `DELETE` appears as arrays inside it.
+* **Graphitron generates the emit; there is no consumer emitter.** The target is a property of the deployment and is known at build time, so it is plugin configuration, and the emit is a jOOQ statement the generator renders like any other, checked against the catalog when you build. A Java emitter the consumer registers on the runtime would put the dialect knowledge in consumer code that nothing checks, and need a JSON library on the consumer side.
 * **Two targets: an outbox table and an outbox function.** The table covers the common relay (Debezium's outbox event router, or a poller) with nothing to write. The function is the extension point: the deployment's own emit lives in the database, where its dialect belongs, and graphitron calls it with the same message on either database. It is how a PostgreSQL logical message (five lines of SQL, in the docs) and an Oracle Transactional Event Queue are reached, so graphitron ships no mechanism-specific target.
-* **The JSON is built in SQL from values graphitron has already converted.** jOOQ's JSON constructors (`DSL.jsonObject`, `DSL.jsonbObject`) render `jsonb_build_object` on PostgreSQL and `JSON_OBJECT` on Oracle, so the generated code needs no JSON library and no escaping of its own. The bound leaf values are the API's representation, each argument leaf passed through its type's `Coercing.serialize` and each `nodeIds` entry encoded as the API encodes it, so the event speaks the API's vocabulary, not the columns'. Only the fields the client sent are rendered, so the statement's shape varies with the request.
-* **One message per field call, not per row.** The arguments belong to the call, and a list input or a multi-row `DELETE` maps to its rows only through the outcome, so the message carries the call's arguments once and every key in `keys`. This keeps any pairing of input elements with rows out of the generated code.
+* **The JSON is built in SQL from values graphitron has already converted.** jOOQ's JSON constructors (`DSL.jsonObject`, `DSL.jsonbObject`) render `jsonb_build_object` on PostgreSQL and `JSON_OBJECT` on Oracle, so the generated code needs no JSON library and no escaping of its own. The bound leaf values are the API's representation (argument leaves through their input type's `Coercing.serialize`, outcome leaves through their output type's, node ids encoded as the API encodes them), so the event speaks the API's vocabulary, not the columns'. Only the fields the client sent are rendered, so the statement's shape varies with the request.
 
 Open, each with the recommendation the draft is written to:
 
-1. **`aggregateid` on a call that wrote several rows.** Debezium uses the column as the Kafka message key, which decides partitioning and so per-aggregate ordering. Recommended: the row's node id (or its key as JSON when the type is not a `@node`) when the call wrote one row, and `NULL` when it wrote several, documented as losing per-aggregate ordering for bulk calls. The alternative writes one outbox row per written row, each repeating the call's whole `arguments`, which restores per-aggregate keys at the cost of a payload that grows with the square of a bulk input.
-2. **Where the directive may sit.** Recommended: Mutation fields only, not repeatable. A type-level `@outbox` hides the emission from the field that causes it; a second event per call is a later, additive change if a consumer needs it.
-3. **`@service` mutations.** Recommended: supported on the owned-connection engine, with the outcome taken from the `@table` rows the service returns, and refused on the escape hatch at request time, where the service's writes run in transactions graphitron cannot join. The arguments half works unchanged, which is what makes this worth having: the call's input is known even though graphitron cannot see what the service wrote.
-4. **A successful call that wrote no rows.** Recommended: no message, since nothing happened. The alternative emits a message with empty `keys`, which records the attempt.
+1. **`aggregateid`.** Debezium uses the column as the Kafka message key, which decides partitioning and so per-aggregate ordering, and with one message per call there is no automatic choice. Recommended: an optional `aggregateId` argument on the `@outbox` that names `event`, one scalar source in `argMapping`'s right-hand form (`aggregateId: "$result.id"`); `NULL` when it is absent or yields an array, documented as losing per-aggregate ordering.
+2. **A successful call that wrote no rows** (an `UPDATE` that matched nothing). Recommended: the message is written, with an empty or `null` `$result`, since the call succeeded and "one message per mutation" says so; the alternative skips it as nothing happened.
+3. **Multi-tenant fields.** A message is written on the connection the field wrote on. Recommended: confirm at pickup that a mutation field writes on one tenant connection (a `@service` batch naming two tenants is already refused) and reject `@outbox` on any variant that can write on two, rather than split one call into two messages.
+4. **`@service` mutations.** Recommended: supported on the owned-connection engine, with `$result` reading the service's returned value in memory (accessors on a record or bean, columns on a jOOQ record), and refused on the escape hatch at request time, where the service's writes run in transactions graphitron cannot join.
+5. **Where the directive may sit.** Recommended: Mutation fields only. A type-level `@outbox` hides the emission from the field that causes it.
 
 ## Implementation
 
@@ -131,12 +136,12 @@ Phased, since each phase is observable on its own.
 
 ### Phase 1: the table target, for generated DML mutations
 
-* **Directive.** `@outbox(event: String!, arguments: String) on FIELD_DEFINITION` in `directives.graphqls`. Classification attaches an outbox slot to the `MutationField` variants that write a known `@table` with a primary key (`DmlTableField`, `MutationDmlRecordField`, `MutationBulkDmlRecordField`); every other placement is a validate-time rejection naming the field and the reason (a Query field; a `@service` or routine write until phase 3; a table without a primary key; an empty `event`).
-* **The arguments selection.** Parsed with graphql-java's parser as a selection set and resolved at classify time against the field's arguments and their input types: each name must be an argument or an input field of the enclosing input type, a leaf must be a scalar or enum (or a list of them), and an input object must have a sub-selection. The result is a tree in the model, rendered into the emit statement as nested JSON constructors guarded by presence, so an absent field contributes no key and an explicit null contributes a JSON `null`.
-* **Configuration.** An `<outbox>` mojo parameter with exactly one of `<table>` or `<function>` (the function target lands in phase 2); `<columns>` maps the roles `type`, `aggregatetype`, `aggregateid` and `payload` to columns, defaulting to the Debezium names. The table and its columns are resolved against the jOOQ catalog when the model is built, and every rejection in the draft is a build failure naming the table and column. `payload` takes a JSON or JSONB column directly; a CLOB or text column takes the JSON rendered as text, which on Oracle needs `JSON_OBJECT(... RETURNING CLOB)` to lift the 4000-byte `VARCHAR2` default (confirm jOOQ 3.20 renders the `RETURNING` form at pickup).
-* **The outcome.** The DML fetchers already capture the written rows' keys through `RETURNING` for the payload's re-fetch (`Returning.primaryKey`); `keys` and `nodeIds` are built from those records. Where a variant's `RETURNING` captures less than the primary key, phase 1 widens it to the key. Confirm per variant at pickup.
-* **The call.** In the generated fetcher, right after the write statement returns and inside the same `transactionResult` (which joins the field's transaction on the owned path, R1101 phase 2, and is the fetcher's own transaction on the escape hatch), the fetcher runs the emit statement once per connection written, when at least one row was written. The scope values (`coordinate`, `operationName`, `tenant`) come from R1101's `MutationScope` on the owned path; on the escape hatch, which has no field scope, from the field's `DataFetchingEnvironment`. The `transactionResult` carries R1101's graphitron mark, so it raises no nested-scope warning. A field whose exception an `@error` channel claims never reaches the emit.
-* **Failure routing.** The emit's exception is wrapped in an emitted `OutboxEmitException`; `ErrorRouter.claim` declines a chain carrying it, beside R1101's `MutationHookException` decline, so the field takes the redacted path and rolls back.
+* **Directive.** `@outbox(event: String, argMapping: String) repeatable on FIELD_DEFINITION` in `directives.graphqls`. Classification gathers a field's occurrences into one outbox slot on the `MutationField` variants that write a known `@table` with a primary key (`DmlTableField`, `MutationDmlRecordField`, `MutationBulkDmlRecordField`); every other placement is a validate-time rejection naming the field and the reason (a Query field; a `@service` or routine write until phase 3; no occurrence or two occurrences naming `event`; a key bound twice; an occurrence with neither `event` nor `argMapping`).
+* **The mapping.** Parsed by the existing `argMapping` parser, extended with a dot-path left-hand side, and resolved at classify time into a payload tree in the model: argument paths against the field's arguments and input types (as `@service` resolves them); `$result` paths against the return type, accepting the node id field and column fields of the written table, through a payload type's data field, and rejecting anything that needs a read; `$session` paths against the `<sessionState>` mount's return type (accessors reflected at build time, as the mount is); `$context.<name>`, typed when the name is a mount payload parameter and checked at request time otherwise; `$scope.<member>` against R1101's `MutationScope`. The common `<payload>` resolves the same way with only `$session`, `$context` and `$scope` admitted, and its keys are merged into each field's tree, a collision failing the build.
+* **The outcome.** The DML fetchers capture the written rows through `RETURNING` for the payload's re-fetch (`Returning.primaryKey`, `Returning.nodeKeyTail`); a `$result` column the capture lacks is added to that `RETURNING`, so the outcome costs no statement.
+* **Configuration.** An `<outbox>` mojo parameter with exactly one of `<table>` or `<function>` (the function target lands in phase 2), an optional `<payload>`, and `<columns>` mapping the roles `type`, `aggregatetype`, `aggregateid` and `payload` to columns, defaulting to the Debezium names. The table and its columns are resolved against the jOOQ catalog when the model is built, and every rejection in the draft is a build failure naming the table and column. `payload` takes a JSON or JSONB column directly; a CLOB or text column takes the JSON rendered as text, which on Oracle needs `JSON_OBJECT(... RETURNING CLOB)` to lift the 4000-byte `VARCHAR2` default (confirm jOOQ 3.20 renders the `RETURNING` form at pickup).
+* **The call.** In the generated fetcher, right after the write statement returns and inside the same `transactionResult` (which joins the field's transaction on the owned path, R1101 phase 2, and is the fetcher's own transaction on the escape hatch), the fetcher renders the payload tree into nested JSON constructors, each leaf guarded by presence so an absent argument contributes no key, and runs the emit once. `$scope` values come from R1101's `MutationScope` on the owned path and from the field's `DataFetchingEnvironment` on the escape hatch. The `transactionResult` carries R1101's graphitron mark, so it raises no nested-scope warning. A field whose exception an `@error` channel claims never reaches the emit.
+* **Failure routing.** The emit's exception, and a request-time source failure (a missing context value, an unserializable one, `$session` on the escape hatch), is wrapped in an emitted `OutboxEmitException`; `ErrorRouter.claim` declines a chain carrying it, beside R1101's `MutationHookException` decline, so the field takes the redacted path and rolls back.
 
 ### Phase 2: the function target
 
@@ -144,38 +149,39 @@ Phased, since each phase is observable on its own.
 
 ### Phase 3: `@service` and routine writes
 
-`MutationServiceTableField` (owned path only; request-time refusal on the escape hatch) and the routine-write variants whose terminus is a keyed `@table`. Settled by open decision 3.
+`MutationServiceTableField` and `MutationServiceRecordField` (owned path only; request-time refusal on the escape hatch), with `$result` resolved against the service method's return type, and the routine-write variants whose terminus is a keyed `@table`. Settled by open decision 4.
 
 ## Tests
 
-Execution tier, against an `outbox` table in Debezium's layout that `graphitron-sakila-db`'s `init.sql` gains, with `id` and a timestamp defaulted:
+Execution tier, against an `outbox` table in Debezium's layout that `graphitron-sakila-db`'s `init.sql` gains, with `id` and a timestamp defaulted, and a common payload reading `$session`, `$context` and `$scope`:
 
 * `createFilm` twice, the second violating a foreign key: the first film row and its outbox row commit together (same `xmin`); the second leaves neither.
-* The payload: `v`, `event`, `coordinate`, `operationName` for a named operation and absent for an anonymous one, `table`, `keys`, `nodeIds` equal to the ids the field returns.
-* `arguments` holds exactly the selected fields: an unselected input field is absent, an omitted selected field is absent, an explicit `null` is present as `null`, an enum is its GraphQL name, an `ID` is the encoded form the client sent, a string with quotes and non-ASCII characters round-trips.
-* `createFilms` with three inputs: one outbox row, the three inputs under `arguments`, three keys in the order of the field's result, `aggregateid` per open decision 1.
-* `deleteFilms` under `missingAsDeleted` with one absent key: `keys` holds only the rows deleted.
-* An `UPDATE` matching no row writes no outbox row.
-* A field whose exception an `@error` channel claims writes no outbox row.
-* The emit failing (the fixture revokes `INSERT` on the outbox table for one test, or a check constraint rejects the row): the field fails redacted, an `@error` channel on the field does not claim it, the film row is gone, the next field commits.
-* Escape hatch: the outbox row commits with the write.
+* The common payload's keys are on every message: the session handle's accessor, the context value, the operation name for a named operation and its absence for an anonymous one. A missing context value fails the field and writes nothing.
+* Two `@outbox` occurrences on one field produce one message with both occurrences' keys.
+* Arguments: an unmapped input field is absent, an omitted mapped field is absent, an explicit `null` is `null`, a dot-path key nests, a path through a list input yields an array, an enum is its GraphQL name, an `ID` is the encoded form the client sent, a string with quotes and non-ASCII characters round-trips.
+* Outcome: `$result.id` equals the id the field returns; a `$result` column not otherwise captured is in the payload with no extra statement (a recording `ExecuteListener` counts the field's statements); `deleteFilms` with `$result` yields the deleted ids as one array in one message, and under `missingAsDeleted` only the rows deleted.
+* A field whose exception an `@error` channel claims writes no message.
+* The emit failing (a check constraint on the outbox table rejects the row): the field fails redacted, an `@error` channel on the field does not claim it, the film row is gone, the next field commits.
+* Escape hatch: the message commits with the write; a `$session` source fails the field.
 * `ROLLBACK_ONLY`: emitted and discarded with the field.
-* Multi-tenant: one outbox row per tenant connection written, in that tenant's database, each holding that tenant's keys and `tenant`.
-* Phase 2, against a fixture `outbox_emit` function that writes its arguments to a second table: the committed field's call is visible with the same payload the table target writes, a rolled-back field leaves none, a role parameter the routine lacks is not passed, a `<parameters>` mapping binds a differently named one, and a routine that raises fails the field redacted with the write gone. A procedure (not a function) is called the same way. The logical-message recipe from the docs is run with a replication slot (`pg_logical_slot_get_changes` with `test_decoding`) where the test database has `wal_level = logical`; check the local-db and CI databases at pickup, and keep it out of the suite if they do not.
+* Multi-tenant: the message is written in the tenant database the field wrote on, `$scope.tenant` set.
+* Phase 2, against a fixture `outbox_emit` function that writes its arguments to a second table: the committed field's call carries the same payload the table target writes, a rolled-back field leaves none, a role parameter the routine lacks is not passed, a `<parameters>` mapping binds a differently named one, and a routine that raises fails the field redacted with the write gone. A procedure is called the same way. The logical-message recipe from the docs is run with a replication slot (`pg_logical_slot_get_changes` with `test_decoding`) where the test database has `wal_level = logical`; check the local-db and CI databases at pickup, and keep it out of the suite if they do not.
 
-Pipeline tier: the `arguments` selection is rejected, naming the offending name, for an unknown argument, an unknown input field, a sub-selection on a scalar and a missing one on an input object; classification accepts the listed variants and rejects the others with their messages; the configuration is rejected for an `@outbox` field without `<outbox>`, both targets set, a missing table or column, an unsupported `payload` type and an unmapped `NOT NULL` column without a default; for the function target, a missing or overloaded routine, an unmapped parameter without a default and an unsupported `payload` type.
+Pipeline tier, each rejection naming the field, key or source: no `event`, two `event`s, a key bound twice, a field key colliding with a common one, an unknown argument or input field, a `$result` path that needs a read, an unknown `$session` accessor, an unknown `$scope` member, an argument or `$result` source in the common payload, a session or context type known not to serialize; classification accepts the listed variants and rejects the others; the configuration is rejected for an `@outbox` field without `<outbox>`, both targets set, a missing table or column, an unsupported `payload` type and an unmapped `NOT NULL` column without a default, and for the function target a missing or overloaded routine and an unmapped parameter without a default.
 
 Oracle: the repository has no Oracle execution tier. Both targets' statements, the insert with `JSON_OBJECT` and the routine call, are rendered for `ORACLE` in a pipeline-tier rendering check (the CLOB `RETURNING` form included); the item records in its Done evidence that it was also run by hand against an Oracle instance.
 
 ## Relation to other items
 
-* **R1101** (Ready), one transaction per mutation field: hard dependency. Phase 2 (nested scopes join) is what makes the fetcher's `transactionResult` and an `@service` share one transaction with the emit; phase 3 emits `MutationScope`, which supplies the message's scope values, and the `claim` decline this item extends. R1101's `MutationHook` runs at the transaction's start and knows no rows, so it records *who* and *why*; `@outbox` runs after the write and records *what*. R1101 keeps field arguments away from the hook because they can carry personal data; `@outbox` offers them only as a selection the schema names.
+* **R1101** (Ready), one transaction per mutation field: hard dependency. Phase 2 (nested scopes join) is what makes the fetcher's `transactionResult` and an `@service` share one transaction with the emit; phase 3 emits `MutationScope`, which `$scope` reads, and the `claim` decline this item extends. R1101's `MutationHook` runs at the transaction's start and knows no rows; `@outbox` runs after the write and records what the call did. R1101 keeps field arguments away from the hook because they can carry personal data; `@outbox` emits only the arguments the schema maps.
 
 ## Other solutions we've considered
 
-* **A payload read after the write.** See Design decisions. A payload of the written row's own columns, compiled into the write's `RETURNING`, avoids the extra read and could be added later as a separate argument if a consumer needs database-filled values; it is not part of this item.
-* **A consumer-registered emitter** (`withOutboxEmitter`). See Design decisions: unchecked dialect code in every consumer, and a JSON library on their side.
+* **A payload read after the write.** See Design decisions.
+* **A selection-set syntax for the payload** (`arguments: "{ in { title } }"`). It covers arguments only; `argMapping` reaches the outcome, the session and the context in one form graphitron already parses.
+* **A consumer-registered emitter** (`withOutboxEmitter`). See Design decisions.
+* **One message per written row.** Gives each row its own aggregate key, but repeats the call's arguments on every row of a bulk call, and the message describes the call, not a row.
 * **The emit fused into the write**, as a PostgreSQL data-modifying CTE (`WITH w AS (INSERT ... RETURNING ...) SELECT ..., pg_logical_emit_message(...) FROM w`). Saves one round trip, but is PostgreSQL-only, must reference the emit from the outer `SELECT` or PostgreSQL skips it, and complicates the DML emitters. A possible later optimization; the separate statement is cheap and works on both databases.
 * **Built-in targets per mechanism** (a PostgreSQL logical message, an Oracle Transactional Event Queue). Each needs mechanism-specific configuration (a prefix; a queue name and payload object type), and the first exists on one database only. The function target reaches both with a few lines of the deployment's own SQL.
-* **The R1101 mutation hook alone.** It runs before the field's SQL, so it cannot know which rows the field wrote.
+* **The R1101 mutation hook alone.** It runs before the field's SQL, so it cannot know what the field wrote.
 * **Change data capture without an outbox** (publishing every row change from the WAL or LogMiner). It publishes the table's shape, not an event the schema chose to publish, and does not exist the same way on both databases.
