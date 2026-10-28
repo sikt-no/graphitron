@@ -9891,7 +9891,7 @@ COMMENT ON COLUMN graphitron_type_backing.class_name IS 'the backing class, as a
 COMMENT ON COLUMN graphitron_type_backing.touched_at IS 'when the reading that last found this backing ran: the mark the sweep reads, so a backing still true survives a reading and one no longer found goes';
 CREATE INDEX graphitron_type_backing_class_ix ON graphitron_type_backing (graph_name, class_name, type_name);
 COMMENT ON INDEX graphitron_type_backing_class_ix IS 'The class is a join key for the readers that go from a class to the types it backs: a generated record read back as its table, and the members a class offers. The primary key puts the type before the class and cannot serve that, so the planner probed the graph''s whole backing once per catalog column. The type closes the index because those readers also filter on it, and without it the planner preferred the primary key for its type list. Measured: the language server''s diagnostics statement over forty bound types scanned twelve thousand rows here through the primary key and eight hundred through this index.';
-COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answered, a closed three-value domain: BOUND_TABLE for the resolved table binding read through its table''s record class, PRODUCER for a class a @service or @externalField method delivers for the field''s type or takes for an argument''s, ACCESSOR for a class reached by reading a field off a class already backing its parent. Provenance, never a preference: a type the populations answer differently has a row from each, and a reader wanting one filters on this column';
+COMMENT ON COLUMN graphitron_type_backing.declared_via IS 'which population answered, a closed three-value domain: BOUND_TABLE for the resolved table binding read through its table''s record class, PRODUCER for a class a @service or @externalField method delivers for the field''s type, or for the data element a service''s object passes through to, or takes for an argument''s, ACCESSOR for a class reached by reading a field off a class already backing its parent. Provenance, never a preference: a type the populations answer differently has a row from each, and a reader wanting one filters on this column';
 
 -- Which kind of producer each field is: its one claim where it has exactly one, and otherwise what
 -- its position and its target make it. A field with two claims is no producer here and a defect in
@@ -12553,7 +12553,8 @@ COMMENT ON VIEW graphitron_field_source_table_rule IS 'One row the field source-
 
 CREATE VIEW graphitron_type_backing_rule (graph_name, type_name, class_name, declared_via) AS
 -- What a producer grounds, two axes: the class a resolved @service method delivers, or the class an
--- @externalField method's Field carries, backs the field's type, and the class a parameter takes
+-- @externalField method's Field carries, backs the field's type, and the data element a service's
+-- object passes through to as well, and the class a parameter takes
 -- backs the type of the argument feeding it, the parameter's own name unless the reference's
 -- argMapping redirects it. Objects and input objects only.
 WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
@@ -12574,6 +12575,24 @@ WITH RECURSIVE seed (graph_name, type_name, class_name) AS (
      AND t.kind IN ('OBJECT', 'INPUT_OBJECT')
    WHERE (s.directive_name = 'service' AND m.result_element_class IS NOT NULL)
       OR (s.directive_name = 'externalField' AND m.result_first_argument_class IS NOT NULL)
+  UNION
+  -- A payload the service's object passes through to its one data field: the class backs the data
+  -- element too, the type its fields are read off, as the generator binds it.
+  SELECT s.graph_name, d.target_type_name, m.result_element_class
+    FROM graphitron_code_reference_site s
+    JOIN graphitron_code_reference r
+      ON r.graph_name = s.graph_name AND r.source_name = s.source_name
+     AND r.source_line = s.source_line AND r.source_column = s.source_column
+    JOIN code_method m
+      ON m.source_name = r.method_source_name AND m.class_name = r.method_class_name
+     AND m.method_name = r.method_name AND m.descriptor = r.method_descriptor
+    JOIN graphitron_carrier_data_channel c
+      ON c.graph_name = s.graph_name AND c.type_name = s.type_name AND c.field_name = s.field_name
+     AND c.passes_through
+    JOIN graphitron_field_target d
+      ON d.graph_name = c.graph_name AND d.type_name = c.payload_type_name
+     AND d.field_name = c.data_field_name
+   WHERE s.directive_name = 'service' AND m.result_element_class IS NOT NULL
   UNION
   SELECT s.graph_name, a.named_type, mp.element_class
     FROM graphitron_code_reference_site s

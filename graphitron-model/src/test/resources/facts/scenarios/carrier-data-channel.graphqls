@@ -1,6 +1,8 @@
 # A @service field's payload with exactly one object data field bound to no table holds the service's
 # value there. Where the class the service returns has no member the data field names, the object
 # itself is the data element and passes through; where it has one, the data field reads that member.
+# A data element the object passes through to is backed by the service's class, as the payload is,
+# so its table children take their key rows off that class's members.
 
 type Film @table(name: "film") { title: String }
 type Actor @table(name: "actor") { lastName: String @field(name: "last_name") }
@@ -33,4 +35,22 @@ extend schema @expectEquals(relation: "graphitron_carrier_data_channel", rows: "
   type_name, field_name,            payload_type_name,      data_field_name, passes_through
   Query,     createFilmsWithActors, FilmsWithActorsPayload, results,         TRUE
   Query,     filmBlurbHolder,       FilmBlurbHolder,        blurb,           FALSE
+  """)
+
+extend schema @expectEquals(relation: "graphitron_type_backing", where: """
+  type_name IN ('FilmsWithActorsPayload', 'FilmWithActorsResult', 'FilmBlurbHolder', 'FilmBlurb')
+  """, rows: """
+  type_name,              class_name,                                              declared_via
+  FilmsWithActorsPayload, no.sikt.graphitron.rewrite.test.services.FilmWithActors, PRODUCER
+  FilmWithActorsResult,   no.sikt.graphitron.rewrite.test.services.FilmWithActors, PRODUCER
+  FilmBlurbHolder,        no.sikt.graphitron.rewrite.test.services.FilmBlurbHolder, PRODUCER
+  FilmBlurb,              no.sikt.graphitron.rewrite.test.services.FilmBlurb,       ACCESSOR
+  """)
+
+extend schema @expectEquals(relation: "graphitron_field_key_row", where: """
+  type_name = 'FilmWithActorsResult'
+  """, rows: """
+  type_name,            field_name, kind,     table_name, arity
+  FilmWithActorsResult, film,       ACCESSOR, film,       ONE
+  FilmWithActorsResult, actors,     ACCESSOR, actor,      MANY
   """)

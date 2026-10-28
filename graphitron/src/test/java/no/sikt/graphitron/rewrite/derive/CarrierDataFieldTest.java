@@ -162,14 +162,11 @@ class CarrierDataFieldTest {
     }
 
     /**
-     * The two-level carrier is the one shape the store cannot see yet, and the cause is the backing
-     * closure's own stated departure rather than anything here: the producer's class backs the
-     * payload wrapper, where the walk reaches past the wrapper and grounds the data field's element
-     * to it. So the element resolves to no kind and the payload names nothing. Pinned rather than
-     * left to be noticed, since it is a shape the generator supports.
+     * The two-level carrier: the service's object passes through the payload's one data field, so
+     * the class backs the data element as well as the payload, and the element is a record.
      */
     @Test
-    void aTwoLevelCarrierNamesNothingBecauseTheClosureBacksTheWrapperInstead() {
+    void aTwoLevelCarrierNamesItsDataElementAsARecord() {
         var sdl = ERRORS + """
             type ResultDto { title: String }
             type CreateFilmsPayload {
@@ -182,7 +179,8 @@ class CarrierDataFieldTest {
                     @service(service: {className: "no.sikt.graphitron.rewrite.derive.TestBackingService", method: "films"})
             }
             """;
-        withCapturedStore(sdl, dsl -> assertThat(carriers(dsl)).isEmpty());
+        withCapturedStore(sdl, dsl -> assertThat(carriers(dsl)).containsExactly(
+            "CreateFilmsPayload.results SERVICE RECORD 1"));
     }
 
     /**

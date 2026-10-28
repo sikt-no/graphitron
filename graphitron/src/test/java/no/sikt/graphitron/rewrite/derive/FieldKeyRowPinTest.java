@@ -47,8 +47,6 @@ class FieldKeyRowPinTest {
      * last assertion until its line goes.
      */
     private static final Map<String, String> UPSTREAM_GAPS = Map.of(
-        "FilmWithActorsResult.film", "graphitron_result_class reaches no class for an error-carrying payload's data element, so its fields are readers",
-        "FilmWithActorsResult.actors", "the same",
         "NestedFilmsPayload.films", "the code family reads no nested class, here NestedFilmsPayloadHolder$Payload, so the accessor is unknown",
         "NestedOccupantCarrier.firstOccupant", "the same, NestedOccupantCarrierHolder$Carrier");
 

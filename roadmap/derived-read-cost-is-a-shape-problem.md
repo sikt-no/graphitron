@@ -451,8 +451,10 @@ classified records have no reader left and can go with the walk.
   * **A record's method beside its components is a read slot** `open`. A record offers only its
     components, so `FilmCardData.example()` backs nothing and `RecordExample` holds an OBJECT of no
     class, where the classifier reads it through that accessor.
-  * **An error-carrying payload's data element holds its class** `open`. `FilmWithActorsResult` has
-    no `graphitron_result_class` row, so its fields are readers where the classifier fetches.
+  * **An error-carrying payload's data element holds its class** `done`. Where a service's object
+    passes through its payload's one data field, the class backs the data element as well as the
+    payload, so `FilmWithActorsResult` is backed by `FilmWithActors` and its table children take key
+    rows off its members; on sis, the 19 payloads that do so.
   * **A nested class is read** `open`. The code family skips `NestedFilmsPayloadHolder$Payload` and
     its kind, so their accessors are unknown.
   * **A plain object's first key is read off its members** `open`. The classifier's `FkColumns`
@@ -462,7 +464,7 @@ classified records have no reader left and can go with the walk.
 * **A field's source is its parent's result** `open`. A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **An object result is lifted onto a key row** `blocked`, on "An error-carrying payload's data element holds its class". Under an
+* **An object result is lifted onto a key row** `open`. Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
   dissolves into `graphitron_result_table` with its interim record and source-row rules. Only a key
   on the source side starts one, a `SOURCE_ROW` key or a `COLUMNS` key on the parent's record
