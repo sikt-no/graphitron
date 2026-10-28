@@ -32,6 +32,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TOUCHED_COORDINATE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
@@ -171,25 +172,58 @@ public final class GraphQLAstCapture {
      * <p>Separate from {@link #anchor} because the incumbent walk needs one and writes the other
      * itself. What this half writes meets nothing that pass produces, the entry stratum being keyed
      * by written position and the walk writing no row of it.
+     *
+     * <p>Every document it rewrites also leaves the coordinates it named before and after the
+     * rewrite in {@code graphql_ast_touched_coordinate}, whose rows start each reading empty for
+     * the graph: what a reading that rewrote nothing touched is nothing.
      */
     public static void captureEntries(DSLContext dsl, GraphIdentity graph,
                                       List<GraphQLSourceCapture.SourceDocument> documents,
                                       LocalDateTime readAt) {
+        var touched = GRAPHQL_AST_TOUCHED_COORDINATE;
+        dsl.deleteFrom(touched)
+            .where(touched.GRAPH_NAME.eq(graph.name()))
+            .and(touched.TOUCHED_AT.ne(readAt))
+            .execute();
         for (var document : documents) {
             switch (document) {
                 case GraphQLSourceCapture.SourceDocument.Changed changed ->
-                    GraphQLAstEntries.write(dsl, graph.name(), changed.sourceName(),
-                        changed.registry(), readAt);
+                    rewrite(dsl, graph.name(), changed.sourceName(), changed.registry(), readAt);
                 case GraphQLSourceCapture.SourceDocument.Specification specification ->
-                    GraphQLAstEntries.write(dsl, graph.name(), specification.sourceName(),
+                    rewrite(dsl, graph.name(), specification.sourceName(),
                         specification.registry(), readAt);
                 case GraphQLSourceCapture.SourceDocument.Unchanged _,
                      GraphQLSourceCapture.SourceDocument.UnchangedSpecification _ -> { }
                 case GraphQLSourceCapture.SourceDocument.Dropped _ ->
-                    GraphQLAstEntries.write(dsl, graph.name(), document.sourceName(),
-                        new TypeDefinitionRegistry(), readAt);
+                    rewrite(dsl, graph.name(), document.sourceName(), new TypeDefinitionRegistry(),
+                        readAt);
             }
         }
+    }
+
+    /**
+     * One document's entries rewritten from {@code registry}, with the coordinates it named read
+     * on both sides of the write: before, because the write deletes what it no longer names, and
+     * after, for what it names now.
+     */
+    private static void rewrite(DSLContext dsl, String graph, String source,
+                                TypeDefinitionRegistry registry, LocalDateTime readAt) {
+        touch(dsl, graph, source, readAt);
+        GraphQLAstEntries.write(dsl, graph, source, registry, readAt);
+        touch(dsl, graph, source, readAt);
+    }
+
+    /** Marks every coordinate {@code source} names now as touched by this reading. */
+    private static void touch(DSLContext dsl, String graph, String source, LocalDateTime readAt) {
+        var e = GRAPHQL_AST_ELEMENT_ENTRY;
+        var t = GRAPHQL_AST_TOUCHED_COORDINATE;
+        dsl.insertInto(t, t.GRAPH_NAME, t.COORDINATE, t.TOUCHED_AT)
+            .select(org.jooq.impl.DSL.selectDistinct(e.GRAPH_NAME, e.COORDINATE, val(readAt, t.TOUCHED_AT))
+                .from(e)
+                .where(e.GRAPH_NAME.eq(graph))
+                .and(e.SOURCE_NAME.eq(source)))
+            .onConflictDoNothing()
+            .execute();
     }
 
     /**

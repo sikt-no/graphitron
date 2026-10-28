@@ -661,6 +661,18 @@ COMMENT ON COLUMN graphql_ast_element_entry.coordinate IS 'the coordinate this d
 CREATE INDEX graphql_ast_element_entry_coordinate_ix ON graphql_ast_element_entry (graph_name, coordinate);
 COMMENT ON INDEX graphql_ast_element_entry_coordinate_ix IS 'A reader holding a field asks for the declaration it was written at by its coordinate, and the primary key, a written position, serves none of that. Whether a field wrote a path is that question, asked of every field graphitron_field_target_column_match weighs: measured on a sis capture of 2026-10-21, 1898 candidate rows against 10394 element entries, the view took 312 s with no index here and 0.5 s with this one, and graphitron_entry_defect_rule, which reads it, 4.5 s.';
 
+CREATE TABLE graphql_ast_touched_coordinate (
+  graph_name VARCHAR   NOT NULL,
+  coordinate VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, coordinate),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE graphql_ast_touched_coordinate IS 'A coordinate the latest reading of a graph''s documents touched: one a document the reading rewrote named before the rewrite or after it. For example renaming Film.title to Film.name in film.graphqls touches Film.title, Film.name and every other coordinate film.graphqls names, and nothing another file alone names.';
+COMMENT ON COLUMN graphql_ast_touched_coordinate.graph_name IS 'the graph whose reading touched the coordinate; the key''s leading column';
+COMMENT ON COLUMN graphql_ast_touched_coordinate.coordinate IS 'the coordinate, in the specification''s grammar as graphql_ast_element_entry spells it. No key into the entries or the anchors: a coordinate the edit removed has no row left in either, and those are the ones a reader re-deriving what the edit reaches needs most';
+COMMENT ON COLUMN graphql_ast_touched_coordinate.touched_at IS 'the reading that touched it. Each reading deletes its graph''s rows carrying an older instant before it writes, so the rows are always the latest reading''s, and a reading that rewrote nothing leaves none';
+
 CREATE TABLE graphql_ast_directive_application_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -15647,6 +15659,9 @@ INSERT INTO meta_grain VALUES
   ('schema-element',
    'one schema element in one graph, identified by the coordinate the GraphQL specification spells for it',
    'graph_name, coordinate', 'sdl'),
+  ('touched-coordinate',
+   'one coordinate the latest reading of one graph''s documents touched',
+   'graph_name, coordinate', 'sdl'),
   ('directive-application',
    'one directive one author applied at one coordinate, in one graph',
    'graph_name, coordinate, directive_name, ordinal', 'sdl'),
@@ -16207,6 +16222,10 @@ INSERT INTO meta_relation VALUES
    'A written position exists in this document: the supertype of the nineteen entry relations, keyed by the position the parse read it at, and carrying which of them holds the rest of it.',
    'For example the @field on name: String @field(name: "title") is one row of kind FIELD_DIRECTIVE, written inside the field declaration whose position it names as its parent.',
    'Nineteen entry relations share a primary key and nothing else, so a reader holding a position had to know which of them to look in before it could ask anything, and a relation naming a position had nothing to reference. Written by the arms themselves as each writes its own rows, which is what lets them key into it and what keeps the two from disagreeing: one reading of one node produces the supertype row and the subtype row together. It carries the tree as well as the position, because three of the nineteen have a parent whose relation is not fixed and could otherwise reference nothing at all. What it does not carry is any name resolved against a later cadence: this is written while one document is being read, and the anchors that settle what the corpus honours do not exist yet.'),
+  ('graphql_ast_touched_coordinate', 'touched-coordinate', 'graphql-ast',
+   'A coordinate the latest reading of a graph''s documents touched: one a document the reading rewrote named before the rewrite or after it.',
+   'For example renaming Film.title to Film.name in film.graphqls touches Film.title, Film.name and every other coordinate film.graphqls names, and nothing another file alone names.',
+   'Where re-deriving what an edit reaches starts. Captured at the write rather than derived after it, because the rewrite deletes the half that says what the document named before, and a coordinate the edit removed is exactly one the anchors have to revisit. Every coordinate a changed document names counts, its unchanged ones too: the anchors stop where a row they re-derive comes out the same, so being coarse here costs a check and never an answer. A reading that rewrote no document touches nothing, which is what lets a round with no change reach nothing.'),
   ('graphql_ast_element_entry', 'sdl-entry-position', 'graphql-ast',
    'This written position declares a schema element, and this is the coordinate it declares: the eight entry kinds that name one, under the nineteen that need not.',
    'For example type Widget declares Widget, the field under it declares Widget.name, and a directive definition declares @widget and @widget(arg:), while the directive applied to that field declares nothing and has no row here. A schema block declares $schema, which is ours.',

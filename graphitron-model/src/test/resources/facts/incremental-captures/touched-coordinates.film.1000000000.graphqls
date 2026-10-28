@@ -1,0 +1,16 @@
+# What a reading touches, read in steps over two files. The first reading writes every file, so it
+# touches everything they name.
+
+type Film {
+  title: String
+  year: Int
+}
+
+extend type Query { films: [Film] }
+
+extend schema @assertContains(relation: "graphql_ast_touched_coordinate", rows: """
+  coordinate
+  Film
+  Film.title
+  Film.year
+  """)

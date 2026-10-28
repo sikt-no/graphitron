@@ -715,14 +715,17 @@ class WarmStartRefreshTest {
      * Row counts per base relation; views hold nothing of their own and are left out, and so are
      * {@code store_graph_write} and {@code store_graph_read}, which record the work each run did
      * rather than anything it read, a capture at a time: they grow by every capture, and a warm run
-     * doing less is the point of a warm start.
+     * doing less is the point of a warm start. {@code graphql_ast_touched_coordinate} is left out
+     * on the same terms: it holds what the latest reading rewrote, which a warm reading of
+     * unchanged documents leaves empty.
      */
     private static Map<String, Integer> census(DSLContext dsl) {
         var counts = new LinkedHashMap<String, Integer>();
         for (Table<?> table : Public.PUBLIC.getTables()) {
             if (table.getOptions().type() != TableOptions.TableType.VIEW
                     && !table.equals(Public.PUBLIC.STORE_GRAPH_WRITE)
-                    && !table.equals(Public.PUBLIC.STORE_GRAPH_READ)) {
+                    && !table.equals(Public.PUBLIC.STORE_GRAPH_READ)
+                    && !table.equals(Public.PUBLIC.GRAPHQL_AST_TOUCHED_COORDINATE)) {
                 counts.put(table.getName(), dsl.fetchCount(table));
             }
         }

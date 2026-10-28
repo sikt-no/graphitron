@@ -1,0 +1,23 @@
+# The second reading renames Film.title to Film.name in this file only. It touches what this file
+# named before the rewrite and after it, the removed Film.title and the unchanged Film.year among
+# them, and nothing the untouched actor file alone names, Query included only because this file
+# extends it too. $schema is the extend schema block carrying this expectation, which the file
+# writes like any other declaration.
+
+type Film {
+  name: String
+  year: Int
+}
+
+extend type Query { films: [Film] }
+
+extend schema @expectEquals(relation: "graphql_ast_touched_coordinate", rows: """
+  coordinate
+  $schema
+  Film
+  Film.name
+  Film.title
+  Film.year
+  Query
+  Query.films
+  """)

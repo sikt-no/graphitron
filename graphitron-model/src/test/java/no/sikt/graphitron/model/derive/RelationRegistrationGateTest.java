@@ -279,6 +279,8 @@ class RelationRegistrationGateTest {
         // element resolved at each depth, and a retired position swept.
         registrations.put("graphql_ast_entry", Arm.DERIVED);
         registrations.put("graphql_ast_element_entry", Arm.DERIVED);
+        // What a reading's rewrites touched, pinned by the touched-coordinates incremental capture.
+        registrations.put("graphql_ast_touched_coordinate", Arm.DERIVED);
         registrations.put("graphql_ast_directive_application_entry", Arm.DERIVED);
         registrations.put("graphql_element_field", Arm.DERIVED);
         registrations.put("graphitron_tabletype", Arm.DERIVED);

@@ -1,0 +1,15 @@
+# The file the second reading leaves alone. Its coordinates are touched once, by the first reading,
+# and never again.
+
+type Actor {
+  name: String
+}
+
+extend type Query { actors: [Actor] }
+
+extend schema @assertContains(relation: "graphql_ast_touched_coordinate", rows: """
+  coordinate
+  Actor
+  Actor.name
+  Query.actors
+  """)
