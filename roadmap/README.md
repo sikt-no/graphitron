@@ -27,7 +27,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R942` | A rule that evaluates an unregistered view once per driving row fails the build, whoever writes the next one | Spec | 2026-09-09 | [plan](per-row-view-naming-fails-the-build.md) |
 | `R677` | Derive the never-unsorted-list verdict from facts, and pin the lowering the verdict cannot see | Spec | 2026-09-22 <sub>created 2026-08-14</sub> | [plan](list-ordering-invariant-enforcement.md) |
 | `R816` | Refuse a routine write's first-hop condition instead of deferring it | Spec | 2026-08-24 <sub>created 2026-08-23</sub> | [plan](routine-write-reread-drops-first-hop-condition.md) |
-| `R1119` | Signed reference handoff: non-table entities across subgraphs | Spec | 2026-10-28 | [plan](signed-reference-entities-across-subgraphs.md) |
+| `R1119` | Signed voucher handover: one subgraph vouches, another grants through RLS | Spec | 2026-10-28 | [plan](signed-reference-entities-across-subgraphs.md) |
 | `R836` | The fact schema's prose is written for its author, not its reader | Spec | 2026-08-26 | [plan](fact-schema-prose-plain-language.md) |
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
@@ -546,7 +546,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R703` [**Generated list-valued bean members emit an unchecked cast that fails a consumer build under -Werror**](list-valued-bean-member-unchecked-cast.md) — Backlog, bug
 - `R694` [**Key the @service input-bean helper dedup on binding shape, the member-axis twin of R437**](service-bean-helper-dedup-by-binding-shape.md) — Backlog, architecture
-- `R1119` [**Signed reference handoff: non-table entities across subgraphs**](signed-reference-entities-across-subgraphs.md) — Spec, feature
+- `R1119` [**Signed voucher handover: one subgraph vouches, another grants through RLS**](signed-reference-entities-across-subgraphs.md) — Spec, feature
 - `R1004` [**Read consumer method signatures from classfiles so an unrelated sibling method cannot fail reflection**](reflect-consumer-signatures-from-classfiles.md) — Backlog, architecture
 - `R402` [**Retire the ValueShape to synthetic CallSiteExtraction.InputBean round-trip in the bean-helper queue**](retire-bean-helper-queue-valueshape-roundtrip.md) — Backlog, structural
 - `R837` [**A jOOQ record with no table cannot be a @service input parameter**](table-less-jooq-record-input.md) — Spec, feature
