@@ -1,7 +1,7 @@
 ---
 id: R1116
 title: "A nullable element field in a list-of-input filter does not constrain when absent"
-status: In Review
+status: Ready
 bucket: feature
 priority: 4
 depends-on: []
@@ -159,3 +159,13 @@ Also the claim, in `field.adoc` and the glossary, that every element field "must
 ## Provenance
 
 Requested 2026-10-28 by the sis Graphitron 10 port session. It is not a port blocker: sis has made the field non-null in the meantime.
+
+## Reviewer findings
+
+### In Review → Done, round 1: rework (session_01FY5Uvs27BcxFzEyVU4rt3x, 2026-10-28)
+
+Reviewed at trunk `1c6d9ea`. The verification build (`mvn install -Plocal-db`) passes. The delivery is the change the spec approved: the sealed `ElementRows.Whole` / `Partial`, `PartialRowIn` and `PARTIAL_MEMBERSHIP`, `Cell.required` with `pathRequired` through nullable nested inputs, the match helper's statement form, the alias reorder, the docs and glossary edits, and the retirement sweep (no retired phrase survives) all match the plan. The eight execution cases ran and pass. Two findings send it back, and both concern how completeness is demonstrated (question 2), not the production code.
+
+1. **The new `ConditionGlueRendererTest` cases match code strings in generated method bodies, which this gate's preconditions forbid.** `ownTablePartialLevel_declaresItsConditionFromTheMatchHelperOverTable`, `allOptionalPartialLevel_matchesEveryRowForAnElementCarryingNoCell` and `reachedPartialLevel_comparesAgainstTheTerminalHopAliasInsideTheExists` render `glueOf(...).code().toString()` and `matchHelperOf(...).code().toString()` and assert statement text: `anyOf.add(...)`, `cells.add(table.ACTOR_ID.eq(cell1));`, the `if (pairs != null)` guard, the alias-before-local index order. `docs/architecture/how-to/testing.adoc` bans code-string body matching on generated `MethodSpec` bodies; compilation and execution cover what those strings claim. The spec's Tests § Render bullet asked for this ("The helper body asserts `trueCondition()` …"), so the plan carries the defect too. Revise the bullet along with the tests. What satisfies it: keep only the structural assertions (the match helper exists, it is named `<stem>Match`, it returns `org.jooq.Condition`, and its second parameter is the own or terminal table class) and move the behavioural claims to the execution tier, per finding 2.
+
+2. **The one subtle invariant the spec calls out is pinned only by those banned strings; no execution case would fail if it regressed.** The spec says the empty-element arm "must be `DSL.trueCondition()`, never `DSL.and(cells)` over an empty list", because `noCondition()` would drop the element from the disjunction and turn `[{a: 1}, {}]` into `a = 1`. Neither `[{}]` execution case tells the two apart. Alone in the list, `DSL.or([noCondition()])` is `noCondition()`, and so is the glue's `and` of it: own-table `[{}]` returns every film, and reached `[{}]` reduces to `EXISTS` over the bare correlation (1, 2, 3, 5) either way. A mixed list is what tells them apart. For example, `filmsByOptionalLanguages(filter: {languages: [{languageId: 2}, {}]})` must return films 1 to 5; with the regression it returns none. Add that case. The scalar `!= null` guard on a `PartialRowIn` local is also unexercised at execution: no partial fixture is queried with the filter absent or with an empty list. Add `filmsByLanguagePairs` with no `filter` and with `pairs: []`, each returning every seeded film.
