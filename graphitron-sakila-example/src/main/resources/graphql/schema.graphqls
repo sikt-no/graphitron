@@ -6265,6 +6265,8 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
     labelsComputed: HostLabelsComputed
     labelsComputedRow: HostLabelsComputedRow
     labelsMixed: HostLabelsMixed
+    languageNames: HostLanguageNames @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}])
+    languageNamesSplit: HostLanguageNames @splitQuery @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}])
 }
 
 # The table-type twin of HostLabels, returned on its own by Query.hostLabelRows: reached from
@@ -6322,6 +6324,18 @@ type HostLabelsMixed {
     nn: String
     nb: String @externalField(reference: {
         className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nb"
+    })
+}
+
+# A @table child made only of @externalFields, reached inline and @splitQuery from
+# PivotNestingHost: host 1 reaches Italian, so italianName keeps it an object whichever field is
+# selected; hosts 2 and 3 reach no language and resolve to null.
+type HostLanguageNames @table(name: "language") {
+    englishName: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "englishName"
+    })
+    italianName: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "italianName"
     })
 }
 

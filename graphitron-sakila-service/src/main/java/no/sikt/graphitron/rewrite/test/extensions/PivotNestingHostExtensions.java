@@ -1,7 +1,9 @@
 package no.sikt.graphitron.rewrite.test.extensions;
 
+import no.sikt.graphitron.rewrite.test.jooq.public_.tables.Language;
 import no.sikt.graphitron.rewrite.test.jooq.public_.tables.PivotNestingHost;
 import org.jooq.Field;
+import org.jooq.impl.DSL;
 
 /**
  * {@code @externalField} helpers over {@code pivot_nesting_host}'s nullable label columns, for the
@@ -10,7 +12,8 @@ import org.jooq.Field;
  * column-backed {@code HostLabels}.
  *
  * <p>Wired by {@code HostLabelsComputed}, {@code HostLabelsComputedRow} and
- * {@code HostLabelsMixed}.
+ * {@code HostLabelsMixed}; the language helpers by {@code HostLanguageNames}, the language a host
+ * reaches through {@code pivot_nesting_host.language_id}.
  */
 public final class PivotNestingHostExtensions {
 
@@ -24,5 +27,15 @@ public final class PivotNestingHostExtensions {
     /** The host's {@code nb} label. */
     public static Field<String> nb(PivotNestingHost table) {
         return table.NB;
+    }
+
+    /** The language's name when it is English, null otherwise. */
+    public static Field<String> englishName(Language table) {
+        return DSL.when(table.NAME.eq("English"), table.NAME);
+    }
+
+    /** The language's name when it is Italian, null otherwise. */
+    public static Field<String> italianName(Language table) {
+        return DSL.when(table.NAME.eq("Italian"), table.NAME);
     }
 }

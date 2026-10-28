@@ -379,9 +379,9 @@ public final class Presence {
              * The object holds a child whose absence no presence leaf decides: a list taking
              * arguments, a connection, a polymorphic or {@code @service} child, an
              * {@code @externalField} returning an object type, a field reached through a database
-             * routine, or a same-table child. Whether it holds anything depends on the query or on code outside
-             * the table's rows. Graphitron 9 counted some of these toward the collapse; this is a
-             * documented divergence.
+             * routine, or a same-table child. Whether it holds anything depends on the query or on
+             * code outside the table's rows. Graphitron 9 counted some of these toward the
+             * collapse; this is a documented divergence.
              */
             record BlockedBy(ChildField blocker) implements Reason {
                 public BlockedBy {

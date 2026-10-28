@@ -26,8 +26,9 @@ final class PresenceProbes {
 
     /**
      * The probe of {@code field} under {@code contract}, or empty when the contract has no
-     * {@link Presence.NullContract#probed probed} leaves. {@code glueOf} answers a probe leaf's condition glue call: the probed field's
-     * coordinate method over the leaf's filters, asked only when it has some.
+     * {@link Presence.NullContract#probed probed} leaves. {@code glueOf} answers a probe leaf's
+     * condition glue call: the probed field's coordinate method over the leaf's filters, asked
+     * only when it has some.
      */
     static Optional<PresenceProbe> of(GraphitronField field, Presence.NullContract contract,
             Function<Presence.PresenceLeaf.Probe, GlueCall> glueOf) {

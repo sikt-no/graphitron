@@ -12,8 +12,8 @@ import java.util.Objects;
  * shows, read by the field's fetcher beside its presence columns. It renders as
  * {@code CASE WHEN <every column leaf absent> AND (<term> OR ...) THEN 1 END}, each term a
  * correlated {@code EXISTS} ({@link ProbeTerm.Exists}) or an {@code @externalField} expression
- * tested for null ({@link ProbeTerm.NotNull}): the guard keeps the terms from running when a column already proves the object present, which the
- * fetcher checks first.
+ * tested for null ({@link ProbeTerm.NotNull}): the guard keeps the terms from running when a
+ * column already proves the object present, which the fetcher checks first.
  *
  * <p>A probe is a rendered expression under a derived alias, not a column of the row, so it rides
  * beside the carriers' column demand rather than in it; the base-name column contract of

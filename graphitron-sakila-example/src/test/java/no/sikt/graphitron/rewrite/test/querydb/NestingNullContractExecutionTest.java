@@ -166,4 +166,19 @@ class NestingNullContractExecutionTest {
         assertThat((Map<String, Object>) hosts("labelsMixed { nn }").get(3).get("labelsMixed"))
             .isNotNull().containsEntry("nn", null);
     }
+
+    @Test
+    void computedOnlyTableChild_inlineAndSplit_decidesOverEveryField() {
+        // The inline multiset and the batched rows method carry the same null terms: host 1's
+        // Italian row keeps the object even when only the null englishName is selected.
+        for (var field : List.of("languageNames", "languageNamesSplit")) {
+            var byId = hosts(field + " { englishName }");
+            assertThat((Map<String, Object>) byId.get(1).get(field)).as(field)
+                .isNotNull().containsEntry("englishName", null);
+            assertThat(byId.get(2)).as(field).containsEntry(field, null);
+            assertThat(byId.get(3)).as(field).containsEntry(field, null);
+            var italian = (Map<String, Object>) hosts(field + " { italianName }").get(1).get(field);
+            assertThat(((String) italian.get("italianName")).trim()).as(field).isEqualTo("Italian");
+        }
+    }
 }
