@@ -83,6 +83,9 @@ A service call is emitted from the store
 │       ├── A parameter's fill states how its value is built
 │       │   └── The generated jOOQ classes are read with their members
 │       ├── An object result is lifted onto a key row
+│       │   ├── The result and path model is stated before it is built
+│       │   ├── An error-carrying payload's data element holds its class
+│       │   ├── A plain object's first key is read off its members
 │       │   ├── A field's key row is stated
 │       │   ├── A type an `@externalField` returns holds an OBJECT
 │       │   └── A binding that names several tables is a row of none of them
@@ -92,6 +95,7 @@ A service call is emitted from the store
 │   └── A service class's construction is stated
 └── A producer's carrier is its one data channel
     └── A field's source is its parent's result
+        └── The result and path model is stated before it is built
 ```
 
 Every other branch is a supporting track: worked when it unblocks this path, or when its own cost or
@@ -237,7 +241,7 @@ resolutions and links built beside it are gone.
     A written path after a `@routine` to an unbound type, or on a field returning an unbound
     object, names no target table, which the defect already says through its own routine probes;
     every path past a `@routine` on the six stores ends on a bound type (2026-10-27).
-  * **A table-bound child is a join, and `SameRowTableField` goes** `blocked`, on "The result and path model is stated before it is built", breaking. A child whose
+  * **A table-bound child is a join, and `SameRowTableField` goes** `blocked`, off the critical path, on "The result and path model is stated before it is built", breaking. A child whose
     type is bound to its parent's own table joins as any bound child does, its key inferred or
     written and its absence a defect, so a same-row read is the author's condition on the primary
     key; this reverts R1045's leaf and its uncorrelated narrowed read, first released in RC44.
@@ -340,12 +344,12 @@ static method needs no holder.
   class of every non-static `code_service_method` row, the code gatherer's own candidate set, and
   states its public constructors as candidates of a `CONTEXT` shape with each parameter's role, kept
   apart from the methods as the census keeps them.
-* **A parameter states its type's first argument** `open`. `code_method_parameter` carries the class
+* **A parameter states its type's first argument** `done`. `code_method_parameter` carries the class
   the census reads at type-argument path `0`, so `Set<FilmRecord>` is told from
   `Set<List<FilmRecord>>` without parsing a spelling.
-* **A `Configuration` parameter is the jOOQ context** `open`. `code_method_parameter.role` gains
+* **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **A service's holder is its one widest buildable constructor** `blocked`, on "A service class's construction is stated" and "A `Configuration` parameter is the jOOQ context". Every
+* **A service's holder is its one widest buildable constructor** `blocked`, on "A service class's construction is stated". Every
   parameter is jOOQ context or a context key; two of the widest, or none buildable, is a defect.
 * **An argument path through input types is stored** `open`. This is R1099's step 2,
   `graphitron_argmapping_binding`, and is done when that step lands; R1099 owns what it retires.
@@ -450,10 +454,10 @@ classified records have no reader left and can go with the walk.
     reads a path's first key off a POJO parent by member name; no fixture has the shape yet.
 * **A table child under a handed value deeper than its carrier refetches** `open`. A table-bound
   field below a value a producer handed down, deeper than its carrier, fetches its rows itself.
-* **A field's source is its parent's result** `open`. A field's source is a join on its parent
+* **A field's source is its parent's result** `blocked`, on "The result and path model is stated before it is built". A field's source is a join on its parent
   type's `graphitron_result` row, nothing at a root, and its readers read that join where they read
   `graphitron_field_source_table`'s inherited rule today.
-* **An object result is lifted onto a key row** `open`. Under an
+* **An object result is lifted onto a key row** `blocked`, on "The result and path model is stated before it is built". Under an
   object parent a path starts at the key row's table, and `graphitron_field_source_table`
   dissolves into `graphitron_result_table` with its interim record and source-row rules. Only a key
   on the source side starts one, a `SOURCE_ROW` key or a `COLUMNS` key on the parent's record
@@ -463,7 +467,7 @@ classified records have no reader left and can go with the walk.
     bound type's table from every candidate of its binding, so a type bound to a bare name two
     schemas declare held a ROW of both; it is still a ROW, of no table, the ambiguity being the
     binding's own defect.
-  * **A `@pivot` gives an OBJECT result** `blocked`, on "The result and path model is stated before it is built". A `@pivot` field's type holds an OBJECT, so
+  * **A `@pivot` gives an OBJECT result** `blocked`, off the critical path, on "The result and path model is stated before it is built". A `@pivot` field's type holds an OBJECT, so
     `graphitron_result_pivot` goes, and a type both nested under a table's field and pivoted holds
     two shapes, `RESULT_SHAPES_CONFLICT`; R1096 plans `@localized`
     on a constructed row, which this replaces.
@@ -471,20 +475,20 @@ classified records have no reader left and can go with the walk.
   their grains, keys and readers, in the store's own terms, and reviewed before any node it blocks
   changes code; it settles where an OBJECT's class lives, whether an OBJECT may have none, and
   whether a field states the result it gives in a relation of its own.
-* **`@sourceRow` dissolves** `blocked`, on "The result and path model is stated before it is built". No schema in the FS-plattform checkout uses it, so the
+* **`@sourceRow` dissolves** `blocked`, off the critical path, on "The result and path model is stated before it is built". No schema in the FS-plattform checkout uses it, so the
   directive, its `SOURCE_ROW` key row and its lifter methods go, an object's key row read off its
   class and members instead.
-* **The bindings are resolved before the targets** `blocked`, on "The result and path model is stated before it is built". `ResolvedTypeBindings` reads only the
+* **The bindings are resolved before the targets** `blocked`, off the critical path, on "The result and path model is stated before it is built". `ResolvedTypeBindings` reads only the
   written `@table`, so its place after the hops is accidental; it runs before
   `graphitron_field_target` and is marked and swept rather than cleared and rewritten.
-* **A routine's result is an object of its function's record class** `blocked`, on "The result and path model is stated before it is built". An unbound type a
+* **A routine's result is an object of its function's record class** `blocked`, off the critical path, on "The result and path model is stated before it is built". An unbound type a
   `@routine` returns is a result, an OBJECT whose class is the function's record off
   `sql_table.record_class_fqn`, whether the routine is a producer (a root, `@splitQuery`, under an
   object) or a lateral step inline, while one returning a bound type gives a row of that table; this
   supersedes the row of its function that a `@routine` read with nothing after it has handed since
   `0428ef411`, and `graphitron_routine_result` and the landing's row with no place go. Today Tilgang
   holds a ROW and an OBJECT, and Brukertilgang's three bound children have no start and no key.
-* **A path starts at its parent's table and targets a table** `blocked`, on "The result and path model is stated before it is built", "A routine's result is an object
+* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "The result and path model is stated before it is built", "A routine's result is an object
   of its function's record class", "Every field has a path, the written one or the one discovery implies",
   "An error-carrying payload's data element holds its class" and "A plain object's first key is read off its members".
   A table-bound parent starts every field's path on its binding, whatever its result, so for almost
