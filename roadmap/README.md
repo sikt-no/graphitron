@@ -38,7 +38,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
 | `R1116` | A nullable element field in a list-of-input filter does not constrain when absent | In Review | 2026-10-28 | [plan](list-of-input-filter-nullable-cell.md) |
 | `R1117` | A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null | In Review | 2026-10-28 | [plan](externalfield-presence-leaf.md) |
-| `R1118` | FetcherErrorResponse can rewrite the message of an unclaimed GraphitronClientException | In Review | 2026-10-28 | [plan](client-error-message-hook.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | Spec | 2026-10-28 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -590,7 +589,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 - `R920` [**a failed batch logs once, without its SQL, and a consumer can cap batch size**](batch-failure-logs-once-not-per-field.md) — Backlog, bug
 - `R423` [**redaction reference id derives from OTel trace_id (via MDC) when present**](redaction-reference-id-from-otel-traceid.md) — Backlog, enhancement
-- `R1118` [**FetcherErrorResponse can rewrite the message of an unclaimed GraphitronClientException**](client-error-message-hook.md) — In Review, feature
 - `R747` [**Generated input records carry no constraint annotations, so the VALIDATION handler can never fire**](generated-input-records-carry-no-constraints.md) — Backlog, architecture
 - `R397` [**Let bare-entity query fields host @error so decode and other client errors route through handlers**](error-directive-on-query-fields.md) — Backlog, architecture
 - `R778` [**Collapse the four verbatim copies of the CamelCase to SCREAMING_SNAKE transform**](screaming-snake-transform-single-spelling.md) — Backlog, cleanup
