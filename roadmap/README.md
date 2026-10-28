@@ -36,7 +36,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
-| `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression <sub>blocked by: [null-sort-keys-sort-last-and-page](null-sort-keys-sort-last-and-page.md)</sub> | Spec | 2026-10-27 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
+| `R1083` | @order: sort by a column on a to-one related table via path, or by a method-supplied expression <sub>blocked by: [null-sort-keys-sort-last-and-page](null-sort-keys-sort-last-and-page.md)</sub> | Spec | 2026-10-28 <sub>created 2026-10-21</sub> | [plan](order-by-related-table-column.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction <sub>blocked by: [mutation-field-transaction-scope](mutation-field-transaction-scope.md)</sub> | Spec | 2026-10-27 | [plan](transactional-outbox-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
