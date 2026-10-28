@@ -1,7 +1,7 @@
 ---
 id: R1115
 title: "A child returning a @table type on its parent's own table, with no @reference, is rejected instead of reading the parent's own row"
-status: Backlog
+status: Spec
 bucket: bug
 priority: 2
 theme: classification-model
