@@ -39,7 +39,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
 | `R1116` | A nullable element field in a list-of-input filter does not constrain when absent | In Review | 2026-10-28 | [plan](list-of-input-filter-nullable-cell.md) |
 | `R1117` | A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null | In Review | 2026-10-28 | [plan](externalfield-presence-leaf.md) |
-| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | Spec | 2026-10-28 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -47,6 +46,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R282` | Scope and type the FK candidate hint on the record-FK and synthesis-miss surfaces | Spec | 2026-07-22 <sub>created 2026-06-08</sub> | [plan](fk-key-hint-sibling-scope.md) |
 | `R1096` | Select a translated text column by the request language (Accept-Language) <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Spec | 2026-10-23 | [plan](request-language-column-selection.md) |
 | `R810` | Transitional surfaces say so where a reader arrives, and say why | Spec | 2026-08-22 | [plan](transitional-surfaces-say-so.md) |
+| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | Ready | 2026-10-28 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start | Ready | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](mutation-field-transaction-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
@@ -611,7 +611,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1102` [**A value the session mount derives binds where a contextArgument binds today**](session-handle-component-bindings.md) — Ready, feature
-- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — Spec, feature
+- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — Ready, feature
 - `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start**](mutation-field-transaction-scope.md) — Ready, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1108` [**The user manual documents the owned-connection engine as the primary path**](manual-catches-up-with-owned-connection-engine.md) — Backlog, docs
