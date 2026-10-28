@@ -35,9 +35,9 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1117` | A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null | Ready | 2026-10-28 | [plan](externalfield-presence-leaf.md) |
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | Ready | 2026-10-26 | [plan](session-handle-component-bindings.md) |
 | `R1116` | A nullable element field in a list-of-input filter does not constrain when absent | In Progress | 2026-10-28 | [plan](list-of-input-filter-nullable-cell.md) |
+| `R1117` | A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null | In Progress | 2026-10-28 | [plan](externalfield-presence-leaf.md) |
 | `R1118` | FetcherErrorResponse can rewrite the message of an unclaimed GraphitronClientException | In Progress | 2026-10-28 | [plan](client-error-message-hook.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | Spec | 2026-10-28 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
@@ -673,7 +673,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — Backlog, bug
 - `R1111` [**A routine argument mapped from a computed $source column looks up a parentInput field typed with its generator**](routine-source-column-strips-generator.md) — Backlog, bug
-- `R1117` [**A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null**](externalfield-presence-leaf.md) — Ready, feature
+- `R1117` [**A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null**](externalfield-presence-leaf.md) — In Progress, feature
 - `R1078` [**An enum-typed output field over a jOOQ-enum column is not checked against the Java enum constants**](enum-output-over-jooq-enum-column-unchecked.md) — Backlog, bug
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture
 - `R521` [**Generated-output readability and hygiene sweep**](generated-output-hygiene-sweep.md) — Backlog, cleanup
