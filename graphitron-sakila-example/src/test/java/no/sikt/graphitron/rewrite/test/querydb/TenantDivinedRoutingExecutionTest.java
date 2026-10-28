@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
@@ -21,11 +22,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
-import java.sql.DriverManager;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -55,7 +54,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class TenantDivinedRoutingExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;                 // default database, out-of-band setup/assertions
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -97,26 +95,17 @@ class TenantDivinedRoutingExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         // Real database-per-tenant: the generated SQL schema-qualifies table names
         // ("public"."film"), so isolation comes from separate databases, not search_path.
         for (String db : List.of("tenant_1", "tenant_2")) {
-            dsl.execute("drop database if exists " + db + " with (force)");
-            dsl.execute("create database " + db);
-            try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
+            SakilaDatabase.createTenantDatabase(db);
+            try (var tenant = DSL.using(SakilaDatabase.tenantUrl(db), jdbcUser, jdbcPassword)) {
                 // The empty-title check gives the errors-payload cases a database error to route.
                 tenant.execute("create table film (film_id int primary key,"
                     + " title text not null check (title <> ''))");
@@ -140,7 +129,7 @@ class TenantDivinedRoutingExecutionTest {
                 TenantSessionFixture.installSessionObjects(tenant);
             }
         }
-        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             t1.execute("insert into film values (1, 'Tenant One Film')");
             t1.execute("insert into inventory (film_id, store_id) values (1, 1), (1, 2)");
             foreignInventoryId = t1.fetchSingle(
@@ -150,7 +139,7 @@ class TenantDivinedRoutingExecutionTest {
             t1.execute("insert into language (language_id, name) values (1, 'tenant_1')");
             t1.execute("insert into store (store_id) values (1), (2)");
         }
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             t2.execute("insert into film values (2, 'Tenant Two Film')");
             t2.execute("insert into film_actor values (20, 2)");
             t2.execute("insert into film_actor_note values (20, 2, 'nob', 'Before')");
@@ -190,10 +179,9 @@ class TenantDivinedRoutingExecutionTest {
                 WRITTEN_ENDORSEMENT_NOTE, ROUTINE_ENDORSEMENT_NOTE);
             dsl.execute("delete from film_bookmark where note in (?, ?)", ROUTED_BOOKMARK_NOTE,
                 UNSET_BOOKMARK_NOTE);
-            dsl.execute("drop database if exists tenant_1 with (force)");
-            dsl.execute("drop database if exists tenant_2 with (force)");
+            SakilaDatabase.dropTenantDatabase("tenant_1");
+            SakilaDatabase.dropTenantDatabase("tenant_2");
         }
-        if (postgres != null) postgres.stop();
     }
 
     @BeforeEach
@@ -206,7 +194,7 @@ class TenantDivinedRoutingExecutionTest {
     @AfterEach
     void resetScenes() {
         for (String db : List.of("tenant_1", "tenant_2")) {
-            try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
+            try (var tenant = DSL.using(SakilaDatabase.tenantUrl(db), jdbcUser, jdbcPassword)) {
                 tenant.execute("update film_scene set parent_scene_no = null, label = null");
             }
         }
@@ -406,7 +394,7 @@ class TenantDivinedRoutingExecutionTest {
     @Test
     void service_runsOnTheTenantItsIdsName_andHandsItDownToTheReturnedRows() {
         var payload = rateFilms("{ film: \"" + NodeIdEncoder.encodeFilm(1) + "\" }");
-        assertThat(payload.get("ranOn")).as("the service's DSLContext is tenant 1's").isEqualTo("tenant_1");
+        assertThat(payload.get("ranOn")).as("the service's DSLContext is tenant 1's").isEqualTo(SakilaDatabase.tenantName("tenant_1"));
         var films = (List<Map<String, Object>>) payload.get("films");
         assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant One Film");
         assertThat((List<?>) films.get(0).get("inventories"))
@@ -427,7 +415,7 @@ class TenantDivinedRoutingExecutionTest {
     void service_optionalSecondIdJoinsTheAgreementOnlyWhenSent() {
         var agreeing = rateFilms("{ film: \"" + NodeIdEncoder.encodeFilm(1) + "\", alsoFilm: \""
             + NodeIdEncoder.encodeFilm(1) + "\" }");
-        assertThat(agreeing.get("ranOn")).isEqualTo("tenant_1");
+        assertThat(agreeing.get("ranOn")).isEqualTo(SakilaDatabase.tenantName("tenant_1"));
 
         var result = execute("mutation { rateFilms(in: [{ film: \"" + NodeIdEncoder.encodeFilm(1)
             + "\", alsoFilm: \"" + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn } }");
@@ -454,7 +442,7 @@ class TenantDivinedRoutingExecutionTest {
             + NodeIdEncoder.encodeFilm(2) + "\" }]) { ranOn films { inventories { inventoryId } } errors { __typename } } }");
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmsChecked");
-        assertThat(payload.get("ranOn")).isEqualTo("tenant_2");
+        assertThat(payload.get("ranOn")).isEqualTo(SakilaDatabase.tenantName("tenant_2"));
         assertThat((List<Map<String, Object>>) payload.get("films"))
             .singleElement()
             .satisfies(film -> assertThat((List<?>) film.get("inventories"))
@@ -483,7 +471,7 @@ class TenantDivinedRoutingExecutionTest {
                 });
             assertThat(TENANT_1_OPENED.get()).as("the other tenant's database is never opened").isZero();
         } finally {
-            try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
                 t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
             }
         }
@@ -505,7 +493,7 @@ class TenantDivinedRoutingExecutionTest {
             .satisfies(error -> assertThat(error.get("__typename")).isEqualTo("FilmWriteDbError"));
         assertThat(TENANT_2_OPENED.get()).as("the write ran on the tenant the input names").isPositive();
         assertThat(TENANT_1_OPENED.get()).as("the other tenant's database is never opened").isZero();
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchValue("select title from film where film_id = 2"))
                 .as("the refused batch committed nothing").isEqualTo("Tenant Two Film");
         }
@@ -569,7 +557,7 @@ class TenantDivinedRoutingExecutionTest {
             + NodeIdEncoder.encodeFilmActor(20, 2) + "\" }]) { ranOn films { title } } }");
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmActors");
-        assertThat(payload.get("ranOn")).isEqualTo("tenant_2");
+        assertThat(payload.get("ranOn")).isEqualTo(SakilaDatabase.tenantName("tenant_2"));
         assertThat((List<Map<String, Object>>) payload.get("films"))
             .extracting(f -> f.get("title")).containsExactly("Tenant Two Film");
         assertThat(TENANT_1_OPENED.get()).isZero();
@@ -583,7 +571,7 @@ class TenantDivinedRoutingExecutionTest {
             + " ranOn films { title inventories { inventoryId } } } }");
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         var payload = (Map<String, Object>) ((Map<String, Object>) result.getData()).get("rateFilmsByFilmId");
-        assertThat(payload.get("ranOn")).as("the marked value names tenant 1").isEqualTo("tenant_1");
+        assertThat(payload.get("ranOn")).as("the marked value names tenant 1").isEqualTo(SakilaDatabase.tenantName("tenant_1"));
         var films = (List<Map<String, Object>>) payload.get("films");
         assertThat(films).extracting(f -> f.get("title")).containsExactly("Tenant One Film");
         assertThat((List<?>) films.get(0).get("inventories"))
@@ -611,7 +599,7 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(agreeing.getErrors()).as("errors: " + agreeing.getErrors()).isEmpty();
         assertThat(((Map<String, Object>) ((Map<String, Object>) agreeing.getData())
                 .get("rateFilmsByFilmIdAndFilm")).get("ranOn"))
-            .as("the marked Integer and the decoded key compare equal").isEqualTo("tenant_1");
+            .as("the marked Integer and the decoded key compare equal").isEqualTo(SakilaDatabase.tenantName("tenant_1"));
     }
 
     @Test
@@ -629,8 +617,8 @@ class TenantDivinedRoutingExecutionTest {
         assertThat((List<Map<String, Object>>) ((Map<String, Object>) result.getData()).get("films"))
             .singleElement()
             .satisfies(film -> {
-                assertThat(film.get("servedBy")).as("the DSLContext parameter").isEqualTo("tenant_2");
-                assertThat(film.get("servedByHolder")).as("the holder's constructor").isEqualTo("tenant_2");
+                assertThat(film.get("servedBy")).as("the DSLContext parameter").isEqualTo(SakilaDatabase.tenantName("tenant_2"));
+                assertThat(film.get("servedByHolder")).as("the holder's constructor").isEqualTo(SakilaDatabase.tenantName("tenant_2"));
             });
         assertThat(TENANT_1_OPENED.get()).isZero();
     }
@@ -788,7 +776,7 @@ class TenantDivinedRoutingExecutionTest {
             + NodeIdEncoder.encodeFilm(1) + "\" }]) { ranOn films { title } language { name } } }",
             List.of(1, 2), 2);
         var payload = (Map<String, Object>) data(result, "rateFilmsWithLanguage");
-        assertThat(payload.get("ranOn")).as("the service runs on the tenant its ids name").isEqualTo("tenant_1");
+        assertThat(payload.get("ranOn")).as("the service runs on the tenant its ids name").isEqualTo(SakilaDatabase.tenantName("tenant_1"));
         assertThat((List<Map<String, Object>>) payload.get("films"))
             .extracting(f -> f.get("title")).containsExactly("Tenant One Film");
         assertThat((Map<String, Object>) payload.get("language"))
@@ -1129,7 +1117,7 @@ class TenantDivinedRoutingExecutionTest {
         var result = execute("mutation { deleteFilmActorByNodeId(in: { id: \"" + wrapped + "\" }) }");
         assertThat(result.getErrors()).as("an id that does not decode is the malformed-id failure").isNotEmpty();
         assertThat(result.getErrors().toString()).contains("not a valid FilmActor id");
-        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             assertThat(t1.fetchCount(DSL.table("film_actor"), DSL.field("actor_id").eq(10)))
                 .as("the row the key wraps onto is untouched").isEqualTo(1);
         }
@@ -1218,7 +1206,7 @@ class TenantDivinedRoutingExecutionTest {
             .singleElement()
             .satisfies(e -> assertThat(e.getMessage()).contains("'2' is not permitted for this request"));
         assertThat(TENANT_2_OPENED.get()).isZero();
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchValue("select title from film where film_id = 2")).isEqualTo("Tenant Two Film");
         }
     }
@@ -1353,13 +1341,13 @@ class TenantDivinedRoutingExecutionTest {
             .extracting(m -> m.get("inventoryId"))
             .isNotNull();
 
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchCount(DSL.table("inventory"), DSL.field("store_id").eq(7)))
                 .as("the write landed in tenant 2's database")
                 .isEqualTo(1);
             t2.execute("delete from inventory where store_id = 7");
         }
-        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             assertThat(t1.fetchCount(DSL.table("inventory"), DSL.field("store_id").eq(7)))
                 .as("no cross-tenant write")
                 .isZero();
@@ -1394,7 +1382,7 @@ class TenantDivinedRoutingExecutionTest {
 
     @Test
     void bulkDeleteByNodeId_idsAgreeingOnOneTenant_deletesOnlyThere() {
-        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             t1.execute("insert into film_actor values (11, 1), (12, 1)");
         }
         String first = NodeIdEncoder.encodeFilmActor(11, 1);
@@ -1410,7 +1398,7 @@ class TenantDivinedRoutingExecutionTest {
             .as("the tenant is slot 1 of the decoded key, so the other database is never opened")
             .isZero();
 
-        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             assertThat(t1.fetchCount(DSL.table("film_actor"),
                     DSL.field("actor_id").in(11, 12)))
                 .as("the rows went from the divined tenant's database")
@@ -1436,11 +1424,11 @@ class TenantDivinedRoutingExecutionTest {
             .as("the disagreement is found before any connection is acquired")
             .isZero();
 
-        try (var t1 = DSL.using(tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("tenant_1"), jdbcUser, jdbcPassword)) {
             assertThat(t1.fetchCount(DSL.table("film_actor"), DSL.field("actor_id").eq(10)))
                 .as("neither tenant's row was touched").isEqualTo(1);
         }
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchCount(DSL.table("film_actor"), DSL.field("actor_id").eq(20)))
                 .isEqualTo(1);
         }
@@ -1470,7 +1458,7 @@ class TenantDivinedRoutingExecutionTest {
             .as("the decoded key is the tenant itself; the other database is never opened")
             .isZero();
 
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
         }
     }
@@ -1484,7 +1472,7 @@ class TenantDivinedRoutingExecutionTest {
             .as("the tenant is slot 1 of a three-column key; the other database is never opened")
             .isZero();
 
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchValue("select note_txt from film_actor_note where actor_id = 20"))
                 .as("the row was updated in the divined tenant's database").isEqualTo("After");
             t2.execute("update film_actor_note set note_txt = 'Before' where actor_id = 20");
@@ -1495,7 +1483,7 @@ class TenantDivinedRoutingExecutionTest {
 
     /** A tenant-2 row's version: {@code xmin} moves on any UPDATE, so an unchanged one means no write. */
     private static String tenant2RowVersion(String table, String where) {
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             return t2.fetchValue("select xmin::text from " + table + " where " + where).toString();
         }
     }
@@ -1542,7 +1530,7 @@ class TenantDivinedRoutingExecutionTest {
             + NodeIdEncoder.encodeFilm(2) + "\", storeId: 9 }) { inventoryId } }");
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
 
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchCount(DSL.table("inventory"), DSL.field("store_id").eq(9)))
                 .as("the decoded Film key lifted onto inventory.film_id, which is the tenant")
                 .isEqualTo(1);
@@ -1604,7 +1592,7 @@ class TenantDivinedRoutingExecutionTest {
         assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
         assertThat(TENANT_1_OPENED.get()).isZero();
 
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             assertThat(t2.fetchValue("select label from film_scene where film_id = 2 and scene_no = 2"))
                 .isEqualTo("x");
         }
@@ -1846,7 +1834,7 @@ class TenantDivinedRoutingExecutionTest {
             assertThat(TENANT_1_OPENED.get()).isZero();
             assertThat(TENANT_2_OPENED.get()).isPositive();
         } finally {
-            try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+            try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
                 t2.execute("update film set title = 'Tenant Two Film' where film_id = 2");
             }
         }
@@ -1916,14 +1904,10 @@ class TenantDivinedRoutingExecutionTest {
     // ===== helpers =====
 
     private static Object tenant2SceneParent(int sceneNo) {
-        try (var t2 = DSL.using(tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("tenant_2"), jdbcUser, jdbcPassword)) {
             return t2.fetchValue(
                 "select parent_scene_no from film_scene where film_id = 2 and scene_no = " + sceneNo);
         }
-    }
-
-    private static String tenantUrl(String database) {
-        return jdbcUrl.replaceFirst("(jdbc:postgresql://[^/]+/)[^?]*", "$1" + database);
     }
 
     /**
@@ -1931,14 +1915,14 @@ class TenantDivinedRoutingExecutionTest {
      * targets the container's main database (the default source).
      */
     private static DataSource countingDataSource(String database, AtomicInteger counter) {
-        String url = database == null ? jdbcUrl : tenantUrl(database);
+        String url = database == null ? jdbcUrl : SakilaDatabase.tenantUrl(database);
         return (DataSource) Proxy.newProxyInstance(
             TenantDivinedRoutingExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     if (counter != null) counter.incrementAndGet();
-                    return DriverManager.getConnection(url, jdbcUser, jdbcPassword);
+                    return SakilaDatabase.connect(url, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);

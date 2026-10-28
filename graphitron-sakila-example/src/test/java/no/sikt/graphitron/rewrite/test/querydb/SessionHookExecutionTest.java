@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
 import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord;
 import no.sikt.graphitron.generated.schema.SessionMountException;
@@ -11,11 +12,9 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.io.PrintWriter;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -60,7 +59,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @ExecutionTier
 class SessionHookExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;                 // superuser, out-of-band setup and cleanup (bypasses RLS)
     static String jdbcUrl;
     static final String PROBE_USER = "rls_probe_user";
@@ -68,19 +66,10 @@ class SessionHookExecutionTest {
 
     @BeforeAll
     static void startDatabase() throws SQLException {
-        var localUrl = System.getProperty("test.db.url");
-        String user, password;
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            user = System.getProperty("test.db.username", "postgres");
-            password = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            user = postgres.getUsername();
-            password = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        String user = SakilaDatabase.user();
+        String password = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, user, password);
 
         // A probe table with an RLS policy keyed on app.user_id, and a non-superuser role to
@@ -107,7 +96,6 @@ class SessionHookExecutionTest {
             exec("drop table if exists rls_probe");
             dropProbeRole();
         }
-        if (postgres != null) postgres.stop();
     }
 
     /**
@@ -528,7 +516,7 @@ class SessionHookExecutionTest {
     }
 
     private static Connection probeConnection() throws SQLException {
-        return DriverManager.getConnection(jdbcUrl, PROBE_USER, PROBE_PASSWORD);
+        return SakilaDatabase.connect(jdbcUrl, PROBE_USER, PROBE_PASSWORD);
     }
 
     private static List<String> notesVisible(Connection conn) throws SQLException {

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.ExecutionResult;
@@ -7,11 +8,8 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
-import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -50,30 +48,14 @@ class OptionalNodeIdProjectionExecutionTest {
     /** The films {@code init.sql} seeds, in {@code film_id} order. */
     private static final List<Integer> SEEDED_FILM_IDS = List.of(1, 2, 3, 4, 5);
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
 
     @BeforeAll
     static void startDatabase() {
-        String localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            dsl = DSL.using(localUrl,
-                System.getProperty("test.db.username", "postgres"),
-                System.getProperty("test.db.password", "postgres"));
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
-        graphql = Graphitron.newGraphQL().build();
-    }
+        dsl = SakilaDatabase.dsl();
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) {
-            postgres.stop();
-        }
+        graphql = Graphitron.newGraphQL().build();
     }
 
     /** The nullable leaf: the filter is required, the {@code @nodeId} inside it is not. */

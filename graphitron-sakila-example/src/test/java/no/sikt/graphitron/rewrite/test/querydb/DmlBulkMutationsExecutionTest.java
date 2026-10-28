@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.GraphQLContext;
@@ -12,10 +13,8 @@ import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.time.LocalDateTime;
 import java.util.List;
@@ -42,7 +41,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class DmlBulkMutationsExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static String dbUrl;
     static String dbUser;
@@ -52,19 +50,10 @@ class DmlBulkMutationsExecutionTest {
 
     @BeforeAll
     static void startDatabase() throws Exception {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            dbUrl = localUrl;
-            dbUser = System.getProperty("test.db.username", "postgres");
-            dbPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine")
-                .withInitScript("init.sql");
-            postgres.start();
-            dbUrl = postgres.getJdbcUrl();
-            dbUser = postgres.getUsername();
-            dbPassword = postgres.getPassword();
-        }
+        dbUrl = SakilaDatabase.url();
+        dbUser = SakilaDatabase.user();
+        dbPassword = SakilaDatabase.password();
+
         dsl = DSL.using(dbUrl, dbUser, dbPassword);
 
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
@@ -77,10 +66,6 @@ class DmlBulkMutationsExecutionTest {
         graphql = Graphitron.newGraphQL().build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     private Map<String, Object> execute(String query) {
         return execute(dsl, query);

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.GraphQLContext;
@@ -9,11 +10,8 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
-import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
 
@@ -43,29 +41,16 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 @ExecutionTier
 class FilmContextArgumentRoundTripTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
 
     @BeforeAll
     static void startDatabase() {
-        String localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            dsl = DSL.using(localUrl,
-                System.getProperty("test.db.username", "postgres"),
-                System.getProperty("test.db.password", "postgres"));
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
         graphql = Graphitron.newGraphQL().build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     @Test
     void factory_threadsUserIdThroughToServiceMethod() {

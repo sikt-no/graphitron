@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.multitenant.schema.GraphitronTransactionProvider.CommitPolicy;
 import no.sikt.graphitron.generated.multitenant.schema.RequestTenants;
@@ -12,12 +13,10 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
@@ -38,37 +37,27 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class TenantScatterExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;                 // default database, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         // Real database-per-tenant. tenant_2's film table stays deliberately empty: an empty
         // result is a Success carrying an empty value, distinct from Failed.
         for (String db : List.of("scatter_t1", "scatter_t2")) {
-            dsl.execute("drop database if exists " + db + " with (force)");
-            dsl.execute("create database " + db);
-            try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
+            SakilaDatabase.createTenantDatabase(db);
+            try (var tenant = DSL.using(SakilaDatabase.tenantUrl(db), jdbcUser, jdbcPassword)) {
                 tenant.execute("create table film (film_id int primary key, title text not null)");
                 TenantSessionFixture.installSessionObjects(tenant);
             }
         }
-        try (var t1 = DSL.using(tenantUrl("scatter_t1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("scatter_t1"), jdbcUser, jdbcPassword)) {
             t1.execute("insert into film values (1, 'Tenant One Film')");
         }
     }
@@ -76,10 +65,9 @@ class TenantScatterExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) {
-            dsl.execute("drop database if exists scatter_t1 with (force)");
-            dsl.execute("drop database if exists scatter_t2 with (force)");
+            SakilaDatabase.dropTenantDatabase("scatter_t1");
+            SakilaDatabase.dropTenantDatabase("scatter_t2");
         }
-        if (postgres != null) postgres.stop();
     }
 
     @Test
@@ -103,8 +91,8 @@ class TenantScatterExecutionTest {
             assertThat(outcomes)
                 .as("each worker ran on its own tenant's connection, under concurrency")
                 .allSatisfy(o -> assertThat(o).isInstanceOf(Outcome.Success.class));
-            assertThat(((Outcome.Success<String>) outcomes.get(0)).value()).isEqualTo("scatter_t1");
-            assertThat(((Outcome.Success<String>) outcomes.get(1)).value()).isEqualTo("scatter_t2");
+            assertThat(((Outcome.Success<String>) outcomes.get(0)).value()).isEqualTo(SakilaDatabase.tenantName("scatter_t1"));
+            assertThat(((Outcome.Success<String>) outcomes.get(1)).value()).isEqualTo(SakilaDatabase.tenantName("scatter_t2"));
         } finally {
             tenants.releaseAll();
         }
@@ -156,23 +144,19 @@ class TenantScatterExecutionTest {
 
     // ===== helpers =====
 
-    static String tenantUrl(String db) {
-        return jdbcUrl.replaceAll("/[^/?]+(\\?|$)", "/" + db + "$1");
-    }
-
     /**
      * A DataSource over {@code db} (or the default database when null), optionally counting
      * physical opens and closes so the leak assertion reads straight off the counters.
      */
     private static DataSource dataSource(String db, AtomicInteger opened, AtomicInteger closed) {
-        String url = db == null ? jdbcUrl : tenantUrl(db);
+        String url = db == null ? jdbcUrl : SakilaDatabase.tenantUrl(db);
         return (DataSource) Proxy.newProxyInstance(
             TenantScatterExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     if (opened != null) opened.incrementAndGet();
-                    Connection real = DriverManager.getConnection(url, jdbcUser, jdbcPassword);
+                    Connection real = SakilaDatabase.connect(url, jdbcUser, jdbcPassword);
                     return closed == null ? real : countingClose(real, closed);
                 }
                 return switch (method.getName()) {

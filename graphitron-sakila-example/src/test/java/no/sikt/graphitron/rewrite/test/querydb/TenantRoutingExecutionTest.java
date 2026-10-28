@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
 import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider.CommitPolicy;
 import no.sikt.graphitron.generated.schema.TenantConnections;
@@ -10,12 +11,10 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Map;
@@ -37,7 +36,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class TenantRoutingExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;                 // superuser, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -46,18 +44,10 @@ class TenantRoutingExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         dsl.execute("drop schema if exists tenant_a cascade");
@@ -76,7 +66,6 @@ class TenantRoutingExecutionTest {
             dsl.execute("drop schema if exists tenant_a cascade");
             dsl.execute("drop schema if exists tenant_b cascade");
         }
-        if (postgres != null) postgres.stop();
     }
 
     @Test
@@ -136,7 +125,7 @@ class TenantRoutingExecutionTest {
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     if (counter != null) counter.incrementAndGet();
-                    Connection c = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword);
+                    Connection c = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword);
                     try (Statement st = c.createStatement()) {
                         st.execute("set search_path to " + schema);
                     }

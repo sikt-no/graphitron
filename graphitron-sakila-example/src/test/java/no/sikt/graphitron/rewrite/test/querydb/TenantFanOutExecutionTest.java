@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.multitenant.Graphitron;
@@ -14,11 +15,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
@@ -46,7 +45,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class TenantFanOutExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;                 // default database, out-of-band setup/cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -57,18 +55,10 @@ class TenantFanOutExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         // Real database-per-tenant with disjoint rows. film_id doubles as the tenant id in the
@@ -77,9 +67,8 @@ class TenantFanOutExecutionTest {
         // fan-out language rows seeded into the default database below (the batched form's
         // untenanted parents).
         for (String db : List.of("fanout_t1", "fanout_t2")) {
-            dsl.execute("drop database if exists " + db + " with (force)");
-            dsl.execute("create database " + db);
-            try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
+            SakilaDatabase.createTenantDatabase(db);
+            try (var tenant = DSL.using(SakilaDatabase.tenantUrl(db), jdbcUser, jdbcPassword)) {
                 tenant.execute("create table film (film_id int primary key, title text not null,"
                     + " language_id int not null)");
                 tenant.execute("create table inventory (inventory_id serial primary key,"
@@ -89,7 +78,7 @@ class TenantFanOutExecutionTest {
                 TenantSessionFixture.installSessionObjects(tenant);
             }
         }
-        try (var t1 = DSL.using(tenantUrl("fanout_t1"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("fanout_t1"), jdbcUser, jdbcPassword)) {
             // Inserted in reverse film_id order on purpose, and every tenant's films point at
             // ONE shared language (901) whose id ranges interleave across tenants: t1 holds 10
             // and 30, t2 holds 20. That makes the batched child's ordering assertion able to
@@ -104,7 +93,7 @@ class TenantFanOutExecutionTest {
             // identifies which tenant's mount produced the handle it observed.
             t1.execute("alter sequence session_handle_seq restart with 1000");
         }
-        try (var t2 = DSL.using(tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
+        try (var t2 = DSL.using(SakilaDatabase.tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
             // 20 shares language 901 with tenant 1's films, which is what makes the ordering
             // contract observable; 40 sits alone under 902 so a second untenanted parent draws
             // its rows from a database the first parent's rows cannot come from, and a
@@ -132,10 +121,9 @@ class TenantFanOutExecutionTest {
     static void stopDatabase() {
         if (dsl != null) {
             dsl.execute("delete from language where language_id in (901, 902, 903)");
-            dsl.execute("drop database if exists fanout_t1 with (force)");
-            dsl.execute("drop database if exists fanout_t2 with (force)");
+            SakilaDatabase.dropTenantDatabase("fanout_t1");
+            SakilaDatabase.dropTenantDatabase("fanout_t2");
         }
-        if (postgres != null) postgres.stop();
     }
 
     @BeforeEach
@@ -476,8 +464,8 @@ class TenantFanOutExecutionTest {
      * run one at a time, so the rows are visible to nothing else and leave with the test.
      */
     private static void withTenantOwnedFilms(Runnable body) {
-        try (var t1 = DSL.using(tenantUrl("fanout_t1"), jdbcUser, jdbcPassword);
-             var t2 = DSL.using(tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
+        try (var t1 = DSL.using(SakilaDatabase.tenantUrl("fanout_t1"), jdbcUser, jdbcPassword);
+             var t2 = DSL.using(SakilaDatabase.tenantUrl("fanout_t2"), jdbcUser, jdbcPassword)) {
             t1.execute("insert into film values (1, 'T1 Own', 903)");
             t2.execute("insert into film values (2, 'T2 Own', 903)");
             try {
@@ -566,28 +554,24 @@ class TenantFanOutExecutionTest {
         assertThat(TENANT_2_OPENED.get()).isPositive();
     }
 
-    static String tenantUrl(String db) {
-        return jdbcUrl.replaceAll("/[^/?]+(\\?|$)", "/" + db + "$1");
-    }
-
     private static DataSource defaultDataSource() {
         return dataSource(jdbcUrl, null, null);
     }
 
     private static DataSource tenantDataSource(String db, AtomicInteger opened, AtomicBoolean down) {
-        return dataSource(tenantUrl(db), opened, down);
+        return dataSource(SakilaDatabase.tenantUrl(db), opened, down);
     }
 
     /** A DataSource whose acquisition hangs past the scatter deadline, then connects normally. */
     private static DataSource hangingDataSource(String db, long hangMillis) {
-        String url = tenantUrl(db);
+        String url = SakilaDatabase.tenantUrl(db);
         return (DataSource) Proxy.newProxyInstance(
             TenantFanOutExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     Thread.sleep(hangMillis);
-                    return DriverManager.getConnection(url, jdbcUser, jdbcPassword);
+                    return SakilaDatabase.connect(url, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);
@@ -608,7 +592,7 @@ class TenantFanOutExecutionTest {
                         throw new SQLException("tenant 2 is down");
                     }
                     if (opened != null) opened.incrementAndGet();
-                    return DriverManager.getConnection(url, jdbcUser, jdbcPassword);
+                    return SakilaDatabase.connect(url, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);

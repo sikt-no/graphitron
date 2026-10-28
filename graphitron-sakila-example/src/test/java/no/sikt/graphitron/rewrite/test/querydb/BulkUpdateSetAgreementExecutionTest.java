@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
@@ -7,11 +8,9 @@ import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
 import java.util.UUID;
@@ -48,7 +47,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class BulkUpdateSetAgreementExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
 
@@ -69,23 +67,11 @@ class BulkUpdateSetAgreementExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
         graphql = Graphitron.newGraphQL().build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     @AfterEach
     void cleanUp() {

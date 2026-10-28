@@ -1,7 +1,7 @@
 ---
 id: R863
 title: "Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it"
-status: Ready
+status: In Progress
 bucket: bug
 priority: 1
 theme: testing

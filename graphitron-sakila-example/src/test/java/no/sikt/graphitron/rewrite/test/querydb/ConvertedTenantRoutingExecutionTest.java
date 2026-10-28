@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.convertedtenant.Graphitron;
@@ -14,11 +15,9 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
-import java.sql.DriverManager;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -42,7 +41,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SuppressWarnings("unchecked")
 class ConvertedTenantRoutingExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -55,34 +53,25 @@ class ConvertedTenantRoutingExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         for (String db : List.of(DB_186, DB_1120)) {
-            dsl.execute("drop database if exists " + db + " with (force)");
-            dsl.execute("create database " + db);
-            try (var tenant = DSL.using(tenantUrl(db), jdbcUser, jdbcPassword)) {
+            SakilaDatabase.createTenantDatabase(db);
+            try (var tenant = DSL.using(SakilaDatabase.tenantUrl(db), jdbcUser, jdbcPassword)) {
                 tenant.execute("create domain org_code_domain as bigint");
                 tenant.execute("create table org_site (site_id int primary key,"
                     + " owner_org org_code_domain not null, issuer_org org_code_domain,"
                     + " site_name varchar(50) not null)");
             }
         }
-        try (var t = DSL.using(tenantUrl(DB_186), jdbcUser, jdbcPassword)) {
+        try (var t = DSL.using(SakilaDatabase.tenantUrl(DB_186), jdbcUser, jdbcPassword)) {
             t.execute("insert into org_site values (1, 186, 186, 'Tromsø main'), (2, 186, null, 'Tromsø annex')");
         }
-        try (var t = DSL.using(tenantUrl(DB_1120), jdbcUser, jdbcPassword)) {
+        try (var t = DSL.using(SakilaDatabase.tenantUrl(DB_1120), jdbcUser, jdbcPassword)) {
             t.execute("insert into org_site values (3, 1120, 1120, 'Trondheim main')");
         }
 
@@ -97,10 +86,9 @@ class ConvertedTenantRoutingExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) {
-            dsl.execute("drop database if exists " + DB_186 + " with (force)");
-            dsl.execute("drop database if exists " + DB_1120 + " with (force)");
+            SakilaDatabase.dropTenantDatabase(DB_186);
+            SakilaDatabase.dropTenantDatabase(DB_1120);
         }
-        if (postgres != null) postgres.stop();
     }
 
     @BeforeEach
@@ -225,20 +213,16 @@ class ConvertedTenantRoutingExecutionTest {
             .hasMessageContaining("'186'");
     }
 
-    private static String tenantUrl(String database) {
-        return jdbcUrl.replaceFirst("(jdbc:postgresql://[^/]+/)[^?]*", "$1" + database);
-    }
-
     /** A DataSource over one database counting acquisitions; {@code database} null is the main one. */
     private static DataSource countingDataSource(String database, AtomicInteger counter) {
-        String url = database == null ? jdbcUrl : tenantUrl(database);
+        String url = database == null ? jdbcUrl : SakilaDatabase.tenantUrl(database);
         return (DataSource) Proxy.newProxyInstance(
             ConvertedTenantRoutingExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     counter.incrementAndGet();
-                    return DriverManager.getConnection(url, jdbcUser, jdbcPassword);
+                    return SakilaDatabase.connect(url, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);

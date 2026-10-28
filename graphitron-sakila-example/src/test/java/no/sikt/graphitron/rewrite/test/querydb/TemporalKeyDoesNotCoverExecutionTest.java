@@ -1,15 +1,14 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.UniqueKey;
-import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.Assumptions;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Arrays;
 import java.util.List;
@@ -50,21 +49,12 @@ class TemporalKeyDoesNotCoverExecutionTest {
     /** The columns a two-hop path through this table would bind, the period column excluded. */
     private static final Set<String> BOUND_BY_THE_HOPS = Set.of("party_id", "team_id");
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
         Assumptions.assumeTrue(serverVersionNum() >= 180_000,
             "WITHOUT OVERLAPS needs PostgreSQL 18; this server cannot express the fixture");
         // A WITHOUT OVERLAPS primary key is a GiST exclusion constraint, and the scalar columns
@@ -85,7 +75,6 @@ class TemporalKeyDoesNotCoverExecutionTest {
     @AfterAll
     static void stopDatabase() {
         if (dsl != null) dsl.execute("DROP TABLE IF EXISTS " + TABLE);
-        if (postgres != null) postgres.stop();
     }
 
     /**

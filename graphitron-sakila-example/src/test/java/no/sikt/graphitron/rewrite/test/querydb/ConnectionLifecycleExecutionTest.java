@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
@@ -9,14 +10,11 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
-import java.sql.DriverManager;
 import java.util.Map;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -41,7 +39,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SuppressWarnings("unchecked")
 class ConnectionLifecycleExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;               // out-of-band, for setup and assertions
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
@@ -53,18 +50,10 @@ class ConnectionLifecycleExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         countingDataSource = countingDataSource();
@@ -72,10 +61,6 @@ class ConnectionLifecycleExecutionTest {
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     // ===== one connection per operation =====
 
@@ -167,7 +152,7 @@ class ConnectionLifecycleExecutionTest {
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     CONNECTIONS_OPENED.incrementAndGet();
-                    return DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword);
+                    return SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);

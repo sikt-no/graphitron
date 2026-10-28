@@ -1,15 +1,14 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.util.ConnectionResult;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Table;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.concurrent.atomic.AtomicInteger;
 
@@ -25,22 +24,13 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @ExecutionTier
 class BatchCountsExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.ExecuteListener() {
                 @Override
@@ -50,10 +40,6 @@ class BatchCountsExecutionTest {
             }));
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     /** {@code film_actor} rows of films 1 to 3 keyed by batch index {@code film_id - 1}. */
     private static Table<?> filmActorsByIndex() {

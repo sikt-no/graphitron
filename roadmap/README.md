@@ -14,7 +14,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 
 | ID | Item | Status | Updated | Plan |
 |---|---|---|---|---|
-| `R863` | Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it | Ready | 2026-10-28 <sub>created 2026-08-27</sub> | [plan](execution-tier-shared-db-cross-talk.md) |
+| `R863` | Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it | In Progress | 2026-10-28 <sub>created 2026-08-27</sub> | [plan](execution-tier-shared-db-cross-talk.md) |
 | `R876` | Expensive derived reads are a modelling defect: every rule needs an owner, and once ownership is computed the derivation gatherer is unearned and meta_materialize has no subject | In Progress | 2026-10-21 <sub>created 2026-08-28</sub> | [plan](derived-read-cost-is-a-shape-problem.md) |
 | `R1115` | A child returning a @table type on its parent's own table needs @reference, and @reference can name the table's own primary key | Spec | 2026-10-28 | [plan](same-table-table-child-without-reference-is-rejected.md) |
 | `R857` | A dev round refreshes what the edit touched <sub>blocked by: [warm-capture-empties-unpartitioned-catalog-relations](warm-capture-empties-unpartitioned-catalog-relations.md)</sub> | Spec | 2026-09-04 <sub>created 2026-08-27</sub> | [plan](refresh-what-the-edit-touched.md) |
@@ -823,7 +823,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### testing
 
-- `R863` [**Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it**](execution-tier-shared-db-cross-talk.md) — Ready, bug
+- `R863` [**Execution-tier tests cross-talk through the shared local-db instance, and trunk CI is red on it**](execution-tier-shared-db-cross-talk.md) — In Progress, bug
 - `R944` [**The read-cost gate fails on how loaded the machine is, which has held trunk CI red and the docs site undeployed since 2026-09-09**](read-cost-budget-floor-is-a-machine-fact.md) — Backlog, testing
 - `R892` [**A pipeline test pins a generated fetcher body with code strings**](generated-body-code-string-pins-in-single-record-payload-test.md) — Backlog, hygiene
 - `R561` [**ConditionGluePipelineTest still scans glue bodies for the shared decode-helper call**](condition-glue-pipeline-body-scans.md) — Backlog, test-quality

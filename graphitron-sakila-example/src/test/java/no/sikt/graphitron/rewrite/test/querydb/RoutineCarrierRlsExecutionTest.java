@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -9,10 +10,8 @@ import org.jooq.impl.DSL;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.Map;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -42,7 +41,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class RoutineCarrierRlsExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext superDsl;            // superuser: out-of-band setup, assertions, cleanup
     static String jdbcUrl;
     static GraphQL graphql;
@@ -51,19 +49,10 @@ class RoutineCarrierRlsExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        String user, password;
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            user = System.getProperty("test.db.username", "postgres");
-            password = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            user = postgres.getUsername();
-            password = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        String user = SakilaDatabase.user();
+        String password = SakilaDatabase.password();
+
         superDsl = DSL.using(jdbcUrl, user, password);
 
         // The table, routine and policy live in init.sql (the catalog needs them); the
@@ -86,9 +75,6 @@ class RoutineCarrierRlsExecutionTest {
             superDsl.execute("delete from secure_note");
             dropProbeRole();
         }
-        if (postgres != null) {
-            postgres.stop();
-        }
     }
 
     /**
@@ -109,7 +95,7 @@ class RoutineCarrierRlsExecutionTest {
     @Test
     @SuppressWarnings("unchecked")
     void secureNoteWrite_commitsARowTheCallerCannotRead_dataNullErrorsEmptyNoFieldError() throws Exception {
-        try (Connection conn = DriverManager.getConnection(jdbcUrl, PROBE_USER, PROBE_PASSWORD)) {
+        try (Connection conn = SakilaDatabase.connect(jdbcUrl, PROBE_USER, PROBE_PASSWORD)) {
             try (var st = conn.createStatement()) {
                 st.execute("set app.user_id = 'alice'");
             }
@@ -166,7 +152,7 @@ class RoutineCarrierRlsExecutionTest {
     void secureNoteWrite_ownerMatchingMountedIdentity_dataFieldReReadsTheRow() throws Exception {
         // The visibility control: the same write with an owner the caller's identity CAN read
         // proves the null above is the policy's doing, not a broken re-read.
-        try (Connection conn = DriverManager.getConnection(jdbcUrl, PROBE_USER, PROBE_PASSWORD)) {
+        try (Connection conn = SakilaDatabase.connect(jdbcUrl, PROBE_USER, PROBE_PASSWORD)) {
             try (var st = conn.createStatement()) {
                 st.execute("set app.user_id = 'alice'");
             }

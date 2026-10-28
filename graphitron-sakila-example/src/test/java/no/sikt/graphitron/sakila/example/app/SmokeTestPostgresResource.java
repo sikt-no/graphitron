@@ -1,49 +1,28 @@
 package no.sikt.graphitron.sakila.example.app;
 
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
-import org.testcontainers.postgresql.PostgreSQLContainer;
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * Wires a Postgres datasource for the Quarkus smoke test before the application boots.
- *
- * <p>If the surrounding build runs under {@code -Plocal-db}, surefire passes
- * {@code -Dtest.db.url=...} and we forward those as Quarkus datasource system properties so
- * the booting app picks them up. Otherwise, start a Testcontainers Postgres with
- * {@code init.sql} from {@code graphitron-sakila-db}; this matches the behaviour of the
- * in-process query-to-database tests and avoids spinning a second Postgres for the smoke
- * check.
+ * Wires the shared Sakila test database into the Quarkus smoke test before the application boots,
+ * forwarding {@link SakilaDatabase}'s connection as Quarkus datasource properties.
  */
 public class SmokeTestPostgresResource implements QuarkusTestResourceLifecycleManager {
-
-    private PostgreSQLContainer container;
 
     @Override
     public Map<String, String> start() {
         Map<String, String> overrides = new HashMap<>();
-        String localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            overrides.put("quarkus.datasource.jdbc.url", localUrl);
-            overrides.put("quarkus.datasource.username",
-                System.getProperty("test.db.username", "postgres"));
-            overrides.put("quarkus.datasource.password",
-                System.getProperty("test.db.password", "postgres"));
-        } else {
-            container = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            container.start();
-            overrides.put("quarkus.datasource.jdbc.url", container.getJdbcUrl());
-            overrides.put("quarkus.datasource.username", container.getUsername());
-            overrides.put("quarkus.datasource.password", container.getPassword());
-        }
+        overrides.put("quarkus.datasource.jdbc.url", SakilaDatabase.url());
+        overrides.put("quarkus.datasource.username", SakilaDatabase.user());
+        overrides.put("quarkus.datasource.password", SakilaDatabase.password());
         return overrides;
     }
 
     @Override
     public void stop() {
-        if (container != null) {
-            container.stop();
-        }
+        // The database belongs to SakilaDatabase and lives as long as the JVM.
     }
 }

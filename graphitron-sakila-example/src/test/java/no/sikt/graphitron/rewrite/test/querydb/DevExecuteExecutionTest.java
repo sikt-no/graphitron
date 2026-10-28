@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
@@ -9,15 +10,12 @@ import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
 import org.jooq.tools.json.JSONValue;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.util.Map;
 import java.util.UUID;
 
@@ -52,35 +50,19 @@ class DevExecuteExecutionTest {
     static final String CLAIMS = "{\"sub\":\"test-user\"}";
     static final String USER_ID = "test-user";
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;               // out-of-band, for independent no-trace assertions
     static String jdbcUrl, jdbcUser, jdbcPassword;
     static GraphQL inAppEngine;
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
         inAppEngine = Graphitron.runtime(simpleDataSource(), SQLDialect.POSTGRES)
             .newGraphQL(Graphitron.buildSchema(b -> {})).build();
-    }
-
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) {
-            postgres.stop();
-        }
     }
 
     @Test
@@ -96,7 +78,7 @@ class DevExecuteExecutionTest {
             + "{ filmId castMembers { actorId actor { firstName } } } }";
 
         String devResult;
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             devResult = GraphitronDevExecutor.execute(
                 connection, "POSTGRES", query, null, CLAIMS, Map.of("userId", USER_ID));
         }
@@ -121,7 +103,7 @@ class DevExecuteExecutionTest {
             "id", no.sikt.graphitron.generated.federated.util.NodeIdEncoder.encode("Customer", 1)));
 
         String result;
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = no.sikt.graphitron.generated.federated.GraphitronDevExecutor.execute(
                 connection, "POSTGRES", query, Map.of("reps", reps), CLAIMS, Map.of());
         }
@@ -133,7 +115,7 @@ class DevExecuteExecutionTest {
     void variables_bindThroughTheExecutor() throws Exception {
         String query = "query($ids: [ID]) { filmById(film_id: $ids) { filmId title } }";
         String result;
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
                 connection, "POSTGRES", query, Map.of("ids", java.util.List.of("1")),
                 CLAIMS, Map.of("userId", USER_ID));
@@ -149,7 +131,7 @@ class DevExecuteExecutionTest {
             """.formatted(title);
 
         String result;
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
                 connection, "POSTGRES", mutation, null, CLAIMS, Map.of("userId", USER_ID));
         }
@@ -179,7 +161,7 @@ class DevExecuteExecutionTest {
             """.formatted(good, bad);
 
         String result;
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
                 connection, "POSTGRES", mutation, null, CLAIMS, Map.of("userId", USER_ID));
         }
@@ -198,7 +180,7 @@ class DevExecuteExecutionTest {
     void missingClaims_failLoudAtTheExecutorGate_namingTheConfigKnob() throws Exception {
         // This module configures <sessionState>, so the emitted executor requires a claims
         // payload rather than running under a different security posture than production.
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             assertThatThrownBy(() -> GraphitronDevExecutor.execute(
                     connection, "POSTGRES", "{ films { filmId } }", null, null, Map.of("userId", USER_ID)))
                 .isInstanceOf(IllegalStateException.class)
@@ -214,7 +196,7 @@ class DevExecuteExecutionTest {
         // rejection propagates as the routine's own error verbatim, proof the claims string
         // travelled untouched through the executor all the way to the real hook. (Inside
         // execution the error router would redact it behind a correlation id.)
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             assertThatThrownBy(() -> GraphitronDevExecutor.execute(
                     connection, "POSTGRES", "{ films { filmId } }", null,
                     "{\"sub\": \"reject-me\"}", Map.of("userId", USER_ID)))
@@ -228,7 +210,7 @@ class DevExecuteExecutionTest {
             DevExecuteExecutionTest.class.getClassLoader(),
             new Class<?>[] {DataSource.class},
             (proxy, method, args) -> switch (method.getName()) {
-                case "getConnection" -> DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword);
+                case "getConnection" -> SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword);
                 case "hashCode" -> System.identityHashCode(proxy);
                 case "equals" -> proxy == args[0];
                 case "toString" -> "simpleDataSource";

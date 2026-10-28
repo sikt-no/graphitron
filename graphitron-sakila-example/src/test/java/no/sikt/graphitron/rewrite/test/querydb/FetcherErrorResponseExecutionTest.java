@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
 import graphql.schema.DataFetchingEnvironment;
@@ -14,14 +15,11 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
-import java.sql.DriverManager;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -44,7 +42,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class FetcherErrorResponseExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static String jdbcUrl;
     static String jdbcUser;
@@ -58,24 +55,16 @@ class FetcherErrorResponseExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
         dataSource = (DataSource) Proxy.newProxyInstance(
             FetcherErrorResponseExecutionTest.class.getClassLoader(),
             new Class<?>[]{DataSource.class},
             (proxy, method, args) -> switch (method.getName()) {
-                case "getConnection" -> DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword);
+                case "getConnection" -> SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword);
                 case "hashCode" -> System.identityHashCode(proxy);
                 case "equals" -> proxy == args[0];
                 case "toString" -> "fetcherErrorResponseDataSource";
@@ -83,10 +72,6 @@ class FetcherErrorResponseExecutionTest {
             });
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     // ===== the hooks under test =====
 

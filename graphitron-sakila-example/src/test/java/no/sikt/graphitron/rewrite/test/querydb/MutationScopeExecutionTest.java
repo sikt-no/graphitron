@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
@@ -11,15 +12,12 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.SQLDialect;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import javax.sql.DataSource;
 import java.lang.reflect.Proxy;
-import java.sql.DriverManager;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -46,7 +44,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 @SuppressWarnings("unchecked")
 class MutationScopeExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;               // out-of-band, for assertions and cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
     static final AtomicInteger CONNECTIONS_OPENED = new AtomicInteger();
@@ -58,27 +55,15 @@ class MutationScopeExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
         runtime = Graphitron.runtime(countingDataSource(), SQLDialect.POSTGRES);
         graphql = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     @AfterEach
     void cleanUp() {
@@ -300,7 +285,7 @@ class MutationScopeExecutionTest {
             (proxy, method, args) -> {
                 if (method.getName().equals("getConnection")) {
                     CONNECTIONS_OPENED.incrementAndGet();
-                    return DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword);
+                    return SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword);
                 }
                 return switch (method.getName()) {
                     case "hashCode" -> System.identityHashCode(proxy);

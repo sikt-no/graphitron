@@ -1,15 +1,13 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.schema.GraphQLScalarType;
 import no.sikt.graphitron.generated.multischemamutation.Graphitron;
 import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionClaimsRecord;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
-import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.Map;
 
@@ -43,27 +41,14 @@ import static org.assertj.core.api.InstanceOfAssertFactories.MAP;
 @ExecutionTier
 class BuiltInScalarRegistrationExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            dsl = DSL.using(localUrl,
-                System.getProperty("test.db.username", "postgres"),
-                System.getProperty("test.db.password", "postgres"));
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     @Test
     void connectionOnlyBuiltInScalars_assembleAndServeThePaginationSurface() {

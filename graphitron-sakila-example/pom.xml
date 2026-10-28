@@ -261,7 +261,8 @@
 
     <profiles>
         <!-- Connect execution tests to a pre-existing PostgreSQL instead of TestContainers.
-             Caller is responsible for running init.sql against the target database beforehand.
+             Caller is responsible for running init.sql against the target database beforehand;
+             the tests and the code generator both read it.
              test.db.url / username / password are overridable via -D so CI environments
              (e.g. the GitLab publish job's postgres service) can point at a non-localhost host. -->
         <profile>

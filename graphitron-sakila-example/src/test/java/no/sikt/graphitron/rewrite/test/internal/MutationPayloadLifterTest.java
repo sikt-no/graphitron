@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.internal;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
 import graphql.schema.DataFetchingEnvironment;
@@ -7,11 +8,8 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
-import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -40,24 +38,14 @@ import static org.assertj.core.api.Assertions.assertThat;
 @ExecutionTier
 class MutationPayloadLifterTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
 
     @BeforeAll
     static void startDatabase() throws Exception {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine")
-                .withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
 
         dsl.configuration().set(new org.jooq.impl.DefaultExecuteListenerProvider(
             new org.jooq.ExecuteListener() {
@@ -70,10 +58,6 @@ class MutationPayloadLifterTest {
         graphql = Graphitron.newGraphQL().build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query) {        var input = Graphitron.newExecutionInput(dsl, "{}", "test-user").query(query).build();

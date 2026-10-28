@@ -1,15 +1,14 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ExecutionResult;
 import graphql.GraphQL;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -34,7 +33,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 @SuppressWarnings("unchecked")
 class EmptyPatchUpdateExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
     /** The write transaction's end markers, {@code commit} or {@code rollback}, in order. */
@@ -45,16 +43,8 @@ class EmptyPatchUpdateExecutionTest {
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
         dsl.configuration().set(new org.jooq.impl.DefaultTransactionListenerProvider(
             new org.jooq.TransactionListener() {
                 @Override public void commitEnd(org.jooq.TransactionContext ctx) { TX_END.add("commit"); }
@@ -63,10 +53,6 @@ class EmptyPatchUpdateExecutionTest {
         graphql = Graphitron.newGraphQL().build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     private static ExecutionResult executeRaw(String query) {
         TX_END.clear();

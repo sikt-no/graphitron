@@ -160,11 +160,21 @@ Generated code run against a real PostgreSQL: one generated fetcher or rows meth
 *Where:* two modules.
 
 * `graphitron`, for the code a fixture schema generates, tested where it is generated. Each fact scenario, a document under `graphitron-model/src/test/resources/facts/scenarios`, is run in `generate-test-sources` as a generating run would run it: a `RunContext` declaring the output coordinates, captured by `GraphitronStore.captured` and generated from what it captured, over the document text and classpath corpus `FactExpectationTest` checks (`FactDocuments`), by the `GenerateTestSchemas` launcher rather than the Maven plugin, into its own package under `target/generated-test-sources/graphitron` (`no.sikt.graphitron.generated.facts.<name>`, each hyphen an underscore), and plain JUnit tests call the generated classes, typed and checked by the compiler against what was emitted. A scenario is added by adding the document, and one stating a `@withConfiguration` is not generated; the classes it names must be on the test classpath before the test sources compile, so its services live in `graphitron-sakila-service`. The fact folder says what each document is: `scenarios` generate and the store records no defect for them, `defects` never generate and always store one, `incremental-captures` are graphs read in steps, and `undecided` makes no claim and only shrinks; `FactExpectationTest` holds each folder to its claim. A scenario the generator rejects stops the module's test compilation, and is a defect the store does not record. Canonical class: `ChildOutcomeExecutionTest`.
-* `graphitron-sakila-example`, for the plugin path, the Java 17 compile, the Quarkus and HTTP wiring and federation. Canonical classes: `GraphQLQueryTest` on the shared fixture; `FederationEntitiesDispatchTest` on the federated fixture.
+* `graphitron-sakila-example`, for the plugin path, the Java 17 compile, the Quarkus and HTTP wiring and federation. Canonical classes: `GraphQLQueryTest` on the Sakila fixture; `FederationEntitiesDispatchTest` on the federated fixture.
 
 Run with `mvn test -pl <module> -Plocal-db` in the web sandbox, or without the profile where Docker runs Testcontainers.
 
 *The database:* one per test JVM, `TestDatabase` in `graphitron`: the database `-Dtest.db.url` names, as `-Plocal-db` sets it, else `postgres:18-alpine` in Testcontainers seeded from the sakila `init.sql`. Never mocked, and never reset between tests, so tests are resilient rather than isolated: a test reads the seeded catalog rows, which no test deletes, a test that writes reads back only rows under keys it chose, and nothing asserts on how many rows a table holds.
+
+*Where an execution test gets its database:* in `graphitron-sakila-example`, from `SakilaDatabase` and nowhere else. It is the one place that reads `test.db.*`, starts the container or composes a JDBC URL: `url()`, `user()`, `password()` and `dsl()` for the shared database, `connect(...)` for a test that opens connections itself, and `tenantUrl(stem)` with `createTenantDatabase(stem)` and `dropTenantDatabase(stem)` for a test that needs databases of its own. A tenant database is named `<stem>_<run token>`, so two runs against one server do not collide on a fixed cluster-scoped name. `SakilaDatabaseGuardTest` fails the build on a container, a `test.db.*` read, a `DriverManager` connection or a `jdbc:postgresql:` literal anywhere else in the module's test sources.
+
+*The rule for both modules.* Every class shares the database and writes to it while others read, so a test is correct on a database other tests write to at the same moment:
+
+* Seeded rows, the ones `init.sql` inserts, are read-only. A test that needs to change a row inserts its own and changes that.
+* A writer inserts under keys it chose (a marker title, an id it allocated) and deletes by key.
+* A reader asserts over rows it can name, seeded keys or keys it wrote, and never over a table's cardinality, its tail, or two reads taken at different instants over a range a sibling can write into.
+
+No guard can tell a whole-table count from a filtered one, so review holds this rule. Running the execution tier at a higher class parallelism, or two runs at once against one server, surfaces a test that breaks it faster than CI hits the interleaving.
 
 Patterns:
 

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider;
 import no.sikt.graphitron.generated.schema.GraphitronTransactionProvider.CommitPolicy;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -11,10 +12,8 @@ import org.jooq.impl.DefaultConfiguration;
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.sql.Connection;
-import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicReference;
@@ -37,24 +36,15 @@ import static org.assertj.core.api.Assertions.catchThrowable;
 @ExecutionTier
 class TransactionProviderExecutionTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;                 // out-of-band setup, observation and cleanup
     static String jdbcUrl, jdbcUser, jdbcPassword;
 
     @BeforeAll
     static void startDatabase() {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            jdbcUrl = localUrl;
-            jdbcUser = System.getProperty("test.db.username", "postgres");
-            jdbcPassword = System.getProperty("test.db.password", "postgres");
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine").withInitScript("init.sql");
-            postgres.start();
-            jdbcUrl = postgres.getJdbcUrl();
-            jdbcUser = postgres.getUsername();
-            jdbcPassword = postgres.getPassword();
-        }
+        jdbcUrl = SakilaDatabase.url();
+        jdbcUser = SakilaDatabase.user();
+        jdbcPassword = SakilaDatabase.password();
+
         dsl = DSL.using(jdbcUrl, jdbcUser, jdbcPassword);
 
         dsl.execute("drop schema if exists tx_provider cascade");
@@ -67,12 +57,11 @@ class TransactionProviderExecutionTest {
         if (dsl != null) {
             dsl.execute("drop schema if exists tx_provider cascade");
         }
-        if (postgres != null) postgres.stop();
     }
 
     @Test
     void nestedCommitOverAnAbortedTransaction_surfaces_andTheEnclosingTransactionRecovers() throws SQLException {
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             var provider = new GraphitronTransactionProvider(connection, CommitPolicy.COMMIT);
             DSLContext ctx = DSL.using(new DefaultConfiguration()
                 .set(connection)
@@ -122,7 +111,7 @@ class TransactionProviderExecutionTest {
 
     @Test
     void nestedOpenOverAnAbortedTransaction_failsAlone_andTheEnclosingScopeRollsBackOnce() throws SQLException {
-        try (Connection connection = DriverManager.getConnection(jdbcUrl, jdbcUser, jdbcPassword)) {
+        try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             var provider = new GraphitronTransactionProvider(connection, CommitPolicy.COMMIT);
             DSLContext ctx = DSL.using(new DefaultConfiguration()
                 .set(connection)

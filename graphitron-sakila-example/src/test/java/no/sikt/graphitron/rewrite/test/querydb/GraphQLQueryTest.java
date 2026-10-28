@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.test.querydb;
 
+import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import graphql.ErrorType;
 import graphql.ExecutionInput;
 import graphql.GraphQL;
@@ -9,11 +10,9 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
-import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 import java.util.List;
 import java.util.Map;
@@ -40,24 +39,14 @@ import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 @SuppressWarnings("unchecked") // GraphQL responses are Map<String, Object>; casts to typed shapes are inherent to the assertion style
 class GraphQLQueryTest {
 
-    static PostgreSQLContainer postgres;
     static DSLContext dsl;
     static GraphQL graphql;
     static final AtomicInteger QUERY_COUNT = new AtomicInteger();
 
     @BeforeAll
     static void startDatabase() throws Exception {
-        var localUrl = System.getProperty("test.db.url");
-        if (localUrl != null) {
-            var user = System.getProperty("test.db.username", "postgres");
-            var pass = System.getProperty("test.db.password", "postgres");
-            dsl = DSL.using(localUrl, user, pass);
-        } else {
-            postgres = new PostgreSQLContainer("postgres:18-alpine")
-                .withInitScript("init.sql");
-            postgres.start();
-            dsl = DSL.using(postgres.getJdbcUrl(), postgres.getUsername(), postgres.getPassword());
-        }
+        dsl = SakilaDatabase.dsl();
+
 
         // Count JDBC round-trips via an ExecuteListener. Tests that care (DataLoader batching)
         // call QUERY_COUNT.set(0) before executing and assert on the count afterward.
@@ -72,10 +61,6 @@ class GraphQLQueryTest {
         graphql = Graphitron.newGraphQL().build();
     }
 
-    @AfterAll
-    static void stopDatabase() {
-        if (postgres != null) postgres.stop();
-    }
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query) {
@@ -8369,9 +8354,16 @@ class GraphQLQueryTest {
         // assign it. The service reads endorsed_film back from the persisted row: the decoded Film id (3)
         // landed on the FK child column.
         String filmId3 = no.sikt.graphitron.generated.util.NodeIdEncoder.encode("Film", 3);
-        Map<String, Object> data = execute(
-            "mutation { endorseFilm(in: {filmId: \"" + filmId3 + "\", note: \"great\"}) }");
-        assertThat(data).extractingByKey("endorseFilm").isEqualTo("endorsed_film=3");
+        String note = "great-" + java.util.UUID.randomUUID();
+        try {
+            Map<String, Object> data = execute(
+                "mutation { endorseFilm(in: {filmId: \"" + filmId3 + "\", note: \"" + note + "\"}) }");
+            assertThat(data).extractingByKey("endorseFilm").isEqualTo("endorsed_film=3");
+        } finally {
+            // The service inserts a row; delete it by the marker note so it leaks nowhere.
+            dsl.deleteFrom(DSL.table("film_endorsement"))
+                .where(DSL.field("note", String.class).eq(note)).execute();
+        }
     }
 
     @Test
@@ -8414,8 +8406,14 @@ class GraphQLQueryTest {
         // (changed=false) rather than throwing on the null identity (skip-not-throw). The
         // @service owns the INSERT; the database assigns the serial PK, which jOOQ refreshes
         // back. The only tier that can observe the changed=false → unset PK → DB-assigned outcome.
-        Map<String, Object> data = execute("mutation { upsertAddress(in: {}) }");
-        assertThat(data).extractingByKey("upsertAddress").isEqualTo("omitted: pkAssignedByDb=true");
+        try {
+            Map<String, Object> data = execute("mutation { upsertAddress(in: {}) }");
+            assertThat(data).extractingByKey("upsertAddress").isEqualTo("omitted: pkAssignedByDb=true");
+        } finally {
+            // The service inserts a row under a fixed marker; delete it so it leaks nowhere.
+            dsl.deleteFrom(DSL.table("address"))
+                .where(DSL.field("address", String.class).eq("record-service fixture address")).execute();
+        }
     }
 
     @Test
@@ -10100,30 +10098,32 @@ class GraphQLQueryTest {
     @SuppressWarnings("unchecked")
     void updateFilmWithErrors_existingFilm_returnsTheUpdatedRow() {
         // A single-row UPDATE whose key matches a row: the payload carries the updated row and
-        // a null errors list.
-        String original = dsl.select(DSL.field("title", String.class)).from(DSL.table("film"))
-            .where(DSL.field("film_id", Integer.class).eq(1)).fetchOne(0, String.class);
+        // a null errors list. The row is this test's own, so seeded film 1 stays read-only.
         String title = "UPD-OK-" + java.util.UUID.randomUUID();
+        Integer filmId = dsl.insertInto(DSL.table("film"),
+                DSL.field("title", String.class), DSL.field("language_id", Integer.class))
+            .values("UPD-OK-BEFORE-" + title, 1)
+            .returningResult(DSL.field("film_id", Integer.class))
+            .fetchOne(0, Integer.class);
         try {
             var rawResult = executeRaw("""
                 mutation {
-                    updateFilmWithErrors(in: { filmId: 1, title: "%s" }) {
+                    updateFilmWithErrors(in: { filmId: %d, title: "%s" }) {
                         film { filmId title }
                         errors { __typename }
                     }
                 }
-                """.formatted(title));
+                """.formatted(filmId, title));
             assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
             Map<String, Object> data = rawResult.getData();
             var payload = assertThat(data).extractingByKey("updateFilmWithErrors", as(MAP));
             payload.containsEntry("errors", null);
             payload.extractingByKey("film", as(MAP))
-                .containsEntry("filmId", 1)
+                .containsEntry("filmId", filmId)
                 .containsEntry("title", title);
         } finally {
-            dsl.update(DSL.table("film"))
-                .set(DSL.field("title", String.class), original)
-                .where(DSL.field("film_id", Integer.class).eq(1))
+            dsl.deleteFrom(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).eq(filmId))
                 .execute();
         }
     }
