@@ -4788,6 +4788,17 @@ class GraphQLQueryTest {
     void allOptionalListOfInputFilter_elementGivingNothingMatchesEveryRow() {
         assertThat(filmIdsOf("filmsByOptionalLanguages", "(filter: {languages: [{}]})"))
             .containsExactly(1, 2, 3, 4, 5);
+        // Beside an element that matches nothing, the empty element must still match every film:
+        // read as jOOQ's noCondition() it would drop out of the OR and leave language 2 alone.
+        assertThat(filmIdsOf("filmsByOptionalLanguages", "(filter: {languages: [{languageId: 2}, {}]})"))
+            .containsExactly(1, 2, 3, 4, 5);
+    }
+
+    @Test
+    void partialListOfInputFilter_absentOrEmptyListAppliesNoFilter() {
+        assertThat(filmIdsOf("filmsByLanguagePairs", "")).containsExactly(1, 2, 3, 4, 5);
+        assertThat(filmIdsOf("filmsByLanguagePairs", "(filter: {})")).containsExactly(1, 2, 3, 4, 5);
+        assertThat(filmIdsOf("filmsByLanguagePairs", "(filter: {pairs: []})")).containsExactly(1, 2, 3, 4, 5);
     }
 
     @Test
