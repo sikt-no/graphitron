@@ -4,6 +4,7 @@ import no.sikt.graphitron.command.CarrierDsl;
 import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.NullCheck;
+import no.sikt.graphitron.command.PresenceProbe;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
 import no.sikt.graphitron.rewrite.model.Presence;
@@ -120,10 +121,29 @@ class RootNullContractPipelineTest {
             assertThat(probe.alias()).isEqualTo("__p_Query$film");
             assertThat(probe.columnLeaves()).hasSize(1);
             // One term per reference the type holds; the inline and the @splitQuery one both probe.
-            assertThat(probe.terms()).hasSize(2).allSatisfy(term -> {
+            assertThat(probe.terms()).hasSize(2).allSatisfy(t -> {
+                var term = (no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists) t;
                 assertThat(term.reach().size()).isEqualTo(1);
                 assertThat(term.targetColumns()).extracting(c -> c.sqlName()).containsExactly("name");
             });
+        });
+    }
+
+    @Test
+    void anchoredSingle_typeHoldingAComputedField_carriesItsNullTermInTheProbe() {
+        var relation = produce("""
+            type RatedFilm @table(name: "film") {
+                title: String
+                rating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            }
+            type Query { ratedFilm(title: String @field(name: "title")): RatedFilm }
+            """);
+        var check = (NullCheck.Collapses) checkOf(relation, "Query", "ratedFilm");
+        assertThat(leafNames(check)).containsExactly(List.of("title"));
+        assertThat(check.probe()).hasValueSatisfying(probe -> {
+            assertThat(probe.alias()).isEqualTo("__p_Query$ratedFilm");
+            assertThat(probe.terms()).singleElement().isInstanceOfSatisfying(PresenceProbe.ProbeTerm.NotNull.class,
+                t -> assertThat(t.method().methodName()).isEqualTo("rating"));
         });
     }
 

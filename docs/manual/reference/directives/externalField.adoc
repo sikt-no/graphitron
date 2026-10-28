@@ -93,6 +93,8 @@ type FilmCardWrapper {
 
 The field may share its name with a column on the parent table. The computed value is projected and read back under a reserved alias rather than under the field's name, so the field returns the method's value, and other fields on the type (for example one declared with xref:field.adoc[`@field(name: ...)`]) still read the column.
 
+A scalar or enum `@externalField` counts toward whether the object holding it resolves to `null`, as a column does: an object whose fields are all such expressions, or columns and such expressions, resolves to `null` when every one of them is. See xref:../../how-to/map-types-to-tables.adoc#single-object-null[When a single object resolves to `null`]. An `@externalField` returning an object type keeps the object holding it an object.
+
 == See also
 
 * xref:reference.adoc[`@reference`] is the FK-driven counterpart, choose it when the value comes from a chain of catalog joins, choose `@externalField` when the value is a custom expression or a typed lift.

@@ -9,6 +9,7 @@ import no.sikt.graphitron.command.LauncherCommand;
 import no.sikt.graphitron.command.Ordering;
 import no.sikt.graphitron.command.ProjectionCommand;
 import no.sikt.graphitron.command.NullCheck;
+import no.sikt.graphitron.command.PresenceProbe;
 import no.sikt.graphitron.command.ResultShape;
 import no.sikt.graphitron.command.TenantStrategy;
 import no.sikt.graphitron.command.UnitRef;
@@ -459,10 +460,13 @@ public final class PlanCompileGraph {
                 }
                 switch (row.result()) {
                     // A collapsing check's probe calls each probed field's condition glue, a
-                    // generated unit, from the launcher; a hop filter names a consumer class.
+                    // generated unit, from the launcher; a hop filter names a consumer class, and
+                    // a null term's @externalField helper is consumer code, so neither is an edge.
                     case ResultShape.SingleRecord single -> {
                         if (single.check() instanceof NullCheck.Collapses collapses) {
                             collapses.probe().ifPresent(probe -> probe.terms().stream()
+                                .filter(PresenceProbe.ProbeTerm.Exists.class::isInstance)
+                                .map(PresenceProbe.ProbeTerm.Exists.class::cast)
                                 .filter(term -> term.filter() != null)
                                 .forEach(term -> precise(owner, term.filter().method().owner())));
                         }

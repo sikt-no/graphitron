@@ -547,7 +547,7 @@ public final class FetcherEmitter {
         return no.sikt.graphitron.render.PresenceFragments.check(
             CodeBlock.of("$T.$L", CatalogRefs.constantsClass(table), table.javaFieldName()),
             contract.columnLeaves().stream().map(Presence.PresenceLeaf.Columns::columns).toList(),
-            contract.probes().isEmpty()
+            contract.probed().isEmpty()
                 ? java.util.Optional.empty()
                 : java.util.Optional.of(no.sikt.graphitron.command.ReservedAliases.presenceProbe(
                     field.parentTypeName(), field.name())),

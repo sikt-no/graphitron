@@ -16,6 +16,10 @@ import java.util.Optional;
  * ({@link ChildField.TableField}, {@link ChildField.BatchedTableField},
  * {@link ChildField.SameRowTableField}), whose leaves are its return type's
  * ({@link no.sikt.graphitron.rewrite.GraphitronSchema#presenceOf}).
+ *
+ * <p>A leaf is a column of the object's own row, a reference or list probed by a correlated
+ * existence test, or a scalar {@code @externalField}: its method returns a SQL expression over
+ * the parent's own row, so its value is decided in the same statement as the columns.
  */
 public final class Presence {
 
@@ -54,11 +58,20 @@ public final class Presence {
     }
 
     /**
-     * One value an object carries that can prove the object non-empty: either columns of the
-     * object's own row ({@link Columns}) or a correlated existence test over a field's own join
-     * path ({@link Probe}).
+     * One value an object carries that can prove the object non-empty: columns of the object's
+     * own row ({@link Columns}), a correlated existence test over a field's own join path
+     * ({@link Probe}), or a scalar {@code @externalField}'s expression over the own row
+     * ({@link Computed}). The last two are {@link Probed}: the fetcher reads them through one
+     * projected probe column rather than one by one.
      */
     public sealed interface PresenceLeaf {
+
+        /**
+         * A leaf the presence probe column carries, one disjunct each; a {@link Columns} leaf is
+         * read off the row instead. A collapsing contract has a probe column exactly when it holds
+         * one of these ({@link NullContract#probed}).
+         */
+        sealed interface Probed extends PresenceLeaf permits Probe, Computed {}
 
         /**
          * Own-row columns, present when every column is non-null. A plain column leaf is one
@@ -86,7 +99,7 @@ public final class Presence {
          * field of either shape blocks the collapse instead ({@link SubtreePresence#over}).
          */
         record Probe(ChildField field, List<JoinStep> joinPath, List<WhereFilter> filters,
-                List<ColumnRef> targetColumns) implements PresenceLeaf {
+                List<ColumnRef> targetColumns) implements Probed {
             public Probe {
                 Objects.requireNonNull(field, "field");
                 joinPath = List.copyOf(joinPath);
@@ -101,6 +114,32 @@ public final class Presence {
                     throw new IllegalArgumentException(
                         "a presence probe cannot run through a database routine; '"
                         + field.qualifiedName() + "' does");
+                }
+            }
+        }
+
+        /**
+         * A scalar {@code @externalField}, present when its expression, called over the object's
+         * own row, is non-null. The method runs at generation time and returns a SQL expression
+         * over the row, so the probe column calls it there as the field's own projection does.
+         *
+         * <p>The field's join path is empty and its return is a
+         * {@link ReturnTypeRef.ScalarReturnType}: a joined computed field is not emitted, and an
+         * object-returning one grounds its return as a result type, whose presence is its own
+         * object's question. Either blocks the collapse instead ({@link SubtreePresence#over}).
+         */
+        record Computed(ChildField.ComputedField field) implements Probed {
+            public Computed {
+                Objects.requireNonNull(field, "field");
+                if (!field.joinPath().isEmpty()) {
+                    throw new IllegalArgumentException(
+                        "a computed presence leaf reads the own row; '" + field.qualifiedName()
+                        + "' has a join path");
+                }
+                if (!(field.returnType() instanceof ReturnTypeRef.ScalarReturnType)) {
+                    throw new IllegalArgumentException(
+                        "a computed presence leaf requires a ScalarReturnType return; '"
+                        + field.qualifiedName() + "' returns " + field.returnType().getClass().getSimpleName());
                 }
             }
         }
@@ -130,9 +169,12 @@ public final class Presence {
          *       {@code @splitQuery}, and a list of a table type taking no arguments, is a
          *       {@link PresenceLeaf.Probe}. A {@code @splitQuery} child probes only when it shares
          *       its parent's connection ({@link TypeFields#sharesParentConnection}).</li>
+         *   <li>A scalar {@code @externalField} on the own row is a {@link PresenceLeaf.Computed}
+         *       leaf.</li>
          *   <li>A nesting child contributes its own leaves.</li>
          *   <li>Everything else blocks: a list taking arguments, a connection, a polymorphic or
-         *       service child, an {@code @externalField}, a {@code @pivot} child, a field reached
+         *       service child, an {@code @externalField} returning an object type or reached over
+         *       a join path, a {@code @pivot} child, a field reached
          *       through a routine, an uncorrelated read of the own table, a {@code @splitQuery}
          *       child fetched on another tenant's or a global connection, and a
          *       {@link ChildField.SameRowTableField}, which is what terminates a same-table
@@ -166,6 +208,13 @@ public final class Presence {
                             return new Blocked(child);
                         }
                         leaves.add(probe.get());
+                    }
+                    case ChildField.ComputedField cf -> {
+                        if (!cf.joinPath().isEmpty()
+                                || !(cf.returnType() instanceof ReturnTypeRef.ScalarReturnType)) {
+                            return new Blocked(child);
+                        }
+                        leaves.add(new PresenceLeaf.Computed(cf));
                     }
                     case ChildField.NestingField inner -> {
                         switch (over(inner.nestedFields(), types)) {
@@ -292,14 +341,18 @@ public final class Presence {
                 .toList();
         }
 
-        /** The {@link PresenceLeaf.Probe} leaves of a collapsing contract, empty otherwise. */
-        default List<PresenceLeaf.Probe> probes() {
+        /**
+         * The {@link PresenceLeaf.Probed} leaves of a collapsing contract, in leaf order, empty
+         * otherwise: what the presence probe column carries, so the contract has a probe column
+         * exactly when this is non-empty.
+         */
+        default List<PresenceLeaf.Probed> probed() {
             if (!(this instanceof CollapsesWhenAbsent c)) {
                 return List.of();
             }
             return c.leaves().stream()
-                .filter(PresenceLeaf.Probe.class::isInstance)
-                .map(PresenceLeaf.Probe.class::cast)
+                .filter(PresenceLeaf.Probed.class::isInstance)
+                .map(PresenceLeaf.Probed.class::cast)
                 .toList();
         }
 
@@ -325,8 +378,8 @@ public final class Presence {
             /**
              * The object holds a child whose absence no presence leaf decides: a list taking
              * arguments, a connection, a polymorphic or {@code @service} child, an
-             * {@code @externalField}, a field reached through a database routine, or a
-             * same-table child. Whether it holds anything depends on the query or on code outside
+             * {@code @externalField} returning an object type, a field reached through a database
+             * routine, or a same-table child. Whether it holds anything depends on the query or on code outside
              * the table's rows. Graphitron 9 counted some of these toward the collapse; this is a
              * documented divergence.
              */

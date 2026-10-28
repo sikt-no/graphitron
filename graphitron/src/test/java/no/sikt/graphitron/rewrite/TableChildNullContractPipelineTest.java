@@ -3,10 +3,12 @@ package no.sikt.graphitron.rewrite;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.LaunchSource;
+import no.sikt.graphitron.command.PresenceProbe;
 import no.sikt.graphitron.model.diagnostics.ValidationError;
 import no.sikt.graphitron.plan.ConditionCommands;
 import no.sikt.graphitron.plan.LauncherCommands;
 import no.sikt.graphitron.rewrite.model.ChildField;
+import no.sikt.graphitron.rewrite.model.Presence;
 import no.sikt.graphitron.rewrite.model.Presence.NullContract;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
@@ -50,8 +52,8 @@ class TableChildNullContractPipelineTest {
         var inline = contractOf(schema, "language");
         assertThat(inline).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c -> {
             assertThat(c.presenceColumns()).extracting(col -> col.sqlName()).containsExactly("name");
-            assertThat(c.probes()).singleElement()
-                .satisfies(p -> assertThat(p.field().name()).isEqualTo("films"));
+            assertThat(c.probed()).singleElement()
+                .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe.class, p -> assertThat(p.field().name()).isEqualTo("films"));
         });
         // @splitQuery is a delivery choice: the same type, the same contract.
         assertThat(contractOf(schema, "languageSplit")).isEqualTo(inline);
@@ -71,7 +73,7 @@ class TableChildNullContractPipelineTest {
             assertThat(p.alias()).isEqualTo("__p_Film$language");
             assertThat(p.columnLeaves()).singleElement()
                 .satisfies(l -> assertThat(l).extracting(c -> c.sqlName()).containsExactly("name"));
-            assertThat(p.terms()).singleElement().satisfies(t -> {
+            assertThat(p.terms()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists.class, t -> {
                 assertThat(t.reach().size()).isEqualTo(1);
                 assertThat(t.targetColumns()).isEmpty();
             });
@@ -99,7 +101,7 @@ class TableChildNullContractPipelineTest {
         assertThat(chain.presence()).extracting(c -> c.sqlName()).containsExactly("name");
         assertThat(chain.probe()).hasValueSatisfying(p -> {
             assertThat(p.alias()).isEqualTo("__p_Film$languageSplit");
-            assertThat(p.terms()).singleElement().satisfies(t -> assertThat(t.reach().size()).isEqualTo(1));
+            assertThat(p.terms()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists.class, t -> assertThat(t.reach().size()).isEqualTo(1));
         });
     }
 
@@ -117,6 +119,50 @@ class TableChildNullContractPipelineTest {
             """);
         assertThat(new GraphitronSchemaValidator().validate(schema).stream().map(ValidationError::message))
             .anySatisfy(m -> assertThat(m).contains("shared across 'Content' and 'Film'"));
+    }
+
+    private static final String COMPUTED_SDL = """
+        type RatedFilm @table(name: "film") {
+            title: String
+            rating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+        }
+        type Inventory @table(name: "inventory") {
+            film: RatedFilm @reference(path: [{key: "inventory_film_id_fkey"}])
+            filmSplit: RatedFilm @splitQuery @reference(path: [{key: "inventory_film_id_fkey"}])
+        }
+        type Query { inventories: [Inventory!]! }
+        """;
+
+    @Test
+    void childHoldingAColumnAndAComputedField_bothCarriersCarryTheColumnAndTheNullTerm() {
+        var schema = TestSchemaHelper.buildSchema(COMPUTED_SDL);
+        var contract = schema.nullContractOf((ChildField) schema.field("Inventory", "film"));
+        assertThat(contract).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c -> {
+            assertThat(c.presenceColumns()).extracting(col -> col.sqlName()).containsExactly("title");
+            assertThat(c.probed()).singleElement().isInstanceOfSatisfying(Presence.PresenceLeaf.Computed.class,
+                l -> assertThat(l.field().name()).isEqualTo("rating"));
+        });
+
+        var multiset = (CallWrap.Multiset) ((Contribution.Call) ProjectionRenderTestSupport.contribution(
+            schema, DEFAULT_OUTPUT_PACKAGE, "Inventory", "film")).wrap();
+        assertThat(multiset.presence()).extracting(c -> c.sqlName()).containsExactly("title");
+        assertThat(multiset.probe()).hasValueSatisfying(p -> {
+            assertThat(p.alias()).isEqualTo("__p_Inventory$film");
+            assertThat(p.columnLeaves()).singleElement()
+                .satisfies(l -> assertThat(l).extracting(c -> c.sqlName()).containsExactly("title"));
+            assertThat(p.terms()).singleElement().isInstanceOfSatisfying(PresenceProbe.ProbeTerm.NotNull.class,
+                t -> assertThat(t.method().methodName()).isEqualTo("rating"));
+        });
+
+        var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
+        var chain = (LaunchSource.CorrelatedChain) LauncherCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE)
+            .rowFor("Inventory", "filmSplit").orElseThrow().source();
+        assertThat(chain.presence()).extracting(c -> c.sqlName()).containsExactly("title");
+        assertThat(chain.probe()).hasValueSatisfying(p -> {
+            assertThat(p.alias()).isEqualTo("__p_Inventory$filmSplit");
+            assertThat(p.terms()).singleElement().isInstanceOfSatisfying(PresenceProbe.ProbeTerm.NotNull.class,
+                t -> assertThat(t.method().methodName()).isEqualTo("rating"));
+        });
     }
 
     private static CallWrap.Multiset multiset(GraphitronSchema schema, String field) {

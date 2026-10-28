@@ -280,9 +280,7 @@ public final class ProjectionUnitRenderer {
             };
             case SelectTerm.HelperCall h ->
                 // Alias by the runtime result key so aliased duplicate selections stay distinct.
-                CodeBlock.of("$T.$L(table).as($L)",
-                    ClassName.bestGuess(h.method().className()), h.method().methodName(),
-                    rkAlias);
+                CodeBlock.of("$L.as($L)", ExternalFieldCall.of(h.method(), "table"), rkAlias);
             case SelectTerm.ScalarSubselect s -> {
                 var aliases = PathFragments.generateAliases(s.path());
                 declareHopAliases(argHelpers, preamble, s.path(), aliases, "            ");

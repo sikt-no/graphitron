@@ -25,7 +25,10 @@ import static org.assertj.core.api.Assertions.assertThat;
  * {@code nb}; host 1 carries both columns, host 2 neither, host 3 only {@code nb}. A reference
  * counts by the row it reaches: {@code PivotNestingHost.origin} is a {@code HostOrigin} holding
  * only references from {@code pivot_nesting_host.language_id}, which reaches a language on host 1
- * and nothing on hosts 2 and 3. The references-and-lists cases over a join column that is always
+ * and nothing on hosts 2 and 3. A scalar {@code @externalField} counts as a column does:
+ * {@code labelsComputed}, its same-row twin {@code labelsComputedRow}, and {@code labelsMixed} (one
+ * column, one {@code @externalField}) read the same two columns through expressions, and agree with
+ * {@code labels} on every host. The references-and-lists cases over a join column that is always
  * set are {@code TableChildNullContractExecutionTest}'s.
  */
 @ExecutionTier
@@ -119,5 +122,48 @@ class NestingNullContractExecutionTest {
         assertThat(byObject.get(1).get("origin")).isNotNull();
         assertThat(byScalar.get(2)).containsEntry("origin", null);
         assertThat(byObject.get(2)).containsEntry("origin", null);
+    }
+
+    @Test
+    void computedOnlyWrapper_withEveryExpressionNull_resolvesToNull() {
+        var byId = hosts("labelsComputed { nn nb }");
+        assertThat(byId.get(2)).containsEntry("labelsComputed", null);
+        var host3 = (Map<String, Object>) byId.get(3).get("labelsComputed");
+        assertThat(host3).containsEntry("nn", null).containsEntry("nb", "nb-only");
+        var host1 = (Map<String, Object>) byId.get(1).get("labelsComputed");
+        assertThat(host1).containsEntry("nn", "nn-vert").containsEntry("nb", "nb-vert");
+    }
+
+    @Test
+    void computedPresence_isDecidedOverEveryField_notTheSelection() {
+        // Selecting nn alone still evaluates nb in the check: host 3 carries nb only and stays an
+        // object, host 2 carries neither and is null, as under the full selection.
+        var byId = hosts("labelsComputed { nn }");
+        assertThat(byId.get(2)).containsEntry("labelsComputed", null);
+        assertThat((Map<String, Object>) byId.get(3).get("labelsComputed")).isNotNull().containsEntry("nn", null);
+    }
+
+    @Test
+    void computedOnlySameRowTwin_agreesWithTheNestingType() {
+        var byId = hosts("labelsComputedRow { nn nb }");
+        assertThat(byId.get(2)).containsEntry("labelsComputedRow", null);
+        assertThat((Map<String, Object>) byId.get(3).get("labelsComputedRow"))
+            .containsEntry("nn", null).containsEntry("nb", "nb-only");
+        assertThat((Map<String, Object>) byId.get(1).get("labelsComputedRow"))
+            .containsEntry("nn", "nn-vert").containsEntry("nb", "nb-vert");
+        assertThat(hosts("labelsComputedRow { nn }").get(2)).containsEntry("labelsComputedRow", null);
+    }
+
+    @Test
+    void columnAndComputedWrapper_agreesWithTheColumnWrapperOnEveryHost() {
+        var mixed = hosts("labelsMixed { nn nb }");
+        var columns = hosts("labels { nn nb }");
+        for (var hostId : List.of(1, 2, 3)) {
+            assertThat(mixed.get(hostId).get("labelsMixed")).as("host " + hostId)
+                .isEqualTo(columns.get(hostId).get("labels"));
+        }
+        // Selecting the column alone, the computed nb still keeps host 3 an object.
+        assertThat((Map<String, Object>) hosts("labelsMixed { nn }").get(3).get("labelsMixed"))
+            .isNotNull().containsEntry("nn", null);
     }
 }

@@ -7,9 +7,11 @@ import no.sikt.graphitron.rewrite.generators.schema.FetcherRegistrationsEmitter;
 import no.sikt.graphitron.rewrite.generators.util.TypeSpecAssertions;
 import no.sikt.graphitron.rewrite.model.ChildField;
 import no.sikt.graphitron.rewrite.model.ChildField.NestingField;
+import no.sikt.graphitron.rewrite.model.Presence;
 import no.sikt.graphitron.rewrite.model.Presence.NullContract;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
+import no.sikt.graphitron.command.PresenceProbe;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -194,6 +196,37 @@ class NestingFieldPipelineTest {
         assertThat(splice(RELEASE_SDL, "Film", "release").probe()).isEmpty();
     }
 
+    private static final String COMPUTED_NESTING_SDL = """
+        type Film @table(name: "film") { labels: FilmLabels }
+        type FilmLabels {
+            rating: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "rating"})
+            any: String @externalField(reference: {className: "no.sikt.graphitron.rewrite.TestExternalFieldStub", method: "anyTable"})
+        }
+        type Query { film: Film }
+        """;
+
+    @Test
+    void wrapperOfComputedFieldsOnly_collapsesThroughNullTermsAlone() {
+        // The sis ResultatAlleSprak shape: every field a scalar @externalField over the parent's
+        // row. The fetcher reads the probe column exactly when the contract has probed leaves, and
+        // checks no column leaf first since there is none.
+        assertThat(contractOf(COMPUTED_NESTING_SDL, "Film", "labels")).isInstanceOfSatisfying(
+            NullContract.CollapsesWhenAbsent.class, c -> {
+                assertThat(c.columnLeaves()).isEmpty();
+                assertThat(c.probed()).extracting(l -> ((Presence.PresenceLeaf.Computed) l).field().name())
+                    .containsExactly("rating", "any");
+            });
+        var nf = (NestingField) TestSchemaHelper.buildSchema(COMPUTED_NESTING_SDL).field("Film", "labels");
+        assertThat(nf.parentRowColumns()).isEmpty();
+        var probe = splice(COMPUTED_NESTING_SDL, "Film", "labels").probe().orElseThrow();
+        assertThat(probe.alias()).isEqualTo("__p_Film$labels");
+        assertThat(probe.columnLeaves()).isEmpty();
+        assertThat(probe.terms())
+            .allSatisfy(t -> assertThat(t).isInstanceOf(PresenceProbe.ProbeTerm.NotNull.class))
+            .extracting(t -> ((PresenceProbe.ProbeTerm.NotNull) t).method().methodName())
+            .containsExactly("rating", "anyTable");
+    }
+
     private static final String LIST_NESTING_SDL = """
         type Actor @table(name: "actor") { firstName: String @field(name: "FIRST_NAME") }
         type FilmInfo {
@@ -209,7 +242,7 @@ class NestingFieldPipelineTest {
         // The phd shape: an object of columns and a list resolves to null when the columns are
         // null and the list is empty, so the list is a probe over its own two-hop path.
         assertThat(contractOf(LIST_NESTING_SDL, "Film", "info")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
-            c -> assertThat(c.probes()).singleElement().satisfies(p -> {
+            c -> assertThat(c.probed()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe.class, p -> {
                 assertThat(p.field()).isInstanceOf(ChildField.TableField.class);
                 assertThat(p.joinPath()).hasSize(2);
                 assertThat(p.targetColumns()).isEmpty();
@@ -217,7 +250,7 @@ class NestingFieldPipelineTest {
         var probe = splice(LIST_NESTING_SDL, "Film", "info").probe().orElseThrow();
         assertThat(probe.alias()).isEqualTo("__p_Film$info");
         assertThat(probe.columnLeaves()).extracting(l -> l.get(0).sqlName()).containsExactly("release_year");
-        assertThat(probe.terms()).singleElement().satisfies(t -> {
+        assertThat(probe.terms()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists.class, t -> {
             assertThat(t.reach().size()).isEqualTo(2);
             assertThat(t.filter()).isNull();
             assertThat(t.targetColumns()).isEmpty();
@@ -247,7 +280,7 @@ class NestingFieldPipelineTest {
     @Test
     void splitQueryChild_probesExactlyAsItsInlineForm() {
         assertThat(contractOf(SPLIT_NESTING_SDL, "Film", "info")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
-            c -> assertThat(c.probes()).singleElement().satisfies(p -> {
+            c -> assertThat(c.probed()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe.class, p -> {
                 assertThat(p.field()).isInstanceOf(ChildField.BatchedTableField.class);
                 assertThat(p.joinPath()).hasSize(2);
             }));
@@ -273,7 +306,7 @@ class NestingFieldPipelineTest {
         // referenced row holding a non-null column of Language.
         assertThat(nf.parentRowColumns()).extracting(c -> c.sqlName()).containsExactly("release_year");
         var probe = splice(sdl, "Film", "info").probe().orElseThrow();
-        assertThat(probe.terms()).singleElement().satisfies(t -> {
+        assertThat(probe.terms()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists.class, t -> {
             assertThat(t.reach().size()).isEqualTo(1);
             assertThat(t.targetColumns()).extracting(c -> c.sqlName()).containsExactly("name");
         });
@@ -294,7 +327,7 @@ class NestingFieldPipelineTest {
         assertThat(nf.parentRowColumns()).isEmpty();
         var probe = splice(sdl, "Address", "info").probe().orElseThrow();
         assertThat(probe.columnLeaves()).isEmpty();
-        assertThat(probe.terms()).singleElement().satisfies(t -> {
+        assertThat(probe.terms()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists.class, t -> {
             assertThat(t.reach().size()).isEqualTo(2);
             assertThat(t.targetColumns()).extracting(c -> c.sqlName()).containsExactly("country");
         });
@@ -311,8 +344,8 @@ class NestingFieldPipelineTest {
             type Query { film: Film }
             """;
         assertThat(contractOf(sdl, "Film", "info")).isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class,
-            c -> assertThat(c.probes()).singleElement()
-                .satisfies(p -> assertThat(p.field().name()).isEqualTo("spoken")));
+            c -> assertThat(c.probed()).singleElement()
+                .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe.class, p -> assertThat(p.field().name()).isEqualTo("spoken")));
     }
 
     private static final String SHARED_INNER_REFERENCE_SDL = """

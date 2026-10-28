@@ -21,6 +21,7 @@ import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
 import no.sikt.graphitron.rewrite.model.OrderBySpec;
 import no.sikt.graphitron.rewrite.model.ParamSource;
+import no.sikt.graphitron.rewrite.model.Presence;
 import no.sikt.graphitron.rewrite.model.ReturnTypeRef;
 import no.sikt.graphitron.model.jooq.TableRef;
 import org.junit.jupiter.api.Test;
@@ -469,6 +470,40 @@ class NestingFieldValidationTest {
             .contains(
                 "Nested type 'FilmDetails' shared across 'Film' and 'Advertisement': field 'actors' "
                     + "classifies as BatchedTableField which is not yet supported across multiple parents");
+    }
+
+    /** A {@code Table<?>}-typed {@code @externalField} returning a {@code String}, on {@code FilmNames}. */
+    private static ComputedField nameIn(String name) {
+        return new ComputedField("FilmNames", name, null,
+            new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
+            List.of(),
+            TestFixtures.staticServiceMethodRef("com.example.FilmExtensions", name,
+                ParameterizedTypeName.get(ClassName.get("org.jooq", "Field"), ClassName.get(String.class)),
+                List.of(new MethodRef.Param.Typed("table", "org.jooq.Table", new ParamSource.Table(new ParamSource.Table.TableSlot.Wildcard())))),
+            AliasOwner.shared(), no.sikt.graphitron.rewrite.model.AliasScope.spliced());
+    }
+
+    private static NestingField namesUnder(TableRef anchor) {
+        return new NestingField("FilmDetails", "names", null,
+            new ReturnTypeRef.TableBoundReturnType("FilmNames", anchor, new FieldWrapper.Single(true)),
+            List.of(nameIn("en"), nameIn("nb")));
+    }
+
+    @Test
+    void multiParentCompat_innerWrapperOfComputedFields_validatesAndCollapsesAtBothSites() {
+        // The sis ResultatAlleSprak shape one level down: the inner wrapper's fetcher lives once on
+        // the shared type, so both sites must collapse over the same leaves. Its computed leaves
+        // compare by field name, and each site's probe calls the Table<?> method over its own row.
+        var filmNames = namesUnder(FILM_TABLE);
+        var adNames = namesUnder(ADVERTISEMENT_TABLE);
+        var schema = twoParentSchema(List.of(filmNames), List.of(adNames));
+        assertThat(validate(schema)).extracting(ValidationError::message).isEmpty();
+        for (var site : List.of(filmNames, adNames)) {
+            assertThat(site.nullContract(Presence.TypeFields.none()))
+                .isInstanceOfSatisfying(Presence.NullContract.CollapsesWhenAbsent.class, c ->
+                    assertThat(c.leaves()).extracting(l -> ((Presence.PresenceLeaf.Computed) l).field().name())
+                        .containsExactly("en", "nb"));
+        }
     }
 
     /** A Table-sourced {@code @splitQuery} leaf, the shape the catch-all still defers. */

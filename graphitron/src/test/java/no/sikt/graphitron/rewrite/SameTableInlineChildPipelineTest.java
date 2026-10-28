@@ -286,14 +286,14 @@ class SameTableInlineChildPipelineTest {
 
             assertThat(contractOf(schema, "cast"))
                 .isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c ->
-                    assertThat(c.probes()).singleElement()
-                        .satisfies(p -> assertThat(p.field().name()).isEqualTo("actors")));
+                    assertThat(c.probed()).singleElement()
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe.class, p -> assertThat(p.field().name()).isEqualTo("actors")));
             var wrap = (CallWrap.SameRow) ((Contribution.Call) ProjectionRenderTestSupport.contribution(
                 schema, DEFAULT_OUTPUT_PACKAGE, "Film", "cast")).wrap();
             assertThat(wrap.presence()).extracting(c -> c.sqlName()).containsExactly("title");
             assertThat(wrap.probe()).hasValueSatisfying(p -> {
                 assertThat(p.alias()).isEqualTo("__p_Film$cast");
-                assertThat(p.terms()).singleElement().satisfies(t -> assertThat(t.reach().size()).isEqualTo(2));
+                assertThat(p.terms()).singleElement().isInstanceOfSatisfying(no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists.class, t -> assertThat(t.reach().size()).isEqualTo(2));
             });
         }
 
@@ -322,8 +322,8 @@ class SameTableInlineChildPipelineTest {
                 .isInstanceOfSatisfying(NullContract.CollapsesWhenAbsent.class, c -> {
                     assertThat(c.presenceColumns()).extracting(col -> col.sqlName())
                         .containsExactly("title", "description");
-                    assertThat(c.probes()).singleElement()
-                        .satisfies(p -> assertThat(p.targetColumns()).extracting(col -> col.sqlName())
+                    assertThat(c.probed()).singleElement()
+                        .isInstanceOfSatisfying(no.sikt.graphitron.rewrite.model.Presence.PresenceLeaf.Probe.class, p -> assertThat(p.targetColumns()).extracting(col -> col.sqlName())
                             .containsExactly("name"));
                 });
         }

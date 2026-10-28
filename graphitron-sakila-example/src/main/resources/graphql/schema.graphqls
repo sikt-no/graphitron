@@ -6262,6 +6262,9 @@ type PivotNestingHost @table(name: "pivot_nesting_host") {
     origin: HostOrigin
     labelsRow: HostLabelsRow
     labelsWithFilms: HostLabelsWithFilms
+    labelsComputed: HostLabelsComputed
+    labelsComputedRow: HostLabelsComputedRow
+    labelsMixed: HostLabelsMixed
 }
 
 # The table-type twin of HostLabels, returned on its own by Query.hostLabelRows: reached from
@@ -6288,6 +6291,38 @@ type HostLabelsWithFilms @table(name: "pivot_nesting_host") {
 type HostLabels {
     nn: String
     nb: String
+}
+
+# HostLabels with every field an @externalField over the same two columns (sis's ResultatAlleSprak
+# shape): a scalar @externalField counts toward the null contract as a column does, so the nullable
+# field resolves to null on the same hosts as labels.
+type HostLabelsComputed {
+    nn: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nn"
+    })
+    nb: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nb"
+    })
+}
+
+# The table-type twin of HostLabelsComputed, reached from PivotNestingHost.labelsComputedRow as a
+# same-row child: the same null contract through the same-row arm.
+type HostLabelsComputedRow @table(name: "pivot_nesting_host") {
+    nn: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nn"
+    })
+    nb: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nb"
+    })
+}
+
+# One column and one @externalField: the object is absent when both are null, so it agrees with
+# labels on every host.
+type HostLabelsMixed {
+    nn: String
+    nb: String @externalField(reference: {
+        className: "no.sikt.graphitron.rewrite.test.extensions.PivotNestingHostExtensions", method: "nb"
+    })
 }
 
 # The null contract of a single-object child, over presence_host and its presence_detail and

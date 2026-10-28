@@ -24,7 +24,8 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  * list-wrapped one never does, and a child no leaf decides blocks the collapse for its own wrapper
  * and every enclosing one. Columns are {@link PresenceLeaf.Columns} leaves; a single reference,
  * inline or {@code @splitQuery}, keyed or predicate-joined, and an argument-free list are
- * {@link PresenceLeaf.Probe} leaves over the field's own join path and filters.
+ * {@link PresenceLeaf.Probe} leaves over the field's own join path and filters; a scalar
+ * {@code @externalField} on the own row is a {@link PresenceLeaf.Computed} leaf.
  */
 @UnitTier
 class PresenceTest {
@@ -38,7 +39,11 @@ class PresenceTest {
     private static final ColumnRef COUNTRY_ID = TestFixtures.col("country_id", "COUNTRY_ID", "java.lang.Integer");
     private static final ColumnRef NAME = TestFixtures.col("name", "NAME", "java.lang.String");
 
-    /** {@code Language}: a type of columns only, so an object reference to it probes them. */
+    /**
+     * {@code Language}: a type of columns only, so an object reference to it probes them.
+     * {@code LanguageWithFilms} also holds a scalar {@code @externalField}, which a probe's target
+     * columns do not carry.
+     */
     private static final TypeFields TYPES = typeName -> switch (typeName) {
         case "Language" -> List.of(new ChildField.ColumnBackedField("Language", "name", null,
             List.of(NAME), new CallSiteCompaction.Direct()));
@@ -61,11 +66,27 @@ class PresenceTest {
             new CallSiteCompaction.NodeIdEncodeKeys(encode));
     }
 
-    private static ChildField computed(String name) {
-        return new ChildField.ComputedField("Release", name, null,
-            new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)), List.of(),
+    private static ChildField.ComputedField computed(String name) {
+        return computed(name, new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)), List.of());
+    }
+
+    private static ChildField.ComputedField computed(String name, ReturnTypeRef returnType, List<JoinStep> path) {
+        return new ChildField.ComputedField("Release", name, null, returnType, path,
             TestFixtures.staticOnlyMethodRef("test.Helpers", name, ClassName.get(String.class)),
             AliasOwner.shared(), AliasScope.spliced());
+    }
+
+    /** A {@code Field<LanguageRecord>} lift: an {@code @externalField} returning an object type. */
+    private static ChildField.ComputedField objectComputed(String name) {
+        return computed(name, new ReturnTypeRef.ResultReturnType("Language", new FieldWrapper.Single(true),
+            "test.LanguageRecord", TestFixtures.languageTable()), List.of());
+    }
+
+    /** A list taking arguments: its emptiness depends on the query, so it blocks. */
+    private static ChildField.TableField pagedList(String name) {
+        var pagination = new PaginationSpec(new PaginationSpec.PaginationArg("Int", false), null, null, null);
+        return reference(name, "Language", new FieldWrapper.List(true, true),
+            List.of(languageHop()), List.of(), pagination);
     }
 
     private static JoinStep.Hop fkHop(List<ColumnRef> source, TableRef target, List<ColumnRef> targetSide,
@@ -187,7 +208,7 @@ class PresenceTest {
 
     @Test
     void otherChild_blocksTheWrapperNamingThatChild() {
-        var blocker = computed("label");
+        var blocker = pagedList("languages");
         var nf = nullable("release", column("year", YEAR), blocker);
         assertThat(SubtreePresence.over(nf.nestedFields(), TYPES)).isEqualTo(new SubtreePresence.Blocked(blocker));
         assertThat(contract(nf)).isEqualTo(blockedBy(blocker));
@@ -196,7 +217,7 @@ class PresenceTest {
 
     @Test
     void blockedInnerNesting_blocksEveryEnclosingWrapper() {
-        var blocker = computed("label");
+        var blocker = pagedList("languages");
         var inner = nonNull("inner", column("minutes", LENGTH), blocker);
         var middle = nullable("middle", inner);
         var outer = nullable("release", column("year", YEAR), middle);
@@ -221,11 +242,13 @@ class PresenceTest {
 
     @Test
     void objectReferenceWhoseTargetHoldsMoreThanColumns_countsItsRowsExistence() {
+        // LanguageWithFilms holds a scalar @externalField beside its column: the probe does not
+        // carry its expression into the terminal row, so the row's existence alone counts.
         var reference = reference("language", "LanguageWithFilms", new FieldWrapper.Single(true),
             List.of(languageHop()), List.of(), null);
         var nf = nullable("release", reference);
-        assertThat(contract(nf).probes()).singleElement()
-            .satisfies(p -> assertThat(p.targetColumns()).isEmpty());
+        assertThat(contract(nf).probed()).singleElement()
+            .isInstanceOfSatisfying(PresenceLeaf.Probe.class, p -> assertThat(p.targetColumns()).isEmpty());
     }
 
     @Test
@@ -250,8 +273,8 @@ class PresenceTest {
         var reference = singleReference("language",
             TestFixtures.conditionJoin(condition, TestFixtures.languageTable(), "lang_0"));
         var nf = nullable("release", column("year", YEAR), reference);
-        assertThat(contract(nf).probes()).singleElement()
-            .satisfies(p -> assertThat(p.field()).isSameAs(reference));
+        assertThat(contract(nf).probed()).singleElement()
+            .isInstanceOfSatisfying(PresenceLeaf.Probe.class, p -> assertThat(p.field()).isSameAs(reference));
     }
 
     @Test
@@ -280,7 +303,7 @@ class PresenceTest {
         assertThat(nf.nullContract(otherConnection)).isEqualTo(blockedBy(split));
         // An inline reference needs no connection of its own and still probes.
         var inline = nullable("release", singleReference("originalLanguage", languageHop()));
-        assertThat(inline.nullContract(otherConnection).probes()).hasSize(1);
+        assertThat(inline.nullContract(otherConnection).probed()).hasSize(1);
     }
 
     @Test
@@ -288,7 +311,8 @@ class PresenceTest {
         var list = listReference("languages", languageHop());
         var splitList = splitReference("splitLanguages", new FieldWrapper.List(true, true));
         var nf = nullable("release", column("year", YEAR), list, splitList);
-        assertThat(contract(nf).probes())
+        assertThat(contract(nf).probed())
+            .map(PresenceLeaf.Probe.class::cast)
             .extracting(PresenceLeaf.Probe::field, PresenceLeaf.Probe::targetColumns)
             .containsExactly(
                 org.assertj.core.groups.Tuple.tuple(list, List.of()),
@@ -299,8 +323,8 @@ class PresenceTest {
     void referenceInAnInnerNestingField_reachesTheOuterContract() {
         var reference = singleReference("originalLanguage", languageHop());
         var nf = nullable("release", column("year", YEAR), nonNull("origin", reference));
-        assertThat(contract(nf).probes()).singleElement()
-            .satisfies(p -> assertThat(p.field()).isSameAs(reference));
+        assertThat(contract(nf).probed()).singleElement()
+            .isInstanceOfSatisfying(PresenceLeaf.Probe.class, p -> assertThat(p.field()).isSameAs(reference));
         assertThat(nf.parentRowColumns()).containsExactly(YEAR);
     }
 
@@ -308,18 +332,83 @@ class PresenceTest {
     void probeTargetColumns_needATypeLookup_butNothingElseDoes() {
         var nf = nullable("release", column("year", YEAR), singleReference("originalLanguage", languageHop()));
         var withoutTypes = nf.nullContract(TypeFields.none());
-        assertThat(withoutTypes.probes()).singleElement()
-            .satisfies(p -> assertThat(p.targetColumns()).isEmpty());
+        assertThat(withoutTypes.probed()).singleElement()
+            .isInstanceOfSatisfying(PresenceLeaf.Probe.class, p -> assertThat(p.targetColumns()).isEmpty());
         assertThat(withoutTypes.presenceColumns()).isEqualTo(contract(nf).presenceColumns());
+    }
+
+    // ===== Computed leaves =====
+
+    @Test
+    void computedFieldsOnly_collapseWithOneComputedLeafEach() {
+        var en = computed("en");
+        var nb = computed("nb");
+        var nf = nullable("names", en, nb);
+        assertThat(contract(nf)).isEqualTo(new NullContract.CollapsesWhenAbsent(List.of(
+            new PresenceLeaf.Computed(en), new PresenceLeaf.Computed(nb))));
+        // The expressions ride the probe column, not the parent row's column demand.
+        assertThat(nf.parentRowColumns()).isEmpty();
+    }
+
+    @Test
+    void columnAndComputedField_collapseOverBoth() {
+        var label = computed("label");
+        var nf = nullable("release", column("year", YEAR), label);
+        assertThat(contract(nf)).isEqualTo(new NullContract.CollapsesWhenAbsent(List.of(
+            columns(YEAR), new PresenceLeaf.Computed(label))));
+        assertThat(nf.parentRowColumns()).containsExactly(YEAR);
+    }
+
+    @Test
+    void listValuedComputedField_isALeaf() {
+        var tags = computed("tags", new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.List(true, true)),
+            List.of());
+        assertThat(contract(nullable("release", tags))).isEqualTo(new NullContract.CollapsesWhenAbsent(List.of(
+            new PresenceLeaf.Computed(tags))));
+    }
+
+    @Test
+    void computedLeaf_rejectsAJoinedOrObjectReturningField() {
+        var joined = computed("label", new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
+            List.of(languageHop()));
+        assertThatThrownBy(() -> new PresenceLeaf.Computed(joined))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("join path");
+        assertThatThrownBy(() -> new PresenceLeaf.Computed(objectComputed("language")))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("ScalarReturnType");
+    }
+
+    @Test
+    void objectReturningComputedField_blocksNamingItself() {
+        var lift = objectComputed("language");
+        var nf = nullable("release", column("year", YEAR), lift);
+        assertThat(contract(nf)).isEqualTo(blockedBy(lift));
+    }
+
+    @Test
+    void joinedComputedField_blocks() {
+        var joined = computed("label", new ReturnTypeRef.ScalarReturnType("String", new FieldWrapper.Single(true)),
+            List.of(languageHop()));
+        assertThat(contract(nullable("release", column("year", YEAR), joined))).isEqualTo(blockedBy(joined));
+    }
+
+    @Test
+    void probed_holdsProbeAndComputedLeavesInLeafOrderAndNoColumnLeaf() {
+        var label = computed("label");
+        var reference = singleReference("originalLanguage", languageHop());
+        var nf = nullable("release", column("year", YEAR), label, reference);
+        assertThat(contract(nf).probed()).containsExactly(
+            new PresenceLeaf.Computed(label),
+            new PresenceLeaf.Probe(reference, reference.joinPath(), List.of(), List.of(NAME)));
+        assertThat(contract(nf).columnLeaves()).containsExactly(columns(YEAR));
     }
 
     // ===== Blockers =====
 
     @Test
     void listTakingArguments_blocks() {
-        var pagination = new PaginationSpec(new PaginationSpec.PaginationArg("Int", false), null, null, null);
-        var paged = reference("languages", "Language", new FieldWrapper.List(true, true),
-            List.of(languageHop()), List.of(), pagination);
+        var paged = pagedList("languages");
         assertThat(contract(nullable("release", column("year", YEAR), paged))).isEqualTo(blockedBy(paged));
     }
 
@@ -346,8 +435,8 @@ class PresenceTest {
         var condition = new ConditionFilter("test.Conditions", "activeOnly", List.of());
         var filtered = reference("language", "Language", new FieldWrapper.Single(true),
             List.of(languageHop()), List.of(condition), null);
-        assertThat(contract(nullable("release", filtered)).probes()).singleElement()
-            .satisfies(p -> assertThat(p.filters()).containsExactly(condition));
+        assertThat(contract(nullable("release", filtered)).probed()).singleElement()
+            .isInstanceOfSatisfying(PresenceLeaf.Probe.class, p -> assertThat(p.filters()).containsExactly(condition));
     }
 
     @Test

@@ -1558,7 +1558,9 @@ public class GraphitronSchemaValidator {
 
     /**
      * Per-leaf names of a collapsing contract: a column leaf's column names, a probe's probed
-     * field; empty for a wrapper that never collapses.
+     * field, a computed leaf's field; empty for a wrapper that never collapses. A probed or
+     * computed leaf compares by field name, since its expression is minted per anchor and read
+     * back under one alias keyed on the field.
      */
     private static List<List<String>> presenceLeafNames(NullContract contract) {
         return switch (contract) {
@@ -1567,6 +1569,7 @@ public class GraphitronSchemaValidator {
                     case Presence.PresenceLeaf.Columns cols ->
                         cols.columns().stream().map(no.sikt.graphitron.model.jooq.ColumnRef::sqlName).toList();
                     case Presence.PresenceLeaf.Probe probe -> List.of("probe of " + probe.field().name());
+                    case Presence.PresenceLeaf.Computed computed -> List.of("value of " + computed.field().name());
                 })
                 .toList();
             case NullContract.AlwaysObject ignored -> List.of();
