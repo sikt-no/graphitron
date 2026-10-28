@@ -26,12 +26,25 @@
         <maven.javadoc.skip>true</maven.javadoc.skip>
         <outputPackage>no.sikt.graphitron.generated</outputPackage>
         <quarkus.platform.version>3.39.4</quarkus.platform.version>
+        <brotli4j.version>1.24.0</brotli4j.version>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus</quarkus.platform.group-id>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <!--
+              brotli4j ahead of the platform BOM for the same first-declaration-wins reason as Jackson
+              below: quarkus-bom pins brotli4j and its native jars at a release with a known security
+              hole, and this import moves the whole family to the fixed release.
+            -->
+            <dependency>
+                <groupId>com.aayushatharva.brotli4j</groupId>
+                <artifactId>brotli4j-bom</artifactId>
+                <version>${brotli4j.version}</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <!--
               Jackson 2.x ahead of the platform BOM: among imports the first declaration wins, and
               quarkus-bom pins the whole 2.x family at a release the root's jackson-bom import has
