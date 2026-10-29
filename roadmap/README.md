@@ -36,8 +36,8 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
+| `R1120` | The POM switches session identity on; the consumer supplies it per request as code | Spec | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](owned-session-state-supplied-per-request.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1120` | The POM switches session identity on; the consumer supplies it per request as code | Ready | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](owned-session-state-supplied-per-request.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | Spec | 2026-10-28 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
@@ -613,7 +613,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1098` [**A graphitron-jakarta-rest subgraph writes only what is its own**](jakarta-rest-request-aware-execution-input.md) — Backlog, feature, blocked by [owned-session-state-supplied-per-request](owned-session-state-supplied-per-request.md)
-- `R1120` [**The POM switches session identity on; the consumer supplies it per request as code**](owned-session-state-supplied-per-request.md) — Ready, feature
+- `R1120` [**The POM switches session identity on; the consumer supplies it per request as code**](owned-session-state-supplied-per-request.md) — Spec, feature
 - `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — Spec, feature
 - `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start**](mutation-field-transaction-scope.md) — Ready, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
