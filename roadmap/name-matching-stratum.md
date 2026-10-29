@@ -55,7 +55,7 @@ the hop view and the classifier. This item completes the stratum.
 
 A previous revision of this item proposed `GENERATED ALWAYS AS (UPPER(...))` columns on eleven base
 relations instead. That treated the fold's spelling, not its location: the rule count stayed the
-same, and the mechanism coupled this item to the capture-layer rewrite (R701), because the current
+same, and the mechanism coupled this item to the capture-layer rewrite (now R876's node retiring `FactSink` and `FactWrites`), because the current
 `FactSink.flush()` names every column and H2 rejects an insert naming a generated column. It also
 over-read its doctrinal warrant: the `graphql_duplicate_declaration.coordinate` precedent blesses a
 rendered key handed outward as a stable id, not an intermediate of a match predicate. The empirical
@@ -203,7 +203,7 @@ reaches primary keys, so a quoted-identifier catalog legitimately declaring `"Ti
 With matching concentrated into three views over a workspace-wide store, and H2 rejecting
 expression indexes as a syntax error, stored folded columns on the three catalog relations become
 more attractive under this design, not less. That option stays deferred behind two triggers, both
-required: R701 landing (writers name their columns, so a generated column costs no writer change),
+required: R876's node retiring `FactSink` and `FactWrites` landing (writers name their columns, so a generated column costs no writer change),
 and a measurement showing a match view slow on a real workspace store. It is a performance move
 with no correctness content once this item confines the rule, and no DDL comment may claim
 otherwise.
