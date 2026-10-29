@@ -33,11 +33,16 @@ import java.util.Locale;
  */
 public class NodeIdFixtureGenerator extends JavaGenerator {
 
-    private record Metadata(String typeId, List<String> keyColumnFields) {}
+    private record Metadata(String typeId, List<String> keyColumnFields, List<String> legacyKeyColumnFields) {
+        Metadata(String typeId, List<String> keyColumnFields) {
+            this(typeId, keyColumnFields, null);
+        }
+    }
 
     /**
      * Fixture tables that should gain NodeId metadata. Table SQL name (lowercase) → (typeId,
-     * key-column Java field names). Key columns are referenced off the generated table singleton
+     * key-column Java field names, and optionally the legacy key-column field names published as
+     * {@code __NODE_LEGACY_KEY_COLUMNS}). Key columns are referenced off the generated table singleton
      * (e.g. {@code BAR.ID_1}); the field names here are the Java constants jOOQ emits for each
      * column (uppercase of the SQL column name).
      */
@@ -125,7 +130,12 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         // Another table's column in the array: an element holding a period is emitted as written,
         // so this one is film's own field rather than this table's film_id.
         Map.entry("node_metadata_foreign", new Metadata("NodeMetadataForeign",
-            List.of("no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film.FILM.FILM_ID")))
+            List.of("no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film.FILM.FILM_ID"))),
+        // A legacy key shape: ids were encoded from (era, id) before era left the key.
+        Map.entry("node_legacy_keyed", new Metadata("NodeLegacyKeyed", List.of("ID"), List.of("ERA", "ID"))),
+        // A legacy array naming another table's column, which the catalog records as unusable.
+        Map.entry("node_legacy_foreign", new Metadata("NodeLegacyForeign", List.of("ID"),
+            List.of("no.sikt.graphitron.rewrite.test.jooq.public_.tables.Film.FILM.FILM_ID", "ID")))
     );
 
     /**
@@ -193,13 +203,21 @@ public class NodeIdFixtureGenerator extends JavaGenerator {
         if (meta.keyColumnFields() == null) {
             return;
         }
-        StringBuilder keys = new StringBuilder("public static final org.jooq.Field<?>[] __NODE_KEY_COLUMNS = { ");
-        for (int i = 0; i < meta.keyColumnFields().size(); i++) {
+        out.println(fieldArray("__NODE_KEY_COLUMNS", singleton, meta.keyColumnFields()));
+        if (meta.legacyKeyColumnFields() != null) {
+            out.println(fieldArray("__NODE_LEGACY_KEY_COLUMNS", singleton, meta.legacyKeyColumnFields()));
+        }
+    }
+
+    /** A {@code Field<?>[]} constant; an element holding a period is emitted as written. */
+    private static String fieldArray(String name, String singleton, List<String> fields) {
+        StringBuilder keys = new StringBuilder("public static final org.jooq.Field<?>[] " + name + " = { ");
+        for (int i = 0; i < fields.size(); i++) {
             if (i > 0) keys.append(", ");
-            var key = meta.keyColumnFields().get(i);
+            var key = fields.get(i);
             keys.append(key.contains(".") ? key : singleton + "." + key);
         }
         keys.append(" };");
-        out.println(keys.toString());
+        return keys.toString();
     }
 }

@@ -518,6 +518,8 @@ public record LspVocabulary(
                 new Behavior.ScalarTypeBinding());
             out.put(new SchemaCoordinate.DirectiveArg("node", "keyColumns"),
                 new Behavior.CatalogColumnBinding());
+            out.put(new SchemaCoordinate.DirectiveArg("node", "legacyKeyColumns"),
+                new Behavior.CatalogColumnBinding());
             out.put(new SchemaCoordinate.DirectiveArg("nodeId", "typeName"),
                 new Behavior.NodeTypeBinding());
             return out;

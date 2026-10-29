@@ -63,7 +63,9 @@ type Customer implements Node & Locatable @table(name: "customer") @node {
     createDate: LocalDate @field(name: "CREATE_DATE")
 }
 
-type Address implements Node & Locatable @table(name: "address") @node {
+# Address carries a legacy key shape, so _entities reads an id minted as (address_id, city_id) as the
+# current one (LegacyNodeKeyExecutionTest).
+type Address implements Node & Locatable @table(name: "address") @node(legacyKeyColumns: ["address_id", "city_id"]) {
     id:         ID!      @nodeId
     addressId:  Int!     @field(name: "ADDRESS_ID")
 }

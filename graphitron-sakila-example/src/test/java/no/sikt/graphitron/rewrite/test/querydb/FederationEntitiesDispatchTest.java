@@ -72,6 +72,27 @@ class FederationEntitiesDispatchTest {
     }
 
     /**
+     * Address carries a legacy key shape, {@code (address_id, city_id)}: a rep whose id was minted
+     * in it resolves to the row, the conversion running inside the dispatcher's decode, and the id
+     * the entity answers is the current form.
+     */
+    @Test
+    @SuppressWarnings("unchecked")
+    void entities_resolveARepWhoseIdIsInTheLegacyKeyShape() {
+        String legacy = NodeIdEncoder.encode("Address", 1, 300);
+        Map<String, Object> data = execute(
+            "query Q($reps: [_Any!]!) { _entities(representations: $reps) {"
+            + " __typename ... on Address { id addressId } } }",
+            Map.of("reps", List.of(Map.of("__typename", "Address", "id", legacy))));
+
+        List<Map<String, Object>> entities = (List<Map<String, Object>>) data.get("_entities");
+        assertThat(entities).singleElement().satisfies(entity -> {
+            assertThat(entity).containsEntry("addressId", 1);
+            assertThat(entity).containsEntry("id", NodeIdEncoder.encode("Address", 1));
+        });
+    }
+
+    /**
      * Order preservation under federation's exact-position contract: a single
      * {@code _entities} call with three reps of mixed {@code __typename} returns results
      * in the same order. Carrying {@code idx} through SQL makes order a SQL property,

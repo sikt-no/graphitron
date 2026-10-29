@@ -11,6 +11,7 @@ import no.sikt.graphitron.model.capture.document.EmittedAnchor;
 import no.sikt.graphitron.model.derive.NameMatchedKeys;
 import no.sikt.graphitron.model.derive.Nodes;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
+import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.TableTypes;
 import no.sikt.graphitron.model.derive.CarrierDataFields;
 import no.sikt.graphitron.model.derive.FieldScopeTables;
@@ -146,6 +147,7 @@ public final class SeededStore {
             TableTypes.derive(dsl, graph);
             Nodes.derive(dsl, graph);
             NodeKeyColumns.derive(dsl, graph);
+            NodeLegacyKeyShapes.derive(dsl, graph);
             ArgMappingCandidates.derive(dsl, graph);
             // The reference stratum's own resolutions, in the order capture runs them: the
             // spelling first, then the two hop arms that read it. Here for the reason the name

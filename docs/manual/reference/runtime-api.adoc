@@ -131,6 +131,8 @@ public final class NodeIdEncoder {
 
     public static String[] decodeValues(String expectedTypeId, String base64Id);
 
+    public static String toCurrentId(String base64Id);
+
     public static Object[] decodeColumns(
         String expectedTypeId, String base64Id, Class<?>[] parseClasses, Field<?>... columns);
 
@@ -162,7 +164,8 @@ For each `@node`-decorated type the generator emits two static helpers named aft
 
 Three more helpers are public because generated code in other packages calls them, or because a consumer reading an id without a typed target needs them, and they are documented here because a consumer reading generated sources will meet them:
 
-* `decodeValues(expectedTypeId, base64Id)` -- the raw unpack: the key values as a `String[]` exactly as they sit on the wire, or `null` when the input is malformed or carries another typeId. No value is checked against a column, so do not bind these strings into SQL; use `decodeColumns` or the per-Node helper for that.
+* `decodeValues(expectedTypeId, base64Id)` -- the raw unpack: the key values as a `String[]` exactly as they sit on the wire, or `null` when the input is malformed or carries another typeId. No value is checked against a column, so do not bind these strings into SQL; use `decodeColumns` or the per-Node helper for that. It is the raw unpack in shape too: an id in a type's legacy key shape comes back with its legacy values, so call `toCurrentId` first for the current shape.
+* `toCurrentId(base64Id)` -- an id in its type's current key shape. It returns the id unchanged unless it is a legacy-shape id of a type that declares one (xref:directives/node.adoc#narrowing-the-key[`@node(legacyKeyColumns:)`] or the table class's `__NODE_LEGACY_KEY_COLUMNS`), the current-shape id when it is, and `null` when it is a legacy-shape id carrying a value that is not one of its column. A migration job rewriting the ids it holds calls this; `decodeColumns` calls it on every id of such a type, so nothing else has to.
 * `decodeColumns(expectedTypeId, base64Id, parseClasses, columns...)` -- the decode behind every per-Node `decode<TypeName>`: the key values as values of `columns`, in key order, or `null` when the input is malformed, carries another typeId, has the wrong number of key values, or carries a value that is not exactly what `encode` writes for a value of its column. That last case covers non-numeric text, a number outside the column's range or precision, and a padded or reformatted number; on a column with a jOOQ converter the value is followed through the converter to its database value and back. `parseClasses` says which type each value's text is parsed as: `null` (the whole array, or one element) parses through the column's `DataType`, and a class, which generated code passes as a converter's user type, parses the text as that class before the converter sees it. Generated code decides it per key column at build time, so a converter-backed key decodes to the value it was minted from.
 * `requireColumnAgreement(conflictLabel, type, a, b)` -- the value-agreement check the write path emits when two input fields land on one column. It coerces both values through the destination column's `DataType` and throws a `GraphqlErrorException` naming `conflictLabel` when they disagree.
 

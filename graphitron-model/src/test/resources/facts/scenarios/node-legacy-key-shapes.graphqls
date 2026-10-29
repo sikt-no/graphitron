@@ -1,0 +1,57 @@
+# Legacy key shapes that anchor: the column list a node type's ids were encoded from before its key
+# was narrowed, resolved against the bound table and keyed by the wire type id. Each position carries
+# the column's place in the current key, null where the current key dropped it, which is the pick a
+# conversion makes. InventoryItem drops a column on each side of the kept one, FilmCategoryItem one
+# between the two it keeps, and RentalItem its last. A type id with no legacy shape has no rows.
+
+interface Node { id: ID! }
+
+type InventoryItem implements Node @table(name: "inventory")
+    @node(keyColumns: ["inventory_id"], legacyKeyColumns: ["store_id", "inventory_id", "last_update"]) {
+  id: ID!
+}
+
+type FilmCategoryItem implements Node @table(name: "film_category")
+    @node(legacyKeyColumns: ["film_id", "last_update", "category_id"]) {
+  id: ID!
+}
+
+type RentalItem implements Node @table(name: "rental") @node(typeId: "R", legacyKeyColumns: ["RENTAL_ID", "rental_date"]) {
+  id: ID!
+}
+
+type Plain implements Node @table(name: "actor") @node { id: ID! }
+
+extend type Query {
+  inventoryItems: [InventoryItem!]!
+  filmCategoryItems: [FilmCategoryItem!]!
+  rentalItems: [RentalItem!]!
+  plains: [Plain!]!
+}
+
+extend schema @expectEquals(relation: "graphitron_node_legacy_keycolumn", rows: """
+  type_id,          position, column_name,  current_position, column_origin, table_name
+  FilmCategoryItem, 0,        film_id,      0,                SDL_PINNED,    film_category
+  FilmCategoryItem, 1,        last_update,  ,                 SDL_PINNED,    film_category
+  FilmCategoryItem, 2,        category_id,  1,                SDL_PINNED,    film_category
+  InventoryItem,    0,        store_id,     ,                 SDL_PINNED,    inventory
+  InventoryItem,    1,        inventory_id, 0,                SDL_PINNED,    inventory
+  InventoryItem,    2,        last_update,  ,                 SDL_PINNED,    inventory
+  R,                0,        rental_id,    0,                SDL_PINNED,    rental
+  R,                1,        rental_date,  ,                 SDL_PINNED,    rental
+  """)
+
+# The written halves keep the author's spellings; the resolved half above folds them.
+extend schema @expectEquals(relation: "graphitron_node_legacykeycolumn_entry", rows: """
+  type_name,        position, column_ref
+  FilmCategoryItem, 0,        film_id
+  FilmCategoryItem, 1,        last_update
+  FilmCategoryItem, 2,        category_id
+  InventoryItem,    0,        store_id
+  InventoryItem,    1,        inventory_id
+  InventoryItem,    2,        last_update
+  RentalItem,       0,        RENTAL_ID
+  RentalItem,       1,        rental_date
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_node_legacy_key_defect")

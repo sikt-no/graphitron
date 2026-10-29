@@ -782,6 +782,10 @@ type Query {
         ids: [ID!]! @nodeId(typeName: "Film"),
         first: Int, after: String
     ): [Film!]! @asConnection @defaultOrder(primaryKey: true)
+    # Legacy node key shapes (LegacyNodeKeyExecutionTest): a @nodeId filter argument and a
+    # @nodeId @reference input field, each reading an InventoryItem id in either shape.
+    inventoryItemsByIds(ids: [ID!]! @nodeId(typeName: "InventoryItem")): [InventoryItem!]!
+    rentalsByInventoryItem(filter: RentalByInventoryItemFilter!): [Rental!]!
     # Translated FK-target @nodeId filters: the child's FK targets a column of the parent that is
     # not the parent's node key, so the decoded id yields a value no child column holds and the
     # predicate has to visit the parent. The emitted SQL is a correlated EXISTS over the FK, not a
@@ -5224,7 +5228,61 @@ type InventoryUnitsPayload {
 }
 
 type DeletedInventoryUnitPayload {
-    deletedId: ID
+    deletedId: ID @nodeId(typeName: "InventoryUnit")
+}
+
+# Legacy node key shape fixtures (LegacyNodeKeyExecutionTest): InventoryItem's key was narrowed from
+# (store_id, inventory_id, last_update) to inventory_id, so an id minted in the old shape is still
+# read wherever an InventoryItem id is, converted to the current shape first, and every id in a
+# response is the current form. The dropped columns sit on both sides of the kept one. InventoryUnit
+# covers the same table as a superkey node with its own type id, so every leaf names its type.
+type InventoryItem implements Node @table(name: "inventory")
+    @node(keyColumns: ["inventory_id"], legacyKeyColumns: ["store_id", "inventory_id", "last_update"]) {
+    id: ID! @nodeId
+    storeId: Int! @field(name: "store_id")
+}
+
+input InventoryItemUpdateInput {
+    id: ID! @nodeId(typeName: "InventoryItem")
+    storeId: Int @field(name: "store_id")
+}
+
+input InventoryItemDeleteInput {
+    id: ID! @nodeId(typeName: "InventoryItem")
+}
+
+type InventoryItemPayload {
+    inventoryItem: InventoryItem
+}
+
+type InventoryItemsPayload {
+    inventoryItems: [InventoryItem!]
+}
+
+type DeletedInventoryItemPayload {
+    deletedId: ID @nodeId(typeName: "InventoryItem")
+}
+
+type DeletedInventoryItemsPayload {
+    deletedIds: [ID!] @nodeId(typeName: "InventoryItem")
+}
+
+# The conversion's log line, which the generated encoder writes once per type id at INFO: a type id
+# no other test converts, so NodeIdLegacyConversionLogTest sees its first conversion.
+type PaymentLegacyProbe implements Node @table(name: "payment")
+    @node(keyColumns: ["payment_id"], legacyKeyColumns: ["payment_id", "customer_id"]) {
+    id: ID! @nodeId
+}
+
+# A @nodeId @reference input field over rental, decoding an InventoryItem id onto rental.inventory_id.
+input RentalByInventoryItemFilter {
+    inventoryItem: ID @nodeId(typeName: "InventoryItem") @reference(path: [{key: "rental_inventory_id_fkey"}])
+}
+
+# The jOOQ-record path: a @service input bean whose InventoryRecord member is decoded from an
+# InventoryItem id through NodeIdEncoder.decodeColumns, which no decode helper sits in front of.
+input InventoryRecordAssignmentInput {
+    inventory: ID! @nodeId(typeName: "InventoryItem")
 }
 
 # FilmCategoryNode's id also encodes last_update, a temporal column beside a two-column key. A
@@ -5623,6 +5681,22 @@ type Mutation {
     updateInventoryUnitsDirect(in: [InventoryUnitUpdateInput!]!): [InventoryUnit!] @mutation(typeName: UPDATE)
     deleteInventoryUnit(in: InventoryUnitDeleteInput!): DeletedInventoryUnitPayload
         @mutation(typeName: DELETE, table: "inventory")
+
+    # Legacy node key shapes (InventoryItem above): pinned by LegacyNodeKeyExecutionTest.
+    updateInventoryItem(in: InventoryItemUpdateInput!): InventoryItemPayload @mutation(typeName: UPDATE)
+    updateInventoryItems(in: [InventoryItemUpdateInput!]!): InventoryItemsPayload @mutation(typeName: UPDATE)
+    updateInventoryItemsDirect(in: [InventoryItemUpdateInput!]!): [InventoryItem!] @mutation(typeName: UPDATE)
+    deleteInventoryItem(in: InventoryItemDeleteInput!): DeletedInventoryItemPayload
+        @mutation(typeName: DELETE, table: "inventory")
+    deleteInventoryItems(in: [InventoryItemDeleteInput!]!): DeletedInventoryItemsPayload
+        @mutation(typeName: DELETE, table: "inventory")
+    deleteInventoryItemsMissingAsDeleted(in: [InventoryItemDeleteInput!]!): DeletedInventoryItemsPayload
+        @mutation(typeName: DELETE, table: "inventory", missingAsDeleted: true)
+    assignInventoryRecord(in: InventoryRecordAssignmentInput!): String
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
+            method: "assignInventoryRecord"
+        })
     deleteFilmCategoryNodes(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
         @mutation(typeName: DELETE, table: "film_category")
     deleteFilmCategoryNodesMissingAsDeleted(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload

@@ -109,6 +109,7 @@ class RelationRegistrationGateTest {
             "sql_index",
             "sql_index_column", "sql_routine", "sql_routine_parameter",
             "sql_node_metadata", "sql_node_key_column", "sql_node_metadata_unreadable",
+            "sql_node_legacy_key_column", "sql_node_legacy_key_unreadable",
             "sql_table_record_supertype",
             "store_source", "store_stamp",
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
@@ -155,6 +156,7 @@ class RelationRegistrationGateTest {
             "graphitron_ast_table_entry", "graphitron_ast_scalar_type_entry",
             "graphitron_ast_enum_entry",
             "graphitron_ast_node_entry", "graphitron_ast_node_keycolumn_entry",
+            "graphitron_ast_node_legacykeycolumn_entry",
             "graphitron_ast_discriminate_entry", "graphitron_ast_discriminator_entry",
             "graphitron_ast_federation_key_entry",
             "graphitron_ast_federation_key_selection_entry",
@@ -286,6 +288,13 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_tabletype", Arm.DERIVED);
         registrations.put("graphitron_node", Arm.DERIVED);
         registrations.put("graphitron_node_keycolumn", Arm.DERIVED);
+        // The legacy key shape each type id answers to and the rules a stated one breaks, both
+        // written by one stage; GraphitronSchema has no word for either, and the node-legacy-key
+        // fact documents pin them. The anchored legacy list beside them is the author's spelling,
+        // which the walk never reads.
+        registrations.put("graphitron_node_legacy_keycolumn", Arm.DERIVED);
+        registrations.put("graphitron_node_legacy_key_defect", Arm.DERIVED);
+        registrations.put("graphitron_node_legacykeycolumn_entry", Arm.UNSHADOWED);
         registrations.put("graphitron_node_id_candidate", Arm.DERIVED);
         registrations.put("graphitron_code_reference_site", Arm.DERIVED);
         registrations.put("graphitron_argmapping_site", Arm.DERIVED);

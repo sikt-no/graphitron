@@ -10,6 +10,8 @@ import no.sikt.graphitron.rewrite.model.UpdateRows;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
+
 import static no.sikt.graphitron.rewrite.DmlWriteReads.updateRowsOf;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -154,7 +156,7 @@ class TableOnlyNodeIdLeafPipelineTest {
     }
 
     private static java.util.List<String> encoderMethodNames(GraphitronSchema schema) {
-        TypeSpec encoder = NodeIdEncoderClassGenerator.generate(schema, "fake.code.generated").getFirst();
+        TypeSpec encoder = NodeIdEncoderClassGenerator.generate(schema, "fake.code.generated", List.of()).getFirst();
         return encoder.methodSpecs().stream().map(MethodSpec::name).toList();
     }
 }

@@ -1,0 +1,29 @@
+# A legacy key shape a generated table class states: node_legacy_keyed publishes a key of id and a
+# __NODE_LEGACY_KEY_COLUMNS of (era, id), so a node inferred over it answers to a shape it never
+# wrote. A table-bound type over the same table that is not a node answers to the same type id with
+# the same current key, and reads the same id space, so the one shape serves both.
+
+interface Node { id: ID! }
+
+type LegacyKeyed implements Node @table(name: "node_legacy_keyed") { id: ID! @nodeId }
+
+type LegacyKeyedRow @table(name: "node_legacy_keyed") { era: Int }
+
+extend type Query {
+  legacyKeyed: [LegacyKeyed!]!
+  legacyKeyedRows: [LegacyKeyedRow!]!
+}
+
+extend schema @expectEquals(relation: "sql_node_legacy_key_column", rows: """
+  table_schema, table_name,        position, column_name
+  public,       node_legacy_keyed, 0,        era
+  public,       node_legacy_keyed, 1,        id
+  """)
+
+extend schema @expectEquals(relation: "graphitron_node_legacy_keycolumn", rows: """
+  type_id,         position, column_name, current_position, column_origin
+  NodeLegacyKeyed, 0,        era,         ,                 JOOQ_METADATA
+  NodeLegacyKeyed, 1,        id,          0,                JOOQ_METADATA
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_node_legacy_key_defect")

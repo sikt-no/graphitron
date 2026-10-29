@@ -81,7 +81,8 @@ public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Bro
      * <p>{@link #echoBinding()} narrows {@link #droppedColumns()} to the columns a missing-row echo
      * must supply beyond the primary key: the payload's node-key columns outside the primary key,
      * in node-key order, each bound to the dropped column that decodes it. The echo carries the
-     * client's value for them, so an echoed id is the id the client sent. Empty when the payload's
+     * client's value for them, so an echoed id is the id the client sent, in the current key shape
+     * (an id in a legacy shape is converted as it is decoded). Empty when the payload's
      * ids need no column beyond the primary key. Every echo binding's extraction is one some
      * {@link #keyBinding()} entry shares, so the decode the echo reads is one the WHERE already
      * performs.

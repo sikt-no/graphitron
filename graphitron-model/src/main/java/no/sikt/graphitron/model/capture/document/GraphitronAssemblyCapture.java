@@ -9,6 +9,7 @@ import no.sikt.graphitron.model.derive.Fetchers;
 import no.sikt.graphitron.model.derive.FieldPaths;
 import no.sikt.graphitron.model.derive.NodeIdCandidates;
 import no.sikt.graphitron.model.derive.NodeKeyColumns;
+import no.sikt.graphitron.model.derive.NodeLegacyKeyShapes;
 import no.sikt.graphitron.model.derive.PathElements;
 import no.sikt.graphitron.model.derive.FieldKeyRows;
 import no.sikt.graphitron.model.derive.RoutineResults;
@@ -60,6 +61,8 @@ public final class GraphitronAssemblyCapture {
     public static void resolve(DSLContext dsl, String graph, LocalDateTime readAt) {
         // Over the nodes the anchor settled.
         NodeKeyColumns.derive(dsl, graph);
+        // The legacy key shape each type id answers to, against the current keys just written.
+        NodeLegacyKeyShapes.derive(dsl, graph);
         NodeIdCandidates.derive(dsl, graph);
         targets(dsl, graph, readAt);
         // The reference stratum's own resolutions, bottom rung first: what a written table name

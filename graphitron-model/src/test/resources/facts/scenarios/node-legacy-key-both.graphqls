@@ -1,0 +1,19 @@
+# A legacy key shape stated twice, on @node and on the table class, the same columns in the same
+# order once folded: the schema's statement is the one anchored, and agreeing with the catalog is
+# not a defect.
+
+interface Node { id: ID! }
+
+type LegacyKeyed implements Node @table(name: "node_legacy_keyed") @node(legacyKeyColumns: ["ERA", "id"]) {
+  id: ID! @nodeId
+}
+
+extend type Query { legacyKeyed: [LegacyKeyed!]! }
+
+extend schema @expectEquals(relation: "graphitron_node_legacy_keycolumn", rows: """
+  type_id,         position, column_name, current_position, column_origin
+  NodeLegacyKeyed, 0,        era,         ,                 SDL_PINNED
+  NodeLegacyKeyed, 1,        id,          0,                SDL_PINNED
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_node_legacy_key_defect")

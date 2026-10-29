@@ -505,7 +505,7 @@ public class GraphQLRewriteGenerator {
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
-                    federationLink, plan.errorChannels()),
+                    federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes()),
                 emittedThisRun);
         }
         var fixedRuntime = FixedRuntimeEmitter.render(store);
@@ -597,12 +597,14 @@ public class GraphQLRewriteGenerator {
                                         List<no.sikt.graphitron.command.TypeUnitCommand.SchemaShapeUnit> schemaShapeRows,
                                         TypeName tenantKeyType, CodeBlock tenantColumn,
                                         boolean federationLink,
-                                        no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
+                                        no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
+                                        no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.Shapes legacyKeyShapes) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
             case LIGHT_FETCHER -> LightFetcherClassGenerator.generate(outputPackage);
-            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(schema, outputPackage);
+            case NODE_ID_ENCODER -> NodeIdEncoderClassGenerator.generate(schema, outputPackage,
+                legacyKeyShapes.shapes());
             case COLUMN_VALUES -> ColumnValuesClassGenerator.generate();
             case ENTITY_FETCHER_DISPATCH -> EntityFetcherDispatchClassGenerator.generate(schema, outputPackage);
             case CONNECTION_RESULT -> ConnectionResultClassGenerator.generate(outputPackage, tenantKeyType != null);

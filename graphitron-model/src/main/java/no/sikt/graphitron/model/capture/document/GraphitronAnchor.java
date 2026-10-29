@@ -18,8 +18,10 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_CONNECTION_ENTRY;
@@ -135,7 +137,10 @@ public final class GraphitronAnchor {
         externalFields(dsl, graph, touchedAt);
         // The node before its key columns, which reference it.
         nodes(dsl, graph, touchedAt);
-        nodeKeyColumns(dsl, graph, touchedAt);
+        nodeKeyColumns(dsl, graph, touchedAt, "keyColumns", GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY,
+            GRAPHITRON_NODE_KEYCOLUMN_ENTRY);
+        nodeKeyColumns(dsl, graph, touchedAt, "legacyKeyColumns",
+            GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY, GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY);
         routines(dsl, graph, touchedAt);
         // The ordering before the fields it orders by, which reference it.
         defaultOrders(dsl, graph, touchedAt);
@@ -299,7 +304,8 @@ public final class GraphitronAnchor {
             GRAPHITRON_CONNECTION_ENTRY, GRAPHITRON_PIVOT_ENTRY, GRAPHITRON_MUTATION_ENTRY,
             GRAPHITRON_SERVICE_ENTRY, GRAPHITRON_EXTERNAL_FIELD_ENTRY,
             GRAPHITRON_DEFAULT_ORDER_FIELD_ENTRY, GRAPHITRON_DEFAULT_ORDER_ENTRY,
-            GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_ENTRY,
+            GRAPHITRON_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_NODE_LEGACYKEYCOLUMN_ENTRY,
+            GRAPHITRON_NODE_ENTRY,
             GRAPHITRON_ROUTINE_ENTRY,
             GRAPHITRON_FIELD_PARTICIPANT_PATH,
             GRAPHITRON_FACET_ENTRY, GRAPHITRON_FIELD_BINDING_ENTRY);
@@ -624,36 +630,45 @@ public final class GraphitronAnchor {
      * rather than skipping the element and numbering past it.
      *
      * <p>After {@link #nodes}, which every row here holds a foreign key into.
+     *
+     * <p>Both list arguments of {@code @node} anchor this way, the current key and the legacy one,
+     * from twin decode relations into twin anchors of one shape; each twin's columns are read off by
+     * name ({@link Table#field(org.jooq.Field)}), the twins being distinct generated types.
      */
-    private static void nodeKeyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt) {
+    private static void nodeKeyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                       String argument, Table<?> decoded, Table<?> anchored) {
         var c = claimed(dsl, graph, "node");
         var a = GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
         var v = GRAPHQL_AST_VALUE_ENTRY;
-        var e = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-        var t = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
-        dsl.insertInto(t)
-            .columns(t.GRAPH_NAME, t.TYPE_NAME, t.POSITION, t.COLUMN_REF, t.TOUCHED_AT)
+        var ek = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+        var tk = GRAPHITRON_NODE_KEYCOLUMN_ENTRY;
+        var columnRef = anchored.field(tk.COLUMN_REF);
+        var touched = anchored.field(tk.TOUCHED_AT);
+        dsl.insertInto(anchored)
+            .columns(anchored.field(tk.GRAPH_NAME), anchored.field(tk.TYPE_NAME),
+                anchored.field(tk.POSITION), columnRef, touched)
             .select(dsl
-                .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME),
-                    coalesce(v.POSITION, inline(0)), e.COLUMN_REF, val(touchedAt, t.TOUCHED_AT))
+                .select(val(graph, anchored.field(tk.GRAPH_NAME)), c.field(TYPE_NAME),
+                    coalesce(v.POSITION, inline(0)), decoded.field(ek.COLUMN_REF),
+                    val(touchedAt, touched))
                 .from(c)
                 .join(a).on(a.GRAPH_NAME.eq(graph))
                     .and(a.SOURCE_NAME.eq(c.field(SITE_NAME)))
                     .and(a.PARENT_LINE.eq(c.field(SITE_LINE)))
                     .and(a.PARENT_COLUMN.eq(c.field(SITE_COLUMN)))
-                    .and(a.NAME.eq("keyColumns"))
+                    .and(a.NAME.eq(argument))
                 .join(v).on(v.GRAPH_NAME.eq(graph))
                     .and(v.SOURCE_NAME.eq(a.SOURCE_NAME))
                     .and(v.HOLDER_LINE.eq(a.SOURCE_LINE))
                     .and(v.HOLDER_COLUMN.eq(a.SOURCE_COLUMN))
-                .join(e).on(e.GRAPH_NAME.eq(graph))
-                    .and(e.SOURCE_NAME.eq(v.SOURCE_NAME))
-                    .and(e.SOURCE_LINE.eq(v.SOURCE_LINE))
-                    .and(e.SOURCE_COLUMN.eq(v.SOURCE_COLUMN))
+                .join(decoded).on(decoded.field(ek.GRAPH_NAME).eq(graph))
+                    .and(decoded.field(ek.SOURCE_NAME).eq(v.SOURCE_NAME))
+                    .and(decoded.field(ek.SOURCE_LINE).eq(v.SOURCE_LINE))
+                    .and(decoded.field(ek.SOURCE_COLUMN).eq(v.SOURCE_COLUMN))
                 .where(c.field(RANK).eq(1)))
             .onDuplicateKeyUpdate()
-            .set(t.COLUMN_REF, excluded(t.COLUMN_REF))
-            .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+            .set(columnRef, excluded(columnRef))
+            .set(touched, excluded(touched))
             .execute();
     }
 

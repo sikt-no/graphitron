@@ -66,6 +66,10 @@ import java.util.Set;
  * is the classification run's own fact, so the verdict is pronounced where the run's ledger meets
  * these rows, and what rides here is only the store's side of the subtraction.
  *
+ * <p>{@link #nodeLegacyKeys} judges a node key's legacy shape, the column list old ids were encoded
+ * from, against the current key and the catalog; {@link #legacyKeyShapes} is its positive half, the
+ * shapes the encoder converts old ids through, an emission fact on {@link #keyProjections}' terms.
+ *
  * <p>Not every member is a detection, and {@link #keyProjections} is the first that is not: it is the
  * positive half of the {@code argMapping} node-id resolution, read for the plan to emit from rather
  * than to reject. It rides here because the store handle does, opened for the capture and closed with
@@ -81,8 +85,10 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               ReferenceForParticipantDefects.Detection referenceForParticipants,
                               UnlowerableOrderings.Detection unlowerableOrderings,
                               DefaultPageSizeDefects.Detection defaultPageSizes,
+                              NodeLegacyKeyDefects.Detection nodeLegacyKeys,
                               ResolvedKeyProjections.Projections keyProjections,
-                              NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage) {
+                              NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage,
+                              StoreLegacyKeyShapes.Shapes legacyKeyShapes) {
 
     /**
      * What each component of the pass reads, keyed by the component's own name, in the family
@@ -108,8 +114,10 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("ReferenceForParticipantDefects", ReferenceForParticipantDefects.READS);
         roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
         roster.put("DefaultPageSizeDefects", DefaultPageSizeDefects.READS);
+        roster.put("NodeLegacyKeyDefects", NodeLegacyKeyDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
+        roster.put("StoreLegacyKeyShapes", StoreLegacyKeyShapes.READS);
         return Collections.unmodifiableMap(roster);
     }
 
@@ -132,8 +140,10 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                     ReferenceForParticipantDefects.detect(dsl, graphName),
                     UnlowerableOrderings.detect(dsl, graphName),
                     DefaultPageSizeDefects.detect(dsl, graphName),
+                    NodeLegacyKeyDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
-                    NodeIdDecodeCoverageFacts.read(dsl, graphName));
+                    NodeIdDecodeCoverageFacts.read(dsl, graphName),
+                    StoreLegacyKeyShapes.read(dsl, graphName));
             }
         };
     }
@@ -148,8 +158,10 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             ReferenceForParticipantDefects.Detection.empty(),
             UnlowerableOrderings.Detection.empty(),
             DefaultPageSizeDefects.Detection.empty(),
+            NodeLegacyKeyDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
-            NodeIdDecodeCoverageFacts.Facts.empty());
+            NodeIdDecodeCoverageFacts.Facts.empty(),
+            StoreLegacyKeyShapes.Shapes.empty());
     }
 
     /** Every violation every family minted, each family's own order preserved within it. */
@@ -162,6 +174,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(referenceForParticipants.violations());
         out.addAll(unlowerableOrderings.violations());
         out.addAll(defaultPageSizes.violations());
+        out.addAll(nodeLegacyKeys.violations());
         return List.copyOf(out);
     }
 

@@ -128,7 +128,7 @@ public final class EntryFamilyFixture {
 
         type Film implements Media
           @table(name: "film")
-          @node(typeId: "F", keyColumns: ["film_id"])
+          @node(typeId: "F", keyColumns: ["film_id"], legacyKeyColumns: ["film_id", "title"])
           @key(fields: "id reviews { id }", resolvable: true)
         {
           id: ID! @nodeId

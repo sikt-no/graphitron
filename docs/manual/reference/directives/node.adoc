@@ -19,7 +19,8 @@ A node type gets a synthesised opaque ID encoding `(typeId, keyColumns)`; xref:n
 ----
 directive @node(
     typeId: String,
-    keyColumns: [String!]
+    keyColumns: [String!],
+    legacyKeyColumns: [String!]
 ) on OBJECT
 ----
 
@@ -30,6 +31,7 @@ directive @node(
 | Name | Type | Default | Description
 | `typeId` | `String` | type's GraphQL name | The discriminator embedded in the ID that tells `Query.node` which type (and table) to dispatch to. Defaults to the GraphQL type name. Set explicitly when you want shorter IDs, or stable IDs that survive a GraphQL type rename.
 | `keyColumns` | `[String!]` | primary-key columns | Ordered column list embedded in the ID. Must correspond to a primary key or another unique key on the bound table. Defaults to the primary key in declaration order. Set explicitly to decouple the ID from primary-key changes.
+| `legacyKeyColumns` | `[String!]` | none | The column list ids of this type were encoded from before `keyColumns` was narrowed. An id in this shape is still accepted everywhere an id of the type is read, and is read as the id of the row its `keyColumns` values name; its other values are checked to be valid values of their columns and otherwise ignored. Ids Graphitron emits always use `keyColumns`. Must contain every `keyColumns` column plus at least one more, each once. Its order is the order the old ids were written in. See <<narrowing-the-key>>.
 |===
 
 == Canonical example
@@ -129,6 +131,25 @@ Two boundaries are worth knowing:
 
 In a federated graph the resolved `typeId` can also be published to the supergraph, so a node subgraph can map an ID to its type without asking the owning subgraph; see xref:../../how-to/apollo-federation.adoc#publish-typeids[Publish typeIds to the supergraph].
 
+[#narrowing-the-key]
+=== Narrowing the key
+
+A key column that should never have been in the id (a mutable date, a status) can be dropped without invalidating ids already issued. Narrow `keyColumns` and move the old list to `legacyKeyColumns`:
+
+[source,graphql]
+----
+type InventoryItem implements Node @table(name: "inventory")
+    @node(keyColumns: ["inventory_id"], legacyKeyColumns: ["store_id", "inventory_id", "last_update"]) {
+  id: ID!
+}
+----
+
+Old ids keep resolving, including ids whose `last_update` has changed since they were issued, and every id in a response is the narrowed form. The type id must stay the same; a renamed type id is a different id space. A generated table class can state the same thing with `__NODE_LEGACY_KEY_COLUMNS`; when both are present they must be the same list in the same order.
+
+The generated `NodeIdEncoder` logs the first legacy id of each type it converts at `INFO`, and later ones at `DEBUG`. Once a release passes with no such line, the stored legacy ids are gone and `legacyKeyColumns` can be deleted. `NodeIdEncoder.toCurrentId(id)` rewrites a stored id without going through GraphQL; see the xref:../runtime-api.adoc[runtime API].
+
+The build refuses a legacy shape that leaves out a `keyColumns` column, holds exactly the `keyColumns` columns in another order, names a column twice or one the table lacks, disagrees with the table class's `__NODE_LEGACY_KEY_COLUMNS`, or belongs to a type id that types over different tables or with different keys answer to.
+
 === When the table has its own `id` column
 
 A table can publish node metadata *and* have a column literally named `id`. Graphitron will not choose for you: `id` could mean the encoded global ID or the column's own value, both are legitimate, and the two are different values on the wire. The build fails until you say which:
@@ -162,7 +183,7 @@ to expose the raw column.
 
 == Editor support
 
-The graphitron LSP completes `keyColumns:` element values against the columns of the type's `@table`-backed jOOQ class (the same column set xref:field.adoc[`@field(name:)`] completes against), flags typos per-element, and hovers each element to surface its GraphQL type. Cursor inside the empty list literal offers every column; once you start typing, the editor narrows to the matching prefix.
+The graphitron LSP completes `keyColumns:` and `legacyKeyColumns:` element values against the columns of the type's `@table`-backed jOOQ class (the same column set xref:field.adoc[`@field(name:)`] completes against), flags typos per-element, and hovers each element to surface its GraphQL type. Cursor inside the empty list literal offers every column; once you start typing, the editor narrows to the matching prefix.
 
 == See also
 

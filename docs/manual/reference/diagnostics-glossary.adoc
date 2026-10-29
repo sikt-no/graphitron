@@ -127,9 +127,9 @@ When `[author-error]` carries an `UnknownName` variant (a closed-set name lookup
 
 *Sample line.* `[author-error] @node keyColumns 'customer_id' did not match a column on table 'customer'; did you mean: CUSTOMER_ID`.
 
-*Cause.* A `@node` directive's `keyColumns:` argument named a column the bound table doesn't carry.
+*Cause.* A `@node` directive's `keyColumns:` or `legacyKeyColumns:` argument named a column the bound table doesn't carry.
 
-*Next step.* Correct case (jOOQ-generated identifiers are usually upper-snake) or update `keyColumns:` after a schema change. xref:directives/node.adoc[`@node` directive reference] covers the `keyColumns:` contract.
+*Next step.* Correct case (jOOQ-generated identifiers are usually upper-snake) or update the list after a schema change. xref:directives/node.adoc[`@node` directive reference] covers the `keyColumns:` and `legacyKeyColumns:` contracts.
 
 [#attempt-dml-kind]
 === dml-kind

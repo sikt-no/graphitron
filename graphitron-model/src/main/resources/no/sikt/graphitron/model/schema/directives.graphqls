@@ -570,6 +570,14 @@ directive @node(
   Note that in such a case, changing the primary key will cause the IDs to change, which can be undesirable.
   """
   keyColumns: [String!]
+
+  """
+  The column list ids of this type were encoded from before keyColumns was narrowed, in the order the old ids were written in.
+  An id in this shape is still accepted wherever an id of the type is read, and identifies the row its keyColumns values name;
+  its other values are checked to be valid values of their columns and otherwise ignored. Ids Graphitron emits always use keyColumns.
+  Must contain every keyColumns column plus at least one more, each once.
+  """
+  legacyKeyColumns: [String!]
 ) on OBJECT
 
 """

@@ -40,6 +40,7 @@ public class JooqCatalog {
 
     /** The key-columns constant beside it, in the positional order encoded ids depend on. */
     private static final String NODE_KEY_COLUMNS = "__NODE_KEY_COLUMNS";
+    private static final String NODE_LEGACY_KEY_COLUMNS = "__NODE_LEGACY_KEY_COLUMNS";
 
     private final Catalog catalog;
     private final ClassLoader codegenLoader;
@@ -1160,6 +1161,69 @@ public class JooqCatalog {
     }
 
     /**
+     * Whether a generated table class publishes a legacy node key shape graphitron can use: the
+     * {@code __NODE_LEGACY_KEY_COLUMNS} array, the column list ids of the table's node type were
+     * encoded from before {@code __NODE_KEY_COLUMNS} was narrowed. {@code identity} is the class's
+     * {@link #nodeMetadataOf} reading, which the array needs beside it.
+     *
+     * <p>An independent axis from the identity pair: a malformed legacy array leaves
+     * {@link #nodeMetadataOf} and {@link #nodeIdMetadata(String)} exactly as they were.
+     */
+    public NodeLegacyKeyLookup nodeLegacyKeyOf(Table<?> table, NodeIdMetadataLookup identity) {
+        return stateNodeLegacyKey(table.getName(),
+            statedConstant(table.getClass(), NODE_LEGACY_KEY_COLUMNS), identity,
+            field -> columnOf(table, field));
+    }
+
+    /**
+     * The decision behind {@link #nodeLegacyKeyOf}, factored as {@link #stateNodeMetadata} is so
+     * tests can reach each outcome with synthetic stated values. {@link NodeLegacyKeyLookup.Absent}
+     * exactly when the class does not declare the constant. Declaring it beside an identity pair
+     * graphitron cannot use, or as anything but a non-empty array of the table's own columns, is
+     * {@link NodeLegacyKeyLookup.Malformed}.
+     */
+    public static NodeLegacyKeyLookup stateNodeLegacyKey(
+            String tableSqlName,
+            StatedConstant legacyKeyColumns,
+            NodeIdMetadataLookup identity,
+            java.util.function.Function<org.jooq.Field<?>, Optional<ColumnEntry>> keyColumn) {
+        if (!legacyKeyColumns.declared()) {
+            return new NodeLegacyKeyLookup.Absent();
+        }
+        if (!(identity instanceof NodeIdMetadataLookup.Present)) {
+            return malformedLegacy(tableSqlName,
+                "__NODE_LEGACY_KEY_COLUMNS is declared without a usable __NODE_TYPE_ID and __NODE_KEY_COLUMNS");
+        }
+        if (!(legacyKeyColumns.value() instanceof org.jooq.Field<?>[] fields) || fields.length == 0) {
+            return malformedLegacy(tableSqlName,
+                "__NODE_LEGACY_KEY_COLUMNS must be a non-empty Field<?>[] (got: "
+                    + legacyKeyColumns.value() + ")");
+        }
+        var resolved = new ArrayList<ColumnRef>(fields.length);
+        for (int i = 0; i < fields.length; i++) {
+            var f = fields[i];
+            if (f == null) {
+                return malformedLegacy(tableSqlName, "__NODE_LEGACY_KEY_COLUMNS[" + i + "] is null");
+            }
+            Optional<ColumnEntry> col = keyColumn.apply(f);
+            if (col.isEmpty()) {
+                return malformedLegacy(tableSqlName,
+                    "__NODE_LEGACY_KEY_COLUMNS[" + i + "] references column '" + f.getName()
+                    + "' which does not belong to this table");
+            }
+            var e = col.get();
+            resolved.add(new ColumnRef(e.sqlName(), e.javaName(), e.columnClass(), e.databaseType()));
+        }
+        return new NodeLegacyKeyLookup.Present(List.copyOf(resolved));
+    }
+
+    private static NodeLegacyKeyLookup.Malformed malformedLegacy(String tableSqlName, String reason) {
+        LOGGER.warn("KjerneJooqGenerator legacy key metadata on table '{}' is malformed: {}",
+            tableSqlName, reason);
+        return new NodeLegacyKeyLookup.Malformed(reason);
+    }
+
+    /**
      * The decision behind {@link #nodeMetadataOf}, factored so tests can reach each outcome with
      * synthetic stated values instead of a generated class broken one way per case.
      */
@@ -1702,6 +1766,20 @@ public class JooqCatalog {
         record Present(NodeIdMetadata metadata) implements NodeIdMetadataLookup {}
         record Absent() implements NodeIdMetadataLookup {}
         record Malformed(String reason) implements NodeIdMetadataLookup {}
+    }
+
+    /**
+     * Three-state outcome of a {@link #nodeLegacyKeyOf} reading, on {@link NodeIdMetadataLookup}'s
+     * terms: {@link Present} carries the legacy array resolved positionally to the table's columns.
+     */
+    public sealed interface NodeLegacyKeyLookup {
+        record Present(List<ColumnRef> legacyKeyColumns) implements NodeLegacyKeyLookup {
+            public Present {
+                legacyKeyColumns = List.copyOf(legacyKeyColumns);
+            }
+        }
+        record Absent() implements NodeLegacyKeyLookup {}
+        record Malformed(String reason) implements NodeLegacyKeyLookup {}
     }
 
     /**

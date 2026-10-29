@@ -68,3 +68,7 @@ The following directives have argument-shape changes between legacy and rewrite.
 * + multiRow: Boolean = false  (rewrite only)
 * + table: String  (rewrite only)
 
+==== `@node`
+
+* + legacyKeyColumns: [String!]  (rewrite only)
+

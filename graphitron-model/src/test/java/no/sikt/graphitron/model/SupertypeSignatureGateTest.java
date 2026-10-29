@@ -242,7 +242,10 @@ class SupertypeSignatureGateTest {
                "graphitron_directive_application_arg", "graphitron_undecoded_argument_entry",
                "graphql_directive_application_arg"),
         Set.of("graphitron_argument_reference_step_entry", "graphitron_field_reference_step_entry"),
-        Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column"),
+        // The legacy key-columns array is a second positional list of a table's columns, the same
+        // payload as the current one under the same key.
+        Set.of("sql_constraint_column", "sql_index_column", "sql_node_key_column",
+               "sql_node_legacy_key_column"),
         // A node's type id as the author wrote it and as the generated class publishes it. Two
         // corpora stating one kind of value, and graphitron_node is where the two are resolved, by
         // precedence, so a supertype over them would be that resolution stated a second time.
@@ -325,7 +328,10 @@ class SupertypeSignatureGateTest {
         // carries the declaration site the application was written on as four columns of its own,
         // where the entry carries that by being keyed at the position, so the two share no payload
         // and this tranche has one row for @node rather than two.
-        Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_node_keycolumn_entry"),
+        // @node's legacy key columns are the second list argument of the directive, decoded and
+        // anchored as twins of the current key's, so they join the set rather than pair beside it.
+        Set.of("graphitron_ast_node_keycolumn_entry", "graphitron_ast_node_legacykeycolumn_entry",
+               "graphitron_node_keycolumn_entry", "graphitron_node_legacykeycolumn_entry"),
         // One decode and one resolution of it, and the payload is one column because a deprecation
         // carries one thing: the replacement hint. The three anchors this used to name were one
         // relation each for a directive, an argument of one, and a field of an input object, and

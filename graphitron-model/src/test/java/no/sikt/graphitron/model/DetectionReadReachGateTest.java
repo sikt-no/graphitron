@@ -156,6 +156,11 @@ class DetectionReadReachGateTest {
         // can be written at, and the configured maximum.
         REACH.put("DefaultPageSizeDefects", Set.of());
 
+        // The legacy key shape's verdicts and its positive half are both stored by the stage that
+        // evaluates the rules, so reading either back expands no rule.
+        REACH.put("NodeLegacyKeyDefects", Set.of());
+        REACH.put("StoreLegacyKeyShapes", Set.of());
+
         // The decode-coverage rule's store operand. Its census side costs nothing here: every
         // relation it reads there is a stored table (the instruction census, the
         // classification domain, and the occurrence-path pair), so those expand no rule at read

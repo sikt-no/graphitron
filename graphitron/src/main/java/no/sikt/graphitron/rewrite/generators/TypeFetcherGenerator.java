@@ -6390,7 +6390,8 @@ public class TypeFetcherGenerator {
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey#echoBinding()}, the
      * node-key columns beyond the primary key that the leaf's {@code RETURNING} also captures, in
      * the same order, reading each from the slot of the decode local the WHERE declared for its
-     * carrier: the client's value, so an echoed id is the id the client sent.
+     * carrier: the client's value, so an echoed id is the id the client sent, in the current key
+     * shape, since the decode converts an id in a legacy shape before the WHERE reads its values.
      */
     private static CodeBlock missingRowEcho(
             no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem,

@@ -253,4 +253,70 @@ class JooqCatalogNodeIdMetadataTest {
         assertThat(catalog.nodeMetadataOf(catalog.findTable("qux").asEntry().orElseThrow().table()))
             .isInstanceOf(JooqCatalog.NodeIdMetadataLookup.Absent.class);
     }
+
+    // --- The legacy key shape, an independent axis beside the pair ---
+
+    private static JooqCatalog.NodeLegacyKeyLookup legacy(JooqCatalog.StatedConstant legacyKeyColumns,
+                                                          JooqCatalog.NodeIdMetadataLookup identity) {
+        return JooqCatalog.stateNodeLegacyKey("bar", legacyKeyColumns, identity,
+            field -> RESOLVE_ID_COLUMNS.apply(field.getName()));
+    }
+
+    private static final JooqCatalog.NodeIdMetadataLookup USABLE = state(stated("Bar"), stated(VALID_KEYS));
+
+    @Test
+    void aWellFormedLegacyArrayIsPresentWithItsColumnsInOrder() {
+        assertThat(legacy(stated(new Field<?>[] { field("id_2"), field("id_1") }), USABLE))
+            .isInstanceOfSatisfying(JooqCatalog.NodeLegacyKeyLookup.Present.class, p ->
+                assertThat(p.legacyKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("id_2", "id_1"));
+    }
+
+    @Test
+    void anUndeclaredLegacyArrayIsAbsentWhateverThePair() {
+        assertThat(legacy(ABSENT, USABLE)).isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Absent.class);
+        assertThat(legacy(ABSENT, state(ABSENT, ABSENT)))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Absent.class);
+    }
+
+    @Test
+    void aMalformedLegacyArrayIsAnAttemptThatFailed() {
+        assertThat(legacy(stated(null), USABLE)).isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+        assertThat(legacy(stated(new Field<?>[0]), USABLE))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+        assertThat(legacy(stated("id_1"), USABLE)).isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+        assertThat(legacy(stated(new Field<?>[] { field("id_1"), null }), USABLE))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+        assertThat(legacy(stated(new Field<?>[] { field("not_a_column_on_bar") }), USABLE))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+    }
+
+    /** No usable pair beside it: the legacy array has no key to be the old form of. */
+    @Test
+    void aLegacyArrayWithoutAUsablePairIsAnAttemptThatFailed() {
+        var array = stated(new Field<?>[] { field("id_1"), field("id_2") });
+        assertThat(legacy(array, state(ABSENT, ABSENT)))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+        assertThat(legacy(array, state(stated("Bar"), ABSENT)))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+    }
+
+    /** The fixture classes: the catalog's legacy table, its malformed twin, and the pair left alone. */
+    @Test
+    void aMalformedLegacyArrayLeavesThePairAsItWas() {
+        var catalog = catalog();
+        var keyed = catalog.findTable("node_legacy_keyed").asEntry().orElseThrow().table();
+        var foreign = catalog.findTable("node_legacy_foreign").asEntry().orElseThrow().table();
+        var keyedIdentity = catalog.nodeMetadataOf(keyed);
+        assertThat(catalog.nodeLegacyKeyOf(keyed, keyedIdentity))
+            .isInstanceOfSatisfying(JooqCatalog.NodeLegacyKeyLookup.Present.class, p ->
+                assertThat(p.legacyKeyColumns()).extracting(ColumnRef::sqlName)
+                    .containsExactly("era", "id"));
+        var foreignIdentity = catalog.nodeMetadataOf(foreign);
+        assertThat(catalog.nodeLegacyKeyOf(foreign, foreignIdentity))
+            .isInstanceOf(JooqCatalog.NodeLegacyKeyLookup.Malformed.class);
+        assertThat(foreignIdentity).isInstanceOfSatisfying(JooqCatalog.NodeIdMetadataLookup.Present.class,
+            p -> assertThat(p.metadata().keyColumns()).extracting(ColumnRef::sqlName).containsExactly("id"));
+        assertThat(catalog.nodeIdMetadata("node_legacy_foreign")).isPresent();
+    }
 }

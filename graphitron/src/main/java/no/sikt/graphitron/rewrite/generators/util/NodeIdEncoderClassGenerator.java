@@ -1,6 +1,8 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
 import no.sikt.graphitron.javapoet.AnnotationSpec;
+import no.sikt.graphitron.javapoet.ArrayTypeName;
+import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.FieldSpec;
 import no.sikt.graphitron.javapoet.MethodSpec;
@@ -11,6 +13,7 @@ import no.sikt.graphitron.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.render.SlotParse;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
+import no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.LegacyKeyShape;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.rewrite.model.GraphitronType.NodeType;
 import no.sikt.graphitron.rewrite.model.HelperRef;
@@ -18,7 +21,9 @@ import no.sikt.graphitron.rewrite.model.HelperRef;
 import javax.lang.model.element.Modifier;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.stream.Collectors;
@@ -61,6 +66,15 @@ import java.util.stream.Collectors;
  * values in the message are client-supplied, so they are logged with control characters escaped and
  * capped in length.
  *
+ * <p>A type id may carry a legacy key shape ({@link LegacyKeyShape}): the column list its ids were
+ * encoded from before the key was narrowed. {@code decodeColumns} converts an id of such a type id to
+ * the current shape before its arity check, through the public {@code toCurrentId}, so every decode
+ * surface accepts both shapes with no call-site change and every id emitted stays in the current
+ * one. A legacy id's values are each checked against its legacy column exactly as a current id's
+ * are, the current key's values are picked out and re-encoded, and the rest are discarded. The
+ * first conversion of each type id is logged at {@code INFO} and later ones at {@code DEBUG}, so a
+ * schema owner can tell when the old ids are gone; no client value is logged.
+ *
  * <p>The generated class is {@code final} with a private constructor and only static methods, so
  * consumers cannot override the encoding: a single canonical wire format across every generated
  * dispatcher is what keeps nodeIds durable across schema evolution.
@@ -68,6 +82,9 @@ import java.util.stream.Collectors;
 public class NodeIdEncoderClassGenerator {
 
     public static final String CLASS_NAME = "NodeIdEncoder";
+
+    /** The nested class holding one type id's legacy key shape. */
+    private static final String LEGACY_SHAPE_CLASS = "LegacyKeyShape";
 
     private static final ClassName BASE64      = ClassName.get(Base64.class);
     private static final ClassName CHARSETS    = ClassName.get(StandardCharsets.class);
@@ -86,20 +103,23 @@ public class NodeIdEncoderClassGenerator {
     /**
      * Emits the encoder class with per-Node {@code encode<TypeName>} / {@code decode<TypeName>}
      * helpers, then a {@code decode<TypeName>} for each catalog decode. {@code outputPackage}
-     * locates the sibling {@code ColumnValues} every key slot is checked through.
+     * locates the sibling {@code ColumnValues} every key slot is checked through, and
+     * {@code legacyKeyShapes} are the type ids whose old ids {@code decodeColumns} converts.
      */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
+    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
+                                          List<LegacyKeyShape> legacyKeyShapes) {
         var nodeTypes = schema.types().values().stream()
             .filter(t -> t instanceof NodeType)
             .map(t -> (NodeType) t)
             .collect(Collectors.toUnmodifiableList());
         var columnValues = ClassName.get(outputPackage + ".util", ColumnValuesClassGenerator.CLASS_NAME);
-        return generate(nodeTypes, schema.catalogNodeDecodes(), columnValues);
+        return generate(nodeTypes, schema.catalogNodeDecodes(), columnValues, legacyKeyShapes);
     }
 
     private static List<TypeSpec> generate(List<NodeType> nodeTypes,
                                            List<HelperRef.Decode> catalogNodeDecodes,
-                                           ClassName columnValues) {
+                                           ClassName columnValues,
+                                           List<LegacyKeyShape> legacyKeyShapes) {
         var privateCtor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PRIVATE)
             .build();
@@ -176,8 +196,22 @@ public class NodeIdEncoderClassGenerator {
                 + "is not exactly what {@link #encode} writes for a value of its column.\n"
                 + "{@code parseClasses[i]}, when the array and the element are non-null, is the user type\n"
                 + "of a converter on {@code columns[i]}, which that slot's text is parsed as.\n")
+            .addCode("// An id of a type id with a legacy key shape is read in the current shape.\n")
+            .beginControlFlow("if (LEGACY_KEY_SHAPES.containsKey(expectedTypeId) && expectedTypeId.equals(peekTypeId(base64Id)))")
+                .addStatement("base64Id = toCurrentId(base64Id)")
+            .endControlFlow()
             .addStatement("$T values = decodeValues(expectedTypeId, base64Id)", String[].class)
             .addStatement("if (values == null || values.length != columns.length) return null")
+            .addStatement("return checkSlots(values, parseClasses, columns)")
+            .build();
+
+        // The per-slot check every decoded value passes, the current shape's and a legacy one's alike.
+        var checkSlots = MethodSpec.methodBuilder("checkSlots")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(Object[].class)
+            .addParameter(String[].class, "values")
+            .addParameter(ArrayTypeName.of(classWildcard), "parseClasses")
+            .addParameter(ArrayTypeName.of(fieldWildcard), "columns")
             .addStatement("Object[] decoded = new Object[values.length]")
             .beginControlFlow("for (int i = 0; i < values.length; i++)")
                 .addStatement("$T parseClass = parseClasses == null ? null : parseClasses[i]", classWildcard)
@@ -188,6 +222,75 @@ public class NodeIdEncoderClassGenerator {
                 .endControlFlow()
             .endControlFlow()
             .addStatement("return decoded")
+            .build();
+
+        var legacyShapeClass = ClassName.get(columnValues.packageName(), CLASS_NAME, LEGACY_SHAPE_CLASS);
+        var legacyShapeType = TypeSpec.classBuilder(LEGACY_SHAPE_CLASS)
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .addJavadoc("A type id's legacy key shape: its columns in the order old ids carry their values,\n"
+                + "their parse classes as {@code decodeColumns} takes them, and for each current key\n"
+                + "position the legacy position its value is read from.\n")
+            .addField(ArrayTypeName.of(fieldWildcard), "columns", Modifier.FINAL)
+            .addField(ArrayTypeName.of(classWildcard), "parseClasses", Modifier.FINAL)
+            .addField(int[].class, "keptAt", Modifier.FINAL)
+            .addMethod(MethodSpec.constructorBuilder()
+                .addParameter(ArrayTypeName.of(fieldWildcard), "columns")
+                .addParameter(ArrayTypeName.of(classWildcard), "parseClasses")
+                .addParameter(int[].class, "keptAt")
+                .addStatement("this.columns = columns")
+                .addStatement("this.parseClasses = parseClasses")
+                .addStatement("this.keptAt = keptAt")
+                .build())
+            .build();
+        var shapeMap = ParameterizedTypeName.get(ClassName.get(Map.class), ClassName.get(String.class),
+            legacyShapeClass);
+        var legacyShapesField = FieldSpec.builder(shapeMap, "LEGACY_KEY_SHAPES",
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("legacyKeyShapes()")
+            .build();
+        var legacyShapesBuilder = MethodSpec.methodBuilder("legacyKeyShapes")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(shapeMap)
+            .addStatement("$T shapes = new $T<>()", shapeMap, HashMap.class);
+        for (LegacyKeyShape shape : legacyKeyShapes) {
+            legacyShapesBuilder.addStatement("shapes.put($S, new $T(new $T { $L }, $L, new int[] { $L }))",
+                shape.typeId(), legacyShapeClass, ArrayTypeName.of(fieldWildcard),
+                columnReferences(shape),
+                SlotParse.parseClasses(shape.columns()),
+                shape.keptAt().stream().map(String::valueOf).collect(Collectors.joining(", ")));
+        }
+        var legacyShapes = legacyShapesBuilder
+            .addStatement("return $T.copyOf(shapes)", Map.class)
+            .build();
+        var convertedTypeIdsField = FieldSpec.builder(stringSetType(), "CONVERTED_TYPE_IDS",
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL)
+            .initializer("$T.newKeySet()", ConcurrentHashMap.class)
+            .build();
+
+        var toCurrentId = MethodSpec.methodBuilder("toCurrentId")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(String.class)
+            .addParameter(String.class, "base64Id")
+            .addJavadoc("The id in its type's current key shape: unchanged unless it is in the legacy shape of a\n"
+                + "type id that declares one, the id the row's current encode produces when it is, and\n"
+                + "{@code null} when it is a legacy-shape id carrying a value that is not one of its column.\n")
+            .addStatement("$T typeId = peekTypeId(base64Id)", String.class)
+            .addStatement("$T shape = typeId == null ? null : LEGACY_KEY_SHAPES.get(typeId)", legacyShapeClass)
+            .addStatement("if (shape == null) return base64Id")
+            .addStatement("$T values = decodeValues(typeId, base64Id)", String[].class)
+            .addStatement("if (values == null || values.length != shape.columns.length) return base64Id")
+            .addStatement("if (checkSlots(values, shape.parseClasses, shape.columns) == null) return null")
+            .addStatement("Object[] current = new Object[shape.keptAt.length]")
+            .beginControlFlow("for (int i = 0; i < current.length; i++)")
+                .addStatement("current[i] = values[shape.keptAt[i]]")
+            .endControlFlow()
+            .beginControlFlow("if (CONVERTED_TYPE_IDS.add(typeId))")
+                .addStatement("LOGGER.info($S, typeId)",
+                    "Converted a node id of type id {} from its legacy key shape; remove legacyKeyColumns once no such line is logged.")
+            .nextControlFlow("else")
+                .addStatement("LOGGER.debug($S, typeId)", "Converted a node id of type id {} from its legacy key shape.")
+            .endControlFlow()
+            .addStatement("return encode(typeId, current)")
             .build();
 
         var stringSet = ParameterizedTypeName.get(ClassName.get(Set.class), ClassName.get(String.class));
@@ -257,11 +360,17 @@ public class NodeIdEncoderClassGenerator {
                 + "by design — see {@link NodeIdEncoderClassGenerator}.\n")
             .addField(loggerField)
             .addField(foldedColumnsField)
+            .addField(legacyShapesField)
+            .addField(convertedTypeIdsField)
+            .addType(legacyShapeType)
             .addMethod(privateCtor)
             .addMethod(encode)
             .addMethod(peekTypeId)
             .addMethod(decodeValues)
+            .addMethod(toCurrentId)
             .addMethod(decodeColumns)
+            .addMethod(checkSlots)
+            .addMethod(legacyShapes)
             .addMethod(reportFold)
             .addMethod(logSafe)
             .addMethod(buildRequireColumnAgreement());
@@ -304,6 +413,19 @@ public class NodeIdEncoderClassGenerator {
                 GRAPHQL_ERROR, "Conflicting values supplied for ")
             .endControlFlow()
             .build();
+    }
+
+    /** The legacy columns as the table constants {@code decodeColumns} callers pass. */
+    private static CodeBlock columnReferences(LegacyKeyShape shape) {
+        ClassName tablesClass = CatalogRefs.constantsClass(shape.table());
+        String tableField = shape.table().javaFieldName();
+        return shape.columns().stream()
+            .map(col -> CodeBlock.of("$T.$L.$L", tablesClass, tableField, col.javaName()))
+            .collect(CodeBlock.joining(", "));
+    }
+
+    private static TypeName stringSetType() {
+        return ParameterizedTypeName.get(ClassName.get(Set.class), ClassName.get(String.class));
     }
 
     /** Emits {@code static String encode<TypeName>(T1 v0, ..., TN vN-1)}. */

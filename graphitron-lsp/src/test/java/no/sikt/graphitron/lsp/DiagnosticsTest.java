@@ -1278,6 +1278,22 @@ class DiagnosticsTest {
     }
 
     @Test
+    void nodeLegacyKeyColumns_unknownElement_producesError() {
+        // The legacy list binds as keyColumns does: each element is checked against the table.
+        var file = file("""
+            type Foo implements Node @table(name: "film") @node(legacyKeyColumns: ["FILM_ID", "MISSING"]) {
+                id: ID
+            }
+            """);
+
+        var diags = compute(file, catalogOnly);
+
+        assertThat(diags).hasSize(1);
+        assertThat(diags.get(0).getMessage()).contains("MISSING").contains("column");
+        assertThat(diags.get(0).getSeverity()).isEqualTo(DiagnosticSeverity.Error);
+    }
+
+    @Test
     void nodeIdTypeName_unknownType_producesError() {
         var file = file("""
             type Query {

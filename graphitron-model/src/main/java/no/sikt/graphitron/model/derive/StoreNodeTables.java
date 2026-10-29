@@ -111,7 +111,7 @@ public final class StoreNodeTables {
     public static Tables read(DSLContext dsl, String graphName) {
         var out = new LinkedHashMap<String, NodeTable>();
         for (var binding : bindings(dsl, graphName)) {
-            var table = tableRef(dsl, binding);
+            var table = tableRef(dsl, binding.sourceName(), binding.tableSchema(), binding.tableName());
             if (table.isEmpty()) {
                 continue;
             }
@@ -148,21 +148,25 @@ public final class StoreNodeTables {
     }
 
     /**
-     * The bound table as a {@link TableRef}: its SQL name, its generated field name, the three
+     * A catalog table as a {@link TableRef}: its SQL name, its generated field name, the three
      * generated classes, its primary key in key order and its columns in declaration order. Absent
      * when the schema publishes no {@code Tables} class, since a ref without a constants class cannot
      * emit a column reference and a partial one is a trap for whoever reads it next.
+     *
+     * <p>Reads {@code sql_table}, {@code sql_schema}, {@code sql_column}, {@code sql_primary_key} and
+     * {@code sql_constraint_column}, which a caller outside this class folds into its own reads.
      */
-    private static Optional<TableRef> tableRef(DSLContext dsl, Binding binding) {
+    static Optional<TableRef> tableRef(DSLContext dsl, String sourceName, String tableSchema,
+                                       String tableName) {
         var t = SQL_TABLE;
         var s = SQL_SCHEMA;
         var row = dsl.select(t.TABLE_NAME, t.JOOQ_NAME, t.CLASS_FQN, t.RECORD_CLASS_FQN,
                 s.TABLES_CLASS_FQN)
             .from(t)
             .join(s).on(s.SOURCE_NAME.eq(t.SOURCE_NAME), s.TABLE_SCHEMA.eq(t.TABLE_SCHEMA))
-            .where(t.SOURCE_NAME.eq(binding.sourceName()),
-                t.TABLE_SCHEMA.eq(binding.tableSchema()),
-                t.TABLE_NAME.eq(binding.tableName()))
+            .where(t.SOURCE_NAME.eq(sourceName),
+                t.TABLE_SCHEMA.eq(tableSchema),
+                t.TABLE_NAME.eq(tableName))
             .fetchOne();
         if (row == null || row.value5() == null) {
             return Optional.empty();
@@ -173,24 +177,26 @@ public final class StoreNodeTables {
             row.value3(),
             row.value4(),
             row.value5(),
-            primaryKeyColumns(dsl, binding),
-            allColumns(dsl, binding)));
+            primaryKeyColumns(dsl, sourceName, tableSchema, tableName),
+            allColumns(dsl, sourceName, tableSchema, tableName)));
     }
 
     /** Every column of the bound table, in the declaration order {@code sql_column.ordinal} states. */
-    private static List<ColumnRef> allColumns(DSLContext dsl, Binding binding) {
+    private static List<ColumnRef> allColumns(DSLContext dsl, String sourceName, String tableSchema,
+                                              String tableName) {
         var c = SQL_COLUMN;
         return dsl.select(c.COLUMN_NAME, c.JOOQ_NAME, c.BINDING_TYPE, c.DATABASE_TYPE)
             .from(c)
-            .where(c.SOURCE_NAME.eq(binding.sourceName()),
-                c.TABLE_SCHEMA.eq(binding.tableSchema()),
-                c.TABLE_NAME.eq(binding.tableName()))
+            .where(c.SOURCE_NAME.eq(sourceName),
+                c.TABLE_SCHEMA.eq(tableSchema),
+                c.TABLE_NAME.eq(tableName))
             .orderBy(c.ORDINAL)
             .fetch(StoreNodeTables::columnOf);
     }
 
     /** The bound table's primary key in key-field order; empty where the table has none. */
-    private static List<ColumnRef> primaryKeyColumns(DSLContext dsl, Binding binding) {
+    private static List<ColumnRef> primaryKeyColumns(DSLContext dsl, String sourceName,
+                                                     String tableSchema, String tableName) {
         var pk = SQL_PRIMARY_KEY;
         var cc = SQL_CONSTRAINT_COLUMN;
         var c = SQL_COLUMN;
@@ -200,9 +206,9 @@ public final class StoreNodeTables {
                 cc.TABLE_NAME.eq(pk.TABLE_NAME), cc.CONSTRAINT_NAME.eq(pk.CONSTRAINT_NAME))
             .join(c).on(c.SOURCE_NAME.eq(cc.SOURCE_NAME), c.TABLE_SCHEMA.eq(cc.TABLE_SCHEMA),
                 c.TABLE_NAME.eq(cc.TABLE_NAME), c.COLUMN_NAME.eq(cc.COLUMN_NAME))
-            .where(pk.SOURCE_NAME.eq(binding.sourceName()),
-                pk.TABLE_SCHEMA.eq(binding.tableSchema()),
-                pk.TABLE_NAME.eq(binding.tableName()))
+            .where(pk.SOURCE_NAME.eq(sourceName),
+                pk.TABLE_SCHEMA.eq(tableSchema),
+                pk.TABLE_NAME.eq(tableName))
             .orderBy(cc.POSITION)
             .fetch(StoreNodeTables::columnOf);
     }

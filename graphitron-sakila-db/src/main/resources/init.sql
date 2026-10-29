@@ -821,6 +821,22 @@ CREATE TABLE node_metadata_foreign (
     film_id integer
 );
 
+-- A legacy node key shape the table class states: NodeIdFixtureGenerator publishes a key of id and a
+-- __NODE_LEGACY_KEY_COLUMNS of (era, id), the list ids were encoded from before era left the key.
+-- The dropped column comes first, so a conversion's pick is not a prefix of the old values.
+CREATE TABLE node_legacy_keyed (
+    id  integer PRIMARY KEY,
+    era integer NOT NULL
+);
+
+-- A legacy key shape naming another table's column: the array holds film.film_id, a field of film,
+-- beside this table's own film_id column, so the catalog records an attempt that failed, on
+-- node_metadata_foreign's terms.
+CREATE TABLE node_legacy_foreign (
+    id      integer PRIMARY KEY,
+    film_id integer
+);
+
 -- Single-key pair. `xlat_parent`'s node key is `pk_id`; `xlat_child.parent_alt_key` references the
 -- unrelated unique column `alt_key`. Seeds give parent P1 two children and P2 one, so filtering by
 -- a list of parent ids has an asymmetric expected result rather than "everything".

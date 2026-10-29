@@ -21,6 +21,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SEGM
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
@@ -88,7 +89,9 @@ final class GraphitronTypeEntries {
 
         var nodes = applied(applications, "node");
         nodes(dsl, graph, touchedAt, nodes);
-        nodeKeyColumns(dsl, graph, touchedAt, nodes);
+        nodeKeyColumns(dsl, graph, touchedAt, nodes, "keyColumns", GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY);
+        nodeKeyColumns(dsl, graph, touchedAt, nodes, "legacyKeyColumns",
+            GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY);
 
         discriminates(dsl, graph, touchedAt, wrote(applied(applications, "discriminate"), "on"));
         discriminators(dsl, graph, touchedAt,
@@ -116,7 +119,8 @@ final class GraphitronTypeEntries {
         GRAPHITRON_AST_ERROR_GENERIC_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_DATABASE_HANDLER_ENTRY,
         GRAPHITRON_AST_ERROR_HANDLER_ENTRY, GRAPHITRON_AST_ERROR_ENTRY,
-        GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_ENTRY,
+        GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY, GRAPHITRON_AST_NODE_LEGACYKEYCOLUMN_ENTRY,
+        GRAPHITRON_AST_NODE_ENTRY,
         GRAPHITRON_AST_DISCRIMINATE_ENTRY, GRAPHITRON_AST_DISCRIMINATOR_ENTRY,
         GRAPHITRON_AST_FEDERATION_KEY_SEGMENT_ENTRY,
         GRAPHITRON_AST_FEDERATION_KEY_SELECTION_ENTRY, GRAPHITRON_AST_FEDERATION_KEY_ENTRY);
@@ -316,24 +320,32 @@ final class GraphitronTypeEntries {
      * read through {@link GraphitronAstEntries#writtenIn}. Each row names the element it decodes. The
      * order is part of what the directive says, being the order the columns take inside an id, and
      * that is why it is not restated here: the element's own row carries the index already.
+     *
+     * <p>Both list arguments of {@code @node} decode this way, the current key and the legacy one,
+     * into twin relations of one shape: {@code table} is the argument's relation, its columns read
+     * off by name ({@link Table#field(org.jooq.Field)}) since the twins are distinct generated types.
      */
     private static void nodeKeyColumns(DSLContext dsl, String graph, LocalDateTime touchedAt,
-                                       List<Directive> applications) {
-        var t = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
-        var rows = writtenIn(applications, "keyColumns").stream().collect(Rows.toRowList(
-            column -> val(graph, t.GRAPH_NAME),
+                                       List<Directive> applications, String argument,
+                                       Table<?> table) {
+        var k = GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
+        var graphName = table.field(k.GRAPH_NAME);
+        var touched = table.field(k.TOUCHED_AT);
+        var columnRef = table.field(k.COLUMN_REF);
+        var rows = writtenIn(applications, argument).stream().collect(Rows.toRowList(
+            column -> val(graph, graphName),
             column -> GraphQLAstEntries.sourceName(column.node()),
             column -> GraphQLAstEntries.sourceLine(column.node()),
             column -> GraphQLAstEntries.sourceColumn(column.node()),
-            column -> val(touchedAt, t.TOUCHED_AT),
-            column -> val(column.value(), t.COLUMN_REF)));
+            column -> val(touchedAt, touched),
+            column -> val(column.value(), columnRef)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.COLUMN_REF)
+            dsl.insertInto(table, graphName, table.field(k.SOURCE_NAME), table.field(k.SOURCE_LINE),
+                    table.field(k.SOURCE_COLUMN), touched, columnRef)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
-                .set(t.COLUMN_REF, excluded(t.COLUMN_REF)));
+                .set(touched, excluded(touched))
+                .set(columnRef, excluded(columnRef)));
     }
 
     /**

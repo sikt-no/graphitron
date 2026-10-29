@@ -96,6 +96,17 @@ public final class FilmReviewService {
     }
 
     /**
+     * Fixture: takes an {@link InventoryRecordAssignment} whose member is an {@code InventoryRecord}
+     * decoded from an InventoryItem id, and reads back the key column the decode populated.
+     */
+    public static String assignInventoryRecord(InventoryRecordAssignment in) {
+        if (in == null || in.inventory() == null) {
+            return "none";
+        }
+        return "inventory:" + in.inventory().getInventoryId();
+    }
+
+    /**
      * Fixture for two {@code @nodeId} input fields over one table: takes a
      * {@link LanguagePairAssignment} whose two members are {@code LanguageRecord}s decoded from ids
      * of two different node types over {@code language}. Reading both key columns back is what

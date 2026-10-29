@@ -3401,6 +3401,27 @@ COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.source_column IS 'source c
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
 COMMENT ON COLUMN graphitron_ast_node_keycolumn_entry.column_ref IS 'the column the element names, as the author spelled it. Whether the database has a column of that name, and whether the columns together are a key, are questions for a resolution and not for this row';
 
+CREATE TABLE graphitron_ast_node_legacykeycolumn_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  column_ref    VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_node_legacykeycolumn_entry IS 'One legacyKeyColumns element of a @node application, as written. For example legacyKeyColumns: ["customer_id", "rental_id", "rental_date"] gives three rows, each keyed where its column was written.';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_line IS 'source line the element was written at, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.source_column IS 'source column of the same. The four key columns are the element''s own position, so this row is the decode of exactly one row of graphql_ast_value_entry; which application holds it, and where in the list it sits, are that row''s to say';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_node_legacykeycolumn_entry.column_ref IS 'the column the element names, as the author spelled it. Whether the database has a column of that name, and whether the list covers the current key, are questions for a resolution and not for this row';
+
 CREATE TABLE graphitron_ast_discriminate_entry (
   graph_name    VARCHAR NOT NULL,
   source_name   VARCHAR NOT NULL,
@@ -4136,6 +4157,23 @@ COMMENT ON COLUMN graphitron_node_keycolumn_entry.type_name IS 'the GraphQL type
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.position IS '0-based position within the owning list';
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.column_ref IS 'the key column as written, folded against nothing and resolved against nothing. Either the catalog''s own spelling or the generated field name will resolve, both being names a consumer sees, but which one this is is not asked here and no fold sits beside it: the crossing happens once, where the column is resolved, and a fold on this side would be a second one';
 COMMENT ON COLUMN graphitron_node_keycolumn_entry.touched_at IS 'when the reading that derived this row ran, on the parent relation''s terms. A list the author shortened loses its tail here and nowhere else: the elements it dropped carry the previous instant and the parent row does not, the application still standing';
+
+CREATE TABLE graphitron_node_legacykeycolumn_entry (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  position   INT     NOT NULL,
+  column_ref VARCHAR NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, type_name, position),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_node_entry (graph_name, type_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_node_legacykeycolumn_entry IS 'One ordered legacyKeyColumns entry of an @node, as the author wrote it. For example @node(keyColumns: ["rental_id"], legacyKeyColumns: ["customer_id", "rental_id", "rental_date"]) gives three rows, rental_id at position 1.';
+COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.type_name IS 'the GraphQL type this row is about';
+COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.position IS '0-based position within the owning list, which is the position the value takes inside an id issued under the old key';
+COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.column_ref IS 'the column as written, folded against nothing and resolved against nothing, on graphitron_node_keycolumn_entry''s terms';
+COMMENT ON COLUMN graphitron_node_legacykeycolumn_entry.touched_at IS 'when the reading that derived this row ran, on the parent relation''s terms. A list the author shortened loses its tail here and nowhere else';
 
 CREATE TABLE graphitron_field_node_id_entry (
   graph_name    VARCHAR NOT NULL,
@@ -5986,6 +6024,42 @@ COMMENT ON COLUMN sql_node_metadata_unreadable.table_schema IS 'SQL schema the t
 COMMENT ON COLUMN sql_node_metadata_unreadable.table_name IS 'SQL table name; with the two columns above, sql_table''s key';
 COMMENT ON COLUMN sql_node_metadata_unreadable.touched_at IS 'when the reading that produced this row ran, swept with the catalog''s other rows';
 
+CREATE TABLE sql_node_legacy_key_column (
+  source_name  VARCHAR NOT NULL,
+  table_schema VARCHAR NOT NULL,
+  table_name   VARCHAR NOT NULL,
+  position     INT     NOT NULL,
+  column_name  VARCHAR NOT NULL,
+  touched_at   TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name, position),
+  FOREIGN KEY (source_name, table_schema, table_name)
+    REFERENCES sql_node_metadata (source_name, table_schema, table_name),
+  FOREIGN KEY (source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name)
+);
+COMMENT ON TABLE sql_node_legacy_key_column IS 'One position in the legacy key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to. For example position 2 of an inventory table class''s __NODE_LEGACY_KEY_COLUMNS, naming last_update.';
+COMMENT ON COLUMN sql_node_legacy_key_column.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_legacy_key_column.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_node_legacy_key_column.table_name IS 'SQL table name. The foreign key is into sql_node_metadata, so a legacy array on a class publishing no usable identity pair has no row here';
+COMMENT ON COLUMN sql_node_legacy_key_column.position IS '0-based index in the stated array, recorded rather than reconstructed: it is the order the values sit in inside every id issued under the old key';
+COMMENT ON COLUMN sql_node_legacy_key_column.column_name IS 'the table''s column the entry names, by its SQL name';
+COMMENT ON COLUMN sql_node_legacy_key_column.touched_at IS 'when the reading that produced this row ran, swept with sql_node_metadata';
+
+CREATE TABLE sql_node_legacy_key_unreadable (
+  source_name  VARCHAR NOT NULL,
+  table_schema VARCHAR NOT NULL,
+  table_name   VARCHAR NOT NULL,
+  touched_at   TIMESTAMP,
+  PRIMARY KEY (source_name, table_schema, table_name),
+  FOREIGN KEY (source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name)
+);
+COMMENT ON TABLE sql_node_legacy_key_unreadable IS 'One table whose generated class declares a legacy node key-columns array graphitron cannot use. For example a table class stating __NODE_LEGACY_KEY_COLUMNS with a null entry, or stating it with no usable __NODE_TYPE_ID and __NODE_KEY_COLUMNS beside it.';
+COMMENT ON COLUMN sql_node_legacy_key_unreadable.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
+COMMENT ON COLUMN sql_node_legacy_key_unreadable.table_schema IS 'SQL schema the table lives in';
+COMMENT ON COLUMN sql_node_legacy_key_unreadable.table_name IS 'SQL table name; with the two columns above, sql_table''s key';
+COMMENT ON COLUMN sql_node_legacy_key_unreadable.touched_at IS 'when the reading that produced this row ran, swept with the catalog''s other rows';
+
 CREATE TABLE graphitron_tabletype (
   graph_name        VARCHAR NOT NULL,
   type_name         VARCHAR NOT NULL,
@@ -6070,6 +6144,58 @@ COMMENT ON COLUMN graphitron_node_keycolumn.column_name_upper IS 'the case fold 
 COMMENT ON COLUMN graphitron_node_keycolumn.table_source_name IS 'the catalog source declaring the table this column belongs to. Carried, with the schema and table beside it, so the row can reference both the type''s binding and the column itself: without them the relation could name a column of some other table and nothing would say so';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_schema IS 'the bound table''s schema, half of the reference that ties this column to the type''s own binding rather than to any table having such a column';
 COMMENT ON COLUMN graphitron_node_keycolumn.table_name IS 'the bound table, cascading with the catalog that declares it: a recrawled source takes its columns and these rows with it, which is the same lifetime rule graphitron_tabletype carries';
+
+CREATE TABLE graphitron_node_legacy_keycolumn (
+  graph_name        VARCHAR NOT NULL,
+  type_id           VARCHAR NOT NULL,
+  position          INT     NOT NULL,
+  column_name       VARCHAR NOT NULL,
+  current_position  INT,
+  column_origin     VARCHAR NOT NULL,
+  table_source_name VARCHAR NOT NULL,
+  table_schema      VARCHAR NOT NULL,
+  table_name        VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_id, position),
+  UNIQUE (graph_name, type_id, column_name),
+  UNIQUE (graph_name, type_id, current_position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name, column_name)
+    REFERENCES sql_column (source_name, table_schema, table_name, column_name) ON DELETE CASCADE,
+  CHECK (position >= 0),
+  CHECK (current_position IS NULL OR current_position >= 0),
+  CHECK (column_origin IN ('SDL_PINNED', 'JOOQ_METADATA'))
+);
+COMMENT ON TABLE graphitron_node_legacy_keycolumn IS 'One position of the legacy key shape a wire type id answers to in a graph, resolved against the table the type id''s ids are rows of. For example type id RentalItem with keyColumns ["rental_id"] and legacyKeyColumns ["customer_id", "rental_id", "rental_date"] draws three rows, rental_id at position 1 with current position 0.';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.type_id IS 'the wire type id whose old ids carry this shape. Keyed by the type id rather than by a type, because an id names its id space by type id and the runtime that converts an id knows nothing else about its target';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.position IS 'the value''s place inside an id issued under the old key, numbered from zero';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.column_name IS 'the catalog column, spelled as the catalog spells it';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.current_position IS 'the column''s place in the current key, null for a column the current key dropped: the pick a conversion makes, computed once here rather than by matching names where the conversion is emitted';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.column_origin IS 'which statement the shape came from: SDL_PINNED from @node(legacyKeyColumns:), JOOQ_METADATA from the bound table class''s __NODE_LEGACY_KEY_COLUMNS. Carried because the fix for a catalog-origin defect is in the generator configuration, not the schema';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.table_source_name IS 'the catalog source declaring the table the type id''s ids are rows of';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.table_schema IS 'that table''s schema';
+COMMENT ON COLUMN graphitron_node_legacy_keycolumn.table_name IS 'that table, cascading with the catalog that declares it';
+
+CREATE TABLE graphitron_node_legacy_key_defect (
+  graph_name VARCHAR NOT NULL,
+  type_name  VARCHAR NOT NULL,
+  code       VARCHAR NOT NULL,
+  detail     VARCHAR NOT NULL,
+  site       VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name, type_name, code),
+  FOREIGN KEY (graph_name, type_name) REFERENCES graphitron_tabletype (graph_name, type_name)
+    ON DELETE CASCADE,
+  CHECK (code IN ('NODE_LEGACY_KEY_COLUMN_UNRESOLVED', 'NODE_LEGACY_KEY_MISSES_KEY_COLUMN',
+                  'NODE_LEGACY_KEY_REORDERS_KEY', 'NODE_LEGACY_KEY_REPEATS_COLUMN',
+                  'NODE_LEGACY_KEY_DISAGREES_WITH_METADATA', 'NODE_LEGACY_TYPE_ID_SHARED')),
+  CHECK (site IN ('NODE', 'TABLE'))
+);
+COMMENT ON TABLE graphitron_node_legacy_key_defect IS 'One rule a table-bound type''s legacy key shape breaks, in one graph, which is why the shape its type id answers to is not anchored. For example an InventoryItem whose legacyKeyColumns leave out its current key column inventory_id gives one NODE_LEGACY_KEY_MISSES_KEY_COLUMN row whose detail is inventory_id.';
+COMMENT ON COLUMN graphitron_node_legacy_key_defect.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN graphitron_node_legacy_key_defect.type_name IS 'the table-bound type whose statement of the shape, or whose share of the type id, breaks the rule';
+COMMENT ON COLUMN graphitron_node_legacy_key_defect.code IS 'the rule, as graphitron_defect_type names it';
+COMMENT ON COLUMN graphitron_node_legacy_key_defect.detail IS 'what the author fixes: the spelling or column the rule failed on, or the shared type id';
+COMMENT ON COLUMN graphitron_node_legacy_key_defect.site IS 'where the editor points: NODE for a shape the type''s @node states, TABLE for one its table class states or a type id it shares, which every bound type carries a @table for';
 
 CREATE TABLE graphitron_node_id_candidate (
   graph_name     VARCHAR NOT NULL,
@@ -11034,6 +11160,37 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
    AND u.table_name = b.table_name
  WHERE t.source_line IS NOT NULL
 UNION ALL
+-- A legacy key shape a @node states that breaks one of its rules, as NodeLegacyKeyShapes evaluated
+-- them: the stage that anchors the shapes wrote the verdict, so the rules are applied once and this
+-- arm only places the verdict at the application the author edits.
+SELECT n.graph_name, n.source_name, n.source_line, n.source_column, d.code, d.detail
+  FROM graphitron_node_legacy_key_defect d
+  JOIN graphitron_node_entry n ON n.graph_name = d.graph_name AND n.type_name = d.type_name
+ WHERE d.site = 'NODE'
+   AND n.source_line IS NOT NULL
+UNION ALL
+-- The same for a shape a table class states, and for a type id a shape cannot belong to because
+-- two tables or two current keys answer to it: reported at each type's @table, which every
+-- contributor carries, on NODE_METADATA_UNREADABLE's terms.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column, d.code, d.detail
+  FROM graphitron_node_legacy_key_defect d
+  JOIN graphitron_table_entry t ON t.graph_name = d.graph_name AND t.type_name = d.type_name
+ WHERE d.site = 'TABLE'
+   AND t.source_line IS NOT NULL
+UNION ALL
+-- A table whose class declares a legacy key-columns array graphitron cannot use. No tier falls back
+-- for it, so unlike NODE_METADATA_UNREADABLE it stops the build: every stored id in the old shape
+-- would otherwise fail to decode at runtime. Reported at each bound type's @table. The detail is the
+-- table.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
+       'NODE_LEGACY_METADATA_UNREADABLE', b.table_name
+  FROM graphitron_tabletype b
+  JOIN graphitron_table_entry t ON t.graph_name = b.graph_name AND t.type_name = b.type_name
+  JOIN sql_node_legacy_key_unreadable u
+    ON u.source_name = b.table_source_name AND u.table_schema = b.table_schema
+   AND u.table_name = b.table_name
+ WHERE t.source_line IS NOT NULL
+UNION ALL
 -- Two types whose names differ only in case, among the types the generator writes a file for, which
 -- is every kind but a scalar and includes what a macro minted. On a filesystem that folds case the
 -- two files are one, and neither name is the right one to keep. Reported at each authored type's
@@ -15965,6 +16122,15 @@ INSERT INTO meta_grain VALUES
   ('node-key-position',
    'one position of one node type''s key tuple, in one graph',
    'graph_name, type_name, position', 'catalog'),
+  ('node-legacy-key-position',
+   'one position of the legacy key shape one wire type id answers to, in one graph',
+   'graph_name, type_id, position', 'catalog'),
+  ('node-legacy-key-written-position',
+   'one position of one @node legacyKeyColumns list as an author wrote it, in one graph',
+   'graph_name, type_name, position', 'sdl'),
+  ('node-legacy-key-defect',
+   'one rule one table-bound type''s legacy key shape breaks, in one graph',
+   'graph_name, type_name, code', 'catalog'),
   ('field-departing-table',
    'one table a field''s read departs from, at one field, in one graph',
    'graph_name, type_name, field_name, from_source_name, from_schema, from_table', 'sdl'),
@@ -16087,6 +16253,9 @@ INSERT INTO meta_grain VALUES
   ('node-key-column',
    'one position in one table''s stated node key-columns array',
    'source_name, table_schema, table_name, position', 'catalog'),
+  ('node-legacy-key-column',
+   'one position in one table''s stated legacy node key-columns array',
+   'source_name, table_schema, table_name, position', 'catalog'),
   ('classpath-class',
    'one class of one classpath entry',
    'source_name, class_name', 'classpath'),
@@ -16181,6 +16350,20 @@ INSERT INTO graphitron_defect_type VALUES
    'The table''s generated class declares node metadata graphitron cannot use, so a node over it encodes its ids from what the schema declares, or from the type''s name and the table''s primary key; fix the generator configuration that writes __NODE_TYPE_ID and __NODE_KEY_COLUMNS.'),
   ('NODE_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_TYPE_ID_SHARED',
    'Two node types answer to one type id, so an id carrying it names either and Query.node cannot tell which to fetch; give one of them its own with @node(typeId:).'),
+  ('NODE_LEGACY_KEY_COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_COLUMN_UNRESOLVED',
+   'A @node(legacyKeyColumns:) names a column the bound table does not have, or has twice under one name, so ids issued in the old shape cannot be read against it.'),
+  ('NODE_LEGACY_KEY_MISSES_KEY_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_MISSES_KEY_COLUMN',
+   'A legacy key shape leaves out a column of the current key, so an id in the old shape cannot be converted without reading the row; list every current key column in it.'),
+  ('NODE_LEGACY_KEY_REORDERS_KEY', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_REORDERS_KEY',
+   'A legacy key shape holds exactly the current key''s columns, so an old id and a current one cannot be told apart by how many values they carry; a legacy shape must be the current key plus at least one more column.'),
+  ('NODE_LEGACY_KEY_REPEATS_COLUMN', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_REPEATS_COLUMN',
+   'A legacy key shape names one column twice, so the conversion cannot tell which of its values is the column''s.'),
+  ('NODE_LEGACY_KEY_DISAGREES_WITH_METADATA', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_KEY_DISAGREES_WITH_METADATA',
+   'A @node(legacyKeyColumns:) and the table class''s __NODE_LEGACY_KEY_COLUMNS state different lists; the order is the wire format of ids already issued, so they must be the same columns in the same order.'),
+  ('NODE_LEGACY_TYPE_ID_SHARED', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_TYPE_ID_SHARED',
+   'A type id with a legacy key shape is answered to by types over different tables or with different current keys, so converting an id of it would rewrite ids another type owns; give the types their own type ids.'),
+  ('NODE_LEGACY_METADATA_UNREADABLE', 'error', 'GRAPHITRON', 'GRAPHITRON_NODE_LEGACY_METADATA_UNREADABLE',
+   'The table''s generated class declares __NODE_LEGACY_KEY_COLUMNS graphitron cannot use, and no fallback reads ids issued in the old shape; fix the generator configuration that writes it.'),
   ('TYPE_NAME_CASE_COLLISION', 'error', 'GRAPHITRON', 'GRAPHITRON_TYPE_NAME_CASE_COLLISION',
    'Two types the generator writes a file for have names that differ only in case, which on a filesystem that folds case is one file; rename one of them.'),
   ('COLUMN_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_COLUMN_UNRESOLVED',
@@ -16746,6 +16929,10 @@ INSERT INTO meta_relation VALUES
    'One keyColumns element of a @node application, as written.',
    'For example keyColumns: ["film_id"] gives one row, keyed where film_id was written.',
    'A list argument becomes rows rather than a column, and the row names the element it decodes rather than the application and an index into it. The order matters here as much as anywhere in the family, the directive stating that the positions are the order the columns take inside an id, and that is exactly why this relation does not restate it: the element''s own row carries its index already, and a second numbering would be a number a reader could only trust by reconstructing the list it came from. The list is optional, and its absence is the author asking for the database''s own primary key in the order the database has it, which is why an omitted list writes no row rather than a defaulted set. Every element is a string because the definition admits nothing else, an application writing anything else being refused before it reaches a decode at all.'),
+  ('graphitron_ast_node_legacykeycolumn_entry', 'sdl-written-value', 'graphitron',
+   'One legacyKeyColumns element of a @node application, as written.',
+   'For example legacyKeyColumns: ["customer_id", "rental_id", "rental_date"] gives three rows, each keyed where its column was written.',
+   'The twin of graphitron_ast_node_keycolumn_entry for the second list argument of @node, decoded the same way so the two arguments are captured alike: the row names the element it decodes, whose own row carries its index. An omitted list writes no row.'),
   ('graphitron_ast_link_entry', 'sdl-declaration-site', 'graphitron',
    'What a federation @link application says: the specification the schema opts in to, as written.',
    'For example a schema extension applying @link with federation v2.10 as its url argument gives one row carrying that string.',
@@ -17032,6 +17219,18 @@ INSERT INTO meta_relation VALUES
    'A node type''s key columns, in key order and resolved against the table it is bound to: one row per position, naming a column the catalog has.',
    'For example a Customer over the customer table draws its primary key columns, an author pinning keyColumns: ["email"] draws that column instead, and a pinned name the table does not have draws nothing at all.',
    'Half of a node''s identity as a resolved fact, beside graphitron_node which carries the other. Three populations answer and one wins: what the author pinned, what the bound table''s generated class publishes, and the table''s own primary key. Standing on the nodehood anchor is what makes resolution possible at all. The relation this replaces reaches the pinned tier through a decode keyed by graph and type alone, so that tier had no table to resolve against and forwarded the authored spelling untouched; a node is table bound unambiguously by construction, so the table is in hand and the column is a reference rather than a name. Both authored tiers fold to resolve, against the column''s SQL name and its generated field name alike, and neither spelling survives into the row. A tier that applies and fails to resolve yields nothing rather than falling through: an author who pinned a column the table does not have has made an error, and encoding ids against the primary key instead would publish a wire format nobody asked for, silently. The same holds within a tier, a key list with a hole decoding values into the wrong positions. The bound table rides along in three columns so the row can reference both the type''s binding and the column, which together make a row naming another table''s column impossible. The order is why this is a relation rather than a list: an id encoded against one order and decoded against another finds the wrong row rather than failing.'),
+  ('graphitron_node_legacykeycolumn_entry', 'node-legacy-key-written-position', 'graphitron',
+   'One ordered legacyKeyColumns entry of an @node, as the author wrote it.',
+   'For example @node(keyColumns: ["rental_id"], legacyKeyColumns: ["customer_id", "rental_id", "rental_date"]) gives three rows, rental_id at position 1.',
+   'The written half of the pair whose resolved half is graphitron_node_legacy_keycolumn, beside graphitron_node_keycolumn_entry and anchored the same way. It holds a spelling and asks nothing of it, so a name the table lacks, a repeated name or a list that misses a current key column is still a row here, which is what lets the defect rules point at what the author wrote.'),
+  ('graphitron_node_legacy_keycolumn', 'node-legacy-key-position', 'graphitron',
+   'One position of the legacy key shape a wire type id answers to in a graph, resolved against the table the type id''s ids are rows of.',
+   'For example type id RentalItem with keyColumns ["rental_id"] and legacyKeyColumns ["customer_id", "rental_id", "rental_date"] draws three rows, rental_id at position 1 with current position 0.',
+   'A legacy key shape is the column list ids of a type were encoded from before its key was narrowed, and the generated runtime converts such an id to the current shape before reading it. It is a fact of the wire type id rather than of a GraphQL type, because the conversion runs where an id is decoded and knows only the type id it expects; keying it so also reaches the decode callers no type-level fact reaches. One shape per type id is the primary key, no repeated column the unique key beside it. A shape is anchored only where every rule holds, all positions or none: a shape that misses a current key column, reorders the current key, names a column twice or the table lacks, disagrees between the schema and the catalog, or belongs to a type id two tables or two current keys answer to, is absent here and present as a defect.'),
+  ('graphitron_node_legacy_key_defect', 'node-legacy-key-defect', 'graphitron',
+   'One rule a table-bound type''s legacy key shape breaks, in one graph, which is why the shape its type id answers to is not anchored.',
+   'For example an InventoryItem whose legacyKeyColumns leave out its current key column inventory_id gives one NODE_LEGACY_KEY_MISSES_KEY_COLUMN row whose detail is inventory_id.',
+   'The negative half of the stage that writes graphitron_node_legacy_keycolumn, written by the same evaluation of the rules so the two halves cannot disagree: a type id gets a shape exactly when none of the types answering to it has a row here. The rule view reads these rows to place each defect at the @node or @table the author edits, rather than restating the rules in SQL beside the stage that already applied them.'),
   ('graphitron_field_participant_path', 'field-participant-path', 'graphitron',
    'One element of one participant''s own path, in the order it was written: one row per element of a @referenceFor application on a field returning a union or an interface.',
    'For example media: [Media!] @referenceFor(type: "Book", path: [{table: "book_shelf"}, {table: "book"}]) draws two elements for Book, at positions 0 and 1.',
@@ -17424,10 +17623,18 @@ INSERT INTO meta_relation VALUES
    'One position in the key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to.',
    'For example position 0 of a film table class''s array, naming film_id.',
    'The array is ordered and the encoded identity depends on that order, so a reader recovering the columns from the table''s own key would encode different ids than the ones already issued: the position is the fact and therefore the key. Every entry resolves, an entry that does not making the whole pair unusable, so the column is a foreign key into sql_column.'),
+  ('sql_node_legacy_key_column', 'node-legacy-key-column', 'jooq',
+   'One position in the legacy key-columns array of a table whose node metadata graphitron can use, naming the column it resolves to.',
+   'For example position 2 of an inventory table class''s __NODE_LEGACY_KEY_COLUMNS, naming last_update.',
+   'The catalog form of @node(legacyKeyColumns:), for a consumer that states node keys in jOOQ metadata. The position is the fact and therefore the key, being the order of the values inside every id issued under the old key. The foreign key into sql_node_metadata makes a legacy array on a class without a usable identity pair impossible to store, and every entry resolves to a column of the table.'),
   ('sql_node_metadata_unreadable', 'database-table', 'jooq',
    'One table whose generated class declares node-identity metadata graphitron cannot use.',
    'For example a table class stating __NODE_TYPE_ID and no __NODE_KEY_COLUMNS, or a key-columns array naming a column the table does not have.',
    'That an attempt at node metadata was noticed and failed, and not why: the generator configuration that writes the constants is what to fix, and it is the consumer''s, so a vocabulary of the ways it can fail would describe the configuration rather than the schema. Recorded because the failure is not harmless, a type bound to the table encoding its ids from the fallback tiers instead, which is what the NODE_METADATA_UNREADABLE warning tells the author at the type''s @table.'),
+  ('sql_node_legacy_key_unreadable', 'database-table', 'jooq',
+   'One table whose generated class declares a legacy node key-columns array graphitron cannot use.',
+   'For example a table class stating __NODE_LEGACY_KEY_COLUMNS with a null entry, or stating it with no usable __NODE_TYPE_ID and __NODE_KEY_COLUMNS beside it.',
+   'Separate from sql_node_metadata_unreadable because the legacy array is an independent axis: a malformed one must not send the table''s identity to the fallback tiers. Recorded because ignoring it is not harmless, every stored id in the old shape then failing to decode at runtime, which is why the defect it raises is an error where the identity pair''s is a warning.'),
   ('code_scalar_constant', 'scalar-type-field', 'code',
    'One constant an author may name in @scalarType(scalar:), and the Java type its scalar coerces to.',
    'For example a DATE_TIME field coercing to java.time.OffsetDateTime.',

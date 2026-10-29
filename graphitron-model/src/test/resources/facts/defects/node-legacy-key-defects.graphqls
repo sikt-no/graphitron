@@ -1,0 +1,57 @@
+# The rules a legacy key shape is held to, one type breaking each. A shape that breaks a rule is not
+# anchored, so no id of its type id is converted: the verdict sits where the author edits, at the
+# @node that stated the shape, or at the @table of a type whose table class stated it or whose type id
+# is shared.
+#
+# Unresolved names a column film does not have. Misses leaves out actor's key column. Reorders holds
+# exactly film_category's key, so an old id and a current one carry as many values. Repeats names
+# city_id twice. Disagrees states node_legacy_keyed's two columns in the opposite order to its table
+# class, whose order is the wire format of the ids already issued. CollideA and CollideB answer to
+# one type id over two tables, and CollideB states a shape for it, which a conversion would apply to
+# ids CollideA owns. ForeignLegacy is bound to a table whose class names another table's column in
+# its legacy array, which no fallback reads past.
+
+interface Node { id: ID! }
+
+type Unresolved implements Node @table(name: "film") @node(legacyKeyColumns: ["film_id", "nonesuch"]) { id: ID! }
+
+type Misses implements Node @table(name: "actor") @node(legacyKeyColumns: ["first_name", "last_name"]) { id: ID! }
+
+type Reorders implements Node @table(name: "film_category") @node(legacyKeyColumns: ["category_id", "film_id"]) { id: ID! }
+
+type Repeats implements Node @table(name: "city") @node(legacyKeyColumns: ["city_id", "country_id", "city_id"]) { id: ID! }
+
+type Disagrees implements Node @table(name: "node_legacy_keyed") @node(legacyKeyColumns: ["id", "era"]) { id: ID! @nodeId }
+
+type CollideA @table(name: "collide_a") { name: String }
+
+type CollideB implements Node @table(name: "collide_b") @node(legacyKeyColumns: ["key_b", "name"]) { id: ID! }
+
+type ForeignLegacy @table(name: "node_legacy_foreign") { id: Int }
+
+extend type Query {
+  u: Unresolved, m: Misses, r: Reorders, p: Repeats, d: Disagrees, a: CollideA, b: CollideB,
+  f: ForeignLegacy
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", where: """
+  code LIKE 'NODE_LEGACY%'
+  """, rows: """
+  code,                                    type_name,     field_name, detail
+  NODE_LEGACY_KEY_COLUMN_UNRESOLVED,       Unresolved,    ,           nonesuch
+  NODE_LEGACY_KEY_MISSES_KEY_COLUMN,       Misses,        ,           actor_id
+  NODE_LEGACY_KEY_REORDERS_KEY,            Reorders,      ,"category_id, film_id"
+  NODE_LEGACY_KEY_REPEATS_COLUMN,          Repeats,       ,           city_id
+  NODE_LEGACY_KEY_DISAGREES_WITH_METADATA, Disagrees,     ,"era, id"
+  NODE_LEGACY_TYPE_ID_SHARED,              CollideA,      ,           195
+  NODE_LEGACY_TYPE_ID_SHARED,              CollideB,      ,           195
+  NODE_LEGACY_METADATA_UNREADABLE,         ForeignLegacy, ,           node_legacy_foreign
+  """)
+
+extend schema @expectEquals(relation: "sql_node_legacy_key_unreadable", rows: """
+  table_schema, table_name
+  public,       node_legacy_foreign
+  """)
+
+# None of the broken shapes is anchored.
+extend schema @assertEmpty(relation: "graphitron_node_legacy_keycolumn")

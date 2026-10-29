@@ -28,6 +28,8 @@ import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX;
 import static no.sikt.graphitron.model.Tables.SQL_INDEX_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_LEGACY_KEY_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_NODE_LEGACY_KEY_UNREADABLE;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA;
 import static no.sikt.graphitron.model.Tables.SQL_NODE_METADATA_UNREADABLE;
 import static no.sikt.graphitron.model.Tables.SQL_PRIMARY_KEY;
@@ -118,6 +120,9 @@ public final class JooqFactCapture {
         nodeMetadata(dsl, nodeMetadata, touchedAt);
         nodeKeyColumns(dsl, nodeMetadata, touchedAt);
         nodeMetadataUnreadable(dsl, nodeMetadata, touchedAt);
+        List<NodeLegacyKeyAt> legacyKeys = nodeLegacyKeysOf(jooq, tables, nodeMetadata);
+        nodeLegacyKeyColumns(dsl, legacyKeys, touchedAt);
+        nodeLegacyKeyUnreadable(dsl, legacyKeys, touchedAt);
         routines(dsl, jooq, tables, touchedAt);
         routineParameters(dsl, jooq, tables, touchedAt);
         recordSupertypes(dsl, tables);
@@ -143,6 +148,9 @@ public final class JooqFactCapture {
 
     /** One table whose class declares node metadata, with what the catalog made of it. */
     private record NodeMetadataAt(TableAt table, JooqCatalog.NodeIdMetadataLookup lookup) {}
+
+    /** One table whose class declares a legacy node key shape, with what the catalog made of it. */
+    private record NodeLegacyKeyAt(TableAt table, JooqCatalog.NodeLegacyKeyLookup lookup) {}
 
     // ------------------------------------------------------------------------- the sql_ relations
 
@@ -617,6 +625,83 @@ public final class JooqFactCapture {
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
     }
 
+    /**
+     * Read once per table, beside the identity pair it needs: a class declaring the legacy array
+     * with no usable pair is an attempt that failed, so the reading is asked of every table and not
+     * only of those {@link #nodeMetadataOf} kept.
+     */
+    private static List<NodeLegacyKeyAt> nodeLegacyKeysOf(JooqCatalog jooq, List<TableAt> tables,
+                                                          List<NodeMetadataAt> nodeMetadata) {
+        Map<TableAt, JooqCatalog.NodeIdMetadataLookup> identities = new LinkedHashMap<>();
+        for (NodeMetadataAt at : nodeMetadata) {
+            identities.put(at.table(), at.lookup());
+        }
+        List<NodeLegacyKeyAt> found = new ArrayList<>();
+        for (TableAt at : tables) {
+            var identity = identities.getOrDefault(at, new JooqCatalog.NodeIdMetadataLookup.Absent());
+            var lookup = jooq.nodeLegacyKeyOf(at.table(), identity);
+            if (!(lookup instanceof JooqCatalog.NodeLegacyKeyLookup.Absent)) {
+                found.add(new NodeLegacyKeyAt(at, lookup));
+            }
+        }
+        return found;
+    }
+
+    private static void nodeLegacyKeyColumns(DSLContext dsl, List<NodeLegacyKeyAt> legacyKeys,
+                                             LocalDateTime touchedAt) {
+        var t = SQL_NODE_LEGACY_KEY_COLUMN;
+        List<PositionAt<TableAt>> named = new ArrayList<>();
+        for (NodeLegacyKeyAt at : legacyKeys) {
+            if (at.lookup() instanceof JooqCatalog.NodeLegacyKeyLookup.Present p) {
+                var keys = p.legacyKeyColumns();
+                for (int i = 0; i < keys.size(); i++) {
+                    named.add(new PositionAt<>(at.table(), i, keys.get(i).sqlName()));
+                }
+            }
+        }
+        if (named.isEmpty()) {
+            return;
+        }
+        var rows = named.stream().collect(Rows.toRowList(
+            at -> val(at.parent().source(), t.SOURCE_NAME),
+            at -> val(at.parent().schema(), t.TABLE_SCHEMA),
+            at -> val(at.parent().name(), t.TABLE_NAME),
+            at -> val(at.position(), t.POSITION),
+            at -> val(at.value(), t.COLUMN_NAME),
+            at -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.POSITION, t.COLUMN_NAME,
+                    t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.COLUMN_NAME, excluded(t.COLUMN_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    private static void nodeLegacyKeyUnreadable(DSLContext dsl, List<NodeLegacyKeyAt> legacyKeys,
+                                                LocalDateTime touchedAt) {
+        var t = SQL_NODE_LEGACY_KEY_UNREADABLE;
+        List<TableAt> attempted = new ArrayList<>();
+        for (NodeLegacyKeyAt at : legacyKeys) {
+            if (at.lookup() instanceof JooqCatalog.NodeLegacyKeyLookup.Malformed) {
+                attempted.add(at.table());
+            }
+        }
+        if (attempted.isEmpty()) {
+            return;
+        }
+        var rows = attempted.stream().collect(Rows.toRowList(
+            at -> val(at.source(), t.SOURCE_NAME),
+            at -> val(at.schema(), t.TABLE_SCHEMA),
+            at -> val(at.name(), t.TABLE_NAME),
+            at -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.TABLE_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
     private static void nodeMetadataUnreadable(DSLContext dsl, List<NodeMetadataAt> nodeMetadata,
                                                LocalDateTime touchedAt) {
         var t = SQL_NODE_METADATA_UNREADABLE;
@@ -862,7 +947,8 @@ public final class JooqFactCapture {
         SQL_SCHEMA, SQL_TABLE, SQL_COLUMN, SQL_CONSTRAINT, SQL_CONSTRAINT_COLUMN, SQL_PRIMARY_KEY,
         SQL_REFERENTIAL_CONSTRAINT, SQL_REFERENTIAL_CONSTRAINT_COLUMN, SQL_TABLE_REFERENCE, SQL_INDEX, SQL_INDEX_COLUMN,
         SQL_NODE_METADATA,
-        SQL_NODE_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
+        SQL_NODE_KEY_COLUMN, SQL_NODE_LEGACY_KEY_COLUMN, SQL_NODE_METADATA_UNREADABLE,
+        SQL_NODE_LEGACY_KEY_UNREADABLE, SQL_ROUTINE, SQL_ROUTINE_PARAMETER, SQL_ENUM_BINDING);
 
     /**
      * Deletes the rows of the sources this reading walked that it did not touch, which are the

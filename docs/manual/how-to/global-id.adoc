@@ -54,7 +54,7 @@ When you genuinely need to migrate `keyColumns` (the underlying PK is being chan
 . *In a single release* swap `keyColumns:` to the new column list. Every client cache or persisted ID issued before this release stops decoding; plan accordingly.
 . Optionally retain the old type under a different `typeId` (and a deprecation marker) for one release cycle so old IDs continue to dispatch while clients refresh.
 
-The rewrite gives no automatic rolling-window for the wire format: a `keyColumns` change is a hard cut. If continuity matters, the right tool is a *second* `@node` type pinned to the old shape, not a graceful in-place migration.
+Narrowing the key, dropping columns from `keyColumns` and keeping the rest, has a rolling window: move the old list to `legacyKeyColumns` and ids issued in the old shape keep resolving while every new id uses the narrowed one; see xref:../reference/directives/node.adoc#narrowing-the-key[Narrowing the key]. Widening the key, reordering it, or swapping in an unrelated key is still a hard cut: every id issued before the change stops decoding. If continuity matters there, the right tool is a *second* `@node` type pinned to the old shape, not a graceful in-place migration.
 
 == Composite-PK nodes
 
