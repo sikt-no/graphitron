@@ -1,26 +1,26 @@
 # The second reading, of the same build file with four elements taken out: the tenant column, the
-# maximum page size, the unmount beside the mount, and one lint rule. Each is a different way of
+# maximum page size, the handle beside the switch, and one lint rule. Each is a different way of
 # going away, and none of them produces an incoming row for an upsert to land on, so only the sweep
 # removes them.
 #
 # A single-valued parameter that went away is a graph with no row, the state a graph that never had
-# one is in. The unmount goes and the mount stays, which is the supported mount-only configuration.
+# one is in. The handle goes and the switch stays, which is a handle-less mount.
 # The rule still declared is a value-keyed row the reading wrote again.
 
 extend schema @withConfiguration(
   lintDisabledRules: ["field-names-camel-case"],
-  mount: "com.example.Identity#mount"
+  sessionState: true
 )
 
 extend schema @assertEmpty(relation: "store_graph_tenant_column")
 
 extend schema @assertEmpty(relation: "store_graph_max_allowed_page_size")
 
-extend schema @assertEmpty(relation: "store_graph_session_unmount")
+extend schema @assertEmpty(relation: "store_graph_session_handle")
 
-extend schema @expectEquals(relation: "store_graph_session_mount", rows: """
-  mount_method,               touched_at
-  com.example.Identity#mount, 1000000060
+extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
+  graph_name, touched_at
+  fixture,    1000000060
   """)
 
 extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """

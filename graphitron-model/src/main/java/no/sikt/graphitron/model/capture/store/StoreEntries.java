@@ -27,8 +27,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HANDLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_SUPPLIED;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
@@ -55,8 +55,8 @@ import static org.jooq.impl.DSL.val;
  * deleting this graph's rows carrying a different one. Those are the parameters the author removed
  * from the build file, and an upsert cannot find them: there is no incoming row to match. The
  * relations are listed in writing order, parents first, and the sweep walks the list backwards,
- * which is what lets {@code store_graph_session_unmount} hold a foreign key into the mount beside
- * it.
+ * which is what lets {@code store_graph_session_handle} hold a foreign key into the supplied row
+ * beside it.
  *
  * <p>The graph's own anchor row is not written here. Every relation below holds a foreign key into
  * {@code store_graph}, so the reading that mints it has to have run first; {@code ModelCapture}
@@ -124,13 +124,13 @@ public final class StoreEntries {
      * prefix: {@code store_graph} and {@code store_graph_source} share the prefix and are not this
      * gatherer's, and a relation added above and not here would keep its stale rows silently.
      *
-     * <p>In writing order, the mount before the unmount that references it. The sweep walks it
+     * <p>In writing order, the supplied row before the handle that references it. The sweep walks it
      * backwards.
      */
     private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
-        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
+        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED, STORE_GRAPH_SESSION_HANDLE,
         STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
     /**
@@ -399,33 +399,33 @@ public final class StoreEntries {
     }
 
     /**
-     * The session-state hooks, as authored. Only the {@code fqcn#method} strings the build carried
-     * land here; what reflection later makes of them is a model fact and never comes back to this
-     * family.
+     * The session-state configuration, as authored. Row presence is the fact: a block yields the
+     * supplied row, and a named handle class adds the handle row beside it. Only the authored
+     * class name lands here; what the class offers is read from the classpath corpus, never
+     * resolved at capture.
      *
      * <p>The switch is exhaustive over the seal, so a third form of the parameter is a compile
-     * error here rather than a configuration nothing transcribes. Two relations rather than two
-     * columns because a mount without an unmount is the supported configuration and an unmount
-     * without a mount is a defect, which the foreign key between them states.
+     * error here rather than a configuration nothing transcribes. Two relations rather than a
+     * nullable column because the handle is optional and a handle without the switch is a defect,
+     * which the foreign key between them states.
      */
     private static void sessionState(DSLContext dsl, String graph, SessionStateConfig sessionState,
                                      LocalDateTime touchedAt) {
         switch (sessionState) {
             case SessionStateConfig.None ignored -> { }
-            case SessionStateConfig.MethodHooks hooks -> {
-                var mount = STORE_GRAPH_SESSION_MOUNT;
-                dsl.insertInto(mount, mount.GRAPH_NAME, mount.MOUNT_METHOD, mount.TOUCHED_AT)
-                    .values(graph, hooks.mount().raw(), touchedAt)
+            case SessionStateConfig.Callbacks callbacks -> {
+                var supplied = STORE_GRAPH_SESSION_SUPPLIED;
+                dsl.insertInto(supplied, supplied.GRAPH_NAME, supplied.TOUCHED_AT)
+                    .values(graph, touchedAt)
                     .onDuplicateKeyUpdate()
-                    .set(mount.MOUNT_METHOD, excluded(mount.MOUNT_METHOD))
-                    .set(mount.TOUCHED_AT, excluded(mount.TOUCHED_AT))
+                    .set(supplied.TOUCHED_AT, excluded(supplied.TOUCHED_AT))
                     .execute();
-                hooks.unmount().ifPresent(unmount -> {
-                    var t = STORE_GRAPH_SESSION_UNMOUNT;
-                    dsl.insertInto(t, t.GRAPH_NAME, t.UNMOUNT_METHOD, t.TOUCHED_AT)
-                        .values(graph, unmount.raw(), touchedAt)
+                callbacks.handleType().ifPresent(handleClass -> {
+                    var t = STORE_GRAPH_SESSION_HANDLE;
+                    dsl.insertInto(t, t.GRAPH_NAME, t.HANDLE_CLASS, t.TOUCHED_AT)
+                        .values(graph, handleClass, touchedAt)
                         .onDuplicateKeyUpdate()
-                        .set(t.UNMOUNT_METHOD, excluded(t.UNMOUNT_METHOD))
+                        .set(t.HANDLE_CLASS, excluded(t.HANDLE_CLASS))
                         .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                         .execute();
                 });

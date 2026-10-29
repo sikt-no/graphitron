@@ -217,14 +217,24 @@ public final class FactDocuments {
             var lint = disabled.isEmpty() && excluded.isEmpty()
                 ? LintConfig.empty()
                 : LintConfig.validated(new LinkedHashSet<>(disabled), excluded);
-            var mount = string(directive, "mount");
-            var unmount = string(directive, "unmount");
-            var session = mount.isEmpty() && unmount.isEmpty()
+            var handle = string(directive, "sessionHandle");
+            var session = !bool(directive, "sessionState") && handle.isEmpty()
                 ? SessionStateConfig.none()
-                : SessionStateConfig.from(mount.orElse(null), unmount.orElse(null));
+                : SessionStateConfig.from(handle.orElse(null), null, null);
             return new SubjectConfig(Optional.empty(), Optional.empty(),
                 string(directive, "supergraph"), output, string(directive, "tenantColumn"), lint,
                 session, integer(directive, "maxAllowedPageSize"));
+        }
+
+        private static boolean bool(Directive directive, String name) {
+            var argument = directive.getArgument(name);
+            if (argument == null) {
+                return false;
+            }
+            if (!(argument.getValue() instanceof graphql.language.BooleanValue value)) {
+                throw new AssertionError("@" + DIRECTIVE + "(" + name + ":) takes a boolean");
+            }
+            return value.isValue();
         }
 
         private static OptionalInt integer(Directive directive, String name) {

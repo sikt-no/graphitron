@@ -52,8 +52,8 @@ directive @withConfiguration(
   outputDirectory: String,
   lintDisabledRules: [String!],
   lintExcludedTypes: [String!],
-  mount: String,
-  unmount: String,
+  sessionState: Boolean,
+  sessionHandle: String,
   maxAllowedPageSize: Int
 ) on SCHEMA
 

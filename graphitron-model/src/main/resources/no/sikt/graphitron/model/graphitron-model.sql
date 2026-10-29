@@ -222,29 +222,28 @@ COMMENT ON COLUMN store_graph_lint_excluded_type.ordinal IS 'position in the con
 COMMENT ON COLUMN store_graph_lint_excluded_type.type_pattern IS 'the type-name glob as configured';
 COMMENT ON COLUMN store_graph_lint_excluded_type.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
-CREATE TABLE store_graph_session_mount (
-  graph_name   VARCHAR NOT NULL,
-  mount_method VARCHAR NOT NULL,
-  touched_at   TIMESTAMP NOT NULL,
+CREATE TABLE store_graph_session_supplied (
+  graph_name VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
 );
-COMMENT ON TABLE store_graph_session_mount IS 'The <sessionState> <mount> reference: the consumer''s static Java method that mounts identity on each acquired connection, as authored. Row presence is the fact, per the family''s absence rule: no row means no identity is mounted. The primary key on graph_name alone makes "at most one mount per graph" structural. Only the authored string lands here; the reflected signature is a build-time model fact, never stored back into this provenance family.';
-COMMENT ON COLUMN store_graph_session_mount.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
-COMMENT ON COLUMN store_graph_session_mount.mount_method IS 'the mounting method as authored, fqcn#method, from <mount>';
-COMMENT ON COLUMN store_graph_session_mount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
+COMMENT ON TABLE store_graph_session_supplied IS 'One graph whose session identity is supplied per request, as its build declared it with a <sessionState> block. For example a build with <sessionState/> in its POM is one row, and a build with no block has none.';
+COMMENT ON COLUMN store_graph_session_supplied.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_session_supplied.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
-CREATE TABLE store_graph_session_unmount (
-  graph_name     VARCHAR NOT NULL,
-  unmount_method VARCHAR NOT NULL,
-  touched_at     TIMESTAMP NOT NULL,
+CREATE TABLE store_graph_session_handle (
+  graph_name   VARCHAR   NOT NULL,
+  handle_class VARCHAR   NOT NULL,
+  touched_at   TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name),
-  FOREIGN KEY (graph_name) REFERENCES store_graph_session_mount (graph_name)
+  FOREIGN KEY (graph_name) REFERENCES store_graph_session_supplied (graph_name),
+  CHECK (CHAR_LENGTH(handle_class) >= 1)
 );
-COMMENT ON TABLE store_graph_session_unmount IS 'The optional <unmount> reference beside the mount. Row presence is the fact: no row means the supported mount-only configuration (the next request''s mount overwrites wholesale), which the reconciler admits without ceremony, and the foreign key to store_graph_session_mount is the "unmount without mount is a defect" rule made structural.';
-COMMENT ON COLUMN store_graph_session_unmount.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_mount';
-COMMENT ON COLUMN store_graph_session_unmount.unmount_method IS 'the unmounting method as authored, fqcn#method, from <unmount>';
-COMMENT ON COLUMN store_graph_session_unmount.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches. Swept before the mount beside it, which is the foreign key deciding the order rather than a rule this family states twice';
+COMMENT ON TABLE store_graph_session_handle IS 'The class a graph''s session mount returns, as its build named it in <sessionState><handle>. For example a build naming com.example.Identity is one row reading that name, and a build whose mount returns nothing has none.';
+COMMENT ON COLUMN store_graph_session_handle.graph_name IS 'the configuring graph''s partition, anchored by store_graph_session_supplied, so a handle without the switch is unwritable';
+COMMENT ON COLUMN store_graph_session_handle.handle_class IS 'the class as authored, fully qualified, from <handle>; read against the classpath later, never resolved here';
+COMMENT ON COLUMN store_graph_session_handle.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
 CREATE TABLE store_graph_dependency (
   graph_name  VARCHAR NOT NULL,
@@ -15759,6 +15758,9 @@ INSERT INTO meta_gatherer_dependency VALUES
   -- source reading records. ModelCapture runs it first.
   ('graphitron', 'graphql-source'),
   ('code', 'classpath-source'),
+  -- The handle class a graph names for its session identity is read for its members whatever
+  -- package or origin it is in, and the name is a row the store gatherer wrote first.
+  ('code', 'store'),
   ('derivation', 'store'),
   ('derivation', 'classpath-source'),
   ('derivation', 'sdl'),
@@ -15906,6 +15908,12 @@ INSERT INTO meta_grain VALUES
    'graph_name, source_name', 'configuration'),
   ('graph-max-page-size',
    'one graph whose build declares a largest page its connections return',
+   'graph_name', 'configuration'),
+  ('graph-session-supplied',
+   'one graph whose build declares that its session identity is supplied per request',
+   'graph_name', 'configuration'),
+  ('graph-session-handle',
+   'one graph whose build names the class its session mount returns',
    'graph_name', 'configuration'),
   ('facet-binding',
    'one @asFacet application, at the input field it sits on, in one graph',
@@ -16528,6 +16536,14 @@ INSERT INTO meta_relation VALUES
    'The largest page any connection of one graph returns, as its build declared it in <maxAllowedPageSize>.',
    'For example a build setting the parameter to 1000 is one row reading 1000, and a build that sets none has no row.',
    'Configuration rather than a reading, and generation policy the store reads: the minted first argument''s default is lowered to it and an authored default above it is a defect, both of which are views, so the maximum is a row they can join rather than a value only the generator holds. Its own graph-keyed relation, on store_graph_tenant_column''s terms: single-valued, optional and run-owned, so row presence is the fact and a build with no maximum has no row.'),
+  ('store_graph_session_supplied', 'graph-session-supplied', 'store',
+   'One graph whose session identity is supplied per request, as its build declared it with a <sessionState> block.',
+   'For example a build with <sessionState/> in its POM is one row, and a build with no block has none.',
+   'Configuration rather than a reading, and the fact every question about session identity starts from: the generators emit the session types, the factory parameter and the connection hook only for a graph with a row, and the derived rejections of a $session binding anti-join against it. Row presence is the fact, per the family''s absence rule: no row means no identity is mounted. Its own graph-keyed relation, on store_graph_tenant_column''s terms: single-valued, optional and run-owned.'),
+  ('store_graph_session_handle', 'graph-session-handle', 'store',
+   'The class a graph''s session mount returns, as its build named it in <sessionState><handle>.',
+   'For example a build naming com.example.Identity is one row reading that name, and a build whose mount returns nothing has none.',
+   'Configuration rather than a reading: only the authored name lands here, and what the class offers is derived from the classpath corpus, so the members a $session binding may name are rows that cite the class files and not a value only the generator holds. A child of store_graph_session_supplied rather than a nullable column on it, after the unmount relation it replaces: row presence is the fact, and a handle without the switch is unwritable by the foreign key.'),
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',

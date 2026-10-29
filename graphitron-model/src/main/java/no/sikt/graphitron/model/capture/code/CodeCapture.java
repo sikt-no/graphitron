@@ -36,6 +36,7 @@ import static no.sikt.graphitron.model.Tables.CODE_SERVICE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE;
 import static no.sikt.graphitron.model.Tables.CODE_THROWABLE_SUPERTYPE;
 import static no.sikt.graphitron.model.Tables.INTENT_DELIVERY_CONTAINER;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HANDLE;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
@@ -146,6 +147,9 @@ public final class CodeCapture {
     private static void gather(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                ClassLoader loader, LocalDateTime touchedAt) {
         var census = reading.census();
+        // Before the empty-census return: a warm round that re-read nothing still has to read the
+        // handle class when the configuration only just named it.
+        handleSlots(dsl, reading, touchedAt);
         if (census.entries().isEmpty()) {
             return;
         }
@@ -165,6 +169,44 @@ public final class CodeCapture {
         // Every entry read, not only the ones that declared something, so an entry that stopped
         // declaring a member loses its row.
         sweep(dsl, reading.read(), touchedAt);
+    }
+
+    /**
+     * The members the graph's session handle class offers, which are the slots of the class the
+     * build named in {@code <sessionState><handle>}. The census withholds members from the jOOQ
+     * package and the reactor gate keeps jar classes out of the member arms, and a handle is
+     * routinely a jOOQ record or a class of a sibling, so this class is read whole on purpose,
+     * from the entries the build declared, and only its slots are written: it is not a method an
+     * author may name, so none of the directive arms gain it.
+     *
+     * <p>Only the class itself is read, so the slots are the members it declares, which is the
+     * rule a handle's members follow: a jOOQ record handle offers {@code principal} and
+     * {@code sessionNo}, not the {@code Record} API it inherits. The class row the slots key to is
+     * the census's own; a class no entry holds, or a non-public one, writes nothing, and the
+     * derivation that reads these rows says so.
+     */
+    private static void handleSlots(DSLContext dsl, ClasspathSourceCapture.Reading reading,
+                                    LocalDateTime touchedAt) {
+        var handle = dsl.select(STORE_GRAPH_SESSION_HANDLE.HANDLE_CLASS)
+            .from(STORE_GRAPH_SESSION_HANDLE)
+            .where(STORE_GRAPH_SESSION_HANDLE.GRAPH_NAME.eq(reading.graph()))
+            .fetchOptional(STORE_GRAPH_SESSION_HANDLE.HANDLE_CLASS);
+        if (handle.isEmpty()) {
+            return;
+        }
+        var entries = reading.sources().stream()
+            .map(source -> java.nio.file.Path.of(source.sourceName()))
+            .toList();
+        var at = ClassfileCensus.readNamed(entries, handle.get());
+        if (at.isEmpty()) {
+            return;
+        }
+        var classRow = dsl.fetchExists(CODE_CLASS,
+            CODE_CLASS.SOURCE_NAME.eq(at.get().source()).and(CODE_CLASS.CLASS_NAME.eq(at.get().className())));
+        if (!classRow) {
+            return;
+        }
+        slots(dsl, List.of(at.get()), deliveryContainers(dsl), touchedAt);
     }
 
     /**

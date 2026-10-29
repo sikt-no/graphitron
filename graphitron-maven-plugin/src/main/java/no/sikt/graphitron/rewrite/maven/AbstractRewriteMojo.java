@@ -170,13 +170,13 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     LintBinding lint;
 
     /**
-     * Session identity. A {@code <sessionState>} block naming the consumer's static Java
-     * methods graphitron calls at the connection boundary: {@code <mount>} (as
-     * {@code fqcn#method}) runs on each acquired connection before any SQL, the optional
-     * {@code <unmount>} at release. Threaded through {@link RunContext} as authored
-     * strings; the schema build reflects them and the connection-runtime emitters call them
-     * directly. A malformed reference or an {@code <unmount>} without a {@code <mount>} fails
-     * the build here; omit the block to mount no identity.
+     * Session identity. A {@code <sessionState>} block switches session identity on for the
+     * owned-connection engine; the consumer supplies it per request as a {@code SessionState}
+     * built from mount and unmount callbacks and passed to the generated factory. The optional
+     * {@code <handle>} names the class the mount callback returns. Threaded through
+     * {@link RunContext} as authored strings and transcribed into the store. A blank
+     * {@code <handle>}, or a leftover {@code <mount>} or {@code <unmount>}, fails the build here;
+     * omit the block to mount no identity.
      */
     @Parameter
     SessionStateBinding sessionState;
@@ -546,17 +546,18 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     }
 
     /**
-     * The shape rejections ({@code <unmount>} without {@code <mount>}, a malformed
-     * {@code fqcn#method}) live in {@link SessionStateConfig}, not here (a {@code pom.xml}
-     * defect has no SDL coordinate); this only hands the authored strings over and wraps the
-     * rejection as a build failure. No reflection runs at this seam: the schema build owns it.
+     * The shape rejections (a blank {@code <handle>}, a leftover {@code <mount>} or
+     * {@code <unmount>}) live in {@link SessionStateConfig}, not here (a {@code pom.xml} defect
+     * has no SDL coordinate); this only hands the authored strings over and wraps the rejection
+     * as a build failure. Nothing is resolved at this seam: the handle class is read from the
+     * classpath into the store.
      */
     private SessionStateConfig buildSessionStateConfig() throws MojoExecutionException {
         if (sessionState == null) {
             return SessionStateConfig.none();
         }
         try {
-            return SessionStateConfig.from(sessionState.mount, sessionState.unmount);
+            return SessionStateConfig.from(sessionState.handle, sessionState.mount, sessionState.unmount);
         } catch (IllegalArgumentException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }

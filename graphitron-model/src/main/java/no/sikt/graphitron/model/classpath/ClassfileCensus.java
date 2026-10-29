@@ -182,6 +182,51 @@ public final class ClassfileCensus {
             file.getFileName().toString(), source, headerOnlyPrefix(headerOnlyPackage));
     }
 
+    /**
+     * One class, read whole, from the first of {@code entries} that holds it: the member reading
+     * the header-only package withholds from the census, for a class a caller names on purpose.
+     * Empty where no entry holds a public class of that name. The class is recorded under the
+     * entry it was found in, as the census records it, so its rows partition the same way.
+     *
+     * @param entries   directories and jars, in the order a classloader would search them
+     * @param className the binary name, with dots
+     */
+    public static Optional<ClassAt> readNamed(List<Path> entries, String className) {
+        String relative = className.replace('.', '/') + ".class";
+        for (Path entry : entries) {
+            String source = entry.toString();
+            if (Files.isDirectory(entry)) {
+                Path file = entry.resolve(relative);
+                if (Files.isRegularFile(file)) {
+                    var found = read(bytes(file), pathOf(entry, file), sizeOf(file), modifiedOf(file),
+                        file.getFileName().toString(), source, null);
+                    if (found.isPresent()) {
+                        return found;
+                    }
+                }
+            } else if (Files.isRegularFile(entry) && source.endsWith(".jar")) {
+                try (ZipFile zip = new ZipFile(entry.toFile())) {
+                    ZipEntry zipped = zip.getEntry(relative);
+                    if (zipped == null) {
+                        continue;
+                    }
+                    byte[] bytes;
+                    try (var in = zip.getInputStream(zipped)) {
+                        bytes = in.readAllBytes();
+                    }
+                    var found = read(bytes, zipped.getName(), zipped.getSize(), zipped.getTime(),
+                        relative.substring(relative.lastIndexOf('/') + 1), source, null);
+                    if (found.isPresent()) {
+                        return found;
+                    }
+                } catch (IOException e) {
+                    // An entry that will not open reads as one that does not hold the class.
+                }
+            }
+        }
+        return Optional.empty();
+    }
+
     /** What the file was, as the reading found it; -1 where the filesystem would not say. */
     private static long sizeOf(Path file) {
         try {

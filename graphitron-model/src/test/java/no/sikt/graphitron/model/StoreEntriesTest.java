@@ -32,8 +32,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_MOUNT;
-import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_UNMOUNT;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HANDLE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_SUPPLIED;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SUPERGRAPH;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_TENANT_COLUMN;
@@ -307,9 +307,7 @@ class StoreEntriesTest {
             Optional.of("tenant_id"),
             LintConfig.validated(Set.of("no-typename-prefix", "field-names-camel-case"),
                 List.of("Legacy*", "*Internal")),
-            new SessionStateConfig.MethodHooks(
-                new SessionStateConfig.HookRef("com.example.Identity", "mount"),
-                Optional.of(new SessionStateConfig.HookRef("com.example.Identity", "unmount"))),
+            new SessionStateConfig.Callbacks(Optional.of("com.example.Identity")),
             OptionalInt.of(1000));
     }
 
@@ -355,8 +353,8 @@ class StoreEntriesTest {
     private static final List<Table<?>> FAMILY = List.of(
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
-        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT,
-        STORE_GRAPH_SESSION_UNMOUNT, STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE,
+        STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_SUPPLIED,
+        STORE_GRAPH_SESSION_HANDLE, STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE,
         STORE_GRAPH_MODULE_ENTRY);
 
     /** How many rows each of {@code relations} holds for one graph. */
