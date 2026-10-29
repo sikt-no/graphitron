@@ -503,6 +503,12 @@ classified records have no reader left and can go with the walk.
   directive, its `SOURCE_ROW` key row and its lifter methods go, an object's key row read off its
   class and members instead. The directive comes back later, once the model is cleaned up, so the
   removal is not final.
+* **The backing closure stops at a table-bound type** `open`, off the critical path. The class a
+  table-bound type holds is its record class, which `BOUND_TABLE` already states, so the
+  `graphitron_type_backing` closure need not walk on from it; since a service's object passes
+  through to its payload's data element, the rule takes about 0.9 s to 1.4 s on sis at load 9 to 10
+  (2026-10-29), its new seed arm 7 ms of that and the rest the walk from the 18 new seed classes into
+  the table-bound types their members return, a cost accepted until this lands.
 * **The bindings are resolved before the targets** `open`, off the critical path. `ResolvedTypeBindings` reads only the
   written `@table`, so its place after the hops is accidental; it runs before
   `graphitron_field_target` and is marked and swept rather than cleared and rewritten.
