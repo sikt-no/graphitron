@@ -88,7 +88,7 @@ class RelationRegistrationGateTest {
             "graphitron_error_entry", "graphitron_error_handler_entry", "graphitron_node_entry", "graphitron_node_keycolumn_entry",
             "graphitron_field_node_id_entry", "graphitron_argument_node_id_entry", "graphitron_argument_lookup_key_entry",
             "graphitron_field_lookup_key_entry", "graphitron_split_query_entry", "graphitron_tenant_fan_out_entry",
-            "graphitron_pivot_entry", "graphitron_routine_entry",
+            "graphitron_pivot_entry", "graphitron_routine_entry", "graphitron_outbox_entry",
             "graphitron_multitable_reference_entry",
             "graphitron_undecoded_argument_entry",
             // The two supertypes ride the arm of the sites that spell them. Both are written in the
@@ -115,6 +115,7 @@ class RelationRegistrationGateTest {
             "store_graph", "store_graph_schema_input", "store_graph_schema_extension",
             "store_graph_supergraph", "store_graph_output", "store_graph_tenant_column",
             "store_graph_max_allowed_page_size",
+            "store_graph_outbox", "store_graph_outbox_role", "store_graph_outbox_payload_entry",
             "store_graph_lint_disabled_rule", "store_graph_lint_excluded_type",
             "store_graph_session_mount", "store_graph_session_unmount", "store_graph_dependency",
             "store_graph_module", "store_graph_module_entry",
@@ -174,7 +175,7 @@ class RelationRegistrationGateTest {
             "graphitron_ast_connection_entry", "graphitron_ast_field_node_id_entry",
             "graphitron_ast_mutation_entry", "graphitron_ast_pivot_entry",
             "graphitron_ast_default_order_entry", "graphitron_ast_default_order_field_entry",
-            "graphitron_ast_routine_entry",
+            "graphitron_ast_routine_entry", "graphitron_ast_outbox_entry",
             // Every Java code reference a document writes, read off the vocabulary's types rather
             // than off a site. Nothing older states the whole of it to agree with; the fact
             // document code-reference.graphqls pins one row per site the vocabulary allows.
@@ -447,6 +448,10 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_reader_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_write", Arm.DERIVED);
         registrations.put("graphitron_producer_write_rule", Arm.DERIVED);
+        registrations.put("graphitron_outbox_leaf", Arm.DERIVED);
+        registrations.put("graphitron_outbox_leaf_rule", Arm.DERIVED);
+        registrations.put("graphitron_outbox_target", Arm.DERIVED);
+        registrations.put("graphitron_outbox_target_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_routine", Arm.DERIVED);
         registrations.put("graphitron_producer_routine_rule", Arm.DERIVED);
         registrations.put("graphitron_producer_service", Arm.DERIVED);

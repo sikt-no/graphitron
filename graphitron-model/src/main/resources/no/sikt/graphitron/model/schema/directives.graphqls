@@ -633,6 +633,32 @@ directive @routine(
 ) repeatable on FIELD_DEFINITION
 
 """
+Writes one message to the transactional outbox every time the mutation field succeeds, inside the
+transaction that made the change, so the message exists if and only if the write committed. The
+directive is repeatable: each occurrence is a message of its own, written in the order the
+directives appear, so a new event (or a new version of one) is added beside the published ones
+without changing them. Valid on Mutation fields that write a table with `@mutation`. Where the
+messages go is configured once, in the plugin's `<outbox>` block.
+"""
+directive @outbox(
+  """
+  The message's event type, the name downstream consumers subscribe to. Defaults to the field's
+  coordinate (`Mutation.createFilm`). Two `@outbox` in the schema with the same event, given or
+  defaulted, are rejected.
+  """
+  event: String
+  """
+  Builds the message's flat JSON payload. Each entry is `jsonKey: source`; multiple entries are
+  comma-separated. A source is a field argument (a dot path walks into nested input fields; an
+  input-object argument yields an object of the fields the client sent, a list yields an array),
+  `$result` or `$result.<path>` (what the write produced), or `$scope.<member>` (`coordinate`,
+  `operationName`, `alias`). A key bound twice, or one that collides with a key of the
+  configured common payload, is rejected.
+  """
+  argMapping: String
+) repeatable on FIELD_DEFINITION
+
+"""
 Specifies how fields should be resolved for nested types. This would typically be used with non-resolvable federation entities.
 """
 directive @experimental_constructType(

@@ -86,6 +86,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                               UnlowerableOrderings.Detection unlowerableOrderings,
                               DefaultPageSizeDefects.Detection defaultPageSizes,
                               NodeLegacyKeyDefects.Detection nodeLegacyKeys,
+                              OutboxDefects.Detection outboxes,
                               ResolvedKeyProjections.Projections keyProjections,
                               NodeIdDecodeCoverageFacts.Facts nodeIdDecodeCoverage,
                               StoreLegacyKeyShapes.Shapes legacyKeyShapes) {
@@ -115,6 +116,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         roster.put("UnlowerableOrderings", UnlowerableOrderings.READS);
         roster.put("DefaultPageSizeDefects", DefaultPageSizeDefects.READS);
         roster.put("NodeLegacyKeyDefects", NodeLegacyKeyDefects.READS);
+        roster.put("OutboxDefects", OutboxDefects.READS);
         roster.put("ResolvedKeyProjections", ResolvedKeyProjections.READS);
         roster.put("NodeIdDecodeCoverageFacts", NodeIdDecodeCoverageFacts.READS);
         roster.put("StoreLegacyKeyShapes", StoreLegacyKeyShapes.READS);
@@ -141,6 +143,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
                     UnlowerableOrderings.detect(dsl, graphName),
                     DefaultPageSizeDefects.detect(dsl, graphName),
                     NodeLegacyKeyDefects.detect(dsl, graphName),
+                    OutboxDefects.detect(dsl, graphName),
                     ResolvedKeyProjections.read(dsl, graphName),
                     NodeIdDecodeCoverageFacts.read(dsl, graphName),
                     StoreLegacyKeyShapes.read(dsl, graphName));
@@ -159,6 +162,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
             UnlowerableOrderings.Detection.empty(),
             DefaultPageSizeDefects.Detection.empty(),
             NodeLegacyKeyDefects.Detection.empty(),
+            OutboxDefects.Detection.empty(),
             ResolvedKeyProjections.Projections.empty(),
             NodeIdDecodeCoverageFacts.Facts.empty(),
             StoreLegacyKeyShapes.Shapes.empty());
@@ -175,6 +179,7 @@ public record StoreDetections(AuthoredClaimConflicts.Detection claims,
         out.addAll(unlowerableOrderings.violations());
         out.addAll(defaultPageSizes.violations());
         out.addAll(nodeLegacyKeys.violations());
+        out.addAll(outboxes.violations());
         return List.copyOf(out);
     }
 

@@ -1,0 +1,66 @@
+# An @outbox is a message each. A field's applications are kept in the order they were written, at
+# ordinals from zero, whatever their events are; an event the author left out is the field's own
+# coordinate, which the anchor states once so no reader recomputes it. The mapping of each is read
+# by the generic argMapping writer into pairs, placed at the application it was written on, and
+# each entry becomes a leaf by the source it reads: an argument path, the node id of the result, a
+# column of the written type, or a member of the field's scope. The configured common payload adds
+# its own leaves to every message, and a message's own key wins over a common one of the same name.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(
+  outboxTable: "outbox",
+  outboxPayload: "operation: $scope.operationName, where: $scope.coordinate"
+)
+
+type Mutation {
+  createFilm(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "FilmCreated", argMapping: "filmId: $result.id, title: in.title, name: $result.title")
+    @outbox(argMapping: "all: in, place: $scope.alias")
+  createFilmAgain(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox
+}
+
+extend schema @expectEquals(relation: "graphitron_outbox_entry", rows: """
+  type_name, field_name,      ordinal, event_ref,   event,                 argmapping
+  Mutation,  createFilm,      0,       FilmCreated, FilmCreated,           "filmId: $result.id, title: in.title, name: $result.title"
+  Mutation,  createFilm,      1,       ,            Mutation.createFilm,   "all: in, place: $scope.alias"
+  Mutation,  createFilmAgain, 0,       ,            Mutation.createFilmAgain,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_leaf", rows: """
+  type_name, field_name,      ordinal, key_name,  origin,  position, source_kind,    source_path,   column_name, node_type_name
+  Mutation,  createFilm,      0,       filmId,    MESSAGE, 0,        RESULT_NODE_ID, id,            ,            Film
+  Mutation,  createFilm,      0,       title,     MESSAGE, 1,        ARGUMENT,       in.title,      ,
+  Mutation,  createFilm,      0,       name,      MESSAGE, 2,        RESULT_COLUMN,  title,         title,
+  Mutation,  createFilm,      0,       operation, COMMON,  0,        SCOPE,          operationName, ,
+  Mutation,  createFilm,      0,       where,     COMMON,  1,        SCOPE,          coordinate,    ,
+  Mutation,  createFilm,      1,       all,       MESSAGE, 0,        ARGUMENT,       in,            ,
+  Mutation,  createFilm,      1,       place,     MESSAGE, 1,        SCOPE,          alias,         ,
+  Mutation,  createFilm,      1,       operation, COMMON,  0,        SCOPE,          operationName, ,
+  Mutation,  createFilm,      1,       where,     COMMON,  1,        SCOPE,          coordinate,    ,
+  Mutation,  createFilmAgain, 0,       operation, COMMON,  0,        SCOPE,          operationName, ,
+  Mutation,  createFilmAgain, 0,       where,     COMMON,  1,        SCOPE,          coordinate,    ,
+  """)
+
+extend schema @expectEquals(relation: "graphitron_outbox_target", rows: """
+  table_name, type_column, aggregatetype_column, aggregateid_column, payload_column, payload_kind
+  outbox,     type,        aggregatetype,        aggregateid,        payload,        JSON
+  """)
+
+extend schema @expectEquals(relation: "graphitron_ast_argmapping_pair_entry", where: "bound_to LIKE '$result%' OR bound_to LIKE '$scope%' OR bound_to = 'in.title'", rows: """
+  position, param_name, bound_to
+  0,        filmId,     $result.id
+  1,        title,      in.title
+  2,        name,       $result.title
+  1,        place,      $scope.alias
+  """)

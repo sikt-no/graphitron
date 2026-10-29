@@ -196,6 +196,56 @@ COMMENT ON COLUMN store_graph_max_allowed_page_size.graph_name IS 'the declaring
 COMMENT ON COLUMN store_graph_max_allowed_page_size.max_page_size IS 'the maximum as configured: a first or last above it is served at it, the built-in default page size is lowered to it, and an authored default above it is a defect';
 COMMENT ON COLUMN store_graph_max_allowed_page_size.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row with no instant being one no reading claims and no sweep reaches';
 
+CREATE TABLE store_graph_outbox (
+  graph_name      VARCHAR   NOT NULL,
+  table_name      VARCHAR,
+  function_name   VARCHAR,
+  payload_mapping VARCHAR,
+  touched_at      TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name)
+);
+COMMENT ON TABLE store_graph_outbox IS 'The <outbox> block of one graph''s build: where the messages of its @outbox fields go, as authored. For example a build configuring <outbox><table>outbox</table></outbox> is one row naming the table, and a build with no block has no row.';
+COMMENT ON COLUMN store_graph_outbox.graph_name IS 'the configuring graph''s partition, anchored by store_graph';
+COMMENT ON COLUMN store_graph_outbox.table_name IS 'the <table> element as written, the outbox table graphitron inserts into, or NULL where none was written; both targets present, or neither, is recorded as written and is a defect at each @outbox it affects';
+COMMENT ON COLUMN store_graph_outbox.function_name IS 'the <function> element as written, the database function or procedure graphitron calls once per message, or NULL where none was written';
+COMMENT ON COLUMN store_graph_outbox.payload_mapping IS 'the <payload> argMapping as written, the entries every message carries, or NULL where none was written; its entries are the payload entry relation';
+COMMENT ON COLUMN store_graph_outbox.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row without a mark could never be swept';
+
+CREATE TABLE store_graph_outbox_role (
+  graph_name VARCHAR   NOT NULL,
+  kind       VARCHAR   NOT NULL,
+  role       VARCHAR   NOT NULL,
+  name       VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, kind, role),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_outbox (graph_name),
+  CHECK (kind IN ('COLUMN', 'PARAMETER'))
+);
+COMMENT ON TABLE store_graph_outbox_role IS 'One role the <outbox> block binds to a name of its target: a column of the outbox table or a parameter of the outbox function. For example <columns><type>event_type</type></columns> is one row binding the role type to the column event_type.';
+COMMENT ON COLUMN store_graph_outbox_role.graph_name IS 'the configuring graph''s partition, anchored by store_graph_outbox';
+COMMENT ON COLUMN store_graph_outbox_role.kind IS 'whether the name is a column of the table target or a parameter of the function target, which is the element it was written in';
+COMMENT ON COLUMN store_graph_outbox_role.role IS 'the role as written: type, aggregatetype, aggregateid or payload, or a parameter name a function maps; open, since nothing upstream has judged it';
+COMMENT ON COLUMN store_graph_outbox_role.name IS 'the column or parameter name as written';
+COMMENT ON COLUMN store_graph_outbox_role.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row without a mark could never be swept';
+
+CREATE TABLE store_graph_outbox_payload_entry (
+  graph_name VARCHAR   NOT NULL,
+  position   INT       NOT NULL,
+  key_name   VARCHAR   NOT NULL,
+  bound_to   VARCHAR   NOT NULL,
+  touched_at TIMESTAMP NOT NULL,
+  PRIMARY KEY (graph_name, position),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_outbox (graph_name),
+  CHECK (position >= 0)
+);
+COMMENT ON TABLE store_graph_outbox_payload_entry IS 'One entry of the <outbox> <payload> mapping every message carries, at its place in it. For example <payload>actor: $session.userId, operation: $scope.operationName</payload> gives two rows, actor bound to $session.userId at position 0 and operation to $scope.operationName at 1.';
+COMMENT ON COLUMN store_graph_outbox_payload_entry.graph_name IS 'the configuring graph''s partition, anchored by store_graph_outbox';
+COMMENT ON COLUMN store_graph_outbox_payload_entry.position IS 'the entry''s 0-based position within the payload mapping as written';
+COMMENT ON COLUMN store_graph_outbox_payload_entry.key_name IS 'the JSON key the entry names, the left side as written';
+COMMENT ON COLUMN store_graph_outbox_payload_entry.bound_to IS 'the right side as written: a sigil with its path, or an argument path where the author wrote one, which no field has and so is a defect';
+COMMENT ON COLUMN store_graph_outbox_payload_entry.touched_at IS 'when the reading that wrote this row ran. A run transcribes the whole of its configuration, so the reading finishes by deleting this graph''s rows carrying a different instant: those are the parameters the run no longer had, which an upsert cannot find because there is no incoming row to match. NOT NULL is what makes that total, a row without a mark could never be swept';
+
 CREATE TABLE store_graph_lint_disabled_rule (
   graph_name VARCHAR NOT NULL,
   rule_id    VARCHAR NOT NULL,
@@ -3012,6 +3062,29 @@ COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_namespace_part IS 'th
 COMMENT ON COLUMN graphitron_ast_routine_entry.routine_ref_name_part IS 'the routine half of the same';
 COMMENT ON COLUMN graphitron_ast_routine_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its segments name is a question for the argument-mapping derivation';
 
+CREATE TABLE graphitron_ast_outbox_entry (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  touched_at    TIMESTAMP NOT NULL,
+  event_ref     VARCHAR,
+  argmapping    VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column),
+  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column)
+    REFERENCES graphql_ast_field_directive_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_ast_outbox_entry IS 'What an @outbox application says: the event it names and the mapping that builds its payload, as written. For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.source_name IS 'the file the application was written in';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.source_line IS 'source line of the at sign, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.source_column IS 'source column of the same. The four key columns are the applied directive''s own key, so this row is the decode of exactly one row of graphql_ast_field_directive_entry, and the ordinal the anchor gives a repeated @outbox is not a column here: the position the application was written at is what tells two of them apart';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the applications the author removed or renamed in place; an application the author moved is swept with the directive row it hangs on';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.event_ref IS 'the event argument exactly as written, or NULL where the author left it out; what an omitted event defaults to is the anchor''s resolution, not a value to keep here';
+COMMENT ON COLUMN graphitron_ast_outbox_entry.argmapping IS 'the argMapping argument, kept as the one string the author typed; what its entries name is a question for the derivation over the argument-mapping pairs';
+
 -- The input-value site's decode. One writer over the three parents the parser treats alike, a
 -- field's argument, an input object's field and a directive definition's own argument, every
 -- relation below keyed by the position of the @ token, which is
@@ -4307,6 +4380,35 @@ COMMENT ON COLUMN graphitron_routine_entry.routine_ref_namespace_part_upper IS '
 COMMENT ON COLUMN graphitron_routine_entry.routine_ref_name_part_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against sql_table''s schema and name, a routine result being a catalog table. Generated, so nothing writes it and nothing can. It exists because an authored spelling meets a catalog name here, which is the only reason anything in this schema is folded';
 COMMENT ON COLUMN graphitron_routine_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
 COMMENT ON COLUMN graphitron_routine_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
+
+CREATE TABLE graphitron_outbox_entry (
+  graph_name     VARCHAR NOT NULL,
+  type_name      VARCHAR NOT NULL,
+  field_name     VARCHAR NOT NULL,
+  ordinal        INT     NOT NULL,
+  source_name    VARCHAR,
+  source_line    INT,
+  source_column  INT,
+  event_ref      VARCHAR,
+  argmapping     VARCHAR,
+  touched_at     TIMESTAMP NOT NULL,
+  event          VARCHAR GENERATED ALWAYS AS (COALESCE(event_ref, type_name || '.' || field_name)),
+  PRIMARY KEY (graph_name, type_name, field_name, ordinal),
+  FOREIGN KEY (graph_name, type_name, field_name) REFERENCES graphql_field_element (graph_name, type_name, field_name)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_outbox_entry IS 'One message of a field: its @outbox application, at its place among the field''s applications in written order. For example @outbox(event: "FilmCreated") followed by @outbox(argMapping: "filmId: $result.id") on Mutation.createFilm gives two rows, at ordinals 0 and 1, the second with the event Mutation.createFilm.';
+COMMENT ON COLUMN graphitron_outbox_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphitron_outbox_entry.type_name IS 'the GraphQL type this row is about';
+COMMENT ON COLUMN graphitron_outbox_entry.field_name IS 'the field name within the owning type';
+COMMENT ON COLUMN graphitron_outbox_entry.ordinal IS 'the application''s place among the field''s @outbox applications in written order, from zero, which is the order the messages are written in';
+COMMENT ON COLUMN graphitron_outbox_entry.source_name IS 'the SDL file the row was captured from';
+COMMENT ON COLUMN graphitron_outbox_entry.source_line IS 'source line, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_outbox_entry.source_column IS 'source column, 1-based per the graphql-java convention';
+COMMENT ON COLUMN graphitron_outbox_entry.event_ref IS 'the event argument as written, or NULL where the author left it out';
+COMMENT ON COLUMN graphitron_outbox_entry.argmapping IS 'the argMapping string as written; the pair child is its decode';
+COMMENT ON COLUMN graphitron_outbox_entry.touched_at IS 'when the reading that derived this row ran. The reading finishes by deleting this graph''s rows carrying a different instant, which are the applications an author removed from a field that still stands; a field the author removed takes its rows with it through the element reference above';
+COMMENT ON COLUMN graphitron_outbox_entry.event IS 'the event the message carries: the one written, else the field''s own coordinate, which is unique in the schema. Generated, so nothing writes it and nothing can; two rows of a graph sharing a value here is the duplicated-event defect';
 
 -- @experimental_constructType has no relation, and unlike every other name in this stratum it
 -- is not a graphitron directive: its declaration in directives.graphqls is a bug (the census
@@ -10695,6 +10797,225 @@ COMMENT ON VIEW graphitron_field_target_column_rule IS 'One row the field target
 -- COMMENT ON COLUMN graphitron_field_target_column_rule.column_name IS 'the one column the spelling names there';
 -- COMMENT ON COLUMN graphitron_field_target_column_rule.matched_by IS 'SQL_NAME or JOOQ_NAME, as graphitron_field_target_column.matched_by states';
 
+-- The leaves of an @outbox message: one row per payload key, by the source it reads, resolved against
+-- what the store holds. The mapping's own entries and the configured common payload's, merged.
+CREATE TABLE graphitron_outbox_leaf (
+  graph_name  VARCHAR NOT NULL,
+  type_name   VARCHAR NOT NULL,
+  field_name  VARCHAR NOT NULL,
+  ordinal     INT     NOT NULL,
+  key_name    VARCHAR NOT NULL,
+  origin      VARCHAR NOT NULL,
+  position    INT     NOT NULL,
+  source_kind VARCHAR NOT NULL,
+  source_path VARCHAR,
+  column_name VARCHAR,
+  node_type_name VARCHAR,
+  PRIMARY KEY (graph_name, type_name, field_name, ordinal, key_name),
+  FOREIGN KEY (graph_name, type_name, field_name, ordinal)
+    REFERENCES graphitron_outbox_entry (graph_name, type_name, field_name, ordinal)
+    ON DELETE CASCADE,
+  CHECK (origin IN ('MESSAGE', 'COMMON')),
+  CHECK (source_kind IN ('ARGUMENT', 'RESULT_ROOT', 'RESULT_NODE_ID', 'RESULT_COLUMN', 'SCOPE'))
+);
+COMMENT ON TABLE graphitron_outbox_leaf IS 'One key of one @outbox message''s payload, by the source it reads. For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.';
+COMMENT ON COLUMN graphitron_outbox_leaf.graph_name IS 'the owning graph''s partition, carried from the message';
+COMMENT ON COLUMN graphitron_outbox_leaf.type_name IS 'the mutation type declaring the field, carried from the message';
+COMMENT ON COLUMN graphitron_outbox_leaf.field_name IS 'the field carrying the @outbox, carried from the message';
+COMMENT ON COLUMN graphitron_outbox_leaf.ordinal IS 'the message''s place among the field''s @outbox applications, carried from graphitron_outbox_entry';
+COMMENT ON COLUMN graphitron_outbox_leaf.key_name IS 'the JSON key, the left side of the entry as written; one row per key of a message, a message''s own entry winning over a common one of the same name, and the first of two written entries winning over the second, whose pair is the key-conflict defect';
+COMMENT ON COLUMN graphitron_outbox_leaf.origin IS 'MESSAGE where the entry is the directive''s own mapping, COMMON where it is the configured common payload''s';
+COMMENT ON COLUMN graphitron_outbox_leaf.position IS 'the entry''s 0-based position in the mapping it was written in';
+COMMENT ON COLUMN graphitron_outbox_leaf.source_kind IS 'ARGUMENT, RESULT_ROOT (the outcome as a whole), RESULT_NODE_ID (the written type''s node id field), RESULT_COLUMN (a field of the written type that reads one column) or SCOPE; a source that resolves to none of them has no row here and is a defect';
+COMMENT ON COLUMN graphitron_outbox_leaf.source_path IS 'the source without its sigil: the argument path, the result field, or the scope member; NULL for RESULT_ROOT';
+COMMENT ON COLUMN graphitron_outbox_leaf.column_name IS 'the SQL column a RESULT_COLUMN reads, from the written table; NULL for every other kind';
+COMMENT ON COLUMN graphitron_outbox_leaf.node_type_name IS 'the node type whose id a RESULT_ROOT or RESULT_NODE_ID leaf encodes: the one node type bound to the written table; NULL for every other kind, and a result leaf over a table with no single node type has no row';
+
+CREATE VIEW graphitron_outbox_leaf_rule
+  (graph_name, type_name, field_name, ordinal, key_name, origin, position, source_kind,
+   source_path, column_name, node_type_name) AS
+WITH written (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to) AS (
+  SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, p.param_name, 'MESSAGE', p.position,
+         p.bound_to
+    FROM graphitron_outbox_entry o
+    JOIN graphitron_argmapping_site s
+      ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
+     AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
+    JOIN graphitron_ast_argmapping_pair_entry p
+      ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+     AND p.source_line = s.source_line AND p.source_column = s.source_column
+  UNION ALL
+  SELECT o.graph_name, o.type_name, o.field_name, o.ordinal, c.key_name, 'COMMON', c.position,
+         c.bound_to
+    FROM graphitron_outbox_entry o
+    JOIN store_graph_outbox_payload_entry c ON c.graph_name = o.graph_name
+),
+ranked (graph_name, type_name, field_name, ordinal, key_name, origin, position, bound_to, rn) AS (
+  SELECT w.graph_name, w.type_name, w.field_name, w.ordinal, w.key_name, w.origin, w.position,
+         w.bound_to,
+         ROW_NUMBER() OVER (PARTITION BY w.graph_name, w.type_name, w.field_name, w.ordinal, w.key_name
+                            ORDER BY CASE w.origin WHEN 'MESSAGE' THEN 0 ELSE 1 END, w.position)
+    FROM written w
+)
+SELECT r.graph_name, r.type_name, r.field_name, r.ordinal, r.key_name, r.origin, r.position,
+       CASE WHEN r.bound_to = '$result' THEN 'RESULT_ROOT'
+            WHEN r.bound_to LIKE '$result.%'
+              THEN CASE WHEN nid.field_name IS NOT NULL THEN 'RESULT_NODE_ID' ELSE 'RESULT_COLUMN' END
+            WHEN r.bound_to LIKE '$scope.%' THEN 'SCOPE'
+            ELSE 'ARGUMENT' END,
+       CASE WHEN r.bound_to = '$result' THEN CAST(NULL AS VARCHAR)
+            WHEN r.bound_to LIKE '$result.%' THEN SUBSTRING(r.bound_to, 9)
+            WHEN r.bound_to LIKE '$scope.%' THEN SUBSTRING(r.bound_to, 8)
+            ELSE r.bound_to END,
+       tc.column_name,
+       CASE WHEN r.bound_to = '$result' OR (r.bound_to LIKE '$result.%' AND nid.field_name IS NOT NULL)
+            THEN nt.node_type_name END
+  FROM ranked r
+  LEFT JOIN graphitron_producer_write w
+    ON w.graph_name = r.graph_name AND w.type_name = r.type_name AND w.field_name = r.field_name
+  LEFT JOIN graphitron_field_target ft
+    ON ft.graph_name = r.graph_name AND ft.type_name = r.type_name AND ft.field_name = r.field_name
+  LEFT JOIN (SELECT b.graph_name, b.table_source_name, b.table_schema, b.table_name,
+                    MIN(n.type_name) AS node_type_name, COUNT(*) AS node_types,
+                    -- The node key is the table's primary key, which is what the write captures
+                    -- and so what a node id is encoded from without another read.
+                    MIN(CASE WHEN (SELECT COUNT(*) FROM graphitron_node_keycolumn k
+                                    WHERE k.graph_name = n.graph_name AND k.type_name = n.type_name)
+                                = (SELECT COUNT(*) FROM sql_primary_key pk
+                                     JOIN sql_constraint_column cc
+                                       ON cc.source_name = pk.source_name
+                                      AND cc.table_schema = pk.table_schema
+                                      AND cc.table_name = pk.table_name
+                                      AND cc.constraint_name = pk.constraint_name
+                                    WHERE pk.source_name = b.table_source_name
+                                      AND pk.table_schema = b.table_schema
+                                      AND pk.table_name = b.table_name)
+                              AND NOT EXISTS (SELECT 1 FROM graphitron_node_keycolumn k
+                                               WHERE k.graph_name = n.graph_name
+                                                 AND k.type_name = n.type_name
+                                                 AND NOT EXISTS (SELECT 1 FROM sql_primary_key pk
+                                                                  JOIN sql_constraint_column cc
+                                                                    ON cc.source_name = pk.source_name
+                                                                   AND cc.table_schema = pk.table_schema
+                                                                   AND cc.table_name = pk.table_name
+                                                                   AND cc.constraint_name = pk.constraint_name
+                                                                 WHERE pk.source_name = b.table_source_name
+                                                                   AND pk.table_schema = b.table_schema
+                                                                   AND pk.table_name = b.table_name
+                                                                   AND cc.column_name = k.column_name))
+                             THEN TRUE ELSE FALSE END) AS key_is_primary
+               FROM graphitron_tabletype b
+               JOIN graphitron_node n ON n.graph_name = b.graph_name AND n.type_name = b.type_name
+              GROUP BY b.graph_name, b.table_source_name, b.table_schema, b.table_name) nt
+    ON nt.graph_name = r.graph_name AND nt.table_source_name = w.table_source_name
+   AND nt.table_schema = w.table_schema AND nt.table_name = w.table_name AND nt.node_types = 1
+  LEFT JOIN graphitron_field_node_id_entry nid
+    ON nid.graph_name = r.graph_name AND nid.type_name = ft.target_type_name
+   AND nid.field_name = SUBSTRING(r.bound_to, 9) AND r.bound_to LIKE '$result.%'
+  LEFT JOIN graphitron_field_target_column tc
+    ON tc.graph_name = r.graph_name AND tc.type_name = ft.target_type_name
+   AND tc.field_name = SUBSTRING(r.bound_to, 9) AND r.bound_to LIKE '$result.%'
+   AND tc.from_source_name = w.table_source_name AND tc.from_schema = w.table_schema
+   AND tc.from_table = w.table_name
+  LEFT JOIN graphitron_argmapping_candidate ca
+    ON ca.graph_name = r.graph_name AND ca.coordinate = r.type_name || '.' || r.field_name
+   AND ca.path = r.bound_to
+ WHERE r.rn = 1
+   AND ((r.origin = 'MESSAGE' AND r.bound_to = '$result' AND w.kind IS NOT NULL
+         AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
+     OR (r.origin = 'MESSAGE' AND r.bound_to LIKE '$result.%' AND w.kind IS NOT NULL
+         AND POSITION('.', SUBSTRING(r.bound_to, 9)) = 0
+         AND ((nid.field_name IS NOT NULL AND nt.node_type_name IS NOT NULL AND nt.key_is_primary)
+              OR (nid.field_name IS NULL AND tc.column_name IS NOT NULL AND w.kind <> 'DELETE')))
+     OR (r.bound_to LIKE '$scope.%'
+         AND SUBSTRING(r.bound_to, 8) IN ('coordinate', 'operationName', 'alias'))
+     OR (r.origin = 'MESSAGE' AND r.bound_to NOT LIKE '$%' AND ca.path IS NOT NULL));
+COMMENT ON VIEW graphitron_outbox_leaf_rule IS 'One row the outbox-leaf rule computes, in the shape graphitron_outbox_leaf stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s rows for one graph into graphitron_outbox_leaf, which is the name every reader spells.';
+
+-- Where the messages of a graph go: the configured outbox table resolved against the catalog.
+CREATE TABLE graphitron_outbox_target (
+  graph_name           VARCHAR NOT NULL,
+  table_source_name    VARCHAR NOT NULL,
+  table_schema         VARCHAR NOT NULL,
+  table_name           VARCHAR NOT NULL,
+  type_column          VARCHAR NOT NULL,
+  aggregatetype_column VARCHAR,
+  aggregateid_column   VARCHAR,
+  payload_column       VARCHAR NOT NULL,
+  payload_kind         VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_outbox (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (table_source_name, table_schema, table_name)
+    REFERENCES sql_table (source_name, table_schema, table_name) ON DELETE CASCADE,
+  CHECK (payload_kind IN ('JSON', 'TEXT'))
+);
+COMMENT ON TABLE graphitron_outbox_target IS 'The outbox table of one graph, resolved: the table the configuration names and the columns each role lands in. For example <outbox><table>outbox</table></outbox> over a table in Debezium''s layout gives one row naming it and its columns; a configuration that resolves to no one such table has no row and is a defect at each @outbox.';
+COMMENT ON COLUMN graphitron_outbox_target.graph_name IS 'the owning graph''s partition, carried from the configuration';
+COMMENT ON COLUMN graphitron_outbox_target.table_source_name IS 'the catalog partition the table was read from, the first column of the sql_table key this row names';
+COMMENT ON COLUMN graphitron_outbox_target.table_schema IS 'the outbox table''s SQL schema';
+COMMENT ON COLUMN graphitron_outbox_target.table_name IS 'the outbox table''s SQL name';
+COMMENT ON COLUMN graphitron_outbox_target.type_column IS 'the column the event is written to: the one the configuration binds to the role type, else the one named type';
+COMMENT ON COLUMN graphitron_outbox_target.aggregatetype_column IS 'the column the written table''s name is written to, or NULL where the table has none and the role is left out';
+COMMENT ON COLUMN graphitron_outbox_target.aggregateid_column IS 'the column an aggregate id would be written to, or NULL where the table has none; no message names one yet, so the column is left to its default';
+COMMENT ON COLUMN graphitron_outbox_target.payload_column IS 'the column the JSON payload is written to: the one the configuration binds to the role payload, else the one named payload';
+COMMENT ON COLUMN graphitron_outbox_target.payload_kind IS 'JSON where the payload column holds JSON or JSONB and takes the JSON value, TEXT where it holds text and takes the JSON rendered as text';
+
+CREATE VIEW graphitron_outbox_target_rule
+  (graph_name, table_source_name, table_schema, table_name, type_column, aggregatetype_column,
+   aggregateid_column, payload_column, payload_kind) AS
+WITH named (graph_name, namespace_part, name_part) AS (
+  SELECT b.graph_name,
+         CASE WHEN POSITION('.', b.table_name) = 0 THEN CAST(NULL AS VARCHAR)
+              ELSE REGEXP_REPLACE(b.table_name, '\..*$', '') END,
+         CASE WHEN POSITION('.', b.table_name) = 0 THEN b.table_name
+              ELSE REGEXP_REPLACE(b.table_name, '^[^.]*\.', '') END
+    FROM store_graph_outbox b
+   WHERE b.table_name IS NOT NULL AND b.function_name IS NULL
+),
+resolved (graph_name, source_name, table_schema, table_name, candidates) AS (
+  SELECT n.graph_name, st.source_name, st.table_schema, st.table_name,
+         COUNT(*) OVER (PARTITION BY n.graph_name)
+    FROM named n
+    JOIN store_graph_source m ON m.graph_name = n.graph_name
+    JOIN sql_table st
+      ON st.source_name = m.source_name AND st.table_name_upper = UPPER(n.name_part)
+     AND (n.namespace_part IS NULL OR st.table_schema_upper = UPPER(n.namespace_part))
+),
+roles (graph_name, source_name, table_schema, table_name, type_column, aggregatetype_column,
+       aggregateid_column, payload_column, payload_type) AS (
+  SELECT r.graph_name, r.source_name, r.table_schema, r.table_name,
+         (SELECT c.column_name FROM sql_column c
+           WHERE c.source_name = r.source_name AND c.table_schema = r.table_schema
+             AND c.table_name = r.table_name
+             AND c.column_name_upper = UPPER(COALESCE((SELECT ro.name FROM store_graph_outbox_role ro
+               WHERE ro.graph_name = r.graph_name AND ro.kind = 'COLUMN' AND ro.role = 'type'), 'type'))),
+         (SELECT c.column_name FROM sql_column c
+           WHERE c.source_name = r.source_name AND c.table_schema = r.table_schema
+             AND c.table_name = r.table_name
+             AND c.column_name_upper = UPPER(COALESCE((SELECT ro.name FROM store_graph_outbox_role ro
+               WHERE ro.graph_name = r.graph_name AND ro.kind = 'COLUMN' AND ro.role = 'aggregatetype'), 'aggregatetype'))),
+         (SELECT c.column_name FROM sql_column c
+           WHERE c.source_name = r.source_name AND c.table_schema = r.table_schema
+             AND c.table_name = r.table_name
+             AND c.column_name_upper = UPPER(COALESCE((SELECT ro.name FROM store_graph_outbox_role ro
+               WHERE ro.graph_name = r.graph_name AND ro.kind = 'COLUMN' AND ro.role = 'aggregateid'), 'aggregateid'))),
+         pc.column_name, UPPER(pc.database_type)
+    FROM resolved r
+    LEFT JOIN sql_column pc
+      ON pc.source_name = r.source_name AND pc.table_schema = r.table_schema
+     AND pc.table_name = r.table_name
+     AND pc.column_name_upper = UPPER(COALESCE((SELECT ro.name FROM store_graph_outbox_role ro
+           WHERE ro.graph_name = r.graph_name AND ro.kind = 'COLUMN' AND ro.role = 'payload'), 'payload'))
+   WHERE r.candidates = 1
+)
+SELECT x.graph_name, x.source_name, x.table_schema, x.table_name, x.type_column,
+       x.aggregatetype_column, x.aggregateid_column, x.payload_column,
+       CASE WHEN x.payload_type IN ('ORG.JOOQ.JSON', 'ORG.JOOQ.JSONB') THEN 'JSON' ELSE 'TEXT' END
+  FROM roles x
+ WHERE x.type_column IS NOT NULL AND x.payload_column IS NOT NULL
+   AND x.payload_type IN ('ORG.JOOQ.JSON', 'ORG.JOOQ.JSONB', 'JAVA.LANG.STRING');
+COMMENT ON VIEW graphitron_outbox_target_rule IS 'One row the outbox-target rule computes, in the shape graphitron_outbox_target stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s row for one graph into graphitron_outbox_target, which is the name every reader spells.';
+
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
@@ -11398,7 +11719,115 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
   FROM graphql_ast_field_definition_entry f
   JOIN graphql_root_operation ro
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
-   AND ro.operation = 'SUBSCRIPTION';
+   AND ro.operation = 'SUBSCRIPTION'
+UNION ALL
+-- An @outbox that is not on a field writing a table with @mutation: no write, no message.
+SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_NOT_A_WRITE',
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_outbox_entry o
+ WHERE o.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM graphitron_producer_write w
+                    WHERE w.graph_name = o.graph_name AND w.type_name = o.type_name
+                      AND w.field_name = o.field_name)
+UNION ALL
+-- An @outbox in a build that configures no outbox target. The configuration has no SDL position, so
+-- the fault is reported at every @outbox it leaves without one.
+SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_NO_TARGET',
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_outbox_entry o
+ WHERE o.source_line IS NOT NULL
+   AND NOT EXISTS (SELECT 1 FROM store_graph_outbox b
+                    WHERE b.graph_name = o.graph_name
+                      AND (b.table_name IS NOT NULL OR b.function_name IS NOT NULL))
+UNION ALL
+-- A configured target that does not resolve, reported at every @outbox it serves.
+SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_TARGET_INVALID',
+       CASE WHEN b.table_name IS NOT NULL AND b.function_name IS NOT NULL
+              THEN 'both <table> and <function> are named, name one'
+            WHEN b.table_name IS NULL
+              THEN '<function> is not generated yet, name an outbox <table>'
+            ELSE '<table> ' || b.table_name || ' is not one table of the jOOQ catalog with a type column'
+                 || ' and a payload column that is JSON, JSONB or text' END
+  FROM graphitron_outbox_entry o
+  JOIN store_graph_outbox b ON b.graph_name = o.graph_name
+ WHERE o.source_line IS NOT NULL
+   AND (b.table_name IS NOT NULL OR b.function_name IS NOT NULL)
+   AND (b.function_name IS NOT NULL
+        OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_target t WHERE t.graph_name = o.graph_name))
+UNION ALL
+-- Two @outbox with one event, at each of the two.
+SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_DUPLICATE_EVENT',
+       o.event
+  FROM graphitron_outbox_entry o
+ WHERE o.source_line IS NOT NULL
+   AND EXISTS (SELECT 1 FROM graphitron_outbox_entry o2
+                WHERE o2.graph_name = o.graph_name AND o2.event = o.event
+                  AND (o2.type_name <> o.type_name OR o2.field_name <> o.field_name
+                       OR o2.ordinal <> o.ordinal))
+UNION ALL
+-- A key bound twice in one mapping, or also a key of the common payload: one row per @outbox, the
+-- first offending key as written; the author fixes it and the next one is reported.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_KEY_CONFLICT',
+       d.key_name
+  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
+               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
+                                               o.source_column ORDER BY p.position) AS rn
+          FROM graphitron_outbox_entry o
+          JOIN graphitron_argmapping_site s
+            ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
+           AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
+          JOIN graphitron_ast_argmapping_pair_entry p
+            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+           AND p.source_line = s.source_line AND p.source_column = s.source_column
+         WHERE o.source_line IS NOT NULL
+           AND (EXISTS (SELECT 1 FROM graphitron_ast_argmapping_pair_entry p2
+                         WHERE p2.graph_name = p.graph_name AND p2.source_name = p.source_name
+                           AND p2.source_line = p.source_line AND p2.source_column = p.source_column
+                           AND p2.param_name = p.param_name AND p2.position <> p.position)
+                OR EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c
+                            WHERE c.graph_name = o.graph_name AND c.key_name = p.param_name))) d
+ WHERE d.rn = 1
+UNION ALL
+-- A key bound to a source the message cannot read: no leaf, so nothing the emitter could render.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_SOURCE_UNRESOLVED',
+       d.key_name || ': ' || d.bound_to
+  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, p.param_name AS key_name,
+               p.bound_to,
+               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
+                                               o.source_column ORDER BY p.position) AS rn
+          FROM graphitron_outbox_entry o
+          JOIN graphitron_argmapping_site s
+            ON s.graph_name = o.graph_name AND s.directive_name = 'outbox'
+           AND s.coordinate = o.type_name || '.' || o.field_name AND s.ordinal = o.ordinal
+          JOIN graphitron_ast_argmapping_pair_entry p
+            ON p.graph_name = s.graph_name AND p.source_name = s.source_name
+           AND p.source_line = s.source_line AND p.source_column = s.source_column
+         WHERE o.source_line IS NOT NULL
+           AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_leaf l
+                            WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
+                              AND l.field_name = o.field_name AND l.ordinal = o.ordinal
+                              AND l.key_name = p.param_name)) d
+ WHERE d.rn = 1
+UNION ALL
+-- The configured common payload's faults, reported at every @outbox: a key it names twice, or an
+-- entry no message could carry.
+SELECT d.graph_name, d.source_name, d.source_line, d.source_column, 'OUTBOX_PAYLOAD_INVALID',
+       d.key_name || ': ' || d.bound_to
+  FROM (SELECT o.graph_name, o.source_name, o.source_line, o.source_column, c.key_name,
+               c.bound_to,
+               ROW_NUMBER() OVER (PARTITION BY o.graph_name, o.source_name, o.source_line,
+                                               o.source_column ORDER BY c.position) AS rn
+          FROM graphitron_outbox_entry o
+          JOIN store_graph_outbox_payload_entry c ON c.graph_name = o.graph_name
+         WHERE o.source_line IS NOT NULL
+           AND (EXISTS (SELECT 1 FROM store_graph_outbox_payload_entry c2
+                         WHERE c2.graph_name = c.graph_name AND c2.key_name = c.key_name
+                           AND c2.position <> c.position)
+                OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_leaf l
+                                WHERE l.graph_name = o.graph_name AND l.type_name = o.type_name
+                                  AND l.field_name = o.field_name AND l.ordinal = o.ordinal
+                                  AND l.key_name = c.key_name))) d
+ WHERE d.rn = 1;
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -15851,6 +16280,18 @@ INSERT INTO meta_grain VALUES
   ('graph-dependency',
    'one entry of the compile classpath one graph''s build declares, as the build resolved it',
    'graph_name, source_name', 'configuration'),
+  ('outbox-message-key',
+   'one key of one @outbox message''s payload, in one graph',
+   'graph_name, type_name, field_name, ordinal, key_name', 'sdl'),
+  ('graph-outbox',
+   'one graph whose build configures an outbox for its @outbox fields',
+   'graph_name', 'configuration'),
+  ('graph-outbox-role',
+   'one role one graph''s outbox configuration binds to a column or a parameter',
+   'graph_name, kind, role', 'configuration'),
+  ('graph-outbox-payload-position',
+   'one position of the payload mapping one graph''s outbox configuration declares',
+   'graph_name, position', 'configuration'),
   ('graph-max-page-size',
    'one graph whose build declares a largest page its connections return',
    'graph_name', 'configuration'),
@@ -15872,6 +16313,9 @@ INSERT INTO meta_grain VALUES
   ('graphitron-entry-defect',
    'one defect one written graphitron directive carries, in one graph',
    'graph_name, source_name, source_line, source_column, code', 'sdl'),
+  ('field-directive-application',
+   'one application of one repeatable directive on one field, in one graph',
+   'graph_name, type_name, field_name, ordinal', 'sdl'),
   ('graph-field',
    'one field one type declares, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -16321,6 +16765,20 @@ INSERT INTO graphitron_defect_type VALUES
    'A field returning a union or an interface with no table of its own is read as one statement per participant, combined on their primary keys, so an ordering declared on it is not applied and rows arrive in participant primary-key order: remove the declaration, or return a single @table type.'),
   ('DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM', 'error', 'GRAPHITRON', 'GRAPHITRON_DEFAULT_PAGE_SIZE_ABOVE_MAXIMUM',
    'A connection''s default page size is larger than the build''s <maxAllowedPageSize>, so the schema advertises a default no request can receive, every page being served at the maximum: lower the default, or raise the maximum.'),
+  ('OUTBOX_NOT_A_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NOT_A_WRITE',
+   'An @outbox writes a message when a write succeeds, so it belongs on a mutation field that writes a table with @mutation (INSERT, UPDATE or DELETE): move it onto one, or remove it.'),
+  ('OUTBOX_NO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NO_TARGET',
+   'An @outbox needs somewhere to write its message, and the build configures no <outbox> block naming a <table>: add one to the plugin configuration.'),
+  ('OUTBOX_TARGET_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_TARGET_INVALID',
+   'The <outbox> block cannot be used as written: fix the configuration the detail names.'),
+  ('OUTBOX_DUPLICATE_EVENT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_DUPLICATE_EVENT',
+   'Two @outbox in the schema carry the same event, given or defaulted to the field''s coordinate, so a consumer could not tell their messages apart: give each its own event.'),
+  ('OUTBOX_KEY_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_KEY_CONFLICT',
+   'A payload key is bound twice in one argMapping, or is also a key of the configured common payload, so one of the two values would be lost: rename or remove one.'),
+  ('OUTBOX_SOURCE_UNRESOLVED', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_SOURCE_UNRESOLVED',
+   'An @outbox argMapping binds a key to a source the field does not have: an argument or input field it does not declare, a $result path that is not the written type''s node id or one of its column fields (after a DELETE, only the node id), or a $scope member that is not coordinate, operationName or alias.'),
+  ('OUTBOX_PAYLOAD_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_PAYLOAD_INVALID',
+   'The <outbox> block''s <payload> binds a key to a source a common payload cannot read, or names a key twice: it reads $scope members only, and every key is its own.'),
   ('SUBSCRIPTION_FIELD', 'error', 'UNSUPPORTED', 'GRAPHITRON_SUBSCRIPTION_FIELD',
    'A field on the subscription root is a subscription, and graphitron generates no subscription resolver yet.'),
   ('PRODUCER_KINDS_CONFLICT', 'error', 'GRAPHITRON', 'GRAPHITRON_PRODUCER_KINDS_CONFLICT',
@@ -16471,6 +16929,18 @@ INSERT INTO meta_relation VALUES
    'One entry of the compile classpath the build handed this graph''s run, with what the build resolved it as.',
    'For example the consumer''s own target/classes is a DIRECTORY of origin PROJECT, and jooq-3.20.11.jar a RELEASE the pom declares.',
    'Configuration rather than a reading: what a module depends on is something its build declares, so the row is transcribed as the producer resolved it and nothing here is read off the entry. Per graph, because how an entry reached the classpath is a fact about one module''s build and not about the bytes: one jar is declared by one module and dragged in by another. Stored rather than held in the Java that wrote it because a graph''s claim on an entry can only reference a dependency that is a row, and that reference is what lets a dependency the build stops declaring release its claim by cascade.'),
+  ('store_graph_outbox', 'graph-outbox', 'store',
+   'The <outbox> block of one graph''s build: where the messages of its @outbox fields go, as authored.',
+   'For example a build configuring <outbox><table>outbox</table></outbox> is one row naming the table, and a build with no block has no row.',
+   'Configuration rather than a reading, transcribed as written and resolved nowhere: the table and function are names the derivation resolves against the catalog, and a block naming both targets or neither is recorded and reported at each @outbox it affects, because a defect has to sit at an SDL position and the configuration has none. Row presence is the fact, as for the maximum page size: no block, no row.'),
+  ('store_graph_outbox_role', 'graph-outbox-role', 'store',
+   'One role the <outbox> block binds to a name of its target: a column of the outbox table or a parameter of the outbox function.',
+   'For example <columns><type>event_type</type></columns> is one row binding the role type to the column event_type.',
+   'Kept apart from the block because the roles are a set of bindings, not a column each: the table target binds columns and the function target binds parameters, under one key. The kind says which element wrote it. Defaults the target applies where a role is not bound are a resolution and live in the derivation.'),
+  ('store_graph_outbox_payload_entry', 'graph-outbox-payload-position', 'store',
+   'One entry of the <outbox> <payload> mapping every message carries, at its place in it.',
+   'For example <payload>actor: $session.userId, operation: $scope.operationName</payload> gives two rows, actor bound to $session.userId at position 0 and operation to $scope.operationName at 1.',
+   'The decode of the common payload, written by capture the way the generic argMapping writer decodes a mapping the SDL carries: the entries are the same sentence about a different corpus, and the configuration has no SDL position for the generic writer to key them by. A string that does not parse writes no rows and is kept verbatim in the block row.'),
   ('store_graph_max_allowed_page_size', 'graph-max-page-size', 'store',
    'The largest page any connection of one graph returns, as its build declared it in <maxAllowedPageSize>.',
    'For example a build setting the parameter to 1000 is one row reading 1000, and a build that sets none has no row.',
@@ -16728,6 +17198,26 @@ INSERT INTO meta_relation VALUES
    'The two columns a @pivot application projects an aggregate across, as one row per field however many applications the corpus wrote on it.',
    'For example @pivot(on: "category", value: "total") gives one row naming the column that spreads and the column that fills.',
    'Derived from the entry beside it on the terms the connection relation states. An inner join where that one takes an outer, and the relation''s own shape is the reason: both columns are NOT NULL and neither has a deduction behind it, so an application naming neither asserts nothing and draws no row, which is what the walk this replaces said by returning early. Whether either column exists on the table the field reads is the catalog''s question and is asked where the resolving happens.'),
+  ('graphitron_outbox_entry', 'field-directive-application', 'graphitron',
+   'One message of a field: its @outbox application, at its place among the field''s applications in written order.',
+   'For example @outbox(event: "FilmCreated") followed by @outbox(argMapping: "filmId: $result.id") on Mutation.createFilm gives two rows, at ordinals 0 and 1, the second with the event Mutation.createFilm.',
+   'Derived from the entry beside it and anchored on the field the application was written on. Every application is kept, because a repeated directive is a message each; there is no collision rule to choose, and the ordinal is the written order within the field, which is the order the messages are written in. The effective event is a generated column, so the default is stated once and a reader never recomputes it.'),
+  ('graphitron_outbox_leaf', 'outbox-message-key', 'graphitron',
+   'One key of one @outbox message''s payload, by the source it reads.',
+   'For example @outbox(argMapping: "filmId: $result.id, title: in.title") on Mutation.createFilm gives two rows, filmId reading the node id of the result and title the argument path in.title, and a configured common payload entry adds its own row to every message.',
+   'Derived in the anchoring phase from the mapping pairs the generic writer captured, the configured common payload and what the store already holds about the field: its arguments, the written table and the columns and node ids of the type it returns. A key that resolves to nothing has no row, and the defect relation says why, so the emitter reads leaves it can render and nothing it must judge.'),
+  ('graphitron_outbox_leaf_rule', 'outbox-message-key', 'graphitron',
+   'One row the outbox-leaf rule computes, in the shape graphitron_outbox_leaf stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the derivation inserts this view''s rows for one graph into graphitron_outbox_leaf, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+  ('graphitron_outbox_target', 'graph-outbox', 'graphitron',
+   'The outbox table of one graph, resolved: the table the configuration names and the columns each role lands in.',
+   'For example <outbox><table>outbox</table></outbox> over a table in Debezium''s layout gives one row naming it and its columns; a configuration that resolves to no one such table has no row and is a defect at each @outbox.',
+   'Derived from the configuration and the catalog, which is two corpora and so stratum two. The table resolves through the graph''s own sources, so a sibling graph''s tables never answer, and an unqualified name must be unambiguous. Roles the configuration does not bind take Debezium''s names. The aggregate type and id columns are optional because a table without them still carries the event and the payload.'),
+  ('graphitron_outbox_target_rule', 'graph-outbox', 'graphitron',
+   'One row the outbox-target rule computes, in the shape graphitron_outbox_target stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the derivation inserts this view''s row for one graph into graphitron_outbox_target, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_mutation_entry', 'graph-field', 'graphitron',
    'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it.',
    'For example @mutation(typeName: INSERT, table: "film") gives one row reading INSERT against the spelling film.',
@@ -16820,6 +17310,10 @@ INSERT INTO meta_relation VALUES
    'What a @nodeId application on an output field says: the node type the identifier belongs to, as written.',
    'For example id: ID! @nodeId(typeName: "Film") gives one row reading Film.',
    'A decode of one directive application, keyed by the application''s own position. One of the two relations this directive draws, one per site the entry family separates, the other hanging off the input-value relation: an output field carrying @nodeId encodes an identifier where an argument or input field carrying one decodes it, so the two sites are read by different consumers and a merged relation would be discriminated by the row its key already reaches. The type name is nullable and nothing here supplies what an omitted one deduces to, the containing type on a plain field and the table''s node type on a referenced one being resolutions over other relations; a NULL is what says the author left the deduction to the build.'),
+  ('graphitron_ast_outbox_entry', 'sdl-declaration-site', 'graphitron',
+   'What an @outbox application says: the event it names and the mapping that builds its payload, as written.',
+   'For example createFilm(in: FilmCreateInput!): Film @outbox(event: "FilmCreated", argMapping: "filmId: $result.id") gives one row.',
+   'A decode of one directive application, keyed by the application''s own position, so the field it was written on and the file are one join away rather than columns here. Both arguments are kept as typed and nothing is checked: an omitted event defaults to the field''s coordinate in the anchor, and the mapping string is read by the generic argMapping writer into its pair entries, which is where its entries are decoded.'),
   ('graphitron_ast_mutation_entry', 'sdl-declaration-site', 'graphitron',
    'What a @mutation application says: which write the field performs, over how many rows, against which table, as written.',
    'For example deleteFilm(input:): Boolean @mutation(typeName: DELETE, multiRow: true, table: "film") gives one row.',

@@ -24,6 +24,7 @@ The rewrite generator declares and supports the following directives. Each is do
 * `@nodeId`
 * `@order`
 * `@orderBy`
+* `@outbox`
 * `@pivot`
 * `@record`
 * `@reference`

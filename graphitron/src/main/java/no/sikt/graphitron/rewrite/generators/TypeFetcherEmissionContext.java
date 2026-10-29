@@ -26,7 +26,9 @@ final class TypeFetcherEmissionContext {
          * {@code private static <T> DataType<T> withoutGenerator(DataType<T> type)}, see
          * {@link MultiTablePolymorphicEmitter#buildWithoutGeneratorHelper()}.
          */
-        WITHOUT_GENERATOR
+        WITHOUT_GENERATOR,
+        /** {@code static Field<?> outboxJsonValue(Object value)}, see {@code OutboxEmitter.jsonValueHelper()}. */
+        OUTBOX_JSON_VALUE
     }
 
     private final EnumSet<HelperKind> requested = EnumSet.noneOf(HelperKind.class);
@@ -59,6 +61,11 @@ final class TypeFetcherEmissionContext {
     // The store's error channels, for the catch arms naming their outcome type's dispatch table.
     private no.sikt.graphitron.emit.ErrorChannelRelation errorChannels =
         no.sikt.graphitron.emit.ErrorChannelRelation.empty();
+
+    // The store's @outbox rows, for the DML sites that write a message beside their write. Empty by
+    // default so out-of-band and unit contexts behave as they did.
+    private no.sikt.graphitron.emit.OutboxQuery.Rows outboxes =
+        no.sikt.graphitron.emit.OutboxQuery.Rows.empty();
 
     TypeFetcherEmissionContext(String parentTypeName,
             no.sikt.graphitron.rewrite.GraphitronSchema graphitronSchema) {
@@ -128,6 +135,28 @@ final class TypeFetcherEmissionContext {
     /** Installs the graph's projected {@code argMapping} bindings for this class's emission. */
     void setKeyProjections(no.sikt.graphitron.command.KeyProjectionRelation keyProjections) {
         this.keyProjections = keyProjections;
+    }
+
+    /** Installs the store's {@code @outbox} rows for this class's emission. */
+    void setOutboxes(no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
+        this.outboxes = outboxes;
+    }
+
+    /**
+     * The store's {@code @outbox} row for this class's field {@code fieldName}, empty where the
+     * field carries none. A present row obliges the caller to register the companion method it
+     * renders ({@link #addCompanionMethod}) and place the call.
+     */
+    java.util.Optional<no.sikt.graphitron.emit.OutboxQuery.Row> outboxFor(String fieldName) {
+        return outboxes.rowFor(parentTypeName, fieldName);
+    }
+
+    /**
+     * Records that this class's companion methods name the {@code outboxJsonValue} helper, which
+     * class assembly then emits once.
+     */
+    void requestOutboxJsonValue() {
+        requested.add(HelperKind.OUTBOX_JSON_VALUE);
     }
 
     /** Installs the store's error channels for this class's emission. */

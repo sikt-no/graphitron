@@ -122,6 +122,11 @@ The following parameters apply to every goal:
 | (none)
 | Session identity. A `<sessionState>` block naming the static Java methods that mount and unmount per-request identity on the pinned connection: `<mount>fqcn#method</mount>` and an optional `<unmount>`. Graphitron reads the method signatures at build time; the mount's payload parameters become contextArguments on the generated factory, and its return type is the handle later passed to `unmount` (and readable in services via the `$session` argMapping sigil). A malformed reference or an `<unmount>` without a `<mount>` fails the build. Omit to mount no identity. See xref:#session-identity[Session identity].
 
+| `outbox`
+| `OutboxBinding`
+| (none)
+| Where the messages of every xref:directives/outbox.adoc[`@outbox`] field go. An `<outbox>` block naming a `<table>` graphitron inserts one row per message into (Debezium's outbox layout by default, `<columns>` naming other columns), and an optional `<payload>` argMapping every message carries. See <<transactional-outbox,Transactional outbox>>. Omit when no field uses `@outbox`.
+
 | `tenantColumn`
 | `String` (database column name)
 | (none)
@@ -411,6 +416,27 @@ public final class Identity {
 Note what the unmount clears to: the empty string, not `NULL`. Postgres cannot restore a touched session variable to unset, so a policy that distinguishes "never set" from "cleared" would silently diverge between a fresh connection and a recycled one. Your RLS policies must treat both `NULL` and the empty string as "no identity" to stay fail-closed, for example with `NULLIF(current_setting('app.tenant', true), '') IS NULL`.
 
 Be aware of what this does and does not give you. A session variable is a convention: any SQL running on that connection can overwrite it, including a `@service` method of your own. If you need identity that consumer code on the same connection cannot forge, mount it with a definer-rights routine, or pass a signed token your `mount` verifies in the database. That choice is yours to make and graphitron cannot check it for you, which is why it is explained in xref:../../security.adoc[the security guide] rather than warned about at build time.
+
+[#transactional-outbox]
+== Transactional outbox
+
+The `<outbox>` block says where the messages of every xref:directives/outbox.adoc[`@outbox`] field go. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
+
+[source,xml]
+----
+<outbox>
+  <table>outbox</table>
+  <columns>
+    <type>event_type</type>
+  </columns>
+  <payload>operation: $scope.operationName</payload>
+</outbox>
+----
+
+* `<table>` names an outbox table in your jOOQ catalog. Graphitron inserts one row per message, expecting Debezium's outbox layout: it fills `type` (the event), `aggregatetype` (the written table) and `payload`, and leaves `aggregateid`, `id` and any timestamp to the column's default or `NULL`. `<columns>` maps a role to another column name. The build fails when the table or a configured column is missing, or when `payload` is not a JSON, JSONB or text column. A JSON or JSONB column takes the payload as JSON; a text column takes it rendered as text.
+* `<payload>` is an argMapping every message carries, for what belongs on every event. It reads `$scope` sources; arguments and `$result` belong to a field and are not available there.
+
+A block that names no `<table>` is reported at every `@outbox` it affects. Calling a database function per message, and `$session` as a source, are not available yet.
 
 == The non-emitting goals' package sentinel
 

@@ -366,6 +366,15 @@
                         <mount>no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount</mount>
                         <unmount>no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount</unmount>
                     </sessionState>
+                    <!--
+                        Transactional outbox: every @outbox message lands in the outbox table, in the
+                        transaction of the write it rides beside. The table's own column names are
+                        the default roles; operation is the one entry every message carries.
+                    -->
+                    <outbox>
+                        <table>outbox</table>
+                        <payload>operation: $scope.operationName</payload>
+                    </outbox>
                 </configuration>
                 <executions>
                     <execution>

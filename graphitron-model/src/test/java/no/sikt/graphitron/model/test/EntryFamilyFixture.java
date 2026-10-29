@@ -240,6 +240,8 @@ public final class EntryFamilyFixture {
         type Mutation {
           deleteFilm(input: DeleteFilmInput!): Boolean
             @mutation(typeName: DELETE, multiRow: true, table: "film", failOnMissing: true)
+            @outbox(event: "FilmDeleted", argMapping: "filmId: $result")
+            @outbox(argMapping: "where: $scope.coordinate")
           importFilms(payload: ImportInput!): [Film!]
             @service(
               service: {className: "no.example.FilmService", method: "importFilms", argMapping: "payload: payload"}

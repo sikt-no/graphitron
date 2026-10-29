@@ -476,7 +476,8 @@ public class GraphQLRewriteGenerator {
             plan.launchers(), plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(),
             plan.routineWrites(),
             plan.keyProjections(),
-            plan.errorChannels());
+            plan.errorChannels(),
+            plan.outboxes());
         // registerFetchers bodies render from the schema-shape rows' registersFetchers flag,
         // the same fact the per-type emitter and the schema-class assembler read.
         var fetcherBodies  = FetcherRegistrationsEmitter.emit(schema, outputPackage, plan.typeUnits().schemaShapes());

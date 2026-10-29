@@ -49,7 +49,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R555` | Deprecate @externalField: fold the computed-field shape into @service | Ready | 2026-08-06 <sub>created 2026-07-28</sub> | [plan](deprecate-externalfield-fold-into-service.md) |
 | `R1101` | One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start | Ready | 2026-10-27 <sub>created 2026-10-26</sub> | [plan](mutation-field-transaction-scope.md) |
 | `R467` | Upgrade graphql-java 25.0 -> 26.0 | Ready | 2026-08-08 <sub>created 2026-07-10</sub> | [plan](upgrade-graphql-java-26.md) |
-| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Progress | 2026-10-29 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
+| `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | In Review | 2026-10-29 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
 | `R722` | Opt-in @service(transactional:) wraps the generated service invocation in a transaction | Spec | 2026-08-19 | [plan](service-opt-in-transaction-wrap.md) |
 | `R730` | The javadoc reference gate reaches test sources, and the capture-API residue it missed | Ready | 2026-08-19 | [plan](capture-api-residue-after-nodehood-move.md) |
 | `R393` | Declare the joined-table base-to-detail join on @discriminator(reference:) | Spec | 2026-08-13 <sub>created 2026-06-26</sub> | [plan](joined-table-base-detail-fk-override.md) |
@@ -608,7 +608,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
 - `R1098` [**A graphitron-jakarta-rest subgraph writes only what is its own**](jakarta-rest-request-aware-execution-input.md) — Spec, feature, blocked by [owned-session-state-supplied-per-request](owned-session-state-supplied-per-request.md)
 - `R1120` [**The POM switches session identity on; the consumer supplies it per request as code**](owned-session-state-supplied-per-request.md) — In Progress, feature
-- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — In Progress, feature
+- `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — In Review, feature
 - `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start**](mutation-field-transaction-scope.md) — Ready, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
 - `R1108` [**The user manual documents the owned-connection engine as the primary path**](manual-catches-up-with-owned-connection-engine.md) — Backlog, docs

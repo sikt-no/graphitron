@@ -1,0 +1,30 @@
+# The <outbox> block lands as written and resolves nothing: the target and the payload mapping on
+# one row, the role bindings of the table target as rows of their own, and the common payload's
+# entries decoded the way a mapping in the SDL is. Both targets present is recorded as written;
+# what it means is a defect at an @outbox, not a fact about the configuration.
+
+extend schema @withConfiguration(
+  outboxTable: "outbox",
+  outboxFunction: "outbox_emit",
+  outboxColumns: ["type=event_type", "payload=body"],
+  outboxParameters: ["payload=p_body"],
+  outboxPayload: "actor: $session.userId, operation: $scope.operationName"
+)
+
+extend schema @expectEquals(relation: "store_graph_outbox", rows: """
+  table_name, function_name, payload_mapping
+  outbox,     outbox_emit,   "actor: $session.userId, operation: $scope.operationName"
+  """)
+
+extend schema @expectEquals(relation: "store_graph_outbox_role", rows: """
+  kind,      role,    name
+  COLUMN,    type,    event_type
+  COLUMN,    payload, body
+  PARAMETER, payload, p_body
+  """)
+
+extend schema @expectEquals(relation: "store_graph_outbox_payload_entry", rows: """
+  position, key_name,  bound_to
+  0,        actor,     $session.userId
+  1,        operation, $scope.operationName
+  """)

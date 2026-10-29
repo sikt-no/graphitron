@@ -88,6 +88,9 @@ import java.util.Set;
  *                       it does not make a graph federated and is not policed against the SDL's
  *                       opt-in. {@code null} is standalone, which is the default rather than a state
  *                       an author spells
+ * @param outboxConfig   the {@code <outbox>} block: where the messages of every {@code @outbox}
+ *                       field go. {@code null} (the default) means no block, which is
+ *                       {@link OutboxConfig#none()}
  * @param maxAllowedPageSize the largest page any connection field returns, from the
  *                       {@code <maxAllowedPageSize>} parameter: a larger {@code first:} or
  *                       {@code last:} is served at this size, and the built-in default page size is
@@ -112,7 +115,8 @@ public record RunContext(
     Path storeDirectory,
     SchemaRecipe schemaRecipe,
     String supergraph,
-    OptionalInt maxAllowedPageSize
+    OptionalInt maxAllowedPageSize,
+    OutboxConfig outboxConfig
 ) {
     /** Standard schema file extensions accepted out of the box. */
     public static final Set<String> DEFAULT_SCHEMA_FILE_EXTENSIONS = Set.of(".graphqls", ".graphql");
@@ -158,10 +162,38 @@ public record RunContext(
         dependencyVersions = dependencyVersions == null ? DependencyVersions.empty() : dependencyVersions;
         supergraph = supergraph == null || supergraph.isBlank() ? null : supergraph.trim();
         maxAllowedPageSize = maxAllowedPageSize == null ? OptionalInt.empty() : maxAllowedPageSize;
+        outboxConfig = outboxConfig == null ? OutboxConfig.none() : outboxConfig;
         if (maxAllowedPageSize.isPresent() && maxAllowedPageSize.getAsInt() < 1) {
             throw new IllegalArgumentException(
                 "maxAllowedPageSize must be at least 1 (was: " + maxAllowedPageSize.getAsInt() + ")");
         }
+    }
+
+    /** A context that declares no {@code <outbox>} block. */
+    public RunContext(
+        List<SchemaInput> schemaInputs,
+        Path basedir,
+        String graphName,
+        Path outputDirectory,
+        Path outputResourcesDirectory,
+        String outputPackage,
+        String jooqPackage,
+        List<ClasspathEntry> classpathRoots,
+        ClassLoader codegenLoader,
+        List<Path> compileSourceRoots,
+        LintConfig lintConfig,
+        SessionStateConfig sessionStateConfig,
+        String tenantColumn,
+        DependencyVersions dependencyVersions,
+        Path storeDirectory,
+        SchemaRecipe schemaRecipe,
+        String supergraph,
+        OptionalInt maxAllowedPageSize
+    ) {
+        this(schemaInputs, basedir, graphName, outputDirectory, outputResourcesDirectory,
+            outputPackage, jooqPackage, classpathRoots, codegenLoader, compileSourceRoots,
+            lintConfig, sessionStateConfig, tenantColumn, dependencyVersions, storeDirectory,
+            schemaRecipe, supergraph, maxAllowedPageSize, null);
     }
 
     /**
@@ -212,7 +244,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -225,7 +257,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -236,7 +268,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -247,7 +279,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -258,7 +290,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -269,7 +301,7 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -280,7 +312,18 @@ public record RunContext(
         return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
             outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
             codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
-            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize);
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
+    }
+
+    /**
+     * Returns a copy with {@code outboxConfig} replaced, so a caller can layer the {@code <outbox>}
+     * declaration on afterwards.
+     */
+    public RunContext withOutboxConfig(OutboxConfig outboxConfig) {
+        return new RunContext(schemaInputs, basedir, graphName, outputDirectory,
+            outputResourcesDirectory, outputPackage, jooqPackage, classpathRoots,
+            codegenLoader, compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn,
+            dependencyVersions, storeDirectory, schemaRecipe, supergraph, maxAllowedPageSize, outboxConfig);
     }
 
     /**
@@ -309,7 +352,7 @@ public record RunContext(
         this(schemaInputs, basedir, graphName, outputDirectory, outputResourcesDirectory,
             outputPackage, jooqPackage, ClasspathEntry.projectRoots(classpathRoots), codegenLoader,
             compileSourceRoots, lintConfig, sessionStateConfig, tenantColumn, dependencyVersions,
-            null, literalRecipe(schemaInputs, schemaFileExtensions), null, OptionalInt.empty());
+            null, literalRecipe(schemaInputs, schemaFileExtensions), null, OptionalInt.empty(), null);
     }
 
     /**

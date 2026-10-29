@@ -20,6 +20,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_CON
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_MUTATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_PIVOT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG_ENTRY;
@@ -94,6 +95,7 @@ final class GraphitronFieldEntries {
 
         var routineApplications = wrote(applied(applications, "routine"), "name");
         routines(dsl, graph, touchedAt, routineApplications);
+        outboxes(dsl, graph, touchedAt, applied(applications, "outbox"));
         GraphitronAstEntries.sweep(dsl, graph, source, touchedAt, TABLES_TO_SWEEP);
     }
 
@@ -110,7 +112,7 @@ final class GraphitronFieldEntries {
         GRAPHITRON_AST_FIELD_NODE_ID_ENTRY, GRAPHITRON_AST_MUTATION_ENTRY,
         GRAPHITRON_AST_PIVOT_ENTRY, GRAPHITRON_AST_DEFAULT_ORDER_ENTRY,
         GRAPHITRON_AST_DEFAULT_ORDER_FIELD_ENTRY,
-        GRAPHITRON_AST_ROUTINE_ENTRY);
+        GRAPHITRON_AST_ROUTINE_ENTRY, GRAPHITRON_AST_OUTBOX_ENTRY);
 
     private static void bindings(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                  List<Directive> applications) {
@@ -438,6 +440,27 @@ final class GraphitronFieldEntries {
                 .set(t.ROUTINE_REF, excluded(t.ROUTINE_REF))
                 .set(t.ROUTINE_REF_NAMESPACE_PART, excluded(t.ROUTINE_REF_NAMESPACE_PART))
                 .set(t.ROUTINE_REF_NAME_PART, excluded(t.ROUTINE_REF_NAME_PART))
+                .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
+    }
+
+    private static void outboxes(DSLContext dsl, String graph, LocalDateTime touchedAt,
+                                 List<Directive> applications) {
+        var t = GRAPHITRON_AST_OUTBOX_ENTRY;
+        var rows = applications.stream().collect(Rows.toRowList(
+            application -> val(graph, t.GRAPH_NAME),
+            application -> GraphQLAstEntries.sourceName(application),
+            application -> GraphQLAstEntries.sourceLine(application),
+            application -> GraphQLAstEntries.sourceColumn(application),
+            application -> val(touchedAt, t.TOUCHED_AT),
+            application -> val(string(application, "event"), t.EVENT_REF),
+            application -> val(string(application, "argMapping"), t.ARGMAPPING)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
+                    t.TOUCHED_AT, t.EVENT_REF, t.ARGMAPPING)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
+                .set(t.EVENT_REF, excluded(t.EVENT_REF))
                 .set(t.ARGMAPPING, excluded(t.ARGMAPPING)));
     }
 }

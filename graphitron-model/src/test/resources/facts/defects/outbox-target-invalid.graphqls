@@ -1,0 +1,31 @@
+# A configured target that does not resolve is reported at every @outbox it serves, naming what is
+# wrong with it: a table the catalog does not hold, here. The same row would read both targets
+# named, or a function, which is not generated yet. No target row is derived for it.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(outboxTable: "no_such_outbox")
+
+type Mutation {
+  create(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox
+  createAgain(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                  coordinate,           detail
+  OUTBOX_TARGET_INVALID, Mutation.create,      "<table> no_such_outbox is not one table of the jOOQ catalog with a type column and a payload column that is JSON, JSONB or text"
+  OUTBOX_TARGET_INVALID, Mutation.createAgain, "<table> no_such_outbox is not one table of the jOOQ catalog with a type column and a payload column that is JSON, JSONB or text"
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_outbox_target")

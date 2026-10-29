@@ -30,6 +30,7 @@ a|
 * xref:notGenerated.adoc[`@notGenerated`] _(rejected, remove from the schema)_
 * xref:order.adoc[`@order`]
 * xref:orderBy.adoc[`@orderBy`]
+* xref:outbox.adoc[`@outbox`]
 * xref:pivot.adoc[`@pivot`]
 * xref:record.adoc[`@record`] _(deprecated, ignored, remove from the schema)_
 * xref:reference.adoc[`@reference`]
@@ -55,7 +56,7 @@ xref:reference.adoc[`@reference`], xref:referenceFor.adoc[`@referenceFor`]
 xref:asConnection.adoc[`@asConnection`], xref:asFacet.adoc[`@asFacet`], xref:condition.adoc[`@condition`], xref:externalField.adoc[`@externalField`], xref:lookupKey.adoc[`@lookupKey`], xref:pivot.adoc[`@pivot`], xref:routine.adoc[`@routine`], xref:splitQuery.adoc[`@splitQuery`], xref:tenantFanOut.adoc[`@tenantFanOut`], xref:globalData.adoc[`@globalData`], xref:tenant.adoc[`@tenant`], xref:defaultTenant.adoc[`@defaultTenant`]
 
 *Mutating* +
-xref:mutation.adoc[`@mutation`], xref:service.adoc[`@service`]
+xref:mutation.adoc[`@mutation`], xref:outbox.adoc[`@outbox`], xref:service.adoc[`@service`]
 
 *Sorting* +
 xref:orderBy.adoc[`@orderBy`], xref:order.adoc[`@order`], xref:defaultOrder.adoc[`@defaultOrder`], xref:index-directive.adoc[`@index`] (deprecated)

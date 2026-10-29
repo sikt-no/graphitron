@@ -2331,3 +2331,14 @@ LANGUAGE sql STABLE
 AS $$
     SELECT c.seq, c.label FROM singleschema.solo_child c WHERE c.parent_id = p_parent_id
 $$;
+
+-- The outbox table @outbox messages are written to, in Debezium's outbox layout: the event as type,
+-- the written table as aggregatetype and the JSON payload. aggregateid is left to the writer.
+CREATE TABLE outbox (
+    id            uuid         NOT NULL DEFAULT gen_random_uuid() PRIMARY KEY,
+    aggregatetype varchar(255) NOT NULL,
+    aggregateid   varchar(255),
+    type          varchar(255) NOT NULL,
+    payload       jsonb        NOT NULL,
+    created_at    timestamptz  NOT NULL DEFAULT now()
+);

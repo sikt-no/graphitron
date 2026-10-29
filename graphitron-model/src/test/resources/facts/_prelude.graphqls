@@ -54,7 +54,7 @@ directive @withConfiguration(
   lintExcludedTypes: [String!],
   mount: String,
   unmount: String,
-  maxAllowedPageSize: Int
+  maxAllowedPageSize: Int, outboxTable: String, outboxFunction: String, outboxColumns: [String!], outboxParameters: [String!], outboxPayload: String
 ) on SCHEMA
 
 # The root field runs something, as every output field must: a read of payment, a table no fact

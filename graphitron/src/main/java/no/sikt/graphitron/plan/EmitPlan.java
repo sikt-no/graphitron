@@ -6,6 +6,7 @@ import no.sikt.graphitron.command.LaunchSource;
 import no.sikt.graphitron.command.GlobalUnitKind;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.emit.ErrorChannelRelation;
+import no.sikt.graphitron.emit.OutboxQuery;
 import no.sikt.graphitron.emit.RoutineWriteQuery;
 import no.sikt.graphitron.model.read.StoreHandle;
 
@@ -50,7 +51,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                        FetcherEdgeRelation fetcherEdges, TypeUnitRelation typeUnits,
                        RoutineWriteQuery.Rows routineWrites,
                        KeyProjectionRelation keyProjections,
-                       ErrorChannelRelation errorChannels) {
+                       ErrorChannelRelation errorChannels,
+                       OutboxQuery.Rows outboxes) {
 
     public EmitPlan {
         globals = List.copyOf(globals);
@@ -81,6 +83,9 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         }
         if (errorChannels == null) {
             throw new IllegalArgumentException("the plan carries the error-channel relation; an empty relation is a value, not null");
+        }
+        if (outboxes == null) {
+            throw new IllegalArgumentException("the plan carries the outbox rows; no rows is a value, not null");
         }
     }
 
@@ -157,6 +162,7 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var conditions = ConditionCommands.produce(schema, outputPackage);
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty() : RoutineWriteQuery.read(store);
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
+        var outboxes = store == null ? OutboxQuery.Rows.empty() : OutboxQuery.read(store);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage);
         var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
             projectionRelation.dslProjections());
@@ -170,7 +176,8 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
             typeUnits(store, schema, outputPackage),
             routineWrites,
             keyProjections,
-            errorChannels);
+            errorChannels,
+            outboxes);
     }
 
     /**

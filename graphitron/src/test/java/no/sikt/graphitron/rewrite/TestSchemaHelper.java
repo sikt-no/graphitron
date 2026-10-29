@@ -200,9 +200,18 @@ public final class TestSchemaHelper {
             String schemaText, RunContext ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
         var bundle = buildBundle(schemaText, ctx);
+        // The run's outbox block is the one configuration this capture carries over; everything
+        // else a context holds stays as the plan tests have always seen it.
+        var configuration = ctx.outboxConfig().isConfigured()
+            ? new no.sikt.graphitron.model.run.SubjectConfig(java.util.Optional.empty(),
+                java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
+                java.util.Optional.empty(), no.sikt.graphitron.model.lint.LintConfig.empty(),
+                no.sikt.graphitron.model.config.SessionStateConfig.none(), java.util.OptionalInt.empty(),
+                ctx.outboxConfig())
+            : no.sikt.graphitron.model.run.SubjectConfig.none();
         try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,
                 no.sikt.graphitron.model.test.CatalogInput.of(ctx),
-                testClasspath())) {
+                testClasspath(), configuration)) {
             return no.sikt.graphitron.plan.EmitPlan.produce(bundle.model(), bundle.federationLink(),
                 bundle.usesOneOf(), ctx.outputPackage(), projections,
                 new no.sikt.graphitron.model.read.StoreHandle(store.dsl(), CapturedStore.GRAPH));
@@ -232,7 +241,7 @@ public final class TestSchemaHelper {
         return no.sikt.graphitron.rewrite.generators.TypeFetcherGenerator.generate(
             bundle.model(), bundle.assembled(), ctx.outputPackage(), plan.launchers(),
             plan.typeUnits().fetchers(), plan.typeUnits().errorFetchers(), plan.routineWrites(),
-            plan.keyProjections(), plan.errorChannels());
+            plan.keyProjections(), plan.errorChannels(), plan.outboxes());
     }
 
     /**

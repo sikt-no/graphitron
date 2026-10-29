@@ -1,0 +1,50 @@
+# An @outbox is judged at its own application. An @outbox on a field that writes no table (a Query
+# field here) has no write to describe. A payload key written twice in one mapping, or one a
+# configured common payload also names, loses a value, and a source the field does not have (an
+# argument it does not declare, a result field that is not the written type's node id or a column
+# field, a scope member that is not one) binds nothing. Two @outbox with one event, given or
+# defaulted to the field's coordinate, cannot be told apart by a consumer. Each is one row per
+# @outbox and code, the first offending key as written.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(outboxTable: "outbox", outboxPayload: "operation: $scope.operationName")
+
+extend type Query {
+  films: [Film!]! @outbox(argMapping: "other: $scope.alias")
+}
+
+type Mutation {
+  keyTwice(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "k: $scope.alias, k: $scope.coordinate")
+  collides(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "operation: $scope.alias")
+  unresolved(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "x: nosuch, y: $result.nosuch, z: $scope.nope, ok: in.title")
+  sameA(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "Same", argMapping: "a: $scope.alias")
+  sameB(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "Same", argMapping: "a: $scope.alias")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                     coordinate,         detail
+  OUTBOX_NOT_A_WRITE,       Query.films,
+  OUTBOX_KEY_CONFLICT,      Mutation.keyTwice,  k
+  OUTBOX_KEY_CONFLICT,      Mutation.collides,  operation
+  OUTBOX_SOURCE_UNRESOLVED, Mutation.unresolved, "x: nosuch"
+  OUTBOX_DUPLICATE_EVENT,   Mutation.sameA,     Same
+  OUTBOX_DUPLICATE_EVENT,   Mutation.sameB,     Same
+  """)

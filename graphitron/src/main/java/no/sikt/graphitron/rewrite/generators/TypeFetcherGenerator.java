@@ -12,6 +12,7 @@ import com.palantir.javapoet.WildcardTypeName;
 import no.sikt.graphitron.render.CatalogRefs;
 import no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorMappingsClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
 import no.sikt.graphitron.rewrite.generators.schema.OutcomeClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.ConnectionHelperClassGenerator;
 import no.sikt.graphitron.rewrite.generators.util.OrderByResultClassGenerator;
@@ -120,7 +121,8 @@ public class TypeFetcherGenerator {
      * that comes from the fact store rather than the walk; a routine call whose IN parameter binds one
      * reads its column off a decoded node id instead of off the wire map. {@code errorChannels} is the
      * store's error channels, from which every catch arm names the dispatch table of the outcome type
-     * its producer catches into.
+     * its producer catches into. {@code outboxes} is the store's {@code @outbox} rows, which the DML
+     * sites that write a table read to write a message beside their write.
      * The overloads above default the walk-derived relations to ones produced from the same schema and
      * the projections to empty, there being no store behind a schema-only caller.
      */
@@ -131,7 +133,8 @@ public class TypeFetcherGenerator {
             List<no.sikt.graphitron.command.TypeUnitCommand.ErrorFetchersUnit> errorRows,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
-            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
         // First-occurrence-wins index of the NestingField embedding each nesting-reached type, so a
         // mixed-source type's ResultType TypeSpec can pair each dual-shape coordinate with its
         // nesting-arm column read. Built over the same schema.fields() iteration order
@@ -154,7 +157,7 @@ public class TypeFetcherGenerator {
                     || type instanceof GraphitronType.RootType || type instanceof GraphitronType.ResultType) {
                 result.add(generateForType(schema, row.typeName(), assembled, outputPackage,
                     nestingByType.get(row.typeName()), launchers, routineWrites, keyProjections,
-                    errorChannels));
+                    errorChannels, outboxes));
             } else {
                 var wiring = reach.wiringFor(row.typeName());
                 if (wiring == null) {
@@ -178,7 +181,8 @@ public class TypeFetcherGenerator {
                     // against it comes back empty, which is exactly the behaviour this arm wants.
                     routineWrites,
                     keyProjections,
-                    errorChannels));
+                    errorChannels,
+                    outboxes));
             }
         }
         for (var row : errorRows) {
@@ -267,7 +271,8 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.plan.LauncherRelation launchers,
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
-            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
         var type = schema.type(typeName);
         var fields = schema.fieldsOf(typeName).stream()
             .filter(f -> !(f instanceof GraphitronField.UnclassifiedField))
@@ -276,7 +281,7 @@ public class TypeFetcherGenerator {
         TableRef parentTable = type instanceof GraphitronType.TableBackedType tbt ? tbt.table() : null;
         GraphitronType.ResultType resultType = type instanceof GraphitronType.ResultType rt ? rt : null;
         return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage, schema,
-            dualWiring, launchers, routineWrites, keyProjections, errorChannels);
+            dualWiring, launchers, routineWrites, keyProjections, errorChannels, outboxes);
     }
 
     /**
@@ -518,6 +523,27 @@ public class TypeFetcherGenerator {
             no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
             no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
             no.sikt.graphitron.emit.ErrorChannelRelation errorChannels) {
+        return generateTypeSpec(typeName, parentTable, resultType, fields, assembled, outputPackage,
+            graphitronSchema, dualWiring, launchers, routineWrites, keyProjections, errorChannels,
+            no.sikt.graphitron.emit.OutboxQuery.Rows.empty());
+    }
+
+    /**
+     * The canonical form with the store's {@code @outbox} rows: each DML site that writes a table
+     * asks {@code outboxes} for its coordinate and, on a row, writes the messages beside the write.
+     * The overloads above pass none, a model-only caller having no store.
+     */
+    static TypeSpec generateTypeSpec(String typeName, TableRef parentTable,
+            GraphitronType.ResultType resultType, List<GraphitronField> fields,
+            graphql.schema.GraphQLSchema assembled,
+            String outputPackage,
+            GraphitronSchema graphitronSchema,
+            ChildField.NestingField dualWiring,
+            no.sikt.graphitron.plan.LauncherRelation launchers,
+            no.sikt.graphitron.emit.RoutineWriteQuery.Rows routineWrites,
+            no.sikt.graphitron.command.KeyProjectionRelation keyProjections,
+            no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
+            no.sikt.graphitron.emit.OutboxQuery.Rows outboxes) {
         var fetchersRef = new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).fetchers(typeName);
         var className = fetchersRef.simpleName();
         var builder = TypeSpec.classBuilder(className)
@@ -534,6 +560,7 @@ public class TypeFetcherGenerator {
         var ctx = new TypeFetcherEmissionContext(typeName, graphitronSchema);
         ctx.setKeyProjections(keyProjections);
         ctx.setErrorChannels(errorChannels);
+        ctx.setOutboxes(outboxes);
 
         // When this type is a flipped Outcome payload (it owns a WrapperArm errors field), its
         // children receive a non-null Outcome as env.getSource(). DataLoader-backed data fields
@@ -1006,6 +1033,9 @@ public class TypeFetcherGenerator {
         }
         if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.WITHOUT_GENERATOR)) {
             builder.addMethod(MultiTablePolymorphicEmitter.buildWithoutGeneratorHelper());
+        }
+        if (ctx.isRequested(TypeFetcherEmissionContext.HelperKind.OUTBOX_JSON_VALUE)) {
+            builder.addMethod(no.sikt.graphitron.emit.OutboxEmitter.jsonValueHelper());
         }
 
         // Emit per-bean instantiation helpers (createBean / createBeans) for any InputBean
@@ -2517,7 +2547,8 @@ public class TypeFetcherGenerator {
             var perRow = buildBulkRecordPerRowDeleteBody(deleteRows, whereGroups, tableRef, tablesOnly,
                 tableLocal, returningCols, recordRowType);
             var loop = perRowLoop(perRow, resultType, "deleted",
-                buildPkFieldList(returningCols, tablesOnly, tableRef), "DELETE", f.qualifiedName(), outputPackage);
+                buildPkFieldList(returningCols, tablesOnly, tableRef), "DELETE", f.qualifiedName(), outputPackage,
+                outboxHook(ctx, f.name(), true, returningCols, outputPackage));
             return buildDmlFetcher(ctx, f, f.returnExpression(),
                 inputArg.name(), tableRef, tablesOnly, tableLocal, outputPackage,
                 f.dialectRequirement(), CodeBlock.of(""), /*listInput=*/ true,
@@ -2538,7 +2569,7 @@ public class TypeFetcherGenerator {
             f.dialectRequirement(), chunk.decodeLocals(), /*listInput=*/ false,
             valueType -> {
                 var b = CodeBlock.builder()
-                    .add(emitEncoded(encode, valueType, tableRef, tablesOnly, statement, /*isList=*/ false));
+                    .add(emitEncoded(ctx, f.name(), outputPackage, encode, valueType, tableRef, tablesOnly, statement, /*isList=*/ false));
                 onMiss.ifPresent(policy -> b.add(singleRowMissBranch(policy, "DELETE", f.qualifiedName())));
                 return b.build();
             });
@@ -5071,9 +5102,9 @@ public class TypeFetcherGenerator {
             KeyStatement statement) {
         return switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es ->
-                emitEncoded(es.encode(), valueType, tableRef, tablesOnly, statement, /*isList=*/ false);
+                emitEncoded(ctx, field.name(), outputPackage, es.encode(), valueType, tableRef, tablesOnly, statement, /*isList=*/ false);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
-                emitEncoded(el.encode(), valueType, tableRef, tablesOnly, statement, /*isList=*/ true);
+                emitEncoded(ctx, field.name(), outputPackage, el.encode(), valueType, tableRef, tablesOnly, statement, /*isList=*/ true);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedSingle ignored ->
                 emitReentry(ctx, field, row, carrierDsl, valueType, outputPackage, statement);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.ProjectedList ignored ->
@@ -5086,6 +5117,7 @@ public class TypeFetcherGenerator {
     }
 
     private static CodeBlock emitEncoded(
+            TypeFetcherEmissionContext ctx, String fieldName, String outputPackage,
             no.sikt.graphitron.rewrite.model.HelperRef.Encode encode,
             TypeName valueType, TableRef tableRef,
             GeneratorUtils.ResolvedTableNames tablesOnly,
@@ -5102,6 +5134,31 @@ public class TypeFetcherGenerator {
         var keyRecordType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), keyCols);
 
+        var outbox = outboxHook(ctx, fieldName, isList, keyCols, outputPackage);
+        if (outbox.isPresent()) {
+            // The messages ride the write's transaction, so the keys are captured inside it and
+            // encoded once it has committed.
+            TypeName keysType = isList
+                ? ParameterizedTypeName.get(RESULT, keyRecordType)
+                : keyRecordType;
+            var tx = renderTransactionalKeyFetch(statement, keysType, "keys", keyFields.build(),
+                keyRecordType, isList ? ".fetch()" : ".fetchOne()", outbox);
+            var tail = CodeBlock.builder();
+            if (isList) {
+                tail.add("$T payload = keys.map($L);\n", valueType,
+                    encodeLambda(encode, tablesOnly, tableRef));
+            } else {
+                tail.add("$T payload = keys == null ? null : $T.$L(", valueType,
+                    encode.encoderClass(), encode.methodName());
+                for (int i = 0; i < keyCols.size(); i++) {
+                    if (i > 0) tail.add(", ");
+                    tail.add("keys.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(),
+                        keyCols.get(i).javaName());
+                }
+                tail.add(");\n");
+            }
+            return CodeBlock.builder().add(tx).add(tail.build()).build();
+        }
         var fetch = CodeBlock.builder().add(isList ? ".fetch(" : ".fetchOne(")
             .add(encodeLambda(encode, tablesOnly, tableRef)).add(")").build();
         return renderKeyFetch(statement, CodeBlock.of("$T payload = ", valueType), CodeBlock.of("dsl"),
@@ -5170,7 +5227,8 @@ public class TypeFetcherGenerator {
             ctx.argPathHelpers(), ctx.projectedKeyHost()));
 
         var body = CodeBlock.builder()
-            .add(emitKeysTransaction(reentry.correlation(), statement, isList));
+            .add(emitKeysTransaction(reentry.correlation(), statement, isList,
+                outboxHook(ctx, field.name(), isList, reentry.correlation().columns(), outputPackage)));
 
         if (!isList) {
             // Single-row UPDATE / DELETE with no match: keys is null. Skip the follow-up SELECT
@@ -5193,7 +5251,7 @@ public class TypeFetcherGenerator {
      */
     private static CodeBlock emitKeysTransaction(
             ParentCorrelation.OnLiftedSlots correlation,
-            KeyStatement statement, boolean isList) {
+            KeyStatement statement, boolean isList, Optional<OutboxHook> outbox) {
         var keyCols = correlation.columns();
         var owner = correlation.targetTable();
         var keyRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
@@ -5209,7 +5267,7 @@ public class TypeFetcherGenerator {
             keyFields.add("$T.$L.$L", CatalogRefs.constantsClass(owner), owner.javaFieldName(), col.javaName());
         }
         return renderTransactionalKeyFetch(statement, keysType, "keys", keyFields.build(), keyRowType,
-            isList ? ".fetch()" : ".fetchOne()");
+            isList ? ".fetch()" : ".fetchOne()", outbox);
     }
 
     /**
@@ -5749,7 +5807,8 @@ public class TypeFetcherGenerator {
         builder.addCode(chainAndGuards.preGuard());
 
         builder.addCode(renderTransactionalKeyFetch(chainAndGuards.statement(), payloadType, "payload",
-            buildPkFieldList(pkCols, tablesOnly, tableRef), payloadType, ".fetchOne()"));
+            buildPkFieldList(pkCols, tablesOnly, tableRef), payloadType, ".fetchOne()",
+            outboxHook(ctx, field.name(), false, pkCols, outputPackage)));
         // A DELETE whose key matched no row answers the key the client sent, or fails the call,
         // ahead of the null-data check below, which then never fires for that shape.
         // Only the DELETE chain carries a policy (buildRecordDeleteChain).
@@ -5974,13 +6033,65 @@ public class TypeFetcherGenerator {
     }
 
     /**
+     * The seam where a field's {@code @outbox} messages ride beside its write: the store row, whose
+     * companion method the site has registered, and the call placed after the write inside its
+     * transaction.
+     */
+    private record OutboxHook(no.sikt.graphitron.emit.OutboxQuery.Row row) {
+        CodeBlock callAfter(String writtenLocal) {
+            return no.sikt.graphitron.emit.OutboxEmitter.call(row, "tx", writtenLocal);
+        }
+    }
+
+    /**
+     * The hook for {@code fieldName}'s {@code @outbox} messages, registering the companion method on
+     * the class, or empty where the field carries none. {@code capturedColumns} are the written
+     * table's columns the site's write returns, which the messages read the written rows back by.
+     */
+    private static Optional<OutboxHook> outboxHook(TypeFetcherEmissionContext ctx, String fieldName,
+            boolean listResult, List<no.sikt.graphitron.model.jooq.ColumnRef> capturedColumns,
+            String outputPackage) {
+        return ctx.outboxFor(fieldName).map(row -> {
+            ctx.addCompanionMethod(no.sikt.graphitron.emit.OutboxEmitter.render(row, listResult,
+                capturedColumns.stream().map(no.sikt.graphitron.model.jooq.ColumnRef::javaName).toList(),
+                outputPackage,
+                ErrorRouterClassGenerator.routerClass(outputPackage)
+                    .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION)));
+            ctx.requestOutboxJsonValue();
+            return new OutboxHook(row);
+        });
+    }
+
+    /**
      * Renders {@code statement} inside {@code dsl.transactionResult(...)}, declaring {@code local}
      * of {@code resultType} from the committed keys. A {@link KeyStatement.Chain} keeps the
      * expression lambda; the UPDATE shapes take a block lambda to hold the statement local.
      */
     private static CodeBlock renderTransactionalKeyFetch(KeyStatement statement, TypeName resultType,
             String local, CodeBlock keyFields, TypeName keyRecordType, String fetch) {
+        return renderTransactionalKeyFetch(statement, resultType, local, keyFields, keyRecordType, fetch,
+            Optional.empty());
+    }
+
+    /**
+     * The same, with an {@code @outbox} hook: the lambda is a block that writes into
+     * {@code written}, places the hook's call on it, and returns it, so the messages are written in
+     * the write's own transaction and the code after the lambda is unchanged.
+     */
+    private static CodeBlock renderTransactionalKeyFetch(KeyStatement statement, TypeName resultType,
+            String local, CodeBlock keyFields, TypeName keyRecordType, String fetch,
+            Optional<OutboxHook> outbox) {
         var receiver = CodeBlock.of("$T.using(tx)", DSL);
+        if (outbox.isPresent()) {
+            return CodeBlock.builder()
+                .add("$T $L = dsl.transactionResult(tx -> {\n", resultType, local).indent()
+                .add(renderKeyFetch(statement, CodeBlock.of("$T written = ", resultType), receiver,
+                    keyFields, keyRecordType, CodeBlock.of(fetch)))
+                .add(outbox.get().callAfter("written"))
+                .addStatement("return written")
+                .unindent().add("});\n")
+                .build();
+        }
         return switch (statement) {
             case KeyStatement.Chain c -> renderKeyFetch(c,
                 CodeBlock.of("$T $L = dsl.transactionResult(tx -> ", resultType, local), receiver,
@@ -6276,7 +6387,8 @@ public class TypeFetcherGenerator {
 
         var perRow = perRowBodyFn.build(tablesOnly, tableLocal, pkCols, recordRowType);
         builder.addCode(perRowLoop(perRow, resultType, "payload",
-            buildPkFieldList(pkCols, tablesOnly, tableRef), verb, qualifiedName, outputPackage));
+            buildPkFieldList(pkCols, tablesOnly, tableRef), verb, qualifiedName, outputPackage,
+            outboxHook(ctx, field.name(), true, pkCols, outputPackage)));
 
         builder.addCode(wrap
             ? returnSyncSuccessWrapped(valueType, outputPackage, "payload", tenantDsl.handDown())
@@ -6301,7 +6413,8 @@ public class TypeFetcherGenerator {
      * wrapping, catch arm) because their value types differ.
      */
     private static CodeBlock perRowLoop(PerRow perRow, TypeName resultType, String local,
-            CodeBlock returningFields, String verb, String qualifiedName, String outputPackage) {
+            CodeBlock returningFields, String verb, String qualifiedName, String outputPackage,
+            Optional<OutboxHook> outbox) {
         // The lambda binds a transactional DSLContext (txd), allocates a typed Result over the
         // returning columns, iterates input rows in declaration order, runs one DML per row, and
         // appends the returned RecordN to the Result or takes the body's miss branch.
@@ -6348,6 +6461,7 @@ public class TypeFetcherGenerator {
                     verb, qualifiedName)
                 .endControlFlow();
         }
+        outbox.ifPresent(hook -> tx.add(hook.callAfter("acc")));
         return tx
             .add("return acc;\n")
             .unindent().add("});\n")

@@ -1,7 +1,7 @@
 ---
 id: R1113
 title: "@outbox: emit a transactional outbox message in the mutation field transaction"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: runtime-connection
@@ -285,6 +285,18 @@ The emitter. A query in `no.sikt.graphitron.emit` reads the three grains (coordi
 * **Configuration.** An `<outbox>` mojo parameter with exactly one of `<table>` or `<function>` (the function target lands in phase 2), an optional `<payload>`, and `<columns>` mapping the roles `type`, `aggregatetype`, `aggregateid` and `payload` to columns, defaulting to the Debezium names. It is captured as written and resolved against the jOOQ catalog's store relations by the derived target relation above, so every rejection in the draft is a defect row at the `@outbox` application, naming the configuration element, the table and the column. `payload` takes a JSON or JSONB column directly; a CLOB or text column takes the JSON rendered as text, which on Oracle needs `JSON_OBJECT(... RETURNING CLOB)` to lift the 4000-byte `VARCHAR2` default (confirm jOOQ 3.20 renders the `RETURNING` form at pickup).
 * **The call.** At each of the four sites, right after the write statement returns and inside the same `transactionResult` (which joins the field's transaction on the owned path, R1101 phase 2, and is the fetcher's own transaction on the escape hatch), the emitter renders each message's leaves into nested JSON constructors in the companion method, each leaf guarded by presence so an absent argument contributes no key, and emits the field's messages in directive order, one statement per message: the table target as an `INSERT ... SELECT`, the function target as one call per message (so directive order is the statement order, which a single `UNION ALL` insert would not promise). `$scope` values come from the field's `DataFetchingEnvironment` (the coordinate from `env.getFieldDefinition()` and its parent type, the operation name from `env.getOperationDefinition()`, the alias from `env.getField()`) and, for `tenant`, from the tenant the fetcher already resolved for its write, on both paths, so the owned path and the escape hatch read one source and nothing waits on R1101's `MutationScope`. Should R1101's join rule land first, the emit sits in the fetcher's own `transactionResult` and joins the field's transaction with no change here; if that rule emits a mark on that call to silence its nested-scope warning, whichever of the two items lands second adds the mark to the emit's call site, which is the same call site. A field whose exception an `@error` channel claims never reaches the emit.
 * **Failure routing.** The emit's exception, and a request-time source failure (an unserializable session value, `$session` on the escape hatch), is wrapped in an emitted `OutboxEmitException`; `ErrorRouter.claim` declines a chain carrying it, through a sibling of `TenantConnections.isMountFailure` of its own (R1101's `MutationHookException` decline is a different exception, and whichever item lands second merges the two declines into one place), so the field takes the redacted path and rolls back.
+
+#### Phase 1 as built
+
+Where the build settled differently from the draft above, so the reviewer reads the code against what was done:
+
+* **The seam supplies the captured columns.** The emitter does not read the written table's primary key from the store. Each DML site already holds the columns its write returns (the reentry correlation's columns, the record carrier's primary key, the node key's columns on an ID return), and passes them to the companion's renderer with the call. The store's query supplies the message grains, the leaves and the target only.
+* **A node id needs a node key that is the primary key.** The captured columns are what the encoder is fed, so a node type whose key is not the written table's primary key makes `$result` or `$result.id` a derived rejection (`OUTBOX_SOURCE_UNRESOLVED`) rather than a second read.
+* **On an ID-returning field the node id is bare `$result`.** `$result.<field>` resolves against the field's returned type, which an `ID` return does not have, so `id: $result` is the spelling there; a table-returning field takes either.
+* **`aggregateid` is left to the column default.** The target relation records it when the table has the column, but no source fills it yet. The draft's check that every other `NOT NULL` column has a default is not built: the store holds no default information for a column, so it cannot be answered from the store.
+* **Narrower than drafted.** `$scope.tenant` is not admitted (the members are `coordinate`, `operationName` and `alias`). A list-valued argument as a whole becomes a JSON array, and a list `$result` an aggregated array, but a path that walks through a list (`in.items.title`) is not built.
+* **The payload column.** A jOOQ `JSON` or `JSONB` column takes the JSON value and a `String` column takes it rendered as text; the Oracle `CLOB` rendering is not built.
+* **Test tiers.** A pipeline test pins the companion's shape and the call at each DML site; an execution test drives four mutations through GraphQL on PostgreSQL and reads the rows they leave; a unit-tier test calls the generated companion directly on a real PostgreSQL inside a rolled-back transaction.
 
 ### Phase 1b: the `$session` source
 

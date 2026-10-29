@@ -8,6 +8,7 @@ import graphql.language.SchemaDefinition;
 import graphql.language.StringValue;
 import graphql.language.Value;
 import graphql.parser.Parser;
+import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
@@ -222,9 +223,27 @@ public final class FactDocuments {
             var session = mount.isEmpty() && unmount.isEmpty()
                 ? SessionStateConfig.none()
                 : SessionStateConfig.from(mount.orElse(null), unmount.orElse(null));
+            var outbox = OutboxConfig.from(string(directive, "outboxTable").orElse(null),
+                string(directive, "outboxFunction").orElse(null),
+                roles(strings(directive, "outboxColumns")),
+                roles(strings(directive, "outboxParameters")),
+                string(directive, "outboxPayload").orElse(null));
             return new SubjectConfig(Optional.empty(), Optional.empty(),
                 string(directive, "supergraph"), output, string(directive, "tenantColumn"), lint,
-                session, integer(directive, "maxAllowedPageSize"));
+                session, integer(directive, "maxAllowedPageSize"), outbox);
+        }
+
+        /** {@code role=name} strings as the ordered role bindings they state. */
+        private static java.util.Map<String, String> roles(List<String> bindings) {
+            var out = new java.util.LinkedHashMap<String, String>();
+            for (var binding : bindings) {
+                int equals = binding.indexOf('=');
+                if (equals <= 0) {
+                    throw new AssertionError("an outbox role is written role=name; found '" + binding + "'");
+                }
+                out.put(binding.substring(0, equals).strip(), binding.substring(equals + 1).strip());
+            }
+            return out;
         }
 
         private static OptionalInt integer(Directive directive, String name) {

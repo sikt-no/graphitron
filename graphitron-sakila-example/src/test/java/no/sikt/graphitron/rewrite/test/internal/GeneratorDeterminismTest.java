@@ -209,8 +209,9 @@ class GeneratorDeterminismTest {
     }
 
     private static RunContext contextFor(Path outputDir) {
-        // The fixture schema binds a $session service parameter, so the context needs the same
-        // <sessionState> pair the example pom configures for the default execution.
+        // The fixture schema binds a $session service parameter and carries @outbox fields, so the
+        // context needs the same <sessionState> pair and <outbox> block the example pom configures
+        // for the default execution.
         return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
@@ -219,7 +220,10 @@ class GeneratorDeterminismTest {
             JOOQ_PACKAGE
         ).withSessionStateConfig(SessionStateConfig.from(
             "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount",
-            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount"));
+            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount"))
+            .withOutboxConfig(no.sikt.graphitron.model.config.OutboxConfig.from(
+                "outbox", null, java.util.Map.of(), java.util.Map.of(),
+                "operation: $scope.operationName"));
     }
 
     /**

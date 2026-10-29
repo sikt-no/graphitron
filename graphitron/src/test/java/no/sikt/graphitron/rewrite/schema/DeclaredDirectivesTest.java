@@ -22,7 +22,7 @@ class DeclaredDirectivesTest {
             "asConnection", "asFacet", "condition", "defaultOrder", "defaultTenant", "discriminate",
             "discriminator", "enum", "error", "experimental_constructType", "externalField",
             "field", "globalData", "index", "lookupKey", "multitableReference", "mutation", "node",
-            "nodeId", "notGenerated", "order", "orderBy", "pivot", "record", "reference",
+            "nodeId", "notGenerated", "order", "orderBy", "outbox", "pivot", "record", "reference",
             "referenceFor", "routine", "scalarType", "service", "sourceRow", "splitQuery",
             "table", "tenant", "tenantFanOut"
         );

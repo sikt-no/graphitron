@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.run;
 
+import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.lint.LintConfig;
@@ -48,11 +49,14 @@ import java.util.OptionalInt;
  *                   component is never absent and the arm carries what absence would have
  * @param maxAllowedPageSize the largest page any connection returns, from
  *                   {@code <maxAllowedPageSize>}; empty on a build with no maximum
+ * @param outbox     the {@code <outbox>} block as written; {@link OutboxConfig#none()} is the
+ *                   no-block arm, so this component is never absent
  */
 public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooqPackage,
                             Optional<String> supergraph, Optional<OutputCoordinates> output,
                             Optional<String> tenantColumn, LintConfig lint,
-                            SessionStateConfig sessionState, OptionalInt maxAllowedPageSize) {
+                            SessionStateConfig sessionState, OptionalInt maxAllowedPageSize,
+                            OutboxConfig outbox) {
     public SubjectConfig {
         Objects.requireNonNull(recipe, "recipe");
         Objects.requireNonNull(jooqPackage, "jooqPackage");
@@ -62,6 +66,16 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
         Objects.requireNonNull(lint, "lint");
         Objects.requireNonNull(sessionState, "sessionState");
         Objects.requireNonNull(maxAllowedPageSize, "maxAllowedPageSize");
+        Objects.requireNonNull(outbox, "outbox");
+    }
+
+    /** A subject that declared no {@code <outbox>} block. */
+    public SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooqPackage,
+                         Optional<String> supergraph, Optional<OutputCoordinates> output,
+                         Optional<String> tenantColumn, LintConfig lint,
+                         SessionStateConfig sessionState, OptionalInt maxAllowedPageSize) {
+        this(recipe, jooqPackage, supergraph, output, tenantColumn, lint, sessionState,
+            maxAllowedPageSize, OutboxConfig.none());
     }
 
     /**
@@ -80,7 +94,8 @@ public record SubjectConfig(Optional<SchemaRecipe> recipe, Optional<String> jooq
             Optional.ofNullable(ctx.tenantColumn()),
             ctx.lintConfig(),
             ctx.sessionStateConfig(),
-            ctx.maxAllowedPageSize());
+            ctx.maxAllowedPageSize(),
+            ctx.outboxConfig());
     }
 
     /** A subject that declared nothing at all. */

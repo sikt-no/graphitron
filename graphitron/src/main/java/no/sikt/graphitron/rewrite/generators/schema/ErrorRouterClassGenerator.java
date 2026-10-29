@@ -40,6 +40,8 @@ public final class ErrorRouterClassGenerator {
     public static final String MAPPING_INTERFACE = "Mapping";
     public static final String EXCEPTION_MAPPING = "ExceptionMapping";
     public static final String DATABASE_MAPPING = "DatabaseMapping";
+    /** The nested exception an {@code @outbox} companion method throws; read by the claim decline. */
+    public static final String OUTBOX_EMIT_EXCEPTION = "OutboxEmitException";
 
     /**
      * The private per-request claim record (each claimed source's chain roots and reference), kept
@@ -195,6 +197,8 @@ public final class ErrorRouterClassGenerator {
             .addType(exceptionMapping)
             .addType(databaseMapping)
             .addType(buildClaimsHolder())
+            .addType(buildOutboxEmitException())
+            .addMethod(buildIsOutboxFailureMethod())
             .addMethod(redact)
             .addMethod(toConfiguredLog)
             .addMethod(buildNewReferenceMethod(fetcherErrorResponse))
@@ -272,6 +276,44 @@ public final class ErrorRouterClassGenerator {
                 + "field directly from the source.\n")
             .addMethod(match)
             .addMethod(description)
+            .build();
+    }
+
+    /**
+     * {@code ErrorRouter.OutboxEmitException}: what an {@code @outbox} companion method throws when
+     * the message's statement fails, wrapping the database error. Nested here rather than a unit of
+     * its own because the router is the only thing that reads it, to decline the claim.
+     */
+    private static TypeSpec buildOutboxEmitException() {
+        return TypeSpec.classBuilder(OUTBOX_EMIT_EXCEPTION)
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC, Modifier.FINAL)
+            .superclass(ClassName.get(RuntimeException.class))
+            .addField(FieldSpec.builder(long.class, "serialVersionUID",
+                Modifier.PRIVATE, Modifier.STATIC, Modifier.FINAL).initializer("1L").build())
+            .addJavadoc("Thrown by an {@code @outbox} companion method when writing its message fails.\n"
+                + "The field fails and its transaction rolls back, write included; the router never\n"
+                + "claims it into an {@code @error} payload, since an outbox fault is not business\n"
+                + "data.\n")
+            .addMethod(MethodSpec.constructorBuilder()
+                .addModifiers(Modifier.PUBLIC)
+                .addParameter(THROWABLE, "cause")
+                .addStatement("super(cause)")
+                .build())
+            .build();
+    }
+
+    /** {@code isOutboxFailure(thrown)}: whether an outbox emit failure is anywhere in the cause chain. */
+    private static MethodSpec buildIsOutboxFailureMethod() {
+        return MethodSpec.methodBuilder("isOutboxFailure")
+            .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(THROWABLE, "thrown")
+            .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", THROWABLE)
+            .beginControlFlow("if (t instanceof $L)", OUTBOX_EMIT_EXCEPTION)
+            .addStatement("return true")
+            .endControlFlow()
+            .endControlFlow()
+            .addStatement("return false")
             .build();
     }
 
@@ -483,12 +525,13 @@ public final class ErrorRouterClassGenerator {
                 + "{@code env} or context records nothing.\n"
                 + "\n"
                 + "<p>A rejected session mount is never claimed: it fails the request as a whole, so no\n"
-                + "mapping may turn it into payload data.\n"
+                + "mapping may turn it into payload data. Nor is a failed outbox emit: it is an\n"
+                + "infrastructure fault, not business data, so it takes the redacted path.\n"
                 + "@param thrown the exception the fetcher caught\n"
                 + "@param mappings the channel's dispatch table\n"
                 + "@param env the failing field's environment, or {@code null}\n"
                 + "@return the claimed link of {@code thrown}'s cause chain, or {@code null}\n")
-            .beginControlFlow("if ($T.isMountFailure(thrown))", tenantConnections)
+            .beginControlFlow("if ($T.isMountFailure(thrown) || isOutboxFailure(thrown))", tenantConnections)
             .addStatement("return null")
             .endControlFlow()
             .beginControlFlow("for ($T mapping : mappings)", ClassName.get("", MAPPING_INTERFACE))

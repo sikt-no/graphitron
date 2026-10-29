@@ -1,0 +1,29 @@
+# The configured common payload is judged at every @outbox it is carried by, since the
+# configuration has no position of its own. A key it names twice, or an entry no message can carry
+# (a common payload reads scope members only, so an argument path is none), is one row per @outbox
+# and code, naming the first offending entry as written.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(
+  outboxTable: "outbox",
+  outboxPayload: "operation: $scope.operationName, operation: $scope.alias, bad: in"
+)
+
+type Mutation {
+  create(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                   coordinate,      detail
+  OUTBOX_PAYLOAD_INVALID, Mutation.create, "operation: $scope.operationName"
+  """)

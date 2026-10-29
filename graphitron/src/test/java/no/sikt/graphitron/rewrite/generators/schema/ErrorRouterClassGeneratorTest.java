@@ -64,7 +64,8 @@ class ErrorRouterClassGeneratorTest {
             "Mapping",
             "ExceptionMapping",
             "DatabaseMapping",
-            "Claims");
+            "Claims",
+            "OutboxEmitException");
         assertThat(nested(router, "Claims").modifiers()).contains(Modifier.PRIVATE, Modifier.STATIC);
     }
 

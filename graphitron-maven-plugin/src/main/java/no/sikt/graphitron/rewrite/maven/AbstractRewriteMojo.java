@@ -22,6 +22,7 @@ import no.sikt.graphitron.model.read.SourceStamp;
 import no.sikt.graphitron.model.schema.input.SchemaInput;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;
 import no.sikt.graphitron.model.diagnostics.ValidationFailedException;
 import no.sikt.graphitron.rewrite.maven.watch.WatchErrorFormatter;
@@ -182,6 +183,19 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
     SessionStateBinding sessionState;
 
     /**
+     * Where the messages of every {@code @outbox} field go: an {@code <outbox>} block naming
+     * either a {@code <table>} graphitron inserts one row per message into (Debezium's outbox
+     * layout by default, {@code <columns>} naming other columns) or a {@code <function>} it calls
+     * once per message ({@code <parameters>} naming other parameters), and an optional
+     * {@code <payload>} argMapping every message carries. Threaded through {@link RunContext} as
+     * authored strings and resolved against the jOOQ catalog by the store's derivation; a schema
+     * with an {@code @outbox} field and no block fails the build, naming the field. Omit the
+     * block when no field uses {@code @outbox}.
+     */
+    @Parameter
+    OutboxBinding outbox;
+
+    /**
      * Name of the database column that carries the tenant id in a database-per-tenant
      * deployment. Matched against catalog columns the way column lookups already match (Java
      * name first, then SQL name, both case-insensitive). Configuring it classifies every
@@ -272,7 +286,8 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
             resolveStoreDirectory(basedir),
             recipe,
             supergraph,
-            effectiveMaxAllowedPageSize()
+            effectiveMaxAllowedPageSize(),
+            buildOutboxConfig()
         );
     }
 
@@ -557,6 +572,23 @@ public abstract class AbstractRewriteMojo extends AbstractMojo {
         }
         try {
             return SessionStateConfig.from(sessionState.mount, sessionState.unmount);
+        } catch (IllegalArgumentException e) {
+            throw new MojoExecutionException(e.getMessage(), e);
+        }
+    }
+
+    /**
+     * {@code <outbox>} as the context carries it: the authored strings, a blank element refused
+     * here by name. Which target is named, and whether the names resolve, is the derivation's to
+     * say, at the {@code @outbox} fields the block serves.
+     */
+    OutboxConfig buildOutboxConfig() throws MojoExecutionException {
+        if (outbox == null) {
+            return OutboxConfig.none();
+        }
+        try {
+            return OutboxConfig.from(outbox.table, outbox.function, outbox.columns,
+                outbox.parameters, outbox.payload);
         } catch (IllegalArgumentException e) {
             throw new MojoExecutionException(e.getMessage(), e);
         }

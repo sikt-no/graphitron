@@ -1,0 +1,69 @@
+= @outbox
+:description: Write a transactional outbox message every time a mutation field succeeds, inside the transaction that made the change.
+:!toc:
+
+Tells graphitron to write a message to your transactional outbox every time a mutation field succeeds, inside the transaction that made the change, so the message exists if and only if the write committed. A *transactional outbox* is the pattern where a service records "this happened" in its own database, in the transaction that made it happen, and a separate relay (a poller, or change data capture such as Debezium) publishes it to a message broker afterwards.
+
+The directive is repeatable: each `@outbox` on a field is one message, written once per successful call, in the order the directives appear. To publish something new, add another `@outbox` beside the ones you have; the published messages do not change, so their consumers are not affected. That includes a new version of an event: add `@outbox(event: "FilmCreated.v2", ...)` beside the old one, and remove the old one when its last consumer has moved.
+
+== SDL signature
+
+[source,graphql]
+----
+directive @outbox(event: String, argMapping: String) repeatable on FIELD_DEFINITION
+----
+
+== Parameters
+
+[cols="1,1,1,3",options="header"]
+|===
+| Name | Type | Default | Description
+| `event` | `String` | the field's coordinate (`Mutation.createFilm`) | The message's event type, the name your downstream consumers subscribe to. Name it when the event should outlive the field's name, since renaming a field without an `event` renames the event its consumers subscribe to. Two `@outbox` in the schema with the same event, given or defaulted, fail the build, so on one field at most one `@outbox` may leave `event` out.
+| `argMapping` | `String` | (none) | Builds the message's flat JSON payload, `jsonKey: source`, comma-separated, the same form `@service` and `@routine` use. The same key twice in one `argMapping`, or a key that is also in the common payload, fails the build.
+|===
+
+== Where a value comes from
+
+[cols="1,3",options="header"]
+|===
+| Source | Meaning
+| `title`, `in.title` | A field argument, walking into nested input fields with dots, as in every `argMapping`. An input-object argument yields an object of the fields the client sent, and a list yields an array. A field the client left out is absent from the payload; a field set to `null` is `null`.
+| `$result`, `$result.id` | The field's success outcome: what the write produced. For an `@mutation` field that is the written type's node id and its own column fields, read from the rows the write wrote. A path that would need another query (a `@reference`, a `@splitQuery` field, a `@service` child) is rejected at build. A list result yields an array. After a `DELETE` there are no rows left to read, so only the node id can be named.
+| `$scope.coordinate`, `$scope.operationName`, `$scope.alias` | The field and its operation. `operationName` and `alias` are absent when there is none.
+|===
+
+Values appear in your API's own representation: an `ID` as your clients see it, an enum by its GraphQL name.
+
+Keys are flat, one JSON key per entry. An object or an array in the payload comes from its source, not from the key.
+
+== Example
+
+[source,graphql]
+----
+type Mutation {
+  createFilm(in: FilmCreateInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "FilmCreated",
+            argMapping: "filmId: $result.id, title: in.title, languageId: in.languageId")
+    @outbox(event: "FilmCatalogued",
+            argMapping: "filmId: $result.id, releaseYear: in.releaseYear")
+}
+----
+
+== When
+
+Right after the field's write succeeds and before its payload is resolved, as one more statement in the field's transaction. A field that failed writes no message: its transaction rolls back, and a failure an `@error` channel turned into a typed payload is a failure. If the emit fails, the field fails and rolls back, write included; the error is logged and redacted, and no `@error` channel can claim it, since an outbox fault is not business data.
+
+A call that wrote no rows (an `UPDATE` that matched nothing, or one whose input sets no column) writes no message.
+
+== Constraints
+
+* Valid on Mutation fields that write a table with `@mutation` (`INSERT`, `UPDATE` or `DELETE`); every other placement is a build error naming the field.
+* Where the messages go is configured once, in the plugin's `<outbox>` block. A schema with an `@outbox` field and no `<outbox>` block fails the build, naming the field.
+
+== See also
+
+* xref:mutation.adoc[`@mutation`] picks the write the messages describe.
+* xref:../mojo-configuration.adoc[Plugin configuration] holds the `<outbox>` block.
+
+xref:../index.adoc[← Reference index]

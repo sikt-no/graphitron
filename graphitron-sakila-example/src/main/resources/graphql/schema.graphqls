@@ -5496,6 +5496,24 @@ type Mutation {
     # R22 Phase 2: INSERT emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.insertInto(film, title, language_id).values(...).returningResult(<$project>).fetchOne(r -> r)`.
     createFilm(in: FilmCreateInput!): Film @mutation(typeName: INSERT)
+
+    # @outbox execution-tier fixtures: one message per directive, written into the outbox table in
+    # the transaction of the write, from the rows the write produced. The four shapes are the four
+    # DML sites: single and bulk insert, single and bulk ID-returning delete.
+    createFilmOutbox(in: FilmCreateInput!): Film
+        @mutation(typeName: INSERT)
+        @outbox(event: "FilmCreated", argMapping: "filmId: $result.id, title: $result.title, requested: in.title")
+        @outbox(event: "FilmAudit", argMapping: "alias: $scope.alias, at: $scope.coordinate, requested: in.title")
+    createFilmsOutbox(in: [FilmCreateInput!]!): [Film!]!
+        @mutation(typeName: INSERT)
+        @outbox(event: "FilmsCreated", argMapping: "ids: $result.id")
+    deleteFilmOutbox(in: FilmDeleteInput!): ID
+        @mutation(typeName: DELETE, table: "film")
+        @outbox(event: "FilmDeleted", argMapping: "id: $result")
+    deleteFilmsOutbox(in: [FilmDeleteInput!]!): [ID!]!
+        @mutation(typeName: DELETE, table: "film")
+        @outbox(event: "FilmsDeleted", argMapping: "ids: $result")
+
     # R22 Phase 4: UPDATE emitter with TableBoundReturnType return. The fetcher emits
     # `dsl.update(film).set(title, val).where(film_id.eq(val)).returningResult(<$project>).fetchOne(r -> r)`.
     updateFilm(in: FilmUpdateInput!): Film @mutation(typeName: UPDATE)

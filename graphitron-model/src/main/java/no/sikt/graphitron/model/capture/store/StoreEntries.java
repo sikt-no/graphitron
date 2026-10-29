@@ -2,7 +2,9 @@ package no.sikt.graphitron.model.capture.store;
 
 import no.sikt.graphitron.model.config.ClasspathEntry;
 import no.sikt.graphitron.model.sink.Progress;
+import no.sikt.graphitron.model.config.OutboxConfig;
 import no.sikt.graphitron.model.config.SessionStateConfig;
+import no.sikt.graphitron.model.grammar.ArgMappingSigil;
 import no.sikt.graphitron.model.config.WorkspaceModule;
 import no.sikt.graphitron.model.lint.LintConfig;
 import no.sikt.graphitron.model.run.OutputCoordinates;
@@ -24,6 +26,9 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_MODULE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_DISABLED_RULE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_LINT_EXCLUDED_TYPE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTBOX_ROLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_EXTENSION;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SCHEMA_INPUT;
@@ -36,7 +41,7 @@ import static org.jooq.impl.DSL.excluded;
 import static org.jooq.impl.DSL.val;
 
 /**
- * Writes what the run was configured with, as configured. Thirteen relations and eleven methods,
+ * Writes what the run was configured with, as configured. Sixteen relations and twelve methods,
  * one per parameter or per group of parameters that arrive together, so a method is changed alone;
  * the mount and the unmount share theirs because one sealed value carries both.
  *
@@ -114,6 +119,7 @@ public final class StoreEntries {
         lintDisabledRules(dsl, graph, config.lint(), touchedAt);
         lintExcludedTypes(dsl, graph, config.lint(), touchedAt);
         sessionState(dsl, graph, config.sessionState(), touchedAt);
+        outbox(dsl, graph, config.outbox(), touchedAt);
         dependencies(dsl, graph, classpath, touchedAt);
         modules(dsl, graph, classpath, touchedAt);
         sweep(dsl, graph, touchedAt);
@@ -131,6 +137,7 @@ public final class StoreEntries {
         STORE_GRAPH_SCHEMA_INPUT, STORE_GRAPH_SCHEMA_EXTENSION, STORE_GRAPH_SUPERGRAPH,
         STORE_GRAPH_OUTPUT, STORE_GRAPH_TENANT_COLUMN, STORE_GRAPH_MAX_ALLOWED_PAGE_SIZE,
         STORE_GRAPH_LINT_DISABLED_RULE, STORE_GRAPH_LINT_EXCLUDED_TYPE, STORE_GRAPH_SESSION_MOUNT, STORE_GRAPH_SESSION_UNMOUNT,
+        STORE_GRAPH_OUTBOX, STORE_GRAPH_OUTBOX_ROLE, STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY,
         STORE_GRAPH_DEPENDENCY, STORE_GRAPH_MODULE, STORE_GRAPH_MODULE_ENTRY);
 
     /**
@@ -396,6 +403,69 @@ public final class StoreEntries {
                 .onDuplicateKeyUpdate()
                 .set(t.TYPE_PATTERN, excluded(t.TYPE_PATTERN))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The {@code <outbox>} block, as authored: the block row, its role bindings and the entries of
+     * its payload mapping. Row presence is the fact, so a build with no block writes nothing, and
+     * nothing is resolved here: the table, the function and the roles are names the derivation
+     * resolves against the catalog. The payload's entries are decoded the way the generic argMapping
+     * writer decodes a mapping the SDL carries; a string that does not parse writes no entries and
+     * stays verbatim on the block row.
+     */
+    private static void outbox(DSLContext dsl, String graph, OutboxConfig outbox,
+                               LocalDateTime touchedAt) {
+        if (!outbox.isConfigured()) {
+            return;
+        }
+        var block = STORE_GRAPH_OUTBOX;
+        dsl.insertInto(block, block.GRAPH_NAME, block.TABLE_NAME, block.FUNCTION_NAME,
+                block.PAYLOAD_MAPPING, block.TOUCHED_AT)
+            .values(graph, outbox.table().orElse(null), outbox.function().orElse(null),
+                outbox.payload().orElse(null), touchedAt)
+            .onDuplicateKeyUpdate()
+            .set(block.TABLE_NAME, excluded(block.TABLE_NAME))
+            .set(block.FUNCTION_NAME, excluded(block.FUNCTION_NAME))
+            .set(block.PAYLOAD_MAPPING, excluded(block.PAYLOAD_MAPPING))
+            .set(block.TOUCHED_AT, excluded(block.TOUCHED_AT))
+            .execute();
+
+        var role = STORE_GRAPH_OUTBOX_ROLE;
+        outbox.columns().forEach((name, column) -> dsl
+            .insertInto(role, role.GRAPH_NAME, role.KIND, role.ROLE, role.NAME, role.TOUCHED_AT)
+            .values(graph, "COLUMN", name, column, touchedAt)
+            .onDuplicateKeyUpdate()
+            .set(role.NAME, excluded(role.NAME))
+            .set(role.TOUCHED_AT, excluded(role.TOUCHED_AT))
+            .execute());
+        outbox.parameters().forEach((name, parameter) -> dsl
+            .insertInto(role, role.GRAPH_NAME, role.KIND, role.ROLE, role.NAME, role.TOUCHED_AT)
+            .values(graph, "PARAMETER", name, parameter, touchedAt)
+            .onDuplicateKeyUpdate()
+            .set(role.NAME, excluded(role.NAME))
+            .set(role.TOUCHED_AT, excluded(role.TOUCHED_AT))
+            .execute());
+
+        var entry = STORE_GRAPH_OUTBOX_PAYLOAD_ENTRY;
+        outbox.payload().ifPresent(mapping -> {
+            List<ArgMappingSigil.Entry> entries;
+            try {
+                entries = ArgMappingSigil.entries(mapping);
+            } catch (no.sikt.graphitron.model.selection.GraphQLSelectionParseException e) {
+                return;
+            }
+            for (int position = 0; position < entries.size(); position++) {
+                var e = entries.get(position);
+                dsl.insertInto(entry, entry.GRAPH_NAME, entry.POSITION, entry.KEY_NAME,
+                        entry.BOUND_TO, entry.TOUCHED_AT)
+                    .values(graph, position, e.parameter(), e.boundTo(), touchedAt)
+                    .onDuplicateKeyUpdate()
+                    .set(entry.KEY_NAME, excluded(entry.KEY_NAME))
+                    .set(entry.BOUND_TO, excluded(entry.BOUND_TO))
+                    .set(entry.TOUCHED_AT, excluded(entry.TOUCHED_AT))
+                    .execute();
+            }
+        });
     }
 
     /**
