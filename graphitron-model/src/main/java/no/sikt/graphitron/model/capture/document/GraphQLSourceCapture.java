@@ -24,8 +24,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static no.sikt.graphitron.model.Tables.GRAPHQL_SOURCE_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
+import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE_INPUT;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
 
 /**
@@ -380,7 +380,7 @@ public final class GraphQLSourceCapture {
     }
 
     /**
-     * Makes {@code graph}'s {@code graphql_source_input} rows be what each claimed file's recipe
+     * Makes {@code graph}'s {@code store_graph_source_input} rows be what each claimed file's recipe
      * entry configures for it, sweeping the files the recipe stopped matching.
      *
      * <p>Every reading writes every match, the unchanged files included: a tag is configuration
@@ -389,7 +389,7 @@ public final class GraphQLSourceCapture {
      */
     private static void writeInputs(DSLContext dsl, String graph, List<SchemaInput> inputs,
                                     Set<String> claimed, LocalDateTime readAt) {
-        var t = GRAPHQL_SOURCE_INPUT;
+        var t = STORE_GRAPH_SOURCE_INPUT;
         for (var input : inputs) {
             if (!claimed.contains(input.sourceName())) {
                 continue;

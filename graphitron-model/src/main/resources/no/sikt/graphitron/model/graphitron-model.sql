@@ -368,7 +368,7 @@ COMMENT ON COLUMN store_source.mtime IS 'the filesystem''s last-modified time fo
 COMMENT ON COLUMN store_source.last_seen IS 'when a run last named this source in its input set; the age half of the age/currency distinction, and the bookkeeping a future eviction surface reads';
 COMMENT ON COLUMN store_source.read_at IS 'when the content behind this row''s stamp began being read; the currency half of the distinction last_seen names the age half of, and never the same question. last_seen moves when a run names the source in its input set, whether or not it opened it; this moves only where a pass read the bytes, and it moves for every source a pass verified rather than only the ones it rewrote, a source hashed and found equal to its stamp having been read as surely as one that was rewritten. Taken before the read rather than at the write, which is the whole of the concurrency argument: a change landing between the read and the commit is later than this value and is correctly read as a change, where a value taken at the write would swallow that window in silence. NULL reads as never, the conservative answer for a row that exists before any pass read its content. What makes the column mean anything is a comparison against a reading process''s own two instants: when it began watching this source''s corpus, and when it last saw this source move. A value below either says the row is not known to be current, so a value written while nothing was watching buys nothing, and one written by another process while we were watching counts as ours';
 
-CREATE TABLE graphql_source_input (
+CREATE TABLE store_graph_source_input (
   graph_name       VARCHAR NOT NULL,
   source_name      VARCHAR NOT NULL,
   tag              VARCHAR,
@@ -378,12 +378,12 @@ CREATE TABLE graphql_source_input (
   FOREIGN KEY (graph_name, source_name) REFERENCES store_graph_source (graph_name, source_name)
     ON DELETE CASCADE
 );
-COMMENT ON TABLE graphql_source_input IS 'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries. For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.';
-COMMENT ON COLUMN graphql_source_input.graph_name IS 'the owning graph''s partition';
-COMMENT ON COLUMN graphql_source_input.source_name IS 'the file, as the source rows name it; with the graph, the grain, and a reference into the graph''s claim on it';
-COMMENT ON COLUMN graphql_source_input.tag IS 'the tag the matching entry configures, which the loading rewrites apply to every element the file declares that carries no @tag of its own; NULL where the entry configures none';
-COMMENT ON COLUMN graphql_source_input.description_note IS 'the note the matching entry configures, which the loading rewrites append to the descriptions the file declares; NULL where the entry configures none';
-COMMENT ON COLUMN graphql_source_input.touched_at IS 'when the reading that wrote this row ran. Every reading writes the whole recipe''s matches, so it finishes by deleting the graph''s rows carrying another instant, which are the files the recipe stopped matching';
+COMMENT ON TABLE store_graph_source_input IS 'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries. For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.';
+COMMENT ON COLUMN store_graph_source_input.graph_name IS 'the owning graph''s partition';
+COMMENT ON COLUMN store_graph_source_input.source_name IS 'the file, as the source rows name it; with the graph, the grain, and a reference into the graph''s claim on it';
+COMMENT ON COLUMN store_graph_source_input.tag IS 'the tag the matching entry configures, which the loading rewrites apply to every element the file declares that carries no @tag of its own; NULL where the entry configures none';
+COMMENT ON COLUMN store_graph_source_input.description_note IS 'the note the matching entry configures, which the loading rewrites append to the descriptions the file declares; NULL where the entry configures none';
+COMMENT ON COLUMN store_graph_source_input.touched_at IS 'when the reading that wrote this row ran. Every reading writes the whole recipe''s matches, so it finishes by deleting the graph''s rows carrying another instant, which are the files the recipe stopped matching';
 
 CREATE TABLE store_stamp (
   singleton         CHAR(1) NOT NULL,
@@ -4771,7 +4771,7 @@ SELECT t.graph_name, t.type_name, t.type_name, t.kind, t.description, s.descript
   LEFT JOIN graphql_type_declaration d
     ON d.graph_name = t.graph_name AND d.type_name = t.type_name
    AND d.merge_ordinal = 0 AND NOT d.is_extension AND d.kind <> 'SCALAR'
-  LEFT JOIN graphql_source_input s
+  LEFT JOIN store_graph_source_input s
     ON s.graph_name = d.graph_name AND s.source_name = d.source_name;
 COMMENT ON VIEW graphitron_type_authored IS 'One of the two sets graphitron_type is the union of: a type an author declared, carried across whole. For example type Film { title: String } is the row Film here, with the kind and docstring the author wrote.';
 -- COMMENT ON COLUMN graphitron_type_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
@@ -5001,7 +5001,7 @@ SELECT f.graph_name, f.type_name, f.field_name, f.type_name || '.' || f.field_na
        f.type_sdl, f.named_type, f.non_null, f.is_list, f.item_non_null,
        f.default_value_sdl, f.description, s.description_note
   FROM graphql_field f
-  LEFT JOIN graphql_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
+  LEFT JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_connection_carrier c
                     WHERE c.graph_name = f.graph_name AND c.type_name = f.type_name
                       AND c.field_name = f.field_name);
@@ -5126,7 +5126,7 @@ SELECT m.graph_name, m.type_name, m.field_name, m.coordinate, m.ordinal, m.type_
   LEFT JOIN graphql_field f
     ON m.rewrite AND f.graph_name = m.graph_name AND f.type_name = m.type_name
    AND f.field_name = m.field_name
-  LEFT JOIN graphql_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
+  LEFT JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
  WHERE NOT EXISTS (SELECT 1 FROM graphitron_minted_conflict c
                     WHERE c.graph_name = m.graph_name AND c.coordinate = m.coordinate)
    AND (m.rewrite
@@ -5172,7 +5172,7 @@ CREATE VIEW graphitron_enum_value_authored (graph_name, type_name, value_name, c
 SELECT v.graph_name, v.type_name, v.value_name, v.type_name || '.' || v.value_name, v.ordinal,
        v.description, s.description_note
   FROM graphql_enum_value v
-  LEFT JOIN graphql_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name;
+  LEFT JOIN store_graph_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name;
 COMMENT ON VIEW graphitron_enum_value_authored IS 'The one set graphitron_enum_value is filled from: an enum value an author declared, with the note its file configures. For example the G in enum Rating { G PG }.';
 -- COMMENT ON COLUMN graphitron_enum_value_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
 -- COMMENT ON COLUMN graphitron_enum_value_authored.type_name IS 'the enum, as the author spelled it';
@@ -5191,7 +5191,7 @@ SELECT a.graph_name, a.type_name, a.field_name, a.argument_name,
        a.type_sdl, a.named_type, a.non_null, a.is_list, a.item_non_null, a.default_value_sdl,
        a.description, s.description_note
   FROM graphql_argument a
-  LEFT JOIN graphql_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name;
+  LEFT JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name;
 COMMENT ON VIEW graphitron_argument_authored IS 'One of the two sets graphitron_argument is the union of: an argument an author declared, carried across whole. For example the lang in title(lang: Lang = NB): String, default included.';
 -- COMMENT ON COLUMN graphitron_argument_authored.note IS 'the note its file''s entry configures, which the anchor appends to the description, minting the one the generator emits; NULL where none is configured';
 -- COMMENT ON COLUMN graphitron_argument_authored.graph_name IS 'the owning graph''s partition, carried from the transcription';
@@ -7604,7 +7604,7 @@ SELECT g.graph_name, 'CONFIGURED',
           JOIN store_graph_source m ON m.source_name = w.source_name
          WHERE m.graph_name = g.graph_name),
        CAST(NULL AS VARCHAR), CAST(NULL AS INT), CAST(NULL AS INT)
-  FROM (SELECT DISTINCT graph_name FROM graphql_source_input WHERE tag IS NOT NULL) g
+  FROM (SELECT DISTINCT graph_name FROM store_graph_source_input WHERE tag IS NOT NULL) g
  WHERE NOT EXISTS (SELECT 1 FROM authored a WHERE a.graph_name = g.graph_name);
 COMMENT ON VIEW graphitron_federation_link_rule IS 'The rule graphitron_federation_link stores: one row per graph that opts in to federation, the way it opts in. For example the graphitron anchor inserts this view''s rows for one graph into graphitron_federation_link, which is the name every reader spells.';
 -- COMMENT ON COLUMN graphitron_federation_link_rule.graph_name IS 'the graph opting in';
@@ -7852,7 +7852,7 @@ WITH applied (graph_name, coordinate, site_order, tag) AS (
   -- A field or an input field, declared at one site, takes the tag of its file unless it carries one.
   SELECT f.graph_name, f.type_name || '.' || f.field_name, 0, s.tag
     FROM graphql_field f
-    JOIN graphql_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
+    JOIN store_graph_source_input s ON s.graph_name = f.graph_name AND s.source_name = f.source_name
    WHERE s.tag IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                       WHERE d.graph_name = f.graph_name
@@ -7861,7 +7861,7 @@ WITH applied (graph_name, coordinate, site_order, tag) AS (
   UNION ALL
   SELECT a.graph_name, a.type_name || '.' || a.field_name || '(' || a.argument_name || ':)', 0, s.tag
     FROM graphql_argument a
-    JOIN graphql_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
+    JOIN store_graph_source_input s ON s.graph_name = a.graph_name AND s.source_name = a.source_name
    WHERE s.tag IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                       WHERE d.graph_name = a.graph_name
@@ -7871,7 +7871,7 @@ WITH applied (graph_name, coordinate, site_order, tag) AS (
   UNION ALL
   SELECT v.graph_name, v.type_name || '.' || v.value_name, 0, s.tag
     FROM graphql_enum_value v
-    JOIN graphql_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name
+    JOIN store_graph_source_input s ON s.graph_name = v.graph_name AND s.source_name = v.source_name
    WHERE s.tag IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM graphql_directive_application d
                       WHERE d.graph_name = v.graph_name
@@ -7882,7 +7882,7 @@ WITH applied (graph_name, coordinate, site_order, tag) AS (
   -- carries one, so a union declared in two tagged files carries both.
   SELECT t.graph_name, t.type_name, t.merge_ordinal, s.tag
     FROM graphql_type_declaration t
-    JOIN graphql_source_input s ON s.graph_name = t.graph_name AND s.source_name = t.source_name
+    JOIN store_graph_source_input s ON s.graph_name = t.graph_name AND s.source_name = t.source_name
    WHERE t.kind = 'UNION' AND s.tag IS NOT NULL
      AND NOT EXISTS (SELECT 1 FROM graphql_ast_type_directive_entry e
                       WHERE e.graph_name = t.graph_name AND e.source_name = t.source_name
@@ -17111,10 +17111,10 @@ INSERT INTO meta_relation VALUES
    'Every field the generator works with, at the type expression it works with: one row per field coordinate, output and input alike, carrying the wrapping columns graphql_field carries.',
    'For example a field the connection macro rewrote reads here as the Connection it returns, where graphql_field is where a reader goes for what the author wrote instead.',
    'The field grain of graphitron_type''s argument, with one difference worth stating. A type is minted or authored and never both, so that population is a disjoint union; a field can be authored at a coordinate whose type expression a macro then rewrote, which is a disagreement at a coordinate both populations hold rather than a row only one of them has. This relation states the generator''s reading at such a coordinate and graphql_field states the author''s, so the two are recoverable separately instead of the authored expression surviving only in a provenance record no anti-join reaches.'),
-  ('graphql_source_input', 'graph-source-input', 'graphql-source',
+  ('store_graph_source_input', 'graph-source-input', 'graphql-source',
    'What a graph''s configuration says about one schema file it reads: one row per file the recipe matched, with the tag and description note its entry carries.',
    'For example a file matched by an entry configured with tag stable is one row carrying stable, and a file matched by an untagged entry is a row carrying none.',
-   'The configuration''s tags and notes reached the schema the run emits and no relation said which element they reached, so a store-sourced reader dropped them: the tag a carrier takes from its file never reached the type it coined. The recipe entry''s own row cannot answer it, a pattern entry matching many files and the match being made only where the files are read; so it is recorded there, at the file grain the elements already carry.'),
+   'The configuration''s tags and notes reached the schema the run emits and no relation said which element they reached, so a store-sourced reader dropped them: the tag a carrier takes from its file never reached the type it coined. The recipe entry''s own row cannot answer it, a pattern entry matching many files and the match being made only where the files are read; so it is recorded there, at the file grain the elements already carry. A store_ relation because it is configuration rather than a reading of the file: a store_graph_schema_input entry, matched to a file the graph claims in store_graph_source.'),
   ('graphitron_directive_application', 'expanded-directive-application', 'graphitron',
    'Every directive application the generator emits, the author''s and the ones macro expansion minted, at the coordinate it is applied to: one row per application.',
    'For example the @key(fields: "id") federation synthesises for a node type sits here beside the @table its author wrote on it, at the same grain and answering the same questions.',

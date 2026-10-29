@@ -236,12 +236,7 @@ class RelationRegistrationGateTest {
             // by exemption: the walk's own two verdict relations are retired, so there is no
             // oracle arm left here to agree with. GraphQLSchemaProblemsTest pins it, over a corpus
             // that provokes each stage in turn.
-            "graphql_schema_problem",
-            // What each file's recipe entry configures for it. GraphitronSchema is built from the
-            // registry the configuration already rewrote and keeps no word on which file a tag came
-            // from, so there is nothing to agree with. StoreEmittedFederationSchemaPipelineTest pins
-            // it through the tags its configured inputs reach the emitted schema with.
-            "graphql_source_input")) {
+            "graphql_schema_problem")) {
             registrations.put(relation, Arm.UNSHADOWED);
         }
         // How far a capture got, which is the run's own record and no fact of any schema, so the
@@ -252,6 +247,11 @@ class RelationRegistrationGateTest {
         // WriteTimesTest pins it, over a capture that finishes and a second that writes less.
         registrations.put("store_graph_write", Arm.UNSHADOWED);
         registrations.put("store_graph_read", Arm.UNSHADOWED);
+        // What each file's recipe entry configures for it. GraphitronSchema is built from the
+        // registry the configuration already rewrote and keeps no word on which file a tag came
+        // from, so there is nothing to agree with. StoreEmittedFederationSchemaPipelineTest pins
+        // it through the tags its configured inputs reach the emitted schema with.
+        registrations.put("store_graph_source_input", Arm.UNSHADOWED);
         // The classfile census: what the compiled classes on the classpath declare, read with no
         // vocabulary from any schema: what an author may name at one directive, admitted by that
         // arm's own rule rather than by a census's. GraphitronSchema has no counterpart because the

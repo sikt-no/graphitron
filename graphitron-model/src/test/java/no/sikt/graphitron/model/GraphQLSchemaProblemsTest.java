@@ -544,10 +544,8 @@ class GraphQLSchemaProblemsTest {
         var rows = new LinkedHashMap<String, List<String>>();
         for (Table<?> relation : Public.PUBLIC.getTables()) {
             String name = relation.getName().toLowerCase(Locale.ROOT);
-            // Two relations record the configuration on purpose: what the composition refused,
-            // and what each file's entry configures.
-            boolean inScope = (name.startsWith("graphql_") && !name.equals("graphql_schema_problem")
-                    && !name.equals("graphql_source_input"))
+            // The composition's refusals record the configuration on purpose.
+            boolean inScope = (name.startsWith("graphql_") && !name.equals("graphql_schema_problem"))
                 || EntryFamilyFixture.entryRelations().contains(name);
             if (inScope) {
                 rows.put(name, dsl.selectFrom(relation).fetch().stream()
