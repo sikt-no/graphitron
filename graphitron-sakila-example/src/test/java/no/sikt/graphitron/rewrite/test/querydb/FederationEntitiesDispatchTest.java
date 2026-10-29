@@ -40,7 +40,7 @@ class FederationEntitiesDispatchTest {
 
     @SuppressWarnings("unchecked")
     private Map<String, Object> execute(String query, Map<String, Object> variables) {
-        var input = Graphitron.newExecutionInput(dsl, "{}")
+        var input = Graphitron.newExecutionInput(dsl)
             .query(query)
             .variables(variables)
             .build();
@@ -484,7 +484,7 @@ class FederationEntitiesDispatchTest {
             return java.util.concurrent.CompletableFuture.completedFuture(java.util.List.of());
         }));
         var customGraphql = GraphQL.newGraphQL(customised).build();
-        var input = Graphitron.newExecutionInput(dsl, "{}")
+        var input = Graphitron.newExecutionInput(dsl)
             .query("{ _entities(representations: [{__typename: \"Film\", filmId: 1}]) { __typename } }")
             .build();
         customGraphql.execute(input);

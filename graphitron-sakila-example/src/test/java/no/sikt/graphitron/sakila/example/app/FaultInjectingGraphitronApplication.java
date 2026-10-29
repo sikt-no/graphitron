@@ -95,7 +95,7 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
                 "could not open JDBC connection to db-fault-host:5432 in no.sikt.graphitron.internal");
         }
         if (headers.getHeaderString(REJECTED_IDENTITY_HEADER) != null) {
-            return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}"), "reject-me");
+            return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}"), "{\"sub\":\"reject-me\"}", "reject-me");
         }
         String traceId = headers.getHeaderString(TRACE_HEADER);
         if (traceId != null) {

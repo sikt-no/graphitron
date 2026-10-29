@@ -13,6 +13,13 @@ final class SessionStates {
 
     private SessionStates() {}
 
+    /** The {@code federated} package: the default identity, over the same facade. */
+    static no.sikt.graphitron.generated.federated.schema.SessionState federated(String claims) {
+        return no.sikt.graphitron.generated.federated.schema.SessionState.of(
+            session -> no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity.mount(session.configuration(), claims),
+            (session, handle) -> no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity.unmount(session.configuration(), handle));
+    }
+
     /** The {@code multitenant} package: the tenant the connection is mounted for rides the session. */
     static no.sikt.graphitron.generated.multitenant.schema.SessionState multitenant(String claims) {
         return no.sikt.graphitron.generated.multitenant.schema.SessionState.of(

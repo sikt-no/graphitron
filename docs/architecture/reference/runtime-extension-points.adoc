@@ -10,7 +10,7 @@ in one of two shapes, and this document is the reference for both:
 * *The owned-connection path (recommended).* Graphitron owns the
   connection lifecycle. You give it a `DataSource` and a dialect once; per
   request it pins one connection, mounts the caller's identity on it through
-  database session hooks you configure, commits each mutation field
+  the session callbacks you pass with the request, commits each mutation field
   independently, and unmounts and releases at completion. See
   <<owned-connection-path,The owned-connection path>>.
 * *The escape-hatch path.* You bring your own `DSLContext` per request and own
@@ -43,34 +43,42 @@ var engine  = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
 so you register nothing else. A later `.instrumentation(other)` on that builder replaces
 it, after which nothing is pinned or mounted; add your own instrumentation (for
 example OpenTelemetry) through a `ChainedInstrumentation` that keeps
-`new GraphitronConnectionInstrumentation(runtime)` in the chain. Per request you pass only your mount method's
-payload (and any declared `contextArguments`):
+`new GraphitronConnectionInstrumentation(runtime)` in the chain. Per request you pass the `SessionState` that carries your
+mount and unmount callbacks (and any declared `contextArguments`):
 
 [source,java]
 ----
-var input = Graphitron.newOwnedExecutionInput(claims, userId).query(q).build();
+var input = Graphitron.newOwnedExecutionInput(session, userId).query(q).build();
 ----
 
 For that operation Graphitron takes one connection when a field first needs it,
-runs your mount method on it to mount identity, executes (each top-level
+runs your mount callback on it to mount identity, executes (each top-level
 mutation field, payload included, in its own transaction that commits or rolls
 back independently, see <<owned-path-transactions>>; queries in autocommit),
-then runs your unmount method and releases the
+then runs your unmount callback and releases the
 connection. A connection whose unmount failed is evicted, never returned to the
 pool.
 
 === Session identity through `<sessionState>`
 
-Identity goes to the database, not to Java. The plugin's `<sessionState>`
-configuration names a static Java `<mount>` method (typically the jOOQ-generated
-executing method of your identity routine, or a hand-written facade of the same
-shape) and an optional `<unmount>`. Graphitron reads the signatures at build
-time: the mount's payload parameters become contextArguments on the generated
-factory, handed through untouched, and its return type is the handle later
-passed to `unmount`. Graphitron parses nothing about the payload; your method
-and the database do. See
+Identity goes to the database, not to Java. Switching on `<sessionState>` (optionally
+naming the `<handle>` type your mount returns) makes the generator emit two types
+in the schema package, `SessionState` and `MountedSession`, and makes the generated
+`newOwnedExecutionInput` factory take a `SessionState` first. You build one per
+request, from code: a mount callback and an optional unmount callback, each handed a
+`MountedSession` whose `configuration()` is bound to the connection being mounted
+(and whose `tenant()` answers the tenant in a `<tenantColumn>` build). The state
+rides the request's `GraphQLContext`, and the connection-lifecycle instrumentation
+reads it when the operation starts, so an input built without one fails before any
+SQL. Graphitron parses nothing about your identity; your callbacks and the database
+do. See
 xref:../../manual/reference/mojo-configuration.adoc#session-identity[Session
-identity] for the configuration and the signature contract.
+identity] for the configuration and the callback contract.
+
+This differs from a mutation hook, which is a static method resolved from the
+schema: identity varies per request and has to carry the request's own claims, so
+it is a value the consumer builds, and the build reads only the handle type, from
+the classpath, to check `$session` bindings.
 
 [#hook-state-contract]
 ==== The hook state contract: session-scoped, never transactional
@@ -207,8 +215,7 @@ a jOOQ `TransactionListener` if code must run as each transaction begins.
 For database-per-tenant deployments, build the runtime over a default
 `DataSource` plus a `Map<TenantId, DataSource>`; Graphitron pins one connection
 per distinct divined tenant within an operation and mounts identity on each,
-handing a mount that declares the `Optional<K>` tenant slot the key it is mounting
-for. Only tenants in the request tenant set (the factories' leading parameter in a
+handing the mount the key it is mounting for through `MountedSession.tenant()`. Only tenants in the request tenant set (the factories' leading parameter in a
 `<tenantColumn>` build) are ever acquired: the generated per-operation connection
 carrier refuses any other key with a client error before a connection is taken. The schema-side
 inference that divines the tenant key is the tenant-column work; the runtime seam
@@ -441,34 +448,32 @@ closed: an RLS policy must treat both a `NULL` and an empty session variable as
 dialect and pattern, and it is a spectrum, not a yes/no. Choosing where on it to
 sit is the load-bearing security decision.
 
-The gradient is read off the routine your `<mount>` line names, not off
-graphitron configuration: on the headline path there is no consumer Java between
-the Mojo line and the database, so what the routine's own definition says is the
-whole story. Only when `<mount>` names a hand-written facade does "visible in
-the consumer's own code" hold literally, and then the facade is one more place
-to read.
+The gradient is read off the routine your mount callback calls, not off
+graphitron configuration: what the routine's own definition says is the
+whole story, and the callback is the one place of consumer Java between the
+request and the database, so it is the one more place to read.
 
 * *Enforced fence* (strongest). The mounted state lives behind a privilege
   fence: an Oracle package-bound context or RAS session attached by a
   definer-rights package, so code on the connection cannot set identity state
-  except through the trusted package. `<mount>` names the package's executing
+  except through the trusted package. Your mount callback calls the package's executing
   method; the fence is the package's own definition.
 * *Convention fence.* Plain PostgreSQL GUCs written by your mount (directly,
   or via a `SECURITY DEFINER` routine): any SQL on the connection can overwrite
   them, so the real guarantee is that Graphitron generates every statement and
   any `@service` code on the connection behaves. The build cannot see which
-  fence a reflected method reference implements, so no warning grades it; the
+  fence a mount callback implements, so no warning grades it; the
   choice is documented here and in xref:../../security.adoc[the security guide]
   rather than policed at build time.
-* *Cryptographic fence.* Pass the raw signed token as the mount's payload and
+* *Cryptographic fence.* Pass the raw signed token into the mount callback and
   have the routine verify the signature in-database, reading claims only from
   verified state, so even arbitrary SQL on the connection cannot forge another
-  user's identity. The fence is the routine's verification logic; `<mount>`
-  merely names it.
+  user's identity. The fence is the routine's verification logic; the callback
+  merely calls it.
 
 === On the owned-connection path
 
-Identity is mounted by your configured `<mount>` method (see
+Identity is mounted by the mount callback of your `SessionState` (see
 <<owned-connection-path,above>>); your RLS policies read whatever it set. For a
 mount that writes a session GUC per request (and an unmount that clears it to
 the empty string, since a touched GUC cannot return to unset), a fail-closed

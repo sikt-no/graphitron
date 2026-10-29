@@ -151,7 +151,7 @@ class SessionHookExecutionTest {
                 .doesNotContain("a1", "a2");
 
             no.sikt.graphitron.generated.multischemamutation.schema.GraphitronSessionHook
-                .unmount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings(), handle);
+                .unmount(multischemaState(), conn, SQLDialect.POSTGRES, new Settings(), handle);
             assertThat(notesVisible(conn)).isEmpty();
         }
     }
@@ -371,7 +371,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "{\"sub\":\"alice\"}", "alice")
             .query("{ sessionPrincipal }")
             .build());
 
@@ -396,7 +396,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "{\"sub\":\"alice\"}", "alice")
             .query("mutation { updateFilmsPayload(in: [{ filmId: 2147483000, title: \"x\" }]) { films { filmId } } }")
             .build());
 
@@ -421,7 +421,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "{\"sub\":\"alice\"}", "alice")
             .query("mutation { updateFilmsPayload(in: [{ filmId: 2147483000, title: \"x\" }]) { films { filmId } } }")
             .build());
 
@@ -442,7 +442,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of(claims), "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of(claims), claims, "alice")
             .query("{ claimsEcho }")
             .build());
 
@@ -492,7 +492,7 @@ class SessionHookExecutionTest {
         // $session.sessionNo: the member's own Integer binds where the whole handle did.
         var engine = ownedEngine();
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "{\"sub\":\"alice\"}", "alice")
             .query("{ sessionNumber sessionPrincipal }")
             .build());
 
@@ -509,7 +509,7 @@ class SessionHookExecutionTest {
         var engine = ownedEngine();
 
         var mary = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}"), "mary")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}"), "{\"sub\":\"mary\"}", "mary")
             .query("{ customersOfPrincipal { firstName } }")
             .build());
         assertThat(mary.getErrors()).as("errors: " + mary.getErrors()).isEmpty();
@@ -519,7 +519,7 @@ class SessionHookExecutionTest {
 
         // A fresh engine: the single-connection data source above is released by the first request.
         var nobody = ownedEngine().execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"no-such-customer\"}"), "no-such-customer")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"no-such-customer\"}"), "{\"sub\":\"no-such-customer\"}", "no-such-customer")
             .query("{ customersOfPrincipal { firstName } }")
             .build());
         assertThat(nobody.getErrors()).isEmpty();
@@ -533,7 +533,7 @@ class SessionHookExecutionTest {
         // it over, which is what makes the read per connection rather than per request.
         var engine = ownedEngine();
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}"), "mary")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}"), "{\"sub\":\"mary\"}", "mary")
             .query("{ sessionStores { storeId customersOfPrincipal { firstName } } }")
             .build());
 
@@ -591,7 +591,7 @@ class SessionHookExecutionTest {
 
     private static graphql.ExecutionInput rejectedInput(String query) {
         return no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}"), "reject-me")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}"), "{\"sub\":\"reject-me\"}", "reject-me")
             .query(query)
             .build();
     }

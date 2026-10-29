@@ -67,7 +67,7 @@ class BuiltInScalarRegistrationExecutionTest {
 
         // Serving proof: every scalar the minted surface names coerces on the way out: Int on
         // totalCount, String on cursor, Boolean on hasNextPage.
-        var input = Graphitron.newExecutionInput(dsl, new SessionClaimsRecord("test-user", null))
+        var input = Graphitron.newExecutionInput(dsl)
             .query("""
                 { eventsA { totalCount edges { cursor } pageInfo { hasNextPage } } }
                 """)
