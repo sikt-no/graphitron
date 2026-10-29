@@ -414,3 +414,25 @@ So a derived relation in `graphitron-model` has nothing to resolve a session mem
 - Keep `$session` out of the first version.
 
 What would satisfy it: pick one, and restate the leaves bullet, the rejections list, the store-tier and pipeline-tier tests, and Design decisions' "the emit is built on the store" to match. If the answer is a new relation, name its owner and grain the way the other relations in the section do.
+
+### Round 3 addendum (2026-10-29, Spec -> Ready, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
+
+R1120 changed after round 3 was written (`ee9c78cce`, now Spec): it moves session identity onto the store. That bears on finding 3, and it makes two statements in this plan stale.
+
+What R1120 now plans, from its "The store" section:
+
+- `store_graph_session_supplied` and `store_graph_session_handle` capture the switch and the `<handle>` class from the configuration.
+- A derived member relation has one row per member the handle offers, keyed by graph and member name, referencing the `code_read_slot` row of its accessor. That row carries the member's type (`slot_type`, `erased_class`).
+- Derived rejections are anti-joins between the captured argMapping pairs and those relations: a `$session` binding with no identity configured, a bare `$session` with no handle, and a `$session.<member>` the handle does not offer.
+- `SessionHooks` (`HandleLess`, `Handled`, `HandleMember`), `ServiceCatalog.resolveSessionHooks` and `decodeHandleMembers` retire, and so does the method-reference form (`<mount>`/`<unmount>`).
+
+Consequences for this item:
+
+1. The first option in finding 3, a store relation for the handle's members, becomes R1120's relation rather than one this item adds. Resolved against it, every `$session` check this item needs can be answered on the store. The one check R1120 leaves in the validator compares a bound Java parameter's type with the member's yield, and an `@outbox` payload key binds no Java parameter. The "member type known not to serialize" rejection can read the member's `slot_type`.
+2. `$session` then depends on R1120, not on R1102 alone. Phase 1 without `$session`, and `$session` once R1120 lands, is one way to sequence it; the choice is the author's.
+3. Two statements are stale under R1120's current plan. Relation to other items says R1120 is "independent of this item". The mapping bullet resolves members through R1102's decode on `SessionHooks.Handled` "for both the reflected method mount and R1120's supplied per-request callback". `SessionHooks` retires, and only the supplied form remains.
+
+Two dependencies to confirm against R1120, rather than assume. Both are R1120's to state, so they belong in R1120's review:
+
+- The emit calls the generated `TenantConnections.sessionMember_<name>(dsl, fieldCoordinate)` accessor. R1120 does not name it: it says only that `ConnectionRuntimeClassGenerator` takes the new value in place of `SessionHooks`.
+- R1120's `$session` rejections must not be scoped to `@service` and `@condition` sites, or `$session` keys on `@outbox` and the common payload escape them. The `<outbox><payload>` pairs are a further case: they come from the configuration, not from the generic SDL argMapping writer, so R1120's anti-joins over the SDL pairs do not see them unless this item's capture joins the same check.
