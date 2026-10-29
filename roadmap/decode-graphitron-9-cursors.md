@@ -1,7 +1,7 @@
 ---
 id: R1088
 title: "A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: pagination
@@ -140,6 +140,15 @@ R1106 (Done) appended the row key to single-table connection orders after this s
 - **Keep writing the user value's text and decode it as the user type**, as node ids do. A 9 cursor carries the database rendering, so decode would need both parses and a rule for which one wins, and the user-type parse needs a per-column parse class the generator supplies (`SlotParse`), which the runtime-generic codec does not have. Writing the database value gives both versions one representation and one parse.
 - **Accept a 9 cursor on an order 10 completes**, reading a cursor one key short as the declared prefix and seeking strictly after it, which is the position 9's own seek used. jOOQ's `seek` takes one value per sort field, so this needs a hand-built row predicate over the prefix beside jOOQ's, and that predicate would have to reproduce the null-aware rendering jOOQ already does for `NULLS LAST` columns. It also gives up strict arity on exactly the connections whose order changed, so a cursor from a different, shorter order would decode instead of failing. And it carries forward a position 9 mis-handled: the page after it starts beyond every row tying with it, which is the skip the appended key exists to stop. No reported consumer needs it; a feed that does gets its own item.
 - **A JSON library on the consumer classpath** (as 9 depended on `org.json`). The generated code is a consumer artifact with no runtime dependency on graphitron beyond jOOQ and graphql-java; a scalar-array reader does not justify one.
+
+## Implementation notes
+
+Implemented in session 01FY5Uvumr2BLg5Q9qeaVe7v as the plan above describes; departures for the In Review reviewer to judge:
+
+- The new execution tests live in their own class, `CursorFormatExecutionTest`, rather than in `GraphQLQueryTest`; the three rebuilt malformed-cursor tests stay in `GraphQLQueryTest`. Each test the plan's Tests section names is there, plus a `null`-element decode and a few more malformed shapes (`[01]`, `[1,]`, `[tru]`, a bad escape letter). The `[1,]` case caught a trailing-comma acceptance in the first draft of the reader.
+- The writer escapes `\n` and `\t` in their short forms and every other character below U+0020 as `\u00XX`, the plan's reading of RFC 8259.
+- `ColumnValues.fromDatabase` hands the parsed database value to the converter through `converter.fromType().cast(...)` in a generic helper; a database type that does not match the converter's `fromType` is a server fault and propagates as a `ClassCastException`, not a client error.
+- `ConnectionHelper` loses its `@SuppressWarnings({"deprecation", "removal"})`: its one `DataType.convert` call moved into `ColumnValues`, which already carries the suppression.
 
 ## Reviewer findings
 
