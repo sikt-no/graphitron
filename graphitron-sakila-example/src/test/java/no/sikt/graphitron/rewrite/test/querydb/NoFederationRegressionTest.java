@@ -37,18 +37,16 @@ class NoFederationRegressionTest {
 
     @Test
     void sharedFixture_doesNotExposeFederationTwoArgOverload() {
-        // Compile-time check: the shared facade emits only a one-arg
-        // build(Consumer<SchemaBuilder>) since federationLink is false.
-        // Any attempt to call the two-arg form should be a compile error;
-        // verify by reflection that the two-arg method does not exist.
-        var methods = java.util.Arrays.stream(Graphitron.class.getDeclaredMethods())
+        // The shared facade emits the one-arg build(Consumer<SchemaBuilder>) and the no-argument
+        // form beside it, since federationLink is false. A two-arg form (a federation customizer)
+        // must not exist; verify by reflection.
+        var parameterCounts = java.util.Arrays.stream(Graphitron.class.getDeclaredMethods())
             .filter(m -> "buildSchema".equals(m.getName()))
+            .map(java.lang.reflect.Method::getParameterCount)
+            .sorted()
             .toList();
-        assertThat(methods)
-            .as("shared facade emits exactly one buildSchema overload (no federation two-arg form)")
-            .hasSize(1);
-        assertThat(methods.get(0).getParameterCount())
-            .as("the single overload is the one-arg form")
-            .isEqualTo(1);
+        assertThat(parameterCounts)
+            .as("shared facade emits buildSchema() and buildSchema(customizer) only, no federation two-arg form")
+            .containsExactly(0, 1);
     }
 }
