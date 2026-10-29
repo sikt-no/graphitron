@@ -1,7 +1,7 @@
 ---
 id: R1123
 title: "The bulk UPDATE zero-row guard reports how many input rows matched nothing"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 5
 theme: mutation-write
