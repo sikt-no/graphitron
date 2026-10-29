@@ -7,7 +7,6 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.render.ConditionGlueRenderer;
 import no.sikt.graphitron.render.ProjectionUnitRenderer;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -49,9 +48,7 @@ class SessionConditionPlanPipelineTest {
         """;
 
     private static no.sikt.graphitron.rewrite.GraphitronSchema schema() {
-        return SessionHooksFixtures.withHooks(TestSchemaHelper.buildSchema(SDL),
-            SessionHooksFixtures.handled(no.sikt.graphitron.javapoet.ClassName.get(
-                "no.sikt.graphitron.rewrite", "SessionHookStub", "RecordHandle")));
+        return TestSchemaHelper.buildSchema(SDL);
     }
 
     private static Set<String> simpleNames(Set<no.sikt.graphitron.command.UnitRef> units) {

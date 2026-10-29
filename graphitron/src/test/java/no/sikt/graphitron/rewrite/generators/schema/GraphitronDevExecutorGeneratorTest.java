@@ -6,8 +6,8 @@ import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.ContextArgumentClassifier;
 import no.sikt.graphitron.rewrite.GraphitronSchema;
 import no.sikt.graphitron.rewrite.model.ResolvedContextArg;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
+import no.sikt.graphitron.emit.SessionIdentityRows;
+import no.sikt.graphitron.rewrite.session.SessionIdentityFixtures;
 import no.sikt.graphitron.rewrite.test.tier.UnitTier;
 import org.junit.jupiter.api.Test;
 
@@ -62,8 +62,8 @@ class GraphitronDevExecutorGeneratorTest {
             new ContextArgumentClassifier.Classification(resolved, List.of()), List.of());
     }
 
-    private static TypeSpec generate(GraphitronSchema schema, SessionHooks sessionHooks) {
-        return GraphitronDevExecutorGenerator.generate(schema, "com.example", sessionHooks).get(0);
+    private static TypeSpec generate(GraphitronSchema schema, SessionIdentityRows identity) {
+        return GraphitronDevExecutorGenerator.generate(schema, "com.example", identity).get(0);
     }
 
     private static MethodSpec executeMethod(TypeSpec spec) {
@@ -76,7 +76,7 @@ class GraphitronDevExecutorGeneratorTest {
     @Test
     void generate_returnsExactlyOneClassNamedGraphitronDevExecutor() {
         var result = GraphitronDevExecutorGenerator.generate(
-            emptySchema(), "com.example", SessionHooks.NotConfigured.INSTANCE);
+            emptySchema(), "com.example", SessionIdentityRows.empty());
         assertThat(result).hasSize(1);
         assertThat(result.get(0).name()).isEqualTo("GraphitronDevExecutor");
         assertThat(result.get(0).modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
@@ -86,7 +86,7 @@ class GraphitronDevExecutorGeneratorTest {
     void execute_hasTheJdkOnlyReflectionBoundarySignature() {
         // The load-bearing property: one public static method, parameter and return types
         // all JDK, so the host reflects it without sharing jOOQ or graphql-java types.
-        var execute = executeMethod(generate(emptySchema(), SessionHooks.NotConfigured.INSTANCE));
+        var execute = executeMethod(generate(emptySchema(), SessionIdentityRows.empty()));
         assertThat(execute.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(execute.returnType().toString()).isEqualTo("java.lang.String");
         assertThat(execute.parameters()).extracting(p -> p.name())
@@ -102,17 +102,17 @@ class GraphitronDevExecutorGeneratorTest {
     }
 
     @Test
-    void executeSignature_isIdenticalRegardlessOfSessionStateAndContextArguments() {
-        // The schema-varying facts (sessionState fail-loud arm, contextArgument binding) are
-        // absorbed into the body; the host reflects one fixed shape. Compare the two extremes
-        // structurally: same parameter names and types either way.
-        var plain = executeMethod(generate(emptySchema(), SessionHooks.NotConfigured.INSTANCE));
+    void executeSignature_isIdenticalRegardlessOfContextArguments() {
+        // The contextArgument binding is absorbed into the body; the host reflects one fixed shape
+        // for a schema that mounts no identity. Compare the two extremes structurally: same
+        // parameter names and types either way.
+        var plain = executeMethod(generate(emptySchema(), SessionIdentityRows.empty()));
         var loaded = executeMethod(generate(
             schemaWithContextArgs(
                 new ResolvedContextArg("claims", ClassName.get(String.class), List.of()),
                 new ResolvedContextArg("fnr", ClassName.get(Long.class), List.of()),
                 new ResolvedContextArg("userId", ClassName.get(String.class), List.of())),
-            SessionHooksFixtures.handleLess(SessionHooksFixtures.stringPayload("claims"))));
+            SessionIdentityRows.empty()));
         assertThat(loaded.parameters()).extracting(p -> p.name())
             .isEqualTo(plain.parameters().stream().map(p -> p.name()).toList());
         assertThat(loaded.parameters()).extracting(p -> p.type().toString())
@@ -121,21 +121,35 @@ class GraphitronDevExecutorGeneratorTest {
     }
 
     @Test
+    void aSchemaSupplyingIdentity_takesTheSessionStateWhereTheOtherTakesClaims() {
+        // The fifth parameter is the one that forks: the claims string where nothing is mounted,
+        // the generated SessionState where identity is supplied, which the dev host builds from
+        // <devDatabase><session>. The method may throw, since the callbacks' own exceptions
+        // propagate verbatim; every other parameter is unchanged.
+        var identity = executeMethod(generate(emptySchema(), SessionIdentityFixtures.handleLess()));
+        assertThat(identity.parameters()).extracting(p -> p.name())
+            .containsExactly("connection", "dialect", "query", "variables", "session", "contextArgs");
+        assertThat(identity.parameters().get(4).type().toString()).isEqualTo("com.example.schema.SessionState");
+        assertThat(identity.exceptions()).extracting(Object::toString).contains("java.lang.Exception");
+        assertThat(identity.returnType().toString()).isEqualTo("java.lang.String");
+    }
+
+    @Test
     void contextArgHelper_emittedOnlyWhenTheSchemaDeclaresContextArguments() {
-        var without = generate(emptySchema(), SessionHooks.NotConfigured.INSTANCE);
+        var without = generate(emptySchema(), SessionIdentityRows.empty());
         assertThat(without.methodSpecs()).extracting(m -> m.name())
             .doesNotContain("requiredContextArg");
 
         var with = generate(
             schemaWithContextArgs(new ResolvedContextArg("userId", ClassName.get(String.class), List.of())),
-            SessionHooks.NotConfigured.INSTANCE);
+            SessionIdentityRows.empty());
         assertThat(with.methodSpecs()).extracting(m -> m.name())
             .contains("requiredContextArg");
     }
 
     @Test
     void nestedSingleConnectionDataSource_wrapsTheHostConnection() {
-        var spec = generate(emptySchema(), SessionHooks.NotConfigured.INSTANCE);
+        var spec = generate(emptySchema(), SessionIdentityRows.empty());
         var wrapper = spec.typeSpecs().stream()
             .filter(t -> t.name().equals("SingleConnectionDataSource"))
             .findFirst()

@@ -356,36 +356,6 @@ class RejectionSeverityCoverageTest {
                 new no.sikt.graphitron.model.diagnostics.ReflectionError.AmbiguousMethod
                     .Ambiguity.NameShared());
         }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.SeamParameterMissing.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.SeamParameterMissing(
-                "com.example.db.Routines", "connect", List.of("connect(org.jooq.Field)"));
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.SeamCandidateAmbiguous.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.SeamCandidateAmbiguous(
-                "com.example.Hooks", "mount",
-                List.of("mount(org.jooq.Configuration)", "mount(java.sql.Connection)"));
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.HookNotStatic.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.HookNotStatic(
-                "com.example.Hooks", "mount");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.HookThrowsChecked.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.HookThrowsChecked(
-                "com.example.Hooks", "mount", List.of("java.sql.SQLException"));
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.HandleTypeMismatch.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.HandleTypeMismatch(
-                "com.example.Hooks", "mount", "SessionHandleRecord",
-                "com.example.Hooks", "unmount", "String");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotDuplicated.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotDuplicated(
-                "com.example.Hooks", "mount", "Long");
-        }
-        if (permit == no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotMistyped.class) {
-            return new no.sikt.graphitron.model.diagnostics.ReflectionError.TenantSlotMistyped(
-                "com.example.Hooks", "mount", "tenant", "Optional<String>", "Long");
-        }
         // UpdateRowsError sub-seal of AuthorError. One sample per arm; Diagnostics.compute's
         // switch on Rejection.AuthorError catches the whole sub-family uniformly (Error severity).
         if (permit == no.sikt.graphitron.model.diagnostics.UpdateRowsError.NoUniqueKeyCoverage.class) {

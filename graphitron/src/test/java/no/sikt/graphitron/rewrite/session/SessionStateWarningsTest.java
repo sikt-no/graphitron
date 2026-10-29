@@ -16,15 +16,14 @@ import no.sikt.graphitron.model.config.SessionStateConfig;
  *
  * <p>Exactly one rule survives: {@code no-session-state}. The retired
  * {@code session-state-convention-fence} graded a fence level graphitron could see only while it
- * generated the GUC set itself; against a reflected method reference the build cannot tell a
+ * generated the GUC set itself; against a consumer's callback the build cannot tell a
  * definer-rights routine call from a plain {@code set_config}, so a configured mount raises
  * nothing and the integrity gradient lives in the security guide.
  */
 @UnitTier
 class SessionStateWarningsTest {
 
-    private static final SessionStateConfig METHOD_HOOKS =
-        SessionStateConfig.from("com.example.db.Routines#connect", "com.example.db.Routines#disconnect");
+    private static final SessionStateConfig CALLBACKS = SessionStateConfig.from("com.example.Identity", null, null);
 
     @Test
     void noSessionState_warnsUnsecured() {
@@ -39,13 +38,14 @@ class SessionStateWarningsTest {
 
     @Test
     void noSessionState_messageTeachesTheMountShapes() {
-        // Being the single build-time signal about identity, the message names the three mount
-        // shapes a consumer chooses between and points at the security guide, instead of only
-        // saying to configure something.
+        // Being the single build-time signal about identity, the message names the callback form
+        // and the three mount shapes a consumer chooses between and points at the security guide,
+        // instead of only saying to configure something.
         assertThat(SessionStateWarnings.forConfig(SessionStateConfig.none()))
             .singleElement()
             .isInstanceOfSatisfying(BuildWarning.LintFinding.class, lf -> assertThat(lf.message())
-                .contains("<mount>")
+                .contains("<sessionState/>")
+                .contains("SessionState")
                 .contains("definer-rights routine")
                 .contains("token verified in-database")
                 .contains("session variable set by convention")
@@ -53,9 +53,9 @@ class SessionStateWarningsTest {
     }
 
     @Test
-    void configuredMethodHooks_raiseNothing() {
-        // Graphitron cannot see the fence level of a reflected mount, so a schema with a
-        // configured mount raises nothing rather than asserting an exposure it cannot ground.
-        assertThat(SessionStateWarnings.forConfig(METHOD_HOOKS)).isEmpty();
+    void configuredCallbacks_raiseNothing() {
+        // Graphitron cannot see the fence level of a consumer's mount callback, so a schema with
+        // a configured session raises nothing rather than asserting an exposure it cannot ground.
+        assertThat(SessionStateWarnings.forConfig(CALLBACKS)).isEmpty();
     }
 }

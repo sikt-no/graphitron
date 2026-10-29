@@ -1263,7 +1263,7 @@ public final class ConnectionRuntimeClassGenerator {
                                               ClassName requestTenants, CodeBlock tenantColumn,
                                               ClassName errorRouter, ClassName columnValues,
                                               ClassName sessionMountException) {
-        var payload = payloadParams(identity, tenantConnections);
+        var payload = payloadParams(identity, self);
         boolean mounts = identity.emitsHookImplementation();
         TypeName handleType = identity.handleType().orElse(null);
         boolean handled = handleType != null;

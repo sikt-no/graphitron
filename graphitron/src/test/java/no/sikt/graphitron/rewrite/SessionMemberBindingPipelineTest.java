@@ -1,12 +1,8 @@
 package no.sikt.graphitron.rewrite;
 
-import no.sikt.graphitron.model.config.SessionStateConfig;
-import no.sikt.graphitron.model.config.RunContext;
 import no.sikt.graphitron.rewrite.model.CallSiteExtraction;
 import no.sikt.graphitron.rewrite.model.ParamSource;
 import no.sikt.graphitron.rewrite.model.SqlGeneratingField;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
-import no.sikt.graphitron.rewrite.session.SessionHooksFixtures;
 import no.sikt.graphitron.rewrite.test.tier.PipelineTier;
 import org.junit.jupiter.api.Test;
 
@@ -15,30 +11,21 @@ import java.util.List;
 import static org.assertj.core.api.Assertions.assertThat;
 
 /**
- * SDL to classified schema to validated schema for {@code $session.<member>}: a member binding
- * classifies to the member variants on a {@code @service} and on a {@code @condition}, and the
- * validator checks it against the handle type's decoded members (an unknown member, a parameter
- * type that is not the member's, a boxed member bound to a primitive parameter). The handle is the
- * record {@code SessionHookStub.RecordHandle(long brukerId, Long sokerId)}, resolved through the
- * real session-hook resolution so the decode is the production one.
+ * SDL to classified schema for {@code $session.<member>}: a member binding classifies to the member
+ * variants on a {@code @service} and on a {@code @condition}, a session-reading condition takes the
+ * statement's {@code DSLContext}, and the placements that cannot run one are rejected. The sigil
+ * lowers structurally, without judging the session configuration; whether a binding names a member
+ * the handle offers, or a parameter of the right type, is the store's verdict and is pinned by
+ * {@link SessionIdentityRejectionPipelineTest}.
  */
 @PipelineTier
 class SessionMemberBindingPipelineTest {
 
-    private static final String STUB = "no.sikt.graphitron.rewrite.SessionHookStub";
     private static final String CONDITIONS = "no.sikt.graphitron.rewrite.TestConditionStub";
     private static final String SERVICES = "no.sikt.graphitron.rewrite.TestServiceStub";
 
-    private static SessionHooks recordHandleHooks() {
-        var catalog = new ServiceCatalog(new BuildContext(null, null, new RunContext(
-            List.of(), java.nio.file.Path.of("."), "SessionMemberBindingPipelineTest",
-            java.nio.file.Path.of("."), "unused", "unused")));
-        return catalog.resolveSessionHooks(
-            SessionStateConfig.from(STUB + "#mountRecordHandle", null), null).hooks();
-    }
-
     private static GraphitronSchema build(String sdl) {
-        return SessionHooksFixtures.withHooks(TestSchemaHelper.buildSchema(sdl), recordHandleHooks());
+        return TestSchemaHelper.buildSchema(sdl);
     }
 
     private static List<String> errors(GraphitronSchema schema) {
@@ -65,7 +52,7 @@ class SessionMemberBindingPipelineTest {
     // ===== @service =====
 
     @Test
-    void serviceMemberBinding_classifiesToTheMemberVariant_andAcceptsABoxedParameterOfAPrimitiveMember() {
+    void serviceMemberBinding_classifiesToTheMemberVariant() {
         var schema = build(serviceSdl("brukerOf", "brukerId: $session.brukerId"));
 
         var field = (no.sikt.graphitron.rewrite.model.ServiceField) schema.field("Query", "bruker");
@@ -73,26 +60,6 @@ class SessionMemberBindingPipelineTest {
             assertThat(entry).isInstanceOfSatisfying(
                 no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandleMember.class,
                 member -> assertThat(member.member()).isEqualTo("brukerId")));
-        assertThat(errors(schema)).isEmpty();
-    }
-
-    @Test
-    void serviceMemberBinding_primitiveParameterOfAPrimitiveMember_isAccepted() {
-        assertThat(errors(build(serviceSdl("brukerOfPrimitive", "brukerId: $session.brukerId")))).isEmpty();
-    }
-
-    @Test
-    void serviceMemberBinding_boxedMemberIntoAPrimitiveParameter_rejectsNamingBothDeclarations() {
-        assertThat(errors(build(serviceSdl("sokerOfPrimitive", "sokerId: $session.sokerId"))))
-            .singleElement().asString()
-            .contains("sokerId").contains("long").contains("java.lang.Long");
-    }
-
-    @Test
-    void serviceMemberBinding_unknownMember_rejectsListingTheReadableMembers() {
-        assertThat(errors(build(serviceSdl("brukerOf", "brukerId: $session.nope"))))
-            .singleElement().asString()
-            .contains("no readable member 'nope'").contains("[brukerId, sokerId]");
     }
 
     // ===== @condition =====
@@ -107,7 +74,6 @@ class SessionMemberBindingPipelineTest {
         assertThat(param.readSource()).isEqualTo(no.sikt.graphitron.rewrite.model.CallParam.ReadSource.SESSION);
         assertThat(field.conditionsReadSession()).isTrue();
         assertThat(field.conditionsReadRequestContext()).isFalse();
-        assertThat(errors(schema)).isEmpty();
     }
 
     @Test
@@ -116,17 +82,6 @@ class SessionMemberBindingPipelineTest {
 
         var param = ((SqlGeneratingField) schema.field("Query", "films")).filters().get(0).callParams().get(0);
         assertThat(param.extraction()).isInstanceOf(CallSiteExtraction.SessionHandleRead.class);
-        assertThat(errors(schema)).isEmpty();
-    }
-
-    @Test
-    void conditionMemberBinding_unknownMember_andTypeMismatch_rejectAtTheirCoordinate() {
-        assertThat(errors(build(conditionSdl("sessionBoxed", "brukerId: $session.nope"))))
-            .singleElement().asString().contains("Query.films").contains("no readable member 'nope'");
-        assertThat(errors(build(conditionSdl("sessionWrongType", "brukerId: $session.brukerId"))))
-            .singleElement().asString().contains("java.lang.String").contains("long");
-        assertThat(errors(build(conditionSdl("sessionBoxedIntoPrimitive", "sokerId: $session.sokerId"))))
-            .singleElement().asString().contains("sokerId");
     }
 
     @Test
@@ -144,7 +99,6 @@ class SessionMemberBindingPipelineTest {
         assertThat(params).extracting(p -> p.readSource()).contains(
             no.sikt.graphitron.rewrite.model.CallParam.ReadSource.ARGUMENT_MAP,
             no.sikt.graphitron.rewrite.model.CallParam.ReadSource.SESSION);
-        assertThat(errors(schema)).isEmpty();
     }
 
     @Test
@@ -156,13 +110,6 @@ class SessionMemberBindingPipelineTest {
     }
 
     @Test
-    void sessionBinding_withNoSessionHooksConfigured_rejectsNamingTheConfiguration() {
-        var schema = TestSchemaHelper.buildSchema(conditionSdl("sessionBoxed", "brukerId: $session.brukerId"));
-        assertThat(errors(schema)).singleElement().asString()
-            .contains("$session.brukerId").contains("no method-hook <sessionState>");
-    }
-
-    @Test
     void parameterSources_theMemberVariantIsDistinctFromTheWholeHandle() {
         assertThat(new ParamSource.SessionHandleMember("a")).isNotEqualTo(new ParamSource.SessionHandle());
     }
@@ -170,9 +117,8 @@ class SessionMemberBindingPipelineTest {
     // ===== Where a session-reading condition cannot run =====
 
     private static GraphitronSchema buildFanned(String sdl) {
-        return SessionHooksFixtures.withHooks(TestSchemaHelper.buildSchema(sdl,
-            no.sikt.graphitron.common.configuration.TestConfiguration.testContext().withTenantColumn("film_id")),
-            recordHandleHooks());
+        return TestSchemaHelper.buildSchema(sdl,
+            no.sikt.graphitron.common.configuration.TestConfiguration.testContext().withTenantColumn("film_id"));
     }
 
     private static final String SESSION_CONDITION = """

@@ -425,7 +425,7 @@ class TestConditionStub {
     }
 
     /** The whole handle. */
-    public static Condition sessionWhole(org.jooq.Table<?> table, SessionHookStub.RecordHandle handle) {
+    public static Condition sessionWhole(org.jooq.Table<?> table, SessionHandleStub.RecordHandle handle) {
         throw new UnsupportedOperationException();
     }
 

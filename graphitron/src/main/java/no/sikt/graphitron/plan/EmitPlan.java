@@ -114,6 +114,17 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                                    String outputPackage,
                                    ResolvedKeyProjections.Projections projections,
                                    StoreHandle store) {
+        return produce(schema, federationLink, usesOneOf, outputPackage, projections, store,
+            store == null ? SessionIdentityRows.empty() : SessionIdentityRows.read(store));
+    }
+
+    private static EmitPlan produce(GraphitronSchema schema,
+                                    boolean federationLink,
+                                    boolean usesOneOf,
+                                    String outputPackage,
+                                    ResolvedKeyProjections.Projections projections,
+                                    StoreHandle store,
+                                    SessionIdentityRows sessionIdentity) {
         var units = new GeneratedUnits(outputPackage);
         var globals = new ArrayList<GlobalCommand>();
 
@@ -145,7 +156,6 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         globals.add(one(GlobalUnitKind.SELECTION_OCCURRENCES, units.selectionOccurrences()));
         globals.add(one(GlobalUnitKind.NESTING_COORDINATES, units.nestingCoordinates()));
         globals.add(one(GlobalUnitKind.ORDER_BY_RESULT, units.orderByResult()));
-        var sessionIdentity = store == null ? SessionIdentityRows.empty() : SessionIdentityRows.read(store);
         globals.add(connectionRuntime(units, sessionIdentity, schema.requestTenantKeyType().isPresent()));
         globals.add(one(GlobalUnitKind.CONNECTION_INSTRUMENTATION,
             units.singleton(GeneratedUnits.SUB_SCHEMA, "GraphitronConnectionInstrumentation")));
@@ -255,6 +265,21 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
                                                String outputPackage) {
         return produce(schema, federationLink, usesOneOf, outputPackage,
             ResolvedKeyProjections.Projections.empty(), null);
+    }
+
+    /**
+     * {@link #produceWithoutStore(GraphitronSchema, boolean, boolean, String)} for a caller that
+     * states the graph's session identity itself, the way a driver without a store states the
+     * rest: the connection runtime plans the session units exactly when {@code sessionIdentity}
+     * says the graph supplies identity.
+     */
+    public static EmitPlan produceWithoutStore(GraphitronSchema schema,
+                                               boolean federationLink,
+                                               boolean usesOneOf,
+                                               String outputPackage,
+                                               SessionIdentityRows sessionIdentity) {
+        return produce(schema, federationLink, usesOneOf, outputPackage,
+            ResolvedKeyProjections.Projections.empty(), null, sessionIdentity);
     }
 
     /** A fixed-substrate global command committing exactly one unit. */

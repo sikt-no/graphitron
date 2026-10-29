@@ -188,7 +188,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
 
         var resultContext = ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, EXECUTION_RESULT);
 
-        var sessionStateType = ClassName.get(outputPackage + ".schema", ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME);
+        var sessionStateType = ClassName.get(errorRouter.packageName(), ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME);
         var payload = sessionHooks.emitsHookImplementation()
             ? java.util.List.of(ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT) : java.util.List.<String>of();
         var beginExecuteOperationBuilder = MethodSpec.methodBuilder("beginExecuteOperation")
