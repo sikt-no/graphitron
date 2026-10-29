@@ -154,8 +154,9 @@ The library has no test tree of its own, so the tests live in graphitron-sakila-
 
 ## Relation to other items
 
-* **R1120** (`owned-session-state-supplied-per-request`): the session-identity callback this flow carries. Its implementation is on trunk, awaiting its Done gate; `sessionMountFailure` builds on its emitted `SessionMountException`.
-* **R1101** (Spec): the runtime's fluent `withMutationHook` chains after the `runtime(dataSource, dialect, Settings)` factory in the adapter's runtime line; the new `newGraphQL` overload must keep its per-field transaction scope working under an extra instrumentation.
+* **R1120** (`owned-session-state-supplied-per-request`): the session-identity callback this flow carries. Its implementation is on trunk and in a review rework round; `sessionMountFailure` builds on its emitted `SessionMountException`.
+* **R1101** (Spec): the per-mutation-field transaction scope is a graphitron instrumentation; the new `newGraphQL` overload must keep it working under an extra instrumentation.
+* **R1129** (Backlog): the mutation hook registered on the runtime (`withMutationHook`) would chain after the `runtime(dataSource, dialect, Settings)` factory in the adapter's runtime line; no conflict.
 * **R1097** (Done): added `clientFault` and documented the instrumentation footgun; this item removes the footgun and layers `rejectedIdentity` over the hook.
 * **R1102** (Spec): `$session` by member; opptak needs it alongside this item.
 * **R1108** (Backlog) and **R530** (Backlog): the manual describes the shape this item lands.
