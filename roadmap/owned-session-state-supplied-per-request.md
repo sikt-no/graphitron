@@ -1,7 +1,7 @@
 ---
 id: R1120
 title: "The POM switches session identity on; the consumer supplies it per request as code"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: runtime-connection
@@ -190,3 +190,12 @@ The spec compares "on the erased class, with boxing accepted in one direction on
 The review of the transactional-outbox item records these as R1120's to state (its round 3 addendum), and this item is the only place they can be settled. (a) The emitted `TenantConnections.sessionMember_<name>` accessors are what `$session.<member>` call sites and the outbox emit call. They are generated today from `SessionHooks.Handled.members()` and nothing in this plan names them; "The handle's `HANDLE_DATA_KEY` publication and `TenantConnections.sessionHandle` are unchanged" should say the member accessors are emitted from the member relation and keep their names and signatures. (b) The `$session` defect arms are over every captured argMapping pair, not only those under `@service` and `@condition`, so a `$session` in a schema position another directive owns is checked too; the plan should say so, and say that pairs authored in the configuration rather than the SDL (the outbox payload) are not seen by these arms. What would satisfy it: one sentence each in The store or What the generators read.
 
 Non-blocking, not part of the verdict: the generator that adds `SessionState session` to the factory (`GraphitronFacadeGenerator`) and the generator for the new `MountedSession` and `SessionState` units are not among the generators listed as taking the session-identity value; the plan's "take the value in place of `SessionHooks`" covers three, and the factory emitter reads neither the carrier nor the value today, only the classified context arguments the retired `SessionMount` root fed.
+
+## Delivery notes
+
+Shipped as one commit. Where it differs from the plan above, and what the reviewer should look at:
+
+* **The defect shape.** The `$session` defects are stated once per mapping string in `graphitron_entry_defect` and in detail per offending entry in a new child relation, `graphitron_argmapping_pair_defect` (keyed by the entry plus the code, with a foreign key to the string's row). The fact schema refuses a set folded into one value, so the first design, one aggregated detail per string, failed `CollectionValuedColumnGateTest`; the child relation is what replaced it. `SupertypeSignatureGateTest` records the parent and child as one defect at two grains by decision.
+* **Nested handle classes** are named by binary name (`Outer$Inner`) and are read by the code gatherer on purpose, with a file row written beside them, because the census proper skips nested classes.
+* **The generated factory still takes the declared `contextArguments`**, so a schema that names `claims` as a context argument still gets `claims` as a factory parameter after the `SessionState`; only the mount's payload parameters stopped being factory parameters.
+* **Tests not written from the Tests section:** a store-tier case for a handle in a sibling module or the jOOQ package beyond what the sakila executions exercise, a unit-tier case driving generated `PinnedConnection` without GraphQL beyond `SessionHookExecutionTest`'s direct acquire cases, and a dev-tooling test of `<devDatabase><session>` resolution in `graphitron-mcp`. The dev path is covered end to end by `DevExecuteExecutionTest` and the generated-executor tests.
