@@ -1,16 +1,18 @@
 ---
 id: R877
 title: "The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation"
-status: In Progress
+status: Spec
 bucket: cleanup
 priority: 2
 theme: model-cleanup
 depends-on: []
 created: 2026-08-29
-last-updated: 2026-09-01
+last-updated: 2026-10-29
 ---
 
 # The graphitron-model house cleaning party: relation descriptions are argument transcripts, so nobody reads them and the same fact gets a second relation
+
+> Returned to Spec on 2026-10-29: the plan was written against code that has since moved (stale since the last update on this item), so it needs re-reading against the current tree before it goes back to Ready.
 
 A relation's comment is supposed to tell you what one of its rows is. Most of them argue a case
 instead. The reader who wanted a definition gets an essay, stops reading, and adds a new relation for

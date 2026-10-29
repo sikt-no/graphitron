@@ -1,16 +1,18 @@
 ---
 id: R851
 title: "Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves"
-status: In Progress
+status: Spec
 bucket: testing
 priority: 3
 theme: classification-model
 depends-on: [derived-read-cost-is-a-shape-problem]
 created: 2026-08-27
-last-updated: 2026-08-27
+last-updated: 2026-10-29
 ---
 
 # Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves
+
+> Returned to Spec on 2026-10-29: the plan was written against code that has since moved (stale since the last update on this item), so it needs re-reading against the current tree before it goes back to Ready.
 
 The spec-by-example corpus (`graphitron/src/test/resources/corpus/`, 57 documents plus the
 prelude) carries two assertion mechanisms for one job. `@expectEquals` states what a fact-store
