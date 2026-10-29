@@ -519,8 +519,7 @@ classified records have no reader left and can go with the walk.
   supersedes the row of its function that a `@routine` read with nothing after it has handed since
   `0428ef411`, and `graphitron_routine_result` and the landing's row with no place go. Today Tilgang
   holds a ROW and an OBJECT, and Brukertilgang's three bound children have no start and no key.
-* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "A routine's result is an object
-  of its function's record class", "Every field has a path, the written one or the one discovery implies",
+* **A path starts at its parent's table and targets a table** `blocked`, off the critical path, on "A routine's result is an object of its function's record class", "Every field has a path, the written one or the one discovery implies",
   "An error-carrying payload's data element holds its class" and "A plain object's first key is read off its members".
   A table-bound parent starts every field's path on its binding, whatever its result, so for almost
   every field the start is known before the results and the editor completes on an unreached type;
