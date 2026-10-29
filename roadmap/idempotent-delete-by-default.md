@@ -1,7 +1,7 @@
 ---
 id: R1124
 title: "A DELETE whose key matches no row is idempotent by default, and failing on it is the opt-in"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 3
 theme: mutation-write
@@ -205,6 +205,20 @@ The argument table row in `mutation.adoc`:
 > A `multiRow: true` `DELETE` whose input covers a primary key or unique key follows the same rule. One whose input covers no key deletes whatever its filter matches and names no key, so neither reading applies to it, and `failOnMissing` is rejected there.
 
 The directive description in `directives.graphqls` carries the first paragraph and the admission sentence. Also updated: the payload-returning section's "unless the field sets `missingAsDeleted: true`" sentences and the errors-field bullet in `mutation.adoc`; `migrating-from-legacy.adoc` (Graphitron 9's DELETE behaviour is now the default; a Graphitron 9 schema with a unique-key DELETE input adds `failOnMissing: true` or keys by the primary key, and one keyed by plain primary-key fields whose ids encode more than the primary key adds `failOnMissing: true` or keys by the node id); `typed-rejection.adoc` and `code-generation-triggers.adoc` where they name the old arms; the regenerated `supported-directives.adoc`.
+
+## Implementation notes
+
+Landed as specified, with these choices the spec left open or that the tree forced:
+
+- *The `buildDmlFetcher` seam is deferred.* It takes a `Function<TypeName, CodeBlock>` that declares `payload`, handed the fetcher's value type, rather than a ready block. The projected-return terminator registers its reentry companion and resolves the tenant DSL as it renders, so computing the block before the skeleton runs would move those registrations ahead of the skeleton's own; the deferred form keeps every other caller's output byte-identical.
+- *`deleteReturning()` reads a static helper.* A compact constructor runs before the record's components are assigned, so the constructor's echo check and the public accessor both call `deleteReturningOf(returnExpression, write)`.
+- *The echo-value sourcing* is `missingRowEchoValues`, a primary-key-then-tail map from column to value expression; `missingRowEcho` builds the record over it in its order, and `missingRowEchoEncoded` looks each encoder parameter up in it, for the single `ID` path.
+- *The single-row miss branch* is one helper, `singleRowMissBranch`, shared by the payload single-record skeleton and the direct single `ID` path.
+- *A fixture beyond the spec's list:* `deleteInventoryItemsMissingAsDeleted`, which the spec's fixture list does not name, folds into `deleteInventoryItems` (the same declaration without the argument); `LegacyNodeKeyExecutionTest`'s echo case retargets it.
+- *Tests beyond the spec's list:* a direct single `ID` DELETE answering a missing node id as sent (`deleteFilmActorByNodeId_missingKey_answersTheSentIdRatherThanNull`), a composite node id missing then existing on the direct `[ID!]` path, `SuperkeyNodeIdDmlClassificationTest`'s `deleteFilmCategoriesByKeyFailOnMissing` (the strict reading reads the tail back from the deleted row), `RecordCarrierEchoReturningInvariantTest`'s direct-return cases, and `FetcherPipelineTest`'s split of the bulk-DELETE emit pin into the per-row loop (keyed) and the row-tuple `IN` (broadcast).
+- *Docs placement.* The "When a key matches no row" section is promoted out of "Payload-returning DELETE" to its own section, "When a DELETE key matches no row", since it now covers the direct return too; its anchor is unchanged.
+- *Neighbouring bodies.* R1100 and R1123 reached Done before this landed, so only R1113's mention is reworded; the other two files were already gone.
+- *Not done here:* announcing the landing commit to the sis port session, which this session has no channel to; the user relays it.
 
 ## Retired vocabulary
 
