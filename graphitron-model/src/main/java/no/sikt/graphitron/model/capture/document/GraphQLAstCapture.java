@@ -1078,7 +1078,7 @@ public final class GraphQLAstCapture {
         var t = GRAPHQL_DIRECTIVE_ARGUMENT;
         var ranked = dsl
             .select(w.DIRECTIVE_NAME, a.NAME.as(ARGUMENT_NAME), a.TYPE_SDL, a.NAMED_TYPE,
-                a.NON_NULL, a.IS_LIST, a.ITEM_NON_NULL, a.DEFAULT_VALUE_SDL, a.DESCRIPTION,
+                a.NON_NULL, a.IS_LIST, a.ITEM_NON_NULL, a.LIST_DEPTH, a.DEFAULT_VALUE_SDL, a.DESCRIPTION,
                 a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN,
                 rowNumber().over(partitionBy(w.DIRECTIVE_NAME, a.NAME).orderBy(
                     a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK),
@@ -1093,7 +1093,7 @@ public final class GraphQLAstCapture {
             .asTable("ranked");
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.DIRECTIVE_NAME, t.ARGUMENT_NAME, t.ORDINAL, t.TYPE_SDL,
-                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.DEFAULT_VALUE_SDL,
+                t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                 t.DESCRIPTION, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.TOUCHED_AT,
                 t.SITE_GRAPH_REF, t.SITE_SOURCE_REF, t.SITE_LINE_REF, t.SITE_COLUMN_REF)
             .select(dsl
@@ -1101,7 +1101,7 @@ public final class GraphQLAstCapture {
                     ranked.field(ARGUMENT_NAME), ranked.field(ORDINAL),
                     ranked.field(a.TYPE_SDL), ranked.field(a.NAMED_TYPE), ranked.field(a.NON_NULL),
                     ranked.field(a.IS_LIST), ranked.field(a.ITEM_NON_NULL),
-                    ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
+                    ranked.field(a.LIST_DEPTH), ranked.field(a.DEFAULT_VALUE_SDL), ranked.field(a.DESCRIPTION),
                     ranked.field(a.SOURCE_NAME), ranked.field(a.SOURCE_LINE),
                     ranked.field(a.SOURCE_COLUMN), val(touchedAt, t.TOUCHED_AT),
                     val(graph, t.SITE_GRAPH_REF), ranked.field(a.SOURCE_NAME),
@@ -1114,6 +1114,7 @@ public final class GraphQLAstCapture {
             .set(t.NON_NULL, excluded(t.NON_NULL))
             .set(t.IS_LIST, excluded(t.IS_LIST))
             .set(t.ITEM_NON_NULL, excluded(t.ITEM_NON_NULL))
+            .set(t.LIST_DEPTH, excluded(t.LIST_DEPTH))
             .set(t.DEFAULT_VALUE_SDL, excluded(t.DEFAULT_VALUE_SDL))
             .set(t.DESCRIPTION, excluded(t.DESCRIPTION))
             .set(t.SOURCE_NAME, excluded(t.SOURCE_NAME))

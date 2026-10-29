@@ -1699,6 +1699,7 @@ CREATE TABLE graphql_directive_argument (
   non_null          BOOLEAN NOT NULL,
   is_list           BOOLEAN NOT NULL,
   item_non_null     BOOLEAN,
+  list_depth        INT     NOT NULL,
   default_value_sdl VARCHAR,
   description       VARCHAR,
   source_name       VARCHAR NOT NULL,
@@ -1714,6 +1715,7 @@ CREATE TABLE graphql_directive_argument (
   FOREIGN KEY (graph_name, directive_name, argument_name)
     REFERENCES graphql_directive_argument_element (graph_name, directive_name, argument_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
+  CHECK (is_list = (list_depth > 0)),
   FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE SET NULL,
@@ -1732,6 +1734,7 @@ COMMENT ON COLUMN graphql_directive_argument.named_type IS 'the named type the e
 COMMENT ON COLUMN graphql_directive_argument.non_null IS 'outermost non-null wrapper present';
 COMMENT ON COLUMN graphql_directive_argument.is_list IS 'a list wrapper is present';
 COMMENT ON COLUMN graphql_directive_argument.item_non_null IS 'item-level non-null when is_list; NULL otherwise';
+COMMENT ON COLUMN graphql_directive_argument.list_depth IS 'how many list wrappers the expression has: 0 for a named type, 1 for a list of one, 2 for a list of lists. Carried from the entry rather than left behind by the anchoring, because the four columns beside it describe a type expression exactly when this is 0 or 1 and a reader that must tell those from a deeper one has nothing else to ask';
 COMMENT ON COLUMN graphql_directive_argument.default_value_sdl IS 'rendered default; the value an application inherits when it omits the argument';
 COMMENT ON COLUMN graphql_directive_argument.description IS 'SDL description string, when the author wrote one';
 COMMENT ON COLUMN graphql_directive_argument.source_name IS 'the SDL file the formal argument was declared in, which is its directive''s one definition''s file';

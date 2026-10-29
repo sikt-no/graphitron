@@ -1,0 +1,16 @@
+# A directive's formal argument keeps how many lists wrap its type, as a field's argument does: the
+# list flag and the item flag beside it describe a type exactly only at depth 0 or 1, so [Int] and
+# [[Int!]] are told apart by the depth alone.
+
+directive @shelf(a: Int, b: [Int], c: [[Int!]]) on OBJECT
+
+type Shelf @shelf(a: 1) {
+  name: String
+}
+
+extend schema @expectEquals(relation: "graphql_directive_argument", where: "directive_name = 'shelf'", rows: """
+  argument_name, is_list, item_non_null, list_depth
+  a,             FALSE,   ,              0
+  b,             TRUE,    FALSE,         1
+  c,             TRUE,    FALSE,         2
+  """)
