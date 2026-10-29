@@ -71,7 +71,7 @@ class SortKeyOrderPipelineTest {
             }
             """);
         var order = fixedOrder(schema, "Query", "films");
-        assertThat(described(order)).containsExactly("language.name ASC");
+        assertThat(described(order)).containsExactly("language.name ASC", "film_id ASC");
         var key = (OrderBySpec.SortKeyEntry) order.entries().getFirst();
         assertThat(key.ordinal()).isZero();
         assertThat(key.nullable()).as("a film with no original language sorts on NULL").isTrue();
@@ -88,7 +88,7 @@ class SortKeyOrderPipelineTest {
                 people: [StintPerson!]! @defaultOrder(fields: [{name: "valid_from", path: [{key: "stint_single_person_fkey"}]}])
             }
             """);
-        assertThat(described(fixedOrder(schema, "Query", "people"))).containsExactly("stint_single.valid_from ASC");
+        assertThat(described(fixedOrder(schema, "Query", "people"))).containsExactly("stint_single.valid_from ASC", "person_id ASC");
     }
 
     @Test
@@ -99,7 +99,7 @@ class SortKeyOrderPipelineTest {
                 people: [StintPerson!]! @defaultOrder(fields: [{name: "label", path: [{key: "stint_badge_person_fkey"}]}])
             }
             """);
-        assertThat(described(fixedOrder(schema, "Query", "people"))).containsExactly("stint_badge.label ASC");
+        assertThat(described(fixedOrder(schema, "Query", "people"))).containsExactly("stint_badge.label ASC", "person_id ASC");
     }
 
     @Test
@@ -249,7 +249,7 @@ class SortKeyOrderPipelineTest {
             }
             """.formatted(STUB));
         var order = fixedOrder(schema, "Query", "films");
-        assertThat(described(order)).containsExactly("rating() DESC");
+        assertThat(described(order)).containsExactly("rating() DESC", "film_id DESC");
         var method = (OrderBySpec.SortKey.Method) ((OrderBySpec.SortKeyEntry) order.entries().getFirst()).key();
         assertThat(method.method().className()).isEqualTo(STUB);
     }
