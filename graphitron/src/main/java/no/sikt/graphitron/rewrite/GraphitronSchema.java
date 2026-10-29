@@ -11,7 +11,6 @@ import no.sikt.graphitron.rewrite.model.Presence;
 import no.sikt.graphitron.rewrite.model.ReachableSourceShape;
 import no.sikt.graphitron.rewrite.model.Source;
 import no.sikt.graphitron.rewrite.model.TenantScopes;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -65,15 +64,6 @@ import no.sikt.graphitron.model.diagnostics.ValidationError;
  * visited, plus the schema-grain minted names. The plan's facet producers read it by coordinate.
  * {@link ConnectionSynthesisRelation#EMPTY} for every schema built without the classify walk.
  *
- * <p>{@link #sessionHooks} is the resolved session-hook carrier
- * ({@link no.sikt.graphitron.rewrite.session.SessionHooks}), minted by
- * {@link GraphitronSchemaBuilder} from the authored {@code <sessionState>} strings and hung
- * here upstream of the contextArgument classification, so the mount's payload parameters feed
- * the classifier as an additional root. Defaults to
- * {@link no.sikt.graphitron.rewrite.session.SessionHooks.NotConfigured} the way
- * {@link #tenantScopes} defaults, so the population is a function of the model's own
- * components rather than of which constructor a caller used.
- *
  * <p>{@link #catalogNodeDecodes} is the set of {@code decode<TypeName>} helpers the walk minted for
  * {@code @table} types that a {@code @nodeId} leaf decodes from catalog node metadata, sorted by type
  * name. It is the set the walk minted rather than a reading of the classified types, because such a
@@ -94,7 +84,6 @@ public record GraphitronSchema(
     ConnectionSynthesisRelation connectionSynthesis,
     OperationMemberRelation operationMembers,
     DeliveryFactRelation deliveryFacts,
-    SessionHooks sessionHooks,
     List<HelperRef.Decode> catalogNodeDecodes
 ) {
 
@@ -106,7 +95,6 @@ public record GraphitronSchema(
         connectionSynthesis = connectionSynthesis == null ? ConnectionSynthesisRelation.EMPTY : connectionSynthesis;
         operationMembers = operationMembers == null ? OperationMemberRelation.EMPTY : operationMembers;
         deliveryFacts = deliveryFacts == null ? DeliveryFactRelation.EMPTY : deliveryFacts;
-        sessionHooks = sessionHooks == null ? SessionHooks.NotConfigured.INSTANCE : sessionHooks;
         catalogNodeDecodes = catalogNodeDecodes == null ? List.of() : List.copyOf(catalogNodeDecodes);
     }
 
@@ -153,7 +141,7 @@ public record GraphitronSchema(
             ContextArgumentClassifier.classify(fields.values()), List.of(), Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY,
             ConnectionSynthesisRelation.EMPTY, OperationMemberRelation.EMPTY,
-            DeliveryFactRelation.EMPTY, SessionHooks.NotConfigured.INSTANCE, List.of());
+            DeliveryFactRelation.EMPTY, List.of());
     }
 
     /**
@@ -249,32 +237,7 @@ public record GraphitronSchema(
                             DeliveryFactRelation deliveryFacts) {
         this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
             tenantScopes, tenantBindings, connectionSynthesis,
-            operationMembers, deliveryFacts, SessionHooks.NotConfigured.INSTANCE);
-    }
-
-    /**
-     * The {@link GraphitronSchemaBuilder} constructor with the resolved session-hook carrier
-     * ({@link SessionHooks}). The carrier sits upstream of the contextArgument classification:
-     * the classify call below takes it as an additional root, so a mount payload parameter
-     * becomes an ordinary name-keyed factory slot, unified with same-named {@code @service}
-     * declarations by the classifier's existing type-agreement fold.
-     */
-    public GraphitronSchema(Map<String, GraphitronType> types,
-                            Map<FieldCoordinates, GraphitronField> fields,
-                            Map<String, EntityResolution> entitiesByType,
-                            List<BuildWarning> warnings,
-                            List<ValidationError> diagnostics,
-                            Map<String, Arrival> arrivals,
-                            Map<FieldCoordinates, Set<ReachableSourceShape>> reachableSourceShapes,
-                            TenantScopes tenantScopes,
-                            TenantBindingIndex tenantBindings,
-                            ConnectionSynthesisRelation connectionSynthesis,
-                            OperationMemberRelation operationMembers,
-                            DeliveryFactRelation deliveryFacts,
-                            SessionHooks sessionHooks) {
-        this(types, fields, entitiesByType, warnings, diagnostics, arrivals, reachableSourceShapes,
-            tenantScopes, tenantBindings, connectionSynthesis, operationMembers, deliveryFacts,
-            sessionHooks, List.of());
+            operationMembers, deliveryFacts, List.of());
     }
 
     /**
@@ -295,12 +258,11 @@ public record GraphitronSchema(
                             ConnectionSynthesisRelation connectionSynthesis,
                             OperationMemberRelation operationMembers,
                             DeliveryFactRelation deliveryFacts,
-                            SessionHooks sessionHooks,
                             List<HelperRef.Decode> catalogNodeDecodes) {
         this(types, fields, groupByType(fields), Map.copyOf(entitiesByType), List.copyOf(warnings),
-            ContextArgumentClassifier.classify(fields.values(), sessionHooks), List.copyOf(diagnostics),
+            ContextArgumentClassifier.classify(fields.values()), List.copyOf(diagnostics),
             Map.copyOf(arrivals), Map.copyOf(reachableSourceShapes), tenantScopes, tenantBindings,
-            connectionSynthesis, operationMembers, deliveryFacts, sessionHooks, catalogNodeDecodes);
+            connectionSynthesis, operationMembers, deliveryFacts, catalogNodeDecodes);
     }
 
     /**
@@ -328,7 +290,7 @@ public record GraphitronSchema(
                             List<ValidationError> diagnostics) {
         this(types, fields, fieldsByType, entitiesByType, warnings, contextArguments, diagnostics, Map.of(), Map.of(),
             TenantScopes.None.INSTANCE, TenantBindingIndex.EMPTY, ConnectionSynthesisRelation.EMPTY,
-            OperationMemberRelation.EMPTY, DeliveryFactRelation.EMPTY, SessionHooks.NotConfigured.INSTANCE,
+            OperationMemberRelation.EMPTY, DeliveryFactRelation.EMPTY,
             List.of());
     }
 

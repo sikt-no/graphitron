@@ -31,7 +31,7 @@ public record ResolvedContextArg(String name, TypeName javaType, List<Site> site
      * The directive coordinate a context-argument reference came from. Every arm projects the
      * class + method names a message or a fix-it reads, so a consumer need not switch on the arm.
      */
-    public sealed interface Site permits Site.Method, Site.Carrier, Site.SessionMount {
+    public sealed interface Site permits Site.Method, Site.Carrier {
         String className();
         String methodName();
 
@@ -45,16 +45,6 @@ public record ResolvedContextArg(String name, TypeName javaType, List<Site> site
         record Carrier(ServiceMethodCall call) implements Site {
             @Override public String className() { return call.fqClassName(); }
             @Override public String methodName() { return call.methodName(); }
-        }
-
-        /**
-         * The {@code <sessionState>} {@code <mount>} method's payload-parameter population, so a
-         * mount-versus-{@code @service} type conflict names the {@code <mount>} element rather
-         * than only the routine class the reference happens to resolve to.
-         */
-        record SessionMount(MethodRef ref) implements Site {
-            @Override public String className() { return "<mount> " + ref.className(); }
-            @Override public String methodName() { return ref.methodName(); }
         }
     }
 }

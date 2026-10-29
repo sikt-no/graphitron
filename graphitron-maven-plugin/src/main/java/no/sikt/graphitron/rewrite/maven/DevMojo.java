@@ -882,7 +882,9 @@ public class DevMojo extends AbstractRewriteMojo {
             ? Boolean.parseBoolean(environment.get("GRAPHITRON_DEV_DB_ALLOW_CLAIMS_OVERRIDE"))
             : devDatabase != null && Boolean.TRUE.equals(devDatabase.allowClaimsOverride);
         return new DevDatabase(
-            new DevQueryExecutor.DbConfig(url, user, password, normalizedDialect, claims),
+            new DevQueryExecutor.DbConfig(url, user, password, normalizedDialect, claims,
+                firstNonBlank(environment.get("GRAPHITRON_DEV_SESSION"),
+                    devDatabase == null ? null : devDatabase.session)),
             allowClaimsOverride);
     }
 

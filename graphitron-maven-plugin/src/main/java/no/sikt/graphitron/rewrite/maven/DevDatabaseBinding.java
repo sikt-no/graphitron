@@ -41,6 +41,14 @@ public class DevDatabaseBinding {
      */
     String claims;
     /**
+     * The method that builds the request's session state from {@link #claims}, as
+     * {@code fqcn#method}: a public static method taking the claims {@code String} and returning
+     * the generated {@code SessionState}. Required when the schema configures
+     * {@code <sessionState>}; resolved against the project's compiled classes at dev run time, so
+     * it may live in the consumer's own module, which generation never loads.
+     */
+    String session;
+    /**
      * Opt-in for a per-call {@code claims} argument on the execute tool (multi-identity RLS
      * probing). Default off, so shared or sensitive dev databases keep one pinned identity.
      */

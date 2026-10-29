@@ -505,7 +505,8 @@ public class GraphQLRewriteGenerator {
         for (GlobalCommand command : plan.globals()) {
             writeCommand(command,
                 renderGlobal(command, schema, assembled, plan.typeUnits().schemaShapes(), tenantKeyType, tenantColumn,
-                    federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes()),
+                    federationLink, plan.errorChannels(), storeFacts.legacyKeyShapes(),
+                    plan.sessionIdentity()),
                 emittedThisRun);
         }
         var fixedRuntime = FixedRuntimeEmitter.render(store);
@@ -598,7 +599,8 @@ public class GraphQLRewriteGenerator {
                                         TypeName tenantKeyType, CodeBlock tenantColumn,
                                         boolean federationLink,
                                         no.sikt.graphitron.emit.ErrorChannelRelation errorChannels,
-                                        no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.Shapes legacyKeyShapes) {
+                                        no.sikt.graphitron.model.derive.StoreLegacyKeyShapes.Shapes legacyKeyShapes,
+                                        no.sikt.graphitron.emit.SessionIdentityRows sessionIdentity) {
         String outputPackage = ctx.outputPackage();
         return switch (command.kind()) {
             case GRAPHITRON_VALUES -> GraphitronValuesClassGenerator.generate();
@@ -614,8 +616,8 @@ public class GraphQLRewriteGenerator {
             case SELECTION_OCCURRENCES -> SelectionOccurrencesClassGenerator.generate(outputPackage);
             case NESTING_COORDINATES -> NestingCoordinatesClassGenerator.generate(schema.nestingReach());
             case ORDER_BY_RESULT -> OrderByResultClassGenerator.generate();
-            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, schema.sessionHooks(), tenantKeyType, tenantColumn);
-            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, schema.sessionHooks());
+            case CONNECTION_RUNTIME -> ConnectionRuntimeClassGenerator.generate(outputPackage, sessionIdentity, tenantKeyType, tenantColumn);
+            case CONNECTION_INSTRUMENTATION -> GraphitronConnectionInstrumentationGenerator.generate(outputPackage, tenantKeyType, sessionIdentity);
             case GRAPHITRON_CONTEXT, TRANSACTION_PROVIDER, CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION,
                  ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME -> throw new IllegalStateException(command.kind()
                 + " is written by FixedRuntimeEmitter and never planned");
@@ -623,8 +625,8 @@ public class GraphQLRewriteGenerator {
             case SCHEMA_CLASS -> GraphitronSchemaClassGenerator.generate(schema, assembled, schemaShapeRows, outputPackage, federationLink);
             case QUERY_NODE_FETCHER -> QueryNodeFetcherClassGenerator.generate(schema, outputPackage);
             case FACADE -> GraphitronFacadeGenerator.generate(schema, outputPackage, federationLink,
-                no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled));
-            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, schema.sessionHooks());
+                no.sikt.graphitron.model.schema.OneOfDirectiveSdl.usesOneOf(assembled), sessionIdentity);
+            case DEV_EXECUTOR -> GraphitronDevExecutorGenerator.generate(schema, outputPackage, sessionIdentity);
         };
     }
 

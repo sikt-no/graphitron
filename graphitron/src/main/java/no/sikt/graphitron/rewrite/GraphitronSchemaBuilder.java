@@ -363,20 +363,6 @@ public class GraphitronSchemaBuilder {
             ctx.schema, SchemaReachability.reachableTypeNames(ctx.schema, ctx.nodeDeclaration),
             classifiedFields, entitiesByType, ctx.types, ctx.tenantScopes, operationMembers,
             columnBindings);
-        // The session-hook resolution: the authored <sessionState> strings arrive on
-        // RunContext and are reflected here, the stage that owns ServiceCatalog, into the
-        // total resolved carrier the emit-side readers switch on. A reflection failure drains
-        // as a schema-wide, coordinate-less ValidationError (the same channel the reductions
-        // above use) and the carrier stays NotConfigured, so no hook unit is planned for a
-        // build that already failed.
-        var sessionHookResolution = ctx.svc.resolveSessionHooks(ctx.ctx().sessionStateConfig(),
-            ctx.tenantScopes instanceof no.sikt.graphitron.rewrite.model.TenantScopes.Configured configuredTenancy
-                ? configuredTenancy.tenantType()
-                : null);
-        for (var rejection : sessionHookResolution.rejections()) {
-            ctx.addDiagnostic(new ValidationError("<schema>",
-                rejection.prefixedWith("<sessionState>: "), SourceLocation.EMPTY));
-        }
         // The decode-coverage ledger's totality clause: every decoding @nodeId coordinate the walk
         // did not classify gets its NotReached row here, so an absent row downstream means one
         // thing only. Runs after the walk and writes only where a mint site left nothing.
@@ -385,7 +371,7 @@ public class GraphitronSchemaBuilder {
             ctx.types, Collections.unmodifiableMap(classifiedFields), entitiesByType, ctx.warnings(),
             ctx.diagnostics(), arrivals, reachableSourceShapes, ctx.tenantScopes, tenantBindings,
             connectionSynthesis, operationMembers, deliveryFacts,
-            sessionHookResolution.hooks(), ctx.catalogNodeDecodes());
+            ctx.catalogNodeDecodes());
         return new BuildResult(model, rebuiltAssembled);
     }
 

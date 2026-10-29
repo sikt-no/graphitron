@@ -156,6 +156,10 @@ class DetectionReadReachGateTest {
         // can be written at, and the configured maximum.
         REACH.put("DefaultPageSizeDefects", Set.of());
 
+        // The stored session defects, a configured handle class's class row and the mapping
+        // strings' sites: every relation it names is a table.
+        REACH.put("SessionIdentityDefects", Set.of());
+
         // The legacy key shape's verdicts and its positive half are both stored by the stage that
         // evaluates the rules, so reading either back expands no rule.
         REACH.put("NodeLegacyKeyDefects", Set.of());

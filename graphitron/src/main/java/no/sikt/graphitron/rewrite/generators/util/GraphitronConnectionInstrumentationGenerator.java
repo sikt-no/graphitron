@@ -7,7 +7,7 @@ import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.javapoet.TypeSpec;
 import no.sikt.graphitron.rewrite.generators.schema.ErrorRouterClassGenerator;
-import no.sikt.graphitron.rewrite.session.SessionHooks;
+import no.sikt.graphitron.emit.SessionIdentityRows;
 
 import javax.lang.model.element.Modifier;
 import java.util.List;
@@ -28,7 +28,7 @@ import java.util.List;
  *       fetcher runs when it is absent (an {@code ExecutionInput} built without the generated
  *       factory), since the set has no "unrestricted" meaning, and when it names a default
  *       tenant this runtime has no {@code DataSource} for.</li>
- *   <li>Read each mount payload contextArgument off the {@code graphQLContext} (the name-keyed
+ *   <li>Read the request's {@code SessionState} off the {@code graphQLContext} (the key
  *       entries the {@code Graphitron.newOwnedExecutionInput(...)} factory writes, the same
  *       per-request extraction {@code @service} call sites use).</li>
  *   <li>Publish the runtime's {@code FetcherErrorLog} and {@code FetcherErrorResponse}, each when
@@ -120,7 +120,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
      *                      {@code outputPackage + ".schema"} (beside {@code GraphitronRuntime})
      */
     public static List<TypeSpec> generate(String outputPackage) {
-        return generate(outputPackage, null, SessionHooks.NotConfigured.INSTANCE);
+        return generate(outputPackage, null, SessionIdentityRows.empty());
     }
 
     /**
@@ -128,10 +128,10 @@ public final class GraphitronConnectionInstrumentationGenerator {
      * {@code <tenantColumn>} is configured, {@code null} otherwise (the carrier then additionally
      * carries the request tenant set and the fan-out machinery); acquisition is lazy on both
      * topologies, so this instrumentation publishes the per-operation carrier and pins nothing
-     * itself. {@code sessionHooks} supplies the mount's payload contextArguments, read here off
+     * itself. {@code sessionHooks} says whether the graph supplies session identity, whose state is read here off
      * the {@code graphQLContext} and retained by the carrier for the life of the request.
      */
-    public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionHooks sessionHooks) {
+    public static List<TypeSpec> generate(String outputPackage, TypeName tenantKeyType, SessionIdentityRows sessionHooks) {
         TypeName tenantKey = tenantKeyType == null ? null
             : (tenantKeyType.isPrimitive() ? tenantKeyType.box() : tenantKeyType);
         String schemaPackage = outputPackage + ".schema";
@@ -152,7 +152,7 @@ public final class GraphitronConnectionInstrumentationGenerator {
     private static TypeSpec instrumentation(
             ClassName self, ClassName runtime, ClassName tenantConnections, ClassName requestTenants,
             ClassName fetcherErrorLog, ClassName fetcherErrorResponse, ClassName commitPolicy, ClassName state,
-            TypeName tenantKey, SessionHooks sessionHooks, ClassName errorRouter) {
+            TypeName tenantKey, SessionIdentityRows sessionHooks, ClassName errorRouter) {
 
         var runtimeField = FieldSpec.builder(runtime, "runtime", Modifier.PRIVATE, Modifier.FINAL).build();
         var policyField = FieldSpec.builder(commitPolicy, "commitPolicy", Modifier.PRIVATE, Modifier.FINAL).build();
@@ -188,7 +188,9 @@ public final class GraphitronConnectionInstrumentationGenerator {
 
         var resultContext = ParameterizedTypeName.get(INSTRUMENTATION_CONTEXT, EXECUTION_RESULT);
 
-        var payload = payloadParams(sessionHooks);
+        var sessionStateType = ClassName.get(outputPackage + ".schema", ConnectionRuntimeClassGenerator.SESSION_STATE_CLASS_NAME);
+        var payload = sessionHooks.emitsHookImplementation()
+            ? java.util.List.of(ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT) : java.util.List.<String>of();
         var beginExecuteOperationBuilder = MethodSpec.methodBuilder("beginExecuteOperation")
             .addAnnotation(Override.class)
             .addModifiers(Modifier.PUBLIC)
@@ -252,20 +254,27 @@ public final class GraphitronConnectionInstrumentationGenerator {
         }
         if (!payload.isEmpty()) {
             beginExecuteOperationBuilder.addComment(
-                "The mount's payload contextArguments, written name-keyed by newOwnedExecutionInput;");
+                "The request's session state, written by newOwnedExecutionInput; the carrier retains it");
             beginExecuteOperationBuilder.addComment(
-                "the carrier retains them for the request, since any fetcher may trigger a mount.");
-            for (var p : payload) {
-                beginExecuteOperationBuilder.addStatement("$T $L = graphQLContext.get($S)",
-                    p.javaType(), p.name(), p.name());
-            }
+                "for the request, since any fetcher may trigger a mount. An input built without the");
+            beginExecuteOperationBuilder.addComment(
+                "factory carries none, and no operation can run without identity: fail before any SQL.");
+            beginExecuteOperationBuilder
+                .addStatement("$T $L = graphQLContext.get($S)", sessionStateType,
+                    ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT, SessionIdentityRows.CONTEXT_KEY)
+                .beginControlFlow("if ($L == null)", ConnectionRuntimeClassGenerator.SESSION_STATE_SLOT)
+                .addStatement("throw new $T($S)", IllegalStateException.class,
+                    "This operation's input carries no session state: build it with "
+                        + "Graphitron.newOwnedExecutionInput(SessionState.of(...), ...) so graphitron can "
+                        + "mount the request's identity on each connection it acquires.")
+                .endControlFlow();
         }
         var carrierArgs = new StringBuilder("runtime, commitPolicy");
         if (tenantKey != null) {
             carrierArgs.append(", requestTenants");
         }
         for (var p : payload) {
-            carrierArgs.append(", ").append(p.name());
+            carrierArgs.append(", ").append(p);
         }
         var beginExecuteOperation = beginExecuteOperationBuilder
             .addComment("The consumer's log and response for fetcher exceptions, application-scoped on the")
@@ -492,16 +501,5 @@ public final class GraphitronConnectionInstrumentationGenerator {
         return builder
             .addType(stateType)
             .build();
-    }
-
-    /** The mount's payload parameters as typed params, empty when nothing is configured. */
-    private static List<no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed> payloadParams(SessionHooks sessionHooks) {
-        return sessionHooks.mountRef()
-            .map(m -> m.params().stream()
-                .filter(p -> p instanceof no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed typed
-                    && typed.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.Context)
-                .map(p -> (no.sikt.graphitron.rewrite.model.MethodRef.Param.Typed) p)
-                .toList())
-            .orElse(List.of());
     }
 }
