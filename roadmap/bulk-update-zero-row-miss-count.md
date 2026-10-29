@@ -1,7 +1,7 @@
 ---
 id: R1123
 title: "The bulk UPDATE zero-row guard reports how many input rows matched nothing"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: mutation-write
@@ -20,8 +20,7 @@ The shape this changes, from the sakila example schema:
 
 ```graphql
 type FilmsPayload {
-    films: [Film]
-    errors: [FilmWriteError]
+    films: [Film!]
 }
 
 extend type Mutation {
