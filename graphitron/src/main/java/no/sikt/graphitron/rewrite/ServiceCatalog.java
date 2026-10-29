@@ -2614,7 +2614,7 @@ class ServiceCatalog {
      * A component or getter wins over a same-named field.
      */
     private List<SessionHooks.HandleMember> decodeHandleMembers(TypeName handleType) {
-        if (!(handleType instanceof no.sikt.graphitron.javapoet.ClassName className)) {
+        if (!(handleType instanceof com.palantir.javapoet.ClassName className)) {
             return List.of();
         }
         // nameability: exempt (the <sessionState> handle is plugin configuration or a mount return, not schema text)

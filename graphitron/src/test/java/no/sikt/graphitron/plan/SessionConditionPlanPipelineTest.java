@@ -3,7 +3,7 @@ package no.sikt.graphitron.plan;
 import no.sikt.graphitron.command.CallWrap;
 import no.sikt.graphitron.command.Contribution;
 import no.sikt.graphitron.command.ProjectionCommand;
-import no.sikt.graphitron.javapoet.TypeSpec;
+import com.palantir.javapoet.TypeSpec;
 import no.sikt.graphitron.render.ConditionGlueRenderer;
 import no.sikt.graphitron.render.ProjectionUnitRenderer;
 import no.sikt.graphitron.rewrite.TestSchemaHelper;
@@ -50,7 +50,7 @@ class SessionConditionPlanPipelineTest {
 
     private static no.sikt.graphitron.rewrite.GraphitronSchema schema() {
         return SessionHooksFixtures.withHooks(TestSchemaHelper.buildSchema(SDL),
-            SessionHooksFixtures.handled(no.sikt.graphitron.javapoet.ClassName.get(
+            SessionHooksFixtures.handled(com.palantir.javapoet.ClassName.get(
                 "no.sikt.graphitron.rewrite", "SessionHookStub", "RecordHandle")));
     }
 
@@ -113,7 +113,7 @@ class SessionConditionPlanPipelineTest {
             .containsExactly("grouped", "table", "env");
     }
 
-    private static no.sikt.graphitron.javapoet.MethodSpec project(TypeSpec unit) {
+    private static com.palantir.javapoet.MethodSpec project(TypeSpec unit) {
         return unit.methodSpecs().stream().filter(m -> m.name().equals("$project")).findFirst().orElseThrow();
     }
 }
