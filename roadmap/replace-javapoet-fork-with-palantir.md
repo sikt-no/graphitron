@@ -1,7 +1,7 @@
 ---
 id: R174
 title: "Replace the graphitron-javapoet fork with Palantir's JavaPoet"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 9
 theme: tooling
@@ -205,3 +205,11 @@ inherits it.
 - **A different code-generation library** (Roaster, JavaParser's
   printer, JCodeModel). None shares JavaPoet's API, so every emitter
   would be rewritten.
+
+## Reviewer findings
+
+Review pass 1 (session_01WkW2JGp7UJ9sNv2NUT5Y3i): the implementation is correct and is the approved change. Not Done yet, for one reason.
+
+- **Spec body does not reflect what shipped (approval precondition; bears on question 2).** The delivery commits changed only the front-matter of this file. Plan steps 1-4 still read as future work. Collapse each to a one-line "shipped at <sha>" note (step 1 and 2 at `65a70ec` and the writer commit, steps 3-4 at `b059dc3`, with the follow-up renames `ea2d616` and `b09ee14`), and state the completeness evidence per Tests bullet: byte-identical regeneration of `graphitron-sakila-example` is currently evidenced only by the pre-implementation trial swap, so either record a before/after diff result against the fork (a build at `65a70ec` versus the delivered tree), or say plainly that the trial swap is the evidence.
+
+Verified at this gate: `mvn install -Plocal-db` green (BUILD SUCCESS, including `IdempotentWriterTest` 6/6 and the Java 17 example tiers); `graphitron-maven-plugin` dependency tree shows `com.palantir.javapoet:javapoet:0.22.0` and no `graphitron-javapoet`; no tracked `graphitron-javapoet` files; no `TypeName.OBJECT`, `writeToPathReporting`, `TypeSpecReferenceWalk` or `LICENSE-JAVAPOET` left in code; the writer lives in `IdempotentWriter` at the `writeUnits` seam; R560 is discarded. Non-blocking: `roadmap/javadoc-gate-incremental-skip.md` and `roadmap/capture-api-residue-after-nodehood-move.md` still name the old package or module as historical examples.
