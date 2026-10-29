@@ -1,7 +1,7 @@
 ---
 id: R174
 title: "Replace the graphitron-javapoet fork with Palantir's JavaPoet"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 9
 theme: tooling
