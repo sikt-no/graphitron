@@ -67,35 +67,6 @@
                 </configuration>
             </plugin>
             <plugin>
-                <!-- The catalog's version is a hash of what it is generated from, init.sql and this
-                     pom's codegen configuration, so jOOQ regenerates exactly when either changes and
-                     no contributor has a version to bump. -->
-                <groupId>org.apache.maven.plugins</groupId>
-                <artifactId>maven-antrun-plugin</artifactId>
-                <version>3.2.0</version>
-                <executions>
-                    <execution>
-                        <id>sakila-catalog-inputs-sha</id>
-                        <phase>initialize</phase>
-                        <goals>
-                            <goal>run</goal>
-                        </goals>
-                        <configuration>
-                            <exportAntProperties>true</exportAntProperties>
-                            <target>
-                                <checksum algorithm="SHA-256" totalproperty="sakila.catalog.inputs.sha"
-                                          todir="${project.build.directory}/catalog-inputs-sha">
-                                    <fileset dir="${project.basedir}">
-                                        <include name="src/main/resources/init.sql"/>
-                                        <include name="pom.xml"/>
-                                    </fileset>
-                                </checksum>
-                            </target>
-                        </configuration>
-                    </execution>
-                </executions>
-            </plugin>
-            <plugin>
                 <groupId>org.jooq</groupId>
                 <artifactId>jooq-codegen-maven</artifactId>
                 <executions>
@@ -146,7 +117,15 @@
                                 </strategy>
                                 <database>
                                     <includes>public\..*|nodeidfixture\..*|idreffixture\..*|multischema_a\..*|multischema_b\..*</includes>
-                                    <schemaVersionProvider>${sakila.catalog.inputs.sha}</schemaVersionProvider>
+                                    <!-- The catalog's version is a hash of what it is generated from, so jOOQ
+                                         regenerates exactly when init.sql or this pom changes. -->
+                                    <schemaVersionProvider>no.sikt.graphitron.rewrite.fixtures.codegen.CatalogInputsSchemaVersionProvider</schemaVersionProvider>
+                                    <properties>
+                                        <property>
+                                            <key>catalogInputs</key>
+                                            <value>${project.basedir}/src/main/resources/init.sql,${project.basedir}/pom.xml</value>
+                                        </property>
+                                    </properties>
                                     <includeIndexes>true</includeIndexes>
                                     <forcedTypes>
                                         <!-- R413: converter-backed domain column. Maps the
@@ -217,7 +196,15 @@
                                 <database>
                                     <inputSchema>singleschema</inputSchema>
                                     <includes>singleschema\..*</includes>
-                                    <schemaVersionProvider>${sakila.catalog.inputs.sha}</schemaVersionProvider>
+                                    <!-- The catalog's version is a hash of what it is generated from, so jOOQ
+                                         regenerates exactly when init.sql or this pom changes. -->
+                                    <schemaVersionProvider>no.sikt.graphitron.rewrite.fixtures.codegen.CatalogInputsSchemaVersionProvider</schemaVersionProvider>
+                                    <properties>
+                                        <property>
+                                            <key>catalogInputs</key>
+                                            <value>${project.basedir}/src/main/resources/init.sql,${project.basedir}/pom.xml</value>
+                                        </property>
+                                    </properties>
                                     <includeIndexes>true</includeIndexes>
                                 </database>
                                 <target>
