@@ -371,6 +371,13 @@ static method needs no holder.
     moving its ten uses. The directive, the tenant index's reading of it and its placement refusals go.
 * **A service call is emitted from the store** `blocked`, on "A service call is the one overload every parameter of which is filled" and "A service's holder is its one widest buildable constructor". `ServiceMethodCallEmitter` reads the call, its fills and its holder, and
   `ServiceCatalog`'s decode, claim and bind phases go.
+* **An `@outbox` on a `@service` mutation emits from the store** `blocked`, off the critical path, on "A service call is emitted from the store".
+  R1113's phase 3 for services, owned here since it waits on the service variant leaving the walk,
+  and also on R1113's phase 1 and R1101's phase 2 reaching trunk. It builds on R1113's seam
+  (`OutboxQuery`, `OutboxEmitter.render`, `outboxHook` in `TypeFetcherGenerator`), admitted by the
+  service's `graphitron_producer_write` row; `$result` reads the returned value through
+  `graphitron_type_backing`, `graphitron_carrier_data_channel` and the class's read slots, since a
+  service has no written key to read rows back by.
 * **A table class's column fields are stated** `blocked`, on "The generated jOOQ classes are read with their members". The code family keeps each generated table's public column fields, which
   the census reads and the capture drops.
 * **The catalog says which columns jOOQ computes** `open`. `sql_column` states a column's computed
@@ -492,9 +499,10 @@ classified records have no reader left and can go with the walk.
   `@field(name:)` as the backing closure already does; and a bound field under an object starts its
   path on that key row. An OBJECT's class stays at the type grain, an OBJECT may have no class, and
   a service field needs no relation of a field's own result.
-* **`@sourceRow` dissolves** `open`, off the critical path. No schema in the FS-plattform checkout uses it, so the
+* **`@sourceRow` dissolves** `open`, off the critical path, breaking. No schema in the FS-plattform checkout uses it, so the
   directive, its `SOURCE_ROW` key row and its lifter methods go, an object's key row read off its
-  class and members instead.
+  class and members instead. The directive comes back later, once the model is cleaned up, so the
+  removal is not final.
 * **The bindings are resolved before the targets** `open`, off the critical path. `ResolvedTypeBindings` reads only the
   written `@table`, so its place after the hops is accidental; it runs before
   `graphitron_field_target` and is marked and swept rather than cleared and rewritten.
