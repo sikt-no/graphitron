@@ -23,7 +23,7 @@ type Mutation {
   createFilm(in: FilmCreateInput!): Film
     @mutation(typeName: INSERT)
     @outbox(event: "FilmCreated",
-            argMapping: "film.id: $result.id, film.title: in.title, film.languageId: in.languageId")
+            argMapping: "filmId: $result.id, title: in.title, languageId: in.languageId")
     @outbox(event: "FilmCatalogued",                              # added in a later release
             argMapping: "filmId: $result.id, releaseYear: in.releaseYear")
 
@@ -55,7 +55,7 @@ inserts two `outbox` rows for field `a`, committed with the film row: a `FilmCre
 
 ```json
 {"actor": "u-42", "requestId": "r-9", "operation": "AddFilms",
- "film": {"id": "RmlsbToxMDAx", "title": "A", "languageId": 1}}
+ "filmId": "RmlsbToxMDAx", "title": "A", "languageId": 1}
 ```
 
 exactly as before the second directive was added, and a `FilmCatalogued` with `{"actor": "u-42", "requestId": "r-9", "operation": "AddFilms", "filmId": "RmlsbToxMDAx"}` (no `releaseYear`: the client did not send one). Field `b` violates a foreign key, so its write and its messages roll back together and nothing about `b` reaches the relay. `deleteFilms` with three ids writes one message, of type `Mutation.deleteFilms`, whose `films` is the array of the three deleted ids: one message per `@outbox` per call, however many rows the call touched.
@@ -74,7 +74,7 @@ Draft for a new directive reference page, `docs/manual/reference/directives/outb
 >
 > `event` is the message's event type, the name your downstream consumers subscribe to. It defaults to the field's coordinate (`Mutation.createFilm`); name it when the event should outlive the field's name, since renaming a field without an `event` renames the event its consumers subscribe to. Two `@outbox` in the schema with the same event, given or defaulted, fail the build, so on one field at most one `@outbox` may leave `event` out.
 >
-> `argMapping` builds the message's JSON payload, `jsonKey: source`, comma-separated, the same form `@service` and `@routine` use. A key may be a dot path (`film.title`) to nest objects. The same key twice in one `argMapping`, or a key that is also in the common payload, fails the build.
+> `argMapping` builds the message's JSON payload, `jsonKey: source`, comma-separated, the same form `@service` and `@routine` use. Keys are flat, one JSON key per entry; an object or an array in the payload comes from its source, not from the key: an input-object argument yields an object of the fields the client sent, a list yields an array. The same key twice in one `argMapping`, or a key that is also in the common payload, fails the build.
 >
 > **Where a value comes from.**
 >
@@ -116,7 +116,7 @@ Draft for a new directive reference page, `docs/manual/reference/directives/outb
 Settled with the user:
 
 * **The payload is built from the arguments, the success outcome, the session and the context, and the only read is a subselect inside the message's own insert.** A payload built by a query after the write (a GraphQL selection over the written type, resolved in the transaction) was considered and rejected: it makes a read fault fail the write, holds the write's locks for as long as the read runs, grows with the rows written and with any list in the selection (past broker message limits), picks up requester-dependent `@condition(contextArguments:)` filters so the same change emits different events for different callers, can run `@service` or `@externalField` code inside the transaction, and reads nothing at all after a `DELETE`. `$result` stays inside that line: on an `@mutation` field it reaches only the node id and the written table's own columns, read by a subselect in the message's `INSERT ... SELECT`, keyed by the primary key the write already captures. The write statement's `RETURNING` is not touched, so the write and its re-select companion are exactly what they are today. The subselect is not the rejected read: it is part of the insert, so it is no statement of its own and cannot fail apart from it, it reads the written type's own columns by key (no selection, no filters, no code), and it is as wide as the columns the mapping names.
-* **`argMapping` constructs the payload.** It is the binding syntax every graphitron directive that binds values already uses (dot paths into inputs, `$session`, `$source` on `@routine`), so `@outbox` adds the `$result` and `$scope` sources and a dot-path left-hand side for nesting, not a second syntax.
+* **`argMapping` constructs the payload.** It is the binding syntax every graphitron directive that binds values already uses (dot paths into inputs, `$session`, `$source` on `@routine`), so `@outbox` adds the `$result` and `$scope` sources to the flat `key: source` entries the parser already handles, not a second syntax. Nested payload objects built in the mapping are a later extension.
 * **`@outbox` is repeatable, one message per directive.** Adding a directive adds a message and leaves every published one as it was, so a schema change around events is additive: new events, and new versions of old ones, are published beside what consumers already read. Merging occurrences into one message would make a new directive modify a published payload. `event` defaults to the field's coordinate, which is unique in the schema; two directives with the same event, given or defaulted, fail the build, since a consumer could not tell their messages apart.
 * **A common payload, configured once.** `<outbox><payload>` carries what every event needs (actor, request, operation) from `$session` and `$scope`, so no field repeats it and no field forgets it. It has no arguments or outcome to read.
 * **One message per directive per mutation call, not per result.** The message describes the call; a list result or a multi-row `DELETE` appears as arrays inside it.
@@ -213,13 +213,11 @@ static void outboxCreateFilm(DSLContext tx, DataFetchingEnvironment env,
             key("requestId").value(TenantConnections.sessionMember_requestId(tx, "Mutation.createFilm")),
             key("operation").value(env.getOperationDefinition().getName()));
 
-        // message 1, event "FilmCreated": film.id: $result.id, film.title: in.title, film.languageId: in.languageId
-        List<JSONEntry<?>> filmEntries = new ArrayList<>();
-        filmEntries.add(key("id").value(encodeFilm(written.value1())));        // $result.id: the API's node id, from the captured key
-        if (in.containsKey("title")) filmEntries.add(key("title").value(in.get("title")));
-        if (in.containsKey("languageId")) filmEntries.add(key("languageId").value(in.get("languageId")));
+        // message 1, event "FilmCreated": filmId: $result.id, title: in.title, languageId: in.languageId
         List<JSONEntry<?>> created = new ArrayList<>(common);
-        created.add(key("film").value(DSL.jsonbObject(filmEntries)));
+        created.add(key("filmId").value(encodeFilm(written.value1())));         // $result.id: the API's node id, from the captured key
+        if (in.containsKey("title")) created.add(key("title").value(in.get("title")));
+        if (in.containsKey("languageId")) created.add(key("languageId").value(in.get("languageId")));
 
         // No $result column: a select of bind values, no FROM.
         tx.insertInto(Tables.OUTBOX, Tables.OUTBOX.TYPE, Tables.OUTBOX.AGGREGATETYPE, Tables.OUTBOX.PAYLOAD)
@@ -261,7 +259,7 @@ The method and its call are rendered from store rows, not from the classified mo
 Captured from the SDL (transcription, one row per thing the document wrote):
 
 * **`@outbox` applications.** One row per `@outbox` application, keyed by the application's source position as `graphitron_ast_mutation_entry` is, carrying the `event` as written (absent when omitted). Written beside the `@mutation` entries in `GraphitronFieldEntries`, with the same `touched_at` mark and sweep, so removing a directive removes its rows and what hung off them.
-* **The mapping pairs need no new writer.** `graphitron_ast_argmapping_pair_entry` is written by the generic argMapping writer (`GraphitronArgMappingEntries`), which finds any argument named `argMapping` by name through `VocabularyWalk`; the pairs of an `@outbox` appear once the directive is in the vocabulary (`directives.graphqls`), and `graphitron_argmapping_site` already places a repeated directive by `ordinal`. What does change is the sigil grammar, `ArgMappingSigil`: it learns `$result` and `$scope.<member>` beside `$session`, `$session.<member>` and `$source.<column>`, its per-site admission table admits `$result` and `$scope` at `@outbox` only and `$session` at `@outbox` as well as `@service` and `@condition`, and the entry parse accepts a dotted left-hand side (check at pickup that `GraphQLSelectionParser.parseEntries` does, or that the sigil scan lifts it before tokenization as it does the `$`-sources).
+* **The mapping pairs need no new writer.** `graphitron_ast_argmapping_pair_entry` is written by the generic argMapping writer (`GraphitronArgMappingEntries`), which finds any argument named `argMapping` by name through `VocabularyWalk`; the pairs of an `@outbox` appear once the directive is in the vocabulary (`directives.graphqls`), and `graphitron_argmapping_site` already places a repeated directive by `ordinal`. What does change is the sigil grammar, `ArgMappingSigil`: it learns `$result` and `$scope.<member>` beside `$session`, `$session.<member>` and `$source.<column>`, its per-site admission table admits `$result` and `$scope` at `@outbox` only and `$session` at `@outbox` as well as `@service` and `@condition`. Entries stay flat, `key: source` with a dotted source path, which is exactly the shape `GraphQLSelectionParser.parseEntries` and the sigil scan handle today (a nested `key: { ... }` form is not parsed by either, and is left to a later version).
 
 Captured from the configuration (a corpus of its own, as the configured tags are):
 
@@ -299,13 +297,13 @@ A service or routine-writing coordinate becomes admissible by the same route: th
 
 Store tier, in `graphitron-model`, beside the capture and derivation tests of the neighbouring directives (`FactCaptureAgreementTest`'s anchors, `RelationRegistrationGateTest`, `MetaDeclarationGateTest`): every new relation declares an owner and a grain and is registered, and each is pinned directly against fixture schemas.
 
-* Capture: two `@outbox` on one field write two application rows in document order, `event` absent when omitted; their argMapping pairs are captured at the right site and ordinal by the unchanged generic writer, with a dotted left-hand side and the new sigils parsed; removing one directive and re-capturing sweeps its rows and what hung off them. The `<outbox>` block captures as written, resolving nothing.
+* Capture: two `@outbox` on one field write two application rows in document order, `event` absent when omitted; their argMapping pairs are captured at the right site and ordinal by the unchanged generic writer, with the new sigils parsed; removing one directive and re-capturing sweeps its rows and what hung off them. The `<outbox>` block captures as written, resolving nothing.
 * Derivation, one anchor per relation: the messages relation keeps every application with the effective event (written, else the coordinate); the leaves relation classifies each key path by source and merges the common payload's leaves per message; the target relation resolves a table and a function against `sql_` (a missing column, an unsupported payload type, an unmapped `NOT NULL` column without a default, an overloaded routine).
 * Each rejection is a derived row: a coordinate with no write row (a Query field), a duplicated event across the schema, a key bound twice, a collision with the common payload, an unresolvable source, an `@outbox` field with no `<outbox>` block. The emitter reads no relation that runs later than the one it is anchored on.
 
 Unit tier, the generated method called directly, against a real PostgreSQL. The companion `outbox<Field>(tx, env, written)` is package-private and static, so a test in the generated fetchers' package calls it with a `DSLContext` on a real connection to the execution tier's PostgreSQL (the `-Plocal-db` or Testcontainers database, with the sakila schema and the `outbox` table), a stub `DataFetchingEnvironment` carrying the arguments the test chooses, and a hand-built key record. Only the environment and the key record are stubbed; the statements run on the database, and the test asserts the rows they wrote by reading the `outbox` table back. There is no mocked `DSLContext`, no `MockConnection` and no in-memory database: the method's value is the SQL it builds (`INSERT ... SELECT`, the subselect, `jsonb_build_object`, `jsonb_agg`), which only a real database can accept, and a mock would assert the strings the spec forbids pinning. This tier is therefore in the `execution` group, excluded from the inner loop's `-DexcludedGroups=execution` run and part of the verification build, like the other execution tests. There is no GraphQL execution and no mutation round trip. Each test runs in a transaction it rolls back, or deletes the rows it wrote, so tests do not leak into the shared database's other tests (the cross-talk the execution tier already has known victims of). The tests assert:
 
-* The payload shapes, one input per case: an omitted mapped field is an absent key, an explicit `null` is `null`, a dot-path key nests, a path through a list input yields an array, an enum is its GraphQL name, a string with quotes and non-ASCII characters round-trips.
+* The payload shapes, one input per case: an omitted mapped field is an absent key, an explicit `null` is `null`, an input-object argument yields an object of the fields sent, a path through a list input yields an array, an enum is its GraphQL name, a string with quotes and non-ASCII characters round-trips.
 * The subselect: with a film row inserted by the test, a `$result` column is read from it by the key record; a message with no `$result` column selects bind values only; a key record whose row does not exist writes nothing for a column message; a list of key records aggregates into one message with an array.
 * Order and count: two directives write two rows in directive order, one statement per message (a recording `ExecuteListener`); a `null` key record writes no message.
 * Session and scope: a `$session` member is read through the accessor on the `tx` passed in, and from no other connection; `$scope` values come from the stub environment.
@@ -320,7 +318,7 @@ Execution tier, against an `outbox` table in Debezium's layout that `graphitron-
 * The common payload's keys are on every message: the session handle's members, the operation name for a named operation and its absence for an anonymous one. A session handle member that cannot be written as JSON fails the field and writes nothing.
 * Two `@outbox` on one field produce two messages, in directive order, each with its own `event`, its own payload and the common keys; the first message's payload is byte-for-byte what it was with the first directive alone.
 * An `@outbox` without `event` writes the field's coordinate (`Mutation.deleteFilms`) as the message's type.
-* Arguments: an unmapped input field is absent, an omitted mapped field is absent, an explicit `null` is `null`, a dot-path key nests, a path through a list input yields an array, an enum is its GraphQL name, an `ID` is the encoded form the client sent, a string with quotes and non-ASCII characters round-trips.
+* Arguments: an unmapped input field is absent, an omitted mapped field is absent, an explicit `null` is `null`, an input-object argument yields an object of the fields sent, a path through a list input yields an array, an enum is its GraphQL name, an `ID` is the encoded form the client sent, a string with quotes and non-ASCII characters round-trips.
 * Outcome: `$result.id` equals the id the field returns; a `$result` column is in the payload, read by the message's own insert with the write's `RETURNING` unchanged (a recording `ExecuteListener` counts one statement per message beside the write and the re-select), and a column the client's request did not select is still there; `$result` on a `DELETE` accepts the node id and rejects a column at build; `deleteFilms` with `$result` yields the deleted ids as one array in one message, and under `missingAsDeleted` only the rows deleted.
 * A field whose exception an `@error` channel claims writes no message.
 * The emit failing (a check constraint on the outbox table rejects the row): the field fails redacted, an `@error` channel on the field does not claim it, the film row is gone, the next field commits.
@@ -332,6 +330,10 @@ Execution tier, against an `outbox` table in Debezium's layout that `graphitron-
 Pipeline tier, each rejection (a derived row at the store tier, above) surfaced naming the field, key or source: an empty `event`, two directives in the schema with the same event (two given, a given one equal to another field's coordinate, two on one field that leave it out), a key bound twice in one `argMapping`, a field key colliding with a common one, an unknown argument or input field, a `$result` path that needs a read, an unknown `$session` accessor, an unknown `$scope` member, an argument or `$result` source in the common payload, a `$context` source (not offered), a session handle member type known not to serialize; classification accepts the listed variants and rejects the others; the configuration is rejected for an `@outbox` field without `<outbox>`, both targets set, a missing table or column, an unsupported `payload` type and an unmapped `NOT NULL` column without a default, and for the function target a missing or overloaded routine and an unmapped parameter without a default.
 
 Oracle: the repository has no Oracle execution tier. Both targets' statements, the insert with `JSON_OBJECT` and the routine call, are rendered for `ORACLE` in a pipeline-tier rendering check (the CLOB `RETURNING` form included); the item records in its Done evidence that it was also run by hand against an Oracle instance.
+
+## Later extension: nested payload objects
+
+The first version's mapping is flat, `key: source`, because that is the shape the argMapping parser and the sigil scan already handle. A later version can build nested objects in the mapping with a selection set, `film: { id: $result.id, title: in.title }`. That needs real grammar work: `GraphQLSelectionParser.parse` reads nested selection sets and aliases but lexes `$`-prefixed text as a variable token and has no `alias: { ... }` form, and the sigil scan lifts sigils from flat entries only, so both would have to learn it together. Until then, nesting comes from the source (an input-object argument is an object, a list is an array).
 
 ## Later extension: related data as of the transaction
 
