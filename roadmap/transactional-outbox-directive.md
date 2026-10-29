@@ -1,7 +1,7 @@
 ---
 id: R1113
 title: "@outbox: emit a transactional outbox message in the mutation field transaction"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 5
 theme: runtime-connection
