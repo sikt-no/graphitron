@@ -565,6 +565,14 @@ class SessionHookExecutionTest {
             assertThat(result.getErrors())
                 .as("an escape-hatch $session read in a condition is an error, not a silent empty filter")
                 .isNotEmpty();
+            // The error the engine surfaces is redacted like any fault; the guarded read itself,
+            // driven directly, is what names the member's coordinate and the owned entry points.
+            assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.TenantConnections
+                    .sessionMember_principal(supplied, "Query.customersOfPrincipal"))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("Query.customersOfPrincipal")
+                .hasMessageContaining("$session")
+                .hasMessageContaining("Graphitron.newOwnedExecutionInput");
         }
     }
 

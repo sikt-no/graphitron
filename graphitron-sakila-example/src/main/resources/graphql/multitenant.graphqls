@@ -444,3 +444,13 @@ type Mutation {
     updateFilmSceneParent(in: UpdateFilmSceneParentInput!): ID @mutation(typeName: UPDATE, table: "film_scene")
     updateFilmSceneParents(in: [UpdateFilmSceneParentInput!]!): [ID!]! @mutation(typeName: UPDATE, table: "film_scene")
 }
+
+# The $session.<member> per-key proof, beside Film.mountedPrincipal: the member form of the same
+# batched child service, so each tenant's batch observes the session number its own mount minted.
+extend type Film {
+    mountedSessionNumber: Int @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SessionIdentityService",
+        method: "mountedSessionNumber",
+        argMapping: "number: $session.sessionNo"
+    })
+}

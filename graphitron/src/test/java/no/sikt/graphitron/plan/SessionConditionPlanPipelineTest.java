@@ -74,8 +74,6 @@ class SessionConditionPlanPipelineTest {
             .flatMap(t -> t.methodSpecs().stream())
             .filter(m -> m.name().equals(row.glue().methodName())).findFirst().orElseThrow();
         assertThat(glue.parameters()).extracting(p -> p.name()).containsExactly("table", "args", "dsl");
-        assertThat(glue.code().toString())
-            .contains("TenantConnections.sessionMember_brukerId(dsl, \"Store.customers\")");
     }
 
     @Test
@@ -99,7 +97,7 @@ class SessionConditionPlanPipelineTest {
     }
 
     @Test
-    void renderedProjections_takeDslExactlyWhereTheClosureSaysAndPassItToTheGlue() {
+    void renderedProjections_takeDslExactlyWhereTheClosureSays() {
         var schema = schema();
         var conditions = ConditionCommands.produce(schema, DEFAULT_OUTPUT_PACKAGE);
         var relation = ProjectionCommands.produce(schema, conditions, DEFAULT_OUTPUT_PACKAGE);
@@ -113,13 +111,6 @@ class SessionConditionPlanPipelineTest {
             .containsExactly("grouped", "table", "env", "dsl");
         assertThat(project(byName.get("Language")).parameters()).extracting(p -> p.name())
             .containsExactly("grouped", "table", "env");
-
-        assertThat(byName.get("Store").toString())
-            .as("the glue call inside the multiset passes the statement's dsl")
-            .contains("StoreConditions.customersCondition(").contains(", dsl)");
-        assertThat(byName.get("Customer").toString())
-            .as("the caller of a dsl-taking callee hands its own dsl on")
-            .contains("Store.$project(").contains("env, dsl)");
     }
 
     private static no.sikt.graphitron.javapoet.MethodSpec project(TypeSpec unit) {

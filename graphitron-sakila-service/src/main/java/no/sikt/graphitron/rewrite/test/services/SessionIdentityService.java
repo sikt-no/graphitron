@@ -37,6 +37,16 @@ public final class SessionIdentityService {
     }
 
     /**
+     * The per-key {@code $session.sessionNo} member witness for the multi-tenant fixture: the
+     * batched child service of {@link #mountedPrincipal}, bound to one member of the handle, so
+     * under fan-out each tenant's batch reads its own connection's mounted session number.
+     */
+    public static Map<FilmRecord, Integer> mountedSessionNumber(
+            Set<FilmRecord> films, DSLContext dsl, Integer number) {
+        return films.stream().collect(Collectors.toMap(film -> film, film -> number));
+    }
+
+    /**
      * The payload/contextArgument unification witness: {@code claims} names the mount method's
      * own payload parameter, so declaring it as a {@code contextArguments} entry at the
      * {@code @service} site adds no factory slot; the caller supplies the value once and this

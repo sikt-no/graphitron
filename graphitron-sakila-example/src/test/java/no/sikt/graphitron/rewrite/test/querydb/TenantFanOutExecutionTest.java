@@ -212,6 +212,28 @@ class TenantFanOutExecutionTest {
     }
 
     @Test
+    void sessionMemberBoundServiceUnderFanOut_eachTenantReadsItsOwnSessionNumber() {
+        // $session.sessionNo under fan-out: the member read goes through each call's own
+        // connection (the statement's dsl), so tenant 1's rows see a number from its 1000s range
+        // and tenant 2's from the 2000s, in one operation, and rows of one tenant share the one.
+        var result = graphql.execute(Graphitron
+            .newOwnedExecutionInput(List.of(1, 2), "{\"sub\":\"fanout-user\"}")
+            .query("{ filmsEverywhere { title mountedSessionNumber } }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        Map<String, Object> data = result.getData();
+        var films = (List<Map<String, Object>>) data.get("filmsEverywhere");
+        int t1First = (Integer) films.get(0).get("mountedSessionNumber");
+        int t1Second = (Integer) films.get(1).get("mountedSessionNumber");
+        int t2 = (Integer) films.get(2).get("mountedSessionNumber");
+
+        assertThat(t1First).as("one pinned connection per tenant").isEqualTo(t1Second);
+        assertThat(t1First).as("minted by tenant 1's own mount").isBetween(1000, 1999);
+        assertThat(t2).as("minted by tenant 2's own mount").isBetween(2000, 2999);
+    }
+
+    @Test
     void fannedChildOfUntenantedParent_isTenantBlockedAndSortedWithinEachBlock() {
         // The untenanted parents come from the default source; the fanned child fans each parent
         // batch out per tenant, and each language's films land under the right parent (the
