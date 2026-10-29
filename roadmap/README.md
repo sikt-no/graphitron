@@ -38,7 +38,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
 | `R747` | Generated input records carry no constraint annotations, so the VALIDATION handler can never fire | Ready | 2026-10-29 <sub>created 2026-08-20</sub> | [plan](generated-input-records-carry-no-constraints.md) |
-| `R1098` | A graphitron-jakarta-rest subgraph writes only what is its own | In Progress | 2026-10-29 <sub>created 2026-10-23</sub> | [plan](jakarta-rest-request-aware-execution-input.md) |
+| `R1098` | A graphitron-jakarta-rest subgraph writes only what is its own | In Review | 2026-10-29 <sub>created 2026-10-23</sub> | [plan](jakarta-rest-request-aware-execution-input.md) |
 | `R837` | A jOOQ record with no table cannot be a @service input parameter | Spec | 2026-08-26 | [plan](table-less-jooq-record-input.md) |
 | `R748` | Decouple the roadmap tool from the generator reactor | Spec | 2026-08-20 | [plan](roadmap-tool-reactor-decoupling.md) |
 | `R381` | LSP-guided @reference path authoring | Spec | 2026-08-06 <sub>created 2026-06-25</sub> | [plan](lsp-reference-path-authoring.md) |
@@ -605,7 +605,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R664` [**A growth-proof staged builder over the generated ExecutionInput factory**](execution-input-staged-builder.md) — Backlog, dx
 - `R469` [**Enable @defer/incremental delivery on the owned-connection path**](defer-under-owned-connections.md) — Backlog, architecture
 - `R468` [**Oracle/RAS execution-tier coverage for session identity hooks**](oracle-ras-session-hook-execution-coverage.md) — Backlog, architecture
-- `R1098` [**A graphitron-jakarta-rest subgraph writes only what is its own**](jakarta-rest-request-aware-execution-input.md) — In Progress, feature
+- `R1098` [**A graphitron-jakarta-rest subgraph writes only what is its own**](jakarta-rest-request-aware-execution-input.md) — In Review, feature
 - `R1113` [**@outbox: emit a transactional outbox message in the mutation field transaction**](transactional-outbox-directive.md) — In Progress, feature
 - `R1101` [**One transaction per top-level mutation field, opened by the instrumentation, with nested scopes joining it**](mutation-field-transaction-scope.md) — Spec, feature
 - `R460` [**Targeted read-only enforcement for query paths graphitron does not control (@routine, @service)**](query-read-only-enforcement.md) — Backlog, architecture
