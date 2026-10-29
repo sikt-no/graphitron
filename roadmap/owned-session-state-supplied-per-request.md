@@ -1,13 +1,13 @@
 ---
 id: R1120
 title: "The POM switches session identity on; the consumer supplies it per request as code"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: runtime-connection
 depends-on: [session-handle-component-bindings]
 created: 2026-10-28
-last-updated: 2026-10-28
+last-updated: 2026-10-29
 ---
 
 # The POM switches session identity on; the consumer supplies it per request as code
