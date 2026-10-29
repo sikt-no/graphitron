@@ -134,7 +134,7 @@ class FixtureWarningsGateTest {
                     .endsWith("schema.graphqls");
                 assertThat(warning.location().getLine())
                     .as("warning is attributed to the filmsConnectionByRequiredIds field definition")
-                    .isEqualTo(781);
+                    .isEqualTo(789);
             });
 
         assertThat(warnings)
