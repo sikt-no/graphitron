@@ -79,13 +79,11 @@ public final class InputRecordGenerator {
         String className = shape.recordClass().simpleName();
         var builder = TypeSpec.classBuilder(className)
             .addModifiers(Modifier.PUBLIC, Modifier.FINAL)
-            .addJavadoc("Graphitron-internal validation target for SDL input type "
-                + "{@code $L}. Materialised at the fetcher boundary via {@link #fromMap},\n"
-                + "handed once to {@code jakarta.validation.Validator#validate}, and "
-                + "discarded.\n\n"
+            .addJavadoc("Graphitron-internal shape of SDL input type {@code $L}, built from the\n"
+                + "argument map via {@link #fromMap}. Bean Validation does not read it: it validates\n"
+                + "the record or bean a {@code @service} method takes.\n\n"
                 + "<p><strong>Do not reference from service code.</strong> This class lives "
-                + "under {@code $L.inputs} and exists only so the validator pre-step has an "
-                + "annotated walk target. Service code consumes the consumer-bean path or "
+                + "under {@code $L.inputs}. Service code consumes the consumer-bean path or "
                 + "the existing {@code Map.get} pattern.\n",
                 className, outputPackage);
 
