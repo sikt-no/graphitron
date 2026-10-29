@@ -1,13 +1,13 @@
 ---
 id: R1113
 title: "@outbox: emit a transactional outbox message in the mutation field transaction"
-status: Spec
+status: Ready
 bucket: feature
 priority: 5
 theme: runtime-connection
 depends-on: []
 created: 2026-10-27
-last-updated: 2026-10-28
+last-updated: 2026-10-29
 ---
 
 # @outbox: emit a transactional outbox message in the mutation field transaction
@@ -460,3 +460,9 @@ Verdict: withhold. One blocking finding on question two (fit), introduced by the
 - **The pairs of one `argMapping` share their string's position.** `graphitron_ast_argmapping_pair_entry` carries a `position` within the string, but the defect key does not. So two pairs breaking the same rule in one mapping, such as two unresolvable sources or two keys colliding with the common payload, are two rows with one key. R1120's round 1 finding 2 is the same collision on its `$session` arms.
 
 What would satisfy it: say where each configuration-sourced rejection is reported. One option is at every `@outbox` application it affects, after the `DefaultPageSizeDefects` precedent, which also covers "an `@outbox` field with no `<outbox>` block". Another is a configuration-anchored defect relation this item adds, with its owner, grain and the diagnostic arm the editor reads. Then state how several offending pairs in one mapping collapse (one row per string and code, with the pairs' details aggregated in pair order), and pin both in the store-tier tests. If R1120 settles the pair collapse first, adopting its answer is enough for the second half.
+
+### Round 5 (2026-10-29, Spec -> Ready, reviewer session 01WkW2JFVN5PqPWn2Ewgh2yG)
+
+Verdict: Ready. Finding 4 is resolved. Every rejection, configuration faults included, sits at the `@outbox` application, which is a schema position `graphitron_entry_defect`'s foreign key accepts, as `DefaultPageSizeDefects` does for its `@asConnection`. The key is `(application, code)`, and several offending pairs collapse into one row with their details in pair order, so there is no collision. The store-tier tests pin the collapse and the per-application fan-out. Phase 1b's two dependencies on R1120 are now stated there (`aa53b94ed`): `sessionMember_<name>(DSLContext dsl, String fieldCoordinate)` is emitted from the member relation with today's name and signature, and R1120's `$session` defect arms run over every SDL argMapping pair, whichever directive wrote it. That leaves the `<outbox><payload>` pairs to this item's own phase 1b check, as the plan says.
+
+Non-blocking: R1125 (Backlog, a home for defects with no SDL position) lists this item's `<outbox>` rejections as a waiting consumer, but Relation to other items does not mention R1125. A line there would record that the per-application repetition is what R1125 would remove.
