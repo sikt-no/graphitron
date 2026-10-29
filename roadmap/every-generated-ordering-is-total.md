@@ -1,7 +1,7 @@
 ---
 id: R1122
 title: "every ordering graphitron generates is deterministic and ends in a tiebreaker"
-status: Spec
+status: Ready
 bucket: bug
 priority: 3
 theme: codegen-correctness
