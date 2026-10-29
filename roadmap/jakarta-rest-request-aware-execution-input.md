@@ -5,7 +5,7 @@ status: Ready
 bucket: feature
 priority: 4
 theme: runtime-connection
-depends-on: [owned-session-state-supplied-per-request]
+depends-on: []
 created: 2026-10-23
 last-updated: 2026-10-29
 ---
