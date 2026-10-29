@@ -419,6 +419,7 @@ pass and no stratum that clears and recomputes.
     `CarrierDataFields` first, since a graphitron anchor reader sees the previous capture's rows.
   * **The stratum's `intent_` writers go** `open`. `ClassificationDomainCapture`,
     `InputOccurrencePaths` and `AuthoredClaimRejectionRows` go with the relations they write.
+* **`FactSink` and `FactWrites` are gone, each writer stating its own insert** `blocked`, on "No `graphitron_*_entry` survives, an entry being the transcription's alone". A capture site builds a generated record, sets one column at a time and hands it to a sink that assembles the insert at run time, with `FactWrites` overriding that for thirteen relations; the statement a writer issues is nowhere in its source. Twenty-nine relations still arrive that way: the legacy `graphitron_*_entry` decodes from `GraphitronFactCapture`, which leave with their node, then the schema inputs and extensions from `SdlFactCapture` and `SdlCoordinates`, the configuration from `StoredRecipe`, the Java declarations from `EmittedRegistry`, the build warnings, rejections, lint findings and javac diagnostics, and the `sql_` catalog from `JooqFactCapture`. Each writes through its own statement instead, set-based where it reads the store and bound once per row through `BindBatch` where it reads a corpus, the shape `GraphQLAstEntries` writes in. R701 states the same end from the column side and folds into this node.
 
 ### `capture` runs against the model alone `done`
 
