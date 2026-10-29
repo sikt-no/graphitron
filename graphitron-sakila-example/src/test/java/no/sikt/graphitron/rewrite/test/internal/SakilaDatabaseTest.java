@@ -22,7 +22,10 @@ class SakilaDatabaseTest {
     void aTenantDatabaseIsNamedForTheRunAndSwapsOnlyTheDatabaseInTheUrl() {
         var name = SakilaDatabase.tenantName("probe");
         assertThat(name).startsWith("probe_").hasSizeGreaterThan("probe_".length());
-        assertThat(SakilaDatabase.tenantUrl("probe")).endsWith("/" + name).startsWith("jdbc:");
+        // The database is the URL's path; a Testcontainers URL carries a query string after it.
+        var url = SakilaDatabase.tenantUrl("probe");
+        assertThat(url).startsWith("jdbc:");
+        assertThat(java.net.URI.create(url.substring("jdbc:".length())).getPath()).isEqualTo("/" + name);
     }
 
     @Test
