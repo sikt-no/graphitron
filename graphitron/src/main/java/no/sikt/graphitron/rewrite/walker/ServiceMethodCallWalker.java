@@ -2,8 +2,6 @@ package no.sikt.graphitron.rewrite.walker;
 
 import graphql.schema.GraphQLFieldDefinition;
 import graphql.schema.GraphQLInputObjectType;
-import graphql.schema.GraphQLList;
-import graphql.schema.GraphQLNonNull;
 import graphql.schema.GraphQLType;
 import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.javapoet.ClassName;
@@ -24,7 +22,6 @@ import no.sikt.graphitron.rewrite.model.ValueShape;
 import no.sikt.graphitron.rewrite.model.WalkerResult;
 
 import java.util.ArrayList;
-import java.util.LinkedHashSet;
 import java.util.List;
 
 /**
@@ -43,8 +40,6 @@ import java.util.List;
  *   <li>Enforce the cross-round invariants: a method round may carry at most one
  *       {@link MappingEntry.FromDsl}; a constructor round may not carry a
  *       {@link MappingEntry.FromArg}.
- *   <li>Classify each field argument the {@link MappingEntry.FromArg} entries read, once per
- *       argument, onto a {@link ServiceMethodCall.ValidatedArgument} arm from its declared type.
  *   <li>Wrap into {@link ServiceMethodCall.Static} or {@link ServiceMethodCall.Instance}
  *       based on {@link MethodRef.Service#callShape()}.
  * </ol>
@@ -100,12 +95,11 @@ public final class ServiceMethodCallWalker {
         }
 
         var returnContainer = ServiceMethodCall.ReturnContainer.of(method.returnType(), recordTable);
-        var validatedArguments = validatedArguments(method, fieldDef);
         ServiceMethodCall carrier = switch (method.callShape()) {
             case MethodRef.CallShape.Static s ->
                 new ServiceMethodCall.Static(
                     method.className(), method.methodName(), methodArgs, method.returnType(),
-                    returnContainer, validatedArguments);
+                    returnContainer);
             case MethodRef.CallShape.InstanceWithDslHolder holder ->
                 new ServiceMethodCall.Instance(
                     method.className(),
@@ -113,63 +107,13 @@ public final class ServiceMethodCallWalker {
                     method.methodName(),
                     methodArgs,
                     method.returnType(),
-                    returnContainer,
-                    validatedArguments);
+                    returnContainer);
         };
 
         if (!errors.isEmpty()) {
             return new WalkerResult.Err<>(errors);
         }
         return new WalkerResult.Ok<>(carrier);
-    }
-
-    /**
-     * The field arguments the method's {@link ParamSource.Arg} parameters read, each once in
-     * first-appearance order, classified against the argument's declared type: the count of list
-     * wrappers (through non-null) and whether the unwrapped type is an input object. Parameters
-     * binding into one argument (a bean for {@code input} and a scalar for {@code input.name})
-     * share its one target. Constructor parameters never bind an argument, so only the method
-     * round is read.
-     */
-    private static List<ServiceMethodCall.ValidatedArgument> validatedArguments(
-            MethodRef.Service method, GraphQLFieldDefinition fieldDef) {
-        var names = new LinkedHashSet<String>();
-        for (MethodRef.Param p : method.params()) {
-            if (p instanceof MethodRef.Param.Typed typed && typed.source() instanceof ParamSource.Arg arg) {
-                names.add(toArgPath(arg.path()).outerArgName());
-            }
-        }
-        var targets = new ArrayList<ServiceMethodCall.ValidatedArgument>(names.size());
-        for (String name : names) {
-            var argument = fieldDef.getArgument(name);
-            if (argument == null) {
-                throw new IllegalStateException("@service parameter binds argument '" + name
-                    + "', which field '" + fieldDef.getName() + "' does not declare; argument"
-                    + " resolution should have rejected the binding");
-            }
-            int listDepth = 0;
-            GraphQLType type = argument.getType();
-            while (true) {
-                if (type instanceof GraphQLNonNull nonNull) {
-                    type = nonNull.getWrappedType();
-                } else if (type instanceof GraphQLList list) {
-                    listDepth++;
-                    type = list.getWrappedType();
-                } else {
-                    break;
-                }
-            }
-            if (!(type instanceof GraphQLInputObjectType input)) {
-                targets.add(new ServiceMethodCall.ValidatedArgument.Raw(name));
-                continue;
-            }
-            targets.add(switch (listDepth) {
-                case 0 -> new ServiceMethodCall.ValidatedArgument.InputObject(name, input.getName());
-                case 1 -> new ServiceMethodCall.ValidatedArgument.InputObjectList(name, input.getName());
-                default -> new ServiceMethodCall.ValidatedArgument.InputObjectNestedList(name, input.getName());
-            });
-        }
-        return targets;
     }
 
     /**
@@ -312,8 +256,8 @@ public final class ServiceMethodCallWalker {
                 fb.definition()));
         }
         return switch (bean.target()) {
-            case RECORD -> new ValueShape.RecordInput(bean.beanClass(), fields);
-            case JAVA_BEAN -> new ValueShape.JavaBeanInput(bean.beanClass(), fields);
+            case RECORD -> new ValueShape.RecordInput(bean.beanClass(), path.outerArgName(), fields);
+            case JAVA_BEAN -> new ValueShape.JavaBeanInput(bean.beanClass(), path.outerArgName(), fields);
         };
     }
 

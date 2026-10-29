@@ -9110,10 +9110,10 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void filmLookupValidated_validationChannel_dispatchesAndResolvesMessages() {
-        // The one channel in the suite carrying {handler: VALIDATION}: the wrapper runs the
-        // Jakarta validation pre-step before the body, and every @error type on the channel gets a
-        // message() body carrying the GraphQLError arm that path lands on. The pre-step's target
-        // declares no constraints, so it yields nothing and the dispatch sibling routes the throw.
+        // A channel carrying {handler: VALIDATION} beside a dispatch handler: every @error type on
+        // the channel gets a message() body carrying the GraphQLError arm the validation path lands
+        // on. The service binds no class, so nothing is validated and the dispatch sibling routes the
+        // throw.
         Map<String, Object> data = execute("""
             {
                 filmLookupValidated(id: -3) {
@@ -9138,8 +9138,7 @@ class GraphQLQueryTest {
     @Test
     @SuppressWarnings("unchecked")
     void filmLookupValidated_validationPreStepLetsTheHappyPathThrough() {
-        // The pre-step short-circuits only on a non-empty violation list. Nothing attaches
-        // constraints to what it validates, so it must not perturb the success return.
+        // A VALIDATION channel whose field binds no class must not perturb the success return.
         Map<String, Object> data = execute("{ filmLookupValidated(id: 5) { title errors { __typename } } }");
         assertThat(data).extractingByKey("filmLookupValidated", as(MAP))
             .containsEntry("title", "THE VALIDATED FILM");
@@ -9226,6 +9225,114 @@ class GraphQLQueryTest {
             .startsWith("An error occurred. Reference: ")
             .doesNotContain("NullPointerException"));
         assertThat(result.<Map<String, Object>>getData()).extractingByKey("countFilmDrafts").isNull();
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmDrafts_blankTitle_isAValidationErrorAndTheServiceIsNotCalled() {
+        // FilmDraft declares @NotBlank on title; the VALIDATION handler checks each FilmDraft the
+        // service would receive, so the blank second draft is a typed error under its SDL path and
+        // the service does not run (count is only ever set by the service).
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmDrafts(in: [{ title: "DRAFT ONE" }, { title: "" }]) {
+                    count
+                    errors {
+                        __typename
+                        ... on FilmWriteInvalid { path message }
+                    }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmDrafts", as(MAP));
+        payload.containsEntry("count", null);
+        var only = payload.extractingByKey("errors", as(list(Map.class))).singleElement(as(MAP));
+        only.containsEntry("__typename", "FilmWriteInvalid");
+        only.containsEntry("path", List.of("countFilmDrafts", "in", "1", "title"));
+        only.containsEntry("message", constraintMessage(
+            no.sikt.graphitron.rewrite.test.services.FilmDraft.class, "title", ""));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmBundleDraft_violationPaths_nameTheSdlInputFields() {
+        // FilmBundleDraft binds capacity out of the grouping input `limits`, a List<@Valid FilmDraft>
+        // as `films`, and carries a class-level constraint. Each violation's path names what the
+        // client sent: the grouping field kept, the element index present, and the class-level one
+        // ending at the argument.
+        var rawResult = executeRaw("""
+            mutation {
+                countFilmBundleDraft(in: {
+                    name: "BUNDLE", limits: { capacity: 0 }, films: [{ title: "DRAFT ONE" }, { title: "" }]
+                }) {
+                    count
+                    errors { ... on FilmWriteInvalid { path message } }
+                }
+            }
+            """);
+        assertThat(rawResult.getErrors()).as("top-level errors: %s", rawResult.getErrors()).isEmpty();
+        Map<String, Object> data = rawResult.getData();
+        var payload = assertThat(data).extractingByKey("countFilmBundleDraft", as(MAP));
+        payload.containsEntry("count", null);
+        payload.extractingByKey("errors", as(list(Map.class)))
+            .extracting(e -> e.get("path"), e -> e.get("message"))
+            .containsExactlyInAnyOrder(
+                tuple(List.of("countFilmBundleDraft", "in", "limits", "capacity"), constraintMessage(
+                    no.sikt.graphitron.rewrite.test.services.FilmBundleDraft.class, "capacity", 0)),
+                tuple(List.of("countFilmBundleDraft", "in", "films", "1", "title"), constraintMessage(
+                    no.sikt.graphitron.rewrite.test.services.FilmDraft.class, "title", "")),
+                tuple(List.of("countFilmBundleDraft", "in"), "the films do not fit the bundle"));
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void countFilmBundleDraft_validBundle_runsTheService() {
+        Map<String, Object> data = execute("""
+            mutation {
+                countFilmBundleDraft(in: {
+                    name: "BUNDLE", limits: { capacity: 2 }, films: [{ title: "DRAFT ONE" }, { title: "DRAFT TWO" }]
+                }) {
+                    count
+                    errors { __typename }
+                }
+            }
+            """);
+        var payload = assertThat(data).extractingByKey("countFilmBundleDraft", as(MAP));
+        payload.containsEntry("count", 2);
+        payload.containsEntry("errors", null);
+    }
+
+    @Test
+    void filmLookupValidated_bindsNoClass_soNoValidatorIsAskedFor() {
+        // The mirror of countFilmDrafts_failureInsideValidation_isHandledByTheFetchersCatchArm:
+        // filmLookupValidated's channel carries a VALIDATION handler, but its service takes a scalar,
+        // so there is nothing to validate and no pre-step. An input carrying no GraphitronContext,
+        // which would fail the Validator lookup, therefore succeeds.
+        ExecutionInput input = ExecutionInput.newExecutionInput()
+            .query("{ filmLookupValidated(id: 5) { title } }")
+            .graphQLContext(b -> b.put(DSLContext.class, dsl))
+            .dataLoaderRegistry(new org.dataloader.DataLoaderRegistry())
+            .build();
+
+        var result = graphql.execute(input);
+
+        assertThat(result.getErrors()).as("errors: %s", result.getErrors()).isEmpty();
+        assertThat(result.<Map<String, Object>>getData()).extractingByKey("filmLookupValidated", as(MAP))
+            .containsEntry("title", "THE VALIDATED FILM");
+    }
+
+    /**
+     * The message the validation provider interpolates for {@code value} at {@code property} of
+     * {@code beanClass}, so an assertion on a violation's message does not depend on the locale's
+     * message bundle.
+     */
+    private static String constraintMessage(Class<?> beanClass, String property, Object value) {
+        try (var factory = jakarta.validation.Validation.buildDefaultValidatorFactory()) {
+            return factory.getValidator().validateValue(beanClass, property, value)
+                .iterator().next().getMessage();
+        }
     }
 
     @Test

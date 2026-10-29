@@ -5232,12 +5232,8 @@ class FieldBuilder {
             .walk(parentTypeName, fieldDef, (no.sikt.graphitron.rewrite.model.MethodRef.Service) method,
                 svc::resolveTableByRecordClassName);
         return switch (walkerResult) {
-            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.ServiceMethodCall> ok -> {
-                String validationReason = unvalidatableArgumentReason(channel, ok.carrier());
-                yield validationReason != null
-                    ? new UnclassifiedField(parentTypeName, fieldName, location, Rejection.structural(validationReason))
-                    : builder.apply(channel, ok.carrier());
-            }
+            case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.ServiceMethodCall> ok ->
+                builder.apply(channel, ok.carrier());
             case no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.ServiceMethodCall> err ->
                 // Preserve the typed ServiceMethodCallError as the UnclassifiedField's
                 // rejection so the LSP Diagnostic projector can read its lspCode() and set the
@@ -5246,30 +5242,6 @@ class FieldBuilder {
                 new UnclassifiedField(parentTypeName, fieldName, location,
                     err.errors().getFirst());
         };
-    }
-
-    /**
-     * Why a {@code @service} field's arguments cannot go through the pre-execution validation pass
-     * its error channel turns on, or {@code null} when they can. The pass runs when the channel
-     * carries a {@code VALIDATION} handler, and materialises an input-object argument at no list
-     * wrapper or one; a list of lists of input objects is beyond it. {@link GraphitronSchemaValidator}
-     * reads the same verdict on the classified field.
-     */
-    static String unvalidatableArgumentReason(Optional<ErrorChannel.Mapped> channel,
-            no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier) {
-        if (channel.isEmpty() || !channel.get().hasValidationHandler()) {
-            return null;
-        }
-        for (var target : carrier.validatedArguments()) {
-            if (target instanceof no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidatedArgument.InputObjectNestedList nested) {
-                return "argument '" + nested.argName() + "' is a list of lists of input type '"
-                    + nested.inputTypeName() + "', and the payload's error channel carries a VALIDATION"
-                    + " handler; validation of a list of lists of input objects is not supported."
-                    + " Flatten the argument to a single list, or drop the VALIDATION handler from"
-                    + " the payload's error types";
-            }
-        }
-        return null;
     }
 
     /**

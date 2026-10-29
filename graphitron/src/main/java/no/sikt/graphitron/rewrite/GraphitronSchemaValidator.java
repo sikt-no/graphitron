@@ -1137,25 +1137,6 @@ public class GraphitronSchemaValidator {
         // Unresolved service method is caught by the builder (UnclassifiedField).
         validateRootServiceTableReturn(field, field.returnType(),
             field.errorChannel().isPresent(), errors);
-        validateServiceValidationTargets(field, field.serviceMethodCall(), field.errorChannel(), errors);
-    }
-
-    /**
-     * A root {@code @service} field whose error channel turns the pre-execution validation pass on
-     * must not read an argument the pass cannot materialise, a list of lists of input objects. Mirrors
-     * the classifier's rejection ({@link FieldBuilder#unvalidatableArgumentReason}); the emitter's
-     * arm for such an argument throws rather than emitting a pass that crashes at request time.
-     */
-    private void validateServiceValidationTargets(no.sikt.graphitron.rewrite.model.OutputField field,
-            no.sikt.graphitron.rewrite.model.ServiceMethodCall carrier,
-            java.util.Optional<no.sikt.graphitron.rewrite.model.ErrorChannel.Mapped> channel,
-            List<ValidationError> errors) {
-        String reason = FieldBuilder.unvalidatableArgumentReason(channel, carrier);
-        if (reason != null) {
-            errors.add(new ValidationError(field.qualifiedName(),
-                Rejection.structural("Field '" + field.qualifiedName() + "': " + reason),
-                field.location()));
-        }
     }
 
     /**
@@ -1227,7 +1208,7 @@ public class GraphitronSchemaValidator {
         }
     }
     private void validateQueryServiceRecordField(no.sikt.graphitron.rewrite.model.QueryField.QueryServiceRecordField field, Map<String, GraphitronType> types, List<ValidationError> errors) {
-        validateServiceValidationTargets(field, field.serviceMethodCall(), field.errorChannel(), errors);
+        // Unresolved service method and return-type mismatches are caught by the builder (UnclassifiedField).
     }
     private void validateQueryServicePolymorphicField(no.sikt.graphitron.rewrite.model.QueryField.QueryServicePolymorphicField field, List<ValidationError> errors) {
         // Route (a): the @service-return arm shares the multitable participant invariants with
@@ -1294,10 +1275,9 @@ public class GraphitronSchemaValidator {
         // Unresolved service method is caught by the builder (UnclassifiedField).
         validateRootServiceTableReturn(field, field.returnType(),
             field.errorChannel().isPresent(), errors);
-        validateServiceValidationTargets(field, field.serviceMethodCall(), field.errorChannel(), errors);
     }
     private void validateMutationServiceRecordField(no.sikt.graphitron.rewrite.model.MutationField.MutationServiceRecordField field, List<ValidationError> errors) {
-        validateServiceValidationTargets(field, field.serviceMethodCall(), field.errorChannel(), errors);
+        // Unresolved service method and return-type mismatches are caught by the builder (UnclassifiedField).
     }
     private void validateMutationServicePolymorphicField(no.sikt.graphitron.rewrite.model.MutationField.MutationServicePolymorphicField field, List<ValidationError> errors) {
         // Route (a): mutation analogue of validateQueryServicePolymorphicField; same shared

@@ -26,7 +26,6 @@ import org.junit.jupiter.api.Test;
 import java.util.List;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
  * Walker unit-tier tests. Exercises the {@link ServiceMethodCallWalker#walk} translator
@@ -320,36 +319,26 @@ class ServiceMethodCallWalkerTest {
     }
 
     @Test
-    void walk_validatedArguments_classifyEachArgumentByItsDeclaredType() {
+    void walk_boundClass_carriesTheArgumentItBinds_evenWithNoBoundFields() {
+        // No leaf to recover the argument name from, so the bound class carries it.
+        var beanClass = ClassName.get("com.example", "Bean");
+        var bean = new CallSiteExtraction.InputBean(beanClass, CallSiteExtraction.InputBean.Target.RECORD,
+            List.of());
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
-            param("title", ClassName.get(String.class), directArg("title")),
-            param("tags", ClassName.OBJECT, directArg("tags")),
-            param("input", ClassName.OBJECT, directArg("input")),
-            param("beans", ClassName.OBJECT, directArg("beans")),
-            param("grid", ClassName.OBJECT, directArg("grid")));
-        var fieldDef = fieldWith(
-            argument("title", Scalars.GraphQLString),
-            argument("tags", GraphQLList.list(GraphQLNonNull.nonNull(Scalars.GraphQLString))),
-            argument("input", GraphQLNonNull.nonNull(BEAN_INPUT)),
-            argument("beans", GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(BEAN_INPUT)))),
-            argument("grid", GraphQLNonNull.nonNull(GraphQLList.list(
-                GraphQLNonNull.nonNull(GraphQLList.list(GraphQLNonNull.nonNull(BEAN_INPUT)))))));
+            param("bean", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))));
 
-        var call = ok(walker.walk("Mutation", fieldDef, method));
+        var call = ok(walker.walk("Query", fieldWith(argument("input", BEAN_INPUT)), method));
 
-        assertThat(call.validatedArguments()).containsExactly(
-            new ServiceMethodCall.ValidatedArgument.Raw("title"),
-            new ServiceMethodCall.ValidatedArgument.Raw("tags"),
-            new ServiceMethodCall.ValidatedArgument.InputObject("input", "BeanInput"),
-            new ServiceMethodCall.ValidatedArgument.InputObjectList("beans", "BeanInput"),
-            new ServiceMethodCall.ValidatedArgument.InputObjectNestedList("grid", "BeanInput"));
+        var shape = (ValueShape.RecordInput) ((MappingEntry.FromArg) call.methodArgs().getFirst()).shape();
+        assertThat(shape.argName()).isEqualTo("input");
     }
 
     @Test
-    void walk_validatedArguments_twoBindingsIntoOneArgumentShareOneTarget() {
-        // A bean parameter for `input` and a scalar parameter for `input.name` read one argument;
-        // validating per binding would report each of its violations twice.
+    void validationTargets_areTheParametersBoundToAClass_perElementForAList() {
+        // A bean for `input`, a list of beans for `beans`, a scalar reaching into `input`, and a
+        // scalar argument: only the two class-bound parameters are validated, each by the local the
+        // call passes.
         var beanClass = ClassName.get("com.example", "Bean");
         var bean = new CallSiteExtraction.InputBean(beanClass,
             CallSiteExtraction.InputBean.Target.RECORD,
@@ -360,29 +349,24 @@ class ServiceMethodCallWalkerTest {
             new CallSiteExtraction.Direct());
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
-            param("input", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))),
+            param("one", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))),
+            param("many", ParameterizedTypeName.get(ClassName.get(List.class), beanClass),
+                new ParamSource.Arg(bean, new PathExpr.Head("beans"))),
             param("name", ClassName.get(String.class), new ParamSource.Arg(nested,
                 new PathExpr.Step(new PathExpr.Head("input"), "name", false))),
             param("title", ClassName.get(String.class), directArg("title")));
 
-        var call = ok(walker.walk("Mutation",
-            fieldWith(argument("input", BEAN_INPUT), argument("title", Scalars.GraphQLString)), method));
+        var call = ok(walker.walk("Mutation", fieldWith(
+            argument("input", BEAN_INPUT),
+            argument("beans", GraphQLList.list(GraphQLNonNull.nonNull(BEAN_INPUT))),
+            argument("title", Scalars.GraphQLString)), method));
 
-        assertThat(call.methodArgs()).hasSize(3);
-        assertThat(call.validatedArguments()).containsExactly(
-            new ServiceMethodCall.ValidatedArgument.InputObject("input", "BeanInput"),
-            new ServiceMethodCall.ValidatedArgument.Raw("title"));
-    }
-
-    @Test
-    void walk_argumentTheFieldDoesNotDeclare_isAnInvariantFailure() {
-        var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
-            new MethodRef.CallShape.Static(false),
-            param("title", ClassName.get(String.class), directArg("title")));
-
-        assertThatThrownBy(() -> walker.walk("Query", STUB_FIELD, method))
-            .isInstanceOf(IllegalStateException.class)
-            .hasMessageContaining("'title'");
+        assertThat(call.validationTargets())
+            .extracting(t -> t.getClass().getSimpleName(), ServiceMethodCall.ValidationTarget::local,
+                t -> t.boundClass().argName())
+            .containsExactly(
+                org.assertj.core.groups.Tuple.tuple("Single", "one", "input"),
+                org.assertj.core.groups.Tuple.tuple("PerElement", "many", "beans"));
     }
 
     // ===== helpers =====

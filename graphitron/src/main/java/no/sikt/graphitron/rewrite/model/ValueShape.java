@@ -14,9 +14,11 @@ import no.sikt.graphitron.render.CatalogRefs;
  * {@link ListOf#elementShape}; every node carries its Java {@link TypeName} so emitters can
  * declare type-correct casts at every step.
  *
- * <p>Paths live on the data-bearing leaves ({@link Scalar}, {@link ListOf}), not on composites.
+ * <p>Paths live on the data-bearing leaves ({@link Scalar}, {@link ListOf}). A class-bound
+ * composite ({@link BoundClass}) carries no path of its own, only the name of the field argument
+ * its value is read from, since a bound class always binds a whole argument.
  */
-public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf, ValueShape.RecordInput, ValueShape.JavaBeanInput, ValueShape.JooqRecordInput {
+public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf, ValueShape.BoundClass, ValueShape.JooqRecordInput {
 
     TypeName javaType();
 
@@ -45,22 +47,41 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
         }
     }
 
+    /**
+     * A value built into a class the consumer wrote, from the SDL input fields {@link #fields()}
+     * binds. {@code argName} is the field argument the value is read from: a bound class always
+     * binds a whole top-level argument, and a nested one (a {@link FieldBinding}'s shape) is read
+     * from inside the same argument. {@code argName} is the argument even where {@code fields} is
+     * empty, which is why it is carried rather than recovered from a leaf's path.
+     */
+    sealed interface BoundClass extends ValueShape permits RecordInput, JavaBeanInput {
+        ClassName javaClass();
+        String argName();
+        List<FieldBinding> fields();
+
+        @Override default TypeName javaType() { return javaClass(); }
+    }
+
     /** Construction via record canonical ctor; field order is the record-component order. */
-    record RecordInput(ClassName javaClass, List<FieldBinding> fields) implements ValueShape {
-        public RecordInput { fields = List.copyOf(fields); }
-        @Override public TypeName javaType() { return javaClass; }
+    record RecordInput(ClassName javaClass, String argName, List<FieldBinding> fields) implements BoundClass {
+        public RecordInput {
+            java.util.Objects.requireNonNull(argName, "argName");
+            fields = List.copyOf(fields);
+        }
     }
 
     /** Construction via no-arg ctor + setters; field order is irrelevant to construction. */
-    record JavaBeanInput(ClassName javaClass, List<FieldBinding> fields) implements ValueShape {
-        public JavaBeanInput { fields = List.copyOf(fields); }
-        @Override public TypeName javaType() { return javaClass; }
+    record JavaBeanInput(ClassName javaClass, String argName, List<FieldBinding> fields) implements BoundClass {
+        public JavaBeanInput {
+            java.util.Objects.requireNonNull(argName, "argName");
+            fields = List.copyOf(fields);
+        }
     }
 
     /**
      * Construction of a generated jOOQ {@link org.jooq.TableRecord} param via the
  * {@code create<Record>} helper. A <em>path-carrying leaf</em>, not a pathless composite
-     * like {@link RecordInput} / {@link JavaBeanInput}: a jOOQ record binds on the column / identity
+     * like a {@link BoundClass}: a jOOQ record binds on the column / identity
      * axes rather than per-SDL-field {@link FieldBinding}s, so there are no per-field {@code ValueShape}
      * children to hang paths on, and {@code JooqRecordInput} carries its own {@code sdlPath} exactly as
      * {@link Scalar} does. It also carries the whole {@link CallSiteExtraction.JooqRecord} construction

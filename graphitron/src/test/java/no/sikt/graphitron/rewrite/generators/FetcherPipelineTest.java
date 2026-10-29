@@ -1038,58 +1038,6 @@ class FetcherPipelineTest {
         assertThat(classes).doesNotContain("UnreachedInput");
     }
 
-    @Test
-    void inputRecord_validatorPreStep_receivesTypedRecordNotMap() {
-        // Pipeline-tier regression guard: the validator pre-step on a mutation service field
-        // with a ValidationHandler-bearing @error type materialises the graphitron-emitted
-        // class via <InputName>.fromMap(...) and walks the typed local through
-        // validator.validate(...). A pre-step that walks the raw Map instead
-        // (validate(env.getArgument(...))) fails the contains assertion. Uses TestInputBean
-        // + runSakWithInputBean (the canonical service-input-bean classification path
-        // returning the SakPayload directly) so the SDL classifies cleanly; the validator
-        // pre-step then runs on top.
-        var sdl = """
-            enum TestInputBeanEnum { LOW HIGH }
-            input TestInputNested { key: String, value: String }
-            input TestInputBean { title: String, rating: TestInputBeanEnum, nested: [TestInputNested!] }
-            type ValidationErr @error(handlers: [{handler: VALIDATION}]) {
-                path: [String!]!
-                message: String!
-            }
-            type DbErr @error(handlers: [{handler: DATABASE, sqlState: "23503"}]) {
-                path: [String!]!
-                message: String!
-            }
-            union SakError = ValidationErr | DbErr
-            type SakPayload {
-                data: String
-                errors: [SakError]
-            }
-            type Query { x: String }
-            type Mutation {
-                runWithInputBean(input: TestInputBean): SakPayload
-                    @service(service: {className: "no.sikt.graphitron.rewrite.TestServiceStub", method: "runSakWithInputBean"})
-            }
-            """;
-        var specs = TestSchemaHelper.storeBackedFetchers(tmp, sdl);
-        var mutationFetchers = specs.stream()
-            .filter(t -> t.name().equals("MutationFetchers"))
-            .findFirst()
-            .orElseThrow();
-        var run = method(mutationFetchers, "runWithInputBean");
-        var body = run.code().toString();
-        // The validator pre-step walks the typed instance, not the raw Map.
-        assertThat(body)
-            .contains(DEFAULT_OUTPUT_PACKAGE + ".inputs.TestInputBean")
-            .contains(".fromMap(")
-            .contains("validator.validate");
-        // Negative half of the regression guard: the typed local feeds validate, not the raw
-        // Map. The "Object arg_input = env.getArgument(...)" raw shape belongs to the scalar and
-        // enum arm.
-        assertThat(body)
-            .doesNotContain("Object arg_input = env.getArgument");
-    }
-
     /**
      * Helper for the SDL → input-class pipeline cases: produces the {@code TypeSpec}
      * the input-class generator emits for {@code typeName}, asserting the class is present in the

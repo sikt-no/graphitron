@@ -1378,10 +1378,10 @@ type Query {
             method: "lookup"
         })
 
-    # The VALIDATION-channel entry point. Its channel mixes a {handler: VALIDATION} entry with a
-    # dispatch handler, so the wrapper emits the Jakarta validation pre-step as the first statement
-    # inside its try block and the per-@error message() bodies carry the GraphQLError arm the validation path lands on.
-    # See FilmValidatedLookupService for what the fixture does and does not pin.
+    # A VALIDATION channel on a field that binds no class: its channel mixes a {handler: VALIDATION}
+    # entry with a dispatch handler, but the service takes a scalar, so there is nothing for the
+    # Jakarta validation pre-step to check and none is emitted. The per-@error message() bodies still
+    # carry the GraphQLError arm the validation path lands on. See FilmValidatedLookupService.
     filmLookupValidated(id: Int!): FilmValidatedLookupPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmValidatedLookupService",
@@ -1729,10 +1729,10 @@ type FilmLookupPayload {
     errors: [FilmLookupError]
 }
 
-# The suite's one {handler: VALIDATION} channel, on its own payload so the wrapper's Jakarta
-# validation pre-step stays off the dispatch fixtures above. Its point is the emitted message()
-# body's GraphQLError arm: the validation path puts GraphQLError instances in the errors slot which
-# need not be Throwables, so that arm is the one resolution step no dispatch fixture reaches.
+# A {handler: VALIDATION} channel on its own payload, kept off the dispatch fixtures above. Its
+# field binds no class, so nothing is validated; its point is the emitted message() body's
+# GraphQLError arm: the validation path puts GraphQLError instances in the errors slot which need
+# not be Throwables, so that arm is the one resolution step no dispatch fixture reaches.
 # A VALIDATION handler carries no description: (the SDL-to-model lift rejects one, since the
 # validator emits one error per violation each carrying its own interpolated message), which is
 # also why the dispatch sibling below is what supplies this channel's error routing.
@@ -1929,12 +1929,24 @@ type FilmWriteInvalid @error(handlers: [{handler: VALIDATION}]) {
 
 union FilmCreateError = FilmCreateConstraintViolation | FilmWriteInvalid
 
-# The errors union of Mutation.countFilmDrafts, sharing the VALIDATION-handled FilmWriteInvalid with
-# FilmCreateError.
+# The errors union of Mutation.countFilmDrafts and Mutation.countFilmBundleDraft, sharing the
+# VALIDATION-handled FilmWriteInvalid with FilmCreateError.
 union FilmDraftError = FilmWriteInvalid
 
 input FilmDraftInput {
     title: String!
+}
+
+# Binds FilmBundleDraft. `limits` names no member of it, so its capacity flattens onto the record;
+# `films` binds a List<@Valid FilmDraft> member.
+input FilmBundleDraftInput {
+    name: String
+    limits: FilmBundleLimitsInput
+    films: [FilmDraftInput!]
+}
+
+input FilmBundleLimitsInput {
+    capacity: Int
 }
 
 type FilmDraftsCountedPayload {
@@ -5641,12 +5653,22 @@ type Mutation {
     # A @service mutation over a list of input objects whose errors union shares FilmWriteInvalid, a
     # {handler: VALIDATION} type, with the DML carriers above: the shape a consumer reaches by putting
     # VALIDATION on an error type its mutations share. The handler turns on the Jakarta validation
-    # pre-step, which reads the list argument element by element. Pinned by GraphQLQueryTest's
-    # countFilmDrafts_* cases; see FilmDraftService.
+    # pre-step, which validates each FilmDraft the service is about to receive against the
+    # constraints declared on it. Pinned by GraphQLQueryTest's countFilmDrafts_* cases; see
+    # FilmDraftService.
     countFilmDrafts(in: [FilmDraftInput!]!): FilmDraftsCountedPayload
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmDraftService",
             method: "count", argMapping: "drafts: in"
+        })
+
+    # The same channel over one input bound to a record through a grouping input, a list member and
+    # a class-level constraint: what a validation error's path names in each case. Pinned by
+    # GraphQLQueryTest's countFilmBundleDraft_* cases; see FilmBundleDraftService.
+    countFilmBundleDraft(in: FilmBundleDraftInput!): FilmDraftsCountedPayload
+        @service(service: {
+            className: "no.sikt.graphitron.rewrite.test.services.FilmBundleDraftService",
+            method: "count", argMapping: "bundle: in"
         })
 
     # R156 compilation-tier fixture: payload-returning DELETE carrier, ID-typed element-shape arm.

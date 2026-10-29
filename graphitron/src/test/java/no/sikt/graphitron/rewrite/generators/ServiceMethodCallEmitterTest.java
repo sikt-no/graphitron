@@ -35,7 +35,7 @@ class ServiceMethodCallEmitterTest {
                 "Query.findByTitle(title:)"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "findByTitle", List.of(entry), stringType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -53,7 +53,7 @@ class ServiceMethodCallEmitterTest {
         var entry = new MappingEntry.FromDsl();
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "queryAll", List.of(entry), ClassName.get(String.class),
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -71,7 +71,7 @@ class ServiceMethodCallEmitterTest {
         var entry = new MappingEntry.FromContext("userId", stringType, "userId");
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "doThing", List.of(entry), stringType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -87,7 +87,7 @@ class ServiceMethodCallEmitterTest {
         var entry = new MappingEntry.FromSessionHandle("identity", handleType);
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "principalOf", List.of(entry), handleType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, handleType, FetchersHelperNames.bare(),
             no.sikt.graphitron.javapoet.CodeBlock.of("graphitronContext(env).getDslContext(env)"),
@@ -109,7 +109,7 @@ class ServiceMethodCallEmitterTest {
         var entry = new MappingEntry.FromSessionHandle("identity", handleType);
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "principalOf", List.of(entry), handleType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         org.assertj.core.api.Assertions.assertThatThrownBy(
                 () -> ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE))
@@ -129,7 +129,7 @@ class ServiceMethodCallEmitterTest {
             "findByTitle",
             List.of(entry),
             ClassName.get(String.class),
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -153,7 +153,7 @@ class ServiceMethodCallEmitterTest {
             "doThing",
             List.of(new MappingEntry.FromDsl()),
             ClassName.get(String.class),
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -174,7 +174,7 @@ class ServiceMethodCallEmitterTest {
     void emit_static_noEntries_emitsBareCall() {
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "doThing", List.of(), ClassName.get(String.class),
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -195,10 +195,10 @@ class ServiceMethodCallEmitterTest {
                 new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct(), "FilmInput.title"), "FilmInput.title"));
         var entry = new MappingEntry.FromArg("input",
-            new ValueShape.RecordInput(beanClass, fields));
+            new ValueShape.RecordInput(beanClass, "input", fields));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "save", List.of(entry), stringType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -220,10 +220,10 @@ class ServiceMethodCallEmitterTest {
                 new ArgPath("input", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct(), "FilmInput.title"), "FilmInput.title"));
         var entry = new MappingEntry.FromArg("input",
-            new ValueShape.JavaBeanInput(beanClass, fields));
+            new ValueShape.JavaBeanInput(beanClass, "input", fields));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "save", List.of(entry), stringType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -248,7 +248,7 @@ class ServiceMethodCallEmitterTest {
                 new CallSiteExtraction.Direct(), "Item.id"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -283,7 +283,7 @@ class ServiceMethodCallEmitterTest {
                 new CallSiteExtraction.Direct(), "Item.id"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -320,7 +320,7 @@ class ServiceMethodCallEmitterTest {
                 new CallSiteExtraction.Direct(), "Item.id"));
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "find", List.of(entry), intType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 
@@ -340,11 +340,11 @@ class ServiceMethodCallEmitterTest {
                 new ArgPath("inputs", List.of(new ArgPath.Segment("title", false))),
                 new CallSiteExtraction.Direct(), "FilmInput.title"), "FilmInput.title"));
         var listShape = new ValueShape.ListOf(ArgPath.head("inputs"),
-            new ValueShape.RecordInput(beanClass, fields));
+            new ValueShape.RecordInput(beanClass, "inputs", fields));
         var entry = new MappingEntry.FromArg("inputs", listShape);
         var call = new ServiceMethodCall.Static(
             "com.example.Svc", "saveAll", List.of(entry), stringType,
-            ServiceMethodCall.ReturnContainer.Other.INSTANCE, List.of());
+            ServiceMethodCall.ReturnContainer.Other.INSTANCE);
 
         var stmts = ServiceMethodCallEmitter.emit(call, OUTPUT_PACKAGE);
 

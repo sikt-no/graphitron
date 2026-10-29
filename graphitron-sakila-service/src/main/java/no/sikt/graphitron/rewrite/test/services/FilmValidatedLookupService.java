@@ -12,14 +12,10 @@ package no.sikt.graphitron.rewrite.test.services;
  *   <li>otherwise — happy path; returns a populated {@link FilmValidatedLookupPayload}.</li>
  * </ul>
  *
- * <p>The wrapper runs {@code jakarta.validation.Validator.validate} on the {@code id} argument
- * before this method, because the channel carries a VALIDATION handler. The generated input the
- * pre-step walks declares no constraint annotations, so the walk yields no violations and the
- * body always runs: what the fixture pins is that the pre-step, the generated
- * {@code ConstraintViolations} helper and the emitted {@code message} body's {@code GraphQLError}
- * arm all compile and execute on a live channel. An assertion on an interpolated violation
- * message is not constructible today, because nothing attaches constraints to the type the
- * pre-step validates.
+ * <p>The VALIDATION handler validates the classes a {@code @service} method takes, and this method
+ * takes a scalar, so there is nothing to validate and the wrapper emits no validation step: what
+ * the fixture pins is that a VALIDATION channel whose field binds no class still compiles,
+ * dispatches, and resolves the emitted {@code message} body on a live channel.
  */
 public final class FilmValidatedLookupService {
 

@@ -4,11 +4,12 @@ import java.util.List;
 
 /**
  * Fixture behind {@code Mutation.countFilmDrafts}: a {@code @service} mutation taking a list of
- * input objects, whose payload's error channel carries a {@code {handler: VALIDATION}} member. That
- * handler makes the wrapper validate the argument before this method runs, one element at a time.
- * The generated input class the pass validates carries no constraint annotations, so the pass finds
- * no violations and the body always runs: what the fixture pins is that a list argument reaches
- * here at all, where it once failed every call by being read as a single input object.
+ * input objects bound to {@link FilmDraft}, whose payload's error channel carries a
+ * {@code {handler: VALIDATION}} member. That handler makes the wrapper validate each
+ * {@code FilmDraft} this method is about to receive, against the constraints declared on it, and
+ * answer with one error per violation instead of calling this method. With every draft valid the
+ * method runs and counts them; {@code count} is only ever set here, so a null {@code count} beside
+ * the errors shows the method was not called.
  */
 public final class FilmDraftService {
 

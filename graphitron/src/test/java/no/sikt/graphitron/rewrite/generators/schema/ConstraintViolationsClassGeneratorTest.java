@@ -21,7 +21,7 @@ class ConstraintViolationsClassGeneratorTest {
 
     @Test
     void emits_singleConstraintViolationsClass() {
-        var specs = ConstraintViolationsClassGenerator.generate();
+        var specs = ConstraintViolationsClassGenerator.generate("com.example.gen");
         assertThat(specs).hasSize(1);
         assertThat(specs.get(0).name()).isEqualTo("ConstraintViolations");
         assertThat(specs.get(0).modifiers()).contains(Modifier.PUBLIC, Modifier.FINAL);
@@ -33,10 +33,13 @@ class ConstraintViolationsClassGeneratorTest {
         var m = method(helper, "toGraphQLError");
         assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
         assertThat(m.parameters()).extracting(p -> p.name())
-            .containsExactly("violation", "env", "argPath");
+            .containsExactly("violation", "env", "argPath", "paths");
         assertThat(m.parameters().get(2).type().toString())
             .as("the argument path, the same parameter shape sizeExceeded takes")
             .isEqualTo("java.util.List<java.lang.Object>");
+        assertThat(m.parameters().get(3).type().toString())
+            .as("the member-to-SDL-field translation, the nested Paths type")
+            .isEqualTo("com.example.gen.schema.ConstraintViolations.Paths");
         assertThat(m.returnType().toString()).isEqualTo("graphql.GraphQLError");
     }
 
@@ -53,7 +56,7 @@ class ConstraintViolationsClassGeneratorTest {
     }
 
     private static TypeSpec generate() {
-        return ConstraintViolationsClassGenerator.generate().get(0);
+        return ConstraintViolationsClassGenerator.generate("com.example.gen").get(0);
     }
 
     private static MethodSpec method(TypeSpec spec, String name) {

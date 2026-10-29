@@ -28,10 +28,8 @@ import java.util.function.Function;
  * {@code returnContainer} is the container that return type is, read once where the return is
  * reflected so no consumer inspects a type name.
  *
- * <p>{@code validatedArguments} names each field argument the call reads, once, in the order the
- * method's parameters first reach it, classified by the shape the pre-execution validation pass
- * materialises it in. It is a fact about the arguments, not about the parameter bindings: two
- * parameters binding into one argument yield one target.
+ * <p>{@link #validationTargets()} derives, from {@code methodArgs}, the values the pre-execution
+ * validation pass checks: the parameters bound to a class the consumer wrote.
  */
 public sealed interface ServiceMethodCall permits ServiceMethodCall.Static, ServiceMethodCall.Instance {
 
@@ -40,20 +38,39 @@ public sealed interface ServiceMethodCall permits ServiceMethodCall.Static, Serv
     List<MappingEntry> methodArgs();
     TypeName javaReturnType();
     ReturnContainer returnContainer();
-    List<ValidatedArgument> validatedArguments();
+
+    /**
+     * The method parameters whose value is a class the consumer wrote ({@link ValueShape.BoundClass}),
+     * directly or as the elements of a list, in parameter order. These are what the pre-execution
+     * validation pass hands the {@code Validator}: the very instances the call is about to pass.
+     * Parameters binding a scalar, an enum, a {@code Map} pass-through or a jOOQ record yield none.
+     */
+    default List<ValidationTarget> validationTargets() {
+        var targets = new java.util.ArrayList<ValidationTarget>();
+        for (MappingEntry entry : methodArgs()) {
+            if (!(entry instanceof MappingEntry.FromArg arg)) {
+                continue;
+            }
+            switch (arg.shape()) {
+                case ValueShape.BoundClass bound -> targets.add(new ValidationTarget.Single(arg.javaName(), bound));
+                case ValueShape.ListOf list when list.elementShape() instanceof ValueShape.BoundClass bound ->
+                    targets.add(new ValidationTarget.PerElement(arg.javaName(), bound));
+                default -> { }
+            }
+        }
+        return List.copyOf(targets);
+    }
 
     record Static(
         String fqClassName,
         String methodName,
         List<MappingEntry> methodArgs,
         TypeName javaReturnType,
-        ReturnContainer returnContainer,
-        List<ValidatedArgument> validatedArguments
+        ReturnContainer returnContainer
     ) implements ServiceMethodCall {
         public Static {
             methodArgs = List.copyOf(methodArgs);
             Objects.requireNonNull(returnContainer, "returnContainer");
-            validatedArguments = List.copyOf(validatedArguments);
         }
     }
 
@@ -63,60 +80,41 @@ public sealed interface ServiceMethodCall permits ServiceMethodCall.Static, Serv
         String methodName,
         List<MappingEntry> methodArgs,
         TypeName javaReturnType,
-        ReturnContainer returnContainer,
-        List<ValidatedArgument> validatedArguments
+        ReturnContainer returnContainer
     ) implements ServiceMethodCall {
         public Instance {
             ctorArgs = List.copyOf(ctorArgs);
             methodArgs = List.copyOf(methodArgs);
             Objects.requireNonNull(returnContainer, "returnContainer");
-            validatedArguments = List.copyOf(validatedArguments);
         }
     }
 
     /**
-     * One field argument the call reads, as the pre-execution validation pass materialises it.
-     * The arm is decided from the argument's declared SDL type: whether it unwraps to an input
-     * object, and under how many list wrappers. An input-object arm names the SDL input type; the
-     * generated class that type renders to is emit vocabulary.
+     * One value the pre-execution validation pass checks: the call-site local a parameter's value is
+     * declared in, and the class it binds. {@code local} is {@link MappingEntry.FromArg#javaName()},
+     * the name the emitted call passes.
      */
-    sealed interface ValidatedArgument {
+    sealed interface ValidationTarget {
 
-        /** The argument's name on the field. */
-        String argName();
+        /** The call-site local the value is declared in. */
+        String local();
 
-        /** A scalar or enum argument, at any list depth; validated as its raw value. */
-        record Raw(String argName) implements ValidatedArgument {
-            public Raw {
-                Objects.requireNonNull(argName, "argName");
+        /** The class the value, or each of its elements, binds. */
+        ValueShape.BoundClass boundClass();
+
+        /** A parameter whose value is one bound class instance. */
+        record Single(String local, ValueShape.BoundClass boundClass) implements ValidationTarget {
+            public Single {
+                Objects.requireNonNull(local, "local");
+                Objects.requireNonNull(boundClass, "boundClass");
             }
         }
 
-        /** An input-object argument under no list wrapper. */
-        record InputObject(String argName, String inputTypeName) implements ValidatedArgument {
-            public InputObject {
-                Objects.requireNonNull(argName, "argName");
-                Objects.requireNonNull(inputTypeName, "inputTypeName");
-            }
-        }
-
-        /** An input-object argument under exactly one list wrapper; validated element by element. */
-        record InputObjectList(String argName, String inputTypeName) implements ValidatedArgument {
-            public InputObjectList {
-                Objects.requireNonNull(argName, "argName");
-                Objects.requireNonNull(inputTypeName, "inputTypeName");
-            }
-        }
-
-        /**
-         * An input-object argument under two or more list wrappers. The validation pass cannot
-         * materialise it, so classification rejects it on a field whose error channel carries a
-         * {@code VALIDATION} handler.
-         */
-        record InputObjectNestedList(String argName, String inputTypeName) implements ValidatedArgument {
-            public InputObjectNestedList {
-                Objects.requireNonNull(argName, "argName");
-                Objects.requireNonNull(inputTypeName, "inputTypeName");
+        /** A {@code List} parameter of bound class instances; validated element by element. */
+        record PerElement(String local, ValueShape.BoundClass boundClass) implements ValidationTarget {
+            public PerElement {
+                Objects.requireNonNull(local, "local");
+                Objects.requireNonNull(boundClass, "boundClass");
             }
         }
     }

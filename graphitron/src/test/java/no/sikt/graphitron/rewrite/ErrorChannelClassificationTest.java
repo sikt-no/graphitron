@@ -86,18 +86,15 @@ class ErrorChannelClassificationTest {
             """;
 
     @Test
-    void serviceField_listOfListsOfInputObjects_underValidationChannel_isRejected() {
-        // The pre-execution validation pass a VALIDATION handler turns on materialises an input
-        // object at no list wrapper or one; a list of lists is beyond it, so classification
-        // refuses the field rather than emitting a pass that fails on every request.
+    void serviceField_listOfListsOfInputObjects_underValidationChannel_classifiesWithNothingToValidate() {
+        // A list of lists of input objects can only bind as a Map pass-through, which is not a class
+        // the consumer wrote, so the VALIDATION handler's pre-step has no target here and the field
+        // classifies like any other.
         var schema = build(UNION_ERROR_PAYLOAD_SDL + INPUT_GRID_SDL);
 
-        var f = schema.field("Mutation", "runWithInputGrid");
-        assertThat(f).isInstanceOf(UnclassifiedField.class);
-        assertThat(((UnclassifiedField) f).reason())
-            .contains("argument 'grid'")
-            .contains("list of lists of input type 'TestInputBean'")
-            .contains("VALIDATION");
+        var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputGrid");
+        assertThat(f.errorChannel().orElseThrow().hasValidationHandler()).isTrue();
+        assertThat(f.serviceMethodCall().validationTargets()).isEmpty();
     }
 
     @Test
@@ -116,9 +113,6 @@ class ErrorChannelClassificationTest {
 
         var f = (MutationField.MutationServiceRecordField) schema.field("Mutation", "runWithInputGrid");
         assertThat(f.errorChannel()).isPresent();
-        assertThat(f.serviceMethodCall().validatedArguments()).containsExactly(
-            new no.sikt.graphitron.rewrite.model.ServiceMethodCall.ValidatedArgument.InputObjectNestedList(
-                "grid", "TestInputBean"));
     }
 
     @Test

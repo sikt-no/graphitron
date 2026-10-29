@@ -240,4 +240,43 @@ final class TypeFetcherEmissionContext {
         companionMethods.clear();
         return out;
     }
+
+    // The ConstraintViolations.Paths constants this class's validation pre-steps name, keyed by the
+    // translation they build, so two fields binding one class through the same SDL layout share one
+    // and the same class bound through two layouts gets two.
+    private final java.util.Map<String, String> validationPathNames = new java.util.LinkedHashMap<>();
+    private final java.util.List<no.sikt.graphitron.javapoet.FieldSpec> validationPathFields =
+        new java.util.ArrayList<>();
+
+    /**
+     * The name of this class's {@code private static final ConstraintViolations.Paths} constant
+     * translating {@code bound}'s Java members to the SDL input fields they bind, declaring it on
+     * first request. Class assembly drains the declarations through {@link #drainValidationPathFields()}.
+     */
+    String validationPathsConstant(no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound,
+            String outputPackage) {
+        var initializer = no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator
+            .pathsInitializer(bound, outputPackage);
+        return validationPathNames.computeIfAbsent(initializer.toString(), key -> {
+            String stem = "VALIDATION_PATHS_"
+                + bound.javaClass().simpleName().replaceAll("([a-z0-9])([A-Z])", "$1_$2").toUpperCase(java.util.Locale.ROOT);
+            String name = stem;
+            for (int n = 2; validationPathNames.containsValue(name); n++) {
+                name = stem + "_" + n;
+            }
+            validationPathFields.add(no.sikt.graphitron.javapoet.FieldSpec.builder(
+                    no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage),
+                    name, javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC,
+                    javax.lang.model.element.Modifier.FINAL)
+                .initializer(initializer)
+                .build());
+            return name;
+        });
+    }
+
+    java.util.List<no.sikt.graphitron.javapoet.FieldSpec> drainValidationPathFields() {
+        var out = java.util.List.copyOf(validationPathFields);
+        validationPathFields.clear();
+        return out;
+    }
 }

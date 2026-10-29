@@ -994,6 +994,9 @@ public class TypeFetcherGenerator {
         // drain onto the class before the helper drain below.
         ctx.drainCompanionMethods().forEach(builder::addMethod);
 
+        // The ConstraintViolations.Paths constants the @service validation pre-steps named.
+        ctx.drainValidationPathFields().forEach(builder::addField);
+
         // Nested-argument descents any @routine dot-path binding on this class registered. Drained
         // after the companion methods, which may themselves register one.
         ctx.argPathHelpers().emit().forEach(builder::addMethod);
@@ -1729,11 +1732,12 @@ public class TypeFetcherGenerator {
      * services share the body shape because they run synchronously, on a root field with no
      * parent-batching context, and the developer-supplied method owns the transaction scope.
      *
-     * <p>When the channel carries any {@link no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler},
-     * the wrapper's first statement inside the try is a pre-execution Jakarta validation pass
-     * over {@link ServiceMethodCall#validatedArguments()}, one target per field argument the call
-     * reads, which short-circuits with the payload's errors-arm filled by the violations when any
-     * are produced; a failure in the pass reaches the catch arm. See {@link #validatorPreStep}.
+     * <p>When the channel carries any {@link no.sikt.graphitron.rewrite.model.GraphitronType.ErrorType.ValidationHandler}
+     * and the call has {@link ServiceMethodCall#validationTargets()}, a pre-execution Jakarta
+     * validation pass sits between the argument locals and the service call, validating the
+     * instances the call is about to pass; it short-circuits with the payload's errors-arm filled by
+     * the violations when any are produced, and a failure in the pass reaches the catch arm. See
+     * {@link #validatorPreStep}.
      *
      * <p>The success arm forks on {@code lift}. With no lift (the record- and scalar-returning
      * leaves) it is passthrough: the service method returns the SDL payload class directly, and
@@ -1797,14 +1801,6 @@ public class TypeFetcherGenerator {
             .addParameter(ENV, "env");
 
         builder.beginControlFlow("try");
-        // Pre-execution Jakarta validation, the first statement inside the try: a failure in the
-        // pass (a Validator throw, an input that will not materialise) reaches the channel's catch
-        // arm like the body's own exceptions. It runs before tenant resolution and the service
-        // call, neither of which is reached when violations exist; the early return wraps the
-        // violation list in Outcome.ErrorList (channel-agnostic under the wrapper).
-        if (wrap && errorChannel.get().hasValidationHandler()) {
-            builder.addCode(validatorPreStep(ctx, carrier, payloadType, outputPackage));
-        }
         // Register the same-class graphitronContext(env) helper before the emitter expands; the
         // emitter generates unqualified calls and relies on the *Fetchers-class helper that
         // {@link #buildGraphitronContextHelper} installs when GRAPHITRON_CONTEXT is requested.
@@ -1824,9 +1820,17 @@ public class TypeFetcherGenerator {
         var tenantHandDown = TenantDslEmitter.handDownOnly(ctx, field, outputPackage, emptySite);
         builder.addCode(tenantHandDown.declaration());
         CodeBlock dslSource = TenantDslEmitter.serviceDslExpression(ctx, field, tenantHandDown, outputPackage);
-        ServiceMethodCallEmitter.emit(carrier, valueType, ctx.fetchersHelperNames(), dslSource,
-                outputPackage, parentTypeName + "." + fieldName, ctx.nodeIdDecodeHelpers())
-            .forEach(builder::addStatement);
+        // Pre-execution Jakarta validation, between the argument locals and the service call: it
+        // validates the instances the call is about to pass, so it runs after the tenant hand-down
+        // above and after argument extraction (node-id decoding included), whose own client errors
+        // win over the violations. A failure in the pass (a Validator throw) reaches the channel's
+        // catch arm like the body's own exceptions; the early return wraps the violation list in
+        // Outcome.ErrorList (channel-agnostic under the wrapper).
+        CodeBlock preCall = wrap && errorChannel.get().hasValidationHandler()
+            ? validatorPreStep(ctx, carrier, payloadType, outputPackage)
+            : CodeBlock.of("");
+        builder.addCode(ServiceMethodCallEmitter.emitWithPreCall(carrier, valueType, ctx.fetchersHelperNames(),
+            dslSource, outputPackage, parentTypeName + "." + fieldName, ctx.nodeIdDecodeHelpers(), preCall));
         if (lift != null) {
             builder.addCode(emitServiceReentryLift(ctx, lift, carrier, dslSource,
                 liftedValueType, outputPackage));
@@ -2028,78 +2032,54 @@ public class TypeFetcherGenerator {
 
     /**
      * Emits the wrapper's pre-execution Jakarta validation block. Walks
-     * {@link ServiceMethodCall#validatedArguments()}, one target per field argument the call reads,
-     * validates each non-null value via the {@code GraphitronContext}-supplied {@code Validator},
-     * accumulates each violation as a {@code GraphQLError} via the generated
-     * {@code ConstraintViolations.toGraphQLError}, and short-circuits with the payload's errors-arm
-     * filled by the violations list when the accumulator is non-empty.
+     * {@link ServiceMethodCall#validationTargets()}, the parameters bound to a class the consumer
+     * wrote, and validates each non-null call-site local (each non-null element, for a list) via the
+     * {@code GraphitronContext}-supplied {@code Validator}, so the constraints the consumer declared
+     * on that class are the ones checked. Each violation becomes a {@code GraphQLError} via the
+     * generated {@code ConstraintViolations.toGraphQLError}, its path rooted at the argument (and the
+     * element index, for a list) and translated to SDL input-field names by the class's
+     * {@code ConstraintViolations.Paths} constant; the block short-circuits with the payload's
+     * errors-arm filled by the violations when the accumulator is non-empty. A call with no targets
+     * emits nothing, not even the {@code Validator} lookup.
      *
-     * <p>An input-object argument materialises through the graphitron-emitted class's
-     * {@code fromMap(Map<String,Object>)} factory before the validator walks it; a list of input
-     * objects is walked element by element, skipping null elements, with the element's index in the
-     * error path after the argument name. A scalar or enum argument is validated as its raw value.
-     * The walk produces zero violations when no programmatic {@code ConstraintMapping} entries are
-     * attached. A list of lists of input objects is rejected at classification
-     * ({@code FieldBuilder.unvalidatableArgumentReason}), so its arm here only throws.
-     *
-     * <p>The caller places the block inside the fetcher's {@code try}, so the early return is a
-     * return from inside it, as the DML column-length pre-step's is.
+     * <p>The caller places the block between the argument locals and the call, inside the fetcher's
+     * {@code try}, so the early return is a return from inside it, as the DML column-length
+     * pre-step's is.
      */
     private static CodeBlock validatorPreStep(TypeFetcherEmissionContext ctx, ServiceMethodCall carrier,
                                               TypeName outcomeType, String outputPackage) {
+        var targets = carrier.validationTargets();
+        if (targets.isEmpty()) {
+            return CodeBlock.of("");
+        }
         var validator = ClassName.get("jakarta.validation", "Validator");
         // List<Object> so the violations feed straight into Outcome.ErrorList(List<Object>) on the
         // early return; each element is a GraphQLError from ConstraintViolations.toGraphQLError.
         var listOfErrors = ParameterizedTypeName.get(LIST, ClassName.get(Object.class));
         var arrayList = ClassName.get("java.util", "ArrayList");
-        var mapStringObject = ParameterizedTypeName.get(
-            ClassName.get(Map.class), ClassName.get(String.class), ClassName.get(Object.class));
 
         var b = CodeBlock.builder();
         b.addStatement("$T validator = $L.getValidator(env)", validator, ctx.graphitronContextCall());
         b.addStatement("$T violations = new $T<>()", listOfErrors, arrayList);
-        for (var target : carrier.validatedArguments()) {
-            String argName = target.argName();
-            String local = "arg_" + sanitizeIdent(argName);
+        for (var target : targets) {
+            var bound = target.boundClass();
+            String paths = ctx.validationPathsConstant(bound, outputPackage);
+            String local = target.local();
+            b.beginControlFlow("if ($L != null)", local);
             switch (target) {
-                case ServiceMethodCall.ValidatedArgument.Raw ignored -> {
-                    b.addStatement("$T $L = env.getArgument($S)", Object.class, local, argName);
-                    b.beginControlFlow("if ($L != null)", local);
-                    b.add(validateInto(local, CodeBlock.of("$T.of($S)", LIST, argName), outputPackage));
-                    b.endControlFlow();
-                }
-                case ServiceMethodCall.ValidatedArgument.InputObject in -> {
-                    // The local is the validator's target (typed), not the raw Map. The class goes
-                    // out of scope after the pre-step; the call's own argument reads are separate.
-                    var inputClass = ClassName.get(outputPackage + ".inputs", in.inputTypeName());
-                    b.addStatement("$T $L_raw = env.getArgument($S)", mapStringObject, local, argName);
-                    b.beginControlFlow("if ($L_raw != null)", local);
-                    b.addStatement("$T $L = $T.fromMap($L_raw)", inputClass, local, inputClass, local);
-                    b.add(validateInto(local, CodeBlock.of("$T.of($S)", LIST, argName), outputPackage));
-                    b.endControlFlow();
-                }
-                case ServiceMethodCall.ValidatedArgument.InputObjectList list -> {
-                    // The element type is carried by getArgument's inference, so neither the list nor
-                    // an element takes a cast.
-                    var inputClass = ClassName.get(outputPackage + ".inputs", list.inputTypeName());
-                    b.addStatement("$T $L_raw = env.getArgument($S)",
-                        ParameterizedTypeName.get(LIST, mapStringObject), local, argName);
-                    b.beginControlFlow("if ($L_raw != null)", local);
-                    b.beginControlFlow("for (int i = 0; i < $L_raw.size(); i++)", local);
-                    b.addStatement("$T $L_element = $L_raw.get(i)", mapStringObject, local, local);
-                    b.beginControlFlow("if ($L_element != null)", local);
-                    b.addStatement("$T $L = $T.fromMap($L_element)", inputClass, local, inputClass, local);
-                    b.add(validateInto(local, CodeBlock.of("$T.of($S, i)", LIST, argName), outputPackage));
-                    b.endControlFlow();
+                case ServiceMethodCall.ValidationTarget.Single ignored ->
+                    b.add(validateInto(local, CodeBlock.of("$T.of($S)", LIST, bound.argName()), paths, outputPackage));
+                case ServiceMethodCall.ValidationTarget.PerElement ignored -> {
+                    b.beginControlFlow("for (int i = 0; i < $L.size(); i++)", local);
+                    b.addStatement("$T element = $L.get(i)", bound.javaClass(), local);
+                    b.beginControlFlow("if (element != null)");
+                    b.add(validateInto("element", CodeBlock.of("$T.of($S, i)", LIST, bound.argName()), paths,
+                        outputPackage));
                     b.endControlFlow();
                     b.endControlFlow();
                 }
-                case ServiceMethodCall.ValidatedArgument.InputObjectNestedList nested ->
-                    throw new IllegalStateException("@service argument '" + argName + "' is a list of"
-                        + " lists of input type '" + nested.inputTypeName() + "' under a VALIDATION"
-                        + " channel; classification rejects that shape, so the field should not have"
-                        + " reached emission");
             }
+            b.endControlFlow();
         }
         b.beginControlFlow("if (!violations.isEmpty())");
         b.add(ChannelEarlyReturnEmitter.emit(outcomeType, "violations", outputPackage));
@@ -2109,24 +2089,25 @@ public class TypeFetcherGenerator {
 
     /**
      * Validates the local {@code target} and adds each violation to {@code violations}, under the
-     * argument path {@code argPath} evaluates to.
+     * argument path {@code argPath} evaluates to, with member names translated by the
+     * {@code paths} constant.
      */
-    private static CodeBlock validateInto(String target, CodeBlock argPath, String outputPackage) {
+    private static CodeBlock validateInto(String target, CodeBlock argPath, String paths, String outputPackage) {
         var violationWildcard = ParameterizedTypeName.get(
             ClassName.get("jakarta.validation", "ConstraintViolation"), WildcardTypeName.subtypeOf(Object.class));
         var constraintViolations = ClassName.get(outputPackage + ".schema",
             ConstraintViolationsClassGenerator.CLASS_NAME);
         return CodeBlock.builder()
             .beginControlFlow("for ($T violation : validator.validate($L))", violationWildcard, target)
-            .addStatement("violations.add($T.toGraphQLError(violation, env, $L))", constraintViolations, argPath)
+            .addStatement("violations.add($T.toGraphQLError(violation, env, $L, $L))",
+                constraintViolations, argPath, paths)
             .endControlFlow()
             .build();
     }
 
     /**
      * Walks a {@link ServiceMethodCall} carrier and projects every {@link
-     * no.sikt.graphitron.rewrite.model.ValueShape.RecordInput} /
-     * {@link no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput} (including transitively
+     * no.sikt.graphitron.rewrite.model.ValueShape.BoundClass} (including transitively
      * via {@link no.sikt.graphitron.rewrite.model.ValueShape.ListOf} and nested
      * {@link no.sikt.graphitron.rewrite.model.ValueShape.FieldBinding}s) into the helper-queue
      * map as a synthetic {@link CallSiteExtraction.InputBean}. The synthetic carries the
@@ -2157,14 +2138,20 @@ public class TypeFetcherGenerator {
         switch (shape) {
             case no.sikt.graphitron.rewrite.model.ValueShape.Scalar ignored -> { /* leaf */ }
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> collectFromValueShape(l.elementShape(), out);
-            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput rec ->
-                registerBeanHelper(rec.javaClass(), CallSiteExtraction.InputBean.Target.RECORD, rec.fields(), out);
-            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
-                registerBeanHelper(jb.javaClass(), CallSiteExtraction.InputBean.Target.JAVA_BEAN, jb.fields(), out);
+            case no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound ->
+                registerBeanHelper(bound.javaClass(), beanTarget(bound), bound.fields(), out);
             // A jOOQ TableRecord input param. Its create<Record> helper is collected up front by
             // collectJooqRecordCarriers, not here — this walk is the bean-only leg of the dual walk.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput ignored -> { /* jooq handled up front */ }
         }
+    }
+
+    /** How the {@code create<Bean>} helper constructs a bound class: canonical constructor or setters. */
+    private static CallSiteExtraction.InputBean.Target beanTarget(no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound) {
+        return switch (bound) {
+            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput ignored -> CallSiteExtraction.InputBean.Target.RECORD;
+            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput ignored -> CallSiteExtraction.InputBean.Target.JAVA_BEAN;
+        };
     }
 
     private static void registerBeanHelper(
@@ -2396,11 +2383,8 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> collectJooqRecordInputsFromShape(l.elementShape(), out);
             // A jOOQ record never nests inside a bean, but recurse for parity so a future nesting cannot
             // silently drop a carrier from the resolver.
-            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput rec -> {
-                for (var f : rec.fields()) collectJooqRecordInputsFromShape(f.shape(), out);
-            }
-            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb -> {
-                for (var f : jb.fields()) collectJooqRecordInputsFromShape(f.shape(), out);
+            case no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound -> {
+                for (var f : bound.fields()) collectJooqRecordInputsFromShape(f.shape(), out);
             }
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> out.add(jr.carrier());
         }
@@ -2413,14 +2397,9 @@ public class TypeFetcherGenerator {
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l ->
                 l.elementShape() instanceof no.sikt.graphitron.rewrite.model.ValueShape.Scalar ls
                     ? ls.leafTransform() : leafForFieldBinding(l.elementShape());
-            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput rec ->
-                new CallSiteExtraction.InputBean(rec.javaClass(),
-                    CallSiteExtraction.InputBean.Target.RECORD,
-                    convertNestedFieldBindings(rec.fields()));
-            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb ->
-                new CallSiteExtraction.InputBean(jb.javaClass(),
-                    CallSiteExtraction.InputBean.Target.JAVA_BEAN,
-                    convertNestedFieldBindings(jb.fields()));
+            case no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound ->
+                new CallSiteExtraction.InputBean(bound.javaClass(), beanTarget(bound),
+                    convertNestedFieldBindings(bound.fields()));
             // Forced by the sealed addition, unreachable here — a JooqRecordInput is never an
             // InputBean field shape, so this leaf-for-field-binding walk never meets one.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr ->
@@ -2449,27 +2428,11 @@ public class TypeFetcherGenerator {
         return switch (shape) {
             case no.sikt.graphitron.rewrite.model.ValueShape.Scalar s -> s.javaType().toString();
             case no.sikt.graphitron.rewrite.model.ValueShape.ListOf l -> innerElementTypeNameOf(l.elementShape());
-            case no.sikt.graphitron.rewrite.model.ValueShape.RecordInput r -> r.javaClass().toString();
-            case no.sikt.graphitron.rewrite.model.ValueShape.JavaBeanInput jb -> jb.javaClass().toString();
+            case no.sikt.graphitron.rewrite.model.ValueShape.BoundClass bound -> bound.javaClass().toString();
             // Forced by the sealed addition; a JooqRecordInput is never an InputBean field shape,
             // but the record class is the trivially-correct inner element type if ever reached.
             case no.sikt.graphitron.rewrite.model.ValueShape.JooqRecordInput jr -> CatalogRefs.recordClass(jr.carrier().table()).toString();
         };
-    }
-
-    /**
-     * Sanitises a GraphQL argument name into a Java identifier suffix for use as a local
-     * variable name in the validator pre-step. Replaces every non-{@code [A-Za-z0-9_]}
-     * character with {@code _}; GraphQL arg names are already restricted to ASCII identifier
-     * characters today, so this is a future-proofing pass rather than a real normalisation.
-     */
-    private static String sanitizeIdent(String name) {
-        var sb = new StringBuilder(name.length());
-        for (int i = 0; i < name.length(); i++) {
-            char c = name.charAt(i);
-            sb.append((Character.isLetterOrDigit(c) || c == '_') ? c : '_');
-        }
-        return sb.toString();
     }
 
     /**

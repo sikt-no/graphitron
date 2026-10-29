@@ -56,7 +56,7 @@ public final class FixedRuntimeEmitter {
             GraphitronTransactionProviderGenerator.generate(outputPackage));
         add(out, GlobalUnitKind.CONSTRAINT_VIOLATIONS,
             units.singleton(GeneratedUnits.SUB_SCHEMA, ConstraintViolationsClassGenerator.CLASS_NAME),
-            ConstraintViolationsClassGenerator.generate());
+            ConstraintViolationsClassGenerator.generate(outputPackage));
         add(out, GlobalUnitKind.CLIENT_EXCEPTION, units.clientException(),
             GraphitronClientExceptionClassGenerator.generate());
         add(out, GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION, units.zeroRowsMatchedException(),

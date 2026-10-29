@@ -1973,11 +1973,8 @@ public record TenantBindingIndex(
                                            SlotCollector collector) {
             switch (shape) {
                 case ValueShape.ListOf list -> collectFromValueShape(list.elementShape(), use, collector);
-                case ValueShape.RecordInput record -> {
-                    for (var field : record.fields()) collectFromValueShape(field.shape(), use, collector);
-                }
-                case ValueShape.JavaBeanInput bean -> {
-                    for (var field : bean.fields()) collectFromValueShape(field.shape(), use, collector);
+                case ValueShape.BoundClass bound -> {
+                    for (var field : bound.fields()) collectFromValueShape(field.shape(), use, collector);
                 }
                 case ValueShape.JooqRecordInput jr -> collectFromJooqRecord(jr, use, collector);
                 case ValueShape.Scalar scalar -> {

@@ -72,7 +72,7 @@ class ConstraintViolationsWireShapeTest {
         var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
             .validate(new TitleBean("toolong")).iterator().next();
 
-        var jakarta = ConstraintViolations.toGraphQLError(violation, env, List.of("in"));
+        var jakarta = ConstraintViolations.toGraphQLError(violation, env, List.of("in"), null);
         var length = ConstraintViolations.sizeExceeded(env, List.of("in", "title"), 3);
 
         assertThat(jakarta.getPath()).containsExactly(FIELD, "in", "title").isEqualTo(length.getPath());
@@ -89,7 +89,7 @@ class ConstraintViolationsWireShapeTest {
         var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
             .validate(new TitlesBean(List.of("ok", "toolong"))).iterator().next();
 
-        assertThat(ConstraintViolations.toGraphQLError(violation, env, List.of("in")).getPath())
+        assertThat(ConstraintViolations.toGraphQLError(violation, env, List.of("in"), null).getPath())
             .containsExactly(FIELD, "in", "titles", 1);
     }
 
@@ -101,10 +101,50 @@ class ConstraintViolationsWireShapeTest {
         var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
             .validate(new TitleBean("toolong")).iterator().next();
 
-        var error = ConstraintViolations.toGraphQLError(violation, env, List.of("in", 1));
+        var error = ConstraintViolations.toGraphQLError(violation, env, List.of("in", 1), null);
         var length = ConstraintViolations.sizeExceeded(env, List.of("in", 1, "title"), 3);
 
         assertThat(error.getPath()).containsExactly(FIELD, "in", 1, "title").isEqualTo(length.getPath());
+    }
+
+    @Test
+    void aMemberThePathsTranslate_isNamedByItsSdlFields_andAnUnknownOneKeepsItsJavaName() {
+        // `title` was bound from the SDL field `title` inside a grouping input `spec`; `titles` is
+        // not in the translation, so it keeps its Java name, as would anything below it.
+        var env = env();
+        var paths = new ConstraintViolations.Paths().bind("title", List.of("spec", "title"), null);
+        var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
+            .validate(new TitleBean("toolong")).iterator().next();
+        var unknown = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
+            .validate(new TitlesBean(List.of("ok", "toolong"))).iterator().next();
+
+        assertThat(ConstraintViolations.toGraphQLError(violation, env, List.of("in"), paths).getPath())
+            .containsExactly(FIELD, "in", "spec", "title");
+        assertThat(ConstraintViolations.toGraphQLError(unknown, env, List.of("in"), paths).getPath())
+            .containsExactly(FIELD, "in", "titles", 1);
+    }
+
+    @Test
+    void aCascadedListElementsViolation_putsTheIndexBetweenTheListAndTheMember() {
+        // Bean Validation puts a cascaded List<@Valid X> element's index on the next property node
+        // rather than on a container-element node of its own.
+        var env = env();
+        var violation = GraphitronContext.GraphitronContextImpl.INSTANCE.getValidator(env)
+            .validate(new ShelfBean(List.of(new TitleBean("ok"), new TitleBean("toolong")))).iterator().next();
+        var paths = new ConstraintViolations.Paths()
+            .bind("titles", List.of("films"), new ConstraintViolations.Paths().bind("title", List.of("title"), null));
+
+        assertThat(ConstraintViolations.toGraphQLError(violation, env, List.of("in"), paths).getPath())
+            .containsExactly(FIELD, "in", "films", 1, "title");
+    }
+
+    /** A list of beans validated through {@code @Valid}, for a cascaded element's violation. */
+    static final class ShelfBean {
+        final List<@jakarta.validation.Valid TitleBean> titles;
+
+        ShelfBean(List<TitleBean> titles) {
+            this.titles = titles;
+        }
     }
 
     private static DataFetchingEnvironment env() {

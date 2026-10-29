@@ -28,6 +28,7 @@ import java.util.List;
  *   <li>Per-entry var-decls in {@code ctorArgs} order (when the carrier is {@link ServiceMethodCall.Instance})
  *       followed by {@code methodArgs}. Each non-DSL entry contributes one var-decl whose RHS is
  *       its {@link MappingEntry} arm's expression form.</li>
+ *   <li>The caller's pre-call block, through {@link #emitWithPreCall} only.</li>
  *   <li>Final result assignment:
  *     <ul>
  *       <li>{@link ServiceMethodCall.Static}: {@code ReturnType result = ClassName.methodName(methodArgs);}</li>
@@ -103,6 +104,35 @@ public final class ServiceMethodCallEmitter {
     public static List<CodeBlock> emit(ServiceMethodCall call, TypeName resultLocalType,
             FetchersHelperNames helperNames, CodeBlock dslExpression, String outputPackage,
             String fieldCoordinate, CompositeDecodeHelperRegistry nodeIdDecodes) {
+        List<CodeBlock> out = argumentStatements(call, helperNames, dslExpression, outputPackage,
+            fieldCoordinate, nodeIdDecodes);
+        out.add(finalAssignment(call, resultLocalType));
+        return out;
+    }
+
+    /**
+     * {@link #emit(ServiceMethodCall, TypeName, FetchersHelperNames, CodeBlock, String, String,
+     * CompositeDecodeHelperRegistry)} as one block, with {@code preCall} placed between the argument
+     * locals and the {@code result} assignment: the one point where every value the call passes is
+     * declared and the call has not run. {@code preCall} is pasted verbatim, so it may carry control
+     * flow and an early return; it reads the argument locals by their
+     * {@link MappingEntry.FromArg#javaName()}.
+     */
+    public static CodeBlock emitWithPreCall(ServiceMethodCall call, TypeName resultLocalType,
+            FetchersHelperNames helperNames, CodeBlock dslExpression, String outputPackage,
+            String fieldCoordinate, CompositeDecodeHelperRegistry nodeIdDecodes, CodeBlock preCall) {
+        var body = CodeBlock.builder();
+        argumentStatements(call, helperNames, dslExpression, outputPackage, fieldCoordinate, nodeIdDecodes)
+            .forEach(body::addStatement);
+        body.add(preCall);
+        body.addStatement(finalAssignment(call, resultLocalType));
+        return body.build();
+    }
+
+    /** The {@code dsl} prelude and the per-entry argument locals, in evaluation order. */
+    private static List<CodeBlock> argumentStatements(ServiceMethodCall call,
+            FetchersHelperNames helperNames, CodeBlock dslExpression, String outputPackage,
+            String fieldCoordinate, CompositeDecodeHelperRegistry nodeIdDecodes) {
         List<CodeBlock> out = new ArrayList<>();
 
         boolean needsDsl = needsDslLocal(allEntries(call));
@@ -118,8 +148,6 @@ public final class ServiceMethodCallEmitter {
         for (MappingEntry e : call.methodArgs()) {
             addVarDecl(out, e, helperNames, outputPackage, fieldCoordinate, nodeIdDecodes);
         }
-
-        out.add(finalAssignment(call, resultLocalType));
         return out;
     }
 
@@ -212,8 +240,8 @@ public final class ServiceMethodCallEmitter {
 
     /**
      * Render an expression that evaluates to the value at the given {@link ValueShape}. Scalar
-     * leaves inline directly; composite shapes ({@link ValueShape.RecordInput},
-     * {@link ValueShape.JavaBeanInput}, {@link ValueShape.ListOf}) delegate to the
+     * leaves inline directly; composite shapes ({@link ValueShape.BoundClass},
+     * {@link ValueShape.ListOf}) delegate to the
      * {@code create<Bean>} / {@code create<Bean>List} helpers emitted on the enclosing
      * {@code *Fetchers} class by {@link InputBeanInstantiationEmitter}. The helper names follow
      * the {@code createBean}/{@code createBeanList} convention; the helper queue in
@@ -225,8 +253,7 @@ public final class ServiceMethodCallEmitter {
         return switch (shape) {
             case ValueShape.Scalar s -> scalarExpression(s, helperNames, nodeIdDecodes);
             case ValueShape.ListOf list -> listExpression(list, helperNames);
-            case ValueShape.RecordInput rec -> compositeHelperCall(rec.javaClass(), rec.fields(), helperNames);
-            case ValueShape.JavaBeanInput bean -> compositeHelperCall(bean.javaClass(), bean.fields(), helperNames);
+            case ValueShape.BoundClass bound -> compositeHelperCall(bound, helperNames);
             case ValueShape.JooqRecordInput jr -> jooqRecordHelperCall(jr, helperNames.jooqRecord());
         };
     }
@@ -234,8 +261,7 @@ public final class ServiceMethodCallEmitter {
     /**
      * Call the {@code create<Record>} singular helper for a jOOQ {@code TableRecord} param. A
      * {@link ValueShape.JooqRecordInput} carries its own {@code sdlPath}, so it reads the arg name
-     * directly rather than recovering it from a {@code fields} list (the reason it does not reuse
-     * {@link #compositeHelperCall}). The helper name resolves through the class-level
+     * directly, as a {@link ValueShape.BoundClass} reads its {@code argName}. The helper name resolves through the class-level
      * {@link JooqRecordHelperNames} by this carrier's binding shape, so the root coordinate routes to the
      * same helper the drain emitted for its shape (and distinctly from a sibling field binding the same
      * record through a different shape).
@@ -456,12 +482,9 @@ public final class ServiceMethodCallEmitter {
         ValueShape elt = list.elementShape();
         String outerArg = list.sdlPath().outerArgName();
         return switch (elt) {
-            case ValueShape.RecordInput rec ->
+            case ValueShape.BoundClass bound ->
                 CodeBlock.of("$L(env.getArgument($S))",
-                    helperNames.createPlural(rec.javaClass()), outerArg);
-            case ValueShape.JavaBeanInput bean ->
-                CodeBlock.of("$L(env.getArgument($S))",
-                    helperNames.createPlural(bean.javaClass()), outerArg);
+                    helperNames.createPlural(bound.javaClass()), outerArg);
             case ValueShape.JooqRecordInput jr ->
                 // List<Record> param — the plural create<Record>List helper maps the singular
                 // create<Record> over each element; the wire value for a [Input!] arg is a
@@ -483,42 +506,13 @@ public final class ServiceMethodCallEmitter {
 
     /**
      * Call the {@code create<Bean>} singular helper emitted on the enclosing {@code *Fetchers}
-     * class. The walker positions every {@link ValueShape.RecordInput} / {@link ValueShape.JavaBeanInput}
-     * at a top-level path (the bean is itself the SDL arg; sibling field paths share the outer
-     * arg name as a prefix), so the call site is {@code createBean(env.getArgument("outerArg"))}.
-     * The outer arg name is derived from any sibling field's path; the {@code @Nullable}
+     * class. A bound class is itself the SDL argument it names ({@link ValueShape.BoundClass#argName()}),
+     * so the call site is {@code createBean(env.getArgument("argName"))}; the {@code @Nullable}
      * graphql-java argument map is passed through unchanged and the helper handles null.
      */
-    private static CodeBlock compositeHelperCall(ClassName beanClass, List<ValueShape.FieldBinding> fields,
-            FetchersHelperNames helperNames) {
+    private static CodeBlock compositeHelperCall(ValueShape.BoundClass bound, FetchersHelperNames helperNames) {
         return CodeBlock.of("$L(env.getArgument($S))",
-            helperNames.createSingular(beanClass), outerArgOf(fields));
-    }
-
-    /**
-     * Derive the outer SDL arg name shared by every leaf under a composite. Every
-     * {@link ValueShape.FieldBinding} inside a bean carries the outer arg in its leaf path's
-     * head (the walker calls {@code path.append(...)} per field while keeping the same
-     * {@code outerArgName}). An empty bean is structurally well-formed but has no source —
-     * defensively returns the empty string; the only way to reach this branch is a bean class
-     * with no SDL-visible fields, which never produces a useful helper call anyway.
-     */
-    private static String outerArgOf(List<ValueShape.FieldBinding> fields) {
-        if (fields.isEmpty()) return "";
-        return outerArgOf(fields.getFirst().shape());
-    }
-
-    private static String outerArgOf(ValueShape shape) {
-        return switch (shape) {
-            case ValueShape.Scalar s -> s.sdlPath().outerArgName();
-            case ValueShape.ListOf l -> l.sdlPath().outerArgName();
-            case ValueShape.RecordInput r -> outerArgOf(r.fields());
-            case ValueShape.JavaBeanInput b -> outerArgOf(b.fields());
-            // Unreachable by construction: a JooqRecordInput is only ever a top-level param shape
-            // or a ListOf element, never an InputBean field shape, so outerArgOf is never called
-            // with one. Defensive read off its own path.
-            case ValueShape.JooqRecordInput jr -> jr.sdlPath().outerArgName();
-        };
+            helperNames.createSingular(bound.javaClass()), bound.argName());
     }
 
     private static CodeBlock finalAssignment(ServiceMethodCall call, TypeName resultLocalType) {
