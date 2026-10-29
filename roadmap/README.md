@@ -31,7 +31,7 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R941` | The owner-read gate resolves a declared relation through the register, so a registration cannot hide a family crossing | Spec | 2026-09-09 | [plan](owner-read-gate-skips-registered-rule-bodies.md) |
 | `R838` | Agents write archeological, deliberation-narrating javadoc; the conventions and guards only cover roadmap citations | Ready | 2026-08-26 | [plan](declarative-comment-style.md) |
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
-| `R1122` | every ordering graphitron generates is deterministic and ends in a tiebreaker | Ready | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](every-generated-ordering-is-total.md) |
+| `R1122` | every ordering graphitron generates is deterministic and ends in a tiebreaker | In Progress | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](every-generated-ordering-is-total.md) |
 | `R1124` | A DELETE whose key matches no row is idempotent by default, and failing on it is the opt-in | In Review | 2026-10-29 | [plan](idempotent-delete-by-default.md) |
 | `R1126` | A matched error's path names the field that owns the payload | Spec | 2026-10-29 | [plan](error-path-names-the-payload-field.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
@@ -668,7 +668,7 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 - `R688` [**The emitter spells a nested backing class with its binary $ name, so generated fetchers for a nested result type do not compile**](nested-backing-class-binary-name-in-emit.md) — Backlog, bug
 - `R558` [**Validator mirrors for launcher-surfaced classification gaps**](root-family-validator-mirror-gaps.md) — Backlog, correctness
 - `R1076` [**_entities answers a representation with an unknown __typename with an error, not a silent null**](entities-unknown-typename-is-an-error.md) — Backlog, bug
-- `R1122` [**every ordering graphitron generates is deterministic and ends in a tiebreaker**](every-generated-ordering-is-total.md) — Ready, bug
+- `R1122` [**every ordering graphitron generates is deterministic and ends in a tiebreaker**](every-generated-ordering-is-total.md) — In Progress, bug
 - `R1111` [**A routine argument mapped from a computed $source column looks up a parentInput field typed with its generator**](routine-source-column-strips-generator.md) — Backlog, bug
 - `R1078` [**An enum-typed output field over a jOOQ-enum column is not checked against the Java enum constants**](enum-output-over-jooq-enum-column-unchecked.md) — Backlog, bug
 - `R647` [**Enforce @condition table-parameter assignability against the anchor table**](condition-table-parameter-anchor-assignability.md) — Backlog, architecture
