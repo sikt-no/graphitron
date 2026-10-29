@@ -1,7 +1,7 @@
 ---
 id: R747
 title: "Generated input records carry no constraint annotations, so the VALIDATION handler can never fire"
-status: In Review
+status: Ready
 bucket: architecture
 priority: 4
 theme: error-channel
@@ -304,3 +304,49 @@ Found while writing execution-tier coverage for the `description:` override work
 VALIDATION fixture asserting that a violation's interpolated message reaches the errors slot and
 could not construct one. `Query.filmLookupValidated` and `Mutation.countFilmDrafts` landed then as
 the VALIDATION channels that compile and run with nothing to report.
+
+## Reviewer findings
+
+### Round 1: In Review → Done, rework (session_01FY5Uvtm5r4VBFbDgjzdWnG, 2026-10-29)
+
+Both gate questions pass on the code. The delivery is the approved change: the model, emission
+order, path translation, classification retirement and docs match the plan. The two substitutions
+(the `emitWithPreCall` overload, `Paths` constants deduped on the translation) are recorded under
+Implementation notes. The spec's named evidence exists and passes: `countFilmDrafts_blankTitle_*`,
+`countFilmBundleDraft_violationPaths_*`, `filmLookupValidated_bindsNoClass_*`, the reworked
+`ErrorChannelClassificationTest` case and the two new wire-shape cases. The generated
+`MutationFetchers.countFilmDrafts` validates the `drafts` local between its extraction and the
+service call. The verification build is green.
+
+The item goes back for one reason: the **retirement sweep** (`roadmap/workflow.adoc`, applied
+before approval) finds prose that still describes the retired mechanism. Two statements contradict
+what shipped:
+
+1. `graphitron/src/test/java/no/sikt/graphitron/rewrite/TestServiceStub.java`, `runSakWithInputGrid`
+   javadoc: "pinning that such an argument is rejected under a `VALIDATION` channel". It now
+   classifies with no target.
+2. `graphitron-sakila-service/src/main/java/no/sikt/graphitron/rewrite/test/services/FilmValidatedLookupPayload.java`
+   class javadoc: "a VALIDATION handler puts the wrapper's Jakarta validation pre-step on every
+   fetcher mapping the channel". It does so only where the call has a bound-class target, and this
+   fixture's field has none.
+
+Four more are stale:
+
+3. `TestServiceStub.runSakWithInputBean` javadoc: "the validator-pre-step regression test that
+   needs an Input-typed arg (for the fromMap materialisation path)". That test was deleted, and
+   `fromMap` is no longer on the path.
+4. `InputRecordGeneratorTest` class javadoc: "validator pre-step rewire lives at the pipeline tier
+   in `FetcherPipelineTest`". That pipeline test was deleted.
+5. `DunderFreeEmissionPipelineTest`, `VALIDATOR_INPUT_SDL` javadoc: "(validator / violations /
+   arg_ locals)". There are no `arg_` locals any more; the pre-step now declares `element` and `i`.
+6. `graphitron-sakila-service/pom.xml`, the `jakarta.validation-api` comment, names
+   `FilmShelfDraft`. The fixture is `FilmBundleDraft`.
+
+What satisfies it: rewrite those six to the shipped fact, with no code change. Then return to
+In Review; the next Done pass is a delta check on these lines.
+
+Non-blocking, for a Backlog item if wanted: the pre-step's locals (`validator`, `violations`,
+`violation`, `element`, `i`) share the `try` scope with the argument locals named after the service
+method's Java parameters. A parameter named `element` or `i` on a VALIDATION-channel field now
+fails to compile the generated code. The same hazard predates this item for `result`, `dsl` and
+`validator`, so it is a reserved-locals question for `ServiceMethodCallEmitter` as a whole.
