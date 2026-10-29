@@ -1,13 +1,13 @@
 ---
 id: R1088
 title: "A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade"
-status: Spec
+status: Ready
 bucket: enhancement
 priority: 3
 theme: pagination
 depends-on: []
 created: 2026-10-22
-last-updated: 2026-10-22
+last-updated: 2026-10-29
 ---
 
 # A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade
@@ -197,3 +197,11 @@ Not a review round: the plan is re-checked against trunk after six days of drift
 - R1103 pinned the frozen scaffolds' javac references, so the `PlanCompileGraph` bullet now names the pin's one-line update.
 - R1083's `path:` / `method:` sort-key fields and R1112's `NULLS LAST` placement reach the codec; design paragraphs say they need nothing of their own, with `getSQLDataType()` measured non-null on every `DataType` shape a sort key can take.
 - R1105's `withoutGenerator` wrapping is reflected in the multi-table paragraph.
+
+### Round 3 (2026-10-29, Spec -> Ready, reviewer session 01FY5UvtnMkLHruALYEHn1Em)
+
+Verdict: sign off. Question one passes: a client that stored a Graphitron 9 cursor (the sis feed checkpoint) keeps its place across the upgrade on a connection whose order is unchanged and already identifies a row, because 10 adopts 9's URL-safe JSON-array format instead of its NUL-joined one; a cursor on an order 10 now completes with the row key stays rejected, consistent with the R1106 changelog entry, and the scope says so in the Goal, the design and the user-docs draft. Question two passes: the one codec is rewritten in place, decode joins `ColumnValues` as a fourth entry point rather than standing a conversion beside it, `PlanCompileGraph` keeps both frozen scaffolds edge-less with the pinned-reference test as the reviewed diff, and no dependency is added. Every symbol, test, fixture and doc section the spec names exists as named, and the jOOQ behaviour the design rests on re-measures as stated against 3.20.11, including on an enum column (`FILM.RATING`), whose `getSQLDataType()` is the enum type itself with the identity converter.
+
+The R1085 edit `## Roadmap entries` assigns to this session is made in this commit: R1085 keeps only the error-path fix.
+
+**Non-blocking.** The format change is consumer-visible on the wire (the cursor of every 10 snapshot changes), so the Done gate's changelog line should say so alongside the 9-compatibility it restores.
