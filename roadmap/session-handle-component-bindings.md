@@ -1,7 +1,7 @@
 ---
 id: R1102
 title: "A value the session mount derives binds where a contextArgument binds today"
-status: In Review
+status: Ready
 bucket: feature
 priority: 4
 theme: runtime-connection
@@ -160,3 +160,15 @@ Two notes for the implementer, neither of which changes the design:
 
 1. Session-reading glue reaches a projection unit through two wraps, `CallWrap.Multiset.filter` and `CallWrap.LookupMultiset.filter`; seed the closure from both, as `addProjectionEdges` reads both.
 2. `ProjectionCall.fromLauncher` and `fromGrouped` take the callee's `ClassName`, not its row, so appending `dsl` from the callee's `readsSession` means each such call site hands `ProjectionCall` the row (or the flag) as well.
+
+### Round 1 review of the delivery (2026-10-29, In Review -> Ready, reviewer session 01WkW2JJt8cw7EivtM5QCRpn)
+
+Verdict: rework. Both blocking findings are about completeness evidence, not the design. The code reads as the approved change (the member decode, the sealed sigil, the closure over `Contribution.Call` edges, `ProjectionCall` as the one `dsl` appender, and the fan-out, entity, `Node` and participant rejections all match the plan; the one narrowing, the extra validate-time rejections, is recorded openly in the spec body). The reviewer stopped the verification build once finding 1 fired, so a green `mvn install -Plocal-db` is still owed by the next pass.
+
+1. **Code-string assertions on generated bodies (approval precondition; question 2).** `SessionConditionPlanPipelineTest` matches rendered code text: `glue.code().toString()).contains("TenantConnections.sessionMember_brukerId(dsl, \"Store.customers\")")` in `conditionRow_readsTheSession_andItsGlueTakesDslAfterTheArguments`, and `byName.get("Store").toString()).contains("StoreConditions.customersCondition(").contains(", dsl)")` plus `byName.get("Customer").toString()).contains("Store.$project(").contains("env, dsl)")` in `renderedProjections_takeDslExactlyWhereTheClosureSaysAndPassItToTheGlue`. `docs/architecture/how-to/testing.adoc` bans code-string body matching on generated bodies; compilation and execution cover it. Keep the structural assertions (parameter names and order, `readsSession`, `takesDsl`, the closure set) and drop the three `toString()` matches; the execution tests already exercise the glue's member read and the nested `$project` handing `dsl` on.
+2. **The fan-out half of the execution evidence is missing (question 2).** The plan's execution bullet requires that a `@service` bound to `$session.<member>` "sees the member, including under fan-out, where each tenant's call reads its own handle (the fixture's per-tenant session-number ranges make that observable through `sessionNo`)". The delivered `SessionHookExecutionTest` covers the service member only on the owned single-source path (`sessionNumber` asserts `isPositive()`), and no test reads a member under `@tenantFanOut`. That is the property reading through `dsl` exists to guarantee. Add a fanned `@service` bound to `$session.sessionNo` and assert each tenant's call returns a number from its own range (1000s and 2000s), or move the claim out of the plan with its reason.
+
+Non-blocking:
+
+* `sessionMemberReadByAConditionOnAnEscapeHatchOperation_failsLoudlyInsteadOfBindingNull` asserts only `getErrors()).isNotEmpty()`, which any failure satisfies. Assert the located session-handle message so it pins the guarded read.
+* The spec body has no "shipped at <sha>" note; once the findings land, collapse the delivered plan to one per the approval precondition.
