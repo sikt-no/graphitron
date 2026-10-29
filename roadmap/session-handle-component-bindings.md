@@ -1,13 +1,13 @@
 ---
 id: R1102
 title: "A value the session mount derives binds where a contextArgument binds today"
-status: In Progress
+status: In Review
 bucket: feature
 priority: 4
 theme: runtime-connection
 depends-on: []
 created: 2026-10-26
-last-updated: 2026-10-28
+last-updated: 2026-10-29
 ---
 
 # A value the session mount derives binds where a contextArgument binds today
