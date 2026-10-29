@@ -50,7 +50,7 @@ public final class OutboxQuery {
     public enum WriteKind { INSERT, UPDATE, DELETE }
 
     /** Where a payload key comes from. */
-    public enum LeafKind { ARGUMENT, RESULT_ROOT, RESULT_NODE_ID, RESULT_COLUMN, SCOPE }
+    public enum LeafKind { ARGUMENT, RESULT_ROOT, RESULT_NODE_ID, RESULT_COLUMN, SCOPE, SESSION }
 
     /** Whether an entry is the directive's own or the configured common payload's. */
     public enum Origin { COMMON, MESSAGE }

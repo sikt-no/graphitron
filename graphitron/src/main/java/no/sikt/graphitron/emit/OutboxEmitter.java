@@ -121,10 +121,10 @@ public final class OutboxEmitter {
      * @param capturedColumns the written table's columns the write captured, by generated name: the
      *                        key the statements read the written rows back by
      * @param outputPackage   the package the node-id encoder is generated under
-     * @param emitException   the generated router's exception a failing statement is wrapped in
+     * @param runtime         what the emitter takes from the generated runtime it may not name itself
      */
     public static MethodSpec render(Row row, boolean listResult, List<String> capturedColumns,
-                                    String outputPackage, ClassName emitException) {
+                                    String outputPackage, Runtime runtime) {
         Objects.requireNonNull(row, "row");
         if (capturedColumns.isEmpty()) {
             throw new IllegalStateException("the write at " + row.typeName() + "." + row.fieldName()
@@ -161,14 +161,35 @@ public final class OutboxEmitter {
             body.addStatement("$T $L = env.getArgument($S)", Object.class, argLocal(argument), argument);
         }
         for (var message : row.messages()) {
-            body.add(message(row, message, listResult, capturedColumns, outputPackage));
+            body.add(message(row, message, listResult, capturedColumns, outputPackage, runtime));
         }
         method.beginControlFlow("try");
         method.addCode(body.build());
         method.nextControlFlow("catch ($T e)", RuntimeException.class);
-        method.addStatement("throw new $T(e)", emitException);
+        method.addStatement("throw new $T(e)", runtime.emitException());
         method.endControlFlow();
         return method.build();
+    }
+
+    /**
+     * What the emitter takes from the generated runtime and may not name itself: the exception a
+     * failing statement is wrapped in, and the read of one session handle member.
+     */
+    public record Runtime(ClassName emitException, SessionMemberRead sessionMember) {
+        public Runtime {
+            Objects.requireNonNull(emitException, "emitException");
+            Objects.requireNonNull(sessionMember, "sessionMember");
+        }
+    }
+
+    /**
+     * The expression that reads one member of the session handle on the companion's own
+     * {@code tx}, the connection the message's statement runs on, and fails where no handle was
+     * mounted on it.
+     */
+    @FunctionalInterface
+    public interface SessionMemberRead {
+        CodeBlock read(String member, String coordinate);
     }
 
     private static boolean anyLeaf(Row row, java.util.function.Predicate<Leaf> test) {
@@ -214,7 +235,8 @@ public final class OutboxEmitter {
     }
 
     private static CodeBlock message(Row row, Message message, boolean listResult,
-                                     List<String> capturedColumns, String outputPackage) {
+                                     List<String> capturedColumns, String outputPackage,
+                                     Runtime runtime) {
         var destination = row.target();
         var family = jsonFamily(switch (destination) {
             case OutboxQuery.Target t -> t.payloadColumn().bindingType();
@@ -228,7 +250,7 @@ public final class OutboxEmitter {
         for (var leaf : message.leaves()) {
             readsColumns |= leaf.kind() == LeafKind.RESULT_COLUMN;
             b.add(leaf(row, leaf, entries, "p" + message.ordinal() + "_" + leafIndex++, listResult,
-                capturedColumns, outputPackage));
+                capturedColumns, outputPackage, runtime));
         }
         // The payload as the constructor builds it, cast to text where the destination takes text.
         CodeBlock payload = CodeBlock.of("$T.$LObject($L)", DSL, family, entries);
@@ -312,10 +334,15 @@ public final class OutboxEmitter {
 
     /** The statements that add one leaf's entry to the message's list. */
     private static CodeBlock leaf(Row row, Leaf leaf, String entries, String local, boolean listResult,
-                                  List<String> capturedColumns, String outputPackage) {
+                                  List<String> capturedColumns, String outputPackage,
+                                  Runtime runtime) {
         var key = CodeBlock.of("$T.key($S)", DSL, leaf.key());
         return switch (leaf.kind()) {
             case SCOPE -> scopeLeaf(row, leaf, entries, key);
+            case SESSION -> CodeBlock.builder()
+                .addStatement("$L.add($L.value($L($L)))", entries, key, JSON_VALUE_HELPER,
+                    runtime.sessionMember().read(leaf.path(), row.typeName() + "." + row.fieldName()))
+                .build();
             case ARGUMENT -> argumentLeaf(leaf, entries, key, local);
             case RESULT_COLUMN -> CodeBlock.builder()
                 .addStatement("$L.add($L.value($L))", entries, key,

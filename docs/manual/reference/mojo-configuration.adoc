@@ -336,6 +336,7 @@ var input = Graphitron.newOwnedExecutionInput(session, userId).query(query).buil
 
 An input built without the state, through the escape hatch or by hand, fails the request before any SQL runs, naming the missing `SessionState`, rather than running unmounted.
 
+[#consuming-the-handle]
 === Consuming the handle
 
 Your `@service` and `@condition` methods can consume the identity your mount returned. Bind a parameter to the handle with the `$session` sigil in `argMapping`, and the parameter receives the handle from the connection the call runs on:
@@ -368,7 +369,7 @@ public static Condition egneSoknader(Soknad soknad, Long sokerId) {
 }
 ----
 
-The sigil is admitted in `argMapping` on `@service` and on `@condition`, whether the `@condition` sits on a field, an argument or an input field. It is not admitted in the `@condition` of a `@reference` path step or on any other directive. The member is exactly one name after the dot; a nested path is not supported.
+The sigil is admitted in `argMapping` on `@service` and on `@condition`, whether the `@condition` sits on a field, an argument or an input field, and on xref:directives/outbox.adoc[`@outbox`] as one member, since an outbox payload is JSON and a whole handle is not. It is not admitted in the `@condition` of a `@reference` path step or on any other directive. The member is exactly one name after the dot; a nested path is not supported.
 
 The members you can name are the ones the handle type _declares_, not the ones it inherits. For a Java record, its components. For any other class, its public non-static `getX()` methods, its `boolean` `isX()` methods and its public fields, each member being the name without the `get` or `is`, first letter lowercased. A jOOQ record handle therefore exposes its own columns and not the whole `Record` API; a handle whose accessors live on a base class you own should re-declare them or be wrapped in a record. A parameter's type must be the member's own type, or its box when the member is primitive (a primitive member may bind a `Long` parameter; a boxed member may not bind a `long` parameter, since the member may be `null`). A `null` member is passed as `null`.
 
@@ -429,9 +430,9 @@ The `<outbox>` block says where the messages of every xref:directives/outbox.ado
 
 * `<table>` names an outbox table in your jOOQ catalog. Graphitron inserts one row per message, expecting Debezium's outbox layout: it fills `type` (the event), `aggregatetype` (the written table) and `payload`, and leaves `aggregateid`, `id` and any timestamp to the column's default or `NULL`. `<columns>` maps a role to another column name. The build fails when the table or a configured column is missing, or when `payload` is not a JSON, JSONB or text column. A JSON or JSONB column takes the payload as JSON; a text column takes it rendered as text.
 * `<function>` names a procedure or a function in your jOOQ catalog that graphitron calls once per message, inside the write's transaction and in directive order. It must be a routine the catalog has no table for (not a table-valued function), and every parameter must answer to a role: `type` (the event), `payload`, and optionally `aggregatetype` (the written table) and `aggregateid`, which is passed as `NULL`. A parameter answers to a role by the name `<parameters>` binds the role to (`<type>p_type</type>`), else by the role's own name, underscores and case aside. `type`, `aggregatetype` and `aggregateid` take text; `payload` takes JSON, JSONB or text. Any value the routine returns is discarded. The build fails when the name matches no such routine, or two. A routine that is a function with no return value is a procedure here.
-* `<payload>` is an argMapping every message carries, for what belongs on every event. It reads `$scope` sources; arguments and `$result` belong to a field and are not available there.
+* `<payload>` is an argMapping every message carries, for what belongs on every event. It reads `$scope` sources and `$session.<member>`; arguments and `$result` belong to a field and are not available there. A `$session` entry here makes every `@outbox` message read the handle, so no message can be written on a caller-supplied `DSLContext`.
 
-Name exactly one of `<table>` and `<function>`. A block naming both, or neither, is reported at every `@outbox` it affects. `$session` as a source is not available yet.
+Name exactly one of `<table>` and `<function>`. A block naming both, or neither, is reported at every `@outbox` it affects.
 
 == The non-emitting goals' package sentinel
 

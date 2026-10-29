@@ -5504,6 +5504,11 @@ type Mutation {
         @mutation(typeName: INSERT)
         @outbox(event: "FilmCreated", argMapping: "filmId: $result.id, title: $result.title, requested: in.title")
         @outbox(event: "FilmAudit", argMapping: "alias: $scope.alias, at: $scope.coordinate, requested: in.title")
+    # A message key reading the session handle the owned acquisition mounted: it fails the field on
+    # a caller-supplied DSLContext, which carries no handle.
+    createFilmSessionOutbox(in: FilmCreateInput!): Film
+        @mutation(typeName: INSERT)
+        @outbox(event: "FilmCreatedBy", argMapping: "by: $session.principal, session: $session.sessionNo, title: in.title")
     createFilmsOutbox(in: [FilmCreateInput!]!): [Film!]!
         @mutation(typeName: INSERT)
         @outbox(event: "FilmsCreated", argMapping: "ids: $result.id")

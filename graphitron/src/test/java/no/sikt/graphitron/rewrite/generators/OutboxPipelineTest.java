@@ -98,6 +98,37 @@ class OutboxPipelineTest {
     }
 
     @Test
+    void sessionMember_isReadThroughTheGuardedAccessorOnTheCompanionsOwnTransaction() {
+        var ctx = TestConfiguration.testContext()
+            .withSessionStateConfig(no.sikt.graphitron.model.config.SessionStateConfig.from(
+                "no.sikt.graphitron.rewrite.SessionHandleStub$RecordHandle", null, null))
+            .withOutboxConfig(OutboxConfig.from("outbox", null, Map.of(), Map.of(),
+                "actor: $session.brukerId"));
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId title: String }
+            input FilmInput { title: String! @field(name: "title") }
+            type Query { dummy: String }
+            type Mutation {
+                createFilm(in: FilmInput!): Film
+                    @mutation(typeName: INSERT)
+                    @outbox(event: "FilmCreated", argMapping: "title: in.title, soker: $session.sokerId")
+            }
+            """;
+        var body = method(TestSchemaHelper.storeBackedFetchers(tmp, sdl, ctx), "outboxCreateFilm");
+
+        assertThat(body)
+            .as("a common payload key reads the handle's member through the guarded accessor, on the"
+                + " companion's own transaction, never from the environment")
+            .contains("DSL.key(\"actor\").value(outboxJsonValue(fake.code.generated.schema.TenantConnections"
+                + ".sessionMember_brukerId(tx, \"Mutation.createFilm\")))")
+            .as("so does a key of the message itself")
+            .contains("DSL.key(\"soker\").value(outboxJsonValue(fake.code.generated.schema.TenantConnections"
+                + ".sessionMember_sokerId(tx, \"Mutation.createFilm\")))")
+            .as("a failure to read the member, as where no handle was mounted, is an outbox failure")
+            .contains("ErrorRouter.OutboxEmitException(e)");
+    }
+
+    @Test
     void everyDmlSiteCallsItsCompanionInsideTheWriteTransaction() {
         var types = fetchers();
         for (var field : new String[] {"createFilm", "createFilms", "deleteFilm", "deleteFilms"}) {

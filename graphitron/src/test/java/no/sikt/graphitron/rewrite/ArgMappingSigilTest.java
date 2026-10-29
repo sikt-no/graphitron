@@ -70,15 +70,32 @@ class ArgMappingSigilTest {
             assertThat(rejected.message()).isEqualTo(ArgMappingSigil.unknownSigilMessage("$handle")));
     }
 
+    @Test
+    void sessionMemberAtTheOutboxSite_isAdmitted() {
+        var result = ArgMappingSigil.scan("actor: $session.userId", ArgMappingSigil.Site.OUTBOX);
+        assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Ok.class, scanned ->
+            assertThat(scanned.sigilBindings()).containsEntry("actor",
+                new ArgMappingSigil.Binding.SessionMember("userId")));
+    }
+
+    @Test
+    void theWholeSessionHandleAtTheOutboxSite_isRejectedAsNoJsonValue() {
+        var result = ArgMappingSigil.scan("actor: $session", ArgMappingSigil.Site.OUTBOX);
+        assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+            assertThat(rejected.message()).isEqualTo(
+                ArgMappingSigil.sessionHandleNotAdmittedMessage(ArgMappingSigil.Site.OUTBOX)));
+    }
+
     @ParameterizedTest
-    @EnumSource(value = ArgMappingSigil.Site.class, names = {"SERVICE", "CONDITION"}, mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = ArgMappingSigil.Site.class, names = {"SERVICE", "CONDITION", "OUTBOX"},
+        mode = EnumSource.Mode.EXCLUDE)
     void sessionAtANonAdmittedSite_rejectsNamingTheAdmittedOne(ArgMappingSigil.Site site) {
         assertThat(site.admitsSessionSigil()).isFalse();
         var result = ArgMappingSigil.scan("identity: $session", site);
         assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected -> {
             assertThat(rejected.message()).isEqualTo(ArgMappingSigil.notAdmittedMessage(site));
             assertThat(rejected.message()).contains(site.description())
-                .contains("@service and @condition argMapping");
+                .contains("@service, @condition and @outbox argMapping");
         });
     }
 

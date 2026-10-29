@@ -1,0 +1,45 @@
+# A $session source an @outbox cannot carry is reported where it is written. A member whose type a
+# JSON payload cannot carry is one this check names, with the type, since the member is found and the
+# session defects have nothing to say; the whole handle is no member and is a source the message
+# cannot read; and a member the handle does not offer is the session defect, which reads every
+# argMapping the same way wherever it is written. FilmKeySummary offers label, which is text, and
+# film, a record a payload cannot carry.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary",
+  outboxTable: "outbox"
+)
+
+type Mutation {
+  unwritable(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "f: $session.film")
+  whole(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "h: $session")
+  unknown(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(argMapping: "u: $session.nope")
+}
+
+extend schema @expectEquals(relation: "graphitron_entry_defect_site", rows: """
+  code,                                 coordinate,        detail
+  OUTBOX_SESSION_MEMBER_UNSERIALIZABLE, Mutation.unwritable, "f: $session.film (no.sikt.graphitron.rewrite.test.jooq.public_.tables.records.FilmRecord)"
+  OUTBOX_SOURCE_UNRESOLVED,             Mutation.whole,      "h: $session"
+  SESSION_MEMBER_UNKNOWN,               Mutation.unknown,
+  """)
+
+extend schema @assertContains(relation: "graphitron_argmapping_pair_defect", rows: """
+  code,                  detail
+  SESSION_MEMBER_UNKNOWN, nope
+  """)

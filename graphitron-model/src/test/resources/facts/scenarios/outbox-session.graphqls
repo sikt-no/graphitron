@@ -1,0 +1,35 @@
+# A $session.<member> source is a leaf like any other: the member name rides as the source path, and
+# the message reads it from the session handle the build's <sessionState> names. It resolves where
+# the handle offers the member once and what it yields is something a JSON payload can carry, here
+# the text label; the common payload may read one too, so every message carries the same identity.
+# The handle is any class the classpath census holds, which is what the member relation is read from.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(
+  sessionState: true,
+  sessionHandle: "no.sikt.graphitron.rewrite.test.services.FilmKeySummary",
+  outboxTable: "outbox",
+  outboxPayload: "who: $session.label, operation: $scope.operationName"
+)
+
+type Mutation {
+  createFilm(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "FilmCreated", argMapping: "by: $session.label, title: in.title")
+}
+
+extend schema @expectEquals(relation: "graphitron_outbox_leaf", rows: """
+  type_name, field_name, ordinal, key_name,  origin,  position, source_kind, source_path,   column_name, node_type_name
+  Mutation,  createFilm, 0,       by,        MESSAGE, 0,        SESSION,     label,         ,
+  Mutation,  createFilm, 0,       title,     MESSAGE, 1,        ARGUMENT,    in.title,      ,
+  Mutation,  createFilm, 0,       who,       COMMON,  0,        SESSION,     label,         ,
+  Mutation,  createFilm, 0,       operation, COMMON,  1,        SCOPE,       operationName, ,
+  """)

@@ -6055,8 +6055,12 @@ public class TypeFetcherGenerator {
             ctx.addCompanionMethod(no.sikt.graphitron.emit.OutboxEmitter.render(row, listResult,
                 capturedColumns.stream().map(no.sikt.graphitron.model.jooq.ColumnRef::javaName).toList(),
                 outputPackage,
-                ErrorRouterClassGenerator.routerClass(outputPackage)
-                    .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION)));
+                new no.sikt.graphitron.emit.OutboxEmitter.Runtime(
+                    ErrorRouterClassGenerator.routerClass(outputPackage)
+                        .nestedClass(ErrorRouterClassGenerator.OUTBOX_EMIT_EXCEPTION),
+                    (member, coordinate) -> CodeBlock.of("$T.$L(tx, $S)",
+                        TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                        no.sikt.graphitron.command.SessionAccessors.memberMethod(member), coordinate))));
             ctx.requestOutboxJsonValue();
             return new OutboxHook(row);
         });

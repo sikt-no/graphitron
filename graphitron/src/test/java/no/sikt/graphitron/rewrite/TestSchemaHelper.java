@@ -200,13 +200,14 @@ public final class TestSchemaHelper {
             String schemaText, RunContext ctx,
             no.sikt.graphitron.model.derive.ResolvedKeyProjections.Projections projections) {
         var bundle = buildBundle(schemaText, ctx);
-        // The run's outbox block is the one configuration this capture carries over; everything
-        // else a context holds stays as the plan tests have always seen it.
+        // The run's outbox block, and the session handle its payload may read a member of, are the
+        // configuration this capture carries over; everything else a context holds stays as the plan
+        // tests have always seen it.
         var configuration = ctx.outboxConfig().isConfigured()
             ? new no.sikt.graphitron.model.run.SubjectConfig(java.util.Optional.empty(),
                 java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
                 java.util.Optional.empty(), no.sikt.graphitron.model.lint.LintConfig.empty(),
-                no.sikt.graphitron.model.config.SessionStateConfig.none(), java.util.OptionalInt.empty(),
+                ctx.sessionStateConfig(), java.util.OptionalInt.empty(),
                 ctx.outboxConfig())
             : no.sikt.graphitron.model.run.SubjectConfig.none();
         try (var store = CapturedStore.ofCatalogWith(directory, CapturedStore.GRAPH, schemaText,

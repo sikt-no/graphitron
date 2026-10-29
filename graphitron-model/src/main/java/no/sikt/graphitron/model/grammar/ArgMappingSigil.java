@@ -112,7 +112,8 @@ public final class ArgMappingSigil {
 
     /**
      * The argMapping sites, for the per-site admission rule: {@code $session} (whole handle or one
-     * member) is admitted at the {@code @service} and {@code @condition} argMappings; every other
+     * member) is admitted at the {@code @service} and {@code @condition} argMappings, and one member
+     * of it at {@code @outbox}, whose payload is JSON and so cannot carry a whole handle; every other
      * site rejects it naming the admitted ones (the {@code $source} precedent exactly).
      * {@link #REFERENCE_STEP}, the path-step condition, is not one of them.
      */
@@ -139,6 +140,14 @@ public final class ArgMappingSigil {
 
         /** True only at the admitted site; parse, diagnostics and completions read one predicate. */
         public boolean admitsSessionSigil() {
+            return this == SERVICE || this == CONDITION || this == OUTBOX;
+        }
+
+        /**
+         * True where the whole session handle may be bound: a Java parameter takes it, and a JSON
+         * payload does not, so the outbox site admits the sigil by member only.
+         */
+        public boolean admitsSessionHandle() {
             return this == SERVICE || this == CONDITION;
         }
 
@@ -204,6 +213,9 @@ public final class ArgMappingSigil {
                 if (SESSION_LITERAL.equals(rhs)) {
                     if (!site.admitsSessionSigil()) {
                         return new ScanResult.Rejected(notAdmittedMessage(site));
+                    }
+                    if (!site.admitsSessionHandle()) {
+                        return new ScanResult.Rejected(sessionHandleNotAdmittedMessage(site));
                     }
                     binding = new Binding.SessionHandle();
                 } else if (rhs.startsWith(SESSION_MEMBER_PREFIX)) {
@@ -412,8 +424,16 @@ public final class ArgMappingSigil {
     /** Canonical message for {@code $session} at an argMapping site that does not admit it. */
     public static String notAdmittedMessage(Site site) {
         return "'" + SESSION_LITERAL + "' is not admitted in " + site.description()
-            + "; it is only valid in @service and @condition argMapping, where it binds the Java"
-            + " parameter to the session handle the <sessionState> mount returned, or to one member"
-            + " of it as " + SESSION_MEMBER_PREFIX + "<member>.";
+            + "; it is only valid in @service, @condition and @outbox argMapping: the first two bind the"
+            + " Java parameter to the session handle the <sessionState> mount returned, or to one member"
+            + " of it as " + SESSION_MEMBER_PREFIX + "<member>, and @outbox binds a payload key to one"
+            + " member.";
+    }
+
+    /** Canonical message for the whole {@code $session} handle at a site that admits only a member. */
+    public static String sessionHandleNotAdmittedMessage(Site site) {
+        return "'" + SESSION_LITERAL + "' is not admitted in " + site.description()
+            + " as a whole: a payload is JSON, which a session handle is not. Name one member of it as "
+            + SESSION_MEMBER_PREFIX + "<member>.";
     }
 }
