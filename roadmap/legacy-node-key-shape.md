@@ -1,7 +1,7 @@
 ---
 id: R1100
 title: "A node type can narrow its key and still accept ids minted under the old key"
-status: Spec
+status: Ready
 bucket: feature
 priority: 3
 theme: nodeid
