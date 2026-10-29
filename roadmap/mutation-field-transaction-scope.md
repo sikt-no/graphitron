@@ -1,13 +1,13 @@
 ---
 id: R1101
 title: "One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start"
-status: Ready
+status: Spec
 bucket: feature
 priority: 5
 theme: runtime-connection
 depends-on: []
 created: 2026-10-26
-last-updated: 2026-10-27
+last-updated: 2026-10-29
 ---
 
 # One transaction per top-level mutation field, opened by the instrumentation, with a consumer hook at its start
