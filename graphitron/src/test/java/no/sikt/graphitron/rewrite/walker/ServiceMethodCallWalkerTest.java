@@ -319,11 +319,13 @@ class ServiceMethodCallWalkerTest {
     }
 
     @Test
-    void walk_boundClass_carriesTheArgumentItBinds_evenWithNoBoundFields() {
-        // No leaf to recover the argument name from, so the bound class carries it.
+    void walk_boundClass_carriesTheArgumentItBinds() {
+        // The argument is named on the bound class itself, not recovered from a leaf's path.
         var beanClass = ClassName.get("com.example", "Bean");
         var bean = new CallSiteExtraction.InputBean(beanClass, CallSiteExtraction.InputBean.Target.RECORD,
-            List.of());
+            List.of(new CallSiteExtraction.FieldBinding(
+                List.of("name"), "name", new CallSiteExtraction.Direct(), false, String.class.getName(),
+                "BeanInput.name")));
         var method = service("com.example.Svc", "doThing", TypeName.OBJECT,
             new MethodRef.CallShape.Static(false),
             param("bean", beanClass, new ParamSource.Arg(bean, new PathExpr.Head("input"))));

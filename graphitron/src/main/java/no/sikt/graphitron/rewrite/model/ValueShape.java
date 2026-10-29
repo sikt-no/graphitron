@@ -51,8 +51,8 @@ public sealed interface ValueShape permits ValueShape.Scalar, ValueShape.ListOf,
      * A value built into a class the consumer wrote, from the SDL input fields {@link #fields()}
      * binds. {@code argName} is the field argument the value is read from: a bound class always
      * binds a whole top-level argument, and a nested one (a {@link FieldBinding}'s shape) is read
-     * from inside the same argument. {@code argName} is the argument even where {@code fields} is
-     * empty, which is why it is carried rather than recovered from a leaf's path.
+     * from inside the same argument. It is carried rather than recovered from a leaf's path, so
+     * the composite says what it binds without a walk of its children.
      */
     sealed interface BoundClass extends ValueShape permits RecordInput, JavaBeanInput {
         ClassName javaClass();

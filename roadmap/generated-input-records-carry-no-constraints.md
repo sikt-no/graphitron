@@ -252,7 +252,7 @@ Landed as specified, with these choices the spec left open or that the tree forc
 - *Classification tests.* `ServiceMethodCallWalkerTest`'s invariant test for an argument the
   field does not declare pinned the retired computation (the throw lived there) and is deleted
   with it, as are `MutationServiceRecordFieldValidationTest`'s two list-of-lists cases. Two walker
-  tests take their place: a bound class carries its argument name with no bound fields, and
+  tests take their place: a bound class carries the argument it binds, and
   `validationTargets()` yields `Single` and `PerElement` for exactly the class-bound parameters.
 - *Prose the change made false, beyond the spec's list:* the javadoc `InputRecordGenerator` stamps
   onto every generated input class (it called each one the validation target), and the class
