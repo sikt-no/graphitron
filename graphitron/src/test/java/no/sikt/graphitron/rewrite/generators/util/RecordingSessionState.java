@@ -22,11 +22,18 @@ final class RecordingSessionState {
 
     private RecordingSessionState() {}
 
+    private static final java.util.Map<ClassLoader, List<Optional<?>>> MOUNTED_BY_LOADER =
+        new java.util.concurrent.ConcurrentHashMap<>();
+
     /**
-     * The tenant each mount received, in call order, in a multi-tenant build. Static because the
-     * proxies are built per call; tests clear it before each case.
+     * The tenant each mount received on {@code harness}'s generated classes, in call order, in a
+     * multi-tenant build. Kept per harness because test classes run concurrently and each compiles
+     * its own generated world, so one class's mounts are never another's; tests clear it before
+     * each case.
      */
-    static final List<Optional<?>> MOUNTED_TENANTS = new CopyOnWriteArrayList<>();
+    static List<Optional<?>> mountedTenants(EmittedCodeHarness harness) {
+        return MOUNTED_BY_LOADER.computeIfAbsent(harness.classLoader(), l -> new CopyOnWriteArrayList<>());
+    }
 
     /**
      * A {@code SessionState.of(mount, unmount)} whose mount issues {@code set_config(...)} and
@@ -97,7 +104,9 @@ final class RecordingSessionState {
 
     private static void recordTenant(Object session) throws ReflectiveOperationException {
         try {
-            MOUNTED_TENANTS.add((Optional<?>) session.getClass().getMethod("tenant").invoke(session));
+            MOUNTED_BY_LOADER.computeIfAbsent(session.getClass().getClassLoader(),
+                    l -> new CopyOnWriteArrayList<>())
+                .add((Optional<?>) session.getClass().getMethod("tenant").invoke(session));
         } catch (NoSuchMethodException singleTenant) {
             // A single-tenant MountedSession declares no tenant(), by construction.
         }

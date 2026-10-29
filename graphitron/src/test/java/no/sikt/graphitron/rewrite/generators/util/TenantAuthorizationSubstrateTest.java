@@ -106,7 +106,7 @@ class TenantAuthorizationSubstrateTest {
     @BeforeEach
     void reset() {
         events.clear();
-        RecordingSessionState.MOUNTED_TENANTS.clear();
+        RecordingSessionState.mountedTenants(harness).clear();
     }
 
     @Test
@@ -119,7 +119,7 @@ class TenantAuthorizationSubstrateTest {
             .hasMessageContaining("'B'")
             .hasMessageContaining("not permitted");
         assertThat(events).as("no connection to a refused tenant is ever opened").isEmpty();
-        assertThat(RecordingSessionState.MOUNTED_TENANTS).isEmpty();
+        assertThat(RecordingSessionState.mountedTenants(harness)).isEmpty();
         releaseAll(tc);
     }
 
@@ -149,7 +149,7 @@ class TenantAuthorizationSubstrateTest {
         dslFor(tc, "A");
         invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
 
-        assertThat(RecordingSessionState.MOUNTED_TENANTS)
+        assertThat(RecordingSessionState.mountedTenants(harness))
             .containsExactly(Optional.of("A"), Optional.empty());
         releaseAll(tc);
     }
@@ -169,7 +169,7 @@ class TenantAuthorizationSubstrateTest {
         assertThat(events.stream().filter(e -> e.equals("getConnection:shared")).count())
             .as("session identity is per (connection, tenant): one pin per key, reused within the key")
             .isEqualTo(2);
-        assertThat(RecordingSessionState.MOUNTED_TENANTS).containsExactly(Optional.of("A"), Optional.of("B"));
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("A"), Optional.of("B"));
         releaseAll(tc);
     }
 
@@ -192,7 +192,7 @@ class TenantAuthorizationSubstrateTest {
         dslGlobal(tc);
 
         assertThat(events).containsExactly("getConnection:B");
-        assertThat(RecordingSessionState.MOUNTED_TENANTS).containsExactly(Optional.of("B"));
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("B"));
         releaseAll(tc);
     }
 
@@ -206,7 +206,7 @@ class TenantAuthorizationSubstrateTest {
 
         assertThat(routed).as("one entry per tenant key, shared by both acquisitions").isSameAs(global);
         assertThat(events).containsExactly("getConnection:A");
-        assertThat(RecordingSessionState.MOUNTED_TENANTS).containsExactly(Optional.of("A"));
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.of("A"));
         releaseAll(tc);
     }
 
@@ -218,7 +218,7 @@ class TenantAuthorizationSubstrateTest {
         invoke(() -> tenantConnectionsClass.getMethod("dslDefault").invoke(tc));
 
         assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingSessionState.MOUNTED_TENANTS).containsExactly(Optional.empty());
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
         releaseAll(tc);
     }
 
@@ -229,7 +229,7 @@ class TenantAuthorizationSubstrateTest {
         dslGlobal(tc);
 
         assertThat(events).containsExactly("getConnection:default");
-        assertThat(RecordingSessionState.MOUNTED_TENANTS).containsExactly(Optional.empty());
+        assertThat(RecordingSessionState.mountedTenants(harness)).containsExactly(Optional.empty());
         releaseAll(tc);
     }
 

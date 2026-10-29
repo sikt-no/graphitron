@@ -71,14 +71,6 @@ public final class GraphitronFacadeGenerator {
      *                       routes {@code schemaSdl} through the generated {@code OneOfDirectiveSdl}
      *                       helper, the same gate {@link GraphitronSchemaClassGenerator} applies to
      *                       its federation build
-     */
-    public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage,
-                                          boolean federationLink, boolean usesOneOf) {
-        return generate(schema, outputPackage, federationLink, usesOneOf,
-            no.sikt.graphitron.emit.SessionIdentityRows.empty());
-    }
-
-    /**
      * @param identity the graph's session identity as the store states it; when the graph supplies
      *                 it, both owned factories take the request's {@code SessionState} and write it
      *                 where the connection instrumentation reads it
@@ -248,7 +240,7 @@ public final class GraphitronFacadeGenerator {
 
     /** Convenience overload for non-federation usage. */
     public static List<TypeSpec> generate(GraphitronSchema schema, String outputPackage) {
-        return generate(schema, outputPackage, false, false);
+        return generate(schema, outputPackage, false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty());
     }
 
     /**

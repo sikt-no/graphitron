@@ -44,7 +44,7 @@ class GraphitronFacadeGeneratorTest {
     @ParameterizedTest(name = "federationLink={0}, usesOneOf={1}")
     @CsvSource({"false, false", "true, false", "true, true"})
     void schemaSdl_isPublicStaticTakingTheSchemaReturningString(boolean federationLink, boolean usesOneOf) {
-        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federationLink, usesOneOf)
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federationLink, usesOneOf, no.sikt.graphitron.emit.SessionIdentityRows.empty())
             .get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("schemaSdl"))
             .toList();
@@ -200,7 +200,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void newGraphQL_isPresentExactlyOnceInFederationBuild() {
-        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0);
         var newGraphQLCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("newGraphQL"))
             .count();
@@ -211,7 +211,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void nonFederation_exposesSingleBuildSchemaMethod() {
-        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", false, false).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .count();
@@ -220,7 +220,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_exposesTwoBuildSchemaMethods() {
-        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0);
+        var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .count();
@@ -229,7 +229,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_secondBuildSchemaMethod_hasFederationCustomizerParameter() {
-        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0).methodSpecs().stream()
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .toList();
         var twoArg = methods.get(1);
@@ -240,7 +240,7 @@ class GraphitronFacadeGeneratorTest {
 
     @Test
     void federation_secondBuildSchemaMethod_delegatesToGraphitronSchemaBuildTwoArg() {
-        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false).get(0).methodSpecs().stream()
+        var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals("buildSchema"))
             .toList();
         var body = methods.get(1).code().toString();
@@ -249,7 +249,7 @@ class GraphitronFacadeGeneratorTest {
     }
 
     private static no.sikt.graphitron.javapoet.MethodSpec findFirstMethod(String name, boolean federation) {
-        return GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federation, false).get(0).methodSpecs().stream()
+        return GraphitronFacadeGenerator.generate(emptySchema(), "com.example", federation, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0).methodSpecs().stream()
             .filter(m -> m.name().equals(name))
             .findFirst()
             .orElseThrow();
