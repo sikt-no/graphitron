@@ -1357,9 +1357,9 @@ CREATE TABLE graphql_argument (
   list_depth        INT     NOT NULL,
   default_value_sdl VARCHAR,
   description       VARCHAR,
-  source_name       VARCHAR,
-  source_line       INT,
-  source_column     INT,
+  source_name       VARCHAR NOT NULL,
+  source_line       INT NOT NULL,
+  source_column     INT NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
   argument_name_upper VARCHAR GENERATED ALWAYS AS (UPPER(argument_name)),
   site_graph_ref  VARCHAR,
@@ -1643,9 +1643,9 @@ CREATE TABLE graphql_directive (
   directive_name VARCHAR NOT NULL,
   repeatable     BOOLEAN NOT NULL,
   description    VARCHAR,
-  source_name    VARCHAR,
-  source_line    INT,
-  source_column  INT,
+  source_name    VARCHAR NOT NULL,
+  source_line    INT NOT NULL,
+  source_column  INT NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   site_graph_ref  VARCHAR,
   site_source_ref VARCHAR,
@@ -1703,9 +1703,9 @@ CREATE TABLE graphql_directive_argument (
   item_non_null     BOOLEAN,
   default_value_sdl VARCHAR,
   description       VARCHAR,
-  source_name       VARCHAR,
-  source_line       INT,
-  source_column     INT,
+  source_name       VARCHAR NOT NULL,
+  source_line       INT NOT NULL,
+  source_column     INT NOT NULL,
   touched_at        TIMESTAMP NOT NULL,
   site_graph_ref  VARCHAR,
   site_source_ref VARCHAR,
@@ -1736,7 +1736,7 @@ COMMENT ON COLUMN graphql_directive_argument.is_list IS 'a list wrapper is prese
 COMMENT ON COLUMN graphql_directive_argument.item_non_null IS 'item-level non-null when is_list; NULL otherwise';
 COMMENT ON COLUMN graphql_directive_argument.default_value_sdl IS 'rendered default; the value an application inherits when it omits the argument';
 COMMENT ON COLUMN graphql_directive_argument.description IS 'SDL description string, when the author wrote one';
-COMMENT ON COLUMN graphql_directive_argument.source_name IS 'position of the formal argument in the definition';
+COMMENT ON COLUMN graphql_directive_argument.source_name IS 'the SDL file the formal argument was declared in, which is its directive''s one definition''s file';
 COMMENT ON COLUMN graphql_directive_argument.source_line IS 'source line, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_argument.source_column IS 'source column, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_directive_argument.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms: swept per graph, and NOT NULL so the sweep is total';
