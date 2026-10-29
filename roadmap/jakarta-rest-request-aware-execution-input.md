@@ -1,7 +1,7 @@
 ---
 id: R1098
 title: "A graphitron-jakarta-rest subgraph writes only what is its own"
-status: Spec
+status: Ready
 bucket: feature
 priority: 4
 theme: runtime-connection
@@ -107,7 +107,7 @@ The five questions the Backlog text left open, answered:
 
 * `GraphqlEndpoint` and `GraphqlEndpoint.Request` as above. `Request` holds the supplier and the policy and delegates to `GraphqlHttpHandler`, `GraphiqlBundle` and the application, the way `GraphqlResource` does; `GraphqlResource` itself becomes the same delegation with `application::newExecutionInput`, so there is one set of arms.
 * `GraphqlHttpHandler`: the two overloads taking the supplier. The supplier is called where `application.newExecutionInput()` is called today, inside the ordered two-arm guard, so client faults pass through, `clientFault` is consulted and everything else is redacted exactly as now.
-* `GraphitronApplication`: the `mountFailure` and `rejectedIdentity` defaults and the `newExecutionInput()` default. `AbstractGraphitronApplication`: the three-function constructor; the existing constructors stay.
+* `GraphitronApplication`: the `mountCause` and `rejectedIdentity` defaults and the `newExecutionInput()` default. `AbstractGraphitronApplication`: the three-function constructor; the existing constructors stay.
 * `AcceptLanguage.parse(HttpHeaders)`, returning `List<String>` (language tags, most preferred first), per RFC 9110: split on commas, order by q-value with header order as the tiebreak, drop `q=0` and `*`, empty when the header is absent or malformed. R1096's context argument is exactly this type.
 * Javadoc on `GraphitronApplication`, `AbstractGraphitronApplication`, `GraphqlHttpHandler` and `GraphqlResource` rewritten around the supplier flow.
 
