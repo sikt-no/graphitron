@@ -172,8 +172,15 @@ The emitter companion to the "Model metadata over parallel type systems" princip
 column's jOOQ `DataType` is already known, so cursor round-tripping goes through the column
 metadata rather than a hand-rolled type-tag system (`i:`, `s:`, `l:`).
 
-- *Encode/decode a seek value*: `field.getDataType().convert(rawValue)` ; the `DataType` and its
-  registered `Converter` do the coercion, exactly as with `DSL.val`'s two-argument form.
+- *Encode a seek value*: the column's database value, the record's value passed through the
+  column's `Converter.to` (jOOQ's identity converter when it has none; an `EnumType` as its
+  literal), written as a JSON string. Never the user value's text: a converter's user type need
+  not share its text with the database type.
+- *Decode a seek value*: `ColumnValues.fromDatabase(field.getDataType(), element)`, which parses
+  the element as the database type (`getSQLDataType().convert`) and runs `Converter.from`. Not the
+  converted `field.getDataType().convert(element)`: it answers `null` for text the user type does
+  not share with the database type, and hands an input that is already a user-type instance back
+  unconverted.
 - *The no-seek case*: `DSL.noField(field)` where a column position must be present but no seek
   value applies, rather than a null placeholder or an omitted column that would misalign the tuple.
 

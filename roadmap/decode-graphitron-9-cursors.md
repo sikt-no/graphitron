@@ -150,6 +150,7 @@ Implemented in session 01FY5Uvumr2BLg5Q9qeaVe7v as the plan above describes; dep
 - `ColumnValues.fromDatabase` hands the parsed database value to the converter through `converter.fromType().cast(...)` in a generic helper; a database type that does not match the converter's `fromType` is a server fault and propagates as a `ClassCastException`, not a client error.
 - An enum order column writes its jOOQ `EnumType` literal, not `toString()`. The plan's "database value's `toString()`" gives the Java constant's name (`NC_17`), which jOOQ's `DataType.convert` does not parse (it parses the literal, `NC-17`), so a cursor landing on such a row failed decode, in the old NUL format too, and the text was not what Graphitron 9 wrote. Pinned by a new `FilmSort.RATING` value on `filmsOrderedConnection` and two `CursorFormatExecutionTest` cases (a 10 cursor and a 9 cursor on the NC-17 film).
 - `ConnectionHelper` loses its `@SuppressWarnings({"deprecation", "removal"})`: its one `DataType.convert` call moved into `ColumnValues`, which already carries the suppression.
+- Round 4's doc rework shipped in session 01FY5UvsZbWjdXJ99oomUy5E: `docs/architecture/reference/emitter-conventions.adoc` and `docs/architecture/principles/development-principles.adoc` describe the delivered codec. No work remains.
 
 ## Reviewer findings
 
@@ -232,6 +233,8 @@ The sweep asks the reviewer to skim the item's touched areas for prose paraphras
 - `docs/architecture/principles/development-principles.adoc`, "Model metadata over parallel type systems": the exemplar says cursor "encode/decode goes through `field.getDataType().convert()` instead of a hand-rolled type-tag system". The principle itself still holds, since the cursor stays column-driven with no type tag, but the named call is no longer the one used.
 
 What would satisfy it: restate both passages against the delivered codec. Encode writes each value's database value (the column converter's `to`, an enum's literal) as a JSON string. Decode parses it as the column's database type and runs the converter through `ColumnValues.fromDatabase`, never the converted `DataType.convert`. Keep the no-type-tag point the principle makes. Neither spec gate named these files under Implementation, so this is a gap in the plan as much as in the delivery. It is small, but it is the convention a future cursor change will be built from.
+
+> *Author response (session 01FY5UvsZbWjdXJ99oomUy5E, 2026-10-29, at the user's request; this makes the Round 4 reviewer an implementer, so a different session takes the Done gate).* Both passages restated against the delivered codec. `emitter-conventions.adoc` "Cursor encode/decode" now gives encode (the column's database value through `Converter.to`, an enum as its literal, as a JSON string) and decode (`ColumnValues.fromDatabase`, never the converted `convert`, with the two measured reasons) as separate bullets; the no-seek bullet is unchanged. `development-principles.adoc` keeps the no-type-tag point and names the database-text write and database-type parse instead of `convert()`.
 
 **Non-blocking.**
 

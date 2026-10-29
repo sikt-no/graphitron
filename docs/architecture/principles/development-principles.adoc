@@ -193,9 +193,9 @@ reintroduced into the model has no typed home to land in).
 
 When the model already carries typed information, runtime data formats derive from that metadata
 rather than inventing a parallel type system. The cursor format is the exemplar: each cursor
-column's jOOQ `DataType` is already known, so encode/decode goes through
-`field.getDataType().convert()` instead of a hand-rolled type-tag system ; the column metadata
-*is* the type information. A parallel type system in a runtime format is the drift smell at the
+column's jOOQ `DataType` is already known, so the cursor writes each value as the column's
+database text and decode parses it back as that column's database type and runs its converter,
+instead of a hand-rolled type-tag system ; the column metadata *is* the type information. A parallel type system in a runtime format is the drift smell at the
 format boundary: redundant, and diverges.
 
 *Enforced by:* review only.
