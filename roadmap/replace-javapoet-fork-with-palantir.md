@@ -1,7 +1,7 @@
 ---
 id: R174
 title: "Replace the graphitron-javapoet fork with Palantir's JavaPoet"
-status: In Progress
+status: In Review
 bucket: architecture
 priority: 9
 theme: tooling
@@ -91,64 +91,32 @@ schedule.
 
 ## Plan
 
-1. **Move the writer into graphitron, at the existing seam.**
-   `GraphQLRewriteGenerator.writeUnits` is already the single write
-   site for every planned and fixed-runtime unit (`writeCommand`
-   delegates to it). It keeps the one render
-   (`JavaFile.builder(...).build().toString()`) and hands the target
-   path, computed from the unit's `UnitRef`, plus the rendered source to
-   a small helper that compares with the file on disk, writes only on a
-   difference, and returns `(path, changed)` as a graphitron-side
-   record. `EmissionLog.record` takes that record, so it stops naming an
-   emit-library type. This also renders once where the fork renders
-   twice on the write path, and compares content directly rather than
-   through a SHA-256 of each side. `IdempotentWriterTest` in
-   `graphitron-sakila-example` keeps pinning the behaviour. Whether
-   `SchemaSdlEmitter` (which writes with `Files.writeString`
-   unconditionally) adopts the helper is the implementer's call, not
-   scope.
-2. **Adapt to Palantir's API differences.** `TypeName.OBJECT` becomes
-   `ClassName.OBJECT` (34 occurrences across eight files, seven of them in main sources). Palantir rejects a format
-   string passed arguments it has no placeholder for, where Square
-   ignored them silently; the trial swap hit this once, at
-   `ConnectionRuntimeClassGenerator`'s multi-tenant constructor
-   (`addStatement` with a placeholder-free template and a `source`
-   argument). Fix that site, and treat any further hit the same way: it
-   is a latent sloppiness in our emit code, not a Palantir problem.
-3. **Switch the dependency.** Pin `com.palantir.javapoet:javapoet`
-   exactly (0.22.0 at time of writing) as a root `pom.xml` property,
-   replace the `graphitron-javapoet` dependency in `graphitron/pom.xml`
-   with it, and rename `no.sikt.graphitron.javapoet` to
-   `com.palantir.javapoet` in the 289 files that name it (mechanical; 270 import it, the rest use the FQN inline or as a string, as `ModelEmitVocabularyGuardTest` and `PackageImportDirectionTest` do).
-4. **Delete the module and its mentions.**
-   - Build: the `graphitron-javapoet` entry in the root `pom.xml`
-     modules list, and the module named in the comment near the
-     leaf-coverage configuration.
-   - Module enumerations: `CLAUDE.md` and
-     `docs/architecture/reference/modules.adoc` (the
-     `check-module-enumeration` step keeps those in step with the pom),
-     the publishable-surface list in `docs/architecture/index.adoc`, the
-     module lists in `GuardScope` and `JavadocReferenceGateTest`, and
-     the build-time table in `.claude/skills/build/SKILL.md`.
-   - Agent and command docs that cite fork paths:
-     `.claude/agents/codebase-analyzer.md`,
-     `.claude/agents/codebase-pattern-finder.md`,
-     `.claude/commands/prepare_for_pr.md`.
-   - Javadoc prose naming the fork: the record-support notes on
-     `InputRecordShape`, `HasInputRecordShape` and
-     `InputRecordGenerator`, and the `CodeBlock.equals` citation in
-     `MethodRefCallShapeTest`.
-   - Roadmap bodies: `inputs-package-internal-use-audit.md` calls
-     records "blocked on a graphitron-javapoet upgrade", which this item
-     removes; `run-record-families-for-commands-and-emitted-units.md`
-     and `model-owns-every-gatherer.md` name
-     `JavaFile.writeToPathReporting`.
-   - R560 (un-skip the fork's test suite) has no subject once the module
-     is gone and is Discarded in the same commit.
-
-Steps 1 and 2 are independent of each other and each lands green
-against the fork, so the switch in step 3 is the only commit that
-changes the dependency.
+1. **Move the writer into graphitron, at the existing seam.** Shipped at
+   `913de99`, inside another item's commit rather than this one: the
+   helper is `IdempotentWriter` (compare rendered content with the file on
+   disk, write only on a difference, return the path and `changed`), called
+   from `GraphQLRewriteGenerator.writeUnits`, and `EmissionLog.record` takes
+   its result. `IdempotentWriterTest` in `graphitron-sakila-example` pins
+   the behaviour. `SchemaSdlEmitter` keeps its unconditional write; adopting
+   the helper was left out of scope.
+2. **Adapt to Palantir's API differences.** Shipped at `65a70ec`:
+   `TypeName.OBJECT` became `ClassName.OBJECT` in eight files while the fork
+   still had both. The placeholder-free format string the trial swap hit did
+   not surface in the delivered swap: the generator tests ran clean against
+   Palantir 0.22.0, so no emit-code fix was needed.
+3. **Switch the dependency.** Shipped at `b059dc3`: root `pom.xml` pins
+   `com.palantir.javapoet:javapoet` 0.22.0 as a property, `graphitron/pom.xml`
+   depends on it, and `no.sikt.graphitron.javapoet` is renamed to
+   `com.palantir.javapoet`. Files that arrived from trunk during the rebases
+   needed the same rename, at `ea2d616` and `b09ee14`.
+4. **Delete the module and its mentions.** Shipped at `b059dc3`: the module,
+   its `pom.xml` entry, the module enumerations (`CLAUDE.md`,
+   `modules.adoc`, `index.adoc`, `GuardScope`, `JavadocReferenceGateTest`,
+   the `build` skill), the agent and command docs, and the fork-naming
+   Javadoc prose and roadmap bodies. The fork's test-suite item was
+   discarded in the same commit. Two historical roadmap mentions of the old
+   module or package, as measurement and incident examples, stay as they
+   were.
 
 **Version bumps afterwards.** A Palantir release that changes rendering
 would mark every unit changed, force a full recompile in the dev loop
@@ -186,7 +154,18 @@ inherits it.
   including the Java 17 compilation and execution tiers of
   `graphitron-sakila-example`.
 - Regenerating `graphitron-sakila-example` from clean before and after
-  the switch yields byte-identical sources.
+  the switch yields byte-identical sources. Measured against the fork
+  (`65a70ec`) and the delivered tree (`b09ee14`), both on the same trunk
+  base and database seed: 1,500 generated `.java` files on each side, and
+  all but two or three identical. The remainder differ only in the order of
+  the `fields.add(...)` lines inside a multi-term projection arm
+  (`Category`, `Store`, `DivergedRefChild`). That is not the switch: two
+  regenerations of the Palantir tree differ from each other in a different
+  set of files, because the order of the correlation-key columns that feed
+  `Contribution.Project` is not stable from run to run, and both trees run
+  the same generator code. So the evidence is the same-base diff plus that
+  self-diff: the switch changes no rendering, and the run-to-run ordering is
+  an existing defect, filed as R1127.
 - `IdempotentWriterTest` passes against the graphitron-side helper.
 - `mvn dependency:tree` on `graphitron-maven-plugin` shows
   `com.palantir.javapoet:javapoet` and no `graphitron-javapoet`.
