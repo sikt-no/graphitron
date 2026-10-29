@@ -210,7 +210,7 @@ class GeneratorDeterminismTest {
 
     private static RunContext contextFor(Path outputDir) {
         // The fixture schema binds a $session service parameter, so the context needs the same
-        // <sessionState> pair the example pom configures for the default execution.
+        // <sessionState> handle the example pom configures for the default execution.
         return new RunContext(
             List.of(new SchemaInput(SchemaSource.file(FIXTURE_SCHEMA), Optional.empty(), Optional.empty())),
             FIXTURE_SCHEMA.getParent(), "GeneratorDeterminismTest",
@@ -218,8 +218,7 @@ class GeneratorDeterminismTest {
             OUTPUT_PACKAGE,
             JOOQ_PACKAGE
         ).withSessionStateConfig(SessionStateConfig.from(
-            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount",
-            "no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount"));
+            "no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord", null, null));
     }
 
     /**

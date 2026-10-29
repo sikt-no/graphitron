@@ -491,9 +491,8 @@ public final class GraphitronFacadeGenerator {
                                                      boolean typedRequestTenants) {
         var sb = new StringBuilder();
         sb.append("Builds an {@link graphql.ExecutionInput.Builder} for the owned-connection path:\n");
-        sb.append("pass only the declared {@code contextArguments} (a configured {@code <mount>} method's\n");
-        sb.append("payload parameters are ordinary entries in that population, typed by the method's own\n");
-        sb.append("declaration). Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
+        sb.append("pass the {@code SessionState} and then only the declared {@code contextArguments}, which\n");
+        sb.append("no longer include any session identity payload. Unlike {@link #newExecutionInput}, no {@code DSLContext} is supplied\n");
         sb.append("here; the execution instrumentation wired by\n");
         sb.append("{@code Graphitron.runtime(...).newGraphQL(schema)} pins connections on first demand,\n");
         sb.append("mounts identity through the mount method, produces every {@code DSLContext}, demarcates\n");

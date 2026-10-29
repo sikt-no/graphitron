@@ -99,7 +99,7 @@ class ConvertedTenantRoutingExecutionTest {
     }
 
     private static ExecutionResult execute(GraphQL on, String query, RequestTenants tenants, String sub) {
-        return on.execute(Graphitron.newOwnedExecutionInput(tenants, "{\"sub\":\"" + sub + "\"}")
+        return on.execute(Graphitron.newOwnedExecutionInput(tenants, SessionStates.convertedTenant("{\"sub\":\"" + sub + "\"}"))
             .query(query).build());
     }
 

@@ -189,7 +189,9 @@ public final class ClassfileCensus {
      * entry it was found in, as the census records it, so its rows partition the same way.
      *
      * @param entries   directories and jars, in the order a classloader would search them
-     * @param className the binary name, with dots
+     * @param className the binary name, with dots; a nested class is named by its binary name
+     *                  ({@code Outer$Inner}), which the census proper never admits and a caller that
+     *                  names one on purpose may
      */
     public static Optional<ClassAt> readNamed(List<Path> entries, String className) {
         String relative = className.replace('.', '/') + ".class";
@@ -199,7 +201,7 @@ public final class ClassfileCensus {
                 Path file = entry.resolve(relative);
                 if (Files.isRegularFile(file)) {
                     var found = read(bytes(file), pathOf(entry, file), sizeOf(file), modifiedOf(file),
-                        file.getFileName().toString(), source, null);
+                        NAMED_FILE, source, null);
                     if (found.isPresent()) {
                         return found;
                     }
@@ -215,7 +217,7 @@ public final class ClassfileCensus {
                         bytes = in.readAllBytes();
                     }
                     var found = read(bytes, zipped.getName(), zipped.getSize(), zipped.getTime(),
-                        relative.substring(relative.lastIndexOf('/') + 1), source, null);
+                        NAMED_FILE, source, null);
                     if (found.isPresent()) {
                         return found;
                     }
@@ -226,6 +228,9 @@ public final class ClassfileCensus {
         }
         return Optional.empty();
     }
+
+    /** The file name a class named on purpose is read under, so the name filter that keeps nested classes out of the census does not apply. */
+    private static final String NAMED_FILE = "Named.class";
 
     /** What the file was, as the reading found it; -1 where the filesystem would not say. */
     private static long sizeOf(Path file) {

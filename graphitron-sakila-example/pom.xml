@@ -352,19 +352,17 @@
                     <jooqPackage>${jooqPackage}</jooqPackage>
                     <outputPackage>${outputPackage}</outputPackage>
                     <!--
-                        Session identity as a config-named static method pair, inherited by every
-                        execution that does not override it. This is the hand-written facade
-                        shape: mount takes one String claims payload (which is also what keeps
-                        the dev goal's <claims> string constructible for `mvn graphitron:dev`),
-                        reshapes it into the composite the session_connect routine takes, and
-                        returns the routine's composite handle; unmount clears through the paired
-                        routine. Exercised end-to-end against RLS in SessionHookExecutionTest;
-                        the direct jOOQ-Routines shape is configured on the
-                        rewrite-generate-multischema-mutation execution below.
+                        Session identity supplied per request as code: the block only switches the
+                        feature on and names the class the mount callback returns, which is what
+                        `$session` bindings read members of. The tests build the SessionState from
+                        callbacks over the facade in graphitron-sakila-service (mount takes one
+                        String claims payload, reshapes it into the composite the session_connect
+                        routine takes, and returns the routine's composite handle; unmount clears
+                        through the paired routine). Inherited by every execution that does not
+                        override it. Exercised end-to-end against RLS in SessionHookExecutionTest.
                     -->
                     <sessionState>
-                        <mount>no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#mount</mount>
-                        <unmount>no.sikt.graphitron.rewrite.test.services.SakilaSessionIdentity#unmount</unmount>
+                        <handle>no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord</handle>
                     </sessionState>
                 </configuration>
                 <executions>
@@ -381,7 +379,7 @@
                             </schemaInputs>
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>${outputPackage}</outputPackage>
-                            <!-- <sessionState> inherits the plugin-level facade pair. -->
+                            <!-- <sessionState> inherits the plugin-level block. -->
                         </configuration>
                     </execution>
                     <!--
@@ -444,13 +442,12 @@
                             <outputPackage>no.sikt.graphitron.generated.multitenant</outputPackage>
                             <tenantColumn>film_id</tenantColumn>
                             <!--
-                                A mount declaring the tenant slot (Optional<Integer>, the film_id
-                                type), so the execution tests can prove each connection's mount
-                                receives the tenant it is mounted for.
+                                In a tenant build the MountedSession carries the tenant
+                                (Optional<Integer>, the film_id type), so the execution tests can
+                                prove each connection's mount receives the tenant it is mounted for.
                             -->
                             <sessionState>
-                                <mount>no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity#mount</mount>
-                                <unmount>no.sikt.graphitron.rewrite.test.services.SakilaTenantSessionIdentity#unmount</unmount>
+                                <handle>no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord</handle>
                             </sessionState>
                         </configuration>
                     </execution>
@@ -475,12 +472,10 @@
                             <jooqPackage>${jooqPackage}</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.convertedtenant</outputPackage>
                             <tenantColumn>owner_org</tenantColumn>
-                            <!-- A handle-less mount declaring the String tenant slot, so the
-                                 execution tests can see the form a mounted tenant takes;
-                                 combine.self keeps the plugin-level unmount out of it. -->
-                            <sessionState combine.self="override">
-                                <mount>no.sikt.graphitron.rewrite.test.services.OrgTenantSessionIdentity#mount</mount>
-                            </sessionState>
+                            <!-- A handle-less mount whose MountedSession carries the String tenant,
+                                 so the execution tests can see the form a mounted tenant takes;
+                                 combine.self keeps the plugin-level handle out of it. -->
+                            <sessionState combine.self="override"/>
                         </configuration>
                     </execution>
                     <execution>
@@ -545,20 +540,14 @@
                             <jooqPackage>no.sikt.graphitron.rewrite.test.jooq</jooqPackage>
                             <outputPackage>no.sikt.graphitron.generated.multischemamutation</outputPackage>
                             <!--
-                                The direct jOOQ-Routines shape of the method-hook contract,
-                                overriding the plugin-level facade pair: <mount> names the
-                                generated executing method itself (the seam rule resolves it
-                                against the Field-expression overloads jOOQ emits beside it),
-                                the composite payload parameter (pClaims, a UDT record) becomes
-                                the factory contextArgument, and the composite return is the
-                                handle. Zero hand-written Java on this shape; compiling this
-                                output at -release 17 plus SessionHookExecutionTest's round trip
-                                is the proof that generated and hand-written hook methods are
-                                indistinguishable to the resolver.
+                                The jOOQ-generated Routines called directly from the callback, with
+                                a composite claims record the test builds itself. Compiling this
+                                output at -release 17 plus SessionHookExecutionTest's round trip is
+                                the proof that a callback over the generated routines is as good as
+                                one over a hand-written facade.
                             -->
                             <sessionState>
-                                <mount>no.sikt.graphitron.rewrite.test.jooq.public_.Routines#sessionConnect</mount>
-                                <unmount>no.sikt.graphitron.rewrite.test.jooq.public_.Routines#sessionDisconnect</unmount>
+                                <handle>no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord</handle>
                             </sessionState>
                         </configuration>
                     </execution>

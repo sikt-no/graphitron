@@ -24,6 +24,7 @@ import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_EXTERNAL_FIELD_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
+import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
@@ -181,9 +182,8 @@ public final class CodeCapture {
      *
      * <p>Only the class itself is read, so the slots are the members it declares, which is the
      * rule a handle's members follow: a jOOQ record handle offers {@code principal} and
-     * {@code sessionNo}, not the {@code Record} API it inherits. The class row the slots key to is
-     * the census's own; a class no entry holds, or a non-public one, writes nothing, and the
-     * derivation that reads these rows says so.
+     * {@code sessionNo}, not the {@code Record} API it inherits. A class no entry holds, or a
+     * non-public one, writes nothing, and the derivation that reads these rows says so.
      */
     private static void handleSlots(DSLContext dsl, ClasspathSourceCapture.Reading reading,
                                     LocalDateTime touchedAt) {
@@ -201,11 +201,20 @@ public final class CodeCapture {
         if (at.isEmpty()) {
             return;
         }
-        var classRow = dsl.fetchExists(CODE_CLASS,
-            CODE_CLASS.SOURCE_NAME.eq(at.get().source()).and(CODE_CLASS.CLASS_NAME.eq(at.get().className())));
-        if (!classRow) {
-            return;
-        }
+        // The rows the slots key to, written here because a nested class is no census class, so
+        // the reading left it no file row, and a top-level one is only written after this runs.
+        // The census's own write of the same keys is an idempotent upsert, and a file row left
+        // alone where it exists is the corpus reader's.
+        var file = STORE_CLASS_FILE;
+        dsl.insertInto(file, file.SOURCE_NAME, file.FILE_PATH, file.BYTE_SIZE, file.MTIME, file.TOUCHED_AT)
+            .values(at.get().source(), at.get().filePath(),
+                at.get().byteSize() < 0 ? null : at.get().byteSize(),
+                at.get().mtimeMillis() < 0 ? null : LocalDateTime.ofInstant(
+                    java.time.Instant.ofEpochMilli(at.get().mtimeMillis()), java.time.ZoneId.systemDefault()),
+                touchedAt)
+            .onDuplicateKeyIgnore()
+            .execute();
+        classes(dsl, List.of(at.get()), touchedAt);
         slots(dsl, List.of(at.get()), deliveryContainers(dsl), touchedAt);
     }
 

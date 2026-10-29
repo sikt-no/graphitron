@@ -84,7 +84,7 @@ class DevExecuteExecutionTest {
         }
 
         ExecutionResult inApp = inAppEngine.execute(
-            Graphitron.newOwnedExecutionInput(CLAIMS, USER_ID).query(query).build());
+            Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), USER_ID).query(query).build());
         assertThat(inApp.getErrors()).as("errors: " + inApp.getErrors()).isEmpty();
 
         // Same serializer on both sides (the executor uses JSONValue internally), so byte-equal

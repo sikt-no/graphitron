@@ -10875,7 +10875,7 @@ session_binding_type (graph_name, source_name, source_line, source_column, posit
                       parameter_name, parameter_type, expected) AS (
   SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position, sp.bound_to,
          cp.parameter_name, cp.parameter_type,
-         CASE WHEN sp.member IS NULL THEN REPLACE(hf.handle_class, '$', '.')
+         CASE WHEN sp.member IS NULL THEN hf.handle_class
               ELSE (SELECT MAX(s.slot_type)
                       FROM graphitron_session_handle_member m
                       JOIN code_read_slot s

@@ -34,8 +34,8 @@ class SessionIdentityRejectionPipelineTest {
 
     private static final String STUB = "no.sikt.graphitron.rewrite.SessionHandleStub";
     private static final String RECORD_HANDLE = STUB + "$RecordHandle";
-    private static final String CONDITIONS = "no.sikt.graphitron.rewrite.TestConditionStub";
-    private static final String SERVICES = "no.sikt.graphitron.rewrite.TestServiceStub";
+    private static final String CONDITIONS = "no.sikt.graphitron.rewrite.SessionBindingStub";
+    private static final String SERVICES = CONDITIONS;
 
     private static String serviceSdl(String method, String binding) {
         return """

@@ -1078,13 +1078,10 @@ AS $$
     SELECT count(*)::int FROM rental WHERE customer_id = p_customer_id
 $$;
 
--- Session-identity method-hook fixture: a composite claims payload, a composite session
--- handle, and a connect/disconnect routine pair. jOOQ codegen turns each routine into a
--- static executing method on the generated Routines class (Configuration first, typed UDT
--- record parameters), which is exactly the signature contract the <sessionState>
--- <mount>/<unmount> references resolve against: the executing method carries the one seam
--- parameter, and the same-named Field-expression overloads jOOQ emits beside it carry none,
--- so the seam rule picks the executing method with no overload grammar. The connect mounts
+-- Session-identity fixture: a composite claims payload, a composite session handle, and a
+-- connect/disconnect routine pair. jOOQ codegen turns each routine into a static executing
+-- method on the generated Routines class (Configuration first, typed UDT record parameters),
+-- which the example's session callbacks call directly. The connect mounts
 -- app.user_id (session-scoped, so it survives later transaction settles and is overwritten
 -- wholesale by the next mount) and returns the handle a $session-bound service parameter
 -- reads back; the disconnect clears to the empty string, which the RLS policies below treat

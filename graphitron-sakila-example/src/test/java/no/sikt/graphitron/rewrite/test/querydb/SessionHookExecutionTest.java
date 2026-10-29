@@ -117,7 +117,7 @@ class SessionHookExecutionTest {
             assertThat(notesVisible(conn)).as("no identity mounted").isEmpty();
 
             SessionHandleRecord handle = no.sikt.graphitron.generated.schema.GraphitronSessionHook
-                .mount(conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"alice\"}");
+                .mount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings());
             assertThat(handle.getPrincipal())
                 .as("the handle is the mount's own resolved identity, typed, never opaque")
                 .isEqualTo("alice");
@@ -129,7 +129,7 @@ class SessionHookExecutionTest {
                 .doesNotContain("b1");
 
             no.sikt.graphitron.generated.schema.GraphitronSessionHook
-                .unmount(conn, SQLDialect.POSTGRES, new Settings(), handle);
+                .unmount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings(), handle);
             assertThat(notesVisible(conn))
                 .as("after unmount the identity is gone: RLS denies everything (fail closed)")
                 .isEmpty();
@@ -142,8 +142,7 @@ class SessionHookExecutionTest {
         // directly; the payload is the routine's own composite record. Same round trip.
         try (Connection conn = probeConnection()) {
             SessionHandleRecord handle = no.sikt.graphitron.generated.multischemamutation.schema
-                .GraphitronSessionHook.mount(conn, SQLDialect.POSTGRES, new Settings(),
-                    new SessionClaimsRecord("bob", null));
+                .GraphitronSessionHook.mount(multischemaState(), conn, SQLDialect.POSTGRES, new Settings());
             assertThat(handle.getPrincipal()).isEqualTo("bob");
 
             assertThat(notesVisible(conn))
@@ -152,7 +151,7 @@ class SessionHookExecutionTest {
                 .doesNotContain("a1", "a2");
 
             no.sikt.graphitron.generated.multischemamutation.schema.GraphitronSessionHook
-                .unmount(conn, SQLDialect.POSTGRES, new Settings(), handle);
+                .unmount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings(), handle);
             assertThat(notesVisible(conn)).isEmpty();
         }
     }
@@ -161,7 +160,7 @@ class SessionHookExecutionTest {
     void identityCarriesAcrossTransactionBoundaries_withNoHookRunningInBetween() throws Exception {
         try (Connection conn = probeConnection()) {
             var handle = no.sikt.graphitron.generated.schema.GraphitronSessionHook
-                .mount(conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"alice\"}");
+                .mount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings());
 
             // A mutation field's transaction commits; the post-commit read-back on the same
             // connection still sees RLS-scoped rows, with no hook having run in between: the
@@ -192,7 +191,7 @@ class SessionHookExecutionTest {
                 .doesNotContain("a-discarded", "b1");
 
             no.sikt.graphitron.generated.schema.GraphitronSessionHook
-                .unmount(conn, SQLDialect.POSTGRES, new Settings(), handle);
+                .unmount(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings(), handle);
         } finally {
             dsl.execute("delete from rls_probe where id in (100, 101)"); // superuser cleanup
         }
@@ -202,14 +201,14 @@ class SessionHookExecutionTest {
     void nextMountOverwritesWholesale_theMountOnlyContractsGround() throws Exception {
         try (Connection conn = probeConnection()) {
             var hook = no.sikt.graphitron.generated.schema.GraphitronSessionHook.class;
-            var mount = hook.getMethod("mount",
-                Connection.class, SQLDialect.class, Settings.class, String.class);
-            mount.invoke(null, conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"alice\"}");
+            var mount = hook.getMethod("mount", no.sikt.graphitron.generated.schema.SessionState.class,
+                Connection.class, SQLDialect.class, Settings.class);
+            mount.invoke(null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), conn, SQLDialect.POSTGRES, new Settings());
             assertThat(notesVisible(conn)).contains("a1");
 
             // The same mount method runs on every acquisition, so the set of state it writes is
             // constant and the overwrite is total: bob's mount leaves nothing of alice's behind.
-            mount.invoke(null, conn, SQLDialect.POSTGRES, new Settings(), "{\"sub\":\"bob\"}");
+            mount.invoke(null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"bob\"}"), conn, SQLDialect.POSTGRES, new Settings());
             assertThat(notesVisible(conn))
                 .as("the next acquisition sees bob's rows, never alice's leftover state")
                 .contains("b1")
@@ -229,7 +228,7 @@ class SessionHookExecutionTest {
         try {
             assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
                     singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
-                    "{\"sub\":\"reject-me\"}"))
+                    no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}")))
                 .as("the mount's own exception propagates as the cause of the request-scoped rejection")
                 .isInstanceOf(SessionMountException.class)
                 .hasStackTraceContaining("unentitled principal");
@@ -253,7 +252,7 @@ class SessionHookExecutionTest {
         Executor sameThread = Runnable::run;
         assertThatThrownBy(() -> no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
                 singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
-                "{\"sub\":\"alice\"}"))
+                no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}")))
             .isNotInstanceOf(SessionMountException.class)
             .hasRootCauseInstanceOf(SQLException.class);
     }
@@ -351,7 +350,7 @@ class SessionHookExecutionTest {
         Executor sameThread = Runnable::run;
         var pinned = no.sikt.graphitron.generated.schema.PinnedConnection.acquire(
             singleConnectionDataSource(raw), SQLDialect.POSTGRES, new Settings(), sameThread,
-            "{\"sub\":\"alice\"}");
+            no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"));
         assertThat(raw.getAutoCommit())
             .as("acquire asserts the resting state on the owned connection")
             .isTrue();
@@ -372,7 +371,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
             .query("{ sessionPrincipal }")
             .build());
 
@@ -397,7 +396,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
             .query("mutation { updateFilmsPayload(in: [{ filmId: 2147483000, title: \"x\" }]) { films { filmId } } }")
             .build());
 
@@ -422,7 +421,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
             .query("mutation { updateFilmsPayload(in: [{ filmId: 2147483000, title: \"x\" }]) { films { filmId } } }")
             .build());
 
@@ -443,7 +442,7 @@ class SessionHookExecutionTest {
             no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
 
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput(claims, "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of(claims), "alice")
             .query("{ claimsEcho }")
             .build());
 
@@ -493,7 +492,7 @@ class SessionHookExecutionTest {
         // $session.sessionNo: the member's own Integer binds where the whole handle did.
         var engine = ownedEngine();
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"alice\"}"), "alice")
             .query("{ sessionNumber sessionPrincipal }")
             .build());
 
@@ -510,7 +509,7 @@ class SessionHookExecutionTest {
         var engine = ownedEngine();
 
         var mary = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"mary\"}", "mary")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}"), "mary")
             .query("{ customersOfPrincipal { firstName } }")
             .build());
         assertThat(mary.getErrors()).as("errors: " + mary.getErrors()).isEmpty();
@@ -520,7 +519,7 @@ class SessionHookExecutionTest {
 
         // A fresh engine: the single-connection data source above is released by the first request.
         var nobody = ownedEngine().execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"no-such-customer\"}", "no-such-customer")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"no-such-customer\"}"), "no-such-customer")
             .query("{ customersOfPrincipal { firstName } }")
             .build());
         assertThat(nobody.getErrors()).isEmpty();
@@ -534,7 +533,7 @@ class SessionHookExecutionTest {
         // it over, which is what makes the read per connection rather than per request.
         var engine = ownedEngine();
         var result = engine.execute(no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"mary\"}", "mary")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"mary\"}"), "mary")
             .query("{ sessionStores { storeId customersOfPrincipal { firstName } } }")
             .build());
 
@@ -592,7 +591,7 @@ class SessionHookExecutionTest {
 
     private static graphql.ExecutionInput rejectedInput(String query) {
         return no.sikt.graphitron.generated.Graphitron
-            .newOwnedExecutionInput("{\"sub\":\"reject-me\"}", "reject-me")
+            .newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"reject-me\"}"), "reject-me")
             .query(query)
             .build();
     }
@@ -648,5 +647,13 @@ class SessionHookExecutionTest {
             @Override public <T> T unwrap(Class<T> iface) throws SQLException { throw new SQLException("not a wrapper"); }
             @Override public boolean isWrapperFor(Class<?> iface) { return false; }
         };
+    }
+
+    private static no.sikt.graphitron.generated.multischemamutation.schema.SessionState multischemaState() {
+        return no.sikt.graphitron.generated.multischemamutation.schema.SessionState.of(
+            session -> no.sikt.graphitron.rewrite.test.jooq.public_.Routines
+                .sessionConnect(session.configuration(), new SessionClaimsRecord("bob", null)),
+            (session, handle) -> no.sikt.graphitron.rewrite.test.jooq.public_.Routines
+                .sessionDisconnect(session.configuration(), handle));
     }
 }

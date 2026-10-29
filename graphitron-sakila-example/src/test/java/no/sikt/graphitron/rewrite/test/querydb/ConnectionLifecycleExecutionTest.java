@@ -140,7 +140,7 @@ class ConnectionLifecycleExecutionTest {
      * the {@code sub} claim from the payload before binding it to the identity routine.
      */
     private ExecutionInput.Builder ownedInput(String query) {
-        return Graphitron.newOwnedExecutionInput("{\"sub\":\"test-user\"}", "test-user")
+        return Graphitron.newOwnedExecutionInput(no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\":\"test-user\"}"), "test-user")
             .query(query);
     }
 
