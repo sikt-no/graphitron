@@ -1751,6 +1751,8 @@ CREATE TABLE graphql_directive (
   site_column_ref INT,
   PRIMARY KEY (graph_name, directive_name),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
+  FOREIGN KEY (graph_name, directive_name)
+    REFERENCES graphql_directive_element (graph_name, directive_name) ON DELETE CASCADE,
   FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE SET NULL,
@@ -1761,7 +1763,7 @@ CREATE TABLE graphql_directive (
 );
 COMMENT ON TABLE graphql_directive IS 'A directive is defined: whether it repeats, its description and the site that declared it. For example directive @paged repeatable on FIELD_DEFINITION is the row (paged) with repeatable true.';
 COMMENT ON COLUMN graphql_directive.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_directive.directive_name IS 'the applied or defined directive name, without the leading @';
+COMMENT ON COLUMN graphql_directive.directive_name IS 'the defined directive name, without the leading @, anchored by graphql_directive_element';
 COMMENT ON COLUMN graphql_directive.repeatable IS 'whether the definition says ''repeatable''; governs the ordinal on applications';
 COMMENT ON COLUMN graphql_directive.description IS 'SDL description string, when the author wrote one';
 COMMENT ON COLUMN graphql_directive.source_name IS 'the SDL file the row was captured from';
@@ -1809,6 +1811,8 @@ CREATE TABLE graphql_directive_argument (
   site_column_ref INT,
   PRIMARY KEY (graph_name, directive_name, argument_name),
   FOREIGN KEY (graph_name, directive_name) REFERENCES graphql_directive (graph_name, directive_name) ON DELETE CASCADE,
+  FOREIGN KEY (graph_name, directive_name, argument_name)
+    REFERENCES graphql_directive_argument_element (graph_name, directive_name, argument_name) ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
   FOREIGN KEY (site_graph_ref, site_source_ref, site_line_ref, site_column_ref)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
@@ -1820,8 +1824,8 @@ CREATE TABLE graphql_directive_argument (
 );
 COMMENT ON TABLE graphql_directive_argument IS 'A directive definition declares a formal argument: its type expression, its default, its description and the site that declared it. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName) with type_sdl String.';
 COMMENT ON COLUMN graphql_directive_argument.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_directive_argument.directive_name IS 'the applied or defined directive name, without the leading @';
-COMMENT ON COLUMN graphql_directive_argument.argument_name IS 'the argument name within the owning field';
+COMMENT ON COLUMN graphql_directive_argument.directive_name IS 'the defined directive name, without the leading @, anchored by graphql_directive';
+COMMENT ON COLUMN graphql_directive_argument.argument_name IS 'the formal argument name within the owning directive; with it, anchored by graphql_directive_argument_element';
 COMMENT ON COLUMN graphql_directive_argument.ordinal IS 'declaration order in the definition';
 COMMENT ON COLUMN graphql_directive_argument.type_sdl IS 'rendered argument type, e.g. ''[ReferenceElement!]!''';
 COMMENT ON COLUMN graphql_directive_argument.named_type IS 'the named type the expression bottoms out in; author-spelled, no FK';
