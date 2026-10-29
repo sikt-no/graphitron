@@ -13,6 +13,7 @@ import java.util.Set;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_SESSION_HANDLE_MEMBER;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HANDLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
 import static org.jooq.impl.DSL.exists;
@@ -25,9 +26,10 @@ import static org.jooq.impl.DSL.selectOne;
  * hold.
  *
  * <p>The first kind is five defect codes, each a stored {@code graphitron_entry_defect} row at the
- * written position of the mapping string, one row per string and code with the offending entries'
- * details aggregated in entry order. The verdict is the row; what this class adds is the
- * coordinate the string sits on, from {@code graphitron_argmapping_site}, and the message.
+ * written position of the mapping string, one row per string and code naming one offending entry.
+ * The verdict is the row; what this class adds is the coordinate the string sits on, from
+ * {@code graphitron_argmapping_site}, the members the handle offers where a member is unknown,
+ * from {@code graphitron_session_handle_member}, and the message.
  *
  * <p>The second kind has no written SDL position, which is the defect relation's key, so it is
  * read and not stored: a handle row with no class row under any source the graph reads. It mints
@@ -44,7 +46,8 @@ public final class SessionIdentityDefects {
 
     /** Every relation this component's statements name. */
     public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_ARGMAPPING_SITE, STORE_GRAPH_SESSION_HANDLE, STORE_GRAPH_SOURCE, CODE_CLASS);
+        GRAPHITRON_ARGMAPPING_SITE, GRAPHITRON_SESSION_HANDLE_MEMBER, STORE_GRAPH_SESSION_HANDLE,
+        STORE_GRAPH_SOURCE, CODE_CLASS);
 
     /** One stored defect, with the coordinate its mapping string sits on and what its message needs. */
     public record Binding(String code, String detail, String coordinate, SourceLocation location) {}
@@ -82,6 +85,12 @@ public final class SessionIdentityDefects {
     public static Detection detect(DSLContext dsl, String graphName) {
         var defect = GRAPHITRON_ENTRY_DEFECT;
         var site = GRAPHITRON_ARGMAPPING_SITE;
+        var offered = String.join(", ", dsl
+            .selectDistinct(GRAPHITRON_SESSION_HANDLE_MEMBER.MEMBER_NAME)
+            .from(GRAPHITRON_SESSION_HANDLE_MEMBER)
+            .where(GRAPHITRON_SESSION_HANDLE_MEMBER.GRAPH_NAME.eq(graphName))
+            .orderBy(GRAPHITRON_SESSION_HANDLE_MEMBER.MEMBER_NAME)
+            .fetch(GRAPHITRON_SESSION_HANDLE_MEMBER.MEMBER_NAME));
         var bindings = dsl
             .select(defect.CODE, defect.DETAIL, site.COORDINATE, defect.SOURCE_NAME,
                 defect.SOURCE_LINE, defect.SOURCE_COLUMN)
@@ -90,8 +99,11 @@ public final class SessionIdentityDefects {
                 site.SOURCE_NAME.eq(defect.SOURCE_NAME), site.SOURCE_LINE.eq(defect.SOURCE_LINE),
                 site.SOURCE_COLUMN.eq(defect.SOURCE_COLUMN))
             .where(defect.GRAPH_NAME.eq(graphName), defect.CODE.in(CODES))
-            .fetch(r -> new Binding(r.value1(), r.value2(), r.value3(),
-                new SourceLocation(r.value5(), r.value6(), r.value4())));
+            .fetch(r -> new Binding(r.value1(),
+                "SESSION_MEMBER_UNKNOWN".equals(r.value1())
+                    ? r.value2() + " (offered: " + (offered.isEmpty() ? "none" : offered) + ")"
+                    : r.value2(),
+                r.value3(), new SourceLocation(r.value5(), r.value6(), r.value4())));
         var sorted = bindings.stream()
             .sorted(Comparator.comparing(Binding::coordinate).thenComparing(Binding::code))
             .toList();

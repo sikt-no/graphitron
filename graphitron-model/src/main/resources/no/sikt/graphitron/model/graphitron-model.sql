@@ -10856,13 +10856,7 @@ session_handle_found (graph_name, handle_class) AS (
                   WHERE gs.graph_name = h.graph_name)
 ),
 session_unknown_member (graph_name, source_name, source_line, source_column, position, detail) AS (
-  SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
-         sp.member || ' (offered: '
-           || COALESCE((SELECT LISTAGG(m.member_name, ', ') WITHIN GROUP (ORDER BY m.member_name)
-                          FROM (SELECT DISTINCT d.graph_name, d.member_name
-                                  FROM graphitron_session_handle_member d) m
-                         WHERE m.graph_name = sp.graph_name), 'none')
-           || ')'
+  SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position, sp.member
     FROM session_pair sp
     JOIN session_handle_found hf ON hf.graph_name = sp.graph_name
    WHERE sp.member IS NOT NULL
@@ -11567,10 +11561,10 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
 UNION ALL
 -- A $session binding where no <sessionState> is configured. A string carries several entries and
 -- the defect's key is one row per position and code, so a string's offending entries collapse to
--- one row, their spellings listed in entry order.
+-- one row naming the least offending spelling; fixing it surfaces the next.
 SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column,
        'SESSION_BINDING_WITHOUT_IDENTITY',
-       LISTAGG(sp.bound_to, ', ') WITHIN GROUP (ORDER BY sp.position)
+       MIN(sp.bound_to)
   FROM session_pair sp
  WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
  GROUP BY sp.graph_name, sp.source_name, sp.source_line, sp.source_column
@@ -11579,23 +11573,24 @@ UNION ALL
 -- nothing for the sigil to read.
 SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column,
        'SESSION_HANDLE_UNNAMED',
-       LISTAGG(sp.bound_to, ', ') WITHIN GROUP (ORDER BY sp.position)
+       MIN(sp.bound_to)
   FROM session_pair sp
  WHERE EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
    AND NOT EXISTS (SELECT 1 FROM store_graph_session_handle h WHERE h.graph_name = sp.graph_name)
  GROUP BY sp.graph_name, sp.source_name, sp.source_line, sp.source_column
 UNION ALL
--- $session.<member> naming a member the handle does not offer; the detail lists what it does.
+-- $session.<member> naming a member the handle does not offer. The detail is the member written;
+-- what the handle does offer is the member relation's rows, which the message joins in.
 SELECT u.graph_name, u.source_name, u.source_line, u.source_column,
        'SESSION_MEMBER_UNKNOWN',
-       LISTAGG(u.detail, '; ') WITHIN GROUP (ORDER BY u.position)
+       MIN(u.detail)
   FROM session_unknown_member u
  GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column
 UNION ALL
 -- $session.<member> naming a member two accessors offer, which has no single thing to read.
 SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column,
        'SESSION_MEMBER_AMBIGUOUS',
-       LISTAGG(sp.member, ', ') WITHIN GROUP (ORDER BY sp.position)
+       MIN(sp.member)
   FROM session_pair sp
  WHERE sp.member IS NOT NULL
    AND (SELECT COUNT(*) FROM graphitron_session_handle_member m
@@ -11606,8 +11601,8 @@ UNION ALL
 -- primitive may bind its boxed parameter and no other pair is loosened.
 SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
        'SESSION_BINDING_TYPE_MISMATCH',
-       LISTAGG(t.bound_to || ': parameter ' || t.parameter_name || ' is ' || t.parameter_type
-               || ', expected ' || t.expected, '; ') WITHIN GROUP (ORDER BY t.position)
+       MIN(t.bound_to || ': parameter ' || t.parameter_name || ' is ' || t.parameter_type
+           || ', expected ' || t.expected)
   FROM session_binding_type t
  WHERE t.expected IS NOT NULL
    AND t.parameter_type <> t.expected
