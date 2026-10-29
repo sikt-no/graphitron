@@ -635,6 +635,14 @@ type Query {
         {name: "name", path: [{key: "film_language_id_fkey"}]},
         {name: "name", path: [{key: "film_original_language_id_fkey"}], direction: DESC}
     ])
+    # The single-valued @orderBy form on a plain list: each @order value arrives completed with
+    # film_id, so the tied films 2 and 3 keep one order.
+    filmsByLanguagesList(order: FilmLanguageOrderBy @orderBy): [Film!]! @defaultOrder(fields: [
+        {name: "name", path: [{key: "film_language_id_fkey"}]},
+        {name: "name", path: [{key: "film_original_language_id_fkey"}], direction: DESC}
+    ])
+    # The list-valued form on a plain list: the helper completes the composed sequence.
+    filmsByLanguagesComposedList(order: [FilmLanguageOrderBy!] @orderBy): [Film!]! @defaultOrder(primaryKey: true)
     # The list-valued form: the composed sequence is completed with film_id in the helper.
     filmsByLanguagesComposed(
         order: [FilmLanguageOrderBy!] @orderBy,
@@ -3576,6 +3584,10 @@ type Language @table(name: "language") {
     filmsByOriginalLanguage(
         first: Int, last: Int, after: String, before: String
     ): FilmsConnection! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    # The same sort key on a @splitQuery child list: the batched ROW_NUMBER() window orders by it.
+    filmsListByOriginalLanguage: [Film!]! @splitQuery
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
     # The same sort key on an inline child list, rendered in the correlated subselect.

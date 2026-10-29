@@ -46,6 +46,7 @@ public enum LintRule {
     ASCONNECTION_SAME_TABLE_PK_IN("asconnection-same-table-pk-in", Source.CLASSIFIER),
     DML_WRITE_LENGTH_UNROUTED("dml-write-length-unrouted", Source.CLASSIFIER),
     CONNECTION_ORDER_NOT_UNIQUE("connection-order-not-unique", Source.CLASSIFIER),
+    LIST_ORDER_NOT_UNIQUE("list-order-not-unique", Source.CLASSIFIER),
 
     // Codegen advisories: facts the generator's own producers state, folded in at report assembly,
     // not derived from the AST and not from a per-field classifier verdict, so neither an engine

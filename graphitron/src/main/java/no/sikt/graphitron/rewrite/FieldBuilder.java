@@ -658,22 +658,38 @@ class FieldBuilder {
     }
 
     /**
-     * Emits the {@link LintRule#CONNECTION_ORDER_NOT_UNIQUE} advisory for a single-table connection
-     * whose table has no key to append to its order, so whether the order identifies a row is the
-     * author's word alone. A warning rather than a rejection: the listed columns may be unique in
-     * fact, and the build has no way to be told so other than this rule being disabled.
+     * Emits the order-uniqueness advisory for a single-table list or connection whose table has no
+     * key to append to its order, so whether the order identifies a row is the author's word alone:
+     * {@link LintRule#CONNECTION_ORDER_NOT_UNIQUE} on a connection, where a tie loses rows between
+     * pages, {@link LintRule#LIST_ORDER_NOT_UNIQUE} on a list, where it only leaves the tie order
+     * to the database. A warning rather than a rejection: the listed columns may be unique in
+     * fact, and the build has no way to be told so other than the rule being disabled.
      */
-    private void warnConnectionOrderNotUnique(String parentTypeName, GraphQLFieldDefinition fieldDef,
+    private void warnOrderNotUnique(String parentTypeName, GraphQLFieldDefinition fieldDef,
             TableRef table, String returnTypeName) {
-        ctx.addWarning(BuildWarning.LintFinding.of(
-            "connection '" + parentTypeName + "." + fieldDef.getName() + "' pages over '"
-                + table.tableName() + "', which has no primary key, no non-null unique key and no"
-                + " @node key, so graphitron cannot make its order identify a row: rows that tie on"
-                + " every listed column can be skipped between pages. Declare a primary key on the"
-                + " table (for a view, a synthetic one in jOOQ codegen), add @node(keyColumns: ...)"
-                + " on '" + returnTypeName + "', or, if the listed columns are unique in fact,"
-                + " add 'connection-order-not-unique' to <disabledRules> in the <lint> block.",
-            locationOf(fieldDef), LintRule.CONNECTION_ORDER_NOT_UNIQUE));
+        boolean connection = ctx.buildWrapper(fieldDef) instanceof FieldWrapper.Connection;
+        String coordinate = parentTypeName + "." + fieldDef.getName();
+        String remedy = "Declare a primary key on the table (for a view, a synthetic one in jOOQ"
+            + " codegen), add @node(keyColumns: ...) on '" + returnTypeName + "', or, if the listed"
+            + " columns are unique in fact, add '";
+        if (connection) {
+            ctx.addWarning(BuildWarning.LintFinding.of(
+                "connection '" + coordinate + "' pages over '"
+                    + table.tableName() + "', which has no primary key, no non-null unique key and no"
+                    + " @node key, so graphitron cannot make its order identify a row: rows that tie on"
+                    + " every listed column can be skipped between pages. " + remedy
+                    + "connection-order-not-unique' to <disabledRules> in the <lint> block.",
+                locationOf(fieldDef), LintRule.CONNECTION_ORDER_NOT_UNIQUE));
+        } else {
+            ctx.addWarning(BuildWarning.LintFinding.of(
+                "list '" + coordinate + "' is ordered over '"
+                    + table.tableName() + "', which has no primary key, no non-null unique key and no"
+                    + " @node key, so graphitron cannot make its order identify a row: rows that tie on"
+                    + " every listed column come back in an order the database chooses, which can differ"
+                    + " between executions. " + remedy
+                    + "list-order-not-unique' to <disabledRules> in the <lint> block.",
+                locationOf(fieldDef), LintRule.LIST_ORDER_NOT_UNIQUE));
+        }
     }
 
     /** Outcome of lowering {@code @field} filters across a multi-table polymorphic field's participants.*/
@@ -2849,8 +2865,8 @@ class FieldBuilder {
         }
         var orderByOk = (OrderByResolver.Resolved.Ok) orderByResolved;
         OrderBySpec orderBy = orderByOk.spec();
-        if (orderByOk.keylessConnection()) {
-            warnConnectionOrderNotUnique(parentTypeName, fieldDef, rt, returnTypeName);
+        if (orderByOk.keyless()) {
+            warnOrderNotUnique(parentTypeName, fieldDef, rt, returnTypeName);
         }
         var lookup = lookupMappingResolver.resolve(refs, rt);
         // Scalar NodeId @lookupKey args fold onto ColumnMapping carrying ScalarLookupArg

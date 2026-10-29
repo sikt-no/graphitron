@@ -115,6 +115,45 @@ class SortKeyOrderExecutionTest {
     }
 
     @Test
+    void pathKey_plainList_singleValuedOrderByArgument_completedInBothDirections() {
+        // The tied films 2 and 3 keep film_id order in the direction of the last entry.
+        assertThat(seeded(filmIdsOf(listOf("filmsByLanguagesList(order: {field: ORIGINAL_LANGUAGE, direction: ASC})"))))
+            .containsExactlyElementsOf(ORIGINAL_ASC);
+        assertThat(seeded(filmIdsOf(listOf("filmsByLanguagesList(order: {field: ORIGINAL_LANGUAGE, direction: DESC})"))))
+            .containsExactlyElementsOf(ORIGINAL_DESC);
+    }
+
+    @Test
+    void pathKeys_plainList_defaultOrderBase_twoKeysOverOneTable() {
+        assertThat(seeded(filmIdsOf(listOf("filmsByLanguagesList")))).containsExactlyElementsOf(ORIGINAL_DESC);
+    }
+
+    @Test
+    void pathKey_plainList_listValuedOrderByArgument_completedInTheHelper() {
+        assertThat(seeded(filmIdsOf(listOf(
+            "filmsByLanguagesComposedList(order: [{field: ORIGINAL_LANGUAGE, direction: ASC}])"))))
+            .containsExactlyElementsOf(ORIGINAL_ASC);
+        assertThat(seeded(filmIdsOf(listOf(
+            "filmsByLanguagesComposedList(order: [{field: ORIGINAL_LANGUAGE, direction: DESC}])"))))
+            .containsExactlyElementsOf(ORIGINAL_DESC);
+    }
+
+    @Test
+    void pathKey_splitQueryChildList_ordersInTheBatchedWindow() {
+        var language = (Map<String, Object>) execute(
+            "{ languageBySingleKey(language_id: 1) { filmsListByOriginalLanguage { filmId } } }")
+            .get("languageBySingleKey");
+        var films = (List<Map<String, Object>>) language.get("filmsListByOriginalLanguage");
+        assertThat(seeded(filmIdsOf(films))).containsExactlyElementsOf(ORIGINAL_ASC);
+    }
+
+    /** The list field's rows, selecting {@code filmId}; {@code field} may carry arguments. */
+    private static List<Map<String, Object>> listOf(String field) {
+        String name = field.contains("(") ? field.substring(0, field.indexOf('(')) : field;
+        return (List<Map<String, Object>>) execute("{ " + field + " { filmId } }").get(name);
+    }
+
+    @Test
     void pathKey_composedOrderByArgument_completedInTheHelper() {
         Function<String, String> query = page -> "{ filmsByLanguagesComposed(order: [{field: ORIGINAL_LANGUAGE,"
             + " direction: ASC}], " + page + ") " + SELECTION + " }";

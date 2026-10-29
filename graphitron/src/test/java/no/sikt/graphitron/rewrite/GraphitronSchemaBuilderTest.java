@@ -1515,13 +1515,86 @@ class GraphitronSchemaBuilderTest {
                         .contains("connection-order-not-unique"));
             }),
 
-        PLAIN_LIST_IS_NOT_COMPLETED(
-            "a plain list with the same @defaultOrder has no cursor and is not completed",
+        PLAIN_LIST_IS_COMPLETED(
+            "a plain list with the same @defaultOrder is completed with the key, as a connection is",
             """
             type Film @table(name: "film") { title: String }
             type Query { films: [Film!]! @defaultOrder(fields: [{name: "rental_rate"}]) }
             """,
-            schema -> assertThat(orderedColumns(rootOrder(schema, "films"))).containsExactly("rental_rate ASC")),
+            schema -> assertThat(orderedColumns(rootOrder(schema, "films")))
+                .containsExactly("rental_rate ASC", "film_id ASC")),
+
+        PLAIN_LIST_KEY_FOLLOWS_LAST_ENTRY_DIRECTION(
+            "a plain list gets the key in the direction of its last listed column",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! @defaultOrder(fields: [{name: "rental_rate"}], direction: DESC) }
+            """,
+            schema -> assertThat(orderedColumns(rootOrder(schema, "films")))
+                .containsExactly("rental_rate DESC", "film_id DESC")),
+
+        PLAIN_LIST_WITHOUT_DECLARED_ORDER_STAYS_UNORDERED(
+            "a plain list with no declared order has nothing to complete and stays unordered",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! }
+            """,
+            schema -> assertThat(rootOrder(schema, "films")).isInstanceOf(OrderBySpec.None.class)),
+
+        INLINE_CHILD_LIST_IS_COMPLETED(
+            "an inline child list is completed with the key",
+            """
+            type Film @table(name: "film") { title: String }
+            type Language @table(name: "language") {
+                films: [Film!]! @reference(path: [{key: "film_language_id_fkey"}])
+                    @defaultOrder(fields: [{name: "rental_rate"}])
+            }
+            type Query { languages: [Language!]! }
+            """,
+            schema -> assertThat(orderedColumns(((ChildField.TableField) schema.field("Language", "films")).orderBy()))
+                .containsExactly("rental_rate ASC", "film_id ASC")),
+
+        SPLIT_CHILD_LIST_IS_COMPLETED(
+            "a @splitQuery child list is completed with the key",
+            """
+            type Film @table(name: "film") { title: String }
+            type Language @table(name: "language") {
+                films: [Film!]! @splitQuery @reference(path: [{key: "film_language_id_fkey"}])
+                    @defaultOrder(fields: [{name: "rental_rate"}])
+            }
+            type Query { languages: [Language!]! }
+            """,
+            schema -> assertThat(orderedColumns(((ChildField.BatchedTableField) schema.field("Language", "films")).orderBy()))
+                .containsExactly("rental_rate ASC", "film_id ASC")),
+
+        KEYLESS_LIST_IS_FLAGGED_BY_THE_LIST_RULE(
+            "a keyless list with a declared order keeps it and raises the list rule, not the connection rule",
+            """
+            type RoleAssignment @table(name: "role_assignment") { roleName: String @field(name: "role_name") }
+            type Query { roles: [RoleAssignment!]! @defaultOrder(fields: [{name: "role_code"}]) }
+            """,
+            schema -> {
+                assertThat(orderedColumns(rootOrder(schema, "roles"))).containsExactly("role_code ASC");
+                assertThat(notUniqueFindings(schema)).isEmpty();
+                assertThat(listNotUniqueFindings(schema))
+                    .singleElement()
+                    .satisfies(m -> assertThat(m)
+                        .contains("list 'Query.roles'")
+                        .contains("role_assignment")
+                        .contains("@node(keyColumns")
+                        .contains("list-order-not-unique"));
+            }),
+
+        KEYED_LIST_IS_NOT_FLAGGED(
+            "a keyed list is completed and raises neither rule",
+            """
+            type Film @table(name: "film") { title: String }
+            type Query { films: [Film!]! @defaultOrder(fields: [{name: "rental_rate"}]) }
+            """,
+            schema -> {
+                assertThat(notUniqueFindings(schema)).isEmpty();
+                assertThat(listNotUniqueFindings(schema)).isEmpty();
+            }),
 
         SINGLE_ORDER_BY_COMPLETES_EACH_NAMED_ORDER_AND_BASE(
             "a single-valued @orderBy on a connection completes each named order and the base",
@@ -1568,8 +1641,8 @@ class GraphitronSchemaBuilderTest {
                     .contains(List.of("film_id"));
             }),
 
-        LIST_ORDER_BY_ON_PLAIN_LIST_IS_NOT_COMPLETED(
-            "the same list-valued @orderBy on a plain list carries no completion",
+        LIST_ORDER_BY_ON_PLAIN_LIST_IS_COMPLETED(
+            "the same list-valued @orderBy on a plain list carries the same row-key completion",
             """
             enum FilmSortField { RATE @order(fields: [{name: "rental_rate"}]) }
             input FilmSort { field: FilmSortField! direction: SortDirection }
@@ -1579,7 +1652,7 @@ class GraphitronSchemaBuilderTest {
             schema -> {
                 var sequence = (OrderBySpec.Composition.Sequence) ((OrderBySpec.Argument) rootOrder(schema, "films"))
                     .composition();
-                assertThat(sequence.completion()).isInstanceOf(OrderBySpec.SequenceCompletion.None.class);
+                assertThat(sequence.completion()).isInstanceOf(OrderBySpec.SequenceCompletion.AppendRowKey.class);
             });
 
         final String sdl;
@@ -1720,6 +1793,14 @@ class GraphitronSchemaBuilderTest {
         assertThat(spec).isInstanceOf(OrderBySpec.Fixed.class);
         return ((OrderBySpec.Fixed) spec).entries().stream()
             .map(e -> ((OrderBySpec.ColumnOrderEntry) e).column().sqlName().toLowerCase(java.util.Locale.ROOT) + (e.nullable() ? " nullable" : " not null"))
+            .toList();
+    }
+
+    private static List<String> listNotUniqueFindings(GraphitronSchema schema) {
+        return schema.warnings().stream()
+            .filter(w -> w instanceof BuildWarning.LintFinding lf
+                && lf.rule() == no.sikt.graphitron.model.lint.LintRule.LIST_ORDER_NOT_UNIQUE)
+            .map(BuildWarning::message)
             .toList();
     }
 

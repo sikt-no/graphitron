@@ -14,7 +14,6 @@ import graphql.schema.GraphQLTypeUtil;
 import no.sikt.graphitron.model.jooq.ColumnRef;
 import no.sikt.graphitron.model.jooq.JooqCatalog;
 import no.sikt.graphitron.model.jooq.TableRef;
-import no.sikt.graphitron.rewrite.model.FieldWrapper;
 import no.sikt.graphitron.rewrite.model.GraphitronType;
 import no.sikt.graphitron.rewrite.model.JoinStep;
 import no.sikt.graphitron.rewrite.model.MethodRef;
@@ -72,13 +71,14 @@ final class OrderByResolver {
 
     /**
      * Outcome of {@link #resolve}: {@link Ok} carries the {@link OrderBySpec}, {@link Rejected} the
-     * failure. {@code keylessConnection} is {@code true} when the field is a single-table
+     * failure. {@code keyless} is {@code true} when the field is a single-table list or
      * connection with a non-empty order over a table with no {@link RowIdentity.Keyed row key}, so
      * nothing could be appended and the order's uniqueness is the author's word; the caller turns
-     * it into the {@code connection-order-not-unique} lint finding.
+     * it into the {@code connection-order-not-unique} or {@code list-order-not-unique} lint
+     * finding, by the field's shape.
      */
     sealed interface Resolved {
-        record Ok(OrderBySpec spec, boolean keylessConnection) implements Resolved {
+        record Ok(OrderBySpec spec, boolean keyless) implements Resolved {
             Ok(OrderBySpec spec) { this(spec, false); }
         }
         record Rejected(Rejection rejection) implements Resolved {
@@ -87,7 +87,7 @@ final class OrderByResolver {
     }
 
     /**
-     * Whether a table's rows can be told apart by key, decided once per single-table connection.
+     * Whether a table's rows can be told apart by key, decided once per single-table list or connection.
      */
     sealed interface RowIdentity {
 
@@ -143,7 +143,6 @@ final class OrderByResolver {
             sortKeyRefusal(tableSqlName, singleTable));
 
         Optional<RowIdentity> identity = singleTable
-                && ctx.buildWrapper(fieldDef) instanceof FieldWrapper.Connection
             ? Optional.of(rowIdentity(table, returnTypeName))
             : Optional.empty();
 

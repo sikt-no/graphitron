@@ -15645,6 +15645,7 @@ INSERT INTO lint_rule VALUES
   ('asconnection-same-table-pk-in', 'CLASSIFIER', 'WARNING'),
   ('dml-write-length-unrouted', 'CLASSIFIER', 'WARNING'),
   ('connection-order-not-unique', 'CLASSIFIER', 'WARNING'),
+  ('list-order-not-unique', 'CLASSIFIER', 'WARNING'),
   ('no-session-state', 'CODEGEN', 'WARNING'),
   ('graphql-java-version-lag', 'CODEGEN', 'WARNING'),
   ('jooq-version-lag', 'CODEGEN', 'WARNING'),

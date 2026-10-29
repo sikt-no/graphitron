@@ -42,7 +42,8 @@ class LintRuleCatalogueTest {
             "redundant-record-directive",
             "asconnection-same-table-pk-in",
             "dml-write-length-unrouted",
-            "connection-order-not-unique");
+            "connection-order-not-unique",
+            "list-order-not-unique");
     }
 
     @Test
