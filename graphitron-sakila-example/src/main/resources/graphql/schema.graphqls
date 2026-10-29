@@ -3740,6 +3740,9 @@ enum FilmSort {
     # argument the generated helper appends film_id after the composed sequence, in the direction
     # of its last part, so a runtime direction: DESC flips the key with the rate.
     RENTAL_RATE @order(fields: [{name: "rental_rate"}])
+    # An order on a PostgreSQL enum column whose literals are not Java names ('PG-13', 'NC-17'):
+    # the cursor carries the literal, which is the database's text for the value.
+    RATING @order(fields: [{name: "rating"}])
 }
 
 input FilmOrderBy {

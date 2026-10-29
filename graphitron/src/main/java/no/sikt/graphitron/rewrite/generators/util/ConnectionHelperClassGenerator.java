@@ -24,7 +24,8 @@ import java.util.OptionalInt;
  *
  * <p>Cursor encoding, the format Graphitron 9 issued: a JSON array with one element per order
  * column, SQL {@code NULL} as {@code null} and every other value as a JSON string of the column's
- * database value (the record's value passed back through the column's converter), encoded as
+ * database value (the record's value passed back through the column's converter, an enum as its
+ * literal), encoded as
  * URL-safe Base64 without padding. Decoding reads any JSON scalar, since Graphitron 9 wrote some
  * values as bare numbers, and binds each element through
  * {@code ColumnValues.fromDatabase(column.getDataType(), element)}, which parses it as the column's
@@ -54,6 +55,7 @@ public class ConnectionHelperClassGenerator {
     private static final ClassName MAP              = ClassName.get("java.util", "Map");
     private static final ClassName ARRAY_LIST       = ClassName.get("java.util", "ArrayList");
     private static final ClassName BASE64           = ClassName.get("java.util", "Base64");
+    private static final ClassName ENUM_TYPE        = ClassName.get("org.jooq", "EnumType");
     private static final ClassName DATA_TYPE_EXCEPTION = ClassName.get("org.jooq.exception", "DataTypeException");
 
     /** The name of the constant {@code pageRequest} lowers an oversized page size to. */
@@ -248,8 +250,10 @@ public class ConnectionHelperClassGenerator {
         // --- databaseValue(Record, Field<T>) ---
         // The record's value passed back through the column's converter (jOOQ's identity converter
         // when it has none), so a converter-backed column contributes its database type's text,
-        // which is what Graphitron 9's SQL-side jsonArray carried. Generic over the column's type so
-        // the wildcard capture type-checks in Java 17.
+        // which is what Graphitron 9's SQL-side jsonArray carried. An enum's database text is its
+        // literal ('NC-17'), not the Java constant's name toString() gives, and it is the literal
+        // the column's DataType parses back. Generic over the column's type so the wildcard capture
+        // type-checks in Java 17.
         var t = no.sikt.graphitron.javapoet.TypeVariableName.get("T");
         var databaseValue = MethodSpec.methodBuilder("databaseValue")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
@@ -258,7 +262,10 @@ public class ConnectionHelperClassGenerator {
             .addParameter(RECORD, "record")
             .addParameter(ParameterizedTypeName.get(JOOQ_FIELD, t), "column")
             .addStatement("$T value = record.get(column)", t)
-            .addStatement("return value == null ? null : column.getDataType().getConverter().to(value)")
+            .addStatement("if (value == null) return null")
+            .addStatement("Object database = column.getDataType().getConverter().to(value)")
+            .addStatement("return database instanceof $T ? (($T) database).getLiteral() : database",
+                ENUM_TYPE, ENUM_TYPE)
             .build();
 
         // --- writeJsonString(StringBuilder, String) ---

@@ -186,6 +186,36 @@ class CursorFormatExecutionTest {
         assertThat(column(data, "converterIdChangesConnection", "newValue")).containsExactly("small hours");
     }
 
+    // ===== An enum order column =====
+    // mpaa_rating's literals 'PG-13' and 'NC-17' are not Java names, so the generated constants
+    // are PG_13 and NC_17. The cursor carries the literal, which is both the database's text and
+    // what the column's DataType parses; the constant's name would parse as no rating at all.
+
+    @Test
+    void enumColumn_cursorCarriesTheLiteral_andPagesBackwardFromIt() {
+        var data = execute("{ filmsOrderedConnection(order: [{field: RATING}], first: 100) "
+            + "{ edges { cursor node { filmId } } } }");
+        var edges = (List<Map<String, Object>>) ((Map<String, Object>) data.get("filmsOrderedConnection")).get("edges");
+        String nc17 = edges.stream().filter(e -> ((Map<String, Object>) e.get("node")).get("filmId").equals(3))
+            .map(e -> (String) e.get("cursor")).findFirst().orElseThrow();
+        assertThat(decode(nc17)).isEqualTo("[\"NC-17\",\"3\"]");
+        assertThat(seededBefore(nc17)).containsExactly(2, 4, 1, 5);
+    }
+
+    @Test
+    void enumColumn_graphitron9Cursor_pagesBackwardFromIt() {
+        String cursor = graphitron9Cursor(FILM, FILM.FILM_ID.eq(3), FILM.RATING, FILM.FILM_ID);
+        assertThat(decode(cursor)).isEqualTo("[\"NC-17\", 3]");
+        assertThat(seededBefore(cursor)).containsExactly(2, 4, 1, 5);
+    }
+
+    /** The seeded films before {@code cursor} in rating order (G, PG, PG-13, R, NC-17, then film_id). */
+    private List<Object> seededBefore(String cursor) {
+        var data = execute("{ filmsOrderedConnection(order: [{field: RATING}], last: 100, before: \"" + cursor + "\") "
+            + "{ nodes { filmId } } }");
+        return column(data, "filmsOrderedConnection", "filmId").stream().filter(id -> (Integer) id <= 5).toList();
+    }
+
     // ===== The emitted format =====
 
     @Test
