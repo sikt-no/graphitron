@@ -1024,7 +1024,8 @@ class GraphitronSchemaBuilderTest {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.uniformAsc()).isTrue();
-                assertThat(order.entries()).hasSize(1);
+                // The listed column plus the actor key the list order is completed with.
+                assertThat(order.entries()).hasSize(2);
                 assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
                 assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
             }),
@@ -1042,7 +1043,8 @@ class GraphitronSchemaBuilderTest {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
                 assertThat(order).isNotNull();
                 assertThat(order.uniformAsc()).isFalse();
-                assertThat(order.entries()).hasSize(1);
+                // The listed column plus the actor key the list order is completed with.
+                assertThat(order.entries()).hasSize(2);
                 assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
                 assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
             }),
@@ -1074,7 +1076,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.entries()).hasSize(2);
+                // The listed columns plus the actor key the list order is completed with.
+                assertThat(order.entries()).hasSize(3);
                 assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
                 assertThat(order.entries().get(0).collation()).isEqualTo("C");
                 assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(1)).column().sqlName()).isEqualToIgnoringCase("first_name");
@@ -1115,7 +1118,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.entries()).hasSize(2);
+                // The listed columns plus the actor key the list order is completed with.
+                assertThat(order.entries()).hasSize(3);
                 assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(0)).column().sqlName()).isEqualToIgnoringCase("last_name");
                 assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
                 assertThat(((OrderBySpec.ColumnOrderEntry) order.entries().get(1)).column().sqlName()).isEqualToIgnoringCase("first_name");
@@ -1140,7 +1144,8 @@ class GraphitronSchemaBuilderTest {
             """,
             schema -> {
                 var order = (OrderBySpec.Fixed) ((TableField) schema.field("FilmActor", "actors")).orderBy();
-                assertThat(order.entries()).hasSize(2);
+                // The listed columns plus the actor key the list order is completed with.
+                assertThat(order.entries()).hasSize(3);
                 assertThat(order.entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
                 assertThat(order.entries().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
                 assertThat(order.uniformAsc()).isFalse();
@@ -1168,7 +1173,7 @@ class GraphitronSchemaBuilderTest {
                 assertThat(orderBy.namedOrders()).hasSize(1);
                 var named = orderBy.namedOrders().get(0);
                 assertThat(named.name()).isEqualTo("LASTNAME_DESC_FIRSTNAME_ASC");
-                assertThat(named.order().entries()).hasSize(2);
+                assertThat(named.order().entries()).hasSize(3);
                 assertThat(named.order().entries().get(0).direction()).isEqualTo(OrderBySpec.SortDirection.DESC);
                 assertThat(named.order().entries().get(1).direction()).isEqualTo(OrderBySpec.SortDirection.ASC);
                 assertThat(named.order().uniformAsc()).isFalse();
@@ -1533,13 +1538,24 @@ class GraphitronSchemaBuilderTest {
             schema -> assertThat(orderedColumns(rootOrder(schema, "films")))
                 .containsExactly("rental_rate DESC", "film_id DESC")),
 
-        PLAIN_LIST_WITHOUT_DECLARED_ORDER_STAYS_UNORDERED(
-            "a plain list with no declared order has nothing to complete and stays unordered",
+        PLAIN_LIST_WITHOUT_DECLARED_ORDER_ORDERS_BY_THE_KEY(
+            "a plain list with no declared order already orders by the primary key, which is total, so nothing is appended",
             """
             type Film @table(name: "film") { title: String }
             type Query { films: [Film!]! }
             """,
-            schema -> assertThat(rootOrder(schema, "films")).isInstanceOf(OrderBySpec.None.class)),
+            schema -> assertThat(orderedColumns(rootOrder(schema, "films"))).containsExactly("film_id ASC")),
+
+        KEYLESS_LIST_WITHOUT_DECLARED_ORDER_STAYS_UNORDERED(
+            "a keyless list with no declared order has nothing to complete and is not flagged",
+            """
+            type RoleAssignment @table(name: "role_assignment") { roleName: String @field(name: "role_name") }
+            type Query { roles: [RoleAssignment!]! }
+            """,
+            schema -> {
+                assertThat(rootOrder(schema, "roles")).isInstanceOf(OrderBySpec.None.class);
+                assertThat(listNotUniqueFindings(schema)).isEmpty();
+            }),
 
         INLINE_CHILD_LIST_IS_COMPLETED(
             "an inline child list is completed with the key",
@@ -1703,7 +1719,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(nullability(rootOrder(schema, "films")))
-                .containsExactly("length nullable", "title not null")),
+                .containsExactly("length nullable", "title not null", "film_id not null")),
 
         INDEX_ENTRIES_CARRY_EACH_COLUMNS_OWN_NULLABILITY(
             "an index: order over a mixed index carries each column's own nullability",
@@ -1714,7 +1730,7 @@ class GraphitronSchemaBuilderTest {
             }
             """,
             schema -> assertThat(nullability(rootOrder(schema, "periods")))
-                .containsExactly("valid_to nullable", "label not null")),
+                .containsExactly("valid_to nullable", "label not null", "period_id not null")),
 
         PRIMARY_KEY_ENTRIES_ARE_NOT_NULL(
             "a primaryKey: order and the primary-key fallback are not nullable",
