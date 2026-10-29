@@ -1,0 +1,36 @@
+# Each element row names the declaration it was written inside, at the depth its kind sits: a
+# declaration is its own, a field, an input field, an enum value and a directive argument are their
+# parent's, and a field argument is its field's parent's.
+
+type Shelf {
+  books(first: Int): [String]
+}
+
+input ShelfInput {
+  name: String
+}
+
+enum Size {
+  SMALL
+}
+
+directive @shelved(at: Int) on OBJECT
+
+extend schema @expectEquals(relation: "graphql_ast_element_entry", where: "coordinate IN ('Shelf', 'Shelf.books', 'Shelf.books(first:)', 'ShelfInput', 'ShelfInput.name', 'Size', 'Size.SMALL', '@shelved', '@shelved(at:)')", rows: """
+  coordinate,          declaration_kind,     declaration_line, declaration_column
+  Shelf,               TYPE_DECLARATION,     5,                1
+  Shelf.books,         TYPE_DECLARATION,     5,                1
+  Shelf.books(first:), TYPE_DECLARATION,     5,                1
+  ShelfInput,          TYPE_DECLARATION,     9,                1
+  ShelfInput.name,     TYPE_DECLARATION,     9,                1
+  Size,                TYPE_DECLARATION,     13,               1
+  Size.SMALL,          TYPE_DECLARATION,     13,               1
+  @shelved,            DIRECTIVE_DEFINITION, 17,               1
+  @shelved(at:),       DIRECTIVE_DEFINITION, 17,               1
+  """)
+
+# The schema block extended just above is its own declaration too.
+extend schema @assertContains(relation: "graphql_ast_element_entry", rows: """
+  coordinate, source_line, declaration_kind,  declaration_line, declaration_column
+  $schema,    19,          SCHEMA_DEFINITION, 19,               1
+  """)

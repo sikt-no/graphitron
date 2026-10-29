@@ -48,11 +48,9 @@ class StageAnswerAgreementTest {
     private record Stage(String target, String ruleView) {}
 
     /**
-     * The stage-written tables and their rules, in the stratum's order, led by the element
-     * declarations capture stores before the directive application anchor reads them.
+     * The stage-written tables and their rules, in the stratum's order.
      */
     private static final List<Stage> STAGES = List.of(
-        new Stage("graphql_ast_element_declaration", "graphql_ast_element_declaration_rule"),
         new Stage("graphitron_type_backing", "graphitron_type_backing_rule"),
         new Stage("graphitron_configured_tag", "graphitron_configured_tag_rule"),
         new Stage("graphitron_minted_coinage", "graphitron_minted_coinage_rule"),

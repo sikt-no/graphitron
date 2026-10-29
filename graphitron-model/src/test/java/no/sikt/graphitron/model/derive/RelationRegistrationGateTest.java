@@ -402,8 +402,6 @@ class RelationRegistrationGateTest {
         registrations.put("graphitron_input_field_reference_step_target", Arm.DERIVED);
         registrations.put("graphitron_field_scope_table_rule", Arm.DERIVED);
         registrations.put("sql_constraint_hop", Arm.DERIVED);
-        registrations.put("graphql_ast_element_declaration", Arm.DERIVED);
-        registrations.put("graphql_ast_element_declaration_rule", Arm.DERIVED);
         registrations.put("graphitron_entry_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_node_id_instruction", Arm.DERIVED);
         registrations.put("intent_node_id_decode_endpoint", Arm.DERIVED);

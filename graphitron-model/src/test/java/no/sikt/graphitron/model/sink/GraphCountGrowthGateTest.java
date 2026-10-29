@@ -51,11 +51,8 @@ class GraphCountGrowthGateTest {
      */
     private static final Map<String, String> KNOWN = Map.of(
         "WRITE GRAPHITRON_CARRIER_DATA_FIELD", "grows with the graphs and sits near the bound, so "
-            + "load tips it over; ends when \"The carrier data fields and the element declarations "
-            + "do not grow with the graphs in the store\" lands",
-        "WRITE GRAPHQL_AST_ELEMENT_DECLARATION", "grows with the graphs and sits near the bound, so "
-            + "load tips it over; ends when \"The carrier data fields and the element declarations "
-            + "do not grow with the graphs in the store\" lands");
+            + "load tips it over; ends when \"The carrier data fields do not grow with the graphs "
+            + "in the store\" lands");
 
     @Test
     @DisplayName("one graph's time per relation, written or read, does not grow with the other graphs")

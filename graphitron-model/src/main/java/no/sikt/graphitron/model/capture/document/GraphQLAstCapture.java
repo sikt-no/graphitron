@@ -42,8 +42,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_LOCATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_DECLARATION_RULE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_APPLICATION_ARG;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
@@ -245,7 +243,6 @@ public final class GraphQLAstCapture {
         directiveLocations(dsl, graph, readAt);
         directiveArguments(dsl, graph, readAt);
         rootOperations(dsl, graph, readAt);
-        elementDeclarations(dsl, graph);
         directiveApplications(dsl, graph, readAt);
         directiveApplicationArguments(dsl, graph, readAt);
         sweep(dsl, graph, readAt);
@@ -1211,28 +1208,6 @@ public final class GraphQLAstCapture {
 
 
     /**
-     * Which declaration each element-declaring position was written inside, walked once for the
-     * reading and stored for {@link #directiveApplications} to join.
-     *
-     * <p>The walk is {@code graphql_ast_element_declaration_rule}, a recursive view, and it is read
-     * here alone because H2 evaluates a recursive view again for every row joined to it. Joined into
-     * the application anchor directly, it re-walked the corpus once per application, which did not
-     * finish on a consumer-size schema.
-     *
-     * <p>Replaced rather than stamped and swept: the rows are the reading's own derivation and the
-     * entries they key into are this reading's too, so the graph's rows before this call say
-     * nothing the rule does not say again.
-     */
-    private static void elementDeclarations(DSLContext dsl, String graph) {
-        var t = GRAPHQL_AST_ELEMENT_DECLARATION;
-        var r = GRAPHQL_AST_ELEMENT_DECLARATION_RULE;
-        dsl.deleteFrom(t).where(t.GRAPH_NAME.eq(graph)).execute();
-        dsl.insertInto(t)
-            .select(dsl.selectFrom(r).where(r.GRAPH_NAME.eq(graph)))
-            .execute();
-    }
-
-    /**
      * Every directive an author applied, at the coordinate they applied it to.
      *
      * <p>One relation, where this was five. The five stated one fact and keyed it five ways because
@@ -1248,8 +1223,8 @@ public final class GraphQLAstCapture {
      * name. A directive is not repeatable unless its definition says so, so on almost every
      * application it is zero and the column exists for the ones that are.
      *
-     * <p>What orders a repeat is the only thing the five sites did not share, and it is the reason
-     * {@code graphql_ast_element_declaration} exists. A repeat is numbered in the order the
+     * <p>What orders a repeat is the only thing the five sites did not share, and it is why the
+     * element entry states the declaration it was written inside. A repeat is numbered in the order the
      * declarations carrying it merge, which is a property of the type declaration the application
      * sits inside, one to three parent hops up depending on the site. The schema block sits inside
      * no type declaration and is ordered by its file's age instead, which is {@link
@@ -1266,7 +1241,6 @@ public final class GraphQLAstCapture {
         var a = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         var n = GRAPHQL_AST_ENTRY;
         var e = GRAPHQL_AST_ELEMENT_ENTRY;
-        var ed = GRAPHQL_AST_ELEMENT_DECLARATION;
         var m = GRAPHQL_TYPE_DECLARATION;
         var s = STORE_SOURCE;
         var t = GRAPHQL_DIRECTIVE_APPLICATION;
@@ -1284,13 +1258,11 @@ public final class GraphQLAstCapture {
                 n.SOURCE_LINE.eq(a.SOURCE_LINE), n.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .join(e).on(e.GRAPH_NAME.eq(a.GRAPH_NAME), e.SOURCE_NAME.eq(a.SOURCE_NAME),
                 e.SOURCE_LINE.eq(n.PARENT_LINE), e.SOURCE_COLUMN.eq(n.PARENT_COLUMN))
-            .join(ed).on(ed.GRAPH_NAME.eq(e.GRAPH_NAME), ed.SOURCE_NAME.eq(e.SOURCE_NAME),
-                ed.SOURCE_LINE.eq(e.SOURCE_LINE), ed.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
             // Outer, because the schema block reaches a declaration that is not a type and has no
             // merge ordinal to read. Its rows sort by the file's age below, and a null here is
             // what says so rather than a branch.
-            .leftJoin(m).on(m.GRAPH_NAME.eq(graph), m.SOURCE_NAME.eq(ed.SOURCE_NAME),
-                m.SOURCE_LINE.eq(ed.DECLARATION_LINE), m.SOURCE_COLUMN.eq(ed.DECLARATION_COLUMN))
+            .leftJoin(m).on(m.GRAPH_NAME.eq(graph), m.SOURCE_NAME.eq(e.SOURCE_NAME),
+                m.SOURCE_LINE.eq(e.DECLARATION_LINE), m.SOURCE_COLUMN.eq(e.DECLARATION_COLUMN))
             .join(s).on(s.SOURCE_NAME.eq(a.SOURCE_NAME))
             .where(a.GRAPH_NAME.eq(graph)).and(touched(graph, e.COORDINATE))
             .asTable("candidates");

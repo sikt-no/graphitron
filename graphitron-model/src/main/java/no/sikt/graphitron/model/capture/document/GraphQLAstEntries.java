@@ -244,16 +244,19 @@ public final class GraphQLAstEntries {
 
     /**
      * The element row for each node one arm is about to write: the coordinate that declaration
-     * names, in the specification's grammar.
+     * names, in the specification's grammar, and the declaration it was written inside.
      *
      * <p>The spelling is the caller's, because it is the one thing the five kinds do not share: a
      * named type is its own name, a field and an enum value and an input field are the parent's
      * name and a dot, and an argument goes one deeper. Everything around it is shared, which is why
-     * this takes the coordinate already spelled rather than a rule for spelling it.
+     * this takes the coordinate already spelled rather than a rule for spelling it. The declaration
+     * is the caller's for the same reason: a declaration is its own, a member is its parent's, and a
+     * field argument is its field's parent's, which the caller already holds.
      */
     private static void element(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                 List<? extends Written> nodes,
-                                Function<Written, String> coordinate) {
+                                Function<Written, String> coordinate,
+                                Function<Written, Node<?>> declaration) {
         var e = GRAPHQL_AST_ELEMENT_ENTRY;
         var rows = nodes.stream().collect(Rows.toRowList(
             nested -> val(graph, e.GRAPH_NAME),
@@ -261,13 +264,20 @@ public final class GraphQLAstEntries {
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
             nested -> val(coordinate.apply(nested), e.COORDINATE),
+            nested -> val(declarationKind(declaration.apply(nested)), e.DECLARATION_KIND),
+            nested -> sourceLine(declaration.apply(nested)),
+            nested -> sourceColumn(declaration.apply(nested)),
             nested -> val(touchedAt, e.TOUCHED_AT)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(e, e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    e.COORDINATE, e.TOUCHED_AT)
+                    e.COORDINATE, e.DECLARATION_KIND, e.DECLARATION_LINE, e.DECLARATION_COLUMN,
+                    e.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(e.COORDINATE, excluded(e.COORDINATE))
+                .set(e.DECLARATION_KIND, excluded(e.DECLARATION_KIND))
+                .set(e.DECLARATION_LINE, excluded(e.DECLARATION_LINE))
+                .set(e.DECLARATION_COLUMN, excluded(e.DECLARATION_COLUMN))
                 .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
     }
 
@@ -306,7 +316,7 @@ public final class GraphQLAstEntries {
         supertype(dsl, graph, touchedAt, EntryKind.TYPE_DECLARATION,
             declarations(document).map(GraphQLAstEntries::root).toList());
         element(dsl, graph, touchedAt, declarations(document).map(GraphQLAstEntries::root).toList(),
-            nested -> ((TypeDefinition<?>) nested.node()).getName());
+            nested -> ((TypeDefinition<?>) nested.node()).getName(), Written::node);
         var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
         var rows = declarations(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),
@@ -337,7 +347,7 @@ public final class GraphQLAstEntries {
         supertype(dsl, graph, touchedAt, EntryKind.DIRECTIVE_DEFINITION,
             directives(document).map(GraphQLAstEntries::root).toList());
         element(dsl, graph, touchedAt, directives(document).map(GraphQLAstEntries::root).toList(),
-            nested -> "@" + ((DirectiveDefinition) nested.node()).getName());
+            nested -> "@" + ((DirectiveDefinition) nested.node()).getName(), Written::node);
         var t = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
         var rows = directives(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),
@@ -369,7 +379,7 @@ public final class GraphQLAstEntries {
         // constant because a schema block has no name to compose one from. A dollar sign is
         // illegal in a GraphQL name, so this can never be a type an author wrote.
         element(dsl, graph, touchedAt, schemas(document).map(GraphQLAstEntries::root).toList(),
-            nested -> SchemaCoordinateSyntax.ofSchema());
+            nested -> SchemaCoordinateSyntax.ofSchema(), Written::node);
         var t = GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
         var rows = schemas(document).collect(Rows.toRowList(
             node -> val(graph, t.GRAPH_NAME),
@@ -395,7 +405,8 @@ public final class GraphQLAstEntries {
                                           TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.FIELD_DEFINITION, fields(document));
         element(dsl, graph, touchedAt, fields(document),
-            nested -> nameOf(nested.parent()) + "." + ((FieldDefinition) nested.node()).getName());
+            nested -> nameOf(nested.parent()) + "." + ((FieldDefinition) nested.node()).getName(),
+            Written::parent);
         var t = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
         var rows = fields(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -443,7 +454,8 @@ public final class GraphQLAstEntries {
         element(dsl, graph, touchedAt, argumentsOfFields(document),
             nested -> ((NestedArgument) nested).typeName() + "."
                 + ((FieldDefinition) nested.parent()).getName() + "("
-                + ((NestedArgument) nested).node().getName() + ":)");
+                + ((NestedArgument) nested).node().getName() + ":)",
+            nested -> ((NestedArgument) nested).declaration());
         var t = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
         var rows = argumentsOfFields(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -494,7 +506,8 @@ public final class GraphQLAstEntries {
                                    TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.INPUT_FIELD, fieldsOfInputObjects(document));
         element(dsl, graph, touchedAt, fieldsOfInputObjects(document),
-            nested -> nameOf(nested.parent()) + "." + ((InputValueDefinition) nested.node()).getName());
+            nested -> nameOf(nested.parent()) + "." + ((InputValueDefinition) nested.node()).getName(),
+            Written::parent);
         var t = GRAPHQL_AST_INPUT_FIELD_ENTRY;
         var rows = fieldsOfInputObjects(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -545,7 +558,8 @@ public final class GraphQLAstEntries {
         supertype(dsl, graph, touchedAt, EntryKind.DIRECTIVE_ARGUMENT, argumentsOfDirectiveDefinitions(document));
         element(dsl, graph, touchedAt, argumentsOfDirectiveDefinitions(document),
             nested -> "@" + nameOf(nested.parent()) + "("
-                + ((InputValueDefinition) nested.node()).getName() + ":)");
+                + ((InputValueDefinition) nested.node()).getName() + ":)",
+            Written::parent);
         var t = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
         var rows = argumentsOfDirectiveDefinitions(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -591,7 +605,8 @@ public final class GraphQLAstEntries {
                                               TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.ENUM_VALUE_DEFINITION, enumValues(document));
         element(dsl, graph, touchedAt, enumValues(document),
-            nested -> nameOf(nested.parent()) + "." + ((EnumValueDefinition) nested.node()).getName());
+            nested -> nameOf(nested.parent()) + "." + ((EnumValueDefinition) nested.node()).getName(),
+            Written::parent);
         var t = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
         var rows = enumValues(document).stream().collect(Rows.toRowList(
             nested -> val(graph, t.GRAPH_NAME),
@@ -1083,23 +1098,27 @@ public final class GraphQLAstEntries {
     }
 
     /**
-     * An argument, the field it was written inside, and the name of the declaration that field was
-     * written inside.
+     * An argument, the field it was written inside, and the declaration that field was written
+     * inside.
      *
      * <p>The one three-level shape in the family, and the coordinate is why: a field argument is
-     * spelled from both ancestors, and a generated column reads no row but its own. The other four
-     * element kinds need one ancestor and travel as an ordinary {@link Nested}.
+     * spelled from both ancestors, and its declaration is the grandparent. The other four element
+     * kinds need one ancestor and travel as an ordinary {@link Nested}.
      */
-    private record NestedArgument(Node<?> parent, InputValueDefinition node, String typeName)
-        implements Written {}
+    private record NestedArgument(Node<?> parent, InputValueDefinition node, Node<?> declaration)
+        implements Written {
+
+        String typeName() {
+            return nameOf(declaration);
+        }
+    }
 
     /** The three parents an input value may have, which are the same node kind to the parser. */
     private static List<NestedArgument> argumentsOfFields(TypeDefinitionRegistry document) {
         List<NestedArgument> nested = new ArrayList<>();
         for (Nested<FieldDefinition> field : fields(document)) {
-            String declaration = nameOf(field.parent());
             field.node().getInputValueDefinitions()
-                .forEach(argument -> nested.add(new NestedArgument(field.node(), argument, declaration)));
+                .forEach(argument -> nested.add(new NestedArgument(field.node(), argument, field.parent())));
         }
         return nested;
     }
@@ -1423,6 +1442,19 @@ public final class GraphQLAstEntries {
      */
     private static String writtenSdl(Value<?> value) {
         return value == null ? null : printAstCompact(value);
+    }
+
+    /**
+     * Which of the three declarations a node is, read off the node class the parser produced, an
+     * extension's class being a subclass of its base's.
+     */
+    private static String declarationKind(Node<?> node) {
+        return switch (node) {
+            case TypeDefinition<?> type -> "TYPE_DECLARATION";
+            case SchemaDefinition schema -> "SCHEMA_DEFINITION";
+            case DirectiveDefinition directive -> "DIRECTIVE_DEFINITION";
+            default -> throw new IllegalStateException("not a declaration: " + node.getClass());
+        };
     }
 
     /**

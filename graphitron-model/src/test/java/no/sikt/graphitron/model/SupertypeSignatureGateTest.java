@@ -252,18 +252,6 @@ class SupertypeSignatureGateTest {
         Set.of("graphitron_ast_node_entry", "sql_node_metadata"),
         Set.of("graphitron_argument_binding_entry", "graphitron_field_binding_entry"),
         Set.of("graphitron_element", "graphql_element"),
-        // A coordinate at the entry position beside the six anchors keyed by the names that spell
-        // one, one anchor per production of the specification's coordinate grammar. The six declare
-        // over graphql_element and would discharge on their own; the entry relation is what keeps
-        // the row here, and it cannot join them in that declaration. The
-        // foreign key this gate asks for would point from the graphql_ast_ family into the graphql_
-        // one, and the second does not exist while the first is being written: an entry is one
-        // document's own reading, and graphql_element is what the corpus settled on afterwards.
-        // So the row is honest and long-lived rather than a supertype anyone should go and write,
-        // and what it costs is the reconstruction below that became visible with it.
-        Set.of("graphql_argument_element", "graphql_ast_element_entry",
-               "graphql_directive_argument_element", "graphql_directive_element",
-               "graphql_enum_value_element", "graphql_field_element", "graphql_type_element"),
         Set.of("graphitron_argument", "graphitron_field"),
 
         // The rest of this roster is the decode migration, and it reads as one thing rather than
@@ -357,12 +345,6 @@ class SupertypeSignatureGateTest {
      * coordinates, and the set is on the roster above with nothing declared over it.
      */
     private static final Set<String> RECONSTRUCTIONS = Set.of(
-        // Older than this roster and unchanged by it. It unions two element relations, which was
-        // not a reconstruction while the four declared over graphql_element and discharged; adding
-        // the entry position to their set is what made the set undeclared and this view visible as
-        // a union of two of its members. The supertype it names is graphql_element, which exists,
-        // so what this row records is a view that could join it instead of unioning its subtypes.
-        "graphql_element_field|graphql_argument_element,graphql_field_element",
         "graphql_poly_member|graphql_implements_interface,graphql_union_member",
         // The union the poly split leaves behind, spelled once here rather than at each reader.
         // Over the two base relations and not over graphql_poly_member, which says the same thing:
