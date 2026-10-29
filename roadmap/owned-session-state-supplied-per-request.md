@@ -5,7 +5,7 @@ status: Ready
 bucket: feature
 priority: 4
 theme: runtime-connection
-depends-on: [session-handle-component-bindings]
+depends-on: []
 created: 2026-10-28
 last-updated: 2026-10-29
 ---
