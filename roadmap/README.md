@@ -37,7 +37,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R1120` | The POM switches session identity on; the consumer supplies it per request as code <sub>blocked by: [session-handle-component-bindings](session-handle-component-bindings.md)</sub> | Spec | 2026-10-28 | [plan](owned-session-state-supplied-per-request.md) |
 | `R736` | The classifier trace goes silent mid-fork: resetForTesting(null) in @AfterEach truncates leaf-coverage by test ordering | Spec | 2026-08-19 | [plan](trace-writer-disabled-for-rest-of-fork.md) |
-| `R1116` | A nullable element field in a list-of-input filter does not constrain when absent | In Review | 2026-10-28 | [plan](list-of-input-filter-nullable-cell.md) |
 | `R1117` | A scalar @externalField counts as a presence leaf, so a wrapper of them collapses to null | In Review | 2026-10-28 | [plan](externalfield-presence-leaf.md) |
 | `R1102` | A value the session mount derives binds where a contextArgument binds today | In Review | 2026-10-29 <sub>created 2026-10-26</sub> | [plan](session-handle-component-bindings.md) |
 | `R1113` | @outbox: emit a transactional outbox message in the mutation field transaction | Spec | 2026-10-28 <sub>created 2026-10-27</sub> | [plan](transactional-outbox-directive.md) |
@@ -848,7 +847,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### (untagged)
 
-- `R1116` [**A nullable element field in a list-of-input filter does not constrain when absent**](list-of-input-filter-nullable-cell.md)
 - `R887` [**ColumnComparison's CatalogColumn overload has no caller, and a doc implies one**](column-comparison-catalog-column-overload-has-no-caller.md)
 - `R862` [**Input-field @condition rewrap drops the enum leaf extraction**](preserve-enum-extraction-through-condition-rewrap.md)
 - `R786` [**MCP issue.report tool: dedup search over issues, roadmap and changelog, plus a draft report**](mcp-issue-report-tool.md)
