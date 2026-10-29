@@ -21,6 +21,7 @@ import graphql.util.TraverserContext;
 import no.sikt.graphitron.model.capture.document.GraphQLAstEntries;
 import no.sikt.graphitron.model.schema.SchemaLoader;
 import no.sikt.graphitron.model.schema.input.SchemaSource;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
 import org.jooq.Field;
 import org.jooq.Record;
@@ -43,23 +44,19 @@ import java.util.Map;
 import java.util.TreeMap;
 
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_IMPLEMENTS_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static no.sikt.graphitron.model.Tables.STORE_SOURCE;
@@ -87,11 +84,11 @@ class GraphQLAstEntriesTest {
      * the family without a line here is a relation the census cannot see and the roster below fails
      * on: the map is pinned by the same equality the counts are.
      *
-     * <p>A kind maps to a list because two of them are held at more than one relation: the parser
-     * gives an input value one shape at all three sites it can be written and a directive
-     * application one shape at all five, where the store keeps a relation per site so that a row
-     * can name its parent by key. The census is indifferent to that, one node being one row
-     * wherever the row lives.
+     * <p>A kind maps to a list because one of them is held at more than one relation: the parser
+     * gives an input value one shape at all three sites it can be written, where the store keeps a
+     * relation per site. A directive application is one relation at all five sites, the site being
+     * the entry kind the index gives it. The census is indifferent to either, one node being one
+     * row wherever the row lives.
      */
     private static final Map<String, List<Table<?>>> RELATIONS = new LinkedHashMap<>(Map.of(
         "TYPE_DECLARATION", List.of(GRAPHQL_AST_TYPE_DECLARATION_ENTRY),
@@ -107,9 +104,7 @@ class GraphQLAstEntriesTest {
         "OPERATION_TYPE_DEFINITION", List.of(GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY)));
 
     static {
-        RELATIONS.put("APPLIED_DIRECTIVE", List.of(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY,
-            GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY, GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY,
-            GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY, GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY));
+        RELATIONS.put("APPLIED_DIRECTIVE", List.of(GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY));
         RELATIONS.put("APPLIED_ARGUMENT", List.of(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY));
         RELATIONS.put("VALUE", List.of(GRAPHQL_AST_VALUE_ENTRY));
     }
@@ -261,13 +256,11 @@ class GraphQLAstEntriesTest {
                     GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY.OPERATION, file))
                 .as("the operation as the grammar spells it, which is lower case")
                 .containsExactly("query");
-            assertThat(named(dsl, GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY,
-                    GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME, file))
+            assertThat(appliedAt(dsl, EntryKind.TYPE_DIRECTIVE, file))
                 .as("the application on the type; the definition above it is not one")
                 .containsExactly("key");
-            assertThat(named(dsl, GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY,
-                    GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY.NAME, file))
-                .as("and the one on the field, which is a relation of its own")
+            assertThat(appliedAt(dsl, EntryKind.FIELD_DIRECTIVE, file))
+                .as("and the one on the field, which is an entry kind of its own")
                 .containsExactly("deprecated");
             assertThat(dsl.select(GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.NAME,
                         GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY.VALUE_SDL)
@@ -320,8 +313,9 @@ class GraphQLAstEntriesTest {
 
     /**
      * What the parent key buys, stood up by breaking it. Every child row a reading writes points at
-     * a parent row of the one relation that holds its site, so a row pointing at a position nothing
-     * was written at is refused rather than kept for a reader to trip over later.
+     * a parent row, a directive application through the entry the index holds for it, so an entry
+     * pointing at a position nothing was written at is refused rather than kept for a reader to
+     * trip over later.
      */
     @Test
     @DisplayName("a directive naming a position no declaration was written at is refused")
@@ -330,11 +324,14 @@ class GraphQLAstEntriesTest {
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, file);
-            var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+            var t = GRAPHQL_AST_ENTRY;
 
             assertThatThrownBy(() -> dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                        t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                    .values(GRAPH, file.toString(), 99, 1, 99, 1, "nowhere")
+                        t.SOURCE_COLUMN, t.ENTRY_KIND, t.PARENT_LINE, t.PARENT_COLUMN, t.TOUCHED_AT)
+                    // The parent is the index's own relation, so it names a position other than
+                    // the row's: a row naming itself would satisfy the key it is meant to break.
+                    .values(GRAPH, file.toString(), 99, 1, EntryKind.TYPE_DIRECTIVE, 98, 1,
+                        LocalDateTime.now())
                     .execute())
                 .as("no declaration was written at that position, so the row is about nothing")
                 .hasMessageContaining("Referential integrity");
@@ -860,6 +857,23 @@ class GraphQLAstEntriesTest {
         return dsl.select(column).from(table)
             .where(table.field("SOURCE_NAME", String.class).eq(file.toString()))
             .fetch(column);
+    }
+
+    /**
+     * The names one document applies at one site: the application entries whose index row gives
+     * them that entry kind.
+     */
+    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Path file) {
+        var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        var entry = GRAPHQL_AST_ENTRY;
+        return dsl.select(applied.NAME).from(applied)
+            .join(entry).on(entry.GRAPH_NAME.eq(applied.GRAPH_NAME))
+            .and(entry.SOURCE_NAME.eq(applied.SOURCE_NAME))
+            .and(entry.SOURCE_LINE.eq(applied.SOURCE_LINE))
+            .and(entry.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+            .where(entry.ENTRY_KIND.eq(site))
+            .and(applied.SOURCE_NAME.eq(file.toString()))
+            .fetch(applied.NAME);
     }
 
     /**

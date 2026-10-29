@@ -9,6 +9,7 @@ import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -29,9 +30,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_DEFAULT_ORDER_FIELD
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_SCHEMA_PROBLEM;
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -45,8 +45,8 @@ import static org.assertj.core.api.Assertions.assertThat;
  * schema assembly is happy with would vanish from every reader that joins to it, reporting nothing.
  *
  * <p>The generic application census is the control. A row in
- * {@code graphql_ast_field_directive_entry} says a directive of this name was written
- * here, which stays true however illegal the application is, so each case can tell a dropped decode
+ * {@code graphql_ast_directive_application_entry} whose entry kind is the site says a directive of
+ * this name was written here, which stays true however illegal the application is, so each case can tell a dropped decode
  * apart from a corpus that never reached capture.
  */
 class EntryLegalityTest {
@@ -69,8 +69,7 @@ class EntryLegalityTest {
                     message: String
                 }
                 """));
-            var d = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
-            assertThat(dsl.fetchCount(d, d.GRAPH_NAME.eq("missing-handler").and(d.NAME.eq("error"))))
+            assertThat(applications(dsl, "missing-handler", EntryKind.TYPE_DIRECTIVE, "error"))
                 .as("the generic census holds the application, so an empty decode below is the rule "
                     + "rather than a corpus that never arrived")
                 .isPositive();
@@ -265,8 +264,7 @@ class EntryLegalityTest {
     /** The enum-value census, which is this site's control. */
     private static void assertEnumValueApplicationWasWritten(DSLContext dsl, String graph,
                                                             String name) {
-        var d = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
-        assertThat(dsl.fetchCount(d, d.GRAPH_NAME.eq(graph).and(d.NAME.eq(name))))
+        assertThat(applications(dsl, graph, EntryKind.ENUM_VALUE_DIRECTIVE, name))
             .as("the generic census holds the application, so an empty decode above is the rule "
                 + "rather than a corpus that never arrived")
             .isPositive();
@@ -274,11 +272,22 @@ class EntryLegalityTest {
 
     /** The application was written and reached capture, whatever became of its decode. */
     private static void assertApplicationWasWritten(DSLContext dsl, String graph, String name) {
-        var d = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-        assertThat(dsl.fetchCount(d, d.GRAPH_NAME.eq(graph).and(d.NAME.eq(name))))
+        assertThat(applications(dsl, graph, EntryKind.FIELD_DIRECTIVE, name))
             .as("the generic census holds the application, so an empty decode below is the rule "
                 + "rather than a corpus that never arrived")
             .isPositive();
+    }
+
+    /** The applications of one name written at one site, counted off the index's entry kind. */
+    private static int applications(DSLContext dsl, String graph, EntryKind site, String name) {
+        var d = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        var e = GRAPHQL_AST_ENTRY;
+        return dsl.fetchCount(dsl.selectOne().from(d)
+            .join(e).on(e.GRAPH_NAME.eq(d.GRAPH_NAME), e.SOURCE_NAME.eq(d.SOURCE_NAME),
+                e.SOURCE_LINE.eq(d.SOURCE_LINE), e.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
+            .where(d.GRAPH_NAME.eq(graph))
+            .and(d.NAME.eq(name))
+            .and(e.ENTRY_KIND.eq(site)));
     }
 
     /** Assembly refused this corpus, which is the authority the rule has to agree with. */

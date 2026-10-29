@@ -146,9 +146,7 @@ class RelationRegistrationGateTest {
             "graphql_ast_enum_value_definition_entry", "graphql_ast_implements_entry",
             "graphql_ast_union_member_entry", "graphql_ast_directive_definition_entry",
             "graphql_ast_directive_location_entry", "graphql_ast_schema_definition_entry",
-            "graphql_ast_operation_type_definition_entry", "graphql_ast_type_directive_entry",
-            "graphql_ast_field_directive_entry", "graphql_ast_input_value_directive_entry",
-            "graphql_ast_enum_value_directive_entry", "graphql_ast_schema_directive_entry",
+            "graphql_ast_operation_type_definition_entry",
             "graphql_ast_applied_argument_entry", "graphql_ast_value_entry",
             // The decode of a type-site directive application, keyed by the application's own
             // position. GraphitronSchema holds one binding per type where these hold one per
@@ -275,7 +273,7 @@ class RelationRegistrationGateTest {
         registrations.put("code_service_method", Arm.UNSHADOWED);
         registrations.put("code_throwable", Arm.UNSHADOWED);
         registrations.put("code_throwable_supertype", Arm.UNSHADOWED);
-        // The entry index: one row per written position the nineteen entry relations hold,
+        // The entry index: one row per written position, of the nineteen entry kinds,
         // unioned by the pass that derives the anchors. Nothing of GraphitronSchema's to agree
         // with, the walk having no notion of a position that is not a declaration, and its own
         // claims are pinned in AstEntryIndexTest: every arm's positions present, the enclosing

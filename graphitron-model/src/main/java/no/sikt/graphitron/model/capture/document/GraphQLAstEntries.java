@@ -66,18 +66,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENT
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_IMPLEMENTS_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_UNION_MEMBER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
 import static org.jooq.impl.DSL.excluded;
@@ -680,107 +675,31 @@ public final class GraphQLAstEntries {
                                    TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.TYPE_DIRECTIVE, directivesOnTypes(document));
         application(dsl, graph, touchedAt, directivesOnTypes(document));
-        var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
-        var rows = directivesOnTypes(document).stream().collect(Rows.toRowList(
-            nested -> val(graph, t.GRAPH_NAME),
-            nested -> sourceName(nested.node()),
-            nested -> sourceLine(nested.node()),
-            nested -> sourceColumn(nested.node()),
-            nested -> parentLine(nested.parent()),
-            nested -> parentColumn(nested.parent()),
-            nested -> val(nested.node().getName(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-                .set(t.NAME, excluded(t.NAME)));
     }
+
     private static void fieldDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.FIELD_DIRECTIVE, directivesOnFields(document));
         application(dsl, graph, touchedAt, directivesOnFields(document));
-        var t = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-        var rows = directivesOnFields(document).stream().collect(Rows.toRowList(
-            nested -> val(graph, t.GRAPH_NAME),
-            nested -> sourceName(nested.node()),
-            nested -> sourceLine(nested.node()),
-            nested -> sourceColumn(nested.node()),
-            nested -> parentLine(nested.parent()),
-            nested -> parentColumn(nested.parent()),
-            nested -> val(nested.node().getName(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-                .set(t.NAME, excluded(t.NAME)));
     }
-    /** All three input-value sites in one relation: the parent is a union whichever way this is cut. */
+
+    /** All three input-value sites under one entry kind: the parent is a union whichever way this is cut. */
     private static void inputValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.INPUT_VALUE_DIRECTIVE, directivesOnInputValues(document));
         application(dsl, graph, touchedAt, directivesOnInputValues(document));
-        var t = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
-        var rows = directivesOnInputValues(document).stream().collect(Rows.toRowList(
-            nested -> val(graph, t.GRAPH_NAME),
-            nested -> sourceName(nested.node()),
-            nested -> sourceLine(nested.node()),
-            nested -> sourceColumn(nested.node()),
-            nested -> parentLine(nested.parent()),
-            nested -> parentColumn(nested.parent()),
-            nested -> val(nested.node().getName(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-                .set(t.NAME, excluded(t.NAME)));
     }
+
     private static void enumValueDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.ENUM_VALUE_DIRECTIVE, directivesOnEnumValues(document));
         application(dsl, graph, touchedAt, directivesOnEnumValues(document));
-        var t = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
-        var rows = directivesOnEnumValues(document).stream().collect(Rows.toRowList(
-            nested -> val(graph, t.GRAPH_NAME),
-            nested -> sourceName(nested.node()),
-            nested -> sourceLine(nested.node()),
-            nested -> sourceColumn(nested.node()),
-            nested -> parentLine(nested.parent()),
-            nested -> parentColumn(nested.parent()),
-            nested -> val(nested.node().getName(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-                .set(t.NAME, excluded(t.NAME)));
     }
+
     private static void schemaDirectives(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                    TypeDefinitionRegistry document) {
         supertype(dsl, graph, touchedAt, EntryKind.SCHEMA_DIRECTIVE, directivesOnSchemas(document));
         application(dsl, graph, touchedAt, directivesOnSchemas(document));
-        var t = GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY;
-        var rows = directivesOnSchemas(document).stream().collect(Rows.toRowList(
-            nested -> val(graph, t.GRAPH_NAME),
-            nested -> sourceName(nested.node()),
-            nested -> sourceLine(nested.node()),
-            nested -> sourceColumn(nested.node()),
-            nested -> parentLine(nested.parent()),
-            nested -> parentColumn(nested.parent()),
-            nested -> val(nested.node().getName(), t.NAME)));
-        BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                .values(markers)
-                .onDuplicateKeyUpdate()
-                .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
-                .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
-                .set(t.NAME, excluded(t.NAME)));
     }
 
     private static void appliedArguments(DSLContext dsl, String graph, LocalDateTime touchedAt,

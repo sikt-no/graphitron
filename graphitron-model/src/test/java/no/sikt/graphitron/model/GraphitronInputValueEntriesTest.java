@@ -9,6 +9,9 @@ import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.tables.GraphqlAstDirectiveApplicationEntry;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -33,7 +36,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -75,7 +79,8 @@ class GraphitronInputValueEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
-            var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+            var entry = GRAPHQL_AST_ENTRY;
             var argument = GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
             var inputField = GRAPHQL_AST_INPUT_FIELD_ENTRY;
             // The coordinate a declaration names sits on the element supertype now.
@@ -87,10 +92,11 @@ class GraphitronInputValueEntriesTest {
                         .and(applied.SOURCE_NAME.eq(decode.SOURCE_NAME))
                         .and(applied.SOURCE_LINE.eq(decode.SOURCE_LINE))
                         .and(applied.SOURCE_COLUMN.eq(decode.SOURCE_COLUMN))
-                    .join(argument).on(argument.GRAPH_NAME.eq(applied.GRAPH_NAME))
-                        .and(argument.SOURCE_NAME.eq(applied.SOURCE_NAME))
-                        .and(argument.SOURCE_LINE.eq(applied.PARENT_LINE))
-                        .and(argument.SOURCE_COLUMN.eq(applied.PARENT_COLUMN))
+                    .join(entry).on(entryOf(applied, EntryKind.INPUT_VALUE_DIRECTIVE))
+                    .join(argument).on(argument.GRAPH_NAME.eq(entry.GRAPH_NAME))
+                        .and(argument.SOURCE_NAME.eq(entry.SOURCE_NAME))
+                        .and(argument.SOURCE_LINE.eq(entry.PARENT_LINE))
+                        .and(argument.SOURCE_COLUMN.eq(entry.PARENT_COLUMN))
                     .join(element).on(element.GRAPH_NAME.eq(argument.GRAPH_NAME))
                         .and(element.SOURCE_NAME.eq(argument.SOURCE_NAME))
                         .and(element.SOURCE_LINE.eq(argument.SOURCE_LINE))
@@ -106,10 +112,11 @@ class GraphitronInputValueEntriesTest {
                         .and(applied.SOURCE_NAME.eq(decode.SOURCE_NAME))
                         .and(applied.SOURCE_LINE.eq(decode.SOURCE_LINE))
                         .and(applied.SOURCE_COLUMN.eq(decode.SOURCE_COLUMN))
-                    .join(inputField).on(inputField.GRAPH_NAME.eq(applied.GRAPH_NAME))
-                        .and(inputField.SOURCE_NAME.eq(applied.SOURCE_NAME))
-                        .and(inputField.SOURCE_LINE.eq(applied.PARENT_LINE))
-                        .and(inputField.SOURCE_COLUMN.eq(applied.PARENT_COLUMN))
+                    .join(entry).on(entryOf(applied, EntryKind.INPUT_VALUE_DIRECTIVE))
+                    .join(inputField).on(inputField.GRAPH_NAME.eq(entry.GRAPH_NAME))
+                        .and(inputField.SOURCE_NAME.eq(entry.SOURCE_NAME))
+                        .and(inputField.SOURCE_LINE.eq(entry.PARENT_LINE))
+                        .and(inputField.SOURCE_COLUMN.eq(entry.PARENT_COLUMN))
                     .join(element).on(element.GRAPH_NAME.eq(inputField.GRAPH_NAME))
                         .and(element.SOURCE_NAME.eq(inputField.SOURCE_NAME))
                         .and(element.SOURCE_LINE.eq(inputField.SOURCE_LINE))
@@ -142,12 +149,8 @@ class GraphitronInputValueEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
-                    .from(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY)
-                    .where(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.SOURCE_NAME.eq(
-                        source(tmp, "film.graphqls")))
-                    .orderBy(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
-                    .fetch(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME))
+            assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE,
+                    GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("the applications are what says they were applied")
                 .containsExactly("asFacet", "lookupKey", "orderBy");
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY)
@@ -264,12 +267,8 @@ class GraphitronInputValueEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
-                    .from(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY)
-                    .where(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.SOURCE_NAME.eq(
-                        source(tmp, "film.graphqls")))
-                    .orderBy(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
-                    .fetch(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME))
+            assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE,
+                    GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
                 .as("both were applied, which is what the applied-directive row is for")
                 .containsExactly("field", "nodeId");
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY))
@@ -390,10 +389,9 @@ class GraphitronInputValueEntriesTest {
                 """);
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY,
-                    GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.SOURCE_NAME.eq(
-                        source(tmp, "film.graphqls"))))
-                .as("one application in this file, at the position the other one had").isEqualTo(1);
+            assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE,
+                    GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.eq(source(tmp, "film.graphqls"))))
+                .as("one application in this file, at the position the other one had").hasSize(1);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_ENTRY))
                 .as("and the condition it replaced is not a fact any more").isZero();
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_CONDITION_CONTEXT_ARG_ENTRY))
@@ -401,6 +399,33 @@ class GraphitronInputValueEntriesTest {
             assertThat(dsl.fetchCount(GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY))
                 .as("what the author wrote instead is there").isEqualTo(1);
         });
+    }
+
+    /**
+     * The names applied at one site: the application entries whose index row gives them that
+     * entry kind.
+     */
+    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
+        var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        return dsl.select(applied.NAME)
+            .from(applied)
+            .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
+            .where(where)
+            .orderBy(applied.NAME)
+            .fetch(applied.NAME);
+    }
+
+    /**
+     * The index row an application is, restricted to one entry kind. It holds the site and the
+     * position the application was written on, which the application entry itself does not repeat.
+     */
+    private static Condition entryOf(GraphqlAstDirectiveApplicationEntry applied, EntryKind site) {
+        var entry = GRAPHQL_AST_ENTRY;
+        return entry.GRAPH_NAME.eq(applied.GRAPH_NAME)
+            .and(entry.SOURCE_NAME.eq(applied.SOURCE_NAME))
+            .and(entry.SOURCE_LINE.eq(applied.SOURCE_LINE))
+            .and(entry.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+            .and(entry.ENTRY_KIND.eq(site));
     }
 
     /** One reading of everything the directory holds, which is what a run does. */

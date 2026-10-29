@@ -104,12 +104,10 @@ class SupertypeSignatureGateTest {
      * it in common at: the coordinate and the kind. Lifting the type expression up there would put
      * eight nullable columns on a supertype whose type rows can never fill them.
      *
-     * <p>One of these sets is chosen, and the payload is identical because the node is: a directive
-     * application has one shape at all five sites it can be written. What differs is the parent,
-     * which is a different relation at each site, so one relation per site is what lets a row name
-     * its parent by key where a relation per node kind could only carry a position. The union the
-     * set asks a reader for is the anchors' work and happens once into a relation rather than in
-     * every reader, which is the cost this gate is really about.
+     * <p>A directive application is no longer one of these sets. It has one shape at all five sites
+     * it can be written, and it is one relation now, {@code graphql_ast_directive_application_entry},
+     * whose site is the entry kind the index gives it and whose parent is the index row's. The
+     * union the five site relations asked a reader for is gone rather than written once.
      *
      * <p>One row is a set whose supertype is written, and it is the only one: a union declares who
      * it admits and a type declares which interfaces it answers to, two facts with two declaring
@@ -217,15 +215,6 @@ class SupertypeSignatureGateTest {
         // either a service producer or a field taking keys off its parent's object, never both, so
         // no relation holds the two; both are calls, which the call model states once.
         Set.of("graphitron_field_key_row_method", "graphitron_producer_service"),
-        // The five application sites, which keep their own signature now that a supertype carries
-        // the name they share: each still holds the parent hop as a foreign key into the relation
-        // its own site declares, and that is the payload grouping them here. The row stays because
-        // a set is discharged by every member referencing the payload, and no member references a
-        // parent position that differs per member. What the supertype discharged is the
-        // reconstruction, which is the cost that was actually being paid: four written-out unions.
-        Set.of("graphql_ast_enum_value_directive_entry", "graphql_ast_field_directive_entry",
-               "graphql_ast_input_value_directive_entry", "graphql_ast_schema_directive_entry",
-               "graphql_ast_type_directive_entry"),
         // Two members where there were six. The five that left were the argument relations of the
         // five application sites, and they shared a payload because they were one fact keyed five
         // ways; they are one relation now, keyed at the coordinate, so the sharing they were

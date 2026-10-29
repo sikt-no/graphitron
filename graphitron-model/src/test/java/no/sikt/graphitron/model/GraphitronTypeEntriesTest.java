@@ -9,7 +9,11 @@ import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.tables.GraphqlAstDirectiveApplicationEntry;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -35,7 +39,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ERROR_HANDLER_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
@@ -66,7 +71,8 @@ class GraphitronTypeEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_TABLE_ENTRY;
-            var applied = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+            var entry = GRAPHQL_AST_ENTRY;
             var declared = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 
             assertThat(dsl.select(applied.NAME, declared.NAME, decode.TABLE_REF,
@@ -77,11 +83,13 @@ class GraphitronTypeEntriesTest {
                     .and(decode.SOURCE_NAME.eq(applied.SOURCE_NAME))
                     .and(decode.SOURCE_LINE.eq(applied.SOURCE_LINE))
                     .and(decode.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+                    .join(entry)
+                    .on(entryOf(applied, EntryKind.TYPE_DIRECTIVE))
                     .join(declared)
-                    .on(applied.GRAPH_NAME.eq(declared.GRAPH_NAME))
-                    .and(applied.SOURCE_NAME.eq(declared.SOURCE_NAME))
-                    .and(applied.PARENT_LINE.eq(declared.SOURCE_LINE))
-                    .and(applied.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
+                    .on(entry.GRAPH_NAME.eq(declared.GRAPH_NAME))
+                    .and(entry.SOURCE_NAME.eq(declared.SOURCE_NAME))
+                    .and(entry.PARENT_LINE.eq(declared.SOURCE_LINE))
+                    .and(entry.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
                     .fetch())
                 .as("the decode, the application it decodes, and the declaration it was written on, "
                     + "none of which repeats what another holds")
@@ -127,9 +135,7 @@ class GraphitronTypeEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME)
-                    .from(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY)
-                    .fetch(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY.NAME))
+            assertThat(appliedAt(dsl, EntryKind.TYPE_DIRECTIVE, DSL.noCondition()))
                 .as("applied, which is what keeps this apart from a type carrying no @table at all")
                 .containsExactly("table");
             assertThat(dsl.fetchCount(GRAPHITRON_AST_TABLE_ENTRY))
@@ -245,8 +251,8 @@ class GraphitronTypeEntriesTest {
             write(tmp, "film.graphqls", "type Film @error(handlers: []) { title: String }\n");
             read(dsl, tmp);
 
-            assertThat(dsl.fetchCount(GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY))
-                .as("one application, at the position the other one had").isEqualTo(1);
+            assertThat(appliedAt(dsl, EntryKind.TYPE_DIRECTIVE, DSL.noCondition()))
+                .as("one application, at the position the other one had").hasSize(1);
             assertThat(dsl.fetchCount(GRAPHITRON_AST_TABLE_ENTRY))
                 .as("and the binding it replaced is not a fact any more").isZero();
         });
@@ -510,6 +516,33 @@ class GraphitronTypeEntriesTest {
                 .as("the absence of a choice as an absence, and the choice as what was written")
                 .containsExactly(null, false);
         });
+    }
+
+    /**
+     * The names applied at one site: the application entries whose index row gives them that
+     * entry kind.
+     */
+    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
+        var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        return dsl.select(applied.NAME)
+            .from(applied)
+            .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
+            .where(where)
+            .orderBy(applied.NAME)
+            .fetch(applied.NAME);
+    }
+
+    /**
+     * The index row an application is, restricted to one entry kind. It holds the site and the
+     * position the application was written on, which the application entry itself does not repeat.
+     */
+    private static Condition entryOf(GraphqlAstDirectiveApplicationEntry applied, EntryKind site) {
+        var entry = GRAPHQL_AST_ENTRY;
+        return entry.GRAPH_NAME.eq(applied.GRAPH_NAME)
+            .and(entry.SOURCE_NAME.eq(applied.SOURCE_NAME))
+            .and(entry.SOURCE_LINE.eq(applied.SOURCE_LINE))
+            .and(entry.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+            .and(entry.ENTRY_KIND.eq(site));
     }
 
     /** One reading of everything the directory holds, which is what a run does. */

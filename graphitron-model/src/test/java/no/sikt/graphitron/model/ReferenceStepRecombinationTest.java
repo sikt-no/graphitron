@@ -127,10 +127,14 @@ class ReferenceStepRecombinationTest {
                 ROW_NUMBER() OVER (PARTITION BY f.type_name, f.name
                                    ORDER BY m.merge_ordinal, a.source_line,
                                             a.source_column) - 1 AS ordinal
-           FROM graphql_ast_field_directive_entry a
+           FROM graphql_ast_directive_application_entry a
+           JOIN graphql_ast_entry x
+             ON x.graph_name = a.graph_name AND x.source_name = a.source_name
+            AND x.source_line = a.source_line AND x.source_column = a.source_column
+            AND x.entry_kind = 'FIELD_DIRECTIVE'
            JOIN graphql_ast_field_definition_entry f
-             ON f.graph_name = a.graph_name AND f.source_name = a.source_name
-            AND f.source_line = a.parent_line AND f.source_column = a.parent_column
+             ON f.graph_name = x.graph_name AND f.source_name = x.source_name
+            AND f.source_line = x.parent_line AND f.source_column = x.parent_column
            JOIN graphql_type_declaration m
              ON m.graph_name = a.graph_name AND m.type_name = f.type_name
             AND m.source_name = f.source_name
@@ -150,10 +154,14 @@ class ReferenceStepRecombinationTest {
                 ROW_NUMBER() OVER (PARTITION BY i.type_name, i.name
                                    ORDER BY m.merge_ordinal, a.source_line,
                                             a.source_column) - 1 AS ordinal
-           FROM graphql_ast_input_value_directive_entry a
+           FROM graphql_ast_directive_application_entry a
+           JOIN graphql_ast_entry x
+             ON x.graph_name = a.graph_name AND x.source_name = a.source_name
+            AND x.source_line = a.source_line AND x.source_column = a.source_column
+            AND x.entry_kind = 'INPUT_VALUE_DIRECTIVE'
            JOIN graphql_ast_input_field_entry i
-             ON i.graph_name = a.graph_name AND i.source_name = a.source_name
-            AND i.source_line = a.parent_line AND i.source_column = a.parent_column
+             ON i.graph_name = x.graph_name AND i.source_name = x.source_name
+            AND i.source_line = x.parent_line AND i.source_column = x.parent_column
            JOIN graphql_type_declaration m
              ON m.graph_name = a.graph_name AND m.type_name = i.type_name
             AND m.source_name = i.source_name

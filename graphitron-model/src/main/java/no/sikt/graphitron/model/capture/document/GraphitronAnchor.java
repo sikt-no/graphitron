@@ -1,5 +1,6 @@
 package no.sikt.graphitron.model.capture.document;
 
+import no.sikt.graphitron.model.vocabulary.EntryKind;
 import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.jooq.Field;
@@ -16,6 +17,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_PARTICIPANT_PATH;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_FOR_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_NODE_KEYCOLUMN_ENTRY;
@@ -48,16 +50,13 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_DEPRECATED;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_FIELD_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INPUT_VALUE_BINDING_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD_BINDING_ENTRY;
@@ -167,7 +166,7 @@ public final class GraphitronAnchor {
      */
     private static Table<Record6<String, String, String, Integer, Integer, String>> fieldApplications(
             DSLContext dsl, String graph) {
-        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var fd = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         var e = GRAPHQL_AST_ENTRY;
         var ef = GRAPHQL_ELEMENT_FIELD;
         var ee = GRAPHQL_AST_ELEMENT_ENTRY;
@@ -186,6 +185,7 @@ public final class GraphitronAnchor {
                 ee.SOURCE_LINE.eq(e.PARENT_LINE), ee.SOURCE_COLUMN.eq(e.PARENT_COLUMN))
             .join(ef).on(ef.GRAPH_NAME.eq(e.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
             .where(fd.GRAPH_NAME.eq(graph))
+            .and(e.ENTRY_KIND.eq(EntryKind.FIELD_DIRECTIVE))
             .and(ef.ARGUMENT_NAME.isNull())
             .asTable("applications");
     }
@@ -350,7 +350,7 @@ public final class GraphitronAnchor {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var a = GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
         var d = GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
-        var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var applied = GRAPHQL_AST_ENTRY;
         var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
@@ -395,7 +395,7 @@ public final class GraphitronAnchor {
                                         LocalDateTime touchedAt) {
         var e = GRAPHITRON_AST_INPUT_VALUE_DEPRECATED_ENTRY;
         var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
-        var applied = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var applied = GRAPHQL_AST_ENTRY;
         var t = GRAPHITRON_DEPRECATED;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.COORDINATE, t.REASON, t.TOUCHED_AT)
@@ -480,7 +480,8 @@ public final class GraphitronAnchor {
      * is what keeps "applied, and named nothing" distinguishable from "not applied".
      */
     private static Table<?> claimed(DSLContext dsl, String graph, String directive) {
-        var a = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+        var a = GRAPHQL_AST_ENTRY;
+        var an = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         var d = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
         var m = GRAPHQL_TYPE_DECLARATION;
         return dsl
@@ -490,6 +491,8 @@ public final class GraphitronAnchor {
                 rowNumber().over(partitionBy(d.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
             .from(a)
+            .join(an).on(an.GRAPH_NAME.eq(a.GRAPH_NAME), an.SOURCE_NAME.eq(a.SOURCE_NAME),
+                an.SOURCE_LINE.eq(a.SOURCE_LINE), an.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .join(d).on(d.GRAPH_NAME.eq(a.GRAPH_NAME))
                 .and(d.SOURCE_NAME.eq(a.SOURCE_NAME))
                 .and(d.SOURCE_LINE.eq(a.PARENT_LINE))
@@ -499,8 +502,10 @@ public final class GraphitronAnchor {
                 .and(m.SOURCE_NAME.eq(d.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(d.SOURCE_LINE))
                 .and(m.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
-            .where(a.GRAPH_NAME.eq(graph))
-            .and(a.NAME.eq(directive))
+            // On the application entry, so its (graph, name) index finds the few applications
+            // of this directive; on the position, H2 reads every position in the graph first.
+            .where(an.GRAPH_NAME.eq(graph))
+            .and(an.NAME.eq(directive))
             .asTable("claimed");
     }
 
@@ -692,7 +697,7 @@ public final class GraphitronAnchor {
      * whose anchor is keyed by the ordinal.
      */
     private static Table<?> applicationsOf(DSLContext dsl, String graph, String directive) {
-        var fd = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var fd = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         var ix = GRAPHQL_AST_ENTRY;
         var ee = GRAPHQL_AST_ELEMENT_ENTRY;
         var ef = GRAPHQL_ELEMENT_FIELD;
@@ -714,6 +719,7 @@ public final class GraphitronAnchor {
             .join(ef).on(ef.GRAPH_NAME.eq(ix.GRAPH_NAME), ef.COORDINATE.eq(ee.COORDINATE))
             .where(fd.GRAPH_NAME.eq(graph))
             .and(fd.NAME.eq(directive))
+            .and(ix.ENTRY_KIND.eq(EntryKind.FIELD_DIRECTIVE))
             .and(ef.ARGUMENT_NAME.isNull())
             .asTable("applications");
     }
@@ -822,7 +828,8 @@ public final class GraphitronAnchor {
      * rather than leaving two rows for a consumer to choose between.
      */
     private static Table<?> claimedOnInputField(DSLContext dsl, String graph, String directive) {
-        var a = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+        var a = GRAPHQL_AST_ENTRY;
+        var an = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         var f = GRAPHQL_AST_INPUT_FIELD_ENTRY;
         var m = GRAPHQL_TYPE_DECLARATION;
         return dsl
@@ -832,6 +839,8 @@ public final class GraphitronAnchor {
                 rowNumber().over(partitionBy(f.TYPE_NAME, f.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
             .from(a)
+            .join(an).on(an.GRAPH_NAME.eq(a.GRAPH_NAME), an.SOURCE_NAME.eq(a.SOURCE_NAME),
+                an.SOURCE_LINE.eq(a.SOURCE_LINE), an.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
                 .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
                 .and(f.SOURCE_LINE.eq(a.PARENT_LINE))
@@ -841,8 +850,10 @@ public final class GraphitronAnchor {
                 .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
-            .where(a.GRAPH_NAME.eq(graph))
-            .and(a.NAME.eq(directive))
+            // On the application entry, so its (graph, name) index finds the few applications
+            // of this directive; on the position, H2 reads every position in the graph first.
+            .where(an.GRAPH_NAME.eq(graph))
+            .and(an.NAME.eq(directive))
             .asTable("claimed_input_field");
     }
 
@@ -928,12 +939,13 @@ public final class GraphitronAnchor {
      *
      * <p>Only the four directives the specification admits at {@code FIELD_DEFINITION} alone go
      * through this. A directive also legal on an input object's field has its applications split
-     * across two entry relations, an input object's field being an input value rather than a field
+     * across two parent kinds, an input object's field being an input value rather than a field
      * in the entry stratum, and an anchor for one of those is a union with a parent-kind test
      * rather than this select.
      */
     private static Table<?> claimedOnField(DSLContext dsl, String graph, String directive) {
-        var a = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+        var a = GRAPHQL_AST_ENTRY;
+        var an = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
         var f = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
         var m = GRAPHQL_TYPE_DECLARATION;
         return dsl
@@ -943,6 +955,8 @@ public final class GraphitronAnchor {
                 rowNumber().over(partitionBy(f.TYPE_NAME, f.NAME).orderBy(
                     m.MERGE_ORDINAL.asc(), a.SOURCE_LINE.asc(), a.SOURCE_COLUMN.asc())).as(RANK))
             .from(a)
+            .join(an).on(an.GRAPH_NAME.eq(a.GRAPH_NAME), an.SOURCE_NAME.eq(a.SOURCE_NAME),
+                an.SOURCE_LINE.eq(a.SOURCE_LINE), an.SOURCE_COLUMN.eq(a.SOURCE_COLUMN))
             .join(f).on(f.GRAPH_NAME.eq(a.GRAPH_NAME))
                 .and(f.SOURCE_NAME.eq(a.SOURCE_NAME))
                 .and(f.SOURCE_LINE.eq(a.PARENT_LINE))
@@ -952,8 +966,10 @@ public final class GraphitronAnchor {
                 .and(m.SOURCE_NAME.eq(f.SOURCE_NAME))
                 .and(m.SOURCE_LINE.eq(f.PARENT_LINE))
                 .and(m.SOURCE_COLUMN.eq(f.PARENT_COLUMN))
-            .where(a.GRAPH_NAME.eq(graph))
-            .and(a.NAME.eq(directive))
+            // On the application entry, so its (graph, name) index finds the few applications
+            // of this directive; on the position, H2 reads every position in the graph first.
+            .where(an.GRAPH_NAME.eq(graph))
+            .and(an.NAME.eq(directive))
             .asTable("claimed_field");
     }
 

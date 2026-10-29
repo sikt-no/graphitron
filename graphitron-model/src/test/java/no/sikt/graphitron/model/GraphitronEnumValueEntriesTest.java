@@ -9,6 +9,9 @@ import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.tables.GraphqlAstDirectiveApplicationEntry;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -28,7 +31,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_INDEX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_ORDER_FIELD_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -202,12 +206,13 @@ class GraphitronEnumValueEntriesTest {
 
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
-            var applied = GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
+            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+            var entry = GRAPHQL_AST_ENTRY;
             var value = GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
 
-            assertThat(dsl.fetchCount(applied, applied.NAME.eq("index")))
+            assertThat(appliedAt(dsl, EntryKind.ENUM_VALUE_DIRECTIVE, applied.NAME.eq("index")))
                 .as("both applications are facts of the document")
-                .isEqualTo(2);
+                .hasSize(2);
 
             assertThat(dsl.select(value.NAME, GRAPHITRON_AST_INDEX_ENTRY.INDEX_REF)
                     .from(GRAPHITRON_AST_INDEX_ENTRY)
@@ -215,15 +220,43 @@ class GraphitronEnumValueEntriesTest {
                         .and(applied.SOURCE_NAME.eq(GRAPHITRON_AST_INDEX_ENTRY.SOURCE_NAME))
                         .and(applied.SOURCE_LINE.eq(GRAPHITRON_AST_INDEX_ENTRY.SOURCE_LINE))
                         .and(applied.SOURCE_COLUMN.eq(GRAPHITRON_AST_INDEX_ENTRY.SOURCE_COLUMN))
-                    .join(value).on(value.GRAPH_NAME.eq(applied.GRAPH_NAME))
-                        .and(value.SOURCE_NAME.eq(applied.SOURCE_NAME))
-                        .and(value.SOURCE_LINE.eq(applied.PARENT_LINE))
-                        .and(value.SOURCE_COLUMN.eq(applied.PARENT_COLUMN))
+                    .join(entry).on(entryOf(applied, EntryKind.ENUM_VALUE_DIRECTIVE))
+                    .join(value).on(value.GRAPH_NAME.eq(entry.GRAPH_NAME))
+                        .and(value.SOURCE_NAME.eq(entry.SOURCE_NAME))
+                        .and(value.SOURCE_LINE.eq(entry.PARENT_LINE))
+                        .and(value.SOURCE_COLUMN.eq(entry.PARENT_COLUMN))
                     .fetch())
                 .as("and only the one that named an index decoded to a row")
                 .extracting(row -> row.value1(), row -> row.value2())
                 .containsExactly(tuple("NAMED", "idx_film_released"));
         });
+    }
+
+    /**
+     * The names applied at one site: the application entries whose index row gives them that
+     * entry kind.
+     */
+    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
+        var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        return dsl.select(applied.NAME)
+            .from(applied)
+            .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
+            .where(where)
+            .orderBy(applied.NAME)
+            .fetch(applied.NAME);
+    }
+
+    /**
+     * The index row an application is, restricted to one entry kind. It holds the site and the
+     * position the application was written on, which the application entry itself does not repeat.
+     */
+    private static Condition entryOf(GraphqlAstDirectiveApplicationEntry applied, EntryKind site) {
+        var entry = GRAPHQL_AST_ENTRY;
+        return entry.GRAPH_NAME.eq(applied.GRAPH_NAME)
+            .and(entry.SOURCE_NAME.eq(applied.SOURCE_NAME))
+            .and(entry.SOURCE_LINE.eq(applied.SOURCE_LINE))
+            .and(entry.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+            .and(entry.ENTRY_KIND.eq(site));
     }
 
     /** One reading of everything the directory holds, which is what a run does. */

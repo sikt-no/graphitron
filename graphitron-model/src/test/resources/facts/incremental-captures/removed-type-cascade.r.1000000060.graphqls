@@ -21,9 +21,20 @@ extend schema @assertAbsent(relation: "graphql_ast_field_argument_entry", rows: 
   Gone,      shelf,      first
   """)
 
-extend schema @assertAbsent(relation: "graphql_ast_field_directive_entry", rows: """
+# This file's own applications, the bundled documents applying @deprecated to their own elements;
+# the declaration of Kept below is what shows the filter reaches this file.
+extend schema @assertAbsent(relation: "graphql_ast_directive_application_entry", where: """
+  source_name LIKE '%removed-type-cascade.r.graphqls'
+  """, rows: """
   name
   deprecated
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_entry", where: """
+  source_name LIKE '%removed-type-cascade.r.graphqls'
+  """, rows: """
+  entry_kind,       source_line, source_column
+  TYPE_DECLARATION, 5,           1
   """)
 
 extend schema @assertContains(relation: "graphql_ast_field_definition_entry", rows: """

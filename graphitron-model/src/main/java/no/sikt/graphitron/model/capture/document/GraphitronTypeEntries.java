@@ -48,7 +48,7 @@ import static org.jooq.impl.DSL.val;
 /**
  * The type site's half of the decode: what a directive written on a type declaration meant.
  *
- * <p>Keyed by the application's own position, which is {@code graphql_ast_type_directive_entry}'s
+ * <p>Keyed by the application's own position, which is {@code graphql_ast_directive_application_entry}'s
  * key, so a row here is the decode of exactly one row there. Which declaration the directive was
  * written on, and in which file, is one join away rather than a column.
  *

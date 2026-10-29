@@ -9,7 +9,11 @@ import no.sikt.graphitron.model.run.ModelCapture;
 import no.sikt.graphitron.model.run.SubjectConfig;
 import no.sikt.graphitron.model.schema.input.SchemaRecipe;
 import no.sikt.graphitron.model.test.ThreadConfinedStore;
+import no.sikt.graphitron.model.tables.GraphqlAstDirectiveApplicationEntry;
+import no.sikt.graphitron.model.vocabulary.EntryKind;
+import org.jooq.Condition;
 import org.jooq.DSLContext;
+import org.jooq.impl.DSL;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -34,8 +38,8 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_CONTEXT_ARG
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_SERVICE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ELEMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.test.ElementOrder.writtenAt;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
@@ -69,7 +73,8 @@ class GraphitronFieldEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_FIELD_CONDITION_ENTRY;
-            var applied = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+            var entry = GRAPHQL_AST_ENTRY;
             var declared = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
             // The coordinate a declaration names now sits on the element supertype
             // rather than on each kind that declares one.
@@ -83,11 +88,13 @@ class GraphitronFieldEntriesTest {
                     .and(decode.SOURCE_NAME.eq(applied.SOURCE_NAME))
                     .and(decode.SOURCE_LINE.eq(applied.SOURCE_LINE))
                     .and(decode.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+                    .join(entry)
+                    .on(entryOf(applied, EntryKind.FIELD_DIRECTIVE))
                     .join(declared)
-                    .on(applied.GRAPH_NAME.eq(declared.GRAPH_NAME))
-                    .and(applied.SOURCE_NAME.eq(declared.SOURCE_NAME))
-                    .and(applied.PARENT_LINE.eq(declared.SOURCE_LINE))
-                    .and(applied.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
+                    .on(entry.GRAPH_NAME.eq(declared.GRAPH_NAME))
+                    .and(entry.SOURCE_NAME.eq(declared.SOURCE_NAME))
+                    .and(entry.PARENT_LINE.eq(declared.SOURCE_LINE))
+                    .and(entry.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
                     .join(element)
                     .on(element.GRAPH_NAME.eq(declared.GRAPH_NAME))
                     .and(element.SOURCE_NAME.eq(declared.SOURCE_NAME))
@@ -121,7 +128,8 @@ class GraphitronFieldEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
             var decode = GRAPHITRON_AST_FIELD_NODE_ID_ENTRY;
-            var applied = GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY;
+            var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+            var entry = GRAPHQL_AST_ENTRY;
             var declared = GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
             var element = GRAPHQL_AST_ELEMENT_ENTRY;
 
@@ -132,11 +140,13 @@ class GraphitronFieldEntriesTest {
                     .and(decode.SOURCE_NAME.eq(applied.SOURCE_NAME))
                     .and(decode.SOURCE_LINE.eq(applied.SOURCE_LINE))
                     .and(decode.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+                    .join(entry)
+                    .on(entryOf(applied, EntryKind.FIELD_DIRECTIVE))
                     .join(declared)
-                    .on(applied.GRAPH_NAME.eq(declared.GRAPH_NAME))
-                    .and(applied.SOURCE_NAME.eq(declared.SOURCE_NAME))
-                    .and(applied.PARENT_LINE.eq(declared.SOURCE_LINE))
-                    .and(applied.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
+                    .on(entry.GRAPH_NAME.eq(declared.GRAPH_NAME))
+                    .and(entry.SOURCE_NAME.eq(declared.SOURCE_NAME))
+                    .and(entry.PARENT_LINE.eq(declared.SOURCE_LINE))
+                    .and(entry.PARENT_COLUMN.eq(declared.SOURCE_COLUMN))
                     .join(element)
                     .on(element.GRAPH_NAME.eq(declared.GRAPH_NAME))
                     .and(element.SOURCE_NAME.eq(declared.SOURCE_NAME))
@@ -152,8 +162,9 @@ class GraphitronFieldEntriesTest {
 
     /**
      * The site split, which is the one place this writer disagrees with the walk it replaces. An
-     * input object's field is an input value to the parser, so a directive written on one is a row
-     * of the input-value relation; the field site is object and interface fields and nothing else.
+     * input object's field is an input value to the parser, so a directive written on one is an
+     * application of the input-value entry kind; the field site is object and interface fields and
+     * nothing else.
      */
     @Test
     @DisplayName("a directive on an input object's field is not a field-site decode")
@@ -169,14 +180,12 @@ class GraphitronFieldEntriesTest {
 
             // Restricted to this case's own document, the bundled directive vocabulary being read
             // as part of every corpus and applying @deprecated to an input value of its own.
-            var written = GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.SOURCE_NAME.like("%filter.graphqls");
-            assertThat(dsl.select(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME)
-                    .from(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY).where(written)
-                    .fetch(GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY.NAME))
+            var written = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY.SOURCE_NAME.like("%filter.graphqls");
+            assertThat(appliedAt(dsl, EntryKind.INPUT_VALUE_DIRECTIVE, written))
                 .as("the application is transcribed at the site the parser puts it")
                 .containsExactly("condition");
-            assertThat(dsl.fetchCount(GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY))
-                .as("and not at the field site").isZero();
+            assertThat(appliedAt(dsl, EntryKind.FIELD_DIRECTIVE, DSL.noCondition()))
+                .as("and not at the field site").isEmpty();
             assertThat(dsl.fetchCount(GRAPHITRON_AST_FIELD_CONDITION_ENTRY))
                 .as("so the field site's decode has nothing to say about it, which is what the "
                     + "foreign key already required: a row here references a row there")
@@ -338,9 +347,7 @@ class GraphitronFieldEntriesTest {
         ThreadConfinedStore.run(dsl -> {
             read(dsl, tmp);
 
-            assertThat(dsl.select(GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY.NAME)
-                    .from(GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY)
-                    .fetch(GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY.NAME))
+            assertThat(appliedAt(dsl, EntryKind.FIELD_DIRECTIVE, DSL.noCondition()))
                 .as("both applications are transcribed, which is the whole of what they say")
                 .containsExactlyInAnyOrder("splitQuery", "tenantFanOut");
             assertThat(decodeRelationsHoldingRows(dsl, "film.graphqls"))
@@ -416,6 +423,32 @@ class GraphitronFieldEntriesTest {
             .map(table -> table.getName().toLowerCase(Locale.ROOT))
             .sorted()
             .toList();
+    }
+
+    /**
+     * The names applied at one site: the application entries whose index row gives them that
+     * entry kind.
+     */
+    private static List<String> appliedAt(DSLContext dsl, EntryKind site, Condition where) {
+        var applied = GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY;
+        return dsl.select(applied.NAME)
+            .from(applied)
+            .join(GRAPHQL_AST_ENTRY).on(entryOf(applied, site))
+            .where(where)
+            .fetch(applied.NAME);
+    }
+
+    /**
+     * The index row an application is, restricted to one entry kind. It holds the site and the
+     * position the application was written on, which the application entry itself does not repeat.
+     */
+    private static Condition entryOf(GraphqlAstDirectiveApplicationEntry applied, EntryKind site) {
+        var entry = GRAPHQL_AST_ENTRY;
+        return entry.GRAPH_NAME.eq(applied.GRAPH_NAME)
+            .and(entry.SOURCE_NAME.eq(applied.SOURCE_NAME))
+            .and(entry.SOURCE_LINE.eq(applied.SOURCE_LINE))
+            .and(entry.SOURCE_COLUMN.eq(applied.SOURCE_COLUMN))
+            .and(entry.ENTRY_KIND.eq(site));
     }
 
     /** One reading of everything the directory holds, which is what a run does. */

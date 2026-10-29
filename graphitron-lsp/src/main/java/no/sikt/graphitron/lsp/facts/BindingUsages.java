@@ -18,7 +18,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_TABLE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_KEY_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_AST_REFERENCE_TABLE_STEP_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_VALUE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_DECLARATION;
 import static no.sikt.graphitron.model.Tables.INTENT_BOUND_TABLE;
 import static no.sikt.graphitron.model.Tables.INTENT_COLUMN_MATCH_CLAIM;
@@ -196,7 +196,7 @@ public final class BindingUsages {
      * is a position, and the entry is keyed there. The coordinate is not a column of the entry and
      * is not meant to be: a transcription says what stands at a position and references the
      * {@code graphql_} entry it decorates, so the type name is reached through that reference, to
-     * the type directive holding its declaration's position in {@code parent_line} and
+     * the application's entry holding its declaration's position in {@code parent_line} and
      * {@code parent_column}, and from there to the declaration carrying the name. The reading this
      * replaces took the type name off the binding row itself, which is why that row had to resolve
      * while the document was still being read.
@@ -208,7 +208,7 @@ public final class BindingUsages {
         StoreHandle store, CatalogTable table
     ) {
         var e = GRAPHITRON_AST_TABLE_ENTRY;
-        var d = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
+        var d = GRAPHQL_AST_ENTRY;
         var m = GRAPHQL_TYPE_DECLARATION;
         return store.dsl()
             .select(e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN)
