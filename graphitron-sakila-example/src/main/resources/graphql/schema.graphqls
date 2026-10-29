@@ -620,6 +620,10 @@ type Query {
     # The same sort key on a plain list root.
     filmsByOriginalLanguageList: [Film!]!
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    # Descending, where the appended film_id flips with it: the tied films 2 and 3 come back 3, 2,
+    # which the database's own tie order (2, 3) does not give by accident.
+    filmsByOriginalLanguageDescList: [Film!]!
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}], direction: DESC)
     # The related column is language_id, named like the film's own languageId: the sort key rides
     # the cursor under a reserved alias, so selecting languageId keeps both and the cursor reads the
     # related one.
@@ -3594,6 +3598,12 @@ type Language @table(name: "language") {
     filmsInlineByOriginalLanguage: [Film!]!
         @reference(path: [{key: "film_language_id_fkey"}])
         @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}])
+    filmsInlineByOriginalLanguageDesc: [Film!]!
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}], direction: DESC)
+    filmsListByOriginalLanguageDesc: [Film!]! @splitQuery
+        @reference(path: [{key: "film_language_id_fkey"}])
+        @defaultOrder(fields: [{name: "name", path: [{key: "film_original_language_id_fkey"}]}], direction: DESC)
     # The path: key on a @splitQuery list, and the method: key on a @splitQuery connection and
     # an inline child list. A plain list appends no row key, so the inline one lists film_id
     # itself to order the store-1 tie.

@@ -115,6 +115,29 @@ class SortKeyOrderExecutionTest {
     }
 
     @Test
+    void pathKey_descendingPlainListRoot_keyFlipsWithTheOrder() {
+        assertThat(seeded(filmIdsOf(listOf("filmsByOriginalLanguageDescList")))).containsExactlyElementsOf(ORIGINAL_DESC);
+    }
+
+    @Test
+    void pathKey_descendingInlineChildList_keyFlipsWithTheOrder() {
+        var language = (Map<String, Object>) execute(
+            "{ languageBySingleKey(language_id: 1) { filmsInlineByOriginalLanguageDesc { filmId } } }")
+            .get("languageBySingleKey");
+        assertThat(seeded(filmIdsOf((List<Map<String, Object>>) language.get("filmsInlineByOriginalLanguageDesc"))))
+            .containsExactlyElementsOf(ORIGINAL_DESC);
+    }
+
+    @Test
+    void pathKey_descendingSplitQueryChildList_keyFlipsWithTheOrder() {
+        var language = (Map<String, Object>) execute(
+            "{ languageBySingleKey(language_id: 1) { filmsListByOriginalLanguageDesc { filmId } } }")
+            .get("languageBySingleKey");
+        assertThat(seeded(filmIdsOf((List<Map<String, Object>>) language.get("filmsListByOriginalLanguageDesc"))))
+            .containsExactlyElementsOf(ORIGINAL_DESC);
+    }
+
+    @Test
     void pathKey_plainList_singleValuedOrderByArgument_completedInBothDirections() {
         // The tied films 2 and 3 keep film_id order in the direction of the last entry.
         assertThat(seeded(filmIdsOf(listOf("filmsByLanguagesList(order: {field: ORIGINAL_LANGUAGE, direction: ASC})"))))
