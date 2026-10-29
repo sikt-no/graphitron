@@ -265,6 +265,8 @@ class RelationRegistrationGateTest {
         registrations.put("code_type_element", Arm.UNSHADOWED);
         registrations.put("code_read_slot", Arm.UNSHADOWED);
         registrations.put("code_construction", Arm.UNSHADOWED);
+        registrations.put("code_constructor", Arm.UNSHADOWED);
+        registrations.put("code_constructor_parameter", Arm.UNSHADOWED);
         registrations.put("code_write_slot", Arm.UNSHADOWED);
         registrations.put("code_method_parameter", Arm.UNSHADOWED);
         registrations.put("code_method_exception", Arm.UNSHADOWED);

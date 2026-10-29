@@ -6341,6 +6341,49 @@ COMMENT ON COLUMN code_construction.shape IS 'POSITIONAL or SETTERS: whether the
 COMMENT ON COLUMN code_construction.descriptor IS 'the constructor to call. At POSITIONAL that is the canonical one, whose parameters are the components in header order; at SETTERS it is ()V. Named by descriptor rather than by presence because a class may declare several and only one of them is the one this shape means';
 COMMENT ON COLUMN code_construction.touched_at IS 'when the reading that produced this row ran; swept with the class it hangs on';
 
+CREATE TABLE code_constructor (
+  source_name VARCHAR   NOT NULL,
+  class_name  VARCHAR   NOT NULL,
+  descriptor  VARCHAR   NOT NULL,
+  touched_at  TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, descriptor),
+  FOREIGN KEY (source_name, class_name)
+    REFERENCES code_class (source_name, class_name) ON DELETE CASCADE
+);
+COMMENT ON TABLE code_constructor IS 'One public constructor of a class declaring an instance @service method: one row per class and constructor, overloads told apart by descriptor. For example SampleInstanceService(DSLContext), the one public constructor of a class whose titleByFilmId an instance @service names.';
+COMMENT ON COLUMN code_constructor.source_name IS 'the entry the class was read from, as on code_class; the key''s leading dimension';
+COMMENT ON COLUMN code_constructor.class_name IS 'the class the constructor makes, keyed into code_class, so a class the next reading does not find takes its constructors with it';
+COMMENT ON COLUMN code_constructor.descriptor IS 'the constructor''s descriptor, completing the key: a class may declare several public constructors, and the descriptor is what tells them apart';
+COMMENT ON COLUMN code_constructor.touched_at IS 'when the reading that produced this row ran; swept with the class it hangs on';
+
+CREATE TABLE code_constructor_parameter (
+  source_name    VARCHAR   NOT NULL,
+  class_name     VARCHAR   NOT NULL,
+  descriptor     VARCHAR   NOT NULL,
+  position       INT       NOT NULL,
+  parameter_name VARCHAR,
+  parameter_type VARCHAR   NOT NULL,
+  erased_class   VARCHAR,
+  role           VARCHAR   NOT NULL,
+  touched_at     TIMESTAMP NOT NULL,
+  PRIMARY KEY (source_name, class_name, descriptor, position),
+  FOREIGN KEY (source_name, class_name, descriptor)
+    REFERENCES code_constructor (source_name, class_name, descriptor) ON DELETE CASCADE,
+  FOREIGN KEY (source_name, parameter_type) REFERENCES code_type (source_name, type_name)
+    ON DELETE CASCADE,
+  CHECK (role IN ('DSL_CONTEXT', 'CONFIGURATION', 'TABLE_CONCRETE', 'TABLE_ANY', 'OTHER'))
+);
+COMMENT ON TABLE code_constructor_parameter IS 'One position in a public constructor''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for. For example position 0 of SampleInstanceService(DSLContext), named ctx and playing the DSL_CONTEXT role.';
+COMMENT ON COLUMN code_constructor_parameter.source_name IS 'the entry the class was read from, as on code_constructor';
+COMMENT ON COLUMN code_constructor_parameter.class_name IS 'the class, as on code_constructor';
+COMMENT ON COLUMN code_constructor_parameter.descriptor IS 'the constructor''s descriptor, as on code_constructor; with the two columns above, the constructor this position belongs to, and the row is deleted with it';
+COMMENT ON COLUMN code_constructor_parameter.position IS 'the position in the parameter list, 0-based, completing the key, on code_method_parameter.position''s terms';
+COMMENT ON COLUMN code_constructor_parameter.parameter_name IS 'the parameter''s name as the source declared it, or NULL where the class was compiled without -parameters, on code_method_parameter.parameter_name''s terms; what a context key binds to';
+COMMENT ON COLUMN code_constructor_parameter.parameter_type IS 'the type bound at this position, by reference, as on code_method_parameter.parameter_type';
+COMMENT ON COLUMN code_constructor_parameter.erased_class IS 'the class the parameter type erases to, on code_method_parameter.erased_class''s terms';
+COMMENT ON COLUMN code_constructor_parameter.role IS 'what the position is for as far as its type alone decides, by the rule and in the vocabulary of code_method_parameter.role: DSL_CONTEXT or CONFIGURATION where the position is declared as that jOOQ type exactly, the two table roles, else OTHER';
+COMMENT ON COLUMN code_constructor_parameter.touched_at IS 'when the reading that produced this row ran; swept with the constructor it hangs on';
+
 CREATE TABLE code_write_slot (
   source_name VARCHAR NOT NULL,
   class_name  VARCHAR NOT NULL,
@@ -17120,6 +17163,9 @@ INSERT INTO meta_grain VALUES
   ('class-ancestor',
    'one type one class is, the class itself excluded',
    'source_name, class_name, supertype_name', 'classpath'),
+  ('class-constructor',
+   'one public constructor of one class, overloads told apart by descriptor',
+   'source_name, class_name, descriptor', 'classpath'),
   ('class-method',
    'one method of one class, overloads told apart by descriptor',
    'source_name, class_name, method_name, descriptor', 'classpath'),
@@ -17132,6 +17178,9 @@ INSERT INTO meta_grain VALUES
   ('method-exception',
    'one exception one method declares it throws',
    'source_name, class_name, method_name, descriptor, exception_class', 'classpath'),
+  ('constructor-parameter',
+   'one position in one constructor''s parameter list',
+   'source_name, class_name, descriptor, position', 'classpath'),
   ('method-parameter',
    'one position in one method''s parameter list',
    'source_name, class_name, method_name, descriptor, position', 'classpath'),
@@ -18616,6 +18665,14 @@ INSERT INTO meta_relation VALUES
    'One member name a class offers an author, the method that reads it and what reading it yields.',
    'For example a Film record offering title through its title() accessor, or a FilmDto offering it through getTitle().',
    'What @field(name:) resolves against on a type whose backing is a class rather than a table. Two arms and the discriminator is on the class rather than the member: a record answers with its components and anything else with its getters, which is decided where the class''s declared form is known and stored as the answer. Keyed by the accessor because the accessor is what is unique; the name an author writes is not, a class spelling one property two ways offering it twice. It names what reading the member yields rather than reaching it through the accessor''s own row, which is the shape the write side settled first and for two reasons that hold here too: every reader of a slot wants the type and none of them wants anything else the method has, and an inherited accessor has no row under the class offering it, so a slot typed only through one could not exist. What a class offers includes what it inherits, the emitter reaching an inherited accessor through the subclass without caring which file it came from, and the declaring class is carried so a jump to the member''s source lands in the file that has it. A record''s accessors are ordinary public methods and so is everything else a record generates, so the components the Record attribute names are what tells an accessor from a toString.'),
+  ('code_constructor', 'class-constructor', 'code',
+   'One public constructor of a class declaring an instance @service method: one row per class and constructor, overloads told apart by descriptor.',
+   'For example SampleInstanceService(DSLContext), the one public constructor of a class whose titleByFilmId an instance @service names.',
+   'What a generated fetcher calls to get the object an instance @service method runs on, so the holder a field needs is chosen from what the class offers rather than by reflecting on it when the schema is classified. Read only for the classes the reading already found an instance service method on, kept apart from the methods as the census keeps them, since a constructor is named by nothing an author writes.'),
+  ('code_constructor_parameter', 'constructor-parameter', 'code',
+   'One position in a public constructor''s parameter list: the type bound there, the name it is bound under, and what the type alone says the position is for.',
+   'For example position 0 of SampleInstanceService(DSLContext), named ctx and playing the DSL_CONTEXT role.',
+   'A constructor''s parameters are its own fact, held once beside it, on code_method_parameter''s terms and decided by the same role rule, so a holder''s positions and a method''s mean one thing by one vocabulary. Only what a holder needs is kept: the name a context key binds to, the type and its erasure, and the role.'),
   ('code_construction', 'classpath-class', 'code',
    'How a value of one class is made, for the classes a generator has to make one of.',
    'For example a FilmInput record, made by calling its canonical constructor with every component at once.',

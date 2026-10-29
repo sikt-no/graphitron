@@ -340,16 +340,17 @@ static method needs no holder.
 * **The generated jOOQ classes are read with their members** `open`. The census's header-only
   package goes, so tables, records, `Routines`, package classes and DAOs are read like any other
   class, with a sis capture timed before and after.
-* **A service class's construction is stated** `open`. `code_construction` reaches the declaring
-  class of every non-static `code_service_method` row, the code gatherer's own candidate set, and
-  states its public constructors as candidates of a `CONTEXT` shape with each parameter's role, kept
-  apart from the methods as the census keeps them.
+* **A service class's construction is stated** `done`. `code_constructor` and
+  `code_constructor_parameter` hold the public constructors of every class a non-static
+  `code_service_method` row is declared on, the code gatherer's own candidate set, each position with
+  its name and the role `code_method_parameter`'s rule gives it, kept apart from the methods as the
+  census keeps them and apart from `code_construction`, which says how a value is made.
 * **A parameter states its type's first argument** `done`. `code_method_parameter` carries the class
   the census reads at type-argument path `0`, so `Set<FilmRecord>` is told from
   `Set<List<FilmRecord>>` without parsing a spelling.
 * **A `Configuration` parameter is the jOOQ context** `done`. `code_method_parameter.role` gains
   `CONFIGURATION` beside `DSL_CONTEXT`, both decided by exact type rather than by being a subtype.
-* **A service's holder is its one widest buildable constructor** `blocked`, on "A service class's construction is stated". Every
+* **A service's holder is its one widest buildable constructor** `open`. Every
   parameter is jOOQ context or a context key; two of the widest, or none buildable, is a defect.
 * **An argument path through input types is stored** `open`. This is R1099's step 2,
   `graphitron_argmapping_binding`, and is done when that step lands; R1099 owns what it retires.

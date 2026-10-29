@@ -20,6 +20,8 @@ import org.jooq.DSLContext;
 
 import static no.sikt.graphitron.model.Tables.CODE_CONDITION_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
@@ -67,6 +69,9 @@ class CodeCaptureTest {
 
     private static final String SERVICES =
         "no.sikt.graphitron.model.capture.code.fixtures.ServiceFixture";
+
+    private static final String HOLDERS =
+        "no.sikt.graphitron.model.capture.code.fixtures.HolderFixture";
 
     private static final String SLOT_RECORD =
         "no.sikt.graphitron.model.capture.code.fixtures.SlotRecord";
@@ -904,6 +909,38 @@ class CodeCaptureTest {
                 .as("an unbounded wildcard names no class")
                 .isNull();
             assertThat(serviceResultFirstArgument(dsl, "aCount")).as("a primitive").isNull();
+        });
+    }
+
+    /**
+     * A class an instance service method is declared on states its public constructors, each
+     * position with the role its type alone decides, by the method parameters' rule. A constructor
+     * that is not public is no candidate, and a class whose service methods are all static has no
+     * holder to make. This module compiles without {@code -parameters}, so the positions are
+     * nameless here, as a condition method's are.
+     */
+    @Test
+    @DisplayName("an instance service class states its public constructors")
+    void anInstanceServiceClassStatesItsConstructors() {
+        withReactorCapture(dsl -> {
+            var p = CODE_CONSTRUCTOR_PARAMETER;
+            assertThat(dsl.select(p.DESCRIPTOR, p.POSITION, p.PARAMETER_NAME, p.ROLE)
+                    .from(p)
+                    .where(p.CLASS_NAME.eq(HOLDERS))
+                    .orderBy(p.DESCRIPTOR, p.POSITION)
+                    .fetch(r -> r.value1() + " " + r.value2() + " " + r.value3() + " " + r.value4()))
+                .as("three public constructors, each position by its role")
+                .containsExactly(
+                    "(Lorg/jooq/Configuration;)V 0 null CONFIGURATION",
+                    "(Lorg/jooq/DSLContext;)V 0 null DSL_CONTEXT",
+                    "(Lorg/jooq/DSLContext;Ljava/lang/String;)V 0 null DSL_CONTEXT",
+                    "(Lorg/jooq/DSLContext;Ljava/lang/String;)V 1 null OTHER");
+            assertThat(dsl.fetchCount(CODE_CONSTRUCTOR, CODE_CONSTRUCTOR.CLASS_NAME.eq(HOLDERS)))
+                .as("the package-private no-argument constructor is no candidate")
+                .isEqualTo(3);
+            assertThat(dsl.fetchCount(CODE_CONSTRUCTOR, CODE_CONSTRUCTOR.CLASS_NAME.eq(SERVICES)))
+                .as("a class whose service methods are all static has no holder to make")
+                .isZero();
         });
     }
 

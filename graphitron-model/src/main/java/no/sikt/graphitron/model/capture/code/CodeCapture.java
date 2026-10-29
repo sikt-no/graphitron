@@ -28,6 +28,8 @@ import static no.sikt.graphitron.model.Tables.STORE_CLASS_FILE;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_EXCEPTION;
 import static no.sikt.graphitron.model.Tables.CODE_METHOD_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTION;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR;
+import static no.sikt.graphitron.model.Tables.CODE_CONSTRUCTOR_PARAMETER;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE;
 import static no.sikt.graphitron.model.Tables.CODE_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.CODE_READ_SLOT;
@@ -397,6 +399,83 @@ public final class CodeCapture {
         arm(dsl, CODE_SERVICE_METHOD, found.stream()
             .filter(d -> !isConditionMethod(d.at()) && !isLifterMethod(d.at(), ancestry))
             .map(d -> new Member(d.source(), d.className(), d.at())).toList(), touchedAt);
+
+        // The classes an instance service method was found on, whose constructors make its holder.
+        var holders = found.stream()
+            .filter(d -> !d.at().isStatic())
+            .filter(d -> !isConditionMethod(d.at()) && !isLifterMethod(d.at(), ancestry))
+            .map(d -> d.source() + '\u0000' + d.className())
+            .collect(java.util.stream.Collectors.toSet());
+        constructors(dsl, classes.stream()
+            .filter(at -> holders.contains(at.source() + '\u0000' + at.className()))
+            .toList(), ancestry, containers, touchedAt);
+    }
+
+    /**
+     * The public constructors of the classes an instance service method was found on, and their
+     * parameters, on the method parameters' terms and by their role rule.
+     *
+     * <p>Read for these classes only: a constructor is named by nothing an author writes, and what
+     * reads these rows is the choice of the object an instance service method runs on, so a class no
+     * such method is declared on has no holder to choose.
+     */
+    private static void constructors(DSLContext dsl, List<ClassfileCensus.ClassAt> classes,
+                                     ClassAncestry ancestry, Map<String, Container> containers,
+                                     LocalDateTime touchedAt) {
+        var found = new ArrayList<Member>();
+        for (ClassfileCensus.ClassAt at : classes) {
+            for (ClassfileCensus.MethodAt constructor : at.constructors()) {
+                found.add(new Member(at.source(), at.className(), constructor));
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        types(dsl, found, containers, touchedAt);
+
+        var c = CODE_CONSTRUCTOR;
+        var constructorRows = found.stream().collect(Rows.toRowList(
+            member -> val(member.source(), c.SOURCE_NAME),
+            member -> val(member.className(), c.CLASS_NAME),
+            member -> val(member.at().descriptor(), c.DESCRIPTOR),
+            member -> val(touchedAt, c.TOUCHED_AT)));
+        BindBatch.execute(dsl, constructorRows, markers ->
+            dsl.insertInto(c, c.SOURCE_NAME, c.CLASS_NAME, c.DESCRIPTOR, c.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(c.TOUCHED_AT, excluded(c.TOUCHED_AT)));
+
+        record At(Member member, ClassfileCensus.ParameterAt at) {}
+        var positions = new ArrayList<At>();
+        for (Member member : found) {
+            for (ClassfileCensus.ParameterAt parameter : member.at().parameters()) {
+                positions.add(new At(member, parameter));
+            }
+        }
+        if (positions.isEmpty()) {
+            return;
+        }
+        var p = CODE_CONSTRUCTOR_PARAMETER;
+        var parameterRows = positions.stream().collect(Rows.toRowList(
+            row -> val(row.member().source(), p.SOURCE_NAME),
+            row -> val(row.member().className(), p.CLASS_NAME),
+            row -> val(row.member().at().descriptor(), p.DESCRIPTOR),
+            row -> val(row.at().position(), p.POSITION),
+            row -> val(row.at().name(), p.PARAMETER_NAME),
+            row -> val(row.at().qualifiedType(), p.PARAMETER_TYPE),
+            row -> val(rootOf(row.at().typeRefs()), p.ERASED_CLASS),
+            row -> val(roleOf(row.at(), ancestry), p.ROLE),
+            row -> val(touchedAt, p.TOUCHED_AT)));
+        BindBatch.execute(dsl, parameterRows, markers ->
+            dsl.insertInto(p, p.SOURCE_NAME, p.CLASS_NAME, p.DESCRIPTOR, p.POSITION,
+                    p.PARAMETER_NAME, p.PARAMETER_TYPE, p.ERASED_CLASS, p.ROLE, p.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(p.PARAMETER_NAME, excluded(p.PARAMETER_NAME))
+                .set(p.PARAMETER_TYPE, excluded(p.PARAMETER_TYPE))
+                .set(p.ERASED_CLASS, excluded(p.ERASED_CLASS))
+                .set(p.ROLE, excluded(p.ROLE))
+                .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
     }
 
     /**
@@ -1248,7 +1327,7 @@ public final class CodeCapture {
     private static void sweep(DSLContext dsl, List<String> sources, LocalDateTime touchedAt) {
         for (org.jooq.Table<?> table : List.of(
                 CODE_METHOD_PARAMETER, CODE_METHOD_EXCEPTION, CODE_WRITE_SLOT, CODE_CONSTRUCTION,
-                CODE_READ_SLOT,
+                CODE_CONSTRUCTOR_PARAMETER, CODE_CONSTRUCTOR, CODE_READ_SLOT,
                 CODE_SERVICE_METHOD, CODE_CONDITION_METHOD, CODE_EXTERNAL_FIELD_METHOD,
                 CODE_METHOD, CODE_TYPE_ELEMENT, CODE_TYPE,
                 CODE_THROWABLE_SUPERTYPE, CODE_THROWABLE, CODE_SCALAR_CONSTANT, CODE_CLASS)) {
