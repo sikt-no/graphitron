@@ -15,8 +15,8 @@ import static no.sikt.graphitron.model.Tables.STORE_GRAPH_OUTPUT;
 
 /**
  * The runtime classes every generating run writes the same way: the request context interface, the
- * transaction provider, the constraint-violation helper, the client exception, the error router and
- * the outcome carrier. What they say depends on nothing but the package they are written under, so
+ * transaction provider, the constraint-violation helper, the client exception, the zero-rows-matched
+ * exception, the error router and the outcome carrier. What they say depends on nothing but the package they are written under, so
  * there is nothing to plan: this reads the package off {@code store_graph_output} and renders.
  *
  * <p>The units it returns are the record of what was written, which the incremental compile graph
@@ -59,6 +59,8 @@ public final class FixedRuntimeEmitter {
             ConstraintViolationsClassGenerator.generate());
         add(out, GlobalUnitKind.CLIENT_EXCEPTION, units.clientException(),
             GraphitronClientExceptionClassGenerator.generate());
+        add(out, GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION, units.zeroRowsMatchedException(),
+            ZeroRowsMatchedExceptionClassGenerator.generate());
         add(out, GlobalUnitKind.ERROR_ROUTER, units.errorRouter(),
             ErrorRouterClassGenerator.generate(outputPackage));
         add(out, GlobalUnitKind.OUTCOME, units.outcome(),

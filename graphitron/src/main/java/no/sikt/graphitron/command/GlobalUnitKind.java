@@ -8,9 +8,9 @@ package no.sikt.graphitron.command;
  * ({@link #ONE_OF_DIRECTIVE_SDL}, {@link #ENTITY_FETCHER_DISPATCH}, {@link #QUERY_NODE_FETCHER})
  * are absent when their producer-side membership predicate excludes them.
  *
- * <p>Six kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
- * {@link #CONSTRAINT_VIOLATIONS}, {@link #CLIENT_EXCEPTION}, {@link #ERROR_ROUTER} and
- * {@link #OUTCOME} are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
+ * <p>Seven kinds never appear in a plan: {@link #GRAPHITRON_CONTEXT}, {@link #TRANSACTION_PROVIDER},
+ * {@link #CONSTRAINT_VIOLATIONS}, {@link #CLIENT_EXCEPTION}, {@link #ZERO_ROWS_MATCHED_EXCEPTION},
+ * {@link #ERROR_ROUTER} and {@link #OUTCOME} are written by {@link no.sikt.graphitron.rewrite.generators.schema.FixedRuntimeEmitter}, which keys
  * what it wrote by these constants so the compile graph's wiring for them stays one switch.
  *
  * <p>A pure key: where a unit of the kind lands is carried by the command's {@link UnitRef}s,
@@ -41,6 +41,7 @@ public enum GlobalUnitKind {
     CONNECTION_INSTRUMENTATION,
     CONSTRAINT_VIOLATIONS,
     CLIENT_EXCEPTION,
+    ZERO_ROWS_MATCHED_EXCEPTION,
     ERROR_ROUTER,
     OUTCOME,
     ERROR_MAPPINGS,

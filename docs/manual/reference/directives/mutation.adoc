@@ -214,13 +214,32 @@ Give one `@error` type in the errors field `{handler: VALIDATION}` and the colum
 
 The same rules hold in a database-per-tenant build: the payload's fields read the tenant the write ran on, and the errors travel with the payload.
 
+[#update-key-matches-no-row]
+== When an UPDATE key matches no row
+
+A list-input `UPDATE` that returns a payload fails the whole call when any input row's key matches no row: nothing is written, and the field reports an error, a typed one if a handler in the payload's errors field matches, otherwise a redacted one. Graphitron runs every row before failing, so the error counts all of them. The exception is `<outputPackage>.schema.ZeroRowsMatchedException`, generated into your output package; it is an `IllegalStateException` whose message contains "matched zero rows", and it tells you which rows missed:
+
+[source,java]
+----
+@Override
+public String unmatchedMessage(Throwable thrown, String reference, DataFetchingEnvironment env) {
+    if (thrown instanceof ZeroRowsMatchedException miss) {
+        return miss.missCount() + " of " + miss.rowCount()
+            + " rows in this write were not found, or are not writable for you.";
+    }
+    return FetcherErrorResponse.super.unmatchedMessage(thrown, reference, env);
+}
+----
+
+`missedRowIndices()` gives the zero-based input positions, and `fieldCoordinate()` the field, as `Mutation.updateFilms`. A key that matches no row may be a row the caller is not allowed to see, so decide how much of this to show. A list-input `UPDATE` that returns the `@table` type or ids directly does not fail on a missed key: it returns the rows it wrote.
+
 == Constraints
 
 * `INSERT` and `UPDATE` derive their write target from the return (a `@table` return, or a payload's `@table`-element data field), falling back to `@mutation(table:)` for an encoded-`ID` / scalar return (see <<_naming_the_insert_and_update_write_target>>). `DELETE` names its write target with `@mutation(table: "…")` on the field (it cannot derive the table from its return type, since the row is gone after the statement). A field with no write-target source is rejected at build time, with the message naming the applicable fix. `@table` on the input type is a xref:table.adoc[deprecated location], ignored rather than consulted, so it is never a write-target source.
 * `UPDATE` and `DELETE` require the input columns to cover a primary key or unique key of the write-target table (inferred from the catalog, no directive needed); otherwise the build fails so a non-unique filter cannot silently broadcast. `DELETE` can opt out with `multiRow: true` for a deliberate broadcast; `UPDATE` has no broadcast shape (cover a key). `@lookupKey` on a mutation input field is no longer supported (it identified rows in the pre-catalog model); remove it.
 * `UPDATE` requires at least one input field outside the matched key (otherwise the `SET` clause is empty). `DELETE` has no such requirement — a key-only DELETE is the canonical single-row delete. `UPSERT` is exempt on the SET side: an upsert with no SET-clause fields is `INSERT … ON CONFLICT DO NOTHING`, which is a legitimate shape.
 +
-The `UPDATE` rule is about the input _type_. A _request_ may still leave every one of those fields out, or send a nested group as absent or `null`: the row is then an empty patch. Graphitron issues no `UPDATE` for it, reads the row back by its key, and returns it in the payload in the row's position, as it would an updated row; other rows in the same list input update normally. An empty patch on a key that matches no row behaves like any `UPDATE` on that key: a single-row mutation resolves `null`, and a list input with a payload raises the same "matched zero rows" error its error handlers already see.
+The `UPDATE` rule is about the input _type_. A _request_ may still leave every one of those fields out, or send a nested group as absent or `null`: the row is then an empty patch. Graphitron issues no `UPDATE` for it, reads the row back by its key, and returns it in the payload in the row's position, as it would an updated row; other rows in the same list input update normally. An empty patch on a key that matches no row behaves like any `UPDATE` on that key: a single-row mutation resolves `null`, and a list input with a payload raises the same "matched zero rows" error its error handlers already see (see <<update-key-matches-no-row>>).
 * `@mutation` and xref:service.adoc[`@service`] are mutually exclusive on the same field. Pick one: `@mutation` for fully-generated DB operations, `@service` for handing the operation to custom Java.
 * Optional input fields participate in the operation only when the client provides them. Absent optional fields are omitted from the `SET` clause (`UPDATE`/`UPSERT`) and from the column list of a single-row `INSERT` and of a bulk `INSERT` whose rows supply the same fields, so the database applies each column's default without being asked by name. A bulk `INSERT` is one statement with one column list: when its rows differ, the list covers every field some row supplies, and a row that leaves one of those out writes `DEFAULT` for it. A bulk `INSERT` of several rows that supply no field at all names every column with `DEFAULT`, since an empty column list would insert a single row. An `INSERT` that supplies no field at all renders `default values`, which jOOQ emulates with a `DEFAULT` per column on a database that lacks that clause, Oracle among them. Oracle rejects an explicit `DEFAULT` against a view (ORA-32575), so on an Oracle view these three shapes fail at the database: a bulk `INSERT` whose rows differ, one whose rows supply no field, and an `INSERT` with no field at all.
 

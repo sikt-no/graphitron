@@ -9,6 +9,7 @@ import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.FetcherErrorLog;
 import no.sikt.graphitron.generated.schema.FetcherErrorResponse;
 import no.sikt.graphitron.generated.schema.GraphitronRuntime;
+import no.sikt.graphitron.generated.schema.ZeroRowsMatchedException;
 import no.sikt.graphitron.rewrite.test.services.FilmLookupNotFoundException;
 import no.sikt.graphitron.rewrite.test.services.FilmLookupService;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
@@ -220,6 +221,43 @@ class FetcherErrorResponseExecutionTest {
         assertThat(log.unmatched).singleElement().satisfies(u -> assertThat(u.reference()).matches(DEFAULT_REFERENCE));
         assertThat(result.getErrors()).extracting(GraphQLError::getMessage).containsExactly(
             "An exception occurred. The error has been logged with id " + log.unmatched.get(0).reference() + ".");
+    }
+
+    @Test
+    void unmatchedMessage_branchingOnZeroRowsMatched_countsTheMissedRowsForTheClient() {
+        // Graphitron 9's text, rebuilt from the generated exception's accessors. The three films
+        // that exist are written back with the titles they already have, so the call changes no
+        // committed state even if the guard were to let it through.
+        var response = new FetcherErrorResponse() {
+            @Override
+            public String unmatchedMessage(Throwable thrown, String reference, DataFetchingEnvironment env) {
+                if (thrown instanceof ZeroRowsMatchedException miss) {
+                    return miss.missCount() + " of " + miss.rowCount()
+                        + " statements in this write affected no rows.";
+                }
+                return FetcherErrorResponse.super.unmatchedMessage(thrown, reference, env);
+            }
+        };
+        var titles = dsl.select(DSL.field("film_id", Integer.class), DSL.field("title", String.class))
+            .from(DSL.table("film"))
+            .where(DSL.field("film_id", Integer.class).in(1, 2, 3))
+            .fetchMap(DSL.field("film_id", Integer.class), DSL.field("title", String.class));
+        String query = """
+            mutation {
+                updateFilmsPayload(in: [
+                    { filmId: 1, title: "%s" },
+                    { filmId: 2147483001, title: "sentinel" },
+                    { filmId: 2, title: "%s" },
+                    { filmId: 2147483002, title: "sentinel" },
+                    { filmId: 3, title: "%s" }
+                ]) { films { filmId } }
+            }
+            """.formatted(titles.get(1), titles.get(2), titles.get(3));
+
+        var result = run(runtime().withFetcherErrorResponse(response), query, null);
+
+        assertThat(result.getErrors()).extracting(GraphQLError::getMessage)
+            .containsExactly("2 of 5 statements in this write affected no rows.");
     }
 
     @Test

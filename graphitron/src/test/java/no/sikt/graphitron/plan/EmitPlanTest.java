@@ -43,6 +43,7 @@ class EmitPlanTest {
         GlobalUnitKind.TRANSACTION_PROVIDER,
         GlobalUnitKind.CONSTRAINT_VIOLATIONS,
         GlobalUnitKind.CLIENT_EXCEPTION,
+        GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION,
         GlobalUnitKind.ERROR_ROUTER,
         GlobalUnitKind.OUTCOME));
 

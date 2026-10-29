@@ -13,7 +13,7 @@ import static org.assertj.core.api.Assertions.tuple;
 class FixedRuntimeEmitterTest {
 
     @Test
-    void writesTheSixRuntimeClassesUnderTheSchemaPackage() {
+    void writesTheSevenRuntimeClassesUnderTheSchemaPackage() {
         assertThat(FixedRuntimeEmitter.render("com.example.gen"))
             .extracting(FixedRuntimeEmitter.Unit::kind, unit -> unit.ref().fqcn(), unit -> unit.spec().name())
             .containsExactly(
@@ -24,6 +24,8 @@ class FixedRuntimeEmitterTest {
                     "ConstraintViolations"),
                 tuple(GlobalUnitKind.CLIENT_EXCEPTION, "com.example.gen.schema.GraphitronClientException",
                     "GraphitronClientException"),
+                tuple(GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION, "com.example.gen.schema.ZeroRowsMatchedException",
+                    "ZeroRowsMatchedException"),
                 tuple(GlobalUnitKind.ERROR_ROUTER, "com.example.gen.schema.ErrorRouter", "ErrorRouter"),
                 tuple(GlobalUnitKind.OUTCOME, "com.example.gen.schema.Outcome", "Outcome"));
     }

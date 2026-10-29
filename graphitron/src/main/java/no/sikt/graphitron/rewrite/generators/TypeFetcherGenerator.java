@@ -6066,6 +6066,7 @@ public class TypeFetcherGenerator {
                 var input = recordCarrierInput(f.write());
                 yield buildBulkRecordTwoStepFetcher(
                     ctx, f, input.name(), input.inputTable(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    "INSERT",
                     (tablesOnly, tableLocal, pkCols, recordRowType) ->
                         buildBulkRecordPerRowBody(f.write(), input.inputTable(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
@@ -6075,20 +6076,22 @@ public class TypeFetcherGenerator {
                 var keyGroups = keyGroupsOf(w.updateRows().keyColumns());
                 yield buildBulkRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    "UPDATE",
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildCarrierBulkPerRowUpdateBody(
                         setGroups, keyGroups, keyColumnsAsSetGroups(w.updateRows().keyColumns()),
                         nullRulesByPath(w.updateRows().nullRules()),
                         w.updateRows().agreementObligations(),
-                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType, f.qualifiedName()),
+                        w.inputArg().table(), tablesOnly, tableLocal, pkCols, recordRowType),
                     outputPackage);
             }
             case OperationMember.Write.Delete w -> {
                 var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
                 yield buildBulkRecordTwoStepFetcher(
                     ctx, f, w.inputArg().name(), w.inputArg().table(), f.returning(), f.errorChannel(), f.lengthCheck(), f.qualifiedName(),
+                    "DELETE",
                     (tablesOnly, tableLocal, pkCols, recordRowType) -> buildBulkRecordPerRowDeleteBody(
                         w.deleteRows(), whereGroups, w.inputArg().table(), tablesOnly, tableLocal, pkCols,
-                        recordRowType, f.qualifiedName()),
+                        recordRowType),
                     outputPackage);
             }
             case OperationMember.Write.Upsert _ -> throw new IllegalStateException(
@@ -6099,31 +6102,56 @@ public class TypeFetcherGenerator {
     /** The seam for {@link #buildBulkRecordTwoStepFetcher}'s per-row DML body.*/
     @FunctionalInterface
     private interface BulkPerRowBodyFn {
-        CodeBlock build(GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
-                        List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType);
+        PerRow build(GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
+                     List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType);
     }
 
     /**
- * The bulk two-step DML emit skeleton shared by {@link #buildMutationBulkDmlRecordFetcher}
-     * (record-carrier INSERT/DELETE) and {@link #buildMutationBulkUpdatePayloadFetcher}
-     * (payload-returning bulk UPDATE). The shape is invariant: an empty-list short-circuit, then a
-     * per-row N+1 accumulator collecting the leaf's {@link no.sikt.graphitron.rewrite.model.Returning}
-     * columns (the primary key, widened to the node key on a DELETE whose payload ids need it) into
-     * a {@code Result<RecordN>} in input order
+     * One per-row DML body for {@link #buildBulkRecordTwoStepFetcher}: {@code statement} runs the
+     * row's DML up to and including the {@code rec} declaration from {@code fetchOne()}, with no
+     * append and no miss branch; {@code onMiss} says what a {@code null} {@code rec} means. The
+     * skeleton emits both the miss branch and the append from it.
+     */
+    private record PerRow(CodeBlock statement, MissPolicy onMiss) {}
+
+    /** What a per-row DML body's {@code null} record means; the skeleton renders the branch. */
+    private sealed interface MissPolicy {
+        /** The statement always yields a row ({@code INSERT … RETURNING}); a plain append. */
+        record CannotMiss() implements MissPolicy {}
+        /** A miss aborts the call at that row. */
+        record FailFast() implements MissPolicy {}
+        /** A miss takes {@code echo}, built from the row's own input, in place of the record. */
+        record Echo(CodeBlock echo) implements MissPolicy {}
+        /** A miss is recorded and the loop carries on; the skeleton throws after the last row. */
+        record CountThenThrow() implements MissPolicy {}
+    }
+
+    /**
+     * The bulk two-step DML emit skeleton behind {@link #buildMutationBulkDmlRecordFetcher}
+     * (payload-returning bulk INSERT, UPDATE and DELETE). The shape is invariant: an empty-list
+     * short-circuit, then a per-row N+1 accumulator collecting the leaf's
+     * {@link no.sikt.graphitron.rewrite.model.Returning} columns (the primary key, widened to the
+     * node key on a DELETE whose payload ids need it) into a {@code Result<RecordN>} in input order
      * inside one {@code dsl.transactionResult(...)}, then the success return and catch arm, both
      * {@code Outcome}-wrapped when the payload declares an errors field (the empty-list
-     * short-circuit included). Only the per-row body varies; {@code perRowBodyFn} is the seam, parameterised
-     * on the resolved table names / PK columns rather than threading a {@code DmlKind} that
-     * re-switches internally. The order-preservation invariant ({@code output.data[i]} corresponds
-     * to {@code input[i]}) is a property of this skeleton's input-order loop and is audited at the
-     * execution tier.
+     * short-circuit included). Only the per-row body varies; {@code perRowBodyFn} is the seam,
+     * parameterised on the resolved table names / PK columns rather than threading a
+     * {@code DmlKind} that re-switches internally. {@code verb} names the write in the miss messages.
+     *
+     * <p>The order-preservation invariant ({@code output.data[i]} corresponds to {@code input[i]})
+     * is structural here: the skeleton is the only code that appends to {@code acc}, and every row
+     * either appends or takes its {@link MissPolicy}'s miss branch. {@link MissPolicy.FailFast}
+     * throws at the row; {@link MissPolicy.Echo} appends the echo; {@link MissPolicy.CountThenThrow}
+     * records the row's index in {@code misses} and the post-loop guard throws the generated
+     * {@code ZeroRowsMatchedException} whenever any row appended nothing, so a {@code return acc}
+     * is only reached with one entry per input row. The invariant is audited at the execution tier.
      */
     private static MethodSpec buildBulkRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
             TableRef tableRef, no.sikt.graphitron.rewrite.model.Returning returning,
             Optional<ErrorChannel.Mapped> errorChannel,
             no.sikt.graphitron.rewrite.model.LengthCheck lengthCheck, String qualifiedName,
-            BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
+            String verb, BulkPerRowBodyFn perRowBodyFn, String outputPackage) {
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
         if (returning.primaryKey().isEmpty()) {
@@ -6172,16 +6200,54 @@ public class TypeFetcherGenerator {
         // transactionResult: per-row DML inside one transaction. The lambda binds a transactional
         // DSLContext (txd), allocates a typed Result over the PK columns, iterates input rows
         // in declaration order, runs one DML per row with PK RETURNING, and appends the returned
-        // RecordN to the Result. On any per-row throw (constraint violation, type mismatch, RLS
-        // denial, ...), the transaction rolls back; the outer catch arm routes the exception
-        // through the carrier's error channel, or redacts it when the payload has none.
-        builder.addCode(CodeBlock.builder()
+        // RecordN to the Result or takes the body's miss branch. On any per-row throw (constraint
+        // violation, type mismatch, RLS denial, ...), the transaction rolls back; the outer catch
+        // arm routes the exception through the carrier's error channel, or redacts it when the
+        // payload has none.
+        var perRow = perRowBodyFn.build(tablesOnly, tableLocal, pkCols, recordRowType);
+        boolean countMisses = perRow.onMiss() instanceof MissPolicy.CountThenThrow;
+        var tx = CodeBlock.builder()
             .add("$T payload = dsl.transactionResult(tx -> {\n", resultType).indent()
             .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
-            .add("$T acc = txd.newResult($L);\n", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef))
-            .add("for ($T<?, ?> row : in) {\n", MAP).indent()
-            .add(perRowBodyFn.build(tablesOnly, tableLocal, pkCols, recordRowType))
-            .unindent().add("}\n")
+            .add("$T acc = txd.newResult($L);\n", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef));
+        if (countMisses) {
+            tx.addStatement("$T<$T> misses = new $T<>()", LIST, Integer.class, ARRAY_LIST);
+        }
+        tx.beginControlFlow("for (int rowIndex = 0; rowIndex < in.size(); rowIndex++)")
+            .addStatement("$T<?, ?> row = in.get(rowIndex)", MAP)
+            .add(perRow.statement());
+        switch (perRow.onMiss()) {
+            case MissPolicy.CannotMiss _ -> tx.addStatement("acc.add(rec)");
+            case MissPolicy.FailFast _ -> tx
+                .beginControlFlow("if (rec == null)")
+                .addStatement("throw new $T($S + rowIndex + $S)", IllegalStateException.class,
+                    "@mutation(typeName: " + verb + ") bulk row matched zero rows; @lookupKey filter "
+                        + "found no target for input row at index ",
+                    " of " + qualifiedName)
+                .endControlFlow()
+                .addStatement("acc.add(rec)");
+            case MissPolicy.Echo echo -> tx
+                .beginControlFlow("if (rec == null)")
+                .addStatement("rec = $L", echo.echo())
+                .endControlFlow()
+                .addStatement("acc.add(rec)");
+            case MissPolicy.CountThenThrow _ -> tx
+                .beginControlFlow("if (rec == null)")
+                .addStatement("misses.add(rowIndex)")
+                .nextControlFlow("else")
+                .addStatement("acc.add(rec)")
+                .endControlFlow();
+        }
+        tx.endControlFlow();
+        if (countMisses) {
+            // Every row ran; acc is short exactly when some row missed, so no skewed acc returns.
+            tx.beginControlFlow("if (!misses.isEmpty())")
+                .addStatement("throw new $T($S, $S, misses, in.size())",
+                    className(new no.sikt.graphitron.plan.GeneratedUnits(outputPackage).zeroRowsMatchedException()),
+                    verb, qualifiedName)
+                .endControlFlow();
+        }
+        builder.addCode(tx
             .add("return acc;\n")
             .unindent().add("});\n")
             .build());
@@ -6200,17 +6266,18 @@ public class TypeFetcherGenerator {
      * SET map from the carrier's {@code setColumns()} ({@link #setGroupsOf}) and the WHERE from
      * the carrier's {@code keyColumns()} ({@link #keyGroupsOf}); no {@code @value}-derived
      * {@code tia} read. A row whose SET map is empty is an empty patch and runs the key read in
-     * place of its UPDATE ({@link KeyStatement.KeyedUpdate}). The no-match throw, which covers both,
-     * preserves the order-preservation invariant; its message names the row by index and the field
-     * by {@code fieldCoordinate}, never by the input's content, so client data stays out of logs.
+     * place of its UPDATE ({@link KeyStatement.KeyedUpdate}). A miss on either is
+     * {@link MissPolicy.CountThenThrow}: the loop carries on, and after the last row the skeleton
+     * throws one {@code ZeroRowsMatchedException} counting every row that matched nothing. Its
+     * message names rows by index and the field by coordinate, never by the input's content, so
+     * client data stays out of logs.
      */
-    private static CodeBlock buildCarrierBulkPerRowUpdateBody(
+    private static PerRow buildCarrierBulkPerRowUpdateBody(
             List<SetGroup> setGroups, List<InputColumnBindingGroup> keyGroups,
             List<SetGroup> keySetGroups, Map<List<String>, OnExplicitNull> setNullRules,
             List<AgreementObligation> agreementObligations,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly, String tableLocal,
-            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType,
-            String fieldCoordinate) {
+            List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols, TypeName recordRowType) {
         var fieldClass = ClassName.get("org.jooq", "Field");
         var linkedHashMap = ClassName.get("java.util", "LinkedHashMap");
         var body = CodeBlock.builder();
@@ -6228,18 +6295,7 @@ public class TypeFetcherGenerator {
         body.add(renderKeyFetch(new KeyStatement.KeyedUpdate(tableLocal, whereChunk.whereExpr()),
             CodeBlock.of("$T rec = ", recordRowType), CodeBlock.of("txd"),
             buildPkFieldList(pkCols, tablesOnly, tableRef), recordRowType, CodeBlock.of(".fetchOne()")));
-        // UPDATE no-match preserves the order-preservation invariant by failing fast rather than
-        // skewing acc.size() against in.size() with a silent skip; the catch arm routes the
-        // exception through the carrier's error channel. acc holds exactly the rows already
-        // written, so its size is this row's zero-based index.
-        body.beginControlFlow("if (rec == null)")
-            .addStatement("throw new $T($S + acc.size() + $S)", IllegalStateException.class,
-                "@mutation(typeName: UPDATE) bulk row matched zero rows; key filter "
-                    + "found no target for input row at index ",
-                " of " + fieldCoordinate)
-            .endControlFlow();
-        body.add("acc.add(rec);\n");
-        return body.build();
+        return new PerRow(body.build(), new MissPolicy.CountThenThrow());
     }
 
     /**
@@ -6250,7 +6306,7 @@ public class TypeFetcherGenerator {
      * arms are rejected at the leaf's compact constructor and never reach this dispatch; they
      * throw to guard against a future widening accident.
      */
-    private static CodeBlock buildBulkRecordPerRowBody(
+    private static PerRow buildBulkRecordPerRowBody(
             OperationMember.Write.Dml write,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
@@ -6272,27 +6328,27 @@ public class TypeFetcherGenerator {
 
     /**
      * Per-row DELETE body for the payload-returning Delete write arm on the bulk carrier
-     * (driven from {@link #buildMutationBulkDeletePayloadFetcher}). Each input row builds a
+     * (driven from {@link #buildMutationBulkDmlRecordFetcher}). Each input row builds a
      * {@code deleteFrom(table).where(<lookup>).returningResult(<returning>).fetchOne()} statement;
-     * the returned {@code RecordN} is appended to the bulk accumulator in input order. A row that
-     * matches no target raises {@link IllegalStateException} with the same shape as the UPDATE
-     * no-match path — input-order preservation is a contract of the bulk-DML emit, and silent
-     * skipping would break it. The per-row WHERE columns are sourced from the
-     * {@link no.sikt.graphitron.rewrite.model.DeleteRows}
-     * carrier ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}. Like the UPDATE
-     * twin, the no-match message names the row by index and the field by {@code fieldCoordinate}.
+     * the skeleton appends the returned {@code RecordN} to the bulk accumulator in input order. A
+     * row that matches no target is {@link MissPolicy.FailFast}: the skeleton throws
+     * {@link IllegalStateException} at that row, naming it by index and the field by coordinate,
+     * since silent skipping would break input-order preservation. The per-row WHERE columns are
+     * sourced from the {@link no.sikt.graphitron.rewrite.model.DeleteRows} carrier
+     * ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}.
      *
      * <p>On {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} a row that
-     * matches no target is not an error: its slot takes the key the client sent
-     * ({@link #missingRowEcho}), so {@code acc} still holds one entry per input row in input order.
+     * matches no target is not an error: the policy is {@link MissPolicy.Echo}, and its slot takes
+     * the key the client sent ({@link #missingRowEcho}), so {@code acc} still holds one entry per
+     * input row in input order.
      */
-    private static CodeBlock buildBulkRecordPerRowDeleteBody(
+    private static PerRow buildBulkRecordPerRowDeleteBody(
             no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
             List<InputColumnBindingGroup> whereGroups,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
             List<no.sikt.graphitron.model.jooq.ColumnRef> pkCols,
-            TypeName recordRowType, String fieldCoordinate) {
+            TypeName recordRowType) {
         var body = CodeBlock.builder();
         var whereChunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "row");
         body.add(whereChunk.decodeLocals());
@@ -6300,21 +6356,13 @@ public class TypeFetcherGenerator {
             .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
             .add("    .fetchOne();\n");
-        body.beginControlFlow("if (rec == null)");
-        if (deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem) {
-            body.addStatement("rec = $L", missingRowEcho(idem, whereChunk, "txd", tablesOnly, tableRef));
-        } else {
-            body.addStatement("throw new $T($S + acc.size() + $S)", IllegalStateException.class,
-                "@mutation(typeName: DELETE) bulk row matched zero rows; @lookupKey filter "
-                    + "found no target for input row at index ",
-                " of " + fieldCoordinate);
-        }
-        body.endControlFlow();
-        body.add("acc.add(rec);\n");
-        return body.build();
+        MissPolicy onMiss = deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem
+            ? new MissPolicy.Echo(missingRowEcho(idem, whereChunk, "txd", tablesOnly, tableRef))
+            : new MissPolicy.FailFast();
+        return new PerRow(body.build(), onMiss);
     }
 
-    private static CodeBlock buildBulkRecordPerRowInsertBody(
+    private static PerRow buildBulkRecordPerRowInsertBody(
             no.sikt.graphitron.rewrite.ArgumentRef.InputTypeArg.TableInputArg tia,
             TableRef tableRef, GeneratorUtils.ResolvedTableNames tablesOnly,
             String tableLocal,
@@ -6327,9 +6375,8 @@ public class TypeFetcherGenerator {
         body.add(values.prep());
         body.add("$T rec = txd", recordRowType).indent().indent().add(values.chain()).unindent().unindent()
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
-            .add("    .fetchOne();\n")
-            .add("acc.add(rec);\n");
-        return body.build();
+            .add("    .fetchOne();\n");
+        return new PerRow(body.build(), new MissPolicy.CannotMiss());
     }
 
     /**

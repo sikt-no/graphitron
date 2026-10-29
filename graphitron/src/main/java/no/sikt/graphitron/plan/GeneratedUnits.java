@@ -3,6 +3,7 @@ package no.sikt.graphitron.plan;
 import no.sikt.graphitron.command.UnitMethodRef;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.rewrite.generators.schema.GraphitronClientExceptionClassGenerator;
+import no.sikt.graphitron.rewrite.generators.schema.ZeroRowsMatchedExceptionClassGenerator;
 
 import java.nio.file.Path;
 
@@ -147,6 +148,14 @@ public final class GeneratedUnits {
      */
     public UnitRef clientException() {
         return unit(SUB_SCHEMA, GraphitronClientExceptionClassGenerator.CLASS_NAME);
+    }
+
+    /**
+     * {@code <pkg>.schema.ZeroRowsMatchedException}: the exception a payload-returning bulk write
+     * throws, after every row has run, when some input rows' keys matched nothing.
+     */
+    public UnitRef zeroRowsMatchedException() {
+        return unit(SUB_SCHEMA, ZeroRowsMatchedExceptionClassGenerator.CLASS_NAME);
     }
 
     /**

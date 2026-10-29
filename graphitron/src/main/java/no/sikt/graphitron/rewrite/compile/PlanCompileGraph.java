@@ -110,6 +110,7 @@ public final class PlanCompileGraph {
         GlobalUnitKind.OUTCOME,
         GlobalUnitKind.CONSTRAINT_VIOLATIONS,
         GlobalUnitKind.CLIENT_EXCEPTION,
+        GlobalUnitKind.ZERO_ROWS_MATCHED_EXCEPTION,
         GlobalUnitKind.ERROR_ROUTER,
         GlobalUnitKind.ERROR_MAPPINGS));
 
@@ -292,7 +293,7 @@ public final class PlanCompileGraph {
                 case GRAPHITRON_VALUES, LIGHT_FETCHER, COLUMN_VALUES, CONNECTION_RESULT,
                      CONNECTION_HELPER, ONE_OF_DIRECTIVE_SDL,
                      SELECTION_OCCURRENCES, NESTING_COORDINATES, ORDER_BY_RESULT,
-                     CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ERROR_ROUTER, OUTCOME,
+                     CONSTRAINT_VIOLATIONS, CLIENT_EXCEPTION, ZERO_ROWS_MATCHED_EXCEPTION, ERROR_ROUTER, OUTCOME,
                      ERROR_MAPPINGS -> { }
                 // The context interface always names the per-operation carrier.
                 case GRAPHITRON_CONTEXT -> runtimeUnit("TenantConnections")

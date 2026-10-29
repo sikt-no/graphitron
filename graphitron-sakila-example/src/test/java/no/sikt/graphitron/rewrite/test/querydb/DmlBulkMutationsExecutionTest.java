@@ -9,6 +9,7 @@ import graphql.schema.DataFetchingEnvironmentImpl;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.FetcherErrorLog;
 import no.sikt.graphitron.generated.schema.GraphitronContext;
+import no.sikt.graphitron.generated.schema.ZeroRowsMatchedException;
 import no.sikt.graphitron.generated.util.NodeIdEncoder;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
@@ -1161,6 +1162,87 @@ class DmlBulkMutationsExecutionTest {
                 .as("the failed row rolls the whole list back")
                 .isEqualTo(marker);
         });
+    }
+
+    // The payload bulk UPDATE runs every row before failing, so the generated exception counts
+    // every miss. The sentinel ids name no film; the sentinel titles must not reach the message.
+
+    @Test
+    void updateFilmsPayload_twoMissesOfFive_countsEveryMissAndRollsBack() {
+        inRolledBackTransaction(tx -> {
+            String marker = randomMarker("zero-rows-count");
+            Integer first = insertFilm(tx, marker + "-a");
+            Integer second = insertFilm(tx, marker + "-b");
+            Integer third = insertFilm(tx, marker + "-c");
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    updateFilmsPayload(in: [
+                        { filmId: %d, title: "renamed-a" },
+                        { filmId: 2147483001, title: "sentinel-title-1" },
+                        { filmId: %d, title: "renamed-b" },
+                        { filmId: 2147483002, title: "sentinel-title-3" },
+                        { filmId: %d, title: "renamed-c" }
+                    ]) { films { filmId } }
+                }
+                """.formatted(first, second, third),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            assertThat(logged.get(0).reference()).isEqualTo(referenceOf(result));
+            assertThat(logged).singleElement().extracting(LoggedUnmatched::thrown)
+                .isInstanceOfSatisfying(ZeroRowsMatchedException.class, miss -> {
+                    assertThat(miss.missCount()).isEqualTo(2);
+                    assertThat(miss.rowCount()).isEqualTo(5);
+                    assertThat(miss.missedRowIndices()).containsExactly(1, 3);
+                    assertThat(miss.fieldCoordinate()).isEqualTo("Mutation.updateFilmsPayload");
+                    assertThat(miss.getMessage())
+                        .contains("matched zero rows")
+                        .contains("2 of 5")
+                        .contains("Mutation.updateFilmsPayload")
+                        .doesNotContain("sentinel-title");
+                });
+            assertThat(titlesOf(tx, first, second, third))
+                .as("the rows that matched, before and after each miss, roll back with the call")
+                .containsExactly(marker + "-a", marker + "-b", marker + "-c");
+        });
+    }
+
+    @Test
+    void updateFilmsPayload_missOnTheLastRow_runsTheEarlierRowsAndRollsThemBack() {
+        inRolledBackTransaction(tx -> {
+            String marker = randomMarker("zero-rows-last");
+            Integer first = insertFilm(tx, marker + "-a");
+            Integer second = insertFilm(tx, marker + "-b");
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    updateFilmsPayload(in: [
+                        { filmId: %d, title: "renamed-a" },
+                        { filmId: %d, title: "renamed-b" },
+                        { filmId: 2147483001, title: "sentinel-title-2" }
+                    ]) { films { filmId } }
+                }
+                """.formatted(first, second),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            assertThat(result.getErrors()).hasSize(1);
+            assertThat(logged).singleElement().extracting(LoggedUnmatched::thrown)
+                .isInstanceOfSatisfying(ZeroRowsMatchedException.class, miss -> {
+                    assertThat(miss.missedRowIndices()).containsExactly(2);
+                    assertThat(miss.rowCount()).isEqualTo(3);
+                    assertThat(miss.getMessage()).contains("1 of 3").contains("first at index 2");
+                });
+            assertThat(titlesOf(tx, first, second)).containsExactly(marker + "-a", marker + "-b");
+        });
+    }
+
+    private static List<String> titlesOf(DSLContext tx, Integer... filmIds) {
+        return java.util.Arrays.stream(filmIds)
+            .map(id -> tx.fetchValue(DSL.select(DSL.field("title", String.class)).from(DSL.table("film"))
+                .where(DSL.field("film_id", Integer.class).eq(id))))
+            .toList();
     }
 
     @Test
