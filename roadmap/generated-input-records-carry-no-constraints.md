@@ -232,6 +232,39 @@ on its own schedule; nothing here touches the view.
   body text and pins the retired target; it is deleted, not rewritten. No new test reads a
   generated method body.
 
+## Implementation notes
+
+Landed as specified, with these choices the spec left open or that the tree forced:
+
+- *The seam is an overload, not a parameter.* The fetcher's caller pastes the emitter's
+  statements one `addStatement` at a time, which a multi-statement block with control flow cannot
+  ride. `ServiceMethodCallEmitter.emitWithPreCall` returns the whole body as one block with the
+  pre-call block between the argument locals and the `result` assignment; the list-returning
+  `emit` overloads, used by the polymorphic emitter and the unit tests, are unchanged.
+- *The `Paths` constants dedupe on the translation they build*, not on `BoundClass` record
+  equality. A `BoundClass` now carries its argument name, nested ones included, so record equality
+  would give one class bound from two arguments with the same layout two identical constants. The
+  outcome the spec asks for holds: one constant per distinct translation, two for one class bound
+  through two layouts. The constants are `private static final ConstraintViolations.Paths` fields
+  on the `*Fetchers` class, registered through `TypeFetcherEmissionContext.validationPathsConstant`.
+- *`ConstraintViolationsClassGenerator.generate` takes the output package*, like its sibling
+  generators, so the nested `Paths` type is a qualified name.
+- *Classification tests.* `ServiceMethodCallWalkerTest`'s invariant test for an argument the
+  field does not declare pinned the retired computation (the throw lived there) and is deleted
+  with it, as are `MutationServiceRecordFieldValidationTest`'s two list-of-lists cases. Two walker
+  tests take their place: a bound class carries its argument name with no bound fields, and
+  `validationTargets()` yields `Single` and `PerElement` for exactly the class-bound parameters.
+- *Prose the change made false, beyond the spec's list:* the javadoc `InputRecordGenerator` stamps
+  onto every generated input class (it called each one the validation target), and the class
+  javadoc of `InputRecordGenerator` and `HasInputRecordShape`. The retirement of those classes
+  stays with the neighbouring item named above.
+- *Neighbouring item bodies* (R92, R172, R1011 and `validator-integration-execute-coverage`) still
+  describe the pre-step validating the `.inputs` instance through `fromMap`. They are other items'
+  designs and are left for their authors, per the section above.
+- *Wire-shape unit tests* (`ConstraintViolationsWireShapeTest`) gained two cases on the generated
+  `toGraphQLError` itself: a translated member and an untranslated one keeping its Java name, and
+  the cascaded `List<@Valid X>` element index that the previous version dropped.
+
 ## Retired vocabulary
 
 `ValidatedArgument`, `validatedArguments`, `InputObjectNestedList`, `unvalidatableArgumentReason`,
