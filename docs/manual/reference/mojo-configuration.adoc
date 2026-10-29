@@ -125,7 +125,7 @@ The following parameters apply to every goal:
 | `outbox`
 | `OutboxBinding`
 | (none)
-| Where the messages of every xref:directives/outbox.adoc[`@outbox`] field go. An `<outbox>` block naming a `<table>` graphitron inserts one row per message into (Debezium's outbox layout by default, `<columns>` naming other columns), and an optional `<payload>` argMapping every message carries. See <<transactional-outbox,Transactional outbox>>. Omit when no field uses `@outbox`.
+| Where the messages of every xref:directives/outbox.adoc[`@outbox`] field go. An `<outbox>` block naming either a `<table>` graphitron inserts one row per message into (Debezium's outbox layout by default, `<columns>` naming other columns) or a `<function>` it calls once per message (`<parameters>` naming the parameters), and an optional `<payload>` argMapping every message carries. See <<transactional-outbox,Transactional outbox>>. Omit when no field uses `@outbox`.
 
 | `tenantColumn`
 | `String` (database column name)
@@ -428,9 +428,10 @@ The `<outbox>` block says where the messages of every xref:directives/outbox.ado
 ----
 
 * `<table>` names an outbox table in your jOOQ catalog. Graphitron inserts one row per message, expecting Debezium's outbox layout: it fills `type` (the event), `aggregatetype` (the written table) and `payload`, and leaves `aggregateid`, `id` and any timestamp to the column's default or `NULL`. `<columns>` maps a role to another column name. The build fails when the table or a configured column is missing, or when `payload` is not a JSON, JSONB or text column. A JSON or JSONB column takes the payload as JSON; a text column takes it rendered as text.
+* `<function>` names a procedure or a function in your jOOQ catalog that graphitron calls once per message, inside the write's transaction and in directive order. It must be a routine the catalog has no table for (not a table-valued function), and every parameter must answer to a role: `type` (the event), `payload`, and optionally `aggregatetype` (the written table) and `aggregateid`, which is passed as `NULL`. A parameter answers to a role by the name `<parameters>` binds the role to (`<type>p_type</type>`), else by the role's own name, underscores and case aside. `type`, `aggregatetype` and `aggregateid` take text; `payload` takes JSON, JSONB or text. Any value the routine returns is discarded. The build fails when the name matches no such routine, or two. A routine that is a function with no return value is a procedure here.
 * `<payload>` is an argMapping every message carries, for what belongs on every event. It reads `$scope` sources; arguments and `$result` belong to a field and are not available there.
 
-A block that names no `<table>` is reported at every `@outbox` it affects. Calling a database function per message, and `$session` as a source, are not available yet.
+Name exactly one of `<table>` and `<function>`. A block naming both, or neither, is reported at every `@outbox` it affects. `$session` as a source is not available yet.
 
 == The non-emitting goals' package sentinel
 

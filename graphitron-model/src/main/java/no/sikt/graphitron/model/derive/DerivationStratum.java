@@ -107,6 +107,8 @@ public final class DerivationStratum {
                 NodeIdDecodeColumns::derive),
             step("OutboxLeaves", "graphitron_outbox_leaf", OutboxLeaves::derive),
             step("OutboxTargets", "graphitron_outbox_target", OutboxTargets::derive),
+            step("OutboxRoutineTargets", "graphitron_outbox_routine_target",
+                OutboxRoutineTargets::derive),
             step("SessionHandleMembers", "graphitron_session_handle_member",
                 SessionHandleMembers::derive),
             step("ArgMappingParameters", "graphitron_argmapping_parameter",

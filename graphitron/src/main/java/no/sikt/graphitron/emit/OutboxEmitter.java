@@ -208,16 +208,18 @@ public final class OutboxEmitter {
             CodeBlock.join(conditionCols.stream().map(c -> CodeBlock.of("written.get($L)", c)).toList(), ", "));
     }
 
-    /** The JSON constructor family the payload column takes: jsonb unless the column is json. */
-    private static String jsonFamily(OutboxQuery.Target target) {
-        var type = target.payloadColumn().bindingType();
-        return type.endsWith(".JSON") ? "json" : "jsonb";
+    /** The JSON constructor family a payload of this Java type takes: jsonb unless the type is json. */
+    private static String jsonFamily(String payloadBindingType) {
+        return payloadBindingType.endsWith(".JSON") ? "json" : "jsonb";
     }
 
     private static CodeBlock message(Row row, Message message, boolean listResult,
                                      List<String> capturedColumns, String outputPackage) {
-        var target = row.target();
-        var family = jsonFamily(target);
+        var destination = row.target();
+        var family = jsonFamily(switch (destination) {
+            case OutboxQuery.Target t -> t.payloadColumn().bindingType();
+            case OutboxQuery.RoutineTarget r -> r.payloadBindingType();
+        });
         var entries = "m" + message.ordinal();
         var b = CodeBlock.builder();
         b.addStatement("$T<$T<?>> $L = new $T<>()", LIST, JSON_ENTRY, entries, ARRAY_LIST);
@@ -228,11 +230,20 @@ public final class OutboxEmitter {
             b.add(leaf(row, leaf, entries, "p" + message.ordinal() + "_" + leafIndex++, listResult,
                 capturedColumns, outputPackage));
         }
-        // The payload as the constructor builds it, cast to text where the column holds text.
+        // The payload as the constructor builds it, cast to text where the destination takes text.
         CodeBlock payload = CodeBlock.of("$T.$LObject($L)", DSL, family, entries);
-        if (target.payloadKind() == PayloadKind.TEXT) {
+        var payloadKind = switch (destination) {
+            case OutboxQuery.Target t -> t.payloadKind();
+            case OutboxQuery.RoutineTarget r -> r.payloadKind();
+        };
+        if (payloadKind == PayloadKind.TEXT) {
             payload = CodeBlock.of("$L.cast($T.class)", payload, String.class);
         }
+        if (destination instanceof OutboxQuery.RoutineTarget routine) {
+            b.add(routineCall(row, message, routine, payload, readsColumns));
+            return b.build();
+        }
+        var target = (OutboxQuery.Target) destination;
         var typeColumn = columnRef(target, target.typeColumn());
         var columns = new ArrayList<CodeBlock>();
         var values = new ArrayList<CodeBlock>();
@@ -251,6 +262,46 @@ public final class OutboxEmitter {
         b.addStatement("tx.insertInto($T.$L, $L).select($L).execute()",
             CatalogRefs.className(target.table().constantsClassName()), target.table().javaFieldName(),
             CodeBlock.join(columns, ", "), select);
+        return b.build();
+    }
+
+    /**
+     * A message written through the outbox routine: the payload is evaluated once, by a select of its
+     * JSON constructor (from the written rows where a leaf reads a column of them), and the routine is
+     * called with it and the event, the written table's name and no aggregate id, each argument at the
+     * position of the parameter its role landed in. A written row the select cannot find passes
+     * nothing, as the table form inserts nothing.
+     */
+    private static CodeBlock routineCall(Row row, Message message, OutboxQuery.RoutineTarget routine,
+                                         CodeBlock payload, boolean readsColumns) {
+        var b = CodeBlock.builder();
+        var body = "body" + message.ordinal();
+        TypeName bodyType = routine.payloadKind() == PayloadKind.TEXT ? ClassName.get(String.class)
+            : ClassName.get("org.jooq", routine.payloadBindingType().endsWith(".JSON") ? "JSON" : "JSONB");
+        var select = CodeBlock.of("tx.select($L)", payload);
+        if (readsColumns) {
+            select = CodeBlock.of("$L.from(t).where(keyed)", select);
+        }
+        b.addStatement("$T $L = $L.fetchOne(0, $T.class)", bodyType, body, select, bodyType);
+        var arguments = new ArrayList<CodeBlock>();
+        arguments.add(CodeBlock.of("tx.configuration()"));
+        for (int position = 0; position < routine.parameterCount(); position++) {
+            if (position == routine.typePosition()) {
+                arguments.add(CodeBlock.of("$S", message.event()));
+            } else if (routine.aggregateTypePosition().isPresent()
+                    && position == routine.aggregateTypePosition().getAsInt()) {
+                arguments.add(CodeBlock.of("$S", row.writtenTable().sqlName()));
+            } else if (routine.aggregateIdPosition().isPresent()
+                    && position == routine.aggregateIdPosition().getAsInt()) {
+                arguments.add(CodeBlock.of("($T) null", String.class));
+            } else {
+                arguments.add(CodeBlock.of("$L", body));
+            }
+        }
+        b.beginControlFlow("if ($L != null)", body)
+            .addStatement("$T.$L($L)", CatalogRefs.className(routine.routinesClassName()),
+                routine.methodName(), CodeBlock.join(arguments, ", "))
+            .endControlFlow();
         return b.build();
     }
 

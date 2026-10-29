@@ -14,6 +14,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -249,6 +250,102 @@ public class JooqCatalog {
                 .map(p -> new RoutineParamFacts(p.getName(), p.getType().getName()))
                 .toList());
     }
+
+    /**
+     * Every generated routine that is no table, as the call surface jOOQ gives it: a procedure, or a
+     * scalar or void function, called through the {@code Routines} class's {@code Configuration}-first
+     * method. The table census cannot see these, a table-valued function being the only routine it
+     * reaches, so this reads the {@code Routines} class of each schema and pairs each such method with
+     * its generated {@code Routine} class, which carries the SQL name, the IN parameters' SQL names
+     * and whether a value comes back.
+     *
+     * <p>A SQL name that two methods share is dropped, both: the store keys a routine by its name, so
+     * keeping either would pick an overload the parameters never chose. A method whose routine class is
+     * not where jOOQ's default naming puts it is skipped, which is a probe miss rather than a guess.
+     */
+    public List<ExecutableRoutineFacts> executableRoutineFacts() {
+        if (catalog == null) {
+            return List.of();
+        }
+        var found = new ArrayList<ExecutableRoutineFacts>();
+        catalog.schemaStream().forEach(schema -> found.addAll(executableRoutinesIn(schema)));
+        return List.copyOf(found);
+    }
+
+    private List<ExecutableRoutineFacts> executableRoutinesIn(Schema schema) {
+        String schemaPackage = schema.getClass().getPackageName();
+        Class<?> routinesClass;
+        try {
+            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            routinesClass = Class.forName(schemaPackage + ".Routines", true, codegenLoader);
+        } catch (ClassNotFoundException | LinkageError e) {
+            return List.of();
+        }
+        var bySqlName = new LinkedHashMap<String, List<ExecutableRoutineFacts>>();
+        for (var method : routinesClass.getMethods()) {
+            if (!java.lang.reflect.Modifier.isStatic(method.getModifiers())
+                    || method.getParameterCount() == 0
+                    || method.getParameterTypes()[0] != org.jooq.Configuration.class
+                    || org.jooq.Result.class.isAssignableFrom(method.getReturnType())) {
+                continue;
+            }
+            var facts = executableRoutineOf(schema, schemaPackage, routinesClass, method);
+            if (facts != null) {
+                bySqlName.computeIfAbsent(facts.sqlName(), k -> new ArrayList<>()).add(facts);
+            }
+        }
+        return bySqlName.values().stream().filter(group -> group.size() == 1)
+            .map(List::getFirst).toList();
+    }
+
+    private ExecutableRoutineFacts executableRoutineOf(Schema schema, String schemaPackage,
+                                                       Class<?> routinesClass,
+                                                       java.lang.reflect.Method method) {
+        String name = method.getName();
+        String routineClass = schemaPackage + ".routines." + Character.toUpperCase(name.charAt(0))
+            + name.substring(1);
+        try {
+            // nameability: exempt (jOOQ catalog class, a catalog concept the census excludes by design)
+            Class<?> c = Class.forName(routineClass, true, codegenLoader);
+            if (!org.jooq.Routine.class.isAssignableFrom(c)) {
+                return null;
+            }
+            var routine = (org.jooq.Routine<?>) c.getDeclaredConstructor().newInstance();
+            var in = routine.getInParameters();
+            var parameters = method.getParameters();
+            if (parameters.length - 1 != in.size()) {
+                return null;
+            }
+            var facts = new ArrayList<ExecutableParamFacts>();
+            for (int i = 0; i < in.size(); i++) {
+                var p = parameters[i + 1];
+                facts.add(new ExecutableParamFacts(in.get(i).getName(), p.getName(),
+                    p.getType().getName()));
+            }
+            return new ExecutableRoutineFacts(schema.getName(), schemaPackage, routine.getName(),
+                routine.getReturnParameter() != null, routinesClass.getName(), name, facts);
+        } catch (ReflectiveOperationException | LinkageError e) {
+            return null;
+        }
+    }
+
+    /**
+     * One routine that is no table, reduced to values: where it lives, what the database calls it and
+     * how jOOQ calls it. {@code parameters} are the IN parameters in declaration order, the
+     * {@code Configuration} the method takes first not among them.
+     */
+    public record ExecutableRoutineFacts(String schemaName, String sourceName, String sqlName,
+                                         boolean returnsValue, String routinesClassFqn,
+                                         String methodName, List<ExecutableParamFacts> parameters) {
+        public ExecutableRoutineFacts { parameters = List.copyOf(parameters); }
+    }
+
+    /**
+     * One IN parameter of an executable routine: the database's own name, the reflected Java name of
+     * the method parameter (so {@code arg0} unless jOOQ's output was compiled with
+     * {@code -parameters}) and the Java type the method takes.
+     */
+    public record ExecutableParamFacts(String sqlName, String javaName, String bindingType) {}
 
     /**
      * A table-valued function's generated call surface reduced to values: the {@code Routines}

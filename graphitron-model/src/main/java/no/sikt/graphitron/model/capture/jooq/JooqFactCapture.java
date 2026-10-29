@@ -125,6 +125,7 @@ public final class JooqFactCapture {
         nodeLegacyKeyUnreadable(dsl, legacyKeys, touchedAt);
         routines(dsl, jooq, tables, touchedAt);
         routineParameters(dsl, jooq, tables, touchedAt);
+        executableRoutines(dsl, jooq, tables, touchedAt);
         recordSupertypes(dsl, tables);
         enumBindings(dsl, tables, touchedAt);
         sweep(dsl, sourceNames(tables), touchedAt);
@@ -786,6 +787,78 @@ public final class JooqFactCapture {
                 .set(t.JOOQ_NAME, excluded(t.JOOQ_NAME))
                 .set(t.BINDING_TYPE, excluded(t.BINDING_TYPE))
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+    }
+
+    /**
+     * The routines that are no table: procedures and scalar or void functions, which the table census
+     * cannot reach. A routine is written where its schema is one a table registered, the rows' foreign
+     * keys needing it, and never over a table-valued function of the same name, whose rows the two
+     * writers above own.
+     */
+    private static void executableRoutines(DSLContext dsl, JooqCatalog jooq, List<TableAt> tables,
+                                           LocalDateTime touchedAt) {
+        Set<String> schemas = new LinkedHashSet<>();
+        tables.forEach(at -> schemas.add(at.source() + " " + at.schema()));
+        Set<String> tableValued = new LinkedHashSet<>();
+        functionsOf(tables).forEach(at -> tableValued.add(at.source() + " " + at.schema() + " " + at.name()));
+        var routines = jooq.executableRoutineFacts().stream()
+            .filter(r -> schemas.contains(r.sourceName() + " " + r.schemaName()))
+            .filter(r -> !tableValued.contains(r.sourceName() + " " + r.schemaName() + " " + r.sqlName()))
+            .toList();
+        if (routines.isEmpty()) {
+            return;
+        }
+        var t = SQL_ROUTINE;
+        var rows = routines.stream().collect(Rows.toRowList(
+            r -> val(r.sourceName(), t.SOURCE_NAME),
+            r -> val(r.schemaName(), t.TABLE_SCHEMA),
+            r -> val(r.sqlName(), t.ROUTINE_NAME),
+            r -> val(r.returnsValue() ? "FUNCTION" : "PROCEDURE", t.ROUTINE_TYPE),
+            r -> val(r.routinesClassFqn(), t.ROUTINES_CLASS_FQN),
+            r -> val(r.methodName(), t.ROUTINES_METHOD_NAME),
+            r -> val(touchedAt, t.TOUCHED_AT)));
+        BindBatch.execute(dsl, rows, markers ->
+            dsl.insertInto(t, t.SOURCE_NAME, t.TABLE_SCHEMA, t.ROUTINE_NAME, t.ROUTINE_TYPE,
+                    t.ROUTINES_CLASS_FQN, t.ROUTINES_METHOD_NAME, t.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(t.ROUTINE_TYPE, excluded(t.ROUTINE_TYPE))
+                .set(t.ROUTINES_CLASS_FQN, excluded(t.ROUTINES_CLASS_FQN))
+                .set(t.ROUTINES_METHOD_NAME, excluded(t.ROUTINES_METHOD_NAME))
+                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT)));
+
+        var p = SQL_ROUTINE_PARAMETER;
+        List<JooqCatalog.ExecutableRoutineFacts> owners = new ArrayList<>();
+        List<Integer> positions = new ArrayList<>();
+        List<JooqCatalog.ExecutableParamFacts> found = new ArrayList<>();
+        for (var routine : routines) {
+            for (int i = 0; i < routine.parameters().size(); i++) {
+                owners.add(routine);
+                positions.add(i);
+                found.add(routine.parameters().get(i));
+            }
+        }
+        if (found.isEmpty()) {
+            return;
+        }
+        var parameterRows = indices(found.size()).stream().collect(Rows.toRowList(
+            i -> val(owners.get(i).sourceName(), p.SOURCE_NAME),
+            i -> val(owners.get(i).schemaName(), p.TABLE_SCHEMA),
+            i -> val(owners.get(i).sqlName(), p.ROUTINE_NAME),
+            i -> val(positions.get(i), p.POSITION),
+            i -> val(found.get(i).javaName(), p.JOOQ_NAME),
+            i -> val(found.get(i).bindingType(), p.BINDING_TYPE),
+            i -> val(found.get(i).sqlName(), p.SQL_NAME),
+            i -> val(touchedAt, p.TOUCHED_AT)));
+        BindBatch.execute(dsl, parameterRows, markers ->
+            dsl.insertInto(p, p.SOURCE_NAME, p.TABLE_SCHEMA, p.ROUTINE_NAME, p.POSITION, p.JOOQ_NAME,
+                    p.BINDING_TYPE, p.SQL_NAME, p.TOUCHED_AT)
+                .values(markers)
+                .onDuplicateKeyUpdate()
+                .set(p.JOOQ_NAME, excluded(p.JOOQ_NAME))
+                .set(p.BINDING_TYPE, excluded(p.BINDING_TYPE))
+                .set(p.SQL_NAME, excluded(p.SQL_NAME))
+                .set(p.TOUCHED_AT, excluded(p.TOUCHED_AT)));
     }
 
     /**

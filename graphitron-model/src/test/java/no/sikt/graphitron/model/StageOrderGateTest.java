@@ -126,6 +126,8 @@ class StageOrderGateTest {
             Set.of("graphitron_outbox_leaf")),
         new Step("OutboxTargets", "graphitron_outbox_target_rule",
             Set.of("graphitron_outbox_target")),
+        new Step("OutboxRoutineTargets", "graphitron_outbox_routine_target_rule",
+            Set.of("graphitron_outbox_routine_target")),
         new Step("SessionHandleMembers", null,
             Set.of("graphitron_session_handle_member")),
         new Step("ArgMappingParameters", null,

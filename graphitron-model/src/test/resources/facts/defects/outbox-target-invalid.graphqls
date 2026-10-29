@@ -1,6 +1,6 @@
 # A configured target that does not resolve is reported at every @outbox it serves, naming what is
 # wrong with it: a table the catalog does not hold, here. The same row would read both targets
-# named, or a function, which is not generated yet. No target row is derived for it.
+# named, or a function that is not one. No target row is derived for it.
 
 interface Node { id: ID! }
 

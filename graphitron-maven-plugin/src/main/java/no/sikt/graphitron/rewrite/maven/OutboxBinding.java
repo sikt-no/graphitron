@@ -12,7 +12,7 @@ import java.util.Map;
  * <outbox>
  *   <table>outbox</table>
  *   <columns><type>event_type</type></columns>
- *   <payload>actor: $session.userId, operation: $scope.operationName</payload>
+ *   <payload>operation: $scope.operationName</payload>
  * </outbox>
  * }</pre>
  * <p>One of {@code <table>} (an outbox table graphitron inserts into, by default in Debezium's

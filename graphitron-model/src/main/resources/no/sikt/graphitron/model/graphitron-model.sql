@@ -5848,6 +5848,7 @@ CREATE TABLE sql_routine (
   routine_type         VARCHAR NOT NULL,
   routines_class_fqn   VARCHAR,
   routines_method_name VARCHAR,
+  routine_name_upper   VARCHAR GENERATED ALWAYS AS (UPPER(routine_name)),
   touched_at           TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, routine_name),
   FOREIGN KEY (source_name) REFERENCES store_source (source_name),
@@ -5857,9 +5858,11 @@ COMMENT ON TABLE sql_routine IS 'One callable the consumer''s catalog declares. 
 COMMENT ON COLUMN sql_routine.source_name IS 'the owning partition''s generated-package source, as on sql_table; the key''s leading dimension';
 COMMENT ON COLUMN sql_routine.table_schema IS 'SQL schema the routine lives in';
 COMMENT ON COLUMN sql_routine.routine_name IS 'SQL routine name; for a table-valued function this is also its sql_table row''s table_name, the two being one database object read two ways. The key inherits sql_table''s one hole with it: an overload set sharing a SQL name collides in both relations, jOOQ distinguishing overloads only by generated class name';
-COMMENT ON COLUMN sql_routine.routine_type IS 'the standard''s ROUTINE_TYPE vocabulary: FUNCTION or PROCEDURE. Single-valued today, every captured routine reaching the store through the table census and therefore being a function; it is the discriminator that lets the other form arrive without reshaping, which is the whole argument for a supertype relation';
+COMMENT ON COLUMN sql_routine.routine_type IS 'the standard''s ROUTINE_TYPE vocabulary: FUNCTION or PROCEDURE. FUNCTION for a table-valued function and for a scalar function, PROCEDURE for a routine that returns no value; a routine with a sql_table row of the same name is table-valued, one without is called through its Configuration-first method. It is the discriminator that lets the other form arrive without reshaping, which is the whole argument for a supertype relation';
 COMMENT ON COLUMN sql_routine.routines_class_fqn IS 'the fully qualified name of the generated Routines class carrying this routine''s call surface, or NULL when the generated model exposes none. Captured beside the method name because the parameters below are a fact about one method: jOOQ generates several forms per routine (a Configuration-first execute form, a value-parameter form, a Field-expression form), and a parameter list that did not name its method would not say which one it described. NULL here and on the method name is also what distinguishes a routine with no parameters from one whose call surface the generated model does not expose, the two being the same zero rows in sql_routine_parameter otherwise.';
-COMMENT ON COLUMN sql_routine.routines_method_name IS 'the Routines-class method the parameters below describe: the value-parameter form, the one an emitted FROM clause calls. NULL exactly when routines_class_fqn is';
+COMMENT ON COLUMN sql_routine.routines_method_name IS 'the Routines-class method the parameters below describe: the value-parameter form, the one an emitted FROM clause calls, for a table-valued function, and the Configuration-first execute form for a routine that is no table. NULL exactly when routines_class_fqn is';
+COMMENT ON COLUMN sql_routine.routine_name_upper IS 'the upper-cased form of the column beside it, for the case-insensitive match against a routine name an author writes in a configuration; generated so a reading never has to know the folding';
+CREATE INDEX sql_routine_name_upper_ix ON sql_routine (routine_name_upper, source_name);
 COMMENT ON COLUMN sql_routine.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_routine_parameter (
@@ -5869,6 +5872,7 @@ CREATE TABLE sql_routine_parameter (
   position     INT     NOT NULL,
   jooq_name    VARCHAR NOT NULL,
   binding_type VARCHAR NOT NULL,
+  sql_name     VARCHAR,
   touched_at   TIMESTAMP,
   PRIMARY KEY (source_name, table_schema, routine_name, position),
   FOREIGN KEY (source_name, table_schema, routine_name)
@@ -5881,6 +5885,7 @@ COMMENT ON COLUMN sql_routine_parameter.routine_name IS 'SQL routine name';
 COMMENT ON COLUMN sql_routine_parameter.position IS '0-based position in the call surface''s parameter list, which is the routine''s declaration order';
 COMMENT ON COLUMN sql_routine_parameter.jooq_name IS 'the generated method parameter''s Java name, read reflectively; jOOQ''s camelCase transform of the database''s own parameter name, and the closest this relation gets to it. Reflection reports it only when the consumer compiled their jOOQ output with -parameters, and reports arg0, arg1 otherwise. The generator already depends on that flag, matching @routine(argMapping:) against these names, so recording the name makes an existing dependency visible rather than creating one.';
 COMMENT ON COLUMN sql_routine_parameter.binding_type IS 'the fully qualified Java type the generated method takes at this position, as on sql_column.binding_type. Unlike a column, a parameter carries no declared SQL type beside it: jOOQ generates no Routine object for a table-valued function, so the declared type survives only as an anonymous bind placeholder behind a protected field on TableImpl, and was left out rather than shipped always-null';
+COMMENT ON COLUMN sql_routine_parameter.sql_name IS 'the database''s own name for the parameter, read off the generated Routine class, for a routine that is no table: a name an author writes in a configuration, which jooq_name only camelCases. NULL on a table-valued function''s parameter, whose reading never asked for it';
 COMMENT ON COLUMN sql_routine_parameter.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting this source''s rows carrying a different instant, which are the tables, columns and keys the consumer''s database no longer has and which an upsert alone cannot find. Nullable because one writer of these relations sets nothing here, and a row with no instant is not this reading''s';
 
 CREATE TABLE sql_node_metadata (
@@ -11060,6 +11065,98 @@ SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
                     WHERE b.prim = t.expected AND b.boxed = t.parameter_type);
 COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
 
+CREATE TABLE graphitron_outbox_routine_target (
+  graph_name             VARCHAR NOT NULL,
+  routine_source_name    VARCHAR NOT NULL,
+  routine_schema         VARCHAR NOT NULL,
+  routine_name           VARCHAR NOT NULL,
+  type_position          INT     NOT NULL,
+  aggregatetype_position INT,
+  aggregateid_position   INT,
+  payload_position       INT     NOT NULL,
+  payload_kind           VARCHAR NOT NULL,
+  PRIMARY KEY (graph_name),
+  FOREIGN KEY (graph_name) REFERENCES store_graph_outbox (graph_name) ON DELETE CASCADE,
+  FOREIGN KEY (routine_source_name, routine_schema, routine_name)
+    REFERENCES sql_routine (source_name, table_schema, routine_name) ON DELETE CASCADE,
+  CHECK (payload_kind IN ('JSON', 'TEXT'))
+);
+COMMENT ON TABLE graphitron_outbox_routine_target IS 'The outbox routine of one graph, resolved: the procedure or function the configuration names and the parameter each role lands in. For example <outbox><function>outbox_emit</function></outbox> over a routine taking type, aggregatetype, aggregateid and payload gives one row naming it and the four positions; a configuration that resolves to no one such routine has no row and is a defect at each @outbox.';
+COMMENT ON COLUMN graphitron_outbox_routine_target.graph_name IS 'the owning graph''s partition, carried from the configuration';
+COMMENT ON COLUMN graphitron_outbox_routine_target.routine_source_name IS 'the catalog partition the routine was read from, the first column of the sql_routine key this row names';
+COMMENT ON COLUMN graphitron_outbox_routine_target.routine_schema IS 'the outbox routine''s SQL schema';
+COMMENT ON COLUMN graphitron_outbox_routine_target.routine_name IS 'the outbox routine''s SQL name';
+COMMENT ON COLUMN graphitron_outbox_routine_target.type_position IS 'the position of the parameter the event is passed in: the one the configuration binds to the role type, else the one named type';
+COMMENT ON COLUMN graphitron_outbox_routine_target.aggregatetype_position IS 'the position of the parameter the written table''s name is passed in, or NULL where the routine has none and the role is left out';
+COMMENT ON COLUMN graphitron_outbox_routine_target.aggregateid_position IS 'the position of the parameter the aggregate id is passed in, or NULL where the routine has none and the role is left out';
+COMMENT ON COLUMN graphitron_outbox_routine_target.payload_position IS 'the position of the parameter the payload is passed in: the one the configuration binds to the role payload, else the one named payload';
+COMMENT ON COLUMN graphitron_outbox_routine_target.payload_kind IS 'JSON where the payload parameter takes jOOQ JSON or JSONB and so takes the JSON value, TEXT where it takes a string and so takes the JSON rendered as text';
+
+CREATE VIEW graphitron_outbox_routine_target_rule
+  (graph_name, routine_source_name, routine_schema, routine_name, type_position,
+   aggregatetype_position, aggregateid_position, payload_position, payload_kind) AS
+WITH named (graph_name, namespace_part, name_part) AS (
+  SELECT b.graph_name,
+         CASE WHEN POSITION('.', b.function_name) = 0 THEN CAST(NULL AS VARCHAR)
+              ELSE REGEXP_REPLACE(b.function_name, '\..*$', '') END,
+         CASE WHEN POSITION('.', b.function_name) = 0 THEN b.function_name
+              ELSE REGEXP_REPLACE(b.function_name, '^[^.]*\.', '') END
+    FROM store_graph_outbox b
+   WHERE b.function_name IS NOT NULL AND b.table_name IS NULL
+),
+-- A routine called through its Configuration-first method: one the catalog has no table for, which is
+-- what tells it from a table-valued function. Candidates are counted per graph, so a name that two
+-- schemas both declare, or that is not unique, resolves to nothing.
+resolved (graph_name, source_name, routine_schema, routine_name, candidates) AS (
+  SELECT n.graph_name, sr.source_name, sr.table_schema, sr.routine_name,
+         COUNT(*) OVER (PARTITION BY n.graph_name)
+    FROM named n
+    JOIN store_graph_source m ON m.graph_name = n.graph_name
+    JOIN sql_routine sr
+      ON sr.routine_name_upper = UPPER(n.name_part) AND sr.source_name = m.source_name
+     AND (n.namespace_part IS NULL OR UPPER(sr.table_schema) = UPPER(n.namespace_part))
+   WHERE sr.routines_method_name IS NOT NULL
+     AND NOT EXISTS (SELECT 1 FROM sql_table st
+                      WHERE st.source_name = sr.source_name AND st.table_schema = sr.table_schema
+                        AND st.table_name = sr.routine_name)
+),
+-- One row per role a parameter answers to. A parameter answers to a role by its name with the
+-- underscores and the case taken out, so p_payload and pPayload both answer to payload = p_payload.
+bound (graph_name, source_name, routine_schema, routine_name, role, position, binding_type) AS (
+  SELECT r.graph_name, r.source_name, r.routine_schema, r.routine_name, ro.role, p.position,
+         p.binding_type
+    FROM resolved r
+    CROSS JOIN (VALUES ('type'), ('aggregatetype'), ('aggregateid'), ('payload')) ro (role)
+    JOIN sql_routine_parameter p
+      ON p.source_name = r.source_name AND p.table_schema = r.routine_schema
+     AND p.routine_name = r.routine_name
+     AND UPPER(REPLACE(p.sql_name, '_', '')) =
+         UPPER(REPLACE(COALESCE((SELECT x.name FROM store_graph_outbox_role x
+                                  WHERE x.graph_name = r.graph_name AND x.kind = 'PARAMETER'
+                                    AND x.role = ro.role), ro.role), '_', ''))
+   WHERE r.candidates = 1
+)
+SELECT b.graph_name, b.source_name, b.routine_schema, b.routine_name,
+       MAX(CASE WHEN b.role = 'type' THEN b.position END),
+       MAX(CASE WHEN b.role = 'aggregatetype' THEN b.position END),
+       MAX(CASE WHEN b.role = 'aggregateid' THEN b.position END),
+       MAX(CASE WHEN b.role = 'payload' THEN b.position END),
+       CASE WHEN MAX(CASE WHEN b.role = 'payload' THEN b.binding_type END)
+                 IN ('org.jooq.JSON', 'org.jooq.JSONB') THEN 'JSON' ELSE 'TEXT' END
+  FROM bound b
+ GROUP BY b.graph_name, b.source_name, b.routine_schema, b.routine_name
+HAVING MAX(CASE WHEN b.role = 'type' THEN 1 END) = 1
+   AND MAX(CASE WHEN b.role = 'payload' THEN 1 END) = 1
+   -- Every parameter answers to one role: a routine with another parameter has a value nobody supplies.
+   AND COUNT(DISTINCT b.position) =
+       (SELECT COUNT(*) FROM sql_routine_parameter sp
+         WHERE sp.source_name = b.source_name AND sp.table_schema = b.routine_schema
+           AND sp.routine_name = b.routine_name)
+   AND MAX(CASE WHEN b.role = 'payload' THEN b.binding_type END)
+       IN ('org.jooq.JSON', 'org.jooq.JSONB', 'java.lang.String')
+   AND SUM(CASE WHEN b.role <> 'payload' AND b.binding_type <> 'java.lang.String' THEN 1 ELSE 0 END) = 0;
+COMMENT ON VIEW graphitron_outbox_routine_target_rule IS 'One row the outbox-routine-target rule computes, in the shape graphitron_outbox_routine_target stores: the rule itself, evaluated on demand rather than read off disk. For example the derivation inserts this view''s row for one graph into graphitron_outbox_routine_target, which is the name every reader spells.';
+
 CREATE VIEW graphitron_entry_defect_rule
   (graph_name, source_name, source_line, source_column, code, detail) AS
 -- The @routine that heads a chain: the last one written at a mutation-root field.
@@ -11789,15 +11886,21 @@ SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_TARG
        CASE WHEN b.table_name IS NOT NULL AND b.function_name IS NOT NULL
               THEN 'both <table> and <function> are named, name one'
             WHEN b.table_name IS NULL
-              THEN '<function> is not generated yet, name an outbox <table>'
+              THEN '<function> ' || b.function_name || ' is not one procedure or function of the jOOQ'
+                   || ' catalog, no table, whose every parameter is the type, the payload (JSON, JSONB'
+                   || ' or text) or an aggregatetype or aggregateid, text'
             ELSE '<table> ' || b.table_name || ' is not one table of the jOOQ catalog with a type column'
                  || ' and a payload column that is JSON, JSONB or text' END
   FROM graphitron_outbox_entry o
   JOIN store_graph_outbox b ON b.graph_name = o.graph_name
  WHERE o.source_line IS NOT NULL
    AND (b.table_name IS NOT NULL OR b.function_name IS NOT NULL)
-   AND (b.function_name IS NOT NULL
-        OR NOT EXISTS (SELECT 1 FROM graphitron_outbox_target t WHERE t.graph_name = o.graph_name))
+   AND ((b.table_name IS NOT NULL AND b.function_name IS NOT NULL)
+        OR (b.function_name IS NULL
+            AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_target t WHERE t.graph_name = o.graph_name))
+        OR (b.table_name IS NULL
+            AND NOT EXISTS (SELECT 1 FROM graphitron_outbox_routine_target t
+                             WHERE t.graph_name = o.graph_name)))
 UNION ALL
 -- Two @outbox with one event, at each of the two.
 SELECT o.graph_name, o.source_name, o.source_line, o.source_column, 'OUTBOX_DUPLICATE_EVENT',
@@ -16837,7 +16940,7 @@ INSERT INTO graphitron_defect_type VALUES
   ('OUTBOX_NOT_A_WRITE', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NOT_A_WRITE',
    'An @outbox writes a message when a write succeeds, so it belongs on a mutation field that writes a table with @mutation (INSERT, UPDATE or DELETE): move it onto one, or remove it.'),
   ('OUTBOX_NO_TARGET', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_NO_TARGET',
-   'An @outbox needs somewhere to write its message, and the build configures no <outbox> block naming a <table>: add one to the plugin configuration.'),
+   'An @outbox needs somewhere to write its message, and the build configures no <outbox> block naming a <table> or a <function>: add one to the plugin configuration.'),
   ('OUTBOX_TARGET_INVALID', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_TARGET_INVALID',
    'The <outbox> block cannot be used as written: fix the configuration the detail names.'),
   ('OUTBOX_DUPLICATE_EVENT', 'error', 'GRAPHITRON', 'GRAPHITRON_OUTBOX_DUPLICATE_EVENT',
@@ -17320,6 +17423,14 @@ INSERT INTO meta_relation VALUES
   ('graphitron_outbox_target_rule', 'graph-outbox', 'graphitron',
    'One row the outbox-target rule computes, in the shape graphitron_outbox_target stores: the rule itself, evaluated on demand rather than read off disk.',
    'For example the derivation inserts this view''s row for one graph into graphitron_outbox_target, which is the name every reader spells.',
+   'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
+  ('graphitron_outbox_routine_target', 'graph-outbox', 'graphitron',
+   'The outbox routine of one graph, resolved: the procedure or function the configuration names and the parameter each role lands in.',
+   'For example <outbox><function>outbox_emit</function></outbox> over a routine taking type, aggregatetype, aggregateid and payload gives one row naming it and the four positions; a configuration that resolves to no one such routine has no row and is a defect at each @outbox.',
+   'Derived from the configuration and the catalog, as the table target is, and beside it: a graph configures one or the other. The routine resolves through the graph''s own sources and must be one the catalog has no table for, since it is called through its Configuration-first method; an unqualified name must be unambiguous. A role answers to the parameter whose name, underscores and case aside, the configuration binds it to, else to the role''s own name, and every parameter must answer to a role.'),
+  ('graphitron_outbox_routine_target_rule', 'graph-outbox', 'graphitron',
+   'One row the outbox-routine-target rule computes, in the shape graphitron_outbox_routine_target stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example the derivation inserts this view''s row for one graph into graphitron_outbox_routine_target, which is the name every reader spells.',
    'The rule as a view beside its table, so an EXCEPT between the two stays runnable for as long as both exist.'),
   ('graphitron_mutation_entry', 'graph-field', 'graphitron',
    'The statement a @mutation application makes a field perform, as one row per field however many applications the corpus wrote on it.',

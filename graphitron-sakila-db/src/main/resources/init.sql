@@ -2339,3 +2339,18 @@ CREATE TABLE outbox (
     payload       jsonb        NOT NULL,
     created_at    timestamptz  NOT NULL DEFAULT now()
 );
+
+-- A stored-routine outbox: the same message layout as the outbox table, reached through a function
+-- the application role may call without being allowed to insert into the table. It stamps the
+-- aggregate id it was not given, which is how a row it wrote is told from one written directly.
+CREATE OR REPLACE FUNCTION public.outbox_emit(
+    p_type          varchar,
+    p_aggregatetype varchar,
+    p_aggregateid   varchar,
+    p_payload       jsonb
+) RETURNS void
+LANGUAGE sql
+AS $$
+    INSERT INTO outbox (type, aggregatetype, aggregateid, payload)
+    VALUES (p_type, p_aggregatetype, COALESCE(p_aggregateid, 'via-routine'), p_payload)
+$$;

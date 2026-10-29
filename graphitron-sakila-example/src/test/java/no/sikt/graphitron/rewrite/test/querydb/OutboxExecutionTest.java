@@ -6,6 +6,7 @@ import no.sikt.graphitron.rewrite.test.SakilaDatabase;
 import no.sikt.graphitron.rewrite.test.tier.ExecutionTier;
 import org.jooq.DSLContext;
 import org.jooq.impl.DSL;
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 
@@ -26,6 +27,16 @@ class OutboxExecutionTest {
 
     static DSLContext dsl;
     static GraphQL graphql;
+
+    /**
+     * The films these cases wrote are removed when they are done. A committed film changes what other
+     * tests read: the ones that order films by a column several share leave ties to the plan, and
+     * more rows move where a tie falls.
+     */
+    @AfterAll
+    static void removeTheFilmsWritten() {
+        dsl.execute("delete from film where title like 'outbox-%'");
+    }
 
     @BeforeAll
     static void start() {

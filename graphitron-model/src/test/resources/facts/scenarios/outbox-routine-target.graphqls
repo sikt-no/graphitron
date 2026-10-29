@@ -1,0 +1,33 @@
+# The <function> target resolves against the routines the catalog holds that are no table: a routine
+# called through its Configuration-first method, with the database's own parameter names. The roles
+# bind to parameters by name, underscores and case aside, the configuration saying which parameter a
+# role means and the role's own name standing where it says nothing. Every parameter must answer to a
+# role; the payload parameter's type decides whether the JSON rides as JSON or as text. A graph
+# configures one target, so no table target is derived beside this one.
+
+interface Node { id: ID! }
+
+type Film implements Node @table(name: "film") @node {
+  id: ID! @nodeId
+  title: String
+}
+
+input FilmInput { title: String }
+
+extend schema @withConfiguration(
+  outboxFunction: "outbox_emit",
+  outboxParameters: ["type=p_type", "aggregatetype=p_aggregatetype", "aggregateid=p_aggregateid", "payload=p_payload"]
+)
+
+type Mutation {
+  createFilm(in: FilmInput!): Film
+    @mutation(typeName: INSERT)
+    @outbox(event: "FilmCreated", argMapping: "title: in.title")
+}
+
+extend schema @expectEquals(relation: "graphitron_outbox_routine_target", rows: """
+  routine_schema, routine_name, type_position, aggregatetype_position, aggregateid_position, payload_position, payload_kind
+  public,         outbox_emit,  0,             1,                      2,                    3,                JSON
+  """)
+
+extend schema @assertEmpty(relation: "graphitron_outbox_target")

@@ -5,6 +5,7 @@ import no.sikt.graphitron.emit.RoutineWriteQuery.Table;
 import no.sikt.graphitron.model.read.StoreHandle;
 import org.jooq.Field;
 import org.jooq.Records;
+import org.jooq.impl.DSL;
 
 import java.util.List;
 import java.util.Objects;
@@ -13,9 +14,12 @@ import java.util.Optional;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_NODE_KEYCOLUMN;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_LEAF;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_ROUTINE_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_OUTBOX_TARGET;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_PRODUCER_WRITE;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE;
+import static no.sikt.graphitron.model.Tables.SQL_ROUTINE_PARAMETER;
 import static no.sikt.graphitron.model.Tables.SQL_SCHEMA;
 import static no.sikt.graphitron.model.Tables.SQL_TABLE;
 import static org.jooq.impl.DSL.exists;
@@ -85,13 +89,36 @@ public final class OutboxQuery {
         }
     }
 
+    /** Where the messages go: an outbox table, or an outbox routine called once per message. */
+    public sealed interface Destination permits Target, RoutineTarget {}
+
+    /**
+     * An outbox routine: a procedure or a function that is no table, called through its
+     * {@code Configuration}-first method on the generated {@code Routines} class, with one argument
+     * per parameter. The positions say which parameter each role lands in; an optional role is empty
+     * where the routine has no such parameter. {@code payloadBindingType} is the Java type the
+     * payload parameter takes, which decides the JSON value the call is handed.
+     */
+    public record RoutineTarget(String routinesClassName, String methodName, int parameterCount,
+                                int typePosition, java.util.OptionalInt aggregateTypePosition,
+                                java.util.OptionalInt aggregateIdPosition, int payloadPosition,
+                                String payloadBindingType, PayloadKind payloadKind)
+            implements Destination {
+        public RoutineTarget {
+            Objects.requireNonNull(routinesClassName, "routinesClassName");
+            Objects.requireNonNull(methodName, "methodName");
+            Objects.requireNonNull(payloadBindingType, "payloadBindingType");
+            Objects.requireNonNull(payloadKind, "payloadKind");
+        }
+    }
+
     /**
      * Where the messages go: the outbox table and the column each role lands in. The optional
      * roles are empty where the table has no such column.
      */
     public record Target(Table table, Column typeColumn, Optional<Column> aggregateTypeColumn,
                          Optional<Column> aggregateIdColumn, Column payloadColumn,
-                         PayloadKind payloadKind) {
+                         PayloadKind payloadKind) implements Destination {
         public Target {
             Objects.requireNonNull(table, "table");
             Objects.requireNonNull(typeColumn, "typeColumn");
@@ -107,7 +134,7 @@ public final class OutboxQuery {
      *                    that node type's name, in key order; empty where no leaf encodes one
      */
     public record Row(String typeName, String fieldName, WriteKind writeKind, Table writtenTable,
-                      Target target, List<Message> messages,
+                      Destination target, List<Message> messages,
                       java.util.Map<String, List<Column>> nodeColumns) {
         public Row {
             messages = List.copyOf(messages);
@@ -151,7 +178,7 @@ public final class OutboxQuery {
 
     /** Reads every {@code @outbox}-carrying write coordinate the store admits. */
     public static Rows read(StoreHandle store) {
-        var target = target(store);
+        var target = target(store).or(() -> routineTarget(store));
         if (target.isEmpty()) {
             // No target row is a configuration the build refused before the generator ran; a run
             // that reaches here with outbox applications and none has no store to read them from.
@@ -165,7 +192,7 @@ public final class OutboxQuery {
 
     private record RawMessage(int ordinal, String event, List<RawLeaf> leaves) {}
 
-    private static List<Row> coordinates(StoreHandle store, Target target) {
+    private static List<Row> coordinates(StoreHandle store, Destination target) {
         var w = GRAPHITRON_PRODUCER_WRITE;
         var o = GRAPHITRON_OUTBOX_ENTRY;
         var wt = SQL_TABLE.as("written_table");
@@ -262,7 +289,7 @@ public final class OutboxQuery {
     }
 
     /** The graph's resolved outbox target, or empty where the configuration resolved to none. */
-    private static Optional<Target> target(StoreHandle store) {
+    private static Optional<Destination> target(StoreHandle store) {
         var t = GRAPHITRON_OUTBOX_TARGET;
         var tt = SQL_TABLE.as("target_table");
         var ts = SQL_SCHEMA.as("target_schema");
@@ -289,7 +316,7 @@ public final class OutboxQuery {
             .join(pc).on(pc.SOURCE_NAME.eq(tt.SOURCE_NAME), pc.TABLE_SCHEMA.eq(tt.TABLE_SCHEMA),
                 pc.TABLE_NAME.eq(tt.TABLE_NAME), pc.COLUMN_NAME.eq(t.PAYLOAD_COLUMN))
             .where(t.GRAPH_NAME.eq(store.graphName()))
-            .fetchOptional(r -> new Target(
+            .fetchOptional(r -> (Destination) new Target(
                 new Table(r.value1(), r.value2(), r.value3(), r.value4()),
                 new Column(r.value5(), r.value6(), r.value7()),
                 r.value8() == null ? Optional.empty()
@@ -298,5 +325,31 @@ public final class OutboxQuery {
                     : Optional.of(new Column(r.value11(), r.value12(), r.value13())),
                 new Column(r.value14(), r.value15(), r.value16()),
                 PayloadKind.valueOf(r.value17())));
+    }
+
+    /** The graph's resolved outbox routine, or empty where the configuration resolved to none. */
+    private static Optional<Destination> routineTarget(StoreHandle store) {
+        var t = GRAPHITRON_OUTBOX_ROUTINE_TARGET;
+        var r = SQL_ROUTINE;
+        var p = SQL_ROUTINE_PARAMETER.as("payload_parameter");
+        return store.dsl()
+            .select(r.ROUTINES_CLASS_FQN, r.ROUTINES_METHOD_NAME, t.TYPE_POSITION,
+                t.AGGREGATETYPE_POSITION, t.AGGREGATEID_POSITION, t.PAYLOAD_POSITION, p.BINDING_TYPE,
+                t.PAYLOAD_KIND,
+                DSL.field(DSL.selectCount().from(SQL_ROUTINE_PARAMETER)
+                    .where(SQL_ROUTINE_PARAMETER.SOURCE_NAME.eq(r.SOURCE_NAME),
+                        SQL_ROUTINE_PARAMETER.TABLE_SCHEMA.eq(r.TABLE_SCHEMA),
+                        SQL_ROUTINE_PARAMETER.ROUTINE_NAME.eq(r.ROUTINE_NAME))))
+            .from(t)
+            .join(r).on(r.SOURCE_NAME.eq(t.ROUTINE_SOURCE_NAME), r.TABLE_SCHEMA.eq(t.ROUTINE_SCHEMA),
+                r.ROUTINE_NAME.eq(t.ROUTINE_NAME))
+            .join(p).on(p.SOURCE_NAME.eq(r.SOURCE_NAME), p.TABLE_SCHEMA.eq(r.TABLE_SCHEMA),
+                p.ROUTINE_NAME.eq(r.ROUTINE_NAME), p.POSITION.eq(t.PAYLOAD_POSITION))
+            .where(t.GRAPH_NAME.eq(store.graphName()))
+            .fetchOptional(row -> (Destination) new RoutineTarget(row.value1(), row.value2(),
+                row.value9(), row.value3(),
+                row.value4() == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(row.value4()),
+                row.value5() == null ? java.util.OptionalInt.empty() : java.util.OptionalInt.of(row.value5()),
+                row.value6(), row.value7(), PayloadKind.valueOf(row.value8())));
     }
 }
