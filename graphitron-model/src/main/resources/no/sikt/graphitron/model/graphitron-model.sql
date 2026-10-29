@@ -486,8 +486,12 @@ CREATE TABLE graphql_type_element (
   coordinate VARCHAR NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name),
+  UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
+  -- may carry the check.
+  CHECK (coordinate = type_name)
 );
 COMMENT ON TABLE graphql_type_element IS 'A type name exists in this graph: the anchor every type-keyed fact hangs off, carrying the key and nothing else. For example type Film { title: String } in one file and extend type Film { year: Int } in another are one row, Film.';
 COMMENT ON COLUMN graphql_type_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -548,10 +552,19 @@ CREATE TABLE graphql_enum_value_element (
   coordinate VARCHAR NOT NULL,
   touched_at TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, type_name, value_name),
+  UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, type_name) REFERENCES graphql_type_element (graph_name, type_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
+  -- may carry the check.
+  CHECK (coordinate = type_name || '.' || value_name)
 );
 COMMENT ON TABLE graphql_enum_value_element IS 'An enum value coordinate exists on a type: the anchor for the value-keyed decode relations. For example the G of enum Rating { G PG } is the row (Rating, G, Rating.G).';
+COMMENT ON COLUMN graphql_enum_value_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
+COMMENT ON COLUMN graphql_enum_value_element.type_name IS 'the owning ENUM type, anchored by graphql_type_element';
+COMMENT ON COLUMN graphql_enum_value_element.value_name IS 'the enum value name within the owning enum type';
+COMMENT ON COLUMN graphql_enum_value_element.coordinate IS 'this row as graphql_element spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_element.element_kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
+COMMENT ON COLUMN graphql_enum_value_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE TABLE graphql_directive_element (
   graph_name     VARCHAR NOT NULL,
@@ -559,8 +572,12 @@ CREATE TABLE graphql_directive_element (
   coordinate     VARCHAR NOT NULL,
   touched_at     TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, directive_name),
+  UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
+  -- may carry the check.
+  CHECK (coordinate = '@' || directive_name)
 );
 COMMENT ON TABLE graphql_directive_element IS 'A directive coordinate exists in this graph: the decomposition of the coordinate graphql_element holds for a directive definition, which is the at sign and this name. For example directive @paged on FIELD_DEFINITION is the row (paged, @paged).';
 COMMENT ON COLUMN graphql_directive_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -578,7 +595,10 @@ CREATE TABLE graphql_directive_argument_element (
   UNIQUE (graph_name, coordinate),
   FOREIGN KEY (graph_name, directive_name)
     REFERENCES graphql_directive_element (graph_name, directive_name) ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE
+  FOREIGN KEY (graph_name, coordinate) REFERENCES graphql_element (graph_name, coordinate) ON DELETE CASCADE,
+  -- The coordinate is the key spelled out; see graphql_field_element for why a capture table
+  -- may carry the check.
+  CHECK (coordinate = '@' || directive_name || '(' || argument_name || ':)')
 );
 COMMENT ON TABLE graphql_directive_argument_element IS 'A directive argument coordinate exists on a directive: the decomposition of the coordinate graphql_element holds for a formal argument of a directive definition. For example the pagedName of directive @paged(pagedName: String) is the row (paged, pagedName, @paged(pagedName:)).';
 COMMENT ON COLUMN graphql_directive_argument_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
@@ -586,11 +606,6 @@ COMMENT ON COLUMN graphql_directive_argument_element.directive_name IS 'the dire
 COMMENT ON COLUMN graphql_directive_argument_element.argument_name IS 'the argument''s own name, the second half of the key a reader holding a directive argument arrives with';
 COMMENT ON COLUMN graphql_directive_argument_element.coordinate IS 'the coordinate the specification spells for this argument, which is the directive''s coordinate with the argument name and a colon in parentheses. Unique on its own, the two keys being two spellings of one thing, which is what lets a reader holding the coordinate join back to the parts instead of taking the string apart by hand';
 COMMENT ON COLUMN graphql_directive_argument_element.touched_at IS 'when the reading that produced this row ran, swept on the same terms as the directive above it';
-COMMENT ON COLUMN graphql_enum_value_element.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
-COMMENT ON COLUMN graphql_enum_value_element.type_name IS 'the owning ENUM type, anchored by graphql_type_element';
-COMMENT ON COLUMN graphql_enum_value_element.value_name IS 'the enum value name within the owning enum type';
-COMMENT ON COLUMN graphql_enum_value_element.coordinate IS 'this row as graphql_element spells it, Type.value, which is the spelling a field of the same name would take; the parent type''s kind is what tells the two apart, and graphql_element.element_kind carries that decision so no reader repeats it. The join down from the supertype, on graphql_type_element.coordinate''s terms and written the same way';
-COMMENT ON COLUMN graphql_enum_value_element.touched_at IS 'when the reading that derived this row ran, on graphql_element.touched_at''s terms. Swept per graph and after its children, a key-to-coordinate row being what a reader joins through and so outliving nothing that still points at it. NOT NULL on graphql_element''s reasoning: a sweep that skipped unstamped rows would not be a sweep';
 
 CREATE VIEW graphql_element_field
   (graph_name, coordinate, type_name, field_name, argument_name) AS

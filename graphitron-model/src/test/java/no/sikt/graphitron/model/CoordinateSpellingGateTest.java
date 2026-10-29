@@ -12,16 +12,23 @@ import java.time.LocalDateTime;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGUMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_FIELD;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_DIRECTIVE_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_ENUM_VALUE_ELEMENT;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD_ELEMENT;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_TYPE_ELEMENT;
 import static no.sikt.graphitron.model.test.CapturedStore.GRAPH;
 import static no.sikt.graphitron.model.test.CapturedStore.withCapturedStore;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * Holds four relations to their coordinate being their key spelled out:
- * {@code graphql_field_element} and {@code graphitron_field} at {@code Type.field}, and
- * {@code graphql_argument_element} and {@code graphitron_argument} at {@code Type.field(arg:)}.
+ * Holds eight relations to their coordinate being their key spelled out:
+ * {@code graphql_field_element} and {@code graphitron_field} at {@code Type.field},
+ * {@code graphql_argument_element} and {@code graphitron_argument} at {@code Type.field(arg:)}, and
+ * the type, enum value, directive and directive argument anchors at {@code Type},
+ * {@code Type.value}, {@code @directive} and {@code @directive(arg:)}.
  *
  * <p>The check is what lets an upsert into these relations match on the key alone. Each also carries
  * a unique coordinate, and with the coordinate free to disagree with the key, a row colliding on the
@@ -37,7 +44,13 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
  *
  * <p>Each refusal takes one captured row out and writes it back under another key. The coordinate's
  * element row stays, so the reference into the element relation holds, and the coordinate is free
- * again, so the unique holds; the only thing the row breaks is the check.
+ * again, so the unique holds; the only thing the row breaks is the check. The anchors' cases add a row
+ * instead, at a coordinate the store holds for another kind of element, which the unique leaves free.
+ *
+ * <p>The unique key is what a reference to an anchor's coordinate needs. For the type and directive
+ * anchors the check already makes the coordinate a function of a one-part key, so no row can collide
+ * on the coordinate without failing the check first; an enum value's two parts can, which is the
+ * one unique refusal here.
  */
 class CoordinateSpellingGateTest {
 
@@ -49,6 +62,8 @@ class CoordinateSpellingGateTest {
           title: String
           rating: String
         }
+        enum Rating { G PG }
+        directive @paged(size: Int, from: Int) on FIELD_DEFINITION
         """;
 
     @Test
@@ -112,6 +127,95 @@ class CoordinateSpellingGateTest {
             row.delete();
             row.setArgumentName("after");
             assertRefused(() -> dsl.insertInto(t).set(row.intoMap()).execute());
+        });
+    }
+
+    @Test
+    @DisplayName("a captured type element's coordinate is its type name")
+    void aCapturedTypeElementSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHQL_TYPE_ELEMENT;
+            assertRefused(() -> dsl.insertInto(t)
+                .set(t.GRAPH_NAME, GRAPH)
+                .set(t.TYPE_NAME, "Movie")
+                .set(t.COORDINATE, "Film.title")
+                .set(t.TOUCHED_AT, LocalDateTime.now())
+                .execute());
+        });
+    }
+
+    @Test
+    @DisplayName("a captured enum value element's coordinate is its type and value name")
+    void aCapturedEnumValueElementSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHQL_ENUM_VALUE_ELEMENT;
+            assertRefused(() -> dsl.insertInto(t)
+                .set(t.GRAPH_NAME, GRAPH)
+                .set(t.TYPE_NAME, "Rating")
+                .set(t.VALUE_NAME, "R")
+                .set(t.COORDINATE, "Film.title")
+                .set(t.TOUCHED_AT, LocalDateTime.now())
+                .execute());
+        });
+    }
+
+    @Test
+    @DisplayName("a captured directive element's coordinate is the at sign and its name")
+    void aCapturedDirectiveElementSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHQL_DIRECTIVE_ELEMENT;
+            assertRefused(() -> dsl.insertInto(t)
+                .set(t.GRAPH_NAME, GRAPH)
+                .set(t.DIRECTIVE_NAME, "limited")
+                .set(t.COORDINATE, "Film.title")
+                .set(t.TOUCHED_AT, LocalDateTime.now())
+                .execute());
+        });
+    }
+
+    @Test
+    @DisplayName("a captured directive argument element's coordinate is its directive and argument name")
+    void aCapturedDirectiveArgumentElementSpellsItsKey(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var t = GRAPHQL_DIRECTIVE_ARGUMENT_ELEMENT;
+            assertRefused(() -> dsl.insertInto(t)
+                .set(t.GRAPH_NAME, GRAPH)
+                .set(t.DIRECTIVE_NAME, "paged")
+                .set(t.ARGUMENT_NAME, "after")
+                .set(t.COORDINATE, "Film.title")
+                .set(t.TOUCHED_AT, LocalDateTime.now())
+                .execute());
+        });
+    }
+
+    @Test
+    @DisplayName("two enum value elements spelling one coordinate under two keys are refused")
+    void anEnumValueCoordinateIsUnique(@TempDir Path directory) {
+        withCapturedStore(directory, SDL, dsl -> {
+            var now = LocalDateTime.now();
+            var e = GRAPHQL_ELEMENT;
+            dsl.insertInto(e, e.GRAPH_NAME, e.COORDINATE, e.ELEMENT_KIND, e.TOUCHED_AT)
+                .values(GRAPH, "A", "NAMED_TYPE", now)
+                .values(GRAPH, "A.b", "NAMED_TYPE", now)
+                .values(GRAPH, "A.b.c", "ENUM_VALUE", now)
+                .execute();
+            var te = GRAPHQL_TYPE_ELEMENT;
+            dsl.insertInto(te, te.GRAPH_NAME, te.TYPE_NAME, te.COORDINATE, te.TOUCHED_AT)
+                .values(GRAPH, "A", "A", now)
+                .values(GRAPH, "A.b", "A.b", now)
+                .execute();
+            var t = GRAPHQL_ENUM_VALUE_ELEMENT;
+            dsl.insertInto(t, t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.COORDINATE, t.TOUCHED_AT)
+                .values(GRAPH, "A", "b.c", "A.b.c", now)
+                .execute();
+            assertThatThrownBy(() -> dsl.insertInto(t,
+                        t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME, t.COORDINATE, t.TOUCHED_AT)
+                    .values(GRAPH, "A.b", "c", "A.b.c", now)
+                    .execute())
+                .as("both rows spell their own key, so only the unique coordinate can refuse the"
+                    + " second")
+                .isInstanceOf(IntegrityConstraintViolationException.class)
+                .hasMessageContaining("Unique index or primary key violation");
         });
     }
 

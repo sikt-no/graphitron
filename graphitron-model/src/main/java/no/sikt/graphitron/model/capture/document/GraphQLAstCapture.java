@@ -381,7 +381,9 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
                 .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            .onDuplicateKeyUpdate()
+            // The primary key named; the coordinate the unique key holds spells the same names.
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME)
+            .doUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
@@ -401,7 +403,9 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(e.SOURCE_NAME), ef.SOURCE_LINE.eq(e.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
                 .where(e.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            .onDuplicateKeyUpdate()
+            // The primary key named; the coordinate the unique key holds spells the same names.
+            .onConflict(t.GRAPH_NAME, t.TYPE_NAME, t.VALUE_NAME)
+            .doUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
@@ -425,7 +429,9 @@ public final class GraphQLAstCapture {
                     ef.SOURCE_NAME.eq(d.SOURCE_NAME), ef.SOURCE_LINE.eq(d.SOURCE_LINE),
                     ef.SOURCE_COLUMN.eq(d.SOURCE_COLUMN))
                 .where(d.GRAPH_NAME.eq(graph)).and(touched(graph, ef.COORDINATE)))
-            .onDuplicateKeyUpdate()
+            // The primary key named; the coordinate the unique key holds spells the same names.
+            .onConflict(t.GRAPH_NAME, t.DIRECTIVE_NAME)
+            .doUpdate()
             .set(t.COORDINATE, excluded(t.COORDINATE))
             .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
             .execute();
