@@ -1,7 +1,7 @@
 ---
 id: R1122
 title: "every ordering graphitron generates is deterministic and ends in a tiebreaker"
-status: In Progress
+status: In Review
 bucket: bug
 priority: 3
 theme: codegen-correctness
@@ -49,6 +49,15 @@ Then:
 * *Execution, one walk per site in step 1* (root list, inline child list, split child list, single-valued and list-valued `@orderBy` at a list), each over the tied films 2 and 3 and each demonstrated to fail with the completion disabled for that site, as `ConnectionTiebreakerExecutionTest`'s walks were. `SortKeyOrderExecutionTest.pathKey_plainListRoot_ordersByTheRelatedColumn` and `pathKey_inlineChildList_ordersInTheSubselect` are the first two and need no change.
 * *Keyless:* a pipeline case that `list-order-not-unique` fires on a keyless list that declares an order, does not fire on a keyed one, and that `connection-order-not-unique` still fires, with its message unchanged, on a keyless connection; `LintRuleCatalogueTest` pins the new name.
 * A repeated-run loop is not evidence: the flake does not reproduce on demand, which is why the walks assert a specific tie order rather than stability across runs.
+
+## Shipped
+
+Implemented as planned, with these particulars for the reviewer.
+
+* *Step 3 corrected.* A list with no declared order was found to default to the primary key already, so nothing is appended; the Goal and step 3 say so.
+* *The plain-list walks that cannot fail.* With completion disabled, the six descending or `@orderBy` walks fail (root, inline and `@splitQuery` descending lists; single-valued and list-valued `@orderBy`; the default-order base) and the original ascending walks still pass, because the database's tie order happens to equal film_id order. That is the original flake's mechanism, so the descending fixtures (`filmsByOriginalLanguageDescList`, `filmsInlineByOriginalLanguageDesc`, `filmsListByOriginalLanguageDesc`) are what pin each site.
+* *Fixture gate.* The keyless fixtures raise `list-order-not-unique` ten times; `FixtureWarningsGateTest` asserts it as a set and keeps its count of three for everything else.
+* *Pipeline expectations that changed.* Ordered plain lists in `GraphitronSchemaBuilderTest` and `SortKeyOrderPipelineTest` now carry the appended key; the cases were updated, not removed.
 
 ## Reviewer findings
 
