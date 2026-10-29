@@ -328,8 +328,8 @@ class DmlBulkMutationsExecutionTest {
 
     @Test
     void deleteFilms_deletesNRowsByLookupKeyTuple() {
-        // Bulk DELETE emits `DELETE FROM film WHERE DSL.row(film_id).in(<row tuples>)`.
-        // No RETURNING projection (return type is [ID!]!, EncodedList terminator).
+        // A key-identified bulk DELETE returning [ID!]! runs one DELETE ... RETURNING per input row
+        // inside one transaction and encodes the returned keys in input order.
         String m1 = randomMarker("R77F-DELETE-A");
         String m2 = randomMarker("R77F-DELETE-B");
         Integer id1 = insertFilm(m1);
@@ -352,6 +352,37 @@ class DmlBulkMutationsExecutionTest {
             deleteFilmById(id1);
             deleteFilmById(id2);
         }
+    }
+
+    @Test
+    void deleteFilms_existingAndMissingInNonKeyOrder_answersBothInInputOrder() {
+        // The direct [ID!] DELETE is idempotent like the payload one: the missing key is answered
+        // with the id the client sent, in its input slot, and the existing row is deleted.
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("idempotent-direct"));
+
+            Map<String, Object> data = execute(tx, """
+                mutation { deleteFilms(in: [{ filmId: %d }, { filmId: %d }]) }
+                """.formatted(MISSING_FILM_ID, existing));
+
+            assertThat((List<String>) data.get("deleteFilms"))
+                .containsExactly(filmId(MISSING_FILM_ID), filmId(existing));
+            assertThat(countFilm(tx, existing)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmsDirectFailOnMissing_missingKey_rollsBackTheExistingRow() {
+        inRolledBackTransaction(tx -> {
+            Integer existing = insertFilm(tx, randomMarker("strict-direct"));
+
+            graphql.ExecutionResult result = executeRaw(tx, """
+                mutation { deleteFilmsDirectFailOnMissing(in: [{ filmId: %d }, { filmId: %d }]) }
+                """.formatted(existing, MISSING_FILM_ID));
+
+            assertThat(result.getErrors()).isNotEmpty();
+            assertThat(countFilm(tx, existing)).as("the existing row's delete rolls back").isEqualTo(1);
+        });
     }
 
     // ===== INSERT missing-vs-null =====
@@ -914,12 +945,9 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    void deleteFilmActorsByNodeId_bulkRows_deletesAllViaRowIn() {
-        // Bulk DELETE keyed by N NodeIds, each decoded inside the stream lambda. The
-        // generated body emits
-        // `DSL.row(actor_id, film_id).in(in.stream().map(row -> { ... __bulkKey0 = decode(...); ...
-        //   return DSL.row(DSL.val(__bulkKey0.value1(), ...), DSL.val(__bulkKey0.value2(), ...));
-        // }).toList())`.
+    void deleteFilmActorsByNodeId_bulkRows_deletesAllPerRow() {
+        // Bulk DELETE keyed by N NodeIds, each decoded once per row inside the per-row loop, which
+        // runs one DELETE ... RETURNING per input row.
         // Uses pairs (2, 3) and (3, 4), neither in the init.sql seed.
         inRolledBackTransaction(tx -> {
             seedFilmActor(tx, 2, 3);
@@ -934,6 +962,37 @@ class DmlBulkMutationsExecutionTest {
             assertThat((List<?>) data.get("deleteFilmActorsByNodeId")).hasSize(2);
             assertThat(countFilmActor(tx, 2, 3)).isZero();
             assertThat(countFilmActor(tx, 3, 4)).isZero();
+        });
+    }
+
+    @Test
+    void deleteFilmActorByNodeId_missingKey_answersTheSentIdRatherThanNull() {
+        // Pair (8, 9) is not in the init.sql seed.
+        inRolledBackTransaction(tx -> {
+            String missing = NodeIdEncoder.encode("FilmActor", 8, 9);
+
+            Map<String, Object> data = execute(tx, """
+                mutation { deleteFilmActorByNodeId(in: { id: "%s" }) }
+                """.formatted(missing));
+
+            assertThat(data.get("deleteFilmActorByNodeId")).isEqualTo(missing);
+        });
+    }
+
+    @Test
+    void deleteFilmActorsByNodeId_missingThenExisting_answersBothCompositeIdsInInputOrder() {
+        // Pair (2, 5) is seeded here; (5, 6) is not in the init.sql seed.
+        inRolledBackTransaction(tx -> {
+            seedFilmActor(tx, 2, 5);
+            String missing = NodeIdEncoder.encode("FilmActor", 5, 6);
+            String existing = NodeIdEncoder.encode("FilmActor", 2, 5);
+
+            Map<String, Object> data = execute(tx, """
+                mutation { deleteFilmActorsByNodeId(in: [{ id: "%s" }, { id: "%s" }]) }
+                """.formatted(missing, existing));
+
+            assertThat((List<String>) data.get("deleteFilmActorsByNodeId")).containsExactly(missing, existing);
+            assertThat(countFilmActor(tx, 2, 5)).isZero();
         });
     }
 
@@ -1246,14 +1305,14 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    void deleteFilmsIdCarrier_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow() {
+    void deleteFilmsFailOnMissing_zeroRowRow_reachesTheConfiguredLogWithoutTheInputRow() {
         inRolledBackTransaction(tx -> {
             Integer existing = insertFilm(tx, randomMarker("R1048-DELETE"));
             var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
 
             var result = runWithLog(tx, """
                 mutation {
-                    deleteFilmsIdCarrier(in: [
+                    deleteFilmsFailOnMissing(in: [
                         { filmId: %d },
                         { filmId: 2147483000 }
                     ]) { deletedIds }
@@ -1267,16 +1326,36 @@ class DmlBulkMutationsExecutionTest {
             assertThat(logged.get(0).thrown().getMessage())
                 .contains("matched zero rows")
                 .contains("at index 1")
-                .contains("Mutation.deleteFilmsIdCarrier")
+                .contains("Mutation.deleteFilmsFailOnMissing")
                 .doesNotContain("2147483000");
+            assertThat(countFilm(tx, existing)).as("the existing row's delete rolls back").isEqualTo(1);
         });
     }
 
-    // ===== missingAsDeleted: a key that matches no row counts as already deleted =====
+    @Test
+    void deleteFilmFailOnMissing_singleMissingKey_reportsAnErrorRatherThanNull() {
+        inRolledBackTransaction(tx -> {
+            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+
+            var result = runWithLog(tx, """
+                mutation {
+                    deleteFilmFailOnMissing(in: { filmId: %d }) { deletedId }
+                }
+                """.formatted(MISSING_FILM_ID),
+                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+
+            assertThat(result.getErrors()).hasSize(1);
+            assertThat(logged).singleElement().satisfies(l -> assertThat(l.thrown().getMessage())
+                .contains("matched zero rows")
+                .contains("Mutation.deleteFilmFailOnMissing")
+                .doesNotContain(String.valueOf(MISSING_FILM_ID)));
+        });
+    }
+
+    // ===== the default reading: a key that matches no row counts as already deleted =====
     //
-    // The opted-in twins of deleteFilmsIdCarrier. Each input key that matches no row is echoed in
-    // its payload slot, encoded the way a deleted row's key is, and the call commits. 2147483000 is
-    // a film id no fixture reaches.
+    // Each input key that matches no row is echoed in its payload slot, encoded the way a deleted
+    // row's key is, and the call commits. 2147483000 is a film id no fixture reaches.
 
     private static final int MISSING_FILM_ID = 2147483000;
 
@@ -1294,23 +1373,23 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    void deleteFilmsMissingAsDeleted_existingThenMissing_deletesTheExistingAndEchoesBoth() {
+    void deleteFilmsIdCarrier_existingThenMissing_deletesTheExistingAndEchoesBoth() {
         inRolledBackTransaction(tx -> {
-            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            Integer existing = insertFilm(tx, randomMarker("idempotent-delete"));
             var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
 
             var result = runWithLog(tx, """
                 mutation {
-                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                    deleteFilmsIdCarrier(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
                 }
                 """.formatted(existing, MISSING_FILM_ID),
                 (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
 
             assertThat(result.getErrors()).isEmpty();
             Map<String, Object> data = result.getData();
-            assertThat(deletedIds(data, "deleteFilmsMissingAsDeleted"))
+            assertThat(deletedIds(data, "deleteFilmsIdCarrier"))
                 .containsExactly(filmId(existing), filmId(MISSING_FILM_ID));
-            assertThat(NodeIdEncoder.decodeValues("Film", deletedIds(data, "deleteFilmsMissingAsDeleted").get(1)))
+            assertThat(NodeIdEncoder.decodeValues("Film", deletedIds(data, "deleteFilmsIdCarrier").get(1)))
                 .containsExactly(String.valueOf(MISSING_FILM_ID));
             assertThat(countFilm(tx, existing)).isZero();
             assertThat(logged).isEmpty();
@@ -1318,94 +1397,94 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    void deleteFilmsMissingAsDeleted_missingThenExisting_keepsInputOrder() {
+    void deleteFilmsIdCarrier_missingThenExisting_keepsInputOrder() {
         inRolledBackTransaction(tx -> {
-            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            Integer existing = insertFilm(tx, randomMarker("idempotent-delete"));
 
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                    deleteFilmsIdCarrier(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
                 }
                 """.formatted(MISSING_FILM_ID, existing));
 
-            assertThat(deletedIds(data, "deleteFilmsMissingAsDeleted"))
+            assertThat(deletedIds(data, "deleteFilmsIdCarrier"))
                 .containsExactly(filmId(MISSING_FILM_ID), filmId(existing));
             assertThat(countFilm(tx, existing)).isZero();
         });
     }
 
     @Test
-    void deleteFilmsMissingAsDeleted_duplicateKey_echoesBothSlots() {
+    void deleteFilmsIdCarrier_duplicateKey_echoesBothSlots() {
         // The second row's delete matches nothing, since the first already removed the film.
         inRolledBackTransaction(tx -> {
-            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            Integer existing = insertFilm(tx, randomMarker("idempotent-delete"));
 
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                    deleteFilmsIdCarrier(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
                 }
                 """.formatted(existing, existing));
 
-            assertThat(deletedIds(data, "deleteFilmsMissingAsDeleted"))
+            assertThat(deletedIds(data, "deleteFilmsIdCarrier"))
                 .containsExactly(filmId(existing), filmId(existing));
             assertThat(countFilm(tx, existing)).isZero();
         });
     }
 
     @Test
-    void deleteFilmsMissingAsDeleted_retriedBatch_answersTheSameWithoutError() {
+    void deleteFilmsIdCarrier_retriedBatch_answersTheSameWithoutError() {
         inRolledBackTransaction(tx -> {
-            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            Integer existing = insertFilm(tx, randomMarker("idempotent-delete"));
             String query = """
                 mutation {
-                    deleteFilmsMissingAsDeleted(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
+                    deleteFilmsIdCarrier(in: [{ filmId: %d }, { filmId: %d }]) { deletedIds }
                 }
                 """.formatted(existing, MISSING_FILM_ID);
 
             Map<String, Object> first = execute(tx, query);
             Map<String, Object> second = execute(tx, query);
 
-            assertThat(deletedIds(second, "deleteFilmsMissingAsDeleted"))
-                .isEqualTo(deletedIds(first, "deleteFilmsMissingAsDeleted"))
+            assertThat(deletedIds(second, "deleteFilmsIdCarrier"))
+                .isEqualTo(deletedIds(first, "deleteFilmsIdCarrier"))
                 .containsExactly(filmId(existing), filmId(MISSING_FILM_ID));
             assertThat(countFilm(tx, existing)).isZero();
         });
     }
 
     @Test
-    void deleteFilmMissingAsDeleted_singleMissingKey_echoesTheInputRatherThanNull() {
+    void deleteFilmIdCarrier_singleMissingKey_echoesTheInputRatherThanNull() {
         inRolledBackTransaction(tx -> {
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteFilmMissingAsDeleted(in: { filmId: %d }) { deletedId }
+                    deleteFilmIdCarrier(in: { filmId: %d }) { deletedId }
                 }
                 """.formatted(MISSING_FILM_ID));
 
-            var payload = (Map<String, Object>) data.get("deleteFilmMissingAsDeleted");
+            var payload = (Map<String, Object>) data.get("deleteFilmIdCarrier");
             assertThat(payload).isNotNull();
             assertThat(payload.get("deletedId")).isEqualTo(filmId(MISSING_FILM_ID));
         });
     }
 
     @Test
-    void deleteFilmMissingAsDeleted_singleExistingKey_deletesAndEchoes() {
+    void deleteFilmIdCarrier_singleExistingKey_deletesAndEchoes() {
         inRolledBackTransaction(tx -> {
-            Integer existing = insertFilm(tx, randomMarker("missingAsDeleted"));
+            Integer existing = insertFilm(tx, randomMarker("idempotent-delete"));
 
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteFilmMissingAsDeleted(in: { filmId: %d }) { deletedId }
+                    deleteFilmIdCarrier(in: { filmId: %d }) { deletedId }
                 }
                 """.formatted(existing));
 
-            var payload = (Map<String, Object>) data.get("deleteFilmMissingAsDeleted");
+            var payload = (Map<String, Object>) data.get("deleteFilmIdCarrier");
             assertThat(payload.get("deletedId")).isEqualTo(filmId(existing));
             assertThat(countFilm(tx, existing)).isZero();
         });
     }
 
     @Test
-    void deleteFilmActorsMissingAsDeleted_compositeNodeId_echoesTheMissingKeyThroughTheOutcomePath() {
+    void deleteFilmActorsWithErrors_compositeNodeId_echoesTheMissingKeyThroughTheOutcomePath() {
         // film_actor's key is (actor_id, film_id), decoded from one node id; the payload declares an
         // errors field, so the fetcher's value is Outcome-wrapped. Pairs (4, 5) and (5, 6) are not in
         // the init.sql seed; only (4, 5) is seeded here.
@@ -1416,14 +1495,14 @@ class DmlBulkMutationsExecutionTest {
 
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteFilmActorsMissingAsDeleted(in: [{ id: "%s" }, { id: "%s" }]) {
+                    deleteFilmActorsWithErrors(in: [{ id: "%s" }, { id: "%s" }]) {
                         deletedIds
                         errors { __typename }
                     }
                 }
                 """.formatted(existing, missing));
 
-            var payload = (Map<String, Object>) data.get("deleteFilmActorsMissingAsDeleted");
+            var payload = (Map<String, Object>) data.get("deleteFilmActorsWithErrors");
             assertThat((List<String>) payload.get("deletedIds")).containsExactly(existing, missing);
             assertThat(NodeIdEncoder.decodeValues("FilmActor", ((List<String>) payload.get("deletedIds")).get(1)))
                 .containsExactly("5", "6");
@@ -1433,7 +1512,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    void deleteSplitKeyChildrenMissingAsDeleted_interleavedKey_echoesEachKeyInItsOwnSlots() {
+    void deleteSplitKeyChildren_interleavedKey_echoesEachKeyInItsOwnSlots() {
         // split_key_child's key is (a, b, c); the input binds a and c from a SplitKeyParent node id
         // and b from a plain field, so the WHERE compares a, c, b. Every value is distinct, so an
         // echo that zipped the values in WHERE order would decode to (1, 3, 2) / (7, 9, 8).
@@ -1445,7 +1524,7 @@ class DmlBulkMutationsExecutionTest {
 
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteSplitKeyChildrenMissingAsDeleted(in: [
+                    deleteSplitKeyChildren(in: [
                         { parent: "%s", b: 2 },
                         { parent: "%s", b: 8 }
                     ]) { deletedIds }
@@ -1453,7 +1532,7 @@ class DmlBulkMutationsExecutionTest {
                 """.formatted(NodeIdEncoder.encode("SplitKeyParent", 1, 3),
                     NodeIdEncoder.encode("SplitKeyParent", 7, 9)));
 
-            var ids = deletedIds(data, "deleteSplitKeyChildrenMissingAsDeleted");
+            var ids = deletedIds(data, "deleteSplitKeyChildren");
             assertThat(ids).hasSize(2);
             assertThat(NodeIdEncoder.decodeValues("SplitKeyChild", ids.get(0))).containsExactly("1", "2", "3");
             assertThat(NodeIdEncoder.decodeValues("SplitKeyChild", ids.get(1))).containsExactly("7", "8", "9");
@@ -1464,8 +1543,9 @@ class DmlBulkMutationsExecutionTest {
     // ===== Superkey node ids: the primary key plus more columns =====
     //
     // InventoryUnit's node key is (inventory_id, store_id) over inventory's primary key
-    // inventory_id; FilmCategoryNode's is (film_id, category_id, last_update) over film_category's
-    // (film_id, category_id). An UPDATE or DELETE taking such an id filters on the primary key the
+    // inventory_id; FilmCategoryNode's is (last_update, film_id, category_id) over film_category's
+    // (film_id, category_id), opening with a column outside the key so its encoder's parameter
+    // order differs from the order RETURNING captures in. An UPDATE or DELETE taking such an id filters on the primary key the
     // id carries and ignores the rest, so an id minted before the extra column changed still names
     // its row. Reads keep filtering on every column.
 
@@ -1626,7 +1706,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     private static String filmCategoryNodeId(int filmId, int categoryId, LocalDateTime lastUpdate) {
-        return NodeIdEncoder.encodeFilmCategoryNode(filmId, categoryId, lastUpdate);
+        return NodeIdEncoder.encodeFilmCategoryNode(lastUpdate, filmId, categoryId);
     }
 
     @Test
@@ -1648,7 +1728,7 @@ class DmlBulkMutationsExecutionTest {
     }
 
     @Test
-    void deleteFilmCategoryNodesMissingAsDeleted_missingThenStale_echoesTheInputIdAndKeepsInputOrder() {
+    void deleteFilmCategoryNodes_missingThenStale_echoesTheInputIdAndKeepsInputOrder() {
         inRolledBackTransaction(tx -> {
             int filmId = insertFilm(tx, randomMarker("superkey"));
             insertFilmCategory(tx, filmId, 1, MINTED_AT);
@@ -1657,32 +1737,33 @@ class DmlBulkMutationsExecutionTest {
 
             Map<String, Object> data = execute(tx, """
                 mutation {
-                    deleteFilmCategoryNodesMissingAsDeleted(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds }
+                    deleteFilmCategoryNodes(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds }
                 }
                 """.formatted(missing, filmCategoryNodeId(filmId, 1, MINTED_AT)));
 
-            assertThat(deletedIds(data, "deleteFilmCategoryNodesMissingAsDeleted"))
+            assertThat(deletedIds(data, "deleteFilmCategoryNodes"))
                 .containsExactly(missing, filmCategoryNodeId(filmId, 1, STORED_AT));
             assertThat(countFilmCategories(tx, filmId)).isZero();
         });
     }
 
     @Test
-    void deleteFilmCategoryNodes_aPrimaryKeyMatchingNoRow_stillFailsTheBatch() {
+    void deleteFilmCategoryNodesDirect_missingThenStale_answersTheSentIdAndTheStoredLastUpdate() {
+        // The direct [ID!] DELETE over a node whose key is not in primary-key-then-tail order: the
+        // missing id is answered as sent, the deleted one with the stored last_update.
         inRolledBackTransaction(tx -> {
             int filmId = insertFilm(tx, randomMarker("superkey"));
             insertFilmCategory(tx, filmId, 1, MINTED_AT);
-            var logged = new CopyOnWriteArrayList<LoggedUnmatched>();
+            touchFilmCategories(tx, filmId, STORED_AT);
+            String missing = filmCategoryNodeId(filmId, 3, MINTED_AT);
 
-            var result = runWithLog(tx, """
-                mutation { deleteFilmCategoryNodes(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds } }
-                """.formatted(filmCategoryNodeId(filmId, 1, MINTED_AT), filmCategoryNodeId(filmId, 3, MINTED_AT)),
-                (thrown, reference, env) -> logged.add(new LoggedUnmatched(thrown, reference)));
+            Map<String, Object> data = execute(tx, """
+                mutation { deleteFilmCategoryNodesDirect(in: [{ id: "%s" }, { id: "%s" }]) }
+                """.formatted(missing, filmCategoryNodeId(filmId, 1, MINTED_AT)));
 
-            assertThat(result.getErrors()).isNotEmpty();
-            assertThat(logged).singleElement()
-                .satisfies(l -> assertThat(l.thrown().getMessage()).contains("matched zero rows").contains("at index 1"));
-            assertThat(countFilmCategories(tx, filmId)).isEqualTo(1);
+            assertThat((List<String>) data.get("deleteFilmCategoryNodesDirect"))
+                .containsExactly(missing, filmCategoryNodeId(filmId, 1, STORED_AT));
+            assertThat(countFilmCategories(tx, filmId)).isZero();
         });
     }
 
@@ -1693,7 +1774,8 @@ class DmlBulkMutationsExecutionTest {
     // PK-or-UK match lands on the UniqueKey arm rather than the PK: the UK-covering single-row
     // delete every other Sakila DELETE fixture (all PK-keyed) leaves unproven at execution tier.
     // The emitted statement is `DELETE FROM storage_bin WHERE code = ? RETURNING bin_id`, and the
-    // `: ID` return encodes the matched bin_id as a StorageBin NodeId.
+    // `: ID` return encodes the matched bin_id as a StorageBin NodeId. A unique key cannot answer a
+    // code that matches no bin, so both fields set failOnMissing: true and a miss fails the call.
 
     private int insertStorageBin(String code, String label) {
         return dsl.insertInto(DSL.table("storage_bin"))
@@ -1734,6 +1816,23 @@ class DmlBulkMutationsExecutionTest {
             dsl.deleteFrom(DSL.table("storage_bin"))
                 .where(DSL.field("code").in(code, survivorCode)).execute();
         }
+    }
+
+    @Test
+    void deleteStorageBinByCode_codeMatchingNoBin_fails() {
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { deleteStorageBinByCode(in: { code: "%s" }) }
+            """.formatted(randomMarker("R266-UK-MISSING")));
+        assertThat(result.getErrors()).isNotEmpty();
+    }
+
+    @Test
+    void deleteStorageBinByCodePayload_codeMatchingNoBin_fails() {
+        graphql.ExecutionResult result = executeRaw("""
+            mutation { deleteStorageBinByCodePayload(in: { code: "%s" }) { deletedId } }
+            """.formatted(randomMarker("R514-payload-MISSING")));
+        assertThat(result.getErrors()).isNotEmpty();
+        assertThat(((Map<String, Object>) result.getData()).get("deleteStorageBinByCodePayload")).isNull();
     }
 
     @Test

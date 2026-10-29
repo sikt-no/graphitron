@@ -1919,7 +1919,7 @@ class NodeIdPipelineTest {
         assertThat(f).isInstanceOf(no.sikt.graphitron.rewrite.model.DmlWriteField.class);
         // The node resolved: the DELETE matches on Bar's two key columns rather than looking for a
         // column literally named `id`, which `bar` does not have.
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified)
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey)
             no.sikt.graphitron.rewrite.DmlWriteReads.deleteRowsOf(
                 (no.sikt.graphitron.rewrite.model.DmlWriteField) f);
         assertThat(deleteRows.whereColumns()).hasSize(2);

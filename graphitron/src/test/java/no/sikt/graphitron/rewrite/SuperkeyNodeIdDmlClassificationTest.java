@@ -49,10 +49,10 @@ class SuperkeyNodeIdDmlClassificationTest {
             createInventoryUnits(in: [InventoryUnitCreateInput!]!): InventoryUnitsPayload @mutation(typeName: INSERT)
             deleteFilmCategoryNodes(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
                 @mutation(typeName: DELETE, table: "film_category")
-            deleteFilmCategoryNodesMissingAsDeleted(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
-                @mutation(typeName: DELETE, table: "film_category", missingAsDeleted: true)
             deleteFilmCategoriesByKey(in: [FilmCategoryKeyInput!]!): DeletedFilmCategoryNodesPayload
-                @mutation(typeName: DELETE, table: "film_category", missingAsDeleted: true)
+                @mutation(typeName: DELETE, table: "film_category")
+            deleteFilmCategoriesByKeyFailOnMissing(in: [FilmCategoryKeyInput!]!): DeletedFilmCategoryNodesPayload
+                @mutation(typeName: DELETE, table: "film_category", failOnMissing: true)
             deleteFilms(in: [FilmDeleteInput!]!): DeletedFilmsPayload @mutation(typeName: DELETE, table: "film")
         }
         """;
@@ -84,11 +84,11 @@ class SuperkeyNodeIdDmlClassificationTest {
     }
 
     @Test
-    void superkeyMissingAsDeleted_echoesTheDroppedColumnTheReturningCaptures() {
-        var deleteRows = deleteRowsOf((DmlWriteField) SCHEMA.field("Mutation", "deleteFilmCategoryNodesMissingAsDeleted"));
+    void superkeyDelete_isIdempotentByDefault_echoingTheDroppedColumnTheReturningCaptures() {
+        var deleteRows = deleteRowsOf((DmlWriteField) SCHEMA.field("Mutation", "deleteFilmCategoryNodes"));
         var idem = (DeleteRows.IdempotentByPrimaryKey) deleteRows;
         assertThat(idem.echoBinding()).extracting(k -> k.targetColumn().sqlName()).containsExactly("last_update");
-        assertThat(sqlNames(returningOf("deleteFilmCategoryNodesMissingAsDeleted").nodeKeyTail()))
+        assertThat(sqlNames(returningOf("deleteFilmCategoryNodes").nodeKeyTail()))
             .containsExactly("last_update");
     }
 
@@ -114,11 +114,20 @@ class SuperkeyNodeIdDmlClassificationTest {
     }
 
     @Test
-    void plainPrimaryKeyInputUnderASuperkeyMissingAsDeletedPayload_isEchoUnencodable() {
+    void plainPrimaryKeyInputUnderASuperkeyPayload_isEchoUnencodableByDefault() {
+        // A missing row's id would need last_update, which only the node id supplies.
         var f = (UnclassifiedField) SCHEMA.field("Mutation", "deleteFilmCategoriesByKey");
-        assertThat(f.rejection()).isInstanceOfSatisfying(DeleteRowsError.MissingAsDeletedEchoUnencodable.class, r -> {
+        assertThat(f.rejection()).isInstanceOfSatisfying(DeleteRowsError.IdempotentDeleteEchoUnencodable.class, r -> {
             assertThat(r.nodeTypeName()).isEqualTo("FilmCategoryNode");
             assertThat(sqlNames(r.unsuppliedColumns())).containsExactly("last_update");
         });
+    }
+
+    @Test
+    void plainPrimaryKeyInputUnderASuperkeyPayload_failOnMissing_readsTheTailBackFromTheDeletedRow() {
+        var deleteRows = deleteRowsOf((DmlWriteField) SCHEMA.field("Mutation", "deleteFilmCategoriesByKeyFailOnMissing"));
+        assertThat(deleteRows).isInstanceOf(DeleteRows.FailOnMissing.class);
+        assertThat(sqlNames(returningOf("deleteFilmCategoriesByKeyFailOnMissing").nodeKeyTail()))
+            .containsExactly("last_update");
     }
 }

@@ -38,11 +38,11 @@ class DeleteMutationValidationTest {
                         "encodeFilm",
                         List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")))),
                 // DELETE carries the slim InputArgRef + the DeleteRows walker carrier on the
-                // write arm. filmId covers the PK, so this is an Identified single-row delete.
+                // write arm. filmId covers the PK; the strict (FailOnMissing) single-row delete.
                 new OperationMember.Write.Delete(
                     new InputArgRef("in", "FilmKey",
                         TestFixtures.tableRef("film", "FILM", "Film", List.of()), false),
-                    new DeleteRows.Identified(
+                    new DeleteRows.FailOnMissing(
                         new MatchedKey.PrimaryKey(
                             List.of(new ColumnRef("film_id", "FILM_ID", "java.lang.Long")), "film_pkey"),
                         List.of(new KeyColumn(

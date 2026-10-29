@@ -494,12 +494,12 @@ class FetcherPipelineTest {
     }
 
     @Test
-    void dmlDeleteField_bulkInput_emitsRowTupleInWithStreamMap() {
+    void dmlDeleteField_bulkKeyedInput_emitsThePerRowLoopWithTheEchoAndEncodesInInputOrder() {
         // A bulk DELETE returns [ID!]! (the encoded-PK arm); DELETE has no @table-return arm
         // (the row is gone after the statement, and RETURNING carries only the PK, so a full
-        // @table projection is impossible). Film is @node so the encoder resolves. The bulk DELETE
-        // SQL chain (row-tuple IN over the stream-mapped input) is the structural subject here,
-        // independent of the terminator.
+        // @table projection is impossible). Film is @node so the encoder resolves. A key-identified
+        // input runs one DELETE per row in one transaction, answering a key that matches no row with
+        // the echo record, then encodes the accumulated records.
         var sdl = """
             type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
             input FilmDeleteInput { filmId: Int! @field(name: "film_id") }
@@ -511,14 +511,43 @@ class FetcherPipelineTest {
         assertThat(body)
             .contains("java.util.List<java.util.Map<?, ?>> in = env.getArgument")
             .contains("if (in.isEmpty())")
+            .contains("= dsl.transactionResult(tx -> {")
+            .contains("for (int rowIndex = 0; rowIndex < in.size(); rowIndex++)")
+            .contains(".deleteFrom")
+            .contains(".returningResult(")
+            .contains(".fetchOne()")
+            .contains("if (rec == null)")
+            .contains("rec = txd.newRecord(")
+            .contains("payload = deleted.map(r -> ")
+            .doesNotContain(".in(in.stream()");
+    }
+
+    @Test
+    void dmlDeleteField_bulkBroadcastInput_emitsRowTupleInWithStreamMap() {
+        // A multiRow DELETE covering no key names no key that could be missing, so it keeps the one
+        // statement: the row-tuple IN over the stream-mapped input.
+        var sdl = """
+            type Film implements Node @table(name: "film") @node { id: ID! @nodeId filmId: Int! @field(name: "film_id") }
+            input FilmByYearInput { releaseYear: Int! @field(name: "release_year") }
+            type Query { dummy: String }
+            type Mutation {
+                deleteFilms(in: [FilmByYearInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film", multiRow: true)
+            }
+            """;
+        var deleteFilms = method(findSpec("MutationFetchers", sdl), "deleteFilms");
+        var body = deleteFilms.code().toString();
+        assertThat(body)
+            .contains("java.util.List<java.util.Map<?, ?>> in = env.getArgument")
+            .contains("if (in.isEmpty())")
             .as("row-tuple IN form, regardless of key arity")
             .contains(".deleteFrom")
             .contains("org.jooq.impl.DSL.row(")
             .contains(".in(in.stream().map(row -> org.jooq.impl.DSL.row(")
-            .contains("org.jooq.impl.DSL.val(row.get(\"filmId\")")
+            .contains("org.jooq.impl.DSL.val(row.get(\"releaseYear\")")
             .contains(".toList())")
             .contains(".returningResult(")
-            .contains(".fetch(");
+            .contains(".fetch(")
+            .doesNotContain("transactionResult");
     }
 
     @Test

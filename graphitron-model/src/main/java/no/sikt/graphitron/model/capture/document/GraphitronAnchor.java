@@ -987,12 +987,12 @@ public final class GraphitronAnchor {
         var t = GRAPHITRON_MUTATION_ENTRY;
         dsl.insertInto(t)
             .columns(t.GRAPH_NAME, t.TYPE_NAME, t.FIELD_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                t.SOURCE_COLUMN, t.OPERATION, t.MULTI_ROW, t.MISSING_AS_DELETED, t.TABLE_REF,
+                t.SOURCE_COLUMN, t.OPERATION, t.MULTI_ROW, t.FAIL_ON_MISSING, t.TABLE_REF,
                 t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART, t.TOUCHED_AT)
             .select(dsl
                 .select(val(graph, t.GRAPH_NAME), c.field(TYPE_NAME), c.field(FIELD_NAME),
                     c.field(SITE_NAME), c.field(SITE_LINE), c.field(SITE_COLUMN),
-                    e.OPERATION, e.MULTI_ROW, e.MISSING_AS_DELETED, e.TABLE_REF,
+                    e.OPERATION, e.MULTI_ROW, e.FAIL_ON_MISSING, e.TABLE_REF,
                     e.TABLE_REF_NAMESPACE_PART,
                     e.TABLE_REF_NAME_PART, val(touchedAt, t.TOUCHED_AT))
                 .from(c)
@@ -1005,7 +1005,7 @@ public final class GraphitronAnchor {
             .set(t.SOURCE_COLUMN, excluded(t.SOURCE_COLUMN))
             .set(t.OPERATION, excluded(t.OPERATION))
             .set(t.MULTI_ROW, excluded(t.MULTI_ROW))
-            .set(t.MISSING_AS_DELETED, excluded(t.MISSING_AS_DELETED))
+            .set(t.FAIL_ON_MISSING, excluded(t.FAIL_ON_MISSING))
             .set(t.TABLE_REF, excluded(t.TABLE_REF))
             .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
             .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART))

@@ -1500,7 +1500,7 @@ public class GraphitronSchemaBuilder {
         assertDirective(ctx, DIR_TENANT_FAN_OUT);
         assertDirective(ctx, DIR_ORDER_BY);
         assertDirective(ctx, DIR_CONDITION);
-        assertDirective(ctx, DIR_MUTATION, ARG_TYPE_NAME, ARG_MULTI_ROW, ARG_MISSING_AS_DELETED);
+        assertDirective(ctx, DIR_MUTATION, ARG_TYPE_NAME, ARG_MULTI_ROW, ARG_FAIL_ON_MISSING);
         assertDirective(ctx, DIR_AS_CONNECTION, ARG_DEFAULT_FIRST_VALUE, ARG_CONNECTION_NAME);
     }
 

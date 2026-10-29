@@ -2453,13 +2453,31 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Emits a fetcher for the Delete write arm: a synchronous static
-     * method that runs {@code dsl.deleteFrom(table).where(<lookupKey predicates>)
-     * .returningResult(<keys or $project>).fetchOne(...)}.
+     * Emits a fetcher for the Delete write arm: a synchronous static method that runs
+     * {@code dsl.deleteFrom(table).where(<lookupKey predicates>).returningResult(<keys>)} and
+     * encodes the returned keys as the field's {@code ID} or {@code [ID!]}.
      *
-     * <p>Empty-match semantics: {@code .fetchOne(...)} returns {@code null} when the WHERE clause
-     * matches no row. graphql-java surfaces that as a GraphQL null on a nullable field, or a
-     * non-null violation on {@code ID!}/{@code Type!}.
+     * <p>Empty-match semantics follow the carrier arm ({@link #deleteMissPolicy}), the same reading
+     * the payload-returning DELETE gives it:
+     * <ul>
+     *   <li>{@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey}: a key that
+     *       matches no row is answered with the id the client sent, encoded from the input's
+     *       values.</li>
+     *   <li>{@link no.sikt.graphitron.rewrite.model.DeleteRows.FailOnMissing}: a key that matches
+     *       no row fails the call, redacted like any other exception here.</li>
+     *   <li>{@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast}: the single-row form
+     *       answers {@code null} on no match, and the list form answers the deleted rows'
+     *       ids.</li>
+     * </ul>
+     *
+     * <p>A key-identified list input runs one statement per input row on the per-row loop the
+     * payload-returning bulk DELETE uses ({@link #perRowLoop}), so the answer holds one id per input
+     * key in input order and a strict miss rolls every row back. The loop's records are typed over
+     * {@link MutationField.DmlTableField#deleteReturning()}, primary key then node-key tail, which
+     * is the order {@link #missingRowEcho} builds an echo in, so a deleted row and an echoed one are
+     * one {@code RecordN} type whatever order the node's key lists its columns; the encode reads
+     * each column by field reference. The broadcast list form keeps its one statement, a
+     * {@code WHERE (cols) IN (...)} over every input row.
      */
     private static MethodSpec buildMutationDeleteFetcher(TypeFetcherEmissionContext ctx, MutationField.DmlTableField f,
                                                           OperationMember.Write.Delete w,
@@ -2473,22 +2491,75 @@ public class TypeFetcherGenerator {
         var tableRef = inputArg.table();
         var tablesOnly = GeneratorUtils.ResolvedTableNames.ofTable(tableRef);
         String tableLocal = tablesOnly.tableLocalName();
-        var whereGroups = keyGroupsOf(w.deleteRows().whereColumns());
+        var deleteRows = w.deleteRows();
+        var whereGroups = keyGroupsOf(deleteRows.whereColumns());
+        var encode = switch (f.returnExpression()) {
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle e -> e.encode();
+            case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList e -> e.encode();
+            default -> throw new IllegalStateException(
+                "DELETE fetcher '" + f.qualifiedName() + "' carries a non-encoded return; "
+                + "DmlTableField's compact constructor rejects that pairing");
+        };
 
-        var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal);
-        var postInGuard = CodeBlock.builder();
         if (inputArg.list()) {
-            dmlChain.add(".where(").add(buildBulkLookupRowIn(whereGroups, tablesOnly, tableRef)).add(")\n");
-        } else {
-            var chunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
-            postInGuard.add(chunk.decodeLocals());
-            dmlChain.add(".where(").add(chunk.whereExpr()).add(")\n");
+            if (deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast) {
+                var dmlChain = CodeBlock.builder().add(".deleteFrom($L)\n", tableLocal)
+                    .add(".where(").add(buildBulkLookupRowIn(whereGroups, tablesOnly, tableRef)).add(")\n");
+                return buildDmlFetcher(ctx, f, f.returnExpression(),
+                    inputArg.name(), tableRef, tablesOnly, tableLocal,
+                    outputPackage, new KeyStatement.Chain(dmlChain.build()),
+                    f.dialectRequirement(), inputArg.list(), row, carrierDsl);
+            }
+            var returningCols = f.deleteReturning().orElseThrow().columns();
+            TypeName recordRowType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
+                new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), returningCols);
+            TypeName resultType = ParameterizedTypeName.get(RESULT, recordRowType);
+            var perRow = buildBulkRecordPerRowDeleteBody(deleteRows, whereGroups, tableRef, tablesOnly,
+                tableLocal, returningCols, recordRowType);
+            var loop = perRowLoop(perRow, resultType, "deleted",
+                buildPkFieldList(returningCols, tablesOnly, tableRef), "DELETE", f.qualifiedName(), outputPackage);
+            return buildDmlFetcher(ctx, f, f.returnExpression(),
+                inputArg.name(), tableRef, tablesOnly, tableLocal, outputPackage,
+                f.dialectRequirement(), CodeBlock.of(""), /*listInput=*/ true,
+                valueType -> CodeBlock.builder()
+                    .add(loop)
+                    .addStatement("$T payload = deleted.map($L)", valueType, encodeLambda(encode, tablesOnly, tableRef))
+                    .build());
         }
 
+        var chunk = buildLookupWhereSingleRow(whereGroups, tablesOnly, tableRef, "in");
+        var statement = new KeyStatement.Chain(CodeBlock.builder()
+            .add(".deleteFrom($L)\n", tableLocal)
+            .add(".where(").add(chunk.whereExpr()).add(")\n")
+            .build());
+        var onMiss = deleteMissPolicy(deleteRows, idem -> missingRowEchoEncoded(idem, chunk, encode));
         return buildDmlFetcher(ctx, f, f.returnExpression(),
-            inputArg.name(), tableRef, tablesOnly, tableLocal,
-            outputPackage, new KeyStatement.Chain(dmlChain.build()),
-            f.dialectRequirement(), postInGuard.build(), inputArg.list(), row, carrierDsl);
+            inputArg.name(), tableRef, tablesOnly, tableLocal, outputPackage,
+            f.dialectRequirement(), chunk.decodeLocals(), /*listInput=*/ false,
+            valueType -> {
+                var b = CodeBlock.builder()
+                    .add(emitEncoded(encode, valueType, tableRef, tablesOnly, statement, /*isList=*/ false));
+                onMiss.ifPresent(policy -> b.add(singleRowMissBranch(policy, "DELETE", f.qualifiedName())));
+                return b.build();
+            });
+    }
+
+    /**
+     * A single-row write's miss branch over its {@code payload} local, from the
+     * {@link MissPolicy} its carrier arm reads as: {@link MissPolicy.Echo} assigns the echo,
+     * {@link MissPolicy.FailFast} throws {@link #singleRowMissThrow}. {@link MissPolicy.CannotMiss}
+     * and {@link MissPolicy.CountThenThrow} are bulk-loop readings with no single-row meaning.
+     */
+    private static CodeBlock singleRowMissBranch(MissPolicy onMiss, String verb, String qualifiedName) {
+        var b = CodeBlock.builder().beginControlFlow("if (payload == null)");
+        switch (onMiss) {
+            case MissPolicy.Echo echo -> b.addStatement("payload = $L", echo.echo());
+            case MissPolicy.FailFast _ -> b.add(singleRowMissThrow(verb, qualifiedName));
+            case MissPolicy.CannotMiss _, MissPolicy.CountThenThrow _ -> throw new IllegalStateException(
+                "single-row DML fetcher '" + qualifiedName + "' carries the bulk-only miss policy "
+                + onMiss.getClass().getSimpleName());
+        }
+        return b.endControlFlow().build();
     }
 
     /**
@@ -4395,7 +4466,7 @@ public class TypeFetcherGenerator {
      *
      * <p>{@code decodeLocalByPath} names, per node-id carrier's input access path, the decode local
      * {@link #decodeLocals()} declares for it, so a reader needing another slot of the same decode
-     * (a {@code missingAsDeleted} echo of a dropped node-key column) reads the record the WHERE
+     * (an idempotent DELETE's echo of a dropped node-key column) reads the record the WHERE
      * already decoded rather than decoding it a second time.
      */
     private record LookupWhereChunk(CodeBlock decodeLocals, CodeBlock whereExpr,
@@ -4845,6 +4916,9 @@ public class TypeFetcherGenerator {
      *       return shapes (EncodedList / ProjectedList), so {@code valueType} is already
      *       {@code List<X>} and {@code List.of()} is its typed empty.</li>
      * </ul>
+     *
+     * <p>The {@code payload} local is declared by the projection terminator over
+     * {@code statement} ({@link #emitDmlReturnExpression}).
      */
     private static MethodSpec buildDmlFetcher(
             TypeFetcherEmissionContext ctx,
@@ -4861,6 +4935,32 @@ public class TypeFetcherGenerator {
             boolean listInput,
             no.sikt.graphitron.command.LauncherCommand row,
             no.sikt.graphitron.command.CarrierDsl carrierDsl) {
+        return buildDmlFetcher(ctx, field, rex, inputArgName, tableRef, tablesOnly, tableLocal,
+            outputPackage, dialectRequirement, postInGuard, listInput,
+            valueType -> emitDmlReturnExpression(ctx, field, rex, row, carrierDsl, valueType,
+                tableRef, tablesOnly, outputPackage, statement));
+    }
+
+    /**
+     * The skeleton itself, with the block that declares the {@code payload} local as its seam:
+     * {@code declarePayload} is handed the fetcher's value type and rendered after
+     * {@code tableLocal} is bound, inside the {@code try}. The overloads above render it from a
+     * {@link KeyStatement}; the direct-return DELETE renders its own, since a single-row miss
+     * branch and the per-row loop have no place in one key statement.
+     */
+    private static MethodSpec buildDmlFetcher(
+            TypeFetcherEmissionContext ctx,
+            no.sikt.graphitron.rewrite.model.MutationField.DmlTableField field,
+            no.sikt.graphitron.rewrite.model.DmlReturnExpression rex,
+            String inputArgName,
+            TableRef tableRef,
+            GeneratorUtils.ResolvedTableNames tablesOnly,
+            String tableLocal,
+            String outputPackage,
+            DialectRequirement dialectRequirement,
+            CodeBlock postInGuard,
+            boolean listInput,
+            java.util.function.Function<TypeName, CodeBlock> declarePayload) {
         TypeName valueType = switch (rex) {
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedSingle es -> ClassName.get(String.class);
             case no.sikt.graphitron.rewrite.model.DmlReturnExpression.EncodedList el ->
@@ -4909,8 +5009,7 @@ public class TypeFetcherGenerator {
             tablesOnly.jooqTableClass(), tableLocal,
             tablesOnly.tablesClass(), tableRef.javaFieldName());
 
-        builder.addCode(emitDmlReturnExpression(ctx, field, rex, row, carrierDsl, valueType,
-            tableRef, tablesOnly, outputPackage, statement));
+        builder.addCode(declarePayload.apply(valueType));
         builder.addCode(returnSyncSuccess(valueType, "payload", tenantDsl.handDown()));
         builder.nextControlFlow("catch ($T e)", Exception.class);
         builder.addCode(noChannelCatchArm(outputPackage));
@@ -5003,16 +5102,26 @@ public class TypeFetcherGenerator {
         var keyRecordType = no.sikt.graphitron.rewrite.model.SourceKey.keyElementType(
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), keyCols);
 
+        var fetch = CodeBlock.builder().add(isList ? ".fetch(" : ".fetchOne(")
+            .add(encodeLambda(encode, tablesOnly, tableRef)).add(")").build();
+        return renderKeyFetch(statement, CodeBlock.of("$T payload = ", valueType), CodeBlock.of("dsl"),
+            keyFields.build(), keyRecordType, fetch);
+    }
+
+    /**
+     * {@code r -> encode<TypeName>(r.get(<col>), ...)} over the encoder's parameter columns, each
+     * read by field reference, so it encodes a record whatever order that record holds the columns
+     * in.
+     */
+    private static CodeBlock encodeLambda(no.sikt.graphitron.rewrite.model.HelperRef.Encode encode,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var keyCols = encode.paramSignature();
         var lambda = CodeBlock.builder().add("r -> $T.$L(", encode.encoderClass(), encode.methodName());
         for (int i = 0; i < keyCols.size(); i++) {
             if (i > 0) lambda.add(", ");
-            var col = keyCols.get(i);
-            lambda.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), col.javaName());
+            lambda.add("r.get($T.$L.$L)", tablesOnly.tablesClass(), tableRef.javaFieldName(), keyCols.get(i).javaName());
         }
-        lambda.add(")");
-        var fetch = CodeBlock.builder().add(isList ? ".fetch(" : ".fetchOne(").add(lambda.build()).add(")").build();
-        return renderKeyFetch(statement, CodeBlock.of("$T payload = ", valueType), CodeBlock.of("dsl"),
-            keyFields.build(), keyRecordType, fetch);
+        return lambda.add(")").build();
     }
 
     /**
@@ -5597,7 +5706,9 @@ public class TypeFetcherGenerator {
      * ({@code fetchOne()} answering {@code null}) returns null data ahead of the wrap, so the whole
      * payload renders {@code null} with or without a channel; wrapping it as {@code Success(null)}
      * would hand the data field a non-null payload with no key to read. The exception is a chain
-     * carrying a {@link DmlChainAndGuards#missingRowEcho()}, whose no-match answer is the echo.
+     * carrying a {@link DmlChainAndGuards#onMiss()}: {@link MissPolicy.Echo} answers the echo, and
+     * {@link MissPolicy.FailFast} throws inside the {@code try}, so the catch arm routes it through
+     * the error channel or redacts it.
      */
     private static MethodSpec buildSingleRecordTwoStepFetcher(
             TypeFetcherEmissionContext ctx, no.sikt.graphitron.rewrite.model.OutputField field, String argName,
@@ -5639,11 +5750,11 @@ public class TypeFetcherGenerator {
 
         builder.addCode(renderTransactionalKeyFetch(chainAndGuards.statement(), payloadType, "payload",
             buildPkFieldList(pkCols, tablesOnly, tableRef), payloadType, ".fetchOne()"));
-        // A missingAsDeleted DELETE whose key matched no row answers the key the client sent,
+        // A DELETE whose key matched no row answers the key the client sent, or fails the call,
         // ahead of the null-data check below, which then never fires for that shape.
-        chainAndGuards.missingRowEcho().ifPresent(echo -> builder.beginControlFlow("if (payload == null)")
-            .addStatement("payload = $L", echo)
-            .endControlFlow());
+        // Only the DELETE chain carries a policy (buildRecordDeleteChain).
+        chainAndGuards.onMiss().ifPresent(onMiss ->
+            builder.addCode(singleRowMissBranch(onMiss, "DELETE", qualifiedName)));
 
         if (wrap) {
             builder.addCode(CodeBlock.builder().add("if (payload == null) ")
@@ -5766,10 +5877,11 @@ public class TypeFetcherGenerator {
 
     /**
      * The key-returning DML statement plus any pre-DML guard statements (e.g. dynamic SET-map
-     * construction), and, for a {@code missingAsDeleted: true} DELETE, the key record to answer
-     * when the statement matches no row ({@link #missingRowEcho}).
+     * construction), and, for a DELETE, what a statement that matches no row means
+     * ({@link #deleteMissPolicy}). Empty on every other verb, and on a broadcast DELETE: the
+     * single-row skeleton then answers {@code null}.
      */
-    private record DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard, Optional<CodeBlock> missingRowEcho) {
+    private record DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard, Optional<MissPolicy> onMiss) {
         DmlChainAndGuards(KeyStatement statement, CodeBlock preGuard) {
             this(statement, preGuard, Optional.empty());
         }
@@ -5910,9 +6022,9 @@ public class TypeFetcherGenerator {
      * (consumed by the per-field
      * {@link no.sikt.graphitron.rewrite.model.ChildField.SingleRecordIdFieldFromReturning}
      * carrier) is a RETURNING Record of the primary key, widened to the node key where the
-     * payload ids need it. On
-     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} the chain also
-     * carries the echo record the fetcher answers when no row matched.
+     * payload ids need it. The chain also carries the arm's miss policy
+     * ({@link #deleteMissPolicy}): the echo record the fetcher answers when no row matched, or the
+     * throw.
      */
     private static DmlChainAndGuards buildRecordDeleteChain(
             no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
@@ -5924,10 +6036,9 @@ public class TypeFetcherGenerator {
             .add(".deleteFrom($L)\n", tableLocal)
             .add(".where(").add(whereChunk.whereExpr()).add(")\n")
             .build();
-        Optional<CodeBlock> echo = deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem
-            ? Optional.of(missingRowEcho(idem, whereChunk, "dsl", tablesOnly, tableRef))
-            : Optional.empty();
-        return new DmlChainAndGuards(new KeyStatement.Chain(chain), preGuard.build(), echo);
+        var onMiss = deleteMissPolicy(deleteRows,
+            idem -> missingRowEcho(idem, whereChunk, "dsl", tablesOnly, tableRef));
+        return new DmlChainAndGuards(new KeyStatement.Chain(chain), preGuard.build(), onMiss);
     }
 
     private static DmlChainAndGuards buildRecordInsertChain(
@@ -6077,7 +6188,11 @@ public class TypeFetcherGenerator {
      */
     private record PerRow(CodeBlock statement, MissPolicy onMiss) {}
 
-    /** What a per-row DML body's {@code null} record means; the skeleton renders the branch. */
+    /**
+     * What a DML statement's {@code null} record means. The per-row loop ({@link #perRowLoop})
+     * renders every arm; the single-row skeletons render {@link Echo} and {@link FailFast}
+     * ({@link #singleRowMissBranch}).
+     */
     private sealed interface MissPolicy {
         /** The statement always yields a row ({@code INSERT … RETURNING}); a plain append. */
         record CannotMiss() implements MissPolicy {}
@@ -6127,7 +6242,6 @@ public class TypeFetcherGenerator {
             new no.sikt.graphitron.rewrite.model.SourceKey.Wrap.Record(), pkCols);
         var resultClass = ClassName.get("org.jooq", "Result");
         TypeName resultType = ParameterizedTypeName.get(resultClass, recordRowType);
-        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         boolean wrap = errorChannel.isPresent();
         TypeName valueType = wrap ? outcomeOf(resultType, outputPackage) : resultType;
 
@@ -6160,19 +6274,43 @@ public class TypeFetcherGenerator {
             builder.addCode(lengthCheckPreStep(checked, argName, true, valueType, outputPackage));
         }
 
-        // transactionResult: per-row DML inside one transaction. The lambda binds a transactional
-        // DSLContext (txd), allocates a typed Result over the PK columns, iterates input rows
-        // in declaration order, runs one DML per row with PK RETURNING, and appends the returned
-        // RecordN to the Result or takes the body's miss branch. On any per-row throw (constraint
-        // violation, type mismatch, RLS denial, ...), the transaction rolls back; the outer catch
-        // arm routes the exception through the carrier's error channel, or redacts it when the
-        // payload has none.
         var perRow = perRowBodyFn.build(tablesOnly, tableLocal, pkCols, recordRowType);
+        builder.addCode(perRowLoop(perRow, resultType, "payload",
+            buildPkFieldList(pkCols, tablesOnly, tableRef), verb, qualifiedName, outputPackage));
+
+        builder.addCode(wrap
+            ? returnSyncSuccessWrapped(valueType, outputPackage, "payload", tenantDsl.handDown())
+            : returnSyncSuccess(resultType, "payload", tenantDsl.handDown()));
+        builder.nextControlFlow("catch ($T e)", Exception.class);
+        builder.addCode(dmlCarrierCatchArm(ctx, field.name(), errorChannel, valueType, outputPackage));
+        builder.endControlFlow();
+        return builder.build();
+    }
+
+    /**
+     * The per-row DML loop shared by the bulk payload-returning DML ({@link #buildBulkRecordTwoStepFetcher})
+     * and the direct-return {@code [ID!]} DELETE ({@link #buildMutationDeleteFetcher}): declares
+     * {@code local} of {@code resultType} ({@code Result<RecordN>} over {@code returningFields})
+     * from one {@code dsl.transactionResult(...)} that iterates the {@code in} list in input order,
+     * runs {@code perRow}'s statement once per row with the row bound to {@code row}, and appends
+     * the returned record or takes its {@link MissPolicy}'s miss branch. On any per-row throw
+     * (constraint violation, type mismatch, RLS denial, a {@link MissPolicy.FailFast} miss, ...)
+     * the transaction rolls back and the throw reaches the caller's catch arm. {@code verb} and
+     * {@code qualifiedName} name the write and the field in the miss messages. Requires {@code dsl}
+     * and {@code in} in scope; each caller keeps its own envelope (empty-input answer, value
+     * wrapping, catch arm) because their value types differ.
+     */
+    private static CodeBlock perRowLoop(PerRow perRow, TypeName resultType, String local,
+            CodeBlock returningFields, String verb, String qualifiedName, String outputPackage) {
+        // The lambda binds a transactional DSLContext (txd), allocates a typed Result over the
+        // returning columns, iterates input rows in declaration order, runs one DML per row, and
+        // appends the returned RecordN to the Result or takes the body's miss branch.
+        var dslContextClass = ClassName.get("org.jooq", "DSLContext");
         boolean countMisses = perRow.onMiss() instanceof MissPolicy.CountThenThrow;
         var tx = CodeBlock.builder()
-            .add("$T payload = dsl.transactionResult(tx -> {\n", resultType).indent()
+            .add("$T $L = dsl.transactionResult(tx -> {\n", resultType, local).indent()
             .add("$T txd = $T.using(tx);\n", dslContextClass, DSL)
-            .add("$T acc = txd.newResult($L);\n", resultType, buildPkFieldList(pkCols, tablesOnly, tableRef));
+            .add("$T acc = txd.newResult($L);\n", resultType, returningFields);
         if (countMisses) {
             tx.addStatement("$T<$T> misses = new $T<>()", LIST, Integer.class, ARRAY_LIST);
         }
@@ -6210,18 +6348,10 @@ public class TypeFetcherGenerator {
                     verb, qualifiedName)
                 .endControlFlow();
         }
-        builder.addCode(tx
+        return tx
             .add("return acc;\n")
             .unindent().add("});\n")
-            .build());
-
-        builder.addCode(wrap
-            ? returnSyncSuccessWrapped(valueType, outputPackage, "payload", tenantDsl.handDown())
-            : returnSyncSuccess(resultType, "payload", tenantDsl.handDown()));
-        builder.nextControlFlow("catch ($T e)", Exception.class);
-        builder.addCode(dmlCarrierCatchArm(ctx, field.name(), errorChannel, valueType, outputPackage));
-        builder.endControlFlow();
-        return builder.build();
+            .build();
     }
 
     /**
@@ -6290,20 +6420,22 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * Per-row DELETE body for the payload-returning Delete write arm on the bulk carrier
-     * (driven from {@link #buildMutationBulkDmlRecordFetcher}). Each input row builds a
+     * Per-row DELETE body for the key-identified bulk DELETE, payload-returning (driven from
+     * {@link #buildMutationBulkDmlRecordFetcher}) or direct-return {@code [ID!]} (driven from
+     * {@link #buildMutationDeleteFetcher}). Each input row builds a
      * {@code deleteFrom(table).where(<lookup>).returningResult(<returning>).fetchOne()} statement;
-     * the skeleton appends the returned {@code RecordN} to the bulk accumulator in input order. A
-     * row that matches no target is {@link MissPolicy.FailFast}: the skeleton throws
-     * {@link IllegalStateException} at that row, naming it by index and the field by coordinate,
-     * since silent skipping would break input-order preservation. The per-row WHERE columns are
-     * sourced from the {@link no.sikt.graphitron.rewrite.model.DeleteRows} carrier
-     * ({@link #keyGroupsOf}) rather than {@code tia.fieldBindings()}.
+     * the loop ({@link #perRowLoop}) appends the returned {@code RecordN} to the accumulator in input
+     * order. The per-row WHERE columns are sourced from the
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows} carrier ({@link #keyGroupsOf}) rather than
+     * {@code tia.fieldBindings()}.
      *
-     * <p>On {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} a row that
-     * matches no target is not an error: the policy is {@link MissPolicy.Echo}, and its slot takes
-     * the key the client sent ({@link #missingRowEcho}), so {@code acc} still holds one entry per
-     * input row in input order.
+     * <p>What a row that matches no target means is the carrier arm's ({@link #deleteMissPolicy}).
+     * On {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} it is not an
+     * error: the policy is {@link MissPolicy.Echo}, and its slot takes the key the client sent
+     * ({@link #missingRowEcho}), so {@code acc} still holds one entry per input row in input order.
+     * Otherwise it is {@link MissPolicy.FailFast}: the loop throws {@link IllegalStateException} at
+     * that row, naming it by index and the field by coordinate, since silent skipping would break
+     * input-order preservation.
      */
     private static PerRow buildBulkRecordPerRowDeleteBody(
             no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
@@ -6319,9 +6451,9 @@ public class TypeFetcherGenerator {
             .add("    .where(").add(whereChunk.whereExpr()).add(")\n")
             .add("    .returningResult(").add(buildPkFieldList(pkCols, tablesOnly, tableRef)).add(")\n")
             .add("    .fetchOne();\n");
-        MissPolicy onMiss = deleteRows instanceof no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem
-            ? new MissPolicy.Echo(missingRowEcho(idem, whereChunk, "txd", tablesOnly, tableRef))
-            : new MissPolicy.FailFast();
+        MissPolicy onMiss = deleteMissPolicy(deleteRows,
+                idem -> missingRowEcho(idem, whereChunk, "txd", tablesOnly, tableRef))
+            .orElse(new MissPolicy.FailFast());
         return new PerRow(body.build(), onMiss);
     }
 
@@ -6343,9 +6475,82 @@ public class TypeFetcherGenerator {
     }
 
     /**
-     * The key record a {@code missingAsDeleted: true} DELETE answers for an input key that matched
-     * no row: {@code <dsl>.newRecord(<returning fields>).values(<key values>)}, the key the client
-     * sent, built the way a deleted row's {@code RETURNING} record is. Walks
+     * The miss behaviour a DELETE's carrier arm reads as, the one projection every DELETE path
+     * (payload single, payload bulk, direct single, direct bulk) renders its miss branch from:
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey} answers the key the
+     * client sent ({@link MissPolicy.Echo} of {@code echo}'s expression),
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.FailOnMissing} fails the call
+     * ({@link MissPolicy.FailFast}). A
+     * {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} names no key that could be
+     * missing, so it answers empty and each path keeps its own answer: the bulk loop fails fast,
+     * the single-row paths answer {@code null}.
+     */
+    private static Optional<MissPolicy> deleteMissPolicy(
+            no.sikt.graphitron.rewrite.model.DeleteRows deleteRows,
+            java.util.function.Function<no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey, CodeBlock> echo) {
+        return switch (deleteRows) {
+            case no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem ->
+                Optional.of(new MissPolicy.Echo(echo.apply(idem)));
+            case no.sikt.graphitron.rewrite.model.DeleteRows.FailOnMissing _ -> Optional.of(new MissPolicy.FailFast());
+            case no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast _ -> Optional.empty();
+        };
+    }
+
+    /**
+     * The key record an idempotent DELETE answers for an input key that matched no row:
+     * {@code <dsl>.newRecord(<returning fields>).values(<key values>)}, the key the client sent,
+     * built the way a deleted row's {@code RETURNING} record is, over the columns and values
+     * {@link #missingRowEchoValues} sources, in its order.
+     */
+    private static CodeBlock missingRowEcho(
+            no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem,
+            LookupWhereChunk whereChunk, String dslLocal,
+            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
+        var fields = CodeBlock.builder();
+        var values = CodeBlock.builder();
+        boolean first = true;
+        for (var echo : missingRowEchoValues(idem, whereChunk).values()) {
+            if (!first) {
+                fields.add(", ");
+                values.add(", ");
+            }
+            first = false;
+            fields.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), echo.column().javaName());
+            values.add(echo.value());
+        }
+        return CodeBlock.of("$L.newRecord($L).values($L)", dslLocal, fields.build(), values.build());
+    }
+
+    /**
+     * The encoded id an idempotent direct-return {@code ID} DELETE answers for an input key that
+     * matched no row: the node type's encoder called on the values {@link #missingRowEchoValues}
+     * sources, looked up column by column in the encoder's parameter order.
+     */
+    private static CodeBlock missingRowEchoEncoded(
+            no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem,
+            LookupWhereChunk whereChunk, no.sikt.graphitron.rewrite.model.HelperRef.Encode encode) {
+        var values = missingRowEchoValues(idem, whereChunk);
+        var args = CodeBlock.builder();
+        var params = encode.paramSignature();
+        for (int i = 0; i < params.size(); i++) {
+            var echo = values.get(params.get(i).sqlName());
+            if (echo == null) {
+                throw new IllegalStateException("idempotent DELETE echo: encoder parameter column '"
+                    + params.get(i).sqlName() + "' is neither a primary-key column nor an echo binding");
+            }
+            if (i > 0) args.add(", ");
+            args.add(echo.value());
+        }
+        return CodeBlock.of("$T.$L($L)", encode.encoderClass(), encode.methodName(), args.build());
+    }
+
+    /** One column of a missing row's echo and the expression supplying its value. */
+    private record EchoValue(no.sikt.graphitron.model.jooq.ColumnRef column, CodeBlock value) {}
+
+    /**
+     * The values an idempotent DELETE answers a missing row with, keyed by column SQL name, in
+     * primary-key-then-tail order: the order of the leaf's {@code RETURNING}, so a record built over
+     * them has the deleted row's shape. Walks
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey#keyBinding()}, which
      * is in primary-key order, and looks each column's value up in the chunk's
      * {@link LookupWhereChunk#keyValues()}, so the echo encodes exactly the values the WHERE
@@ -6356,37 +6561,43 @@ public class TypeFetcherGenerator {
      * carrier: the client's value, so an echoed id is the id the client sent, in the current key
      * shape, since the decode converts an id in a legacy shape before the WHERE reads its values.
      */
-    private static CodeBlock missingRowEcho(
+    private static java.util.SequencedMap<String, EchoValue> missingRowEchoValues(
             no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey idem,
-            LookupWhereChunk whereChunk, String dslLocal,
-            GeneratorUtils.ResolvedTableNames tablesOnly, TableRef tableRef) {
-        var fields = CodeBlock.builder();
-        var values = CodeBlock.builder();
-        for (int i = 0; i < idem.keyBinding().size(); i++) {
-            var column = idem.keyBinding().get(i).targetColumn();
+            LookupWhereChunk whereChunk) {
+        var out = new java.util.LinkedHashMap<String, EchoValue>();
+        for (var binding : idem.keyBinding()) {
+            var column = binding.targetColumn();
             var value = whereChunk.keyValues().get(column.sqlName());
             if (value == null) {
-                throw new IllegalStateException("missingAsDeleted echo: primary-key column '"
+                throw new IllegalStateException("idempotent DELETE echo: primary-key column '"
                     + column.sqlName() + "' has no bound value in the DELETE's WHERE");
             }
-            if (i > 0) {
-                fields.add(", ");
-                values.add(", ");
-            }
-            fields.add("$T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), column.javaName());
-            values.add(value);
+            out.put(column.sqlName(), new EchoValue(column, value));
         }
         for (var echo : idem.echoBinding()) {
             var decodeLocal = whereChunk.decodeLocalByPath().get(accessPathOf(echo.sdlFieldName(), echo.extraction()));
             if (decodeLocal == null) {
-                throw new IllegalStateException("missingAsDeleted echo: node-key column '"
+                throw new IllegalStateException("idempotent DELETE echo: node-key column '"
                     + echo.targetColumn().sqlName() + "' reads input field '" + echo.sdlFieldName()
                     + "', whose decode the DELETE's WHERE does not declare");
             }
-            fields.add(", $T.$L.$L", tablesOnly.tablesClass(), tableRef.javaFieldName(), echo.targetColumn().javaName());
-            values.add(", $L.value$L()", decodeLocal, echo.decodeSlot() + 1);
+            out.put(echo.targetColumn().sqlName(), new EchoValue(echo.targetColumn(),
+                CodeBlock.of("$L.value$L()", decodeLocal, echo.decodeSlot() + 1)));
         }
-        return CodeBlock.of("$L.newRecord($L).values($L)", dslLocal, fields.build(), values.build());
+        return out;
+    }
+
+    /**
+     * The statement a single-row write throws when its key matched no row and its
+     * {@link MissPolicy} is {@link MissPolicy.FailFast}. Keeps the "matched zero rows" substring the
+     * bulk message carries, so an {@code @error} handler matching one matches both.
+     */
+    private static CodeBlock singleRowMissThrow(String verb, String qualifiedName) {
+        return CodeBlock.builder()
+            .addStatement("throw new $T($S)", IllegalStateException.class,
+                "@mutation(typeName: " + verb + ") row matched zero rows; the key found no target for "
+                    + qualifiedName)
+            .build();
     }
 
     /** Builds the comma-separated list of PK column references for a {@code returningResult(...)} call. */

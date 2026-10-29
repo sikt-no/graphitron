@@ -18,8 +18,8 @@ import java.util.stream.Collectors;
  * there is <b>no {@code NoSetFields}</b> (DELETE has no SET clause to be empty) and <b>no
  * {@code MixedCarrierKeyMembership}</b> (DELETE has no SET boundary for a composite carrier to
  * straddle: every admitted column is a WHERE filter, or dropped where a node id covers the whole
- * matched key plus more). The three remaining arms map verbatim; the {@code missingAsDeleted} arms
- * are DELETE's own.
+ * matched key plus more). The three remaining arms map verbatim; the arms on answering a key that
+ * matches no row are DELETE's own.
  *
  * <p>The arm-to-code mapping is exposed via {@link #lspCode()} under the
  * {@code graphitron.delete-rows.} namespace so the LSP {@code Diagnostic} projector can read the
@@ -29,8 +29,9 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
     DeleteRowsError.NoUniqueKeyCoverage,
     DeleteRowsError.UnsupportedInputFieldShape,
     DeleteRowsError.OverrideConditionNotSupported,
-    DeleteRowsError.MissingAsDeletedNeedsPrimaryKey,
-    DeleteRowsError.MissingAsDeletedEchoUnencodable
+    DeleteRowsError.IdempotentDeleteNeedsPrimaryKey,
+    DeleteRowsError.IdempotentDeleteEchoUnencodable,
+    DeleteRowsError.FailOnMissingNeedsKey
 {
     /** LSP wire code under the {@code graphitron.delete-rows.} namespace. */
     String lspCode();
@@ -121,71 +122,94 @@ public sealed interface DeleteRowsError extends Rejection.AuthorError permits
     }
 
     /**
-     * {@code missingAsDeleted: true} on a DELETE whose input does not identify rows by exactly the
-     * primary key: it covers only a unique key, contributes a column beyond the primary key, binds
-     * a primary-key column twice, or covers no key at all. The echo for a missing row is the
-     * primary key, which only an input supplying the whole primary key can build, and an extra
-     * filter column would let the echo claim a deletion that did not happen. A node id covering
-     * the primary key plus more is admitted, since its other columns are dropped rather than
-     * filtered on. Names the table's
-     * primary key (empty for a table without one) and the input's columns.
+     * A DELETE answers a key that matches no row as already deleted, building that key's answer
+     * from the input, but its input does not identify rows by exactly the primary key: it covers
+     * only a unique key, contributes a column beyond the primary key, or binds a primary-key column
+     * twice. The answer for a missing row is the primary key, which only an input supplying the
+     * whole primary key can build, and an extra filter column would let the answer claim a deletion
+     * that did not happen. A node id covering the primary key plus more is admitted, since its
+     * other columns are dropped rather than filtered on. Names the table's primary key (empty for a
+     * table without one) and the input's columns.
      */
-    record MissingAsDeletedNeedsPrimaryKey(
+    record IdempotentDeleteNeedsPrimaryKey(
         String table,
         List<ColumnRef> inputColumns,
         List<ColumnRef> primaryKeyColumns
     ) implements DeleteRowsError {
-        public MissingAsDeletedNeedsPrimaryKey {
+        public IdempotentDeleteNeedsPrimaryKey {
             inputColumns = List.copyOf(inputColumns);
             primaryKeyColumns = List.copyOf(primaryKeyColumns);
         }
         @Override public String message() {
-            var sb = new StringBuilder("@mutation(typeName: DELETE, missingAsDeleted: true) input for table '")
-                .append(table).append("' must identify rows by exactly the primary key, binding each "
-                    + "primary-key column once and no other column. Input contributes ")
+            var sb = new StringBuilder("@mutation(typeName: DELETE) on table '").append(table)
+                .append("' answers a key that matches no row as deleted, which needs the input to "
+                    + "bind exactly the primary key, each primary-key column once and no other "
+                    + "column. Input contributes ")
                 .append(sqlNames(inputColumns)).append("; ");
             if (primaryKeyColumns.isEmpty()) {
                 sb.append("the table declares no primary key. ");
             } else {
                 sb.append("the primary key is ").append(sqlNames(primaryKeyColumns)).append(". ");
             }
-            return sb.append("A key that matches no row is echoed as deleted, and only the primary "
-                + "key supplied by the input can be echoed. Change the input to bind exactly the "
-                + "primary key, or remove missingAsDeleted: true. A node id whose key columns are "
-                + "the whole primary key plus more also qualifies: it filters on the primary key "
-                + "alone.").toString();
+            return sb.append("Change the input to bind exactly the primary key, or add "
+                + "failOnMissing: true to fail the call on a key that matches no row. A node id "
+                + "whose key columns are the whole primary key plus more also qualifies: it filters "
+                + "on the primary key alone.").toString();
         }
-        @Override public String lspCode() { return "graphitron.delete-rows.missing-as-deleted-needs-primary-key"; }
+        @Override public String lspCode() { return "graphitron.delete-rows.idempotent-delete-needs-primary-key"; }
     }
 
     /**
-     * {@code missingAsDeleted: true} on a DELETE whose payload ids encode a node key reaching
-     * beyond the primary key, while the input supplies no value for some of those extra columns.
-     * The input identifies rows by exactly the primary key, so a key that matches a row deletes it
-     * and the payload id is read back from the deleted row; but a key that matches no row is
-     * echoed from the input, and there is nothing to encode its extra columns from. Separate from
-     * {@link MissingAsDeletedNeedsPrimaryKey} because the fix differs: key the input by the node
-     * id rather than narrow it to the primary key. Names the table, the payload's node type, the
+     * A DELETE answers a key that matches no row as already deleted, but its response ids encode a
+     * node key reaching beyond the primary key, while the input supplies no value for some of those
+     * extra columns. The input identifies rows by exactly the primary key, so a key that matches a
+     * row deletes it and the id is read back from the deleted row; but a key that matches no row is
+     * answered from the input, and there is nothing to encode its extra columns from. Separate from
+     * {@link IdempotentDeleteNeedsPrimaryKey} because the fix differs: key the input by the node id
+     * rather than narrow it to the primary key. Names the table, the response's node type, the
      * input's columns and the node-key columns no input field supplies.
      */
-    record MissingAsDeletedEchoUnencodable(
+    record IdempotentDeleteEchoUnencodable(
         String table,
         String nodeTypeName,
         List<ColumnRef> inputColumns,
         List<ColumnRef> unsuppliedColumns
     ) implements DeleteRowsError {
-        public MissingAsDeletedEchoUnencodable {
+        public IdempotentDeleteEchoUnencodable {
             inputColumns = List.copyOf(inputColumns);
             unsuppliedColumns = List.copyOf(unsuppliedColumns);
         }
         @Override public String message() {
-            return "@mutation(typeName: DELETE, missingAsDeleted: true) on table '" + table
-                + "' echoes a key that matches no row as a '" + nodeTypeName + "' id, whose node key "
-                + "also encodes " + sqlNames(unsuppliedColumns) + ", but the input contributes only "
-                + sqlNames(inputColumns) + ", so a missing row's id has nothing to encode those "
-                + "columns from. Key the input by the '" + nodeTypeName + "' node id instead, or "
-                + "remove missingAsDeleted: true.";
+            return "@mutation(typeName: DELETE) on table '" + table
+                + "' answers a key that matches no row with a '" + nodeTypeName + "' id, whose node "
+                + "key also encodes " + sqlNames(unsuppliedColumns) + ", but the input contributes "
+                + "only " + sqlNames(inputColumns) + ", so a missing row's id has nothing to encode "
+                + "those columns from. Key the input by the '" + nodeTypeName + "' node id instead, "
+                + "or add failOnMissing: true.";
         }
-        @Override public String lspCode() { return "graphitron.delete-rows.missing-as-deleted-echo-unencodable"; }
+        @Override public String lspCode() { return "graphitron.delete-rows.idempotent-delete-echo-unencodable"; }
+    }
+
+    /**
+     * {@code failOnMissing: true} on a {@code multiRow: true} DELETE whose input covers no primary
+     * key or unique key. Such a DELETE deletes whatever its filter matches; a filter that matches
+     * nothing deleted nothing, and there is no key to report missing. Names the table and the
+     * input's columns.
+     */
+    record FailOnMissingNeedsKey(
+        String table,
+        List<ColumnRef> inputColumns
+    ) implements DeleteRowsError {
+        public FailOnMissingNeedsKey {
+            inputColumns = List.copyOf(inputColumns);
+        }
+        @Override public String message() {
+            return "@mutation(typeName: DELETE, multiRow: true, failOnMissing: true) input for table '"
+                + table + "' covers no primary key or unique key (it contributes "
+                + sqlNames(inputColumns) + "), so it deletes whatever its filter matches and names "
+                + "no key that could be missing. Remove failOnMissing: true, or add the column(s) "
+                + "of a primary key or unique key to the input.";
+        }
+        @Override public String lspCode() { return "graphitron.delete-rows.fail-on-missing-needs-key"; }
     }
 }

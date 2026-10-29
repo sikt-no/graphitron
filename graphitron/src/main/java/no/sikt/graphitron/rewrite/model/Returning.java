@@ -8,8 +8,8 @@ import java.util.HashSet;
 import java.util.List;
 
 /**
- * The columns a record-carrier DML statement's {@code RETURNING} captures, decided by the
- * classifier: the write table's primary key, then {@link #nodeKeyTail()}, the payload id's
+ * The columns a record-carrier DML statement's {@code RETURNING} captures, or a direct-return
+ * DELETE's ({@link MutationField.DmlTableField#deleteReturning()}), decided by the classifier: the write table's primary key, then {@link #nodeKeyTail()}, the payload id's
  * node-key columns outside the primary key in node-key order. "Primary key first" is structural, so
  * an emitter reads the record shape off this one value rather than re-deciding it per verb.
  *

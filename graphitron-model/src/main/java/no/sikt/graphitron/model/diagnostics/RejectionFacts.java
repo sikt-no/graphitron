@@ -166,7 +166,7 @@ public final class RejectionFacts {
             case UpdateRowsError e -> coded(e.lspCode());
             case DeleteRowsError e -> coded(e.lspCode());
             case MutationTableArgError e -> coded(e.lspCode());
-            case MissingAsDeletedError e -> coded(e.lspCode());
+            case FailOnMissingError e -> coded(e.lspCode());
             case ErrorChannelWalkerError e -> coded(e.lspCode());
             case WireCoercionError e -> coded(e.lspCode());
             case ServiceCarrierShapeError e -> coded(e.lspCode());

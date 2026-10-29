@@ -6,8 +6,8 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
 
 /**
  * The DELETE-shape walker carrier. Holds the WHERE columns {@code DeleteRowsWalker} derived
- * from the DML input plus, on the {@link Identified} arm, the matched key identity that
- * proves the WHERE reduces to at most one row. Rides the {@link OperationMember.Write.Delete} arm alongside the slim
+ * from the DML input plus, on the keyed arms, the matched key identity that proves the WHERE
+ * reduces to at most one row. Rides the {@link OperationMember.Write.Delete} arm alongside the slim
  * {@link InputArgRef} arg surface.
  *
  * <p><b>Why DELETE is not {@link UpdateRows}-minus-SET.</b> UPDATE partitions its input columns:
@@ -20,20 +20,25 @@ import no.sikt.graphitron.model.jooq.ColumnRef;
  * ANDed predicates rather than orphans with nowhere to go. The family reuses the
  * {@link UpdateRows} family's {@link KeyColumn} for each WHERE contribution.
  *
- * <p>The family is sealed on two arms, unlike {@link UpdateRows}'s single {@link UpdateRows.Identified}:
- * {@link UpdateRows} rejects {@code multiRow: true} outright (covering a PK/UK is <em>the</em> single-row
- * UPDATE shape), but {@code multiRow: true} is a real DELETE shape ({@code deleteFilmsByReleaseYear} filters
- * on the non-PK {@code release_year}), so the carrier needs a {@link Broadcast} arm for it. The
- * {@link Broadcast} compact constructor rejects an empty {@link #whereColumns()} so an empty input
- * cannot degenerate into an unfiltered {@code DELETE}.
+ * <p>The arm is the reading of a key that matches no row, so no flag travels beside it and the
+ * emitters project their miss behaviour from the arm alone:
  *
- * <p>A third arm, {@link IdempotentByPrimaryKey}, is the {@code missingAsDeleted: true} refinement
- * of {@link Identified}: the matched key is the primary key and the input binds each of its
- * columns exactly once and nothing else, so a key that matches no row can be echoed from the input
- * as if it had been deleted. Outside the payload-returning emitters it reads exactly like
- * {@link Identified}.
+ * <ul>
+ *   <li>{@link IdempotentByPrimaryKey}, the default: the input binds exactly the primary key, so a
+ *       key that matches no row is answered with the input key, as if it had been deleted.</li>
+ *   <li>{@link FailOnMissing}, reached only with {@code failOnMissing: true}: any covered primary
+ *       key or unique key, extra filter columns allowed; a key that matches no row fails the
+ *       call.</li>
+ *   <li>{@link Broadcast}: {@code multiRow: true} with no covered key. Unlike {@link UpdateRows},
+ *       which rejects {@code multiRow: true} outright (covering a PK/UK is <em>the</em> single-row
+ *       UPDATE shape), {@code multiRow: true} is a real DELETE shape
+ *       ({@code deleteFilmsByReleaseYear} filters on the non-PK {@code release_year}). It names no
+ *       key that could be missing. Its compact constructor rejects an empty
+ *       {@link #whereColumns()} so an empty input cannot degenerate into an unfiltered
+ *       {@code DELETE}.</li>
+ * </ul>
  */
-public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Broadcast, DeleteRows.IdempotentByPrimaryKey {
+public sealed interface DeleteRows permits DeleteRows.FailOnMissing, DeleteRows.Broadcast, DeleteRows.IdempotentByPrimaryKey {
 
     /** Every admitted input column the statement filters on. Non-empty on every arm. */
     List<KeyColumn> whereColumns();
@@ -48,13 +53,14 @@ public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Bro
     List<KeyColumn> droppedColumns();
 
     /**
-     * The input covers a primary key or unique key, so the WHERE reduces to at most one row
-     * regardless of any {@code multiRow} flag. {@link #matchedKey()} is the single-row guard, not a
-     * column subset; {@link #whereColumns()} is still every admitted input column.
+     * {@code failOnMissing: true}: the input covers a primary key or unique key, so the WHERE
+     * reduces to at most one row regardless of any {@code multiRow} flag, and a key that matches no
+     * row fails the call. {@link #matchedKey()} is the single-row guard, not a column subset;
+     * {@link #whereColumns()} is still every admitted input column.
      */
-    record Identified(MatchedKey matchedKey, List<KeyColumn> whereColumns, List<KeyColumn> droppedColumns)
+    record FailOnMissing(MatchedKey matchedKey, List<KeyColumn> whereColumns, List<KeyColumn> droppedColumns)
             implements DeleteRows {
-        public Identified {
+        public FailOnMissing {
             if (matchedKey == null) {
                 throw new IllegalArgumentException("matchedKey required");
             }
@@ -62,15 +68,15 @@ public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Bro
             droppedColumns = List.copyOf(droppedColumns);
             if (whereColumns.isEmpty()) {
                 throw new IllegalArgumentException(
-                    "Identified.whereColumns cannot be empty; a covered key contributes at least "
+                    "FailOnMissing.whereColumns cannot be empty; a covered key contributes at least "
                     + "one WHERE column");
             }
         }
     }
 
     /**
-     * {@code missingAsDeleted: true}: the input identifies rows by exactly the primary key, so an
-     * input key that matches no row counts as already deleted and its payload slot echoes the key
+     * The default reading: the input identifies rows by exactly the primary key, so an input key
+     * that matches no row counts as already deleted and its slot in the response echoes the key
      * the client sent. {@link #keyBinding()} names, for each primary-key column in
      * {@code key.columns()} order, the one input contribution that supplies it; that is the order
      * of the {@code RecordN} the echo builds, independent of the order the WHERE compares the
@@ -79,10 +85,10 @@ public sealed interface DeleteRows permits DeleteRows.Identified, DeleteRows.Bro
      * columns to {@link #droppedColumns()}.
      *
      * <p>{@link #echoBinding()} narrows {@link #droppedColumns()} to the columns a missing-row echo
-     * must supply beyond the primary key: the payload's node-key columns outside the primary key,
+     * must supply beyond the primary key: the response's node-key columns outside the primary key,
      * in node-key order, each bound to the dropped column that decodes it. The echo carries the
      * client's value for them, so an echoed id is the id the client sent, in the current key shape
-     * (an id in a legacy shape is converted as it is decoded). Empty when the payload's
+     * (an id in a legacy shape is converted as it is decoded). Empty when the response's
      * ids need no column beyond the primary key. Every echo binding's extraction is one some
      * {@link #keyBinding()} entry shares, so the decode the echo reads is one the WHERE already
      * performs.

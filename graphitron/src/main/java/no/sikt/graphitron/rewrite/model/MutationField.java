@@ -30,9 +30,9 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             MutationField.MutationBulkDmlRecordField {
 
     /**
-     * The record-carrier leaves' shared invariant: a {@code missingAsDeleted} DELETE's echo
-     * supplies exactly the columns the {@code RETURNING} captures beyond the primary key, in the
-     * same order, so an echoed row and a deleted row are records of one shape.
+     * The DELETE leaves' shared invariant: an idempotent DELETE's echo supplies exactly the columns
+     * the {@code RETURNING} captures beyond the primary key, in the same order, so an echoed row and
+     * a deleted row are records of one shape.
      */
     private static void requireEchoMatchesReturning(OperationMember.Write.Dml write, Returning returning) {
         Objects.requireNonNull(returning, "returning");
@@ -42,7 +42,7 @@ public sealed interface MutationField extends RootField, WithErrorChannel
             var tail = returning.nodeKeyTail().stream().map(ColumnRef::sqlName).toList();
             if (!echoed.equals(tail)) {
                 throw new IllegalArgumentException(
-                    "missingAsDeleted echo binds " + echoed + " but RETURNING captures " + tail
+                    "the idempotent DELETE's echo binds " + echoed + " but RETURNING captures " + tail
                     + " beyond the primary key; an echoed row must have the deleted row's shape");
             }
         }
@@ -95,10 +95,8 @@ public sealed interface MutationField extends RootField, WithErrorChannel
      * so no follow-up projection exists to feed a table-bound return; the classifier rejects
      * DELETE with any table-bound return at authoring time, and the constructor makes the
      * pairing structural, which keeps the validator's reentry key-arity check provably
-     * vacuous for Delete. Nor does a Delete arm here carry
-     * {@link DeleteRows.IdempotentByPrimaryKey}: only the payload-returning DELETE echoes a key
-     * that matched no row, and the classifier rejects {@code missingAsDeleted: true} on this
-     * shape first.
+     * vacuous for Delete. A Delete arm's echo of a key that matched no row is held to what
+     * {@link #deleteReturning()} captures, as on the record carriers.
      */
     record DmlTableField(
         String parentTypeName,
@@ -122,13 +120,34 @@ public sealed interface MutationField extends RootField, WithErrorChannel
                     + "DELETE with a @table return at authoring time; this carrier only ever "
                     + "holds an encoded-ID return beside a Delete arm.");
             }
-            if (write instanceof OperationMember.Write.Delete d
-                    && d.deleteRows() instanceof DeleteRows.IdempotentByPrimaryKey) {
-                throw new IllegalArgumentException(
-                    "a direct-return DELETE cannot carry an IdempotentByPrimaryKey carrier: "
-                    + "missingAsDeleted: true is supported only on a payload-returning DELETE, and "
-                    + "the @mutation classifier rejects it on this shape at authoring time.");
+            if (write instanceof OperationMember.Write.Delete) {
+                requireEchoMatchesReturning(write, deleteReturningOf(returnExpression, write).orElseThrow());
             }
+        }
+
+        /**
+         * What a Delete arm's {@code RETURNING} captures: the primary key followed by the encoded
+         * node key's columns outside it, the value the record carriers hold as their
+         * {@code returning} component. Both the echo check and the emitted {@code RETURNING} read
+         * it, so they cannot disagree. Empty off the Delete arm.
+         */
+        public Optional<Returning> deleteReturning() {
+            return deleteReturningOf(returnExpression, write);
+        }
+
+        // Static so the compact constructor can read it before the components are assigned.
+        private static Optional<Returning> deleteReturningOf(DmlReturnExpression returnExpression,
+                                                             OperationMember.Write.Dml write) {
+            if (!(write instanceof OperationMember.Write.Delete)) {
+                return Optional.empty();
+            }
+            var encode = switch (returnExpression) {
+                case DmlReturnExpression.EncodedSingle e -> e.encode();
+                case DmlReturnExpression.EncodedList e -> e.encode();
+                default -> throw new IllegalStateException(
+                    "a Delete arm carries only an encoded return; the compact constructor holds this");
+            };
+            return Optional.of(Returning.widenedToNodeKey(write.table(), encode.paramSignature()));
         }
 
         /**

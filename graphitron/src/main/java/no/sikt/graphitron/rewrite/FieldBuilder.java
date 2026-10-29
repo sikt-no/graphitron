@@ -6260,15 +6260,15 @@ class FieldBuilder {
                             MutationInputResolver.TABLE_ARG_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
                 }
 
-                // @mutation(missingAsDeleted:) means something only for the verbs in
-                // MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS; on any other verb it
+                // @mutation(failOnMissing:) means something only for the verbs in
+                // MutationInputResolver.FAIL_ON_MISSING_SUPPORTED_VERBS; on any other verb it
                 // rejects loudly rather than being silently ignored, beside the table: verb check.
-                if (MutationInputResolver.parseMissingAsDeleted(fieldDef)
-                        && !MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS.contains(kind)) {
+                if (MutationInputResolver.parseFailOnMissing(fieldDef)
+                        && !MutationInputResolver.FAIL_ON_MISSING_SUPPORTED_VERBS.contains(kind)) {
                     return new UnclassifiedField(parentTypeName, name, location,
-                        new no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedVerb(
+                        new no.sikt.graphitron.model.diagnostics.FailOnMissingError.UnsupportedVerb(
                             kind.name(),
-                            MutationInputResolver.MISSING_AS_DELETED_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
+                            MutationInputResolver.FAIL_ON_MISSING_SUPPORTED_VERBS.stream().map(Enum::name).sorted().toList()));
                 }
 
                 // Every @mutation(typeName: UPDATE) classifies through the
@@ -6370,6 +6370,7 @@ class FieldBuilder {
 
         // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
+        var echoColumns = no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
             // The by-table node index is one-to-many; the implicit ID encoder is
@@ -6673,18 +6674,13 @@ class FieldBuilder {
      * Unlike UPDATE, {@code multiRow: true} is admitted (the walker turns it into the
      * {@link no.sikt.graphitron.rewrite.model.DeleteRows.Broadcast} arm). A pre-check failure or a
      * walker {@code Err} surfaces as an {@link UnclassifiedField} carrying the typed
-     * {@code DeleteRowsError} arm verbatim for the LSP projector. {@code missingAsDeleted: true}
-     * is rejected first: only the payload-returning DELETE echoes a missing key, and the leaf's
-     * compact constructor refuses the carrier arm it would produce.
+     * {@code DeleteRowsError} arm verbatim for the LSP projector. The encoder is resolved before
+     * the walk because what a key matching no row is answered with follows from it, exactly as on
+     * the payload path: the node-key columns outside the primary key, which the input must supply.
      */
     private GraphitronField classifyDeleteTableField(
             GraphQLFieldDefinition fieldDef, String parentTypeName, String name,
             SourceLocation location, ReturnTypeRef returnType) {
-        if (MutationInputResolver.parseMissingAsDeleted(fieldDef)) {
-            return new UnclassifiedField(parentTypeName, name, location,
-                new no.sikt.graphitron.model.diagnostics.MissingAsDeletedError.UnsupportedReturnShape(
-                    parentTypeName + "." + name));
-        }
         TableRef writeTarget;
         List<InputField> inputFields;
         no.sikt.graphitron.rewrite.model.InputArgRef inputArg;
@@ -6704,6 +6700,7 @@ class FieldBuilder {
 
         // ID-return encode resolution (mirrors the shared DML path at the @mutation classifier).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
+        var echoColumns = no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
             // The by-table node index is one-to-many; the implicit ID encoder is
@@ -6718,15 +6715,22 @@ class FieldBuilder {
                 return new UnclassifiedField(parentTypeName, name, location, Rejection.structural(
                     ambiguousImplicitNodeError("@mutation(typeName: DELETE) field '" + name + "'", tableSqlName, nodesOnTable)));
             }
-            encodeReturn = Optional.of(nodesOnTable.get(0).encodeMethod());
+            var nodeType = nodesOnTable.get(0);
+            encodeReturn = Optional.of(nodeType.encodeMethod());
+            echoColumns = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns(
+                nodeType.name(),
+                no.sikt.graphitron.rewrite.model.Returning.widenedToNodeKey(
+                    writeTarget, nodeType.encodeMethod().paramSignature()).nodeKeyTail());
         }
 
         // DeleteRows walker: PK-or-UK identification over the already-classified input fields, with
-        // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker).
+        // multiRow opting into the Broadcast arm (the translator concession; see DeleteRowsWalker)
+        // and failOnMissing into the FailOnMissing arm.
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
+        boolean failOnMissing = MutationInputResolver.parseFailOnMissing(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, false, inputArg.name(),
-                no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE);
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, failOnMissing, inputArg.name(),
+                echoColumns);
         var enc = encodeReturn;
         return switch (walkerResult) {
             case no.sikt.graphitron.rewrite.model.WalkerResult.Ok<no.sikt.graphitron.rewrite.model.DeleteRows> ok ->
@@ -6783,7 +6787,7 @@ class FieldBuilder {
         var dataFieldLocation = locationOf(dataField);
 
         // The payload ids' encoder, resolved ahead of the walker because what RETURNING captures and
-        // what a missingAsDeleted echo must supply both follow from it: the node-key columns
+        // what the answer to a key matching no row must supply both follow from it: the node-key columns
         // outside the primary key, read back from a deleted row and echoed from a missing one's
         // input id. An unresolved encoder captures the primary key alone; its error is reported
         // below, after the walker's, in the order the two were always checked.
@@ -6800,13 +6804,13 @@ class FieldBuilder {
             : no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
 
         // DeleteRows walker: PK-or-UK identification over the already-classified input fields,
-        // multiRow opting into the Broadcast arm and missingAsDeleted into the
-        // IdempotentByPrimaryKey arm. Run it before the per-field reclassify so an under-keyed
+        // multiRow opting into the Broadcast arm and failOnMissing into the FailOnMissing arm.
+        // Run it before the per-field reclassify so an under-keyed
         // input rejects without leaving an orphaned data-field carrier in the registry.
         boolean multiRow = MutationInputResolver.parseMultiRow(fieldDef);
-        boolean missingAsDeleted = MutationInputResolver.parseMissingAsDeleted(fieldDef);
+        boolean failOnMissing = MutationInputResolver.parseFailOnMissing(fieldDef);
         var walkerResult = new no.sikt.graphitron.rewrite.walker.DeleteRowsWalker()
-            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, missingAsDeleted, inputArg.name(),
+            .walk(fieldDef, writeTarget, inputFields, ctx.catalog, multiRow, failOnMissing, inputArg.name(),
                 echoColumns);
         if (walkerResult instanceof no.sikt.graphitron.rewrite.model.WalkerResult.Err<no.sikt.graphitron.rewrite.model.DeleteRows> err) {
             return new UnclassifiedField(parentTypeName, name, location, err.errors().getFirst());
@@ -7128,6 +7132,7 @@ class FieldBuilder {
 
         // ID-return encode resolution against the resolved write target (mirrors the DELETE path).
         Optional<HelperRef.Encode> encodeReturn = Optional.empty();
+        var echoColumns = no.sikt.graphitron.rewrite.walker.DeleteRowsWalker.EchoColumns.NONE;
         if (returnType instanceof ReturnTypeRef.ScalarReturnType s && "ID".equals(s.returnTypeName())) {
             String tableSqlName = writeTarget.tableName();
             var nodesOnTable = ctx.nodes.forTable(tableSqlName);

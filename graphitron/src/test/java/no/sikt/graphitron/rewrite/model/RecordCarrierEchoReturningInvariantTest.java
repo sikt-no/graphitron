@@ -14,11 +14,12 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 /**
- * The record-carrier leaves' shared invariant: a {@code missingAsDeleted} DELETE's echo supplies
- * exactly the columns {@link Returning#nodeKeyTail()} captures beyond the primary key, in the same
- * order, so an echoed row and a deleted row are records of one shape. Both
- * {@link MutationField.MutationDmlRecordField} and {@link MutationField.MutationBulkDmlRecordField}
- * enforce it in their compact constructors; each case below runs against both.
+ * The DELETE leaves' shared invariant: an idempotent DELETE's echo supplies exactly the columns
+ * {@link Returning#nodeKeyTail()} captures beyond the primary key, in the same order, so an echoed
+ * row and a deleted row are records of one shape. {@link MutationField.MutationDmlRecordField} and
+ * {@link MutationField.MutationBulkDmlRecordField} enforce it in their compact constructors; each
+ * record-carrier case below runs against both. {@link MutationField.DmlTableField} enforces it
+ * against {@link MutationField.DmlTableField#deleteReturning()}, which its encoder decides.
  *
  * <p>The table is a primary key {@code (a, b)} with a node key {@code (a, b, x, y)}: the node id
  * decodes all four, the WHERE binds {@code a} and {@code b}, and {@code x} and {@code y} are dropped.
@@ -73,23 +74,55 @@ class RecordCarrierEchoReturningInvariantTest {
     }
 
     @Test
-    void identifiedDelete_isNotHeldToTheEchoShape() {
-        // Without missingAsDeleted nothing is echoed, so a widened RETURNING needs no echo binding.
-        var identified = new DeleteRows.Identified(
+    void failOnMissingDelete_isNotHeldToTheEchoShape() {
+        // A strict DELETE echoes nothing, so a widened RETURNING needs no echo binding.
+        var strict = new DeleteRows.FailOnMissing(
             new MatchedKey.PrimaryKey(List.of(A, B), "t_pkey"), List.of(KEY_A, KEY_B), List.of(DROPPED_X, DROPPED_Y));
         var returning = new Returning(List.of(A, B), List.of(X, Y));
 
-        assertThat(singleLeaf(identified, returning).returning()).isEqualTo(returning);
-        assertThat(bulkLeaf(identified, returning).returning()).isEqualTo(returning);
+        assertThat(singleLeaf(strict, returning).returning()).isEqualTo(returning);
+        assertThat(bulkLeaf(strict, returning).returning()).isEqualTo(returning);
+    }
+
+    @Test
+    void directReturnDelete_capturesThePrimaryKeyThenTheEncodersTail() {
+        // The encoder lists the node key out of primary-key order; RETURNING is still the primary
+        // key in key order, then the tail in node-key order.
+        var leaf = directLeaf(idempotent(List.of(DROPPED_Y, DROPPED_X)), List.of(Y, B, A, X));
+
+        assertThat(leaf.deleteReturning()).contains(new Returning(List.of(A, B), List.of(Y, X)));
+    }
+
+    @Test
+    void directReturnDelete_echoMatchingTheEncodersTail_isAdmitted() {
+        var leaf = directLeaf(idempotent(List.of(DROPPED_X, DROPPED_Y)), List.of(A, B, X, Y));
+
+        assertThat(leaf.deleteReturning()).contains(new Returning(List.of(A, B), List.of(X, Y)));
+    }
+
+    @Test
+    void directReturnDelete_echoShortOfTheEncodersTail_isRefused() {
+        // A missing row would be echoed with nothing for y, while a deleted row reads it back.
+        assertThatThrownBy(() -> directLeaf(idempotent(List.of(DROPPED_X)), List.of(A, B, X, Y)))
+            .isInstanceOf(IllegalArgumentException.class)
+            .hasMessageContaining("idempotent DELETE's echo binds");
     }
 
     private static void assertRefusedByBothLeaves(List<KeyColumn> echo, Returning returning) {
         assertThatThrownBy(() -> single(echo, returning))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("missingAsDeleted echo binds");
+            .hasMessageContaining("idempotent DELETE's echo binds");
         assertThatThrownBy(() -> bulk(echo, returning))
             .isInstanceOf(IllegalArgumentException.class)
-            .hasMessageContaining("missingAsDeleted echo binds");
+            .hasMessageContaining("idempotent DELETE's echo binds");
+    }
+
+    private static MutationField.DmlTableField directLeaf(DeleteRows deleteRows, List<ColumnRef> nodeKey) {
+        return new MutationField.DmlTableField(
+            "Mutation", "deleteT", null,
+            new DmlReturnExpression.EncodedSingle(
+                new HelperRef.Encode(ClassName.bestGuess("fixture.Enc"), "encodeT", nodeKey)),
+            new OperationMember.Write.Delete(new InputArgRef("in", "TDeleteInput", TABLE, false), deleteRows));
     }
 
     private static DeleteRows.IdempotentByPrimaryKey idempotent(List<KeyColumn> echo) {

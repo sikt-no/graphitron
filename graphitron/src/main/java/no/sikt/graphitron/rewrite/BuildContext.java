@@ -167,7 +167,7 @@ class BuildContext {
     static final String ARG_CONNECTION_NAME     = "connectionName";
     static final String ARG_OVERRIDE            = no.sikt.graphitron.facts.ConditionFactVisitor.ARG_OVERRIDE;
     static final String ARG_MULTI_ROW           = "multiRow";
-    static final String ARG_MISSING_AS_DELETED  = no.sikt.graphitron.facts.WriteFactVisitor.ARG_MISSING_AS_DELETED;
+    static final String ARG_FAIL_ON_MISSING     = no.sikt.graphitron.facts.WriteFactVisitor.ARG_FAIL_ON_MISSING;
 
     // ===== Shared state =====
 

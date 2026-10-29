@@ -13,7 +13,7 @@ import java.util.Optional;
  * name has its single lexical home there.
  *
  * <p>The row carries the raw verb token exactly as authored ({@code typeName:}), the
- * {@code multiRow:} and {@code missingAsDeleted:} flags and the raw {@code table:} argument; validating the verb against the
+ * {@code multiRow:} and {@code failOnMissing:} flags and the raw {@code table:} argument; validating the verb against the
  * supported set, resolving the write target and building the per-verb payloads stay with the
  * classification-side resolver. The walked fact is the application and its authored surface.
  * Routine-backed writes ({@code @routine} on a mutation root) are deliberately outside this
@@ -32,10 +32,10 @@ public record WriteFacts(Map<GraphQLFieldDefinition, Row> rowsByDefinition) {
     /**
      * One coordinate's write application: the raw verb token (absent when the author omitted
      * the argument, a malformed application the resolver rejects), the bulk flag, the
-     * missing-row-as-deleted flag and the raw field-relative write-target table name.
+     * fail-on-missing-row flag and the raw field-relative write-target table name.
      */
     public record Row(String parentTypeName, String fieldName,
-                      Optional<String> verb, boolean multiRow, boolean missingAsDeleted,
+                      Optional<String> verb, boolean multiRow, boolean failOnMissing,
                       Optional<String> table) {
         public Row {
             Objects.requireNonNull(parentTypeName, "parentTypeName");

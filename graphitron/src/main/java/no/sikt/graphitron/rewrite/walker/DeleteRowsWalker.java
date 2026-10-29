@@ -34,18 +34,26 @@ import java.util.Set;
  * alone names the row, so an id whose extra columns have since changed still deletes it.
  *
  * <p>PK-or-UK identification is the shared {@link MatchedKeys#firstCovered} matcher both walkers
- * call: a covered key yields {@link DeleteRows.Identified} (single-row; {@code multiRow} is moot
- * because the key already proves at most one row); no covered key yields
- * {@link DeleteRows.Broadcast} when {@code multiRow: true}, and
- * {@link DeleteRowsError.NoUniqueKeyCoverage} otherwise.
+ * call. The arm the walk yields is the reading of a key that matches no row, so no flag travels
+ * beside it:
  *
- * <p>With {@code missingAsDeleted: true} the walker admits only an input that identifies rows by
- * exactly the primary key: the matched key is the primary key and the WHERE binds each of its
- * columns once and nothing else. That yields {@link DeleteRows.IdempotentByPrimaryKey}, with the
- * supplying {@link KeyColumn} picked for each primary-key slot in key order; anything else is
- * {@link DeleteRowsError.MissingAsDeletedNeedsPrimaryKey}. Where the payload's ids encode columns
- * beyond the primary key ({@link EchoColumns}), each must be one a carrier drops, so the echo has
- * the client's value to encode; otherwise {@link DeleteRowsError.MissingAsDeletedEchoUnencodable}.
+ * <ul>
+ *   <li>A covered key with {@code failOnMissing: true} yields {@link DeleteRows.FailOnMissing}
+ *       (single-row; {@code multiRow} is moot because the key already proves at most one row).</li>
+ *   <li>A covered key without it is the default, idempotent reading, which admits only an input
+ *       that identifies rows by exactly the primary key: the matched key is the primary key and the
+ *       WHERE binds each of its columns once and nothing else. That yields
+ *       {@link DeleteRows.IdempotentByPrimaryKey}, with the supplying {@link KeyColumn} picked for
+ *       each primary-key slot in key order; anything else is
+ *       {@link DeleteRowsError.IdempotentDeleteNeedsPrimaryKey}. Where the response's ids encode
+ *       columns beyond the primary key ({@link EchoColumns}), each must be one a carrier drops, so
+ *       the echo has the client's value to encode; otherwise
+ *       {@link DeleteRowsError.IdempotentDeleteEchoUnencodable}.</li>
+ *   <li>No covered key yields {@link DeleteRows.Broadcast} when {@code multiRow: true} (and
+ *       {@link DeleteRowsError.FailOnMissingNeedsKey} if {@code failOnMissing: true} asks it to
+ *       report a key it does not have), and {@link DeleteRowsError.NoUniqueKeyCoverage}
+ *       otherwise.</li>
+ * </ul>
  *
  * <p><b>Substrate concession (mirrors {@link UpdateRowsWalker}).</b> Re-deriving the column
  * classification from raw SDL would duplicate the upstream input-field classifier, so this walker
@@ -63,10 +71,9 @@ public final class DeleteRowsWalker {
                                 CarrierRole role) {}
 
     /**
-     * What a {@code missingAsDeleted} echo of a missing row must supply beyond the primary key: the
-     * payload's node type and its node-key columns outside the primary key, in node-key order.
-     * {@link #NONE} where the payload's ids need nothing beyond the primary key, and on the
-     * direct-return path, where {@code missingAsDeleted} is refused before the walk.
+     * What the echo of a missing row must supply beyond the primary key: the response's node type
+     * and its node-key columns outside the primary key, in node-key order. {@link #NONE} where the
+     * response's ids need nothing beyond the primary key, or where the response carries no ids.
      */
     public record EchoColumns(String nodeTypeName, List<ColumnRef> columns) {
         public static final EchoColumns NONE = new EchoColumns("", List.of());
@@ -82,7 +89,7 @@ public final class DeleteRowsWalker {
         List<InputField> inputFields,
         JooqCatalog catalog,
         boolean multiRow,
-        boolean missingAsDeleted,
+        boolean failOnMissing,
         String outerArgName,
         EchoColumns echoColumns
     ) {
@@ -132,18 +139,21 @@ public final class DeleteRowsWalker {
             }
         }
 
-        if (missingAsDeleted) {
-            return idempotentByPrimaryKey(catalog, table, matchedKey, whereColumns, droppedColumns,
-                inputColumns, echoColumns);
-        }
         if (matchedKey != null) {
-            return new WalkerResult.Ok<>(new DeleteRows.Identified(matchedKey, whereColumns, droppedColumns));
+            return failOnMissing
+                ? new WalkerResult.Ok<>(new DeleteRows.FailOnMissing(matchedKey, whereColumns, droppedColumns))
+                : idempotentByPrimaryKey(catalog, table, matchedKey, whereColumns, droppedColumns,
+                    inputColumns, echoColumns);
         }
 
-        // No key covered. multiRow: true opts into a broadcast (non-key) delete; otherwise the
-        // input cannot identify rows and is a typed rejection.
+        // No key covered. multiRow: true opts into a broadcast (non-key) delete, which names no
+        // key that could be missing; otherwise the input cannot identify rows and is a typed
+        // rejection.
         if (multiRow) {
-            return new WalkerResult.Ok<>(new DeleteRows.Broadcast(whereColumns));
+            return failOnMissing
+                ? new WalkerResult.Err<>(List.of(
+                    new DeleteRowsError.FailOnMissingNeedsKey(table.tableName(), inputColumns)))
+                : new WalkerResult.Ok<>(new DeleteRows.Broadcast(whereColumns));
         }
         return new WalkerResult.Err<>(List.of(
             new DeleteRowsError.NoUniqueKeyCoverage(
@@ -151,18 +161,18 @@ public final class DeleteRowsWalker {
     }
 
     /**
-     * The {@code missingAsDeleted: true} admission: the matched key must be the primary key, and
-     * every WHERE column must bind a distinct primary-key column, so the binding covers the key
-     * exactly once with nothing beside it. A unique-key match, an extra filter column, a column
-     * bound twice (a node id and a plain field both filling it) and no covered key at all are each
-     * the one typed rejection. The binding is re-ordered into the key's column order here, since
+     * The idempotent reading's admission over a covered key: the matched key must be the primary
+     * key, and every WHERE column must bind a distinct primary-key column, so the binding covers the
+     * key exactly once with nothing beside it. A unique-key match, an extra filter column and a
+     * column bound twice (a node id and a plain field both filling it) are each the one typed
+     * rejection. The binding is re-ordered into the key's column order here, since
      * the contribution order is the WHERE's and need not be the key's. A superkey node id's dropped
      * columns do not count against "nothing beside it", since they are not filtered on.
      *
      * <p>Each of {@code echoColumns} is then bound to the dropped column that decodes it, in
      * {@code echoColumns} order, so a missing row's echo can encode the payload's id from the
      * client's value. An echo column no carrier decodes is
-     * {@link DeleteRowsError.MissingAsDeletedEchoUnencodable}.
+     * {@link DeleteRowsError.IdempotentDeleteEchoUnencodable}.
      */
     private static WalkerResult<DeleteRows> idempotentByPrimaryKey(
         JooqCatalog catalog, TableRef table, MatchedKey matchedKey,
@@ -192,7 +202,7 @@ public final class DeleteRowsWalker {
                 }
                 if (!unsupplied.isEmpty()) {
                     return new WalkerResult.Err<>(List.of(
-                        new DeleteRowsError.MissingAsDeletedEchoUnencodable(
+                        new DeleteRowsError.IdempotentDeleteEchoUnencodable(
                             table.tableName(), echoColumns.nodeTypeName(), inputColumns, unsupplied)));
                 }
                 return new WalkerResult.Ok<>(
@@ -205,7 +215,7 @@ public final class DeleteRowsWalker {
             .map(MatchedKey::columns)
             .orElse(List.of());
         return new WalkerResult.Err<>(List.of(
-            new DeleteRowsError.MissingAsDeletedNeedsPrimaryKey(
+            new DeleteRowsError.IdempotentDeleteNeedsPrimaryKey(
                 table.tableName(), inputColumns, primaryKeyColumns)));
     }
 

@@ -5174,14 +5174,14 @@ type DeletedFilmsIdPayload {
     deletedIds: [ID!]
 }
 
-# missingAsDeleted execution-tier fixtures (DmlBulkMutationsExecutionTest). The single-row twin of
-# DeletedFilmsIdPayload: with missingAsDeleted: true a film id that matches no row is echoed here
-# rather than rendering the payload null.
+# Idempotent-DELETE execution-tier fixtures (DmlBulkMutationsExecutionTest). The single-row twin of
+# DeletedFilmsIdPayload: a film id that matches no row is echoed here rather than rendering the
+# payload null, unless the field sets failOnMissing: true.
 type DeletedFilmIdPayload {
     deletedId: ID
 }
 
-# The composite-key node-id bulk delete with an errors field, so the missingAsDeleted echo runs the
+# The composite-key node-id bulk delete with an errors field, so the idempotent echo runs the
 # Outcome-wrapped path.
 type DeletedFilmActorsWithErrorsPayload {
     deletedIds: [ID!]
@@ -5190,7 +5190,7 @@ type DeletedFilmActorsWithErrorsPayload {
 
 # A primary key interleaving a node id with a plain column: split_key_child's key is (a, b, c) and
 # its FK to split_key_parent covers (a, c). SplitKeyChildDeleteInput binds the key a, c (decoded
-# from the parent id) then b, which is not key order; the missingAsDeleted echo must still encode
+# from the parent id) then b, which is not key order; the idempotent echo must still encode
 # (a, b, c). See the split_key_* tables in init.sql.
 type SplitKeyParent implements Node @table(name: "split_key_parent") @node {
     id: ID! @nodeId
@@ -5298,9 +5298,12 @@ input InventoryRecordAssignmentInput {
 }
 
 # FilmCategoryNode's id also encodes last_update, a temporal column beside a two-column key. A
-# deleted row's payload id carries the stored last_update, read back through RETURNING; a
-# missingAsDeleted echo carries the one the client sent.
-type FilmCategoryNode implements Node @table(name: "film_category") @node(keyColumns: ["film_id", "category_id", "last_update"]) {
+# deleted row's id carries the stored last_update, read back through RETURNING; the echo of a
+# missing row carries the one the client sent. The key opens with last_update, a column outside
+# the primary key and of another Java type, so the encoder's parameter order differs from the
+# primary-key-then-tail order RETURNING captures in; a direct [ID!] DELETE over it compiles only if
+# a deleted row and an echoed one share one record type.
+type FilmCategoryNode implements Node @table(name: "film_category") @node(keyColumns: ["last_update", "film_id", "category_id"]) {
     id: ID! @nodeId
 }
 
@@ -5516,6 +5519,10 @@ type Mutation {
     createFilms(in: [FilmCreateInput!]!): [Film!]! @mutation(typeName: INSERT)
     updateFilms(in: [FilmUpdateInput!]!): [Film!]! @mutation(typeName: UPDATE)
     deleteFilms(in: [FilmDeleteInput!]!): [ID!]! @mutation(typeName: DELETE, table: "film")
+    # The strict twin of deleteFilms: a key that matches no row fails the call and rolls back the
+    # rows that did match.
+    deleteFilmsDirectFailOnMissing(in: [FilmDeleteInput!]!): [ID!]!
+        @mutation(typeName: DELETE, table: "film", failOnMissing: true)
 
     # R406: INSERT / UPDATE returning the single-table discriminated Content interface. The write
     # is a plain single-@table 'content' write; the follow-up SELECT re-projects by PK through the
@@ -5554,8 +5561,10 @@ type Mutation {
     # R266 execution-tier proof of the UK-covering single-row delete. The input covers the
     # UNIQUE `code` (not the PK), so the DeleteRowsWalker matches the UniqueKey arm; the emitted
     # WHERE filters on `code` while RETURNING projects bin_id for the @node `: ID` encode. See
-    # StorageBin / StorageBinDeleteByCodeInput above.
-    deleteStorageBinByCode(in: StorageBinDeleteByCodeInput!): ID @mutation(typeName: DELETE, table: "storage_bin")
+    # StorageBin / StorageBinDeleteByCodeInput above. A unique key cannot answer a code that matches
+    # no bin with the bin's id, so the field takes failOnMissing: true.
+    deleteStorageBinByCode(in: StorageBinDeleteByCodeInput!): ID
+        @mutation(typeName: DELETE, table: "storage_bin", failOnMissing: true)
 
     # R514 execution-tier proof: the payload-returning analogue of deleteStorageBinByCode. Same
     # field-named @mutation(table:) write target and UK-covering WHERE, but the carrier wraps the
@@ -5565,7 +5574,7 @@ type Mutation {
     # the field-named table).
     """Delete a storage bin matched by its unique code, returning the deleted bin's NodeId in a payload."""
     deleteStorageBinByCodePayload(in: StorageBinDeleteByCodeInput!): DeletedStorageBinPayload
-        @mutation(typeName: DELETE, table: "storage_bin")
+        @mutation(typeName: DELETE, table: "storage_bin", failOnMissing: true)
 
     # R130 single-PK NodeId-decoded INSERT: client supplies the PK as an opaque NodeId.
     # Drives buildInsertDecodeLocals (one decode local per NodeId-bearing carrier)
@@ -5681,18 +5690,20 @@ type Mutation {
     # a full @table projection off a deleted row is impossible — RETURNING carries only the PK.)
     deleteFilmsIdCarrier(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload @mutation(typeName: DELETE, table: "film")
 
-    # missingAsDeleted: true on the payload-returning DELETE: an input key that matches no row
-    # counts as already deleted, the call commits, and the payload echoes every input key in input
-    # order. deleteFilmsIdCarrier above is the default-behaviour twin (a missing key rolls the call
-    # back). Pinned by DmlBulkMutationsExecutionTest's missingAsDeleted cases.
-    deleteFilmsMissingAsDeleted(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
-        @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
-    deleteFilmMissingAsDeleted(in: FilmDeleteInput!): DeletedFilmIdPayload
-        @mutation(typeName: DELETE, table: "film", missingAsDeleted: true)
-    deleteFilmActorsMissingAsDeleted(in: [DeleteFilmActorByNodeIdInput!]!): DeletedFilmActorsWithErrorsPayload
-        @mutation(typeName: DELETE, table: "film_actor", missingAsDeleted: true)
-    deleteSplitKeyChildrenMissingAsDeleted(in: [SplitKeyChildDeleteInput!]!): DeletedSplitKeyChildrenPayload
-        @mutation(typeName: DELETE, table: "split_key_child", missingAsDeleted: true)
+    # A payload-returning DELETE treats an input key that matches no row as already deleted: the
+    # call commits, and the payload echoes every input key in input order. Pinned by
+    # DmlBulkMutationsExecutionTest's idempotent cases on deleteFilmsIdCarrier above and on these.
+    # The *FailOnMissing twins are the strict opt-in: a missing key fails the call.
+    deleteFilmIdCarrier(in: FilmDeleteInput!): DeletedFilmIdPayload
+        @mutation(typeName: DELETE, table: "film")
+    deleteFilmActorsWithErrors(in: [DeleteFilmActorByNodeIdInput!]!): DeletedFilmActorsWithErrorsPayload
+        @mutation(typeName: DELETE, table: "film_actor")
+    deleteSplitKeyChildren(in: [SplitKeyChildDeleteInput!]!): DeletedSplitKeyChildrenPayload
+        @mutation(typeName: DELETE, table: "split_key_child")
+    deleteFilmsFailOnMissing(in: [FilmDeleteInput!]!): DeletedFilmsIdPayload
+        @mutation(typeName: DELETE, table: "film", failOnMissing: true)
+    deleteFilmFailOnMissing(in: FilmDeleteInput!): DeletedFilmIdPayload
+        @mutation(typeName: DELETE, table: "film", failOnMissing: true)
 
     # Superkey node ids (InventoryUnit, FilmCategoryNode above): each filters on the primary key the
     # id carries and ignores its other columns. Pinned by DmlBulkMutationsExecutionTest's superkey
@@ -5712,8 +5723,6 @@ type Mutation {
         @mutation(typeName: DELETE, table: "inventory")
     deleteInventoryItems(in: [InventoryItemDeleteInput!]!): DeletedInventoryItemsPayload
         @mutation(typeName: DELETE, table: "inventory")
-    deleteInventoryItemsMissingAsDeleted(in: [InventoryItemDeleteInput!]!): DeletedInventoryItemsPayload
-        @mutation(typeName: DELETE, table: "inventory", missingAsDeleted: true)
     assignInventoryRecord(in: InventoryRecordAssignmentInput!): String
         @service(service: {
             className: "no.sikt.graphitron.rewrite.test.services.FilmReviewService",
@@ -5721,8 +5730,8 @@ type Mutation {
         })
     deleteFilmCategoryNodes(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
         @mutation(typeName: DELETE, table: "film_category")
-    deleteFilmCategoryNodesMissingAsDeleted(in: [FilmCategoryNodeDeleteInput!]!): DeletedFilmCategoryNodesPayload
-        @mutation(typeName: DELETE, table: "film_category", missingAsDeleted: true)
+    deleteFilmCategoryNodesDirect(in: [FilmCategoryNodeDeleteInput!]!): [ID!]!
+        @mutation(typeName: DELETE, table: "film_category")
 
     # The bulk DELETE id carrier with an errors field and a non-null [ID!]!: deleting a referenced
     # film violates a foreign key, the batch rolls back, and deletedIds renders []. Pinned by

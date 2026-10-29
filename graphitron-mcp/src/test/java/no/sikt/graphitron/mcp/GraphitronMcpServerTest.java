@@ -1436,7 +1436,7 @@ class GraphitronMcpServerTest {
                 - `typeName: MutationType!`
                 - `multiRow: Boolean = false`
                 - `table: String`
-                - `missingAsDeleted: Boolean = false`
+                - `failOnMissing: Boolean = false`
                 """);
             // An argument's own description, which the definition's does not subsume.
             assertThat(text).contains("Default page size when the client omits the 'first' argument.");

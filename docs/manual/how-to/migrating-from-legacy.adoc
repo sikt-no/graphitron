@@ -248,7 +248,7 @@ A client that tested such a field for `null` should test the fields inside it in
 
 == Behavior divergence: a `DELETE` whose key matches no row
 
-Graphitron 9 did not check row counts on `DELETE`, so a bulk delete naming a key that matched no row deleted the rest and succeeded. The rewrite fails the whole call by default: nothing is deleted, and a single-row payload-returning delete renders its payload `null`. A schema that relied on Graphitron 9's behavior adds `missingAsDeleted: true` to the field, which treats such a key as already deleted and echoes every input key in the payload; see xref:../reference/directives/mutation.adoc#when-a-key-matches-no-row[`@mutation`] under "When a key matches no row". It applies to a payload-returning `DELETE` keyed by exactly the primary key.
+Graphitron 9 did not check row counts on `DELETE`, so a bulk delete naming a key that matched no row deleted the rest and succeeded, and the response listed every input id. The rewrite does the same by default: such a key counts as already deleted, and the response holds every input key in input order; see xref:../reference/directives/mutation.adoc#when-a-key-matches-no-row[`@mutation`] under "When a DELETE key matches no row". That answer is built from the input, so it needs the input keyed by exactly the primary key, directly or through a node id. A Graphitron 9 schema whose `DELETE` input is keyed by a unique key adds `failOnMissing: true` or keys the input by the primary key, and one keyed by plain primary-key fields whose ids encode more than the primary key adds `failOnMissing: true` or keys the input by the node id. `failOnMissing: true` makes a key that matches no row fail the whole call instead.
 
 == Behavior divergence: a list field on a payload with errors
 

@@ -239,7 +239,7 @@ public final class EntryFamilyFixture {
 
         type Mutation {
           deleteFilm(input: DeleteFilmInput!): Boolean
-            @mutation(typeName: DELETE, multiRow: true, table: "film", missingAsDeleted: true)
+            @mutation(typeName: DELETE, multiRow: true, table: "film", failOnMissing: true)
           importFilms(payload: ImportInput!): [Film!]
             @service(
               service: {className: "no.example.FilmService", method: "importFilms", argMapping: "payload: payload"}

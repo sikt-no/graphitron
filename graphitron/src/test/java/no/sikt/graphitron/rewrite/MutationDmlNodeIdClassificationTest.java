@@ -214,8 +214,8 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBar");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
-        assertThat(deleteRows.matchedKey()).isInstanceOf(
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey) deleteRowsOf(f);
+        assertThat(deleteRows.key()).isInstanceOf(
             no.sikt.graphitron.model.diagnostics.MatchedKey.PrimaryKey.class);
         assertThat(deleteRows.whereColumns()).hasSize(2);
         assertThat(deleteRows.whereColumns()).extracting(k -> k.sdlFieldName()).containsOnly("id");
@@ -233,10 +233,13 @@ class MutationDmlNodeIdClassificationTest {
             type ParentNode implements Node @table(name: "parent_node") @node { id: ID! @nodeId pkId: String! @field(name: "pk_id") }
             input DeleteParentNodeInput { altKey: String! @field(name: "alt_key") }
             type Query { x: String }
-            type Mutation { deleteParentNode(in: DeleteParentNodeInput!): ID @mutation(typeName: DELETE, table: "parent_node") }
+            type Mutation {
+                deleteParentNode(in: DeleteParentNodeInput!): ID
+                    @mutation(typeName: DELETE, table: "parent_node", failOnMissing: true)
+            }
             """, NODEID_CTX);
         var del = (MutationField.DmlTableField) deleteSchema.field("Mutation", "deleteParentNode");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(del);
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.FailOnMissing) deleteRowsOf(del);
         assertThat(deleteRows.matchedKey()).isInstanceOf(no.sikt.graphitron.model.diagnostics.MatchedKey.UniqueKey.class);
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("alt_key");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName()).containsExactly("alt_key");
@@ -349,7 +352,7 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBaz");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey) deleteRowsOf(f);
         assertThat(deleteRows.whereColumns()).hasSize(1);
         var keyColumn = deleteRows.whereColumns().get(0);
         assertThat(keyColumn.sdlFieldName()).isEqualTo("id");
@@ -571,8 +574,8 @@ class MutationDmlNodeIdClassificationTest {
             """, NODEID_CTX);
 
         var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteBar");
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
-        assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName())
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.IdempotentByPrimaryKey) deleteRowsOf(f);
+        assertThat(deleteRows.key().columns()).extracting(c -> c.sqlName())
             .containsExactlyInAnyOrder("id_1", "id_2");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
             .containsExactlyInAnyOrder("id_1", "id_2");
@@ -632,15 +635,16 @@ class MutationDmlNodeIdClassificationTest {
             }
             type Query { x: String }
             type Mutation {
-                deleteReorderedChild(in: DeleteReorderedChildInput!): ID @mutation(typeName: DELETE, table: "reordered_fk_child")
+                deleteReorderedChild(in: DeleteReorderedChildInput!): ID
+                    @mutation(typeName: DELETE, table: "reordered_fk_child", failOnMissing: true)
             }
             """, NODEID_CTX);
 
         var f = (MutationField.DmlTableField) schema.field("Mutation", "deleteReorderedChild");
         // DELETE has no SET partition: childId covers the single-column PK (child_id), and
         // parentRef contributes its 3 lifted columns as extra ANDed predicates sharing the SDL
-        // field name "parentRef".
-        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.Identified) deleteRowsOf(f);
+        // field name "parentRef". Filtering beyond the primary key needs the strict reading.
+        var deleteRows = (no.sikt.graphitron.rewrite.model.DeleteRows.FailOnMissing) deleteRowsOf(f);
         assertThat(deleteRows.matchedKey().columns()).extracting(c -> c.sqlName()).containsExactly("child_id");
         assertThat(deleteRows.whereColumns()).extracting(k -> k.targetColumn().sqlName())
             .containsExactlyInAnyOrder("child_id", "fk_a", "fk_b", "fk_c");

@@ -322,7 +322,7 @@ final class GraphitronFieldEntries {
             application -> val(touchedAt, t.TOUCHED_AT),
             application -> val(token(application, "typeName"), t.OPERATION),
             application -> val(bool(application, "multiRow"), t.MULTI_ROW),
-            application -> val(bool(application, "missingAsDeleted"), t.MISSING_AS_DELETED),
+            application -> val(bool(application, "failOnMissing"), t.FAIL_ON_MISSING),
             application -> val(string(application, "table"), t.TABLE_REF),
             application -> val(QualifiedNameGrammar.namespacePart(string(application, "table")),
                 t.TABLE_REF_NAMESPACE_PART),
@@ -330,14 +330,14 @@ final class GraphitronFieldEntries {
                 t.TABLE_REF_NAME_PART)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN,
-                    t.TOUCHED_AT, t.OPERATION, t.MULTI_ROW, t.MISSING_AS_DELETED, t.TABLE_REF,
+                    t.TOUCHED_AT, t.OPERATION, t.MULTI_ROW, t.FAIL_ON_MISSING, t.TABLE_REF,
                     t.TABLE_REF_NAMESPACE_PART, t.TABLE_REF_NAME_PART)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.OPERATION, excluded(t.OPERATION))
                 .set(t.MULTI_ROW, excluded(t.MULTI_ROW))
-                .set(t.MISSING_AS_DELETED, excluded(t.MISSING_AS_DELETED))
+                .set(t.FAIL_ON_MISSING, excluded(t.FAIL_ON_MISSING))
                 .set(t.TABLE_REF, excluded(t.TABLE_REF))
                 .set(t.TABLE_REF_NAMESPACE_PART, excluded(t.TABLE_REF_NAMESPACE_PART))
                 .set(t.TABLE_REF_NAME_PART, excluded(t.TABLE_REF_NAME_PART)));

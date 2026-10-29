@@ -22,7 +22,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 
-import static no.sikt.graphitron.rewrite.BuildContext.ARG_MISSING_AS_DELETED;
+import static no.sikt.graphitron.rewrite.BuildContext.ARG_FAIL_ON_MISSING;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_MULTI_ROW;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_NAME;
 import static no.sikt.graphitron.rewrite.BuildContext.ARG_OVERRIDE;
@@ -105,26 +105,26 @@ final class MutationInputResolver {
     }
 
     /**
-     * Reads {@code @mutation(missingAsDeleted:)} from the field's directive application. Defaults
+     * Reads {@code @mutation(failOnMissing:)} from the field's directive application. Defaults
      * to {@code false} when the argument is absent or set to {@code null}. Verb gating lives on
-     * {@link #MISSING_AS_DELETED_SUPPORTED_VERBS}.
+     * {@link #FAIL_ON_MISSING_SUPPORTED_VERBS}.
      */
-    static boolean parseMissingAsDeleted(GraphQLFieldDefinition fieldDef) {
+    static boolean parseFailOnMissing(GraphQLFieldDefinition fieldDef) {
         var dir = fieldDef.getAppliedDirective(DIR_MUTATION);
         if (dir == null) return false;
-        var arg = dir.getArgument(ARG_MISSING_AS_DELETED);
+        var arg = dir.getArgument(ARG_FAIL_ON_MISSING);
         if (arg == null) return false;
         Object value = arg.getValue();
         return value instanceof Boolean b && b;
     }
 
     /**
-     * The {@code @mutation} verbs that admit {@code missingAsDeleted: true}: DELETE only, since a
+     * The {@code @mutation} verbs that admit {@code failOnMissing: true}: DELETE only, since a
      * key that matches no row counts as already deleted only for a write whose goal is that no
-     * such row exists. Single-sourced so the classifier's unsupported-verb guard and the
-     * rejection's message agree on the set.
+     * such row exists, so only there is there a default reading to opt out of. Single-sourced so
+     * the classifier's unsupported-verb guard and the rejection's message agree on the set.
      */
-    static final Set<DmlKind> MISSING_AS_DELETED_SUPPORTED_VERBS = Set.of(DmlKind.DELETE);
+    static final Set<DmlKind> FAIL_ON_MISSING_SUPPORTED_VERBS = Set.of(DmlKind.DELETE);
 
     /**
      * Reads {@code @mutation(table:)} off the field's directive application. Returns the SQL

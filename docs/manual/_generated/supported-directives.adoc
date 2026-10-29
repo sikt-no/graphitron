@@ -64,7 +64,7 @@ The following directives have argument-shape changes between legacy and rewrite.
 
 ==== `@mutation`
 
-* + missingAsDeleted: Boolean = false  (rewrite only)
+* + failOnMissing: Boolean = false  (rewrite only)
 * + multiRow: Boolean = false  (rewrite only)
 * + table: String  (rewrite only)
 

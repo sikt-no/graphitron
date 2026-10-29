@@ -324,14 +324,14 @@ class LegacyNodeKeyExecutionTest {
     }
 
     @Test
-    void deleteInventoryItemsMissingAsDeleted_echoesAMissingLegacyIdInTheCurrentShape() {
+    void deleteInventoryItems_echoesAMissingLegacyIdInTheCurrentShape() {
         inRolledBackTransaction(tx -> {
             int present = insertInventory(tx);
             int missing = NEXT_INVENTORY_ID.incrementAndGet();
             Map<String, Object> data = execute(tx, """
-                mutation { deleteInventoryItemsMissingAsDeleted(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds } }
+                mutation { deleteInventoryItems(in: [{ id: "%s" }, { id: "%s" }]) { deletedIds } }
                 """.formatted(legacyId(present), legacyId(missing)));
-            assertThat((List<String>) ((Map<String, Object>) data.get("deleteInventoryItemsMissingAsDeleted")).get("deletedIds"))
+            assertThat((List<String>) ((Map<String, Object>) data.get("deleteInventoryItems")).get("deletedIds"))
                 .containsExactly(currentId(present), currentId(missing));
         });
     }
