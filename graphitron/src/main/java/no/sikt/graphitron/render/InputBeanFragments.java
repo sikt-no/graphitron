@@ -270,6 +270,8 @@ public final class InputBeanFragments {
                     : names.decodeContainerSingular(poly.containerName()),
                 root, sdl);
             case CallSiteExtraction.ContextArg ignored -> throw notALeaf(fb);
+            case CallSiteExtraction.SessionHandleRead ignored -> throw notALeaf(fb);
+            case CallSiteExtraction.SessionMemberRead ignored -> throw notALeaf(fb);
             case CallSiteExtraction.JooqConvert ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NestedInputField ignored -> throw notALeaf(fb);
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> throw notALeaf(fb);

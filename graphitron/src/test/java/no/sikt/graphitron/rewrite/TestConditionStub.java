@@ -401,4 +401,36 @@ class TestConditionStub {
             no.sikt.graphitron.rewrite.test.jooq.public_.tables.Actor tgt) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== $session bindings in a condition =====
+
+    /** A boxed parameter bound to the primitive {@code long} member {@code brukerId}: admitted. */
+    public static Condition sessionBoxed(org.jooq.Table<?> table, Long brukerId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A primitive parameter bound to the primitive member {@code brukerId}: admitted. */
+    public static Condition sessionPrimitive(org.jooq.Table<?> table, long brukerId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A primitive parameter bound to the boxed member {@code sokerId} (may be null): rejected. */
+    public static Condition sessionBoxedIntoPrimitive(org.jooq.Table<?> table, long sokerId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A parameter whose type is neither the member's nor its box. */
+    public static Condition sessionWrongType(org.jooq.Table<?> table, String brukerId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The whole handle. */
+    public static Condition sessionWhole(org.jooq.Table<?> table, SessionHookStub.RecordHandle handle) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A session read beside an argument: the argument keeps its binding. */
+    public static Condition sessionBesideArgument(org.jooq.Table<?> table, String title, Long brukerId) {
+        throw new UnsupportedOperationException();
+    }
 }

@@ -37,4 +37,12 @@ public interface SqlGeneratingField {
     default boolean conditionsReadRequestContext() {
         return WhereFilter.anyReadRequestContext(filters());
     }
+
+    /**
+     * True when any of this coordinate's condition bindings reads the session handle
+     * ({@link CallParam#readsSession()}): the fold behind the {@code dsl}-appending glue signature.
+     */
+    default boolean conditionsReadSession() {
+        return WhereFilter.anyReadSession(filters());
+    }
 }

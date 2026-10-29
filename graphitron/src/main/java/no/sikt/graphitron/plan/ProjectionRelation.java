@@ -28,6 +28,16 @@ public record ProjectionRelation(List<ProjectionCommand> rows) {
         }
     }
 
+    /**
+     * The units whose {@code $project} takes {@code dsl}: the same set every row carries, read off
+     * the rows so a consumer holding the relation needs no other handle.
+     */
+    public java.util.Set<UnitRef> dslProjections() {
+        var set = new LinkedHashSet<UnitRef>();
+        rows.forEach(r -> set.addAll(r.dslProjections()));
+        return java.util.Set.copyOf(set);
+    }
+
     /** The distinct units this relation commits, in row order (one unit per row). */
     public List<UnitRef> units() {
         return rows.stream().map(ProjectionCommand::unit).toList();

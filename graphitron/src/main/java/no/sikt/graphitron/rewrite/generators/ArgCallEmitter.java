@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.rewrite.PathExpr;
@@ -145,6 +146,17 @@ public final class ArgCallEmitter {
                 yield CodeBlock.of("$T.sessionHandle(dsl, $S)",
                     TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate);
             }
+            case ParamSource.SessionHandleMember member -> {
+                if (fieldCoordinate == null) {
+                    throw new IllegalStateException(
+                        "ParamSource.SessionHandleMember reached buildMethodBackedCallArgs without a"
+                        + " fieldCoordinate — the $session guard bakes the coordinate into its failure"
+                        + " message, so every caller must supply it: param '" + param.name() + "'");
+                }
+                yield CodeBlock.of("$T.$L(dsl, $S)",
+                    TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                    ConnectionRuntimeClassGenerator.sessionMemberMethod(member.member()), fieldCoordinate);
+            }
         };
     }
 
@@ -198,6 +210,16 @@ public final class ArgCallEmitter {
             case CallSiteExtraction.ContextArg ignored ->
                 CodeBlock.of("($T) $L.getContextArgument(env, $S)",
                     rawTypeOfCallParam(param), ctx.graphitronContextCall(), param.name());
+            case CallSiteExtraction.SessionHandleRead ignored ->
+                throw new IllegalStateException(
+                    "CallSiteExtraction.SessionHandleRead reached the service-call argument emitter for"
+                    + " param '" + param.name() + "'; a service reads the handle through its"
+                    + " ParamSource, and the call-site read is a condition-glue concept");
+            case CallSiteExtraction.SessionMemberRead ignored ->
+                throw new IllegalStateException(
+                    "CallSiteExtraction.SessionMemberRead reached the service-call argument emitter for"
+                    + " param '" + param.name() + "'; a service reads the handle through its"
+                    + " ParamSource, and the call-site read is a condition-glue concept");
             case CallSiteExtraction.NestedInputField nif ->
                 buildNestedInputFieldExtraction(nif.outerArgName(), nif.path(), nif.leaf(),
                     param.typeName(), param.list());

@@ -334,9 +334,9 @@ public final class KernelIdentity {
 }
 ----
 
-=== Consuming the handle in services
+=== Consuming the handle
 
-Your services can consume the identity your `mount` resolved. Bind a parameter to `mount`'s return value with the `$session` sigil, and the parameter receives the handle from the connection the call runs on:
+Your `@service` and `@condition` methods can consume the identity your `mount` resolved. Bind a parameter to `mount`'s return value with the `$session` sigil in `argMapping`, and the parameter receives the handle from the connection the call runs on:
 
 [source,graphql]
 ----
@@ -345,9 +345,36 @@ access: [Entitlement] @service(
   argMapping: "identity: $session")
 ----
 
-Under tenant fan-out each call sees its own tenant's handle. The parameter's type must match your `mount`'s return type; both are your declarations, checked at build time.
+Often you want one value out of the handle, not the handle. `$session.<member>` binds a parameter to one member of it, so a method keeps the parameters it has and only the `argMapping` names the source. With a mount that returns a Java record `Identitet(long brukerId, Long sokerId)`:
 
-One check has to wait until runtime, because the build cannot see which factory an operation was built with: a `$session` field executed through the escape hatch (`Graphitron.newExecutionInput(dsl, ...)` with `Graphitron.newGraphQL()`) runs on a connection graphitron never mounted, so the read fails the request with an error naming the field and the owned entry points rather than handing your service a `null` where identity belongs.
+[source,graphql]
+----
+type Query {
+  mineSoknader: [Soknad!]! @condition(condition: {
+    className: "no.sikt.opptak.Tilgang", method: "egneSoknader",
+    argMapping: "sokerId: $session.sokerId"})
+  profil: Profil @service(service: {
+    className: "no.sikt.opptak.ProfilService", method: "hent",
+    argMapping: "brukerId: $session.brukerId"})
+}
+----
+
+[source,java]
+----
+public static Condition egneSoknader(Soknad soknad, Long sokerId) {
+    return soknad.SOKER_ID.eq(sokerId);
+}
+----
+
+The sigil is admitted in `argMapping` on `@service` and on `@condition`, whether the `@condition` sits on a field, an argument or an input field. It is not admitted in the `@condition` of a `@reference` path step or on any other directive. The member is exactly one name after the dot; a nested path is not supported.
+
+The members you can name are the ones the handle type _declares_, not the ones it inherits. For a Java record, its components. For any other class, its public non-static `getX()` methods, its `boolean` `isX()` methods and its public fields, each member being the name without the `get` or `is`, first letter lowercased. A jOOQ record handle therefore exposes its own columns and not the whole `Record` API; a handle whose accessors live on a base class you own should re-declare them or be wrapped in a record. A parameter's type must be the member's own type, or its box when the member is primitive (a primitive member may bind a `Long` parameter; a boxed member may not bind a `long` parameter, since the member may be `null`). A `null` member is passed as `null`. Every one of these is checked at build time, and a mismatch names both declarations: the parameter's and the member's.
+
+Under tenant fan-out each `@service` call sees its own tenant's handle. A `@condition` that reads `$session` is not supported on a `@tenantFanOut` field or in a subtree projected under one, because a fanned statement is built before any tenant's connection exists, so there is no handle to read; the build fails naming both coordinates. Bind the value in a `@service` there instead. A session-reading condition also cannot be used in the filter of a multi-table interface or union field, whose per-participant statements are built without it.
+
+The parameter's type must match your `mount`'s return type (or the member's type); all of it is your declarations, checked at build time.
+
+One check has to wait until runtime, because the build cannot see which factory an operation was built with: a `$session` field executed through the escape hatch (`Graphitron.newExecutionInput(dsl, ...)` with `Graphitron.newGraphQL()`) runs on a connection graphitron never mounted, so the read fails the request with an error naming the field and the owned entry points rather than handing your method a `null` where identity belongs.
 
 === The seam parameter
 

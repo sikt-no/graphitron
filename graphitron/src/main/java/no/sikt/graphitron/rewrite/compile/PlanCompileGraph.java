@@ -403,6 +403,11 @@ public final class PlanCompileGraph {
                 if (row.readsRequestContext()) {
                     precise(glue, require(GlobalUnitKind.GRAPHITRON_CONTEXT));
                 }
+                // A session read goes through the connection runtime's guarded handle accessors,
+                // which live on the same TenantConnections carrier the request context reaches.
+                if (row.readsSession()) {
+                    runtimeUnit("TenantConnections").ifPresent(t -> precise(glue, t));
+                }
             }
         }
 

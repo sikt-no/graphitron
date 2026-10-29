@@ -162,6 +162,8 @@ public final class NodeIdDecodeLedger {
             case CallSiteExtraction.Direct ignored -> false;
             case CallSiteExtraction.EnumValueOf ignored -> false;
             case CallSiteExtraction.ContextArg ignored -> false;
+            case CallSiteExtraction.SessionHandleRead ignored -> false;
+            case CallSiteExtraction.SessionMemberRead ignored -> false;
             case CallSiteExtraction.JooqConvert ignored -> false;
             case CallSiteExtraction.InputBean ignored -> false;
             case CallSiteExtraction.ElementRows ignored -> false;

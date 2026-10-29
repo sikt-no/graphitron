@@ -84,8 +84,23 @@ public sealed interface Contribution {
     }
 
     /** Fields another projection unit decides, arriving per {@link CallWrap}. */
-    record Call(String field, UnitRef callee, CallWrap wrap, AliasOwner aliasOwner, AliasScope aliasScope)
-            implements Contribution {
+    record Call(String field, UnitRef callee, CallWrap wrap, AliasOwner aliasOwner, AliasScope aliasScope,
+                boolean calleeTakesDsl) implements Contribution {
+
+        /** A call to a callee whose {@code $project} takes no {@code dsl}: every pre-session shape. */
+        public Call(String field, UnitRef callee, CallWrap wrap, AliasOwner aliasOwner, AliasScope aliasScope) {
+            this(field, callee, wrap, aliasOwner, aliasScope, false);
+        }
+
+        /**
+         * Whether the callee's {@code $project} takes the executing {@code DSLContext dsl}, stamped
+         * by the producer's closure over the unit call graph so the caller's renderer appends the
+         * argument without a lookup of its own.
+         */
+        public Call withCalleeTakesDsl(boolean takesDsl) {
+            return new Call(field, callee, wrap, aliasOwner, aliasScope, takesDsl);
+        }
+
         public Call {
             requireField(field, "Call");
             Objects.requireNonNull(callee, "callee");

@@ -1644,6 +1644,9 @@ public final class ConnectionRuntimeClassGenerator {
         }
         if (handled) {
             carrier.addMethod(sessionHandleAccessor(handleType));
+            for (var member : ((SessionHooks.Handled) sessionHooks).members()) {
+                carrier.addMethod(sessionMemberAccessor(member));
+            }
         }
         carrier.addType(entryClass)
             .addType(MutationFieldScopeEmitter.fieldScopeType(provider, tenantKey));
@@ -2929,6 +2932,39 @@ public final class ConnectionRuntimeClassGenerator {
                 + "DSLContext (the escape hatch), which cannot carry mounted identity.\n"
                 + "@param dsl the call site's resolved per-connection context\n"
                 + "@param fieldCoordinate the {@code $$session}-binding field, for the failure message\n")
+            .build();
+    }
+
+    /** The generated carrier's {@code ClassName}: {@code <outputPackage>.schema.TenantConnections}. */
+    public static ClassName tenantConnectionsClass(String outputPackage) {
+        return ClassName.get(outputPackage + ".schema", TENANT_CONNECTIONS_CLASS_NAME);
+    }
+
+    /** The method name of the guarded read of one handle member, the one place it is spelled. */
+    public static String sessionMemberMethod(String member) {
+        return no.sikt.graphitron.command.SessionAccessors.memberMethod(member);
+    }
+
+    /**
+     * {@code static <memberType> sessionMember_<name>(DSLContext dsl, String fieldCoordinate)}: the
+     * guarded read of one handle member that a {@code $session.<member>} binding routes through. It
+     * is {@link #sessionHandleAccessor}'s guarded handle plus the member's own accessor, so the
+     * join of the authored member name and the decoded member lives here and nowhere in the
+     * call-site emitters, which name only the member.
+     */
+    private static MethodSpec sessionMemberAccessor(SessionHooks.HandleMember member) {
+        var read = member.form() == SessionHooks.HandleMember.Form.METHOD
+            ? CodeBlock.of("sessionHandle(dsl, fieldCoordinate).$L()", member.accessor())
+            : CodeBlock.of("sessionHandle(dsl, fieldCoordinate).$L", member.accessor());
+        return MethodSpec.methodBuilder(sessionMemberMethod(member.name()))
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(member.type())
+            .addParameter(DSL_CONTEXT, "dsl")
+            .addParameter(String.class, "fieldCoordinate")
+            .addStatement("return $L", read)
+            .addJavadoc("The session handle's {@code $L} member, read through the guarded handle.\n"
+                + "@param dsl the call site's resolved per-connection context\n"
+                + "@param fieldCoordinate the binding field, for the guard's failure message\n", member.name())
             .build();
     }
 

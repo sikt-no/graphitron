@@ -28,6 +28,15 @@ public final class SessionIdentityService {
     }
 
     /**
+     * The {@code $session.sessionNo} member witness: the parameter's boxed {@code Integer} is the
+     * member's own type, so {@code argMapping: "number: $session.sessionNo"} binds it without the
+     * service taking the whole handle.
+     */
+    public static Integer sessionNumber(DSLContext dsl, Integer number) {
+        return number;
+    }
+
+    /**
      * The payload/contextArgument unification witness: {@code claims} names the mount method's
      * own payload parameter, so declaring it as a {@code contextArguments} entry at the
      * {@code @service} site adds no factory slot; the caller supplies the value once and this

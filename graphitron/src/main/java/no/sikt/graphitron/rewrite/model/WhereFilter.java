@@ -42,4 +42,15 @@ public sealed interface WhereFilter permits GeneratedConditionFilter, ConditionF
             .flatMap(f -> f.callParams().stream())
             .anyMatch(CallParam::readsRequestContext);
     }
+
+    /**
+     * True when any binding across {@code filters} reads the session handle
+     * ({@link CallParam#readsSession()}): the fold behind the {@code dsl}-appending glue signature,
+     * the sibling of {@link #anyReadRequestContext}.
+     */
+    static boolean anyReadSession(List<WhereFilter> filters) {
+        return filters.stream()
+            .flatMap(f -> f.callParams().stream())
+            .anyMatch(CallParam::readsSession);
+    }
 }

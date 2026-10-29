@@ -331,4 +331,47 @@ class SessionHookResolutionTest {
         assertThat(result.hooks()).isSameAs(SessionHooks.NotConfigured.INSTANCE);
         assertThat(result.rejections()).hasSize(2);
     }
+
+    // ===== Handle members ($session.<member>) =====
+
+    private static java.util.List<String> memberNames(String mount) {
+        var handled = (SessionHooks.Handled) resolve(ref(mount), null).hooks();
+        return handled.members().stream().map(SessionHooks.HandleMember::name).sorted().toList();
+    }
+
+    @Test
+    void recordHandle_membersAreItsComponents_readThroughTheirAccessors() {
+        var handled = (SessionHooks.Handled) resolve(ref("mountRecordHandle"), null).hooks();
+
+        assertThat(handled.members()).extracting(SessionHooks.HandleMember::name)
+            .containsExactly("brukerId", "sokerId");
+        var bruker = handled.member("brukerId").orElseThrow();
+        assertThat(bruker.form()).isEqualTo(SessionHooks.HandleMember.Form.METHOD);
+        assertThat(bruker.accessor()).isEqualTo("brukerId");
+        assertThat(bruker.type().toString()).isEqualTo("long");
+        assertThat(handled.member("sokerId").orElseThrow().type().toString()).isEqualTo("java.lang.Long");
+    }
+
+    @Test
+    void pojoHandle_membersAreDeclaredGettersAndPublicFields_neverInheritedStaticOrParameterised() {
+        assertThat(memberNames("mountPojoHandle")).containsExactly("active", "label", "principal");
+        var handled = (SessionHooks.Handled) resolve(ref("mountPojoHandle"), null).hooks();
+        assertThat(handled.member("label").orElseThrow().form()).isEqualTo(SessionHooks.HandleMember.Form.FIELD);
+        assertThat(handled.member("active").orElseThrow().accessor()).isEqualTo("isActive");
+        assertThat(handled.member("principal").orElseThrow().accessor()).isEqualTo("getPrincipal");
+    }
+
+    @Test
+    void jooqUdtRecordHandle_hasExactlyItsDeclaredMembers_notTheRecordApi() {
+        assertThat(memberNames("mountJooqHandle")).containsExactly("principal", "sessionNo");
+    }
+
+    @Test
+    void handleWithoutLoadableMembers_hasNone() {
+        // String's declared getters would be noise; the point is that an unloadable or
+        // primitive handle yields an empty member set rather than a failure here, and the
+        // validator reports the unknown member where a binding names it.
+        var handled = (SessionHooks.Handled) resolve(ref("mountIntHandle"), null).hooks();
+        assertThat(handled.member("anything")).isEmpty();
+    }
 }

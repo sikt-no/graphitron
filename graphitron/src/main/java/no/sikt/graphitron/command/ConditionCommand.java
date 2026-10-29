@@ -21,7 +21,9 @@ import java.util.List;
  * read the request context ({@link #readsRequestContext()}) appends
  * {@code graphql.schema.DataFetchingEnvironment env} to that signature, uniformly across the glue
  * method and its facet fragments; context is request-global, so the ancestor env every call site
- * holds serves it correctly.
+ * holds serves it correctly. A row whose bindings read the session ({@link #readsSession()})
+ * appends {@code org.jooq.DSLContext dsl} after that, the executing connection's context, which
+ * the session handle rides.
  *
  * <p>Reserved local names in a glue body are the two parameters and the fold seed
  * ({@code table}, {@code args}, {@code condition}); the producer's binding and lift locals must
@@ -39,10 +41,11 @@ public record ConditionCommand(
 
     /**
      * Local names every glue body already binds; producer-named locals must avoid them.
-     * {@code env} is reserved unconditionally, not only on env-appending rows, so a rename of an
-     * argument cannot flip compilability when a context binding is added beside it.
+     * {@code env} and {@code dsl} are reserved unconditionally, not only on the rows that take
+     * them, so a rename of an argument cannot flip compilability when a context or session binding
+     * is added beside it.
      */
-    private static final List<String> RESERVED_LOCALS = List.of("table", "args", "condition", "env");
+    private static final List<String> RESERVED_LOCALS = List.of("table", "args", "condition", "env", "dsl");
 
     public ConditionCommand {
         if (coordinate == null) {
@@ -156,6 +159,16 @@ public record ConditionCommand(
      */
     public boolean readsRequestContext() {
         return bindings().stream().anyMatch(b -> b.param().readsRequestContext());
+    }
+
+    /**
+     * True when any binding reads the session handle ({@code argMapping: "x: $session"} or
+     * {@code "x: $session.<member>"}), so this row's emitted methods append the executing
+     * {@code DSLContext dsl} to their signature, after {@code env} where both are taken. Row-grained
+     * like {@link #readsRequestContext()}: the glue method and every facet fragment fork together.
+     */
+    public boolean readsSession() {
+        return bindings().stream().anyMatch(b -> b.param().readsSession());
     }
 
     /**

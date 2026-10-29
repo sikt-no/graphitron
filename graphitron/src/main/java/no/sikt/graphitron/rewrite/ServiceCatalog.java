@@ -240,6 +240,8 @@ class ServiceCatalog {
         record Dsl() implements ParamRole {}
         /** Name-claimed by the {@code $session} argMapping sigil: bound to the session handle. */
         record SessionBound() implements ParamRole {}
+        /** Name-claimed by a {@code $session.<member>} sigil: bound to one member of the handle. */
+        record SessionMemberBound(String member) implements ParamRole {}
         /** Name-claimed by a GraphQL argument (possibly through an {@code argMapping} path). */
         record ArgBound(PathExpr path) implements ParamRole {}
         /** Name-claimed by a declared context key. */
@@ -334,17 +336,19 @@ class ServiceCatalog {
      */
     ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
             Map<String, GraphQLInputType> slotTypes) {
-        return reduceClaims(sig, argBindings, ctxKeys, slotTypes, Set.of());
+        return reduceClaims(sig, argBindings, ctxKeys, slotTypes, Map.of());
     }
 
     /**
-     * Sigil-aware overload of {@link #reduceClaims}: {@code sessionBound} carries the Java
-     * parameter names an argMapping {@code $session} entry bound to the session handle. An
-     * explicit binding, so it claims right after the type-resolved {@code DSLContext} slot,
-     * ahead of every name claim.
+     * Sigil-aware overload of {@link #reduceClaims}: {@code sessionBound} carries, by Java
+     * parameter name, the argMapping {@code $session} and {@code $session.<member>} entries (the
+     * lifted {@link no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding}s). An explicit
+     * binding, so it claims right after the type-resolved {@code DSLContext} slot, ahead of every
+     * name claim.
      */
     ClaimedParams reduceClaims(ServiceSignature sig, ArgBindingMap argBindings, Set<String> ctxKeys,
-            Map<String, GraphQLInputType> slotTypes, Set<String> sessionBound) {
+            Map<String, GraphQLInputType> slotTypes,
+            Map<String, no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding> sessionBound) {
         var argByJavaName = inferBindingsByType(sig, argBindings.byJavaName(), ctxKeys, slotTypes);
         var roles = new ArrayList<ParamRole>(sig.params().size());
         for (var p : sig.params()) {
@@ -352,8 +356,17 @@ class ServiceCatalog {
                 roles.add(new ParamRole.Dsl());
                 continue;
             }
-            if (p.name() != null && sessionBound.contains(p.name())) {
-                roles.add(new ParamRole.SessionBound());
+            var sessionBinding = p.name() == null ? null : sessionBound.get(p.name());
+            if (sessionBinding != null) {
+                roles.add(switch (sessionBinding) {
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SessionHandle ignored ->
+                        new ParamRole.SessionBound();
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SessionMember m ->
+                        new ParamRole.SessionMemberBound(m.member());
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SourceColumn ignored ->
+                        throw new IllegalStateException("a $source binding reached @service claims; the"
+                            + " SERVICE site does not admit it");
+                });
                 continue;
             }
             PathExpr resolvedPath = p.name() != null ? argByJavaName.get(p.name()) : null;
@@ -420,6 +433,9 @@ class ServiceCatalog {
                 case ParamRole.SessionBound ignored ->
                     params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
                         new ParamSource.SessionHandle()));
+                case ParamRole.SessionMemberBound m ->
+                    params.add(new MethodRef.Param.Typed(p.displayName(), p.typeName(), p.javaType(),
+                        new ParamSource.SessionHandleMember(m.member())));
                 case ParamRole.ArgBound bound -> {
                     String where = "parameter '" + p.displayName() + "' of method '" + sig.methodName()
                         + "' in class '" + sig.className() + "'";
@@ -502,7 +518,8 @@ class ServiceCatalog {
             // off the resolved DSLContext's own Configuration data.
             boolean needsDslLocal = params.stream()
                 .anyMatch(p -> p.source() instanceof ParamSource.DslContext
-                    || p.source() instanceof ParamSource.SessionHandle);
+                    || p.source() instanceof ParamSource.SessionHandle
+                    || p.source() instanceof ParamSource.SessionHandleMember);
             callShape = new MethodRef.CallShape.Static(needsDslLocal);
         } else {
             callShape = new MethodRef.CallShape.InstanceWithDslHolder(sig.ctorParams());
@@ -1083,6 +1100,20 @@ class ServiceCatalog {
     ServiceReflectionResult reflectTableMethod(String className, String methodName,
             ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes,
             ConditionSite site) {
+        return reflectTableMethod(className, methodName, argBindings, ctxKeys, slotTypes, site, Map.of());
+    }
+
+    /**
+     * Session-aware overload: {@code sessionBound} carries, by Java parameter name, the
+     * {@code $session} and {@code $session.<member>} entries the condition's argMapping lifted.
+     * A bound name claims its parameter ahead of every argument and context-key claim, as on the
+     * {@code @service} path; a name that is no bindable parameter of the method rejects naming the
+     * available ones.
+     */
+    ServiceReflectionResult reflectTableMethod(String className, String methodName,
+            ArgBindingMap argBindings, Set<String> ctxKeys, Map<String, GraphQLInputType> slotTypes,
+            ConditionSite site,
+            Map<String, no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding> sessionBound) {
         var argByJavaName = argBindings.byJavaName();
         if (className == null || methodName == null) {
             return new ServiceReflectionResult(null, Rejection.structural("table method reference is incomplete"));
@@ -1124,6 +1155,16 @@ class ServiceCatalog {
         if (tableTypoGuard != null) {
             return new ServiceReflectionResult(null, Rejection.structural(tableTypoGuard));
         }
+        for (var entry : sessionBound.entrySet()) {
+            if (!shape.bindableParamNames().contains(entry.getKey())) {
+                return new ServiceReflectionResult(null, Rejection.structural(
+                    "argMapping entry '" + entry.getKey() + ": " + entry.getValue().raw()
+                        + "' names no bindable parameter of method '" + methodName + "' in class '"
+                        + className + "'" + (shape.reservedTableSlotNames().contains(entry.getKey())
+                            ? " — the Table<?> slot is reserved" : "")
+                        + "; available parameter names are " + shape.bindableParamNames()));
+            }
+        }
         argByJavaName = inferBindingsByType(shape, argByJavaName, ctxKeys, slotTypes);
         var params = new ArrayList<MethodRef.Param>();
         for (var slot : shape.slots()) {
@@ -1140,6 +1181,19 @@ class ServiceCatalog {
             }
             String typeName = bindable.typeName();
             TypeName javaType = bindable.javaType();
+            var sessionBinding = sessionBound.get(pName);
+            if (sessionBinding != null) {
+                params.add(new MethodRef.Param.Typed(pName, typeName, javaType, switch (sessionBinding) {
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SessionHandle ignored ->
+                        new ParamSource.SessionHandle();
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SessionMember m ->
+                        new ParamSource.SessionHandleMember(m.member());
+                    case no.sikt.graphitron.model.grammar.ArgMappingSigil.Binding.SourceColumn ignored ->
+                        throw new IllegalStateException("a $source binding reached @condition claims; the"
+                            + " CONDITION site does not admit it");
+                }));
+                continue;
+            }
             PathExpr resolvedPath = argByJavaName.get(pName);
             if (resolvedPath != null) {
                 // Two arms by the bound leaf. An input-object leaf goes through the carrier decision
@@ -2541,8 +2595,76 @@ class ServiceCatalog {
         }
         SessionHooks hooks = handleLess
             ? new SessionHooks.HandleLess(mount, Optional.ofNullable(unmount))
-            : new SessionHooks.Handled(mount, mount.returnType(), Optional.ofNullable(unmount));
+            : new SessionHooks.Handled(mount, mount.returnType(), Optional.ofNullable(unmount),
+                decodeHandleMembers(mount.returnType()));
         return new SessionHookResolution(hooks, List.of());
+    }
+
+    /**
+     * The readable members of the handle class, as values. A function of the handle class alone,
+     * so wherever the class comes from (today the mount's return type) the decode is the same.
+     * A handle class the codegen classloader cannot load, or a primitive or array handle, has no
+     * members; a member binding to it then rejects as an unknown member naming none.
+     *
+     * <p>The rule reads what the handle type <em>declares</em>, not what it inherits, so a jOOQ
+     * record handle does not list the whole {@code Record} API: for a Java record, its components
+     * through their accessors; for any other class, the public non-static zero-argument
+     * {@code get<Name>} methods and {@code boolean} {@code is<Name>} methods declared on the class
+     * itself (member {@code <name>}, first letter lowercased), plus its public non-static fields.
+     * A component or getter wins over a same-named field.
+     */
+    private List<SessionHooks.HandleMember> decodeHandleMembers(TypeName handleType) {
+        if (!(handleType instanceof no.sikt.graphitron.javapoet.ClassName className)) {
+            return List.of();
+        }
+        // nameability: exempt (the <sessionState> handle is plugin configuration or a mount return, not schema text)
+        if (!(ConsumerClassLoad.reflect(className.reflectionName(), ctx.codegenLoader())
+                instanceof ConsumerClassLoad.Loaded loaded)) {
+            return List.of();
+        }
+        Class<?> cls = loaded.cls();
+        var members = new java.util.LinkedHashMap<String, SessionHooks.HandleMember>();
+        if (cls.isRecord()) {
+            for (var component : cls.getRecordComponents()) {
+                var accessor = component.getAccessor();
+                if (accessor != null && java.lang.reflect.Modifier.isPublic(accessor.getModifiers())) {
+                    members.put(component.getName(), new SessionHooks.HandleMember(component.getName(),
+                        SessionHooks.HandleMember.Form.METHOD, accessor.getName(),
+                        TypeName.get(accessor.getGenericReturnType())));
+                }
+            }
+        } else {
+            for (var method : cls.getDeclaredMethods()) {
+                int mods = method.getModifiers();
+                if (!java.lang.reflect.Modifier.isPublic(mods) || java.lang.reflect.Modifier.isStatic(mods)
+                        || method.isSynthetic() || method.isBridge() || method.getParameterCount() != 0) {
+                    continue;
+                }
+                String name = method.getName();
+                String stem = null;
+                if (name.startsWith("get") && name.length() > 3 && method.getReturnType() != void.class) {
+                    stem = name.substring(3);
+                } else if (name.startsWith("is") && name.length() > 2 && method.getReturnType() == boolean.class) {
+                    stem = name.substring(2);
+                }
+                if (stem == null) {
+                    continue;
+                }
+                String member = Character.toLowerCase(stem.charAt(0)) + stem.substring(1);
+                members.putIfAbsent(member, new SessionHooks.HandleMember(member,
+                    SessionHooks.HandleMember.Form.METHOD, name, TypeName.get(method.getGenericReturnType())));
+            }
+            for (var field : cls.getDeclaredFields()) {
+                int mods = field.getModifiers();
+                if (java.lang.reflect.Modifier.isPublic(mods) && !java.lang.reflect.Modifier.isStatic(mods)
+                        && !field.isSynthetic()) {
+                    members.putIfAbsent(field.getName(), new SessionHooks.HandleMember(field.getName(),
+                        SessionHooks.HandleMember.Form.FIELD, field.getName(),
+                        TypeName.get(field.getGenericType())));
+                }
+            }
+        }
+        return List.copyOf(members.values());
     }
 
     /**

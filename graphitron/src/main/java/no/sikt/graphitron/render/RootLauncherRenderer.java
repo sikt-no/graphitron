@@ -737,6 +737,9 @@ public final class RootLauncherRenderer {
         if (glue.takesEnv()) {
             call.add(", env");
         }
+        if (glue.takesDsl()) {
+            call.add(", dsl");
+        }
         call.add(")");
         return call.build();
     }

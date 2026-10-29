@@ -235,12 +235,13 @@ final class ServiceDirectiveResolver {
         // The $session-bound parameter names from the argMapping sigil scan. The typo guard
         // mirrors the override guard: an explicit binding naming no Java parameter fails naming
         // the available ones rather than falling through to a per-parameter mismatch.
-        var sessionBound = serviceRef.sigilBindings().keySet();
-        for (String name : sessionBound) {
+        var sessionBound = serviceRef.sigilBindings();
+        for (var entry : sessionBound.entrySet()) {
+            String name = entry.getKey();
             if (!signature.namedParameters().contains(name)) {
                 return new Resolved.Rejected(Rejection.structural(
                     "service method could not be resolved — argMapping entry '" + name + ": "
-                        + ArgMappingSigil.SESSION_LITERAL + "' names no parameter of method '"
+                        + entry.getValue().raw() + "' names no parameter of method '"
                         + signature.methodName() + "' in class '" + signature.className()
                         + "'; available parameter names are " + signature.namedParameters()));
             }

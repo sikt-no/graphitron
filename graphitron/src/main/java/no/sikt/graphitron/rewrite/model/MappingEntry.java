@@ -13,7 +13,7 @@ import no.sikt.graphitron.javapoet.TypeName;
  * actual-arg list.
  */
 public sealed interface MappingEntry permits MappingEntry.FromArg, MappingEntry.FromContext, MappingEntry.FromDsl,
-        MappingEntry.FromSessionHandle {
+        MappingEntry.FromSessionHandle, MappingEntry.FromSessionHandleMember {
 
     /** GraphQL-argument-sourced slot. {@code shape}'s {@code javaType} is the slot's Java type. */
     record FromArg(String javaName, ValueShape shape) implements MappingEntry {}
@@ -39,4 +39,11 @@ public sealed interface MappingEntry permits MappingEntry.FromArg, MappingEntry.
      * {@code configuration().data(...)} slot, never off {@code graphQLContext}.
      */
     record FromSessionHandle(String javaName, TypeName javaType) implements MappingEntry {}
+
+    /**
+     * Session-handle-member-sourced slot: the parameter a {@code $session.<member>} sigil bound.
+     * {@code member} is the authored member name; the emitter reads the handle as for
+     * {@link FromSessionHandle} and applies the member's accessor.
+     */
+    record FromSessionHandleMember(String javaName, TypeName javaType, String member) implements MappingEntry {}
 }

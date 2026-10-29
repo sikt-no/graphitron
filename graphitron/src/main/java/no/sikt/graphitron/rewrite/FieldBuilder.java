@@ -1481,6 +1481,10 @@ class FieldBuilder {
             case CallSiteExtraction.Direct ignored -> true;
             case CallSiteExtraction.EnumValueOf ignored -> true;
             case CallSiteExtraction.ContextArg ignored -> true;
+            // Not branch-safe: the polymorphic branch filter is built without the executing dsl a
+            // session-reading glue takes, so it is refused here rather than emitted unrunnable.
+            case CallSiteExtraction.SessionHandleRead ignored -> false;
+            case CallSiteExtraction.SessionMemberRead ignored -> false;
             case CallSiteExtraction.NestedInputField nif -> isBranchSafeExtraction(nif.leaf());
             // Branch-safe: the shared arm emits the DSL.val(raw, col.getDataType()).getValue()
             // coercion, and the branch path pre-declares the shared <name>Keys local (deduped
@@ -2892,6 +2896,8 @@ class FieldBuilder {
             case CallSiteExtraction.JooqConvert ignored -> column.columnClass();
             case CallSiteExtraction.Direct ignored -> column.columnClass();
             case CallSiteExtraction.ContextArg ignored -> column.columnClass();
+            case CallSiteExtraction.SessionHandleRead ignored -> column.columnClass();
+            case CallSiteExtraction.SessionMemberRead ignored -> column.columnClass();
             case CallSiteExtraction.NestedInputField ignored -> column.columnClass();
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> column.columnClass();
             case CallSiteExtraction.InputBean ignored -> column.columnClass();
@@ -3033,6 +3039,9 @@ class FieldBuilder {
             case CallSiteExtraction.Direct ignored -> reads.wholes().add(path);
             case CallSiteExtraction.EnumValueOf ignored -> reads.wholes().add(path);
             case CallSiteExtraction.ContextArg ignored -> reads.wholes().add(path);
+            // A session read consumes no argument: the handle is not in the argument map.
+            case CallSiteExtraction.SessionHandleRead ignored -> { }
+            case CallSiteExtraction.SessionMemberRead ignored -> { }
             case CallSiteExtraction.JooqConvert ignored -> reads.wholes().add(path);
             case CallSiteExtraction.NodeIdDecodeKeys ignored -> reads.wholes().add(path);
             case CallSiteExtraction.NodeIdDecodeRecord ignored -> reads.wholes().add(path);
@@ -9452,13 +9461,25 @@ class FieldBuilder {
             ? ArgMappingSigil.Site.SERVICE
             : (DIR_EXTERNAL_FIELD.equals(directiveName)
                 ? ArgMappingSigil.Site.EXTERNAL_FIELD
-                : ArgMappingSigil.Site.CONDITION);
+                : unexpectedExternalRefHost(directiveName));
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, sigilSite);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ExternalRef(className, methodName, Map.of(), pe.message());
         }
         var parsedOk = (ArgBindingMap.ParsedArgMapping.Ok) parsed;
         return new ExternalRef(className, methodName, parsedOk.overrides(), parsedOk.sigilBindings(), null);
+    }
+
+    /**
+     * {@link #parseExternalRef}'s only hosts are {@code @service} and {@code @externalField}, so
+     * any other directive reaching it is a programming error. Throwing, rather than falling back
+     * to a site, keeps a future caller from silently inheriting the {@code @condition} admission
+     * of {@code $session}.
+     */
+    private static ArgMappingSigil.Site unexpectedExternalRefHost(String directiveName) {
+        throw new IllegalStateException("parseExternalRef reached for @" + directiveName
+            + "; its hosts are @service and @externalField, and the @condition parse goes through"
+            + " BuildContext.readConditionDirective");
     }
 
     /**
@@ -9892,7 +9913,7 @@ class FieldBuilder {
      */
     record ExternalRef(String className, String methodName,
                        Map<String, java.util.List<String>> argMapping,
-                       Map<String, String> sigilBindings,
+                       Map<String, ArgMappingSigil.Binding> sigilBindings,
                        String argMappingError) {
         ExternalRef(String className, String methodName,
                     Map<String, java.util.List<String>> argMapping, String argMappingError) {

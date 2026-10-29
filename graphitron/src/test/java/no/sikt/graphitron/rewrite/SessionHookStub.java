@@ -128,4 +128,43 @@ public final class SessionHookStub {
     public static Integer mountIntHandle(Configuration cfg) {
         throw new UnsupportedOperationException();
     }
+
+    // ===== Handle types whose members $session.<member> decodes =====
+
+    /** A Java record handle: its components are its members, read through the record accessors. */
+    public record RecordHandle(long brukerId, Long sokerId) {}
+
+    /** A base class whose getter the handle inherits: inherited members are excluded. */
+    public static class HandleBase {
+        public String getInherited() { return "inherited"; }
+    }
+
+    /**
+     * A non-record handle: a {@code get} getter, a boolean {@code is} getter and a public field are
+     * members; a static getter, a parameterised getter, a private getter, a non-boolean {@code is}
+     * and the inherited getter are not.
+     */
+    public static class PojoHandle extends HandleBase {
+        public String label = "label";
+        public static String staticName = "x";
+        public String getPrincipal() { return "p"; }
+        public boolean isActive() { return true; }
+        public static String getStaticThing() { return "s"; }
+        public String getWithArgument(String x) { return x; }
+        String getPackagePrivate() { return "p"; }
+        public String isNotBoolean() { return "n"; }
+    }
+
+    public static RecordHandle mountRecordHandle(Configuration cfg) {
+        throw new UnsupportedOperationException();
+    }
+
+    public static PojoHandle mountPojoHandle(Configuration cfg) {
+        throw new UnsupportedOperationException();
+    }
+
+    public static no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRecord mountJooqHandle(
+            Configuration cfg) {
+        throw new UnsupportedOperationException();
+    }
 }

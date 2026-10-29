@@ -1483,7 +1483,8 @@ public record TenantBindingIndex(
                     : method.params().stream().anyMatch(p ->
                         p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.DslContext);
                 return needsDsl || method.params().stream().anyMatch(p ->
-                    p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle);
+                    p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandle
+                        || p.source() instanceof no.sikt.graphitron.rewrite.model.ParamSource.SessionHandleMember);
             }
             if (out instanceof no.sikt.graphitron.rewrite.model.ServiceField sf) {
                 var carrier = sf.serviceMethodCall();
@@ -1494,7 +1495,8 @@ public record TenantBindingIndex(
                 }
                 return entries.stream().anyMatch(e ->
                     e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromDsl
-                        || e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle);
+                        || e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandle
+                        || e instanceof no.sikt.graphitron.rewrite.model.MappingEntry.FromSessionHandleMember);
             }
             return false;
         }

@@ -49,7 +49,7 @@ class ArgMappingSigilTest {
         var result = (ArgMappingSigil.ScanResult.Ok) ArgMappingSigil.scan(
             "inputs: input, identity: $session, kvote: kvoteId", ArgMappingSigil.Site.SERVICE);
         assertThat(result.sigilBindings())
-            .containsExactlyEntriesOf(Map.of("identity", ArgMappingSigil.SESSION_LITERAL));
+            .containsExactlyEntriesOf(Map.of("identity", new ArgMappingSigil.Binding.SessionHandle()));
         assertThat(result.residual()).isEqualTo("inputs: input, kvote: kvoteId");
     }
 
@@ -71,13 +71,14 @@ class ArgMappingSigilTest {
     }
 
     @ParameterizedTest
-    @EnumSource(value = ArgMappingSigil.Site.class, names = "SERVICE", mode = EnumSource.Mode.EXCLUDE)
+    @EnumSource(value = ArgMappingSigil.Site.class, names = {"SERVICE", "CONDITION"}, mode = EnumSource.Mode.EXCLUDE)
     void sessionAtANonAdmittedSite_rejectsNamingTheAdmittedOne(ArgMappingSigil.Site site) {
         assertThat(site.admitsSessionSigil()).isFalse();
         var result = ArgMappingSigil.scan("identity: $session", site);
         assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected -> {
             assertThat(rejected.message()).isEqualTo(ArgMappingSigil.notAdmittedMessage(site));
-            assertThat(rejected.message()).contains(site.description()).contains("@service argMapping");
+            assertThat(rejected.message()).contains(site.description())
+                .contains("@service and @condition argMapping");
         });
     }
 
@@ -85,7 +86,8 @@ class ArgMappingSigilTest {
     void sourceColumnEntry_isLiftedAtTheRoutineSite() {
         var result = (ArgMappingSigil.ScanResult.Ok) ArgMappingSigil.scan(
             "pActorId: $source.actor_id, pMinLength: minLength", ArgMappingSigil.Site.ROUTINE);
-        assertThat(result.sigilBindings()).containsExactlyEntriesOf(Map.of("pActorId", "$source.actor_id"));
+        assertThat(result.sigilBindings()).containsExactlyEntriesOf(
+            Map.of("pActorId", new ArgMappingSigil.Binding.SourceColumn("actor_id")));
         assertThat(result.residual()).isEqualTo(" pMinLength: minLength");
         assertThat(ArgMappingSigil.sourceColumn("$source.actor_id")).isEqualTo("actor_id");
     }
@@ -132,7 +134,7 @@ class ArgMappingSigilTest {
         assertThat(result).isInstanceOfSatisfying(ArgBindingMap.ParsedArgMapping.Ok.class, ok -> {
             assertThat(ok.overrides()).containsExactlyEntriesOf(Map.of("inputs", List.of("input")));
             assertThat(ok.sigilBindings())
-                .containsExactlyEntriesOf(Map.of("identity", ArgMappingSigil.SESSION_LITERAL));
+                .containsExactlyEntriesOf(Map.of("identity", new ArgMappingSigil.Binding.SessionHandle()));
         });
     }
 
@@ -147,10 +149,51 @@ class ArgMappingSigilTest {
     @Test
     void parseArgMapping_sigilAwareOverload_nonAdmittedSite_surfacesTheOwnersMessage() {
         var result = ArgBindingMap.parseArgMapping(
-            "identity: $session", ArgMappingSigil.Site.CONDITION);
+            "identity: $session", ArgMappingSigil.Site.REFERENCE_STEP);
         assertThat(result).isInstanceOfSatisfying(ArgBindingMap.ParsedArgMapping.ParseError.class, error ->
             assertThat(error.message())
-                .isEqualTo(ArgMappingSigil.notAdmittedMessage(ArgMappingSigil.Site.CONDITION)));
+                .isEqualTo(ArgMappingSigil.notAdmittedMessage(ArgMappingSigil.Site.REFERENCE_STEP)));
+    }
+
+    @Test
+    void conditionSite_admitsTheWholeHandleAndAMember() {
+        var result = (ArgMappingSigil.ScanResult.Ok) ArgMappingSigil.scan(
+            "sokerId: $session.sokerId, h: $session, kvote: kvoteId", ArgMappingSigil.Site.CONDITION);
+        assertThat(result.sigilBindings()).containsExactly(
+            Map.entry("sokerId", new ArgMappingSigil.Binding.SessionMember("sokerId")),
+            Map.entry("h", new ArgMappingSigil.Binding.SessionHandle()));
+        assertThat(result.sigilBindings().get("sokerId").raw()).isEqualTo("$session.sokerId");
+        assertThat(result.residual()).isEqualTo(" kvote: kvoteId");
+    }
+
+    @Test
+    void referenceStep_stillRejectsTheSessionSigil() {
+        assertThat(ArgMappingSigil.Site.REFERENCE_STEP.admitsSessionSigil()).isFalse();
+        assertThat(ArgMappingSigil.scan("x: $session.member", ArgMappingSigil.Site.REFERENCE_STEP))
+            .isInstanceOf(ArgMappingSigil.ScanResult.Rejected.class);
+    }
+
+    @Test
+    void sessionMember_servicesAdmitIt_andADeeperPathRejectsNamingTheOneMemberForm() {
+        var ok = (ArgMappingSigil.ScanResult.Ok) ArgMappingSigil.scan(
+            "x: $session.brukerId", ArgMappingSigil.Site.SERVICE);
+        assertThat(ok.sigilBindings()).containsExactly(
+            Map.entry("x", new ArgMappingSigil.Binding.SessionMember("brukerId")));
+        for (String rhs : new String[] {"$session.a.b", "$session."}) {
+            var result = ArgMappingSigil.scan("x: " + rhs, ArgMappingSigil.Site.SERVICE);
+            assertThat(result).isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+                assertThat(rejected.message()).isEqualTo(ArgMappingSigil.deepSessionPathMessage(rhs)));
+        }
+    }
+
+    @Test
+    void sessionMember_isNotAdmittedAtTheNonAdmittedSites() {
+        for (var site : new ArgMappingSigil.Site[] {ArgMappingSigil.Site.ROUTINE, ArgMappingSigil.Site.RECORD,
+                ArgMappingSigil.Site.EXTERNAL_FIELD, ArgMappingSigil.Site.ENUM}) {
+            assertThat(ArgMappingSigil.scan("x: $session.m", site))
+                .isInstanceOfSatisfying(ArgMappingSigil.ScanResult.Rejected.class, rejected ->
+                    assertThat(rejected.message()).isEqualTo(ArgMappingSigil.notAdmittedMessage(site)));
+        }
     }
 
     @Test

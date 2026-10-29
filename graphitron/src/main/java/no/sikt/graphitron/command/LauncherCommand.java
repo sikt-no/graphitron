@@ -3,6 +3,7 @@ package no.sikt.graphitron.command;
 import graphql.schema.FieldCoordinates;
 
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * One row of the launcher command relation: the named {@code rows<Field>}-shaped unit owning
@@ -48,10 +49,28 @@ public record LauncherCommand(
     Invocation invocation,
     TenantStrategy tenancy,
     ResultShape result,
-    UnitRef selectionOccurrences
+    UnitRef selectionOccurrences,
+    Set<UnitRef> dslProjections
 ) {
 
+    /** A launcher over a plan whose projections take no {@code dsl}: every pre-session shape. */
+    public LauncherCommand(UnitMethodRef unit, FieldCoordinates coordinate, LaunchSource source,
+            GlueCall where, Invocation invocation, TenantStrategy tenancy, ResultShape result,
+            UnitRef selectionOccurrences) {
+        this(unit, coordinate, source, where, invocation, tenancy, result, selectionOccurrences, Set.of());
+    }
+
+    /**
+     * This row carrying the projection relation's closure of units whose {@code $project} takes
+     * {@code dsl}, so {@code ProjectionCall} appends the argument for exactly those callees.
+     */
+    public LauncherCommand withDslProjections(Set<UnitRef> dslProjections) {
+        return new LauncherCommand(unit, coordinate, source, where, invocation, tenancy, result,
+            selectionOccurrences, dslProjections);
+    }
+
     public LauncherCommand {
+        dslProjections = Set.copyOf(Objects.requireNonNull(dslProjections, "dslProjections"));
         Objects.requireNonNull(unit, "unit");
         Objects.requireNonNull(coordinate, "a launcher row is keyed by its field coordinate");
         Objects.requireNonNull(source, "every launcher states how its rows are sourced and projected");

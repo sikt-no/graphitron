@@ -87,6 +87,7 @@ class SessionHookExecutionTest {
             + "with check (owner_id = nullif(current_setting('app.user_id', true), ''))");
         exec("grant select, insert, update, delete on rls_probe to " + PROBE_USER);
         exec("grant usage on sequence session_handle_seq to " + PROBE_USER);
+        exec("grant select on customer, store to " + PROBE_USER);
         exec("insert into rls_probe values (1,'alice','a1'),(2,'bob','b1'),(3,'alice','a2')");
     }
 
@@ -487,7 +488,99 @@ class SessionHookExecutionTest {
         }
     }
 
+    @Test
+    void sessionMemberBoundToAService_readsThatMemberOfTheMountedHandle() throws Exception {
+        // $session.sessionNo: the member's own Integer binds where the whole handle did.
+        var engine = ownedEngine();
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"alice\"}", "alice")
+            .query("{ sessionNumber sessionPrincipal }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        java.util.Map<String, Object> data = result.getData();
+        assertThat((Integer) data.get("sessionNumber")).isPositive();
+        assertThat((String) data.get("sessionPrincipal"))
+            .as("the member and the whole handle are the one mounted handle")
+            .isEqualTo("alice#" + data.get("sessionNumber"));
+    }
+
+    @Test
+    void sessionMemberReadByARootCondition_filtersByTheMountedPrincipal() throws Exception {
+        var engine = ownedEngine();
+
+        var mary = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"mary\"}", "mary")
+            .query("{ customersOfPrincipal { firstName } }")
+            .build());
+        assertThat(mary.getErrors()).as("errors: " + mary.getErrors()).isEmpty();
+        assertThat(firstNames(mary.getData(), "customersOfPrincipal"))
+            .as("the condition read the principal off the connection it runs on")
+            .isNotEmpty().allMatch(name -> name.equalsIgnoreCase("mary"));
+
+        // A fresh engine: the single-connection data source above is released by the first request.
+        var nobody = ownedEngine().execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"no-such-customer\"}", "no-such-customer")
+            .query("{ customersOfPrincipal { firstName } }")
+            .build());
+        assertThat(nobody.getErrors()).isEmpty();
+        assertThat(firstNames(nobody.getData(), "customersOfPrincipal")).isEmpty();
+    }
+
+    @Test
+    void sessionMemberReadByAChildCondition_isProjectedIntoTheParentStatement() throws Exception {
+        // The condition sits on an inline child, so its glue is called from the parent's $project
+        // inside a correlated multiset: the projection unit takes dsl and the root launcher hands
+        // it over, which is what makes the read per connection rather than per request.
+        var engine = ownedEngine();
+        var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+            .newOwnedExecutionInput("{\"sub\":\"mary\"}", "mary")
+            .query("{ sessionStores { storeId customersOfPrincipal { firstName } } }")
+            .build());
+
+        assertThat(result.getErrors()).as("errors: " + result.getErrors()).isEmpty();
+        java.util.Map<String, Object> data = result.getData();
+        @SuppressWarnings("unchecked")
+        var nodes = (List<java.util.Map<String, Object>>) data.get("sessionStores");
+        assertThat(nodes).isNotEmpty();
+        var names = new java.util.ArrayList<String>();
+        for (var node : nodes) {
+            @SuppressWarnings("unchecked")
+            var customers = (List<java.util.Map<String, Object>>) node.get("customersOfPrincipal");
+            customers.forEach(c -> names.add((String) c.get("firstName")));
+        }
+        assertThat(names).isNotEmpty().allMatch(name -> name.equalsIgnoreCase("mary"));
+    }
+
+    @Test
+    void sessionMemberReadByAConditionOnAnEscapeHatchOperation_failsLoudlyInsteadOfBindingNull() throws Exception {
+        try (Connection conn = probeConnection()) {
+            DSLContext supplied = DSL.using(conn, SQLDialect.POSTGRES);
+            var engine = no.sikt.graphitron.generated.Graphitron.newGraphQL().build();
+            var result = engine.execute(no.sikt.graphitron.generated.Graphitron
+                .newExecutionInput(supplied, "{\"sub\":\"mary\"}", "mary")
+                .query("{ customersOfPrincipal { firstName } }")
+                .build());
+
+            assertThat(result.getErrors())
+                .as("an escape-hatch $session read in a condition is an error, not a silent empty filter")
+                .isNotEmpty();
+        }
+    }
+
     // ===== helpers =====
+
+    private static graphql.GraphQL ownedEngine() throws Exception {
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(
+            singleConnectionDataSource(probeConnection()), SQLDialect.POSTGRES);
+        return runtime.newGraphQL(no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+    }
+
+    private static List<String> firstNames(java.util.Map<String, Object> data, String field) {
+        @SuppressWarnings("unchecked")
+        var rows = (List<java.util.Map<String, Object>>) data.get(field);
+        return rows.stream().map(r -> (String) r.get("firstName")).toList();
+    }
 
     private static graphql.ExecutionInput rejectedInput(String query) {
         return no.sikt.graphitron.generated.Graphitron

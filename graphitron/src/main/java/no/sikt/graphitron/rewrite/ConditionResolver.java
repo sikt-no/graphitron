@@ -81,7 +81,7 @@ final class ConditionResolver {
         var slotTypes = java.util.Map.of(argName, arg.getType());
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()), slotTypes,
-            new ConditionSite.Consuming(parentTypeName, fieldDef.getName()));
+            new ConditionSite.Consuming(parentTypeName, fieldDef.getName()), cond.sessionBindings());
         if (result.failed()) {
             return new ArgConditionResult.Rejected(result.rejection().prefixedWith("argument '" + argName + "' @condition: "));
         }
@@ -110,7 +110,7 @@ final class ConditionResolver {
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()),
             FieldBuilder.argSlotTypes(fieldDef),
-            new ConditionSite.Consuming(parentTypeName, fieldDef.getName()));
+            new ConditionSite.Consuming(parentTypeName, fieldDef.getName()), cond.sessionBindings());
         if (result.failed()) {
             return new FieldConditionResult.Rejected(result.rejection().prefixedWith("field '" + fieldDef.getName() + "' @condition: "));
         }

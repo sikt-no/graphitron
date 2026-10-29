@@ -71,8 +71,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
     }
 
     /**
-     * Extracted parameters only ({@link ParamSource.Arg} and {@link ParamSource.Context}),
-     * in declaration order. Skips implicit structural parameters ({@link ParamSource.Table},
+     * Extracted parameters only ({@link ParamSource.Arg}, {@link ParamSource.Context} and the two
+     * session-handle sources), in declaration order. Skips implicit structural parameters ({@link ParamSource.Table},
      * {@link ParamSource.SourceTable}, {@link ParamSource.DslContext},
      * {@link ParamSource.Sources}).
      *
@@ -82,7 +82,9 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
      */
     default List<CallParam> callParams() {
         return params().stream()
-            .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context)
+            .filter(p -> p.source() instanceof ParamSource.Arg || p.source() instanceof ParamSource.Context
+                || p.source() instanceof ParamSource.SessionHandle
+                || p.source() instanceof ParamSource.SessionHandleMember)
             .map(p -> new CallParam(callParamName(p), toCallSiteExtraction(p), false,
                 p.typeName(), ((Param.Typed) p).javaType()))
             .toList();
@@ -108,9 +110,15 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
             case ParamSource.SourceTable ignored  -> throw nonExtractedSource(p);
             case ParamSource.SourceColumn ignored -> throw nonExtractedSource(p);
             case ParamSource.SessionSeam ignored   -> throw nonExtractedSource(p);
-            case ParamSource.SessionHandle ignored -> throw nonExtractedSource(p);
+            case ParamSource.SessionHandle ignored -> callParamNameOfSessionRead(p);
+            case ParamSource.SessionHandleMember ignored -> callParamNameOfSessionRead(p);
             case ParamSource.SessionTenant ignored -> throw nonExtractedSource(p);
         };
+    }
+
+    /** A session read names no argument or context key; its glue local is the Java parameter's own name. */
+    private static String callParamNameOfSessionRead(Param p) {
+        return p.name();
     }
 
     private static IllegalStateException nonExtractedSource(Param p) {
@@ -133,7 +141,8 @@ public sealed interface MethodRef permits MethodRef.NonCondition, ConditionFilte
             case ParamSource.SourceTable ignored  -> throw nonExtractedSource(p);
             case ParamSource.SourceColumn ignored -> throw nonExtractedSource(p);
             case ParamSource.SessionSeam ignored   -> throw nonExtractedSource(p);
-            case ParamSource.SessionHandle ignored -> throw nonExtractedSource(p);
+            case ParamSource.SessionHandle ignored -> new CallSiteExtraction.SessionHandleRead();
+            case ParamSource.SessionHandleMember m -> new CallSiteExtraction.SessionMemberRead(m.member());
             case ParamSource.SessionTenant ignored -> throw nonExtractedSource(p);
         };
     }

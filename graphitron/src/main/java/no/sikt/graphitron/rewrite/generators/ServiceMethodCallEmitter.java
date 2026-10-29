@@ -2,6 +2,7 @@ package no.sikt.graphitron.rewrite.generators;
 
 import no.sikt.graphitron.javapoet.ClassName;
 import no.sikt.graphitron.javapoet.CodeBlock;
+import no.sikt.graphitron.rewrite.generators.util.ConnectionRuntimeClassGenerator;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
 import no.sikt.graphitron.javapoet.TypeName;
 import no.sikt.graphitron.render.CompositeDecodeHelperRegistry;
@@ -149,7 +150,8 @@ public final class ServiceMethodCallEmitter {
      */
     private static boolean needsDslLocal(List<MappingEntry> entries) {
         for (MappingEntry e : entries) {
-            if (e instanceof MappingEntry.FromDsl || e instanceof MappingEntry.FromSessionHandle) return true;
+            if (e instanceof MappingEntry.FromDsl || e instanceof MappingEntry.FromSessionHandle
+                    || e instanceof MappingEntry.FromSessionHandleMember) return true;
         }
         return false;
     }
@@ -178,6 +180,19 @@ public final class ServiceMethodCallEmitter {
                 out.add(CodeBlock.of("$T $L = $T.sessionHandle(dsl, $S)",
                     handle.javaType(), handle.javaName(),
                     TenantDslEmitter.tenantConnectionsClass(outputPackage), fieldCoordinate));
+            }
+            case MappingEntry.FromSessionHandleMember member -> {
+                if (fieldCoordinate == null) {
+                    throw new IllegalStateException(
+                        "MappingEntry.FromSessionHandleMember reached ServiceMethodCallEmitter without a"
+                        + " fieldCoordinate — a $session-binding call must route through the canonical"
+                        + " emit overload, which carries the coordinate for the guard's message:"
+                        + " parameter '" + member.javaName() + "'");
+                }
+                out.add(CodeBlock.of("$T $L = $T.$L(dsl, $S)",
+                    member.javaType(), member.javaName(),
+                    TenantDslEmitter.tenantConnectionsClass(outputPackage),
+                    ConnectionRuntimeClassGenerator.sessionMemberMethod(member.member()), fieldCoordinate));
             }
             case MappingEntry.FromArg arg -> {
                 CodeBlock expr = valueShapeExpression(arg.shape(), helperNames, nodeIdDecodes);
@@ -529,6 +544,7 @@ public final class ServiceMethodCallEmitter {
                 case MappingEntry.FromContext c -> c.javaName();
                 case MappingEntry.FromArg a -> a.javaName();
                 case MappingEntry.FromSessionHandle h -> h.javaName();
+                case MappingEntry.FromSessionHandleMember h -> h.javaName();
             };
             b.add("$L", name);
         }

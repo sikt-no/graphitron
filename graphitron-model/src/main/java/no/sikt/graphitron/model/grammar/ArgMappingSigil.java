@@ -34,6 +34,12 @@ public final class ArgMappingSigil {
     public static final String SESSION_LITERAL = "$session";
 
     /**
+     * Sigil prefix of the member form. An entry's right-hand side {@code $session.<member>} binds
+     * the parameter to one readable member of the session handle, exactly one name after the dot.
+     */
+    public static final String SESSION_MEMBER_PREFIX = "$session.";
+
+    /**
      * Sigil prefix. An entry's right-hand side {@code $source.<column>} binds the parameter to that
      * column of the row the routine is applied to: the parent's row where the routine comes first
      * in its path, the table the preceding {@code @reference} reached otherwise. A bare name never
@@ -44,9 +50,34 @@ public final class ArgMappingSigil {
     private ArgMappingSigil() {}
 
     /**
-     * The argMapping sites, for the per-site admission rule: {@code $session} is admitted at the
-     * {@code @service} argMapping in v1; every other site rejects it naming the admitted one
-     * (the {@code $source} precedent exactly).
+     * One lifted sigil entry's right-hand side, parsed once so every consumer switches on the
+     * value instead of re-reading the string: a member cannot silently reach one emitter and not
+     * the other. {@link #raw()} is the right-hand side as written, for diagnostics and fact capture.
+     */
+    public sealed interface Binding permits Binding.SessionHandle, Binding.SessionMember, Binding.SourceColumn {
+        String raw();
+
+        /** {@code $session}: the whole session handle. */
+        record SessionHandle() implements Binding {
+            @Override public String raw() { return SESSION_LITERAL; }
+        }
+
+        /** {@code $session.<member>}: one readable member of the session handle. */
+        record SessionMember(String member) implements Binding {
+            @Override public String raw() { return SESSION_MEMBER_PREFIX + member; }
+        }
+
+        /** {@code $source.<column>}: a column of the row a routine is applied to. */
+        record SourceColumn(String column) implements Binding {
+            @Override public String raw() { return SOURCE_PREFIX + column; }
+        }
+    }
+
+    /**
+     * The argMapping sites, for the per-site admission rule: {@code $session} (whole handle or one
+     * member) is admitted at the {@code @service} and {@code @condition} argMappings; every other
+     * site rejects it naming the admitted ones (the {@code $source} precedent exactly).
+     * {@link #REFERENCE_STEP}, the path-step condition, is not one of them.
      */
     public enum Site {
         SERVICE("@service argMapping"),
@@ -70,7 +101,7 @@ public final class ArgMappingSigil {
 
         /** True only at the admitted site; parse, diagnostics and completions read one predicate. */
         public boolean admitsSessionSigil() {
-            return this == SERVICE;
+            return this == SERVICE || this == CONDITION;
         }
 
         /** True only at the routine site, the one whose call reads the row it is applied to. */
@@ -81,7 +112,7 @@ public final class ArgMappingSigil {
 
     /**
      * Outcome of {@link #scan}: the recognized sigil entries lifted out (Java parameter name to
-     * sigil literal, document order) plus the residual raw string for {@code parseEntries}, or
+     * parsed {@link Binding}, document order) plus the residual raw string for {@code parseEntries}, or
      * the canonical rejection.
      *
      * <p>{@code sigilPositions} carries each lifted entry's 0-based position in the argMapping as
@@ -91,7 +122,7 @@ public final class ArgMappingSigil {
      * positions for the sigils and the remaining ones, in order, for the residual.
      */
     public sealed interface ScanResult permits ScanResult.Ok, ScanResult.Rejected {
-        record Ok(Map<String, String> sigilBindings, Map<String, Integer> sigilPositions,
+        record Ok(Map<String, Binding> sigilBindings, Map<String, Integer> sigilPositions,
                   String residual) implements ScanResult {
             public Ok {
                 sigilBindings = java.util.Collections.unmodifiableMap(new LinkedHashMap<>(sigilBindings));
@@ -112,7 +143,7 @@ public final class ArgMappingSigil {
         if (raw == null || raw.isBlank() || raw.indexOf('$') < 0) {
             return new ScanResult.Ok(Map.of(), Map.of(), raw);
         }
-        var sigils = new LinkedHashMap<String, String>();
+        var sigils = new LinkedHashMap<String, Binding>();
         var positions = new LinkedHashMap<String, Integer>();
         var residual = new StringBuilder();
         int index = -1;
@@ -121,14 +152,26 @@ public final class ArgMappingSigil {
             int colon = piece.indexOf(':');
             String rhs = colon < 0 ? "" : piece.substring(colon + 1).strip();
             if (colon >= 0 && rhs.startsWith("$")) {
+                Binding binding;
                 if (SESSION_LITERAL.equals(rhs)) {
                     if (!site.admitsSessionSigil()) {
                         return new ScanResult.Rejected(notAdmittedMessage(site));
                     }
+                    binding = new Binding.SessionHandle();
+                } else if (rhs.startsWith(SESSION_MEMBER_PREFIX)) {
+                    if (!site.admitsSessionSigil()) {
+                        return new ScanResult.Rejected(notAdmittedMessage(site));
+                    }
+                    String member = sessionMember(rhs);
+                    if (member == null) {
+                        return new ScanResult.Rejected(deepSessionPathMessage(rhs));
+                    }
+                    binding = new Binding.SessionMember(member);
                 } else if (sourceColumn(rhs) != null) {
                     if (!site.admitsSourceSigil()) {
                         return new ScanResult.Rejected(sourceNotAdmittedMessage(site));
                     }
+                    binding = new Binding.SourceColumn(sourceColumn(rhs));
                 } else {
                     return new ScanResult.Rejected(unknownSigilMessage(rhs));
                 }
@@ -142,7 +185,7 @@ public final class ArgMappingSigil {
                         "argMapping has duplicate entries for Java parameter '" + javaName
                             + "' — each Java parameter may appear at most once");
                 }
-                sigils.put(javaName, rhs);
+                sigils.put(javaName, binding);
                 positions.put(javaName, index);
                 continue;
             }
@@ -214,10 +257,28 @@ public final class ArgMappingSigil {
         return column.isEmpty() || column.indexOf('.') >= 0 ? null : column;
     }
 
+    /**
+     * The member a {@code $session.<member>} right-hand side names, or {@code null} where
+     * {@code rhs} is not that sigil with exactly one non-empty name after the dot.
+     */
+    public static String sessionMember(String rhs) {
+        if (rhs == null || !rhs.startsWith(SESSION_MEMBER_PREFIX)) {
+            return null;
+        }
+        String member = rhs.substring(SESSION_MEMBER_PREFIX.length());
+        return member.isEmpty() || member.indexOf('.') >= 0 ? null : member;
+    }
+
+    /** Canonical message for a {@code $session.} path that is not exactly one member name. */
+    public static String deepSessionPathMessage(String raw) {
+        return "'" + raw + "' is not a session member binding; the form is " + SESSION_MEMBER_PREFIX
+            + "<member>, exactly one member name after the dot (a nested path is not supported).";
+    }
+
     /** Canonical message for a {@code $}-prefixed argMapping value that is not an admitted sigil. */
     public static String unknownSigilMessage(String raw) {
         return "Unknown sigil '" + raw + "' in argMapping; allowed: " + SESSION_LITERAL + ", "
-            + SOURCE_PREFIX + "<column>";
+            + SESSION_MEMBER_PREFIX + "<member>, " + SOURCE_PREFIX + "<column>";
     }
 
     /** Canonical message for {@code $source.<column>} at an argMapping site that does not admit it. */
@@ -230,7 +291,8 @@ public final class ArgMappingSigil {
     /** Canonical message for {@code $session} at an argMapping site that does not admit it. */
     public static String notAdmittedMessage(Site site) {
         return "'" + SESSION_LITERAL + "' is not admitted in " + site.description()
-            + "; it is only valid in @service argMapping, where it binds the Java parameter to the"
-            + " session handle the <sessionState> mount returned.";
+            + "; it is only valid in @service and @condition argMapping, where it binds the Java"
+            + " parameter to the session handle the <sessionState> mount returned, or to one member"
+            + " of it as " + SESSION_MEMBER_PREFIX + "<member>.";
     }
 }

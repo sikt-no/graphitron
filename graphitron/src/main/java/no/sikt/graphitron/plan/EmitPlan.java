@@ -157,9 +157,10 @@ public record EmitPlan(List<GlobalCommand> globals, ConditionRelation conditions
         var conditions = ConditionCommands.produce(schema, outputPackage);
         var routineWrites = store == null ? RoutineWriteQuery.Rows.empty() : RoutineWriteQuery.read(store);
         var errorChannels = store == null ? ErrorChannelRelation.empty() : ErrorChannelRelation.read(store);
-        var launchers = LauncherCommands.produce(schema, conditions, outputPackage);
-        var keyProjections = KeyProjectionCommands.produce(projections);
         var projectionRelation = ProjectionCommands.produce(schema, conditions, outputPackage);
+        var launchers = LauncherCommands.produce(schema, conditions, outputPackage,
+            projectionRelation.dslProjections());
+        var keyProjections = KeyProjectionCommands.produce(projections);
         requireEveryProjectionIsReachable(keyProjections, routineWrites, launchers, conditions);
         LauncherCommands.requireResolvedOrderingsAreLowered(launchers, projectionRelation);
         return new EmitPlan(globals, conditions,

@@ -107,7 +107,7 @@ class RootLauncherRendererTest {
 
     @Test
     void whereSlot_rendersTheGlueCallAgainstTheArgumentsMap() {
-        var where = new GlueCall(UNITS.conditionMethod("Query", "films"), false);
+        var where = new GlueCall(UNITS.conditionMethod("Query", "films"), false, false);
         assertThat(body(filmsRow(where, list(null))))
             .contains("condition = " + DEFAULT_OUTPUT_PACKAGE
                 + ".conditions.QueryConditions.filmsCondition(filmTable, env.getArguments())");
@@ -115,7 +115,7 @@ class RootLauncherRendererTest {
 
     @Test
     void envAppendingWhereSlot_appendsEnvAfterTheMap() {
-        var where = new GlueCall(UNITS.conditionMethod("Query", "films"), true);
+        var where = new GlueCall(UNITS.conditionMethod("Query", "films"), true, false);
         assertThat(body(filmsRow(where, list(null))))
             .contains("condition = " + DEFAULT_OUTPUT_PACKAGE
                 + ".conditions.QueryConditions.filmsCondition(filmTable, env.getArguments(), env)");
@@ -281,7 +281,7 @@ class RootLauncherRendererTest {
 
     @Test
     void discriminatedSource_inRestrictionRidesTheArm_whereSlotStaysConditionGlue() {
-        var where = new GlueCall(UNITS.conditionMethod("Query", "allContent"), false);
+        var where = new GlueCall(UNITS.conditionMethod("Query", "allContent"), false, false);
         var body = body(discriminatedRow(where, list(null), List.of(), List.of(filmContentBranch())));
         assertThat(body)
             .contains("condition = " + DEFAULT_OUTPUT_PACKAGE

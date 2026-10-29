@@ -6404,3 +6404,41 @@ type HostOrigin {
     languageName: String @field(name: "NAME")
         @reference(path: [{key: "pivot_nesting_host_language_id_fkey"}])
 }
+
+# Query fields for the $session sigil's condition and member fixtures, kept at the end of the file
+# so the line numbers the warnings gate pins above stay put.
+extend type Query {
+    # The session handle read by a condition: `principal` binds to the principal member of the
+    # handle the <sessionState> mount returned (SessionHandleRecord), read off the executing
+    # connection. The glue takes the statement's dsl for it; no field argument or context
+    # argument carries the value.
+    customersOfPrincipal: [Customer!]! @condition(condition: {
+        className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+        method: "customerOfPrincipal",
+        argMapping: "principal: $session.principal"}) @defaultOrder(primaryKey: true)
+    # The same condition on an inline child, projected into its parent's statement: SessionStore
+    # and SessionCustomer are their own types, off every Node and interface path, because a type
+    # whose subtree reads the session is projected with the statement's dsl.
+    sessionStores: [SessionStore!]! @defaultOrder(primaryKey: true)
+    # $session.<member>: one member of the handle binds where the whole handle did, the member's
+    # own type (Integer here) against the parameter's.
+    sessionNumber: Int @service(service: {
+        className: "no.sikt.graphitron.rewrite.test.services.SessionIdentityService",
+        method: "sessionNumber",
+        argMapping: "number: $session.sessionNo"
+    })
+}
+
+# Fixture types for the session-reading condition on a child projected into its parent's statement.
+type SessionStore @table(name: "store") {
+    storeId: Int! @field(name: "STORE_ID")
+    customersOfPrincipal: [SessionCustomer!]! @reference(path: [{key: "customer_store_id_fkey"}])
+        @condition(condition: {
+            className: "no.sikt.graphitron.rewrite.test.conditions.InputFieldConditionFixtures",
+            method: "customerOfPrincipal",
+            argMapping: "principal: $session.principal"}) @defaultOrder(primaryKey: true)
+}
+
+type SessionCustomer @table(name: "customer") {
+    firstName: String! @field(name: "FIRST_NAME")
+}

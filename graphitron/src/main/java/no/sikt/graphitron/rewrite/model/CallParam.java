@@ -61,11 +61,39 @@ public record CallParam(
      * reads this one predicate rather than re-deriving the extraction match.
      */
     public boolean readsRequestContext() {
-        if (extraction instanceof CallSiteExtraction.ContextArg) {
-            return true;
+        return readSource() == ReadSource.REQUEST_CONTEXT;
+    }
+
+    /**
+     * Where this binding's value is read from: the argument map, the request context, or the
+     * session handle of the executing connection. One derived fact in place of a predicate per
+     * source, so "reads the argument map" is said positively instead of as the negation of the
+     * request-context test. {@link #decodesNodeId()} is orthogonal and stays.
+     */
+    public ReadSource readSource() {
+        CallSiteExtraction leaf = extraction instanceof CallSiteExtraction.NestedInputField nif
+            ? nif.leaf() : extraction;
+        if (leaf instanceof CallSiteExtraction.ContextArg) {
+            return ReadSource.REQUEST_CONTEXT;
         }
-        return extraction instanceof CallSiteExtraction.NestedInputField nif
-            && nif.leaf() instanceof CallSiteExtraction.ContextArg;
+        if (leaf instanceof CallSiteExtraction.SessionHandleRead
+                || leaf instanceof CallSiteExtraction.SessionMemberRead) {
+            return ReadSource.SESSION;
+        }
+        return ReadSource.ARGUMENT_MAP;
+    }
+
+    /** The three places a condition binding's value can come from. */
+    public enum ReadSource { ARGUMENT_MAP, REQUEST_CONTEXT, SESSION }
+
+    /**
+     * True when this binding reads the session handle of the executing connection
+     * ({@code argMapping: "x: $session"} or {@code "x: $session.<member>"}): the leaf fact behind
+     * the {@code dsl}-appending glue signature, as {@link #readsRequestContext()} is behind the
+     * env-appending one.
+     */
+    public boolean readsSession() {
+        return readSource() == ReadSource.SESSION;
     }
 
     /**

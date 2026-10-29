@@ -43,6 +43,7 @@ public final class ProjectionUnitRenderer {
 
     private static final ClassName FIELD = ClassName.get("org.jooq", "Field");
     private static final ClassName DSL = ClassName.get("org.jooq.impl", "DSL");
+    private static final ClassName DSL_CONTEXT = ClassName.get("org.jooq", "DSLContext");
     private static final ClassName MAP = ClassName.get("java.util", "Map");
     private static final ClassName LIST = ClassName.get("java.util", "List");
     private static final ClassName SET = ClassName.get("java.util", "Set");
@@ -66,9 +67,9 @@ public final class ProjectionUnitRenderer {
         ArgPathHelperRegistry.collectInto(builder, argHelpers -> {
             switch (row) {
                 case ProjectionCommand.AnchorUnit a -> builder.addMethod(
-                    buildTableContextMethod(argHelpers, a.table(), a.contributions(), false, outputPackage));
+                    buildTableContextMethod(argHelpers, a.table(), a.contributions(), false, a.takesDsl(), outputPackage));
                 case ProjectionCommand.NestedUnit n -> builder.addMethod(
-                    buildTableContextMethod(argHelpers, n.table(), n.contributions(), true, outputPackage));
+                    buildTableContextMethod(argHelpers, n.table(), n.contributions(), true, n.takesDsl(), outputPackage));
                 case ProjectionCommand.PivotUnit p -> builder.addMethod(buildPivotMethod(p, argHelpers));
             }
         });
@@ -112,7 +113,7 @@ public final class ProjectionUnitRenderer {
      * their own key so every selection set spliced into one row gets its own alias space.
      */
     private static MethodSpec buildTableContextMethod(ArgPathHelperRegistry argHelpers, TableRef tableRef,
-            List<Contribution> contributions, boolean nestedUnit,
+            List<Contribution> contributions, boolean nestedUnit, boolean takesDsl,
             String outputPackage) {
         var fieldWildcard = fieldWildcard();
         var builder = MethodSpec.methodBuilder(ProjectionCall.METHOD_NAME)
@@ -123,6 +124,9 @@ public final class ProjectionUnitRenderer {
             .addParameter(ENV, "env");
         if (nestedUnit) {
             builder.addParameter(String.class, RK_PATH);
+        }
+        if (takesDsl) {
+            builder.addParameter(DSL_CONTEXT, "dsl");
         }
         builder.addStatement("$T<$T> fields = new $T<>()", LINKED_HASH_SET, fieldWildcard, LINKED_HASH_SET);
 
@@ -193,7 +197,8 @@ public final class ProjectionUnitRenderer {
                             ? CodeBlock.of("$L + entry.getKey() + $S", RK_PATH, ReservedAliases.RESULT_KEY_PATH_DELIMITER)
                             : CodeBlock.of("entry.getKey() + $S", ReservedAliases.RESULT_KEY_PATH_DELIMITER);
                         var callee = ProjectionCall.fromOccurrences(c.callee(),
-                            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), path, outputPackage);
+                            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), path, outputPackage,
+                            c.calleeTakesDsl());
                         if (s.callerDemand().isEmpty() && s.probe().isEmpty()) {
                             builder.addCode("        case $S -> fields.addAll($L);\n", c.field(), callee);
                         } else {
@@ -309,7 +314,7 @@ public final class ProjectionUnitRenderer {
     private static CodeBlock sameRowArmBody(Contribution.Call c, CallWrap.SameRow sr, String outputPackage) {
         var code = CodeBlock.builder();
         var callee = ProjectionCall.fromOccurrences(c.callee(),
-            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage);
+            CodeBlock.of("entry.getValue()"), CodeBlock.of("table"), outputPackage, c.calleeTakesDsl());
         if (sr.presence().isEmpty() && sr.probe().isEmpty()) {
             code.addStatement("fields.add($T.multiset($T.select($L)).as($L))",
                 DSL, DSL, callee, rkAlias(c));
@@ -357,7 +362,7 @@ public final class ProjectionUnitRenderer {
         }
 
         var callee = ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
-            CodeBlock.of("$L", terminalAlias), outputPackage);
+            CodeBlock.of("$L", terminalAlias), outputPackage, c.calleeTakesDsl());
         CodeBlock selectList = callee;
         if (!m.presence().isEmpty() || m.probe().isPresent()) {
             // A single child's null contract reads its presence columns and probe off the child's
@@ -469,7 +474,7 @@ public final class ProjectionUnitRenderer {
         code.addStatement("fields.add($T.multiset($T.select($L).from($L).where($T.falseCondition())).as($L))",
             DSL, DSL,
             ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
-                CodeBlock.of("$L", terminalAlias), outputPackage),
+                CodeBlock.of("$L", terminalAlias), outputPackage, c.calleeTakesDsl()),
             terminalAlias, DSL, rkAlias(c));
         code.nextControlFlow("else");
 
@@ -494,7 +499,7 @@ public final class ProjectionUnitRenderer {
         var sel = CodeBlock.builder();
         sel.add("$T.select($L)", DSL,
             ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
-                CodeBlock.of("$L", terminalAlias), outputPackage));
+                CodeBlock.of("$L", terminalAlias), outputPackage, c.calleeTakesDsl()));
         sel.add("\n        .from($L)", terminalAlias);
         // JOIN chain from the terminal hop back towards step 0; no-op when the path is empty.
         for (int i = path.size() - 1; i >= 1; i--) {
@@ -548,7 +553,7 @@ public final class ProjectionUnitRenderer {
         code.addStatement("fields.add($T.multiset($T.select($L).from($L).where($L)).as($L))",
             DSL, DSL,
             ProjectionCall.fromOccurrences(c.callee(), CodeBlock.of("entry.getValue()"),
-                CodeBlock.of("$L", aliasVar), outputPackage),
+                CodeBlock.of("$L", aliasVar), outputPackage, c.calleeTakesDsl()),
             aliasVar, correlation.build(), rkAlias(c));
         return code.build();
     }
@@ -627,12 +632,11 @@ public final class ProjectionUnitRenderer {
         }
     }
 
-    /** {@code <Owner>.<method>(<alias>, <argsMap>[, env])}: the condition glue call. */
+    /** {@code <Owner>.<method>(<alias>, <argsMap>[, env][, dsl])}: the condition glue call. */
     private static CodeBlock glueExpression(GlueCall glue, String tableAlias, CodeBlock argsMapExpr) {
         var owner = ClassName.get(glue.method().owner().packageName(), glue.method().owner().simpleName());
-        return glue.takesEnv()
-            ? CodeBlock.of("$T.$L($L, $L, env)", owner, glue.method().methodName(), tableAlias, argsMapExpr)
-            : CodeBlock.of("$T.$L($L, $L)", owner, glue.method().methodName(), tableAlias, argsMapExpr);
+        return CodeBlock.of("$T.$L($L, $L$L$L)", owner, glue.method().methodName(), tableAlias, argsMapExpr,
+            glue.takesEnv() ? ", env" : "", glue.takesDsl() ? ", dsl" : "");
     }
 
     private static ParameterizedTypeName fieldWildcard() {

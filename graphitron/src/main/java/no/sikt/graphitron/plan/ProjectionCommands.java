@@ -108,7 +108,8 @@ public final class ProjectionCommands {
             String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
         var glueEnvByMethod = conditions.rows().stream()
-            .collect(Collectors.toMap(row -> row.glue(), row -> row.readsRequestContext()));
+            .collect(Collectors.toMap(row -> row.glue(),
+                row -> new GlueCall(row.glue(), row.readsRequestContext(), row.readsSession())));
         var census = new AddressCensus();
         for (var typeName : schema.types().keySet().stream().sorted().toList()) {
             if (!(schema.type(typeName) instanceof GraphitronType.TableBackedType type)
@@ -122,7 +123,70 @@ public final class ProjectionCommands {
             census.add(new ProjectionCommand.AnchorUnit(anchor, type.table(), contributions),
                 "table-backed type '" + typeName + "'");
         }
-        return new ProjectionRelation(census.rows());
+        return new ProjectionRelation(withDslClosure(census.rows()));
+    }
+
+    /**
+     * Stamps every row with the set of units whose {@code $project} takes {@code dsl}: seed the
+     * units whose own contributions call a session-reading condition glue, then walk the caller
+     * edges backwards (the inverse of {@link Contribution.Call#callee()}), marking each caller
+     * once. The visited set makes it terminate on a cycle (a type reaching itself through a nested
+     * field), and the result is the least fixpoint. A plan-layer fact over the commands' own call
+     * graph, so a renderer reads it off its row and never recomputes it. With no seed the rows are
+     * returned untouched.
+     */
+    private static List<ProjectionCommand> withDslClosure(List<ProjectionCommand> rows) {
+        var callersOf = new java.util.HashMap<UnitRef, List<UnitRef>>();
+        var marked = new java.util.LinkedHashSet<UnitRef>();
+        var pending = new java.util.ArrayDeque<UnitRef>();
+        for (var row : rows) {
+            for (var contribution : row.contributions()) {
+                if (!(contribution instanceof Contribution.Call call)) {
+                    continue;
+                }
+                callersOf.computeIfAbsent(call.callee(), k -> new ArrayList<>()).add(row.unit());
+                if (readsSessionGlue(call.wrap()) && marked.add(row.unit())) {
+                    pending.add(row.unit());
+                }
+            }
+        }
+        while (!pending.isEmpty()) {
+            for (var caller : callersOf.getOrDefault(pending.poll(), List.of())) {
+                if (marked.add(caller)) {
+                    pending.add(caller);
+                }
+            }
+        }
+        if (marked.isEmpty()) {
+            return rows;
+        }
+        var closure = java.util.Set.copyOf(marked);
+        return rows.stream().map(row -> ProjectionCommand.withDslProjections(row, closure)).toList();
+    }
+
+    /**
+     * Whether a call's wrap names a condition glue that reads the session: its own filter, or a
+     * presence probe term's filter. Both wraps that carry a filter are read, as
+     * {@code PlanCompileGraph} reads both.
+     */
+    private static boolean readsSessionGlue(CallWrap wrap) {
+        return switch (wrap) {
+            case CallWrap.Multiset m -> takesDsl(m.filter()) || probeTakesDsl(m.probe());
+            case CallWrap.LookupMultiset lm -> takesDsl(lm.filter());
+            case CallWrap.Splice s -> probeTakesDsl(s.probe());
+            case CallWrap.SameRow sr -> probeTakesDsl(sr.probe());
+            case CallWrap.PivotMultiset ignored -> false;
+        };
+    }
+
+    private static boolean takesDsl(GlueCall glue) {
+        return glue != null && glue.takesDsl();
+    }
+
+    private static boolean probeTakesDsl(Optional<no.sikt.graphitron.command.PresenceProbe> probe) {
+        return probe.isPresent() && probe.get().terms().stream().anyMatch(term ->
+            term instanceof no.sikt.graphitron.command.PresenceProbe.ProbeTerm.Exists exists
+                && takesDsl(exists.filter()));
     }
 
     // ------------------------------------------------------------------------------------------
@@ -139,7 +203,7 @@ public final class ProjectionCommands {
     private static List<Contribution> collectContributions(GraphitronSchema schema,
             List<? extends GraphitronField> fields,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census, boolean nested) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested) {
         var contributions = new ArrayList<Contribution>();
         for (var field : fields) {
             if (field instanceof GraphitronField.UnclassifiedField) {
@@ -163,7 +227,7 @@ public final class ProjectionCommands {
 
     private static Optional<Contribution> contributionFor(GraphitronSchema schema, ChildField field,
             UnitRef owner, String anchorTypeName, GeneratedUnits units,
-            Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census, boolean nested) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census, boolean nested) {
         return switch (field) {
             case ChildField.ColumnBackedField cf -> Optional.of(new Contribution.Project(cf.name(),
                 cf.columns().stream()
@@ -271,7 +335,7 @@ public final class ProjectionCommands {
      */
     private static Optional<Contribution> tableTargetContribution(GraphitronSchema schema,
             ChildField.TableTargetField ttf, UnitRef owner, GeneratedUnits units,
-            Map<UnitMethodRef, Boolean> glueEnvByMethod, boolean nested) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod, boolean nested) {
         var members = nested
             ? OperationMembers.membersOf(ttf)
             : schema.operationMembersOf(ttf.parentTypeName(), ttf.name());
@@ -340,7 +404,7 @@ public final class ProjectionCommands {
      */
     private static Optional<no.sikt.graphitron.command.PresenceProbe> probeOf(ChildField field,
             no.sikt.graphitron.rewrite.model.Presence.NullContract contract, GeneratedUnits units,
-            Map<UnitMethodRef, Boolean> glueEnvByMethod) {
+            Map<UnitMethodRef, GlueCall> glueEnvByMethod) {
         return PresenceProbes.of(field, contract, probe -> glueFor(probe.field().parentTypeName(),
             probe.field().name(), probe.filters(), units, glueEnvByMethod));
     }
@@ -388,7 +452,7 @@ public final class ProjectionCommands {
 
     private static UnitRef mintNestedUnit(GraphitronSchema schema, ChildField.NestingField nf,
             String anchorTypeName,
-            GeneratedUnits units, Map<UnitMethodRef, Boolean> glueEnvByMethod, AddressCensus census) {
+            GeneratedUnits units, Map<UnitMethodRef, GlueCall> glueEnvByMethod, AddressCensus census) {
         var unit = units.nestingUnit(anchorTypeName, nf.returnType().returnTypeName());
         var contributions = collectContributions(
             schema, nf.nestedFields(), unit, anchorTypeName, units, glueEnvByMethod, census, true);
@@ -422,23 +486,23 @@ public final class ProjectionCommands {
     /**
      * The coordinate's condition glue call, resolved off the condition relation: the glue ref by
      * the naming scheme, the env-appending fork by the row's own answer (single-sourced; never
-     * recomputed from filters here). A filtered coordinate with no condition row is a relation
+     * recomputed from filters here; the {@code dsl}-appending fork likewise). A filtered coordinate with no condition row is a relation
      * integrity failure: the condition producer's membership predicate covers every
      * SQL-generating field with filters.
      */
     private static GlueCall glueFor(String parentTypeName, String fieldName,
-            List<WhereFilter> filters, GeneratedUnits units, Map<UnitMethodRef, Boolean> glueEnvByMethod) {
+            List<WhereFilter> filters, GeneratedUnits units, Map<UnitMethodRef, GlueCall> glueEnvByMethod) {
         if (filters.isEmpty()) {
             return null;
         }
         var method = units.conditionMethod(parentTypeName, fieldName);
-        Boolean takesEnv = glueEnvByMethod.get(method);
-        if (takesEnv == null) {
+        GlueCall glue = glueEnvByMethod.get(method);
+        if (glue == null) {
             throw new IllegalStateException(
                 "filtered coordinate '" + parentTypeName + "." + fieldName + "' has no condition "
                 + "row; the condition relation must cover every SQL-generating field with filters");
         }
-        return new GlueCall(method, takesEnv);
+        return glue;
     }
 
     /**
@@ -456,7 +520,7 @@ public final class ProjectionCommands {
         }
         if (tf.filters().stream()
                 .flatMap(f -> f.callParams().stream())
-                .anyMatch(p -> !p.readsRequestContext())) {
+                .anyMatch(p -> p.readSource() == no.sikt.graphitron.rewrite.model.CallParam.ReadSource.ARGUMENT_MAP)) {
             return true;
         }
         return tf.joinPath().stream().anyMatch(step ->

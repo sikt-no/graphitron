@@ -24,6 +24,7 @@ import no.sikt.graphitron.model.jooq.TableRef;
 public sealed interface CallSiteExtraction
         permits CallSiteExtraction.Direct, CallSiteExtraction.EnumValueOf,
                 CallSiteExtraction.ContextArg,
+                CallSiteExtraction.SessionHandleRead, CallSiteExtraction.SessionMemberRead,
                 CallSiteExtraction.JooqConvert, CallSiteExtraction.NestedInputField,
                 CallSiteExtraction.NodeIdDecodeKeys, CallSiteExtraction.NodeIdDecodeRecord,
                 CallSiteExtraction.NodeIdDecodePolymorphicRecord,
@@ -47,6 +48,22 @@ public sealed interface CallSiteExtraction
      * Retrieve a context argument: {@code graphitronContext(env).getContextArgument(env, "name")}.
      */
     record ContextArg() implements CallSiteExtraction {}
+
+    /**
+     * Read the whole session handle off the executing {@code DSLContext}'s own connection:
+     * {@code TenantConnections.sessionHandle(dsl, "<coordinate>")}. A {@code @condition} binding
+     * ({@code argMapping: "x: $session"}); never reads the argument map or the request context,
+     * so a glue holding one takes the statement's {@code dsl}.
+     */
+    record SessionHandleRead() implements CallSiteExtraction {}
+
+    /**
+     * Read one member of the session handle off the executing {@code DSLContext}'s own
+     * connection ({@code argMapping: "x: $session.<member>"}); see {@link SessionHandleRead}.
+     * {@code member} is the authored member name, which the connection runtime's guarded member
+     * accessor is keyed by.
+     */
+    record SessionMemberRead(String member) implements CallSiteExtraction {}
 
     /**
      * Coerce a GraphQL {@code ID} scalar (delivered as {@code String} by GraphQL-Java) to the

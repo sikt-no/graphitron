@@ -21,7 +21,8 @@ import no.sikt.graphitron.model.jooq.TableRef;
 public sealed interface ParamSource
     permits ParamSource.RoutineParamSource, ParamSource.Context, ParamSource.Sources,
             ParamSource.DslContext, ParamSource.Table, ParamSource.SourceTable,
-            ParamSource.SessionSeam, ParamSource.SessionHandle, ParamSource.SessionTenant {
+            ParamSource.SessionSeam, ParamSource.SessionHandle, ParamSource.SessionHandleMember,
+            ParamSource.SessionTenant {
 
     /**
      * The two arms a {@link RoutineRef.ArgBinding} may carry, named as a type so the routine
@@ -297,6 +298,18 @@ public sealed interface ParamSource
      * filtered out of {@link MethodRef#callParams()}.
      */
     record SessionHandle() implements ParamSource {}
+
+    /**
+     * A parameter bound to one readable member of the session handle, by the
+     * {@code $session.<member>} argMapping sigil. Read the way {@link SessionHandle} is, off the
+     * resolved {@code DSLContext}'s own configuration data, then through the member's accessor.
+     * Never produced for the {@code <unmount>} hook, whose parameter is the whole handle.
+     * Supplied by the generator, filtered out of {@link MethodRef#callParams()} for a service;
+     * a {@code @condition} reads it through a call-site extraction.
+     *
+     * @param member the authored member name, joined against the handle's decoded members
+     */
+    record SessionHandleMember(String member) implements ParamSource {}
 
     /**
      * A {@code <mount>} method's tenant slot: the one parameter typed exactly

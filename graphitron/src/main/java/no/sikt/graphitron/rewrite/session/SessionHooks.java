@@ -131,12 +131,43 @@ public sealed interface SessionHooks permits SessionHooks.NotConfigured, Session
      * is written once per acquisition to the per-key carrier entry and read by {@code release}
      * (to call unmount) and by the {@code $session} sigil's call-site extraction.
      */
-    record Handled(MethodRef.StaticOnly mount, TypeName handleType, Optional<MethodRef.StaticOnly> unmount)
+    record Handled(MethodRef.StaticOnly mount, TypeName handleType, Optional<MethodRef.StaticOnly> unmount,
+                   List<HandleMember> members)
         implements SessionHooks {
         public Handled {
             java.util.Objects.requireNonNull(mount, "mount");
             java.util.Objects.requireNonNull(handleType, "handleType");
             java.util.Objects.requireNonNull(unmount, "unmount");
+            members = List.copyOf(members);
         }
+
+        /** A handle whose members were not decoded: nothing to bind a {@code $session.<member>} to. */
+        public Handled(MethodRef.StaticOnly mount, TypeName handleType, Optional<MethodRef.StaticOnly> unmount) {
+            this(mount, handleType, unmount, List.of());
+        }
+
+        /** The decoded member of that authored name, if the handle type has one. */
+        public Optional<HandleMember> member(String name) {
+            return members.stream().filter(m -> m.name().equals(name)).findFirst();
+        }
+    }
+
+    /**
+     * One readable member of a handle type, decoded once where the handle class is live so no
+     * {@code Method} or {@code Field} enters the model. {@code name} is the member as authored in
+     * {@code $session.<name>}; {@code accessor} is the Java identifier the emitted read applies
+     * (a method name, or a field name when {@code form} is {@link Form#FIELD}); {@code type} is
+     * the member's declared type.
+     */
+    record HandleMember(String name, Form form, String accessor, TypeName type) {
+        public HandleMember {
+            java.util.Objects.requireNonNull(name, "name");
+            java.util.Objects.requireNonNull(form, "form");
+            java.util.Objects.requireNonNull(accessor, "accessor");
+            java.util.Objects.requireNonNull(type, "type");
+        }
+
+        /** How the member is read off the handle. */
+        public enum Form { METHOD, FIELD }
     }
 }

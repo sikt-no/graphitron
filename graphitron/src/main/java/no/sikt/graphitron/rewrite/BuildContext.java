@@ -2646,7 +2646,7 @@ class BuildContext {
             return new ConditionResolution.Unresolved();
         }
         String rawArgMapping = Optional.ofNullable(conditionMap.get(ARG_ARGMAPPING)).map(Object::toString).orElse(null);
-        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
+        var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.REFERENCE_STEP);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
             return new ConditionResolution.Failed(
                 "path-step @condition: " + pe.message());
@@ -2696,6 +2696,7 @@ class BuildContext {
         boolean override,
         List<String> contextArguments,
         Map<String, List<String>> argMapping,
+        Map<String, ArgMappingSigil.Binding> sessionBindings,
         String argMappingError
     ) {}
 
@@ -2720,10 +2721,11 @@ class BuildContext {
         String rawArgMapping = Optional.ofNullable(ref.get(ARG_ARGMAPPING)).map(Object::toString).orElse(null);
         var parsed = ArgBindingMap.parseArgMapping(rawArgMapping, ArgMappingSigil.Site.CONDITION);
         if (parsed instanceof ArgBindingMap.ParsedArgMapping.ParseError pe) {
-            return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), pe.message());
+            return new ConditionDirective(className, methodName, override, ctxArgs, Map.of(), Map.of(), pe.message());
         }
-        var segmentChains = ((ArgBindingMap.ParsedArgMapping.Ok) parsed).overrides();
-        return new ConditionDirective(className, methodName, override, ctxArgs, segmentChains, null);
+        var parsedOk = (ArgBindingMap.ParsedArgMapping.Ok) parsed;
+        return new ConditionDirective(className, methodName, override, ctxArgs, parsedOk.overrides(),
+            parsedOk.sigilBindings(), null);
     }
 
     /**
@@ -2757,7 +2759,7 @@ class BuildContext {
         var result = svc.reflectTableMethod(cond.className(), cond.methodName(),
             argBindings, Set.copyOf(cond.contextArguments()),
             java.util.Map.of(field.getName(), field.getType()),
-            new ConditionSite.InputField(parentTypeName, inputFieldName));
+            new ConditionSite.InputField(parentTypeName, inputFieldName), cond.sessionBindings());
         if (result.failed()) {
             // Kept unprefixed: the reflect arms are typed sub-seals whose prefixedWith is a
             // deliberate no-op, so the "@condition on input field X" context is the consumer's to

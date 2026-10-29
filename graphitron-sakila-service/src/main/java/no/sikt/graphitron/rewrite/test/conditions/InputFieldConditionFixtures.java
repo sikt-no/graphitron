@@ -183,6 +183,20 @@ public final class InputFieldConditionFixtures {
     }
 
     /**
+     * Field-level {@code @condition(argMapping: "principal: $session.principal")}: the value is a
+     * member of the session handle the {@code <sessionState>} mount returned, read off the
+     * statement's own connection, not a field argument or a context argument. Narrows to customers
+     * whose first name matches the mounted principal case-insensitively; a {@code null} principal
+     * matches no rows, so a dropped session read is loud in behaviour tests.
+     */
+    public static Condition customerOfPrincipal(Customer table, String principal) {
+        if (principal == null) {
+            return DSL.falseCondition();
+        }
+        return table.FIRST_NAME.equalIgnoreCase(principal);
+    }
+
+    /**
      * Field-level {@code @condition} on a routine-backed read ({@code Query.tilgangerAdmin}).
      * The table handed in is the table-valued function's result, aliased into the FROM of the
      * statement that calls it, so the predicate lands in that statement's WHERE like any other

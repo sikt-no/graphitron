@@ -5,6 +5,7 @@ import no.sikt.graphitron.rewrite.model.AliasScope;
 
 import java.util.List;
 import java.util.Objects;
+import java.util.Set;
 
 /**
  * One projection unit: an emitted {@code $project} method that takes the result-key-grouped
@@ -35,6 +36,21 @@ public sealed interface ProjectionCommand {
     List<Contribution> contributions();
 
     /**
+     * The units whose emitted {@code $project} takes the executing {@code DSLContext dsl}: those
+     * that call a session-reading condition glue directly, and every unit that calls one of
+     * those, through to the roots. A least fixpoint over the call graph between units, computed
+     * once by the producer after every unit is minted and carried on each row so renderers read
+     * it and never recompute it. Empty where no condition reads the session, in which case no
+     * signature changes.
+     */
+    Set<UnitRef> dslProjections();
+
+    /** Whether this unit's {@code $project} takes {@code dsl}. */
+    default boolean takesDsl() {
+        return dslProjections().contains(unit());
+    }
+
+    /**
      * A table-backed type's unit ({@code TableType} / {@code NodeType}), keyed by type name.
      * Every entry is selection-gated, correlation keys included: a child whose fetcher reads
      * parent-row columns carries an ordinary {@link Contribution.Project} of those columns,
@@ -43,11 +59,17 @@ public sealed interface ProjectionCommand {
     record AnchorUnit(
         UnitRef unit,
         TableRef table,
-        List<Contribution> contributions
+        List<Contribution> contributions,
+        Set<UnitRef> dslProjections
     ) implements ProjectionCommand {
+        public AnchorUnit(UnitRef unit, TableRef table, List<Contribution> contributions) {
+            this(unit, table, contributions, Set.of());
+        }
+
         public AnchorUnit {
             requireCore(unit, table);
             contributions = List.copyOf(contributions);
+            dslProjections = Set.copyOf(dslProjections);
             requireScope(contributions, AliasScope.RowOwner.class, "AnchorUnit " + unit.fqcn()
                 + " writes into its own row, so none of its result-key aliases is path-qualified");
         }
@@ -63,11 +85,17 @@ public sealed interface ProjectionCommand {
     record NestedUnit(
         UnitRef unit,
         TableRef table,
-        List<Contribution> contributions
+        List<Contribution> contributions,
+        Set<UnitRef> dslProjections
     ) implements ProjectionCommand {
+        public NestedUnit(UnitRef unit, TableRef table, List<Contribution> contributions) {
+            this(unit, table, contributions, Set.of());
+        }
+
         public NestedUnit {
             requireCore(unit, table);
             contributions = List.copyOf(contributions);
+            dslProjections = Set.copyOf(dslProjections);
             requireScope(contributions, AliasScope.Spliced.class, "NestedUnit " + unit.fqcn()
                 + " is spliced into its anchor's row, so every result-key alias it writes is"
                 + " path-qualified");
@@ -88,6 +116,12 @@ public sealed interface ProjectionCommand {
         TableRef table,
         List<Contribution> contributions
     ) implements ProjectionCommand {
+        /** A pivot unit projects slot aggregates and calls no condition glue, so it never takes {@code dsl}. */
+        @Override
+        public Set<UnitRef> dslProjections() {
+            return Set.of();
+        }
+
         public PivotUnit {
             requireCore(unit, table);
             contributions = List.copyOf(contributions);
@@ -100,6 +134,24 @@ public sealed interface ProjectionCommand {
                 }
             }
         }
+    }
+
+    /** This row with the closure's answer stamped on it; a pivot row is returned as it is. */
+    static ProjectionCommand withDslProjections(ProjectionCommand row, Set<UnitRef> dslProjections) {
+        return switch (row) {
+            case AnchorUnit a -> new AnchorUnit(a.unit(), a.table(),
+                stamped(a.contributions(), dslProjections), dslProjections);
+            case NestedUnit n -> new NestedUnit(n.unit(), n.table(),
+                stamped(n.contributions(), dslProjections), dslProjections);
+            case PivotUnit p -> p;
+        };
+    }
+
+    private static List<Contribution> stamped(List<Contribution> contributions, Set<UnitRef> dslProjections) {
+        return contributions.stream()
+            .map(c -> c instanceof Contribution.Call call
+                ? (Contribution) call.withCalleeTakesDsl(dslProjections.contains(call.callee())) : c)
+            .toList();
     }
 
     /**

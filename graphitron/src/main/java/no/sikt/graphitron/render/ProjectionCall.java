@@ -71,7 +71,8 @@ public final class ProjectionCall {
      */
     public static CodeBlock fromLauncher(ClassName unitClass, String tableLocal, LauncherCommand row) {
         return fromEnvSelection(unitClass, tableLocal,
-            className(row.selectionOccurrences()), SelectionScope.of(row.result()));
+            className(row.selectionOccurrences()), SelectionScope.of(row.result()),
+            row.dslProjections().stream().anyMatch(u -> u.fqcn().equals(unitClass.canonicalName())));
     }
 
     /**
@@ -80,8 +81,18 @@ public final class ProjectionCall {
      */
     public static CodeBlock fromEnvSelection(ClassName unitClass, String tableLocal,
             ClassName selectionOccurrences, SelectionScope scope) {
+        return fromEnvSelection(unitClass, tableLocal, selectionOccurrences, scope, false);
+    }
+
+    /**
+     * {@link #fromEnvSelection(ClassName, String, ClassName, SelectionScope)} for a callee whose
+     * {@code $project} takes the executing {@code dsl} ({@code takesDsl}), which every consumer
+     * holds in scope as {@code dsl} when it builds the statement.
+     */
+    public static CodeBlock fromEnvSelection(ClassName unitClass, String tableLocal,
+            ClassName selectionOccurrences, SelectionScope scope, boolean takesDsl) {
         return fromGrouped(unitClass, envSelection(selectionOccurrences, scope),
-            CodeBlock.of("$L", tableLocal));
+            CodeBlock.of("$L", tableLocal), takesDsl);
     }
 
     /**
@@ -95,8 +106,15 @@ public final class ProjectionCall {
     /** {@code <Unit>.$project(SelectionOccurrences.mergeByResultKey(<occurrences>), <table>, env)}. */
     public static CodeBlock fromOccurrences(UnitRef unit, CodeBlock occurrencesExpr, CodeBlock tableExpr,
             String outputPackage) {
-        return CodeBlock.of("$T.$L($T.mergeByResultKey($L), $L, env)",
-            className(unit), METHOD_NAME, selectionOccurrencesClass(outputPackage), occurrencesExpr, tableExpr);
+        return fromOccurrences(unit, occurrencesExpr, tableExpr, outputPackage, false);
+    }
+
+    /** {@link #fromOccurrences(UnitRef, CodeBlock, CodeBlock, String)} appending {@code dsl} for a callee that takes it. */
+    public static CodeBlock fromOccurrences(UnitRef unit, CodeBlock occurrencesExpr, CodeBlock tableExpr,
+            String outputPackage, boolean takesDsl) {
+        return CodeBlock.of("$T.$L($T.mergeByResultKey($L), $L, env$L)",
+            className(unit), METHOD_NAME, selectionOccurrencesClass(outputPackage), occurrencesExpr, tableExpr,
+            dslTail(takesDsl));
     }
 
     /**
@@ -106,15 +124,36 @@ public final class ProjectionCall {
      */
     public static CodeBlock fromOccurrences(UnitRef unit, CodeBlock occurrencesExpr, CodeBlock tableExpr,
             CodeBlock rkPathExpr, String outputPackage) {
-        return CodeBlock.of("$T.$L($T.mergeByResultKey($L), $L, env, $L)",
+        return fromOccurrences(unit, occurrencesExpr, tableExpr, rkPathExpr, outputPackage, false);
+    }
+
+    /** The splice into a nested unit, appending {@code dsl} after the alias path for a callee that takes it. */
+    public static CodeBlock fromOccurrences(UnitRef unit, CodeBlock occurrencesExpr, CodeBlock tableExpr,
+            CodeBlock rkPathExpr, String outputPackage, boolean takesDsl) {
+        return CodeBlock.of("$T.$L($T.mergeByResultKey($L), $L, env, $L$L)",
             className(unit), METHOD_NAME, selectionOccurrencesClass(outputPackage), occurrencesExpr,
-            tableExpr, rkPathExpr);
+            tableExpr, rkPathExpr, dslTail(takesDsl));
     }
 
     /** {@code <Unit>.$project(<grouped>, <table>, env)} for an already-grouped map expression. */
     public static CodeBlock fromGrouped(ClassName unitClass, CodeBlock groupedExpr, CodeBlock tableExpr) {
-        return CodeBlock.of("$T.$L($L, $L, env)",
-            unitClass, METHOD_NAME, groupedExpr, tableExpr);
+        return fromGrouped(unitClass, groupedExpr, tableExpr, false);
+    }
+
+    /** {@link #fromGrouped(ClassName, CodeBlock, CodeBlock)} appending {@code dsl} for a callee that takes it. */
+    public static CodeBlock fromGrouped(ClassName unitClass, CodeBlock groupedExpr, CodeBlock tableExpr,
+            boolean takesDsl) {
+        return CodeBlock.of("$T.$L($L, $L, env$L)",
+            unitClass, METHOD_NAME, groupedExpr, tableExpr, dslTail(takesDsl));
+    }
+
+    /**
+     * The trailing {@code , dsl} argument of a {@code $project} call whose callee takes the
+     * executing {@code DSLContext}: the connection a session-reading condition reads the handle
+     * off. Last on every form, after the alias path a nested unit takes.
+     */
+    private static String dslTail(boolean takesDsl) {
+        return takesDsl ? ", dsl" : "";
     }
 
     /** The generated {@code <outputPackage>.util.SelectionOccurrences} runtime scaffold. */

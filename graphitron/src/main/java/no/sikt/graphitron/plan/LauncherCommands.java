@@ -201,6 +201,17 @@ public final class LauncherCommands {
 
     public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
             String outputPackage) {
+        return produce(schema, conditions, outputPackage, java.util.Set.of());
+    }
+
+    /**
+     * {@link #produce(GraphitronSchema, ConditionRelation, String)} over a plan whose projection
+     * relation found units taking {@code dsl} ({@link ProjectionRelation#dslProjections()}): every
+     * row carries that set, so the {@code $project} calls it renders append the argument for
+     * exactly those callees.
+     */
+    public static LauncherRelation produce(GraphitronSchema schema, ConditionRelation conditions,
+            String outputPackage, java.util.Set<no.sikt.graphitron.command.UnitRef> dslProjections) {
         var units = new GeneratedUnits(outputPackage);
         var rows = new ArrayList<LauncherCommand>();
         for (var type : schema.types().values()) {
@@ -222,6 +233,9 @@ public final class LauncherCommands {
         var carrierDsl = schema.tenantScopes() instanceof TenantScopes.Configured
             ? CarrierDsl.ROUTED
             : CarrierDsl.ENV_ACQUIRED;
+        if (!dslProjections.isEmpty()) {
+            rows.replaceAll(row -> row.withDslProjections(dslProjections));
+        }
         return new LauncherRelation(rows, carrierDsl);
     }
 
@@ -618,7 +632,8 @@ public final class LauncherCommands {
             return null;
         }
         return new GlueCall(units.conditionMethod(parentTypeName, fieldName),
-            no.sikt.graphitron.rewrite.model.WhereFilter.anyReadRequestContext(filters));
+            no.sikt.graphitron.rewrite.model.WhereFilter.anyReadRequestContext(filters),
+            no.sikt.graphitron.rewrite.model.WhereFilter.anyReadSession(filters));
     }
 
     /**
@@ -1285,6 +1300,7 @@ public final class LauncherCommands {
             }
         }
         boolean takesEnv = row.readsRequestContext();
+        boolean takesDsl = row.readsSession();
         var base = units.facetBaseConditionMethod(qtf.parentTypeName(), qtf.name());
         requireFragment(fragmentRefs, base, qtf);
         var entries = new ArrayList<FacetPlan.Entry>(specs.size());
@@ -1298,10 +1314,10 @@ public final class LauncherCommands {
                     + "' has no own fragment on the condition row; the fragment producer builds one"
                     + " per facet spec");
             }
-            entries.add(new FacetPlan.Entry(spec, new GlueCall(fragment, takesEnv),
+            entries.add(new FacetPlan.Entry(spec, new GlueCall(fragment, takesEnv, takesDsl),
                 groupingOf(spec, own, row.table(), qtf)));
         }
-        return new FacetPlan(new GlueCall(base, takesEnv), entries, row.table().primaryKeyColumns());
+        return new FacetPlan(new GlueCall(base, takesEnv, takesDsl), entries, row.table().primaryKeyColumns());
     }
 
     /**
@@ -1426,7 +1442,7 @@ public final class LauncherCommands {
 
     private static GlueCall whereOf(String parentTypeName, String fieldName, ConditionRelation conditions) {
         return conditionRowOf(parentTypeName, fieldName, conditions)
-            .map(r -> new GlueCall(r.glue(), r.readsRequestContext()))
+            .map(r -> new GlueCall(r.glue(), r.readsRequestContext(), r.readsSession()))
             .orElse(null);
     }
 

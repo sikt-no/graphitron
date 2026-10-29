@@ -229,7 +229,7 @@ final class RoutineDirectiveResolver {
         }
         var parsedOk = (ArgBindingMap.ParsedArgMapping.Ok) parsedMapping;
         Map<String, List<String>> overrides = parsedOk.overrides();
-        Map<String, String> sigils = parsedOk.sigilBindings();
+        Map<String, ArgMappingSigil.Binding> sigils = parsedOk.sigilBindings();
 
         return switch (ctx.catalog.resolveTableValuedFunction(routineName)) {
             case JooqCatalog.RoutineResolution.NotInCatalog ignored -> new NodeResolved.Rejected(Rejection.unknownTable(
@@ -262,7 +262,7 @@ final class RoutineDirectiveResolver {
      */
     private NodeResolved bindArgs(String parentTypeName, GraphQLFieldDefinition fieldDef,
             JooqCatalog.RoutineResolution.Resolved fn, Map<String, List<String>> overrides,
-            Map<String, String> sigils, boolean isRoot, String standingTableSqlName, Seat seat) {
+            Map<String, ArgMappingSigil.Binding> sigils, boolean isRoot, String standingTableSqlName, Seat seat) {
         // The left-hand side is per-directive and does not unify: a routine names catalog IN
         // parameters, a @service method names reflected Java parameters. Without this check a
         // misspelled target is silently dropped and the parameter it meant to claim falls through
@@ -282,17 +282,18 @@ final class RoutineDirectiveResolver {
         var slotTypes = FieldBuilder.argSlotTypes(fieldDef);
         var columns = new HashMap<String, ColumnRef>();
         for (var param : fn.params()) {
-            String columnName = ArgMappingSigil.sourceColumn(sigils.get(param.name()));
+            String columnName = sigils.get(param.name()) instanceof ArgMappingSigil.Binding.SourceColumn sc
+                ? sc.column() : null;
             if (columnName != null) {
                 if (standingTableSqlName == null) {
                     return new NodeResolved.Rejected(isRoot
                         ? Rejection.structural("@routine binds parameter '" + param.name() + "' to '"
-                            + sigils.get(param.name()) + "', but a root field has no row for $source to"
+                            + sigils.get(param.name()).raw() + "', but a root field has no row for $source to"
                             + " read; bind it from an argument")
                         // A record-backed parent: the column would be one of the record's accessors,
                         // which a routine cannot bind yet.
                         : Rejection.deferred("@routine binds parameter '" + param.name() + "' to '"
-                            + sigils.get(param.name()) + "' under a parent without a catalog table,"
+                            + sigils.get(param.name()).raw() + "' under a parent without a catalog table,"
                             + " which is not yet supported"));
                 }
                 var column = ctx.catalog.resolveColumn(standingTableSqlName, columnName);

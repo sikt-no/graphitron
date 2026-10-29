@@ -222,6 +222,8 @@ public final class ServiceMethodCallWalker {
                 deriveValueShape(arg, param.javaType(), site, errors));
             case ParamSource.SessionHandle ignored ->
                 new MappingEntry.FromSessionHandle(param.name(), param.javaType());
+            case ParamSource.SessionHandleMember m ->
+                new MappingEntry.FromSessionHandleMember(param.name(), param.javaType(), m.member());
             // Table / SourceTable / SourceColumn / Sources / SessionSeam / SessionTenant don't appear on root
             // sync @service permits. Defensive fallback: skip and let upstream rejection surface.
             case ParamSource.Table ignored -> null;

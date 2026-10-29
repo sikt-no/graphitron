@@ -92,11 +92,8 @@ public final class PresenceProbeFragments {
      */
     private static CodeBlock glueCall(GlueCall glue, String alias) {
         var owner = ClassName.get(glue.method().owner().packageName(), glue.method().owner().simpleName());
-        return glue.takesEnv()
-            ? CodeBlock.of("$T.$L($L, $T.of(), env)", owner, glue.method().methodName(), alias,
-                ClassName.get("java.util", "Map"))
-            : CodeBlock.of("$T.$L($L, $T.of())", owner, glue.method().methodName(), alias,
-                ClassName.get("java.util", "Map"));
+        return CodeBlock.of("$T.$L($L, $T.of()$L$L)", owner, glue.method().methodName(), alias,
+            ClassName.get("java.util", "Map"), glue.takesEnv() ? ", env" : "", glue.takesDsl() ? ", dsl" : "");
     }
 
     private static CodeBlock join(List<CodeBlock> parts) {

@@ -12,6 +12,7 @@ import no.sikt.graphitron.command.ReachPath;
 import no.sikt.graphitron.command.UnitRef;
 import no.sikt.graphitron.javapoet.AnnotationSpec;
 import no.sikt.graphitron.javapoet.ClassName;
+import no.sikt.graphitron.command.SessionAccessors;
 import no.sikt.graphitron.javapoet.CodeBlock;
 import no.sikt.graphitron.javapoet.MethodSpec;
 import no.sikt.graphitron.javapoet.ParameterizedTypeName;
@@ -100,14 +101,17 @@ public final class ConditionGlueRenderer {
                     var hosts = new Hosts(registry, contextHelper, beans, elementRows);
                     for (var row : entry.getValue()) {
                         boolean takesEnv = row.readsRequestContext();
+                        boolean takesDsl = row.readsSession();
+                        String coordinate = row.coordinate().getTypeName() + "." + row.coordinate().getFieldName();
                         classBuilder.addMethod(buildGlueMethod(
                             row.glue().methodName(), CatalogRefs.tableClass(row.table()),
-                            row.predicates(), row.lifts(), takesEnv, hosts,
+                            row.predicates(), row.lifts(), takesEnv, takesDsl, coordinate, outputPackage, hosts,
                             keyHost.at(row.coordinate())));
                         for (var fragment : row.facets()) {
                             classBuilder.addMethod(buildGlueMethod(
                                 fragment.method().methodName(), CatalogRefs.tableClass(row.table()),
-                                fragment.predicates(), fragment.lifts(), takesEnv, hosts,
+                                fragment.predicates(), fragment.lifts(), takesEnv, takesDsl, coordinate,
+                                outputPackage, hosts,
                                 keyHost.at(row.coordinate())));
                         }
                     }
@@ -131,8 +135,8 @@ public final class ConditionGlueRenderer {
                          InputBeanHelperRegistry beans, ElementRowsHelperRegistry elementRows) {}
 
     private static MethodSpec buildGlueMethod(String methodName, TypeName jooqTableClass,
-            List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv, Hosts hosts,
-            ProjectedKeyReads keys) {
+            List<Predicate> predicates, List<OuterLift> lifts, boolean takesEnv, boolean takesDsl,
+            String coordinate, String outputPackage, Hosts hosts, ProjectedKeyReads keys) {
         var builder = MethodSpec.methodBuilder(methodName)
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
             .returns(CONDITION)
@@ -140,6 +144,9 @@ public final class ConditionGlueRenderer {
             .addParameter(ARGS_MAP, "args");
         if (takesEnv) {
             builder.addParameter(ClassName.get("graphql.schema", "DataFetchingEnvironment"), "env");
+        }
+        if (takesDsl) {
+            builder.addParameter(ClassName.get("org.jooq", "DSLContext"), "dsl");
         }
 
         var bindings = distinctBindings(predicates);
@@ -170,7 +177,8 @@ public final class ConditionGlueRenderer {
             if (matchTable != null) {
                 valueTable = new ValueTable(valueTable.tableClass(), CodeBlock.of("$L", matchTable));
             }
-            bindingLocals.add(extractionExpr(binding.param(), valueTable, liftLocals, hosts, keys));
+            bindingLocals.add(extractionExpr(binding.param(), valueTable, liftLocals, hosts, keys,
+                coordinate, outputPackage));
         }
         builder.addCode(keys.declarations());
         for (int i = 0; i < bindings.size(); i++) {
@@ -550,6 +558,9 @@ public final class ConditionGlueRenderer {
      * {@code -Xlint:rawtypes -Werror} rejects; a partial read is the finished {@code Condition}.
      */
     private static TypeName localType(CallParam param) {
+        if (param.readsSession()) {
+            return param.javaType();
+        }
         var decode = decodeLeafOf(param.extraction());
         if (decode != null) {
             return CompositeDecodeHelperRegistry.decodedType(decode.decodeMethod(), decodesList(param));
@@ -609,8 +620,19 @@ public final class ConditionGlueRenderer {
     }
 
     private static CodeBlock extractionExpr(CallParam param, ValueTable valueTable,
-            Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys) {
+            Map<String, String> liftLocals, Hosts hosts, ProjectedKeyReads keys,
+            String coordinate, String outputPackage) {
         return switch (param.extraction()) {
+            // The session handle (or one member of it) rides the executing DSLContext's own
+            // configuration data, so the local reads through the connection runtime's guarded
+            // accessor off the glue's dsl parameter: per pinned connection, and a located throw
+            // rather than a silent null where nothing was mounted.
+            case CallSiteExtraction.SessionHandleRead ignored ->
+                CodeBlock.of("$T.sessionHandle(dsl, $S)",
+                    ClassName.get(outputPackage + ".schema", "TenantConnections"), coordinate);
+            case CallSiteExtraction.SessionMemberRead member ->
+                CodeBlock.of("$T.$L(dsl, $S)", ClassName.get(outputPackage + ".schema", "TenantConnections"),
+                    SessionAccessors.memberMethod(member.member()), coordinate);
             case CallSiteExtraction.Direct ignored ->
                 CodeBlock.of("($T) args.get($S)", localType(param), param.name());
             case CallSiteExtraction.EnumValueOf ev -> {

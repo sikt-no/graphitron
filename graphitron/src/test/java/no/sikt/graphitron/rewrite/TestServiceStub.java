@@ -1084,4 +1084,19 @@ class TestServiceStub {
     public static String runWithGroupedJavaBean(TestInputJavaBeanGrouped input) {
         throw new UnsupportedOperationException();
     }
+
+    /** A service parameter bound to the {@code brukerId} member of the record handle. */
+    public static Long brukerOf(org.jooq.DSLContext dsl, Long brukerId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** The primitive form of {@link #brukerOf}. */
+    public static Long brukerOfPrimitive(org.jooq.DSLContext dsl, long brukerId) {
+        throw new UnsupportedOperationException();
+    }
+
+    /** A boxed member bound to a primitive parameter. */
+    public static Long sokerOfPrimitive(org.jooq.DSLContext dsl, long sokerId) {
+        throw new UnsupportedOperationException();
+    }
 }

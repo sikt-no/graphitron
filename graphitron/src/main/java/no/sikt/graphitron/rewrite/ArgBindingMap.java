@@ -84,11 +84,11 @@ record ArgBindingMap(Map<String, PathExpr> byJavaName, java.util.Set<String> aut
      * nested input fields arrive as multi-element lists with the head segment first.
      *
      * <p>{@code sigilBindings} are the recognized sigil entries lifted out by
-     * {@link ArgMappingSigil#scan} before tokenization (Java parameter name to sigil literal);
+     * {@link ArgMappingSigil#scan} before tokenization (Java parameter name to the parsed {@link ArgMappingSigil.Binding});
      * empty for every site that admits none and for the sigil-unaware single-arg overload.
      */
     sealed interface ParsedArgMapping {
-        record Ok(Map<String, List<String>> overrides, Map<String, String> sigilBindings)
+        record Ok(Map<String, List<String>> overrides, Map<String, ArgMappingSigil.Binding> sigilBindings)
                 implements ParsedArgMapping {
             Ok(Map<String, List<String>> overrides) {
                 this(overrides, Map.of());

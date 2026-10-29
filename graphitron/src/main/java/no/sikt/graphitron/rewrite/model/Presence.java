@@ -261,7 +261,7 @@ public final class Presence {
                 || wrapper instanceof FieldWrapper.Connection
                 || !(field.lookup() instanceof LookupResolution.None)
                 || field.filters().stream().flatMap(f -> f.callParams().stream())
-                    .anyMatch(p -> !p.readsRequestContext())) {
+                    .anyMatch(p -> p.readSource() == CallParam.ReadSource.ARGUMENT_MAP)) {
             return Optional.empty();
         }
         if (wrapper instanceof FieldWrapper.List

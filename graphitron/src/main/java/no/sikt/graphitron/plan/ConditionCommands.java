@@ -69,7 +69,7 @@ public final class ConditionCommands {
     private ConditionCommands() {}
 
     /** Locals every glue body binds before the producer names anything; see {@link ConditionCommand}. */
-    private static final Set<String> RESERVED_LOCALS = Set.of("table", "args", "condition", "env");
+    private static final Set<String> RESERVED_LOCALS = Set.of("table", "args", "condition", "env", "dsl");
 
     public static ConditionRelation produce(GraphitronSchema schema, String outputPackage) {
         var units = new GeneratedUnits(outputPackage);
