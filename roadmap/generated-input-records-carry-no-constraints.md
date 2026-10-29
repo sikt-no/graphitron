@@ -1,7 +1,7 @@
 ---
 id: R747
 title: "Generated input records carry no constraint annotations, so the VALIDATION handler can never fire"
-status: Ready
+status: In Progress
 bucket: architecture
 priority: 4
 theme: error-channel
