@@ -204,9 +204,11 @@ public final class SdlFactCapture {
 
     /**
      * Records what each directive <em>is</em>, for every definition the registry holds. Graphitron's
-     * own bundled definitions are rows too, so an application's directive name always resolves to a
-     * definition and reading a repeatable flag or an argument default stays a join. Which definitions an emitter re-declares is a
-     * question about their {@code source_name}, answered where the emitting happens.
+     * own bundled definitions are rows too, so reading a repeatable flag or an argument default of
+     * one of them stays a join. An application need not resolve to a row: a federation directive
+     * imported through {@code @link} has no definition in the documents, and a misspelt one has none
+     * anywhere, so no key joins an application to its definition. Which definitions an emitter
+     * re-declares is a question about their {@code source_name}, answered where the emitting happens.
      */
     private void captureDirectiveDefinitions() {
         for (DirectiveDefinition definition : registry.getDirectiveDefinitions().values()) {

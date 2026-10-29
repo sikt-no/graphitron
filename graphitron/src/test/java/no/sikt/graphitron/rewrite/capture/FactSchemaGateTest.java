@@ -449,13 +449,15 @@ class FactSchemaGateTest {
     }
 
     /**
-     * The transcription is total, so an application's name always resolves to a definition. This is
-     * the invariant that replaced an exclusion: the graphitron namespace used to be withheld from
-     * these relations, which made the family a transcription with a hole in it and pushed a
-     * question about {@code source_name} into the choice of table.
+     * Graphitron's bundled vocabulary is transcribed like an author's definitions, so a corpus that
+     * applies only directives it or that vocabulary defines has every application resolve to a
+     * definition. This is the invariant that replaced an exclusion: the graphitron namespace used to
+     * be withheld from these relations, which made the family a transcription with a hole in it and
+     * pushed a question about {@code source_name} into the choice of table. It is the fixture's and
+     * no key's: a federation directive imported through {@code @link} has no definition row.
      */
     @Test
-    @DisplayName("every directive application resolves to a captured definition")
+    @DisplayName("every application of a defined or bundled directive resolves to its definition")
     void everyApplicationResolvesToItsDefinition(@TempDir Path tmp) {
         try (var store = CapturedStore.ownStore(tmp, FIXTURE)) {
             var defined = store.dsl().select(GRAPHQL_DIRECTIVE.DIRECTIVE_NAME)
