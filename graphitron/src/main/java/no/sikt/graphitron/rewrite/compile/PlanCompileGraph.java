@@ -375,6 +375,8 @@ public final class PlanCompileGraph {
                     // contextArguments and the singleton, so the facade references the runtime
                     // (Graphitron.runtime(...)) but never the instrumentation class.
                     runtimeUnit("GraphitronRuntime").ifPresent(r -> precise(facade, r));
+                    // sessionMountFailure reads the cause chain through the carrier's static.
+                    runtimeUnit("TenantConnections").ifPresent(t -> precise(facade, t));
                     // A <tenantColumn> build's factories take or wrap the RequestTenants value.
                     runtimeUnit("RequestTenants").ifPresent(rt -> precise(facade, rt));
                     // A federated @oneOf build's schemaSdl prints through the helper.

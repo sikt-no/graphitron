@@ -14,14 +14,16 @@ import java.util.Optional;
  * <p>The library cannot name the generated {@code Graphitron} facade: that class lives in a
  * per-subgraph package, and {@code newExecutionInput} varies per schema in both arity and parameter
  * type (its context-arg values are resolved per request from auth). The subgraph supplies a small
- * adapter implementing this interface; the adapter is the only place that names the facade. The
- * library depends on this interface, never on a generated symbol.
+ * adapter implementing this interface; the adapter is the only place that names the facade, through
+ * method references to it. The library depends on this interface, never on a generated symbol.
  *
  * <p>This is a consumer-implemented SPI, so it is a plain (open) interface, not a sealed hierarchy:
  * the set of implementations is open by design, owned by each consuming subgraph rather than by the
  * generator. {@link AbstractGraphitronApplication} removes the boilerplate so a concrete adapter
- * passes the facade's schema builder and SDL printer, writes the auth-bearing
- * {@link #newExecutionInput()} and, optionally, an {@link #engineBuilder()} override.
+ * passes the facade's schema builder and SDL printer and, optionally, overrides
+ * {@link #engineBuilder()} and {@link #rejectedIdentity(Throwable)}. A resource builds each request's
+ * input itself and hands it to {@link GraphqlEndpoint}; {@link #newExecutionInput()} is only the
+ * built-in {@code /graphql} endpoint's seam.
  *
  * @see AbstractGraphitronApplication
  */
@@ -37,15 +39,21 @@ public interface GraphitronApplication {
     GraphQLSchema schema();
 
     /**
-     * A per-request, auth-seeded {@link ExecutionInput.Builder}. The subgraph populates the
-     * {@code DSLContext} and any declared {@code contextArguments} from the current request (via
-     * {@code Graphitron.newExecutionInput(...)}); the library layers {@code query} /
-     * {@code variables} / {@code operationName} / {@code extensions} from the HTTP body on top,
-     * then executes.
+     * The input for a request to the built-in {@code /graphql} endpoint, where no resource of the
+     * subgraph's own has the request in hand: a per-request {@link ExecutionInput.Builder} the
+     * subgraph populates with its {@code DSLContext} or session identity and any declared
+     * {@code contextArguments} (via {@code Graphitron.newOwnedExecutionInput(...)} or
+     * {@code Graphitron.newExecutionInput(...)}). The library layers {@code query} /
+     * {@code variables} / {@code operationName} / {@code extensions} from the HTTP body on top, then
+     * executes.
      *
-     * <p>This runs after the resource method that delegated to the library, so a
-     * {@code @RequestScoped} holder the resource populated (claims read from an {@code Authorization}
-     * header, a path parameter, anything else resolved per request) is visible here.
+     * <p>A subgraph that serves GraphQL from a resource of its own passes the input to
+     * {@link GraphqlEndpoint#request(java.util.function.Supplier)} there, where the request's
+     * values are at hand, and does not override this method: it returns {@code false} from
+     * {@link #builtInEndpointEnabled()} instead. The default throws an
+     * {@link IllegalStateException} naming those two ways out, so a built-in endpoint nobody
+     * configured answers the redacted {@code 500} and logs the reason rather than running
+     * unauthenticated.
      *
      * <p>Throwing a {@link jakarta.ws.rs.WebApplicationException} from this method is the supported
      * way to answer a client fault: {@link jakarta.ws.rs.NotAuthorizedException} for {@code 401},
@@ -58,7 +66,12 @@ public interface GraphitronApplication {
      *
      * @return a builder pre-wired with this request's per-request context
      */
-    ExecutionInput.Builder newExecutionInput();
+    default ExecutionInput.Builder newExecutionInput() {
+        throw new IllegalStateException(getClass().getName() + " does not supply an execution input for the"
+            + " built-in /graphql endpoint: override newExecutionInput(), or return false from"
+            + " builtInEndpointEnabled() and serve GraphQL from a resource that hands its input to"
+            + " GraphqlEndpoint.");
+    }
 
     /**
      * The reference the client is given for a fault the library redacts itself: one thrown while
@@ -97,28 +110,52 @@ public interface GraphitronApplication {
     }
 
     /**
-     * Answers an exception that escaped {@link #newExecutionInput()} or execution as a client fault
-     * instead of redacting it. The case it exists for: when the database rejects the caller's
-     * identity, the {@code <sessionState>} mount throws, and on the owned-connection engine
-     * {@code GraphQL.execute} throws the generated {@code SessionMountException} (in your
-     * {@code <outputPackage>.schema}) with the mount's own exception as its cause. Map it to the
-     * status you want:
+     * The exception the session mount itself threw, when {@code thrown} is, or is caused by, a
+     * rejected mount; empty otherwise. On the owned-connection engine a mount the database rejects
+     * makes {@code GraphQL.execute} throw the generated {@code SessionMountException} (in your
+     * {@code <outputPackage>.schema}), which this module cannot name; the generated facade's
+     * {@code sessionMountFailure} recognises it, and {@link AbstractGraphitronApplication} takes that
+     * method reference at construction. The default is empty, so an application that does not mount
+     * identity never sees {@link #rejectedIdentity(Throwable)} called.
      *
-     * <pre>{@code
-     * @Override
-     * public Optional<WebApplicationException> clientFault(Throwable thrown) {
-     *     if (thrown instanceof SessionMountException mount && rejectedIdentity(mount.getCause())) {
-     *         return Optional.of(new NotAuthorizedException("identity rejected"));
-     *     }
-     *     return Optional.empty();
-     * }
-     * }</pre>
+     * @param thrown the exception that escaped
+     * @return the mount's own exception, or empty when {@code thrown} is not a rejected mount
+     */
+    default Optional<Throwable> mountCause(Throwable thrown) {
+        return Optional.empty();
+    }
+
+    /**
+     * Answers a rejected session identity as a client fault, from the mount's own exception:
+     * a rejected-identity {@code SQLState} to {@link jakarta.ws.rs.NotAuthorizedException}, say. Called
+     * only when {@link #mountCause(Throwable)} found one, and before
+     * {@link #clientFault(Throwable)}, so an application that overrides both gets this one for a
+     * mount failure and {@code clientFault} for everything else.
      *
-     * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from
-     * {@link #newExecutionInput()} is, and the library logs nothing about the fault. Empty, the
-     * default, redacts it to the reference-only {@code 500}. If this method throws or returns
-     * {@code null}, the fault is redacted and one ERROR line names your class and the class of what
-     * it threw.
+     * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from the
+     * input is, and the library logs nothing about the fault. Empty, the default, falls through to
+     * {@link #clientFault(Throwable)} and then to the redacted {@code 500}. If this method throws or
+     * returns {@code null}, the fault is redacted and one ERROR line names your class and the class
+     * of what it threw.
+     *
+     * @param mountCause what the mount threw
+     * @return the client fault to answer with, or empty to leave the decision to
+     *         {@link #clientFault(Throwable)}
+     */
+    default Optional<WebApplicationException> rejectedIdentity(Throwable mountCause) {
+        return Optional.empty();
+    }
+
+    /**
+     * Answers any other exception that escaped the input or execution as a client fault instead of
+     * redacting it. A rejected session identity is better answered by
+     * {@link #rejectedIdentity(Throwable)}, which receives the mount's own exception; this is for
+     * everything else a subgraph wants mapped to a status.
+     *
+     * <p>A present value is thrown, unredacted, the way a {@link WebApplicationException} from the
+     * input is, and the library logs nothing about the fault. Empty, the default, redacts it to the
+     * reference-only {@code 500}. If this method throws or returns {@code null}, the fault is
+     * redacted and one ERROR line names your class and the class of what it threw.
      *
      * @param thrown the exception that escaped
      * @return the client fault to answer with, or empty to redact
@@ -134,12 +171,11 @@ public interface GraphitronApplication {
      * endpoint; override to add an instrumentation (e.g. OpenTelemetry {@code GraphQLTelemetry}), a
      * custom {@code ExecutionStrategy}, or any future engine knob.
      *
-     * <p>On the owned-connection engine ({@code GraphitronRuntime.newGraphQL(schema)}) the builder
-     * already carries the generated {@code GraphitronConnectionInstrumentation}, and
-     * {@code .instrumentation(other)} replaces it: no identity is mounted and no connection is
-     * pinned from then on. Add yours through a {@code ChainedInstrumentation} that keeps it,
-     * for example
-     * {@code .instrumentation(new ChainedInstrumentation(new GraphitronConnectionInstrumentation(runtime), telemetry))}.
+     * <p>On the owned-connection engine build the builder from the generated runtime and pass any
+     * further instrumentation to it: {@code runtime.newGraphQL(schema(), telemetry.newInstrumentation())}.
+     * That keeps the connection instrumentation first in the chain. A later
+     * {@code .instrumentation(other)} on the returned builder would replace it, after which no
+     * identity is mounted and no connection is pinned.
      *
      * @return a {@link GraphQL.Builder} over {@link #schema()}, ready for {@code .build()}
      */

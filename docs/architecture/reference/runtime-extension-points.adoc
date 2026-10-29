@@ -36,14 +36,20 @@ owns acquisition, transactions, and identity on top of it:
 [source,java]
 ----
 var runtime = Graphitron.runtime(dataSource, SQLDialect.POSTGRES);
-var engine  = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();
+var engine  = runtime.newGraphQL(Graphitron.buildSchema()).build();
 ----
 
+`Graphitron.runtime(dataSource, dialect, settings)` is the same with the jOOQ
+`Settings` (a schema or render mapping) that reach every context Graphitron
+mints, the mount's included.
+
 `runtime.newGraphQL(schema)` attaches the connection-lifecycle instrumentation,
-so you register nothing else. A later `.instrumentation(other)` on that builder replaces
-it, after which nothing is pinned or mounted; add your own instrumentation (for
-example OpenTelemetry) through a `ChainedInstrumentation` that keeps
-`new GraphitronConnectionInstrumentation(runtime)` in the chain. Per request you pass the `SessionState` that carries your
+so you register nothing else. To add your own instrumentation (for example
+OpenTelemetry) pass it to `runtime.newGraphQL(schema, telemetry.newInstrumentation())`:
+Graphitron's stays first in the chain and yours follow in the order given, so
+you never write a `ChainedInstrumentation`. A later `.instrumentation(other)` on
+the returned builder still replaces the whole chain, after which nothing is
+pinned or mounted; pass instrumentations to `newGraphQL` instead. Per request you pass the `SessionState` that carries your
 mount and unmount callbacks (and any declared `contextArguments`):
 
 [source,java]
@@ -153,8 +159,11 @@ What you can rely on:
   caller's identity.
 
 With `graphitron-jakarta-rest`, return the status from
-`GraphitronApplication.clientFault(Throwable)`; without an override the handler
-answers the reference-only 500.
+`GraphitronApplication.rejectedIdentity(Throwable)`, which receives the mount's
+own exception (the adapter hands the library `Graphitron::sessionMountFailure`,
+which recognises the generated exception so the library need not name it). It
+runs before `clientFault(Throwable)`, which still answers any other escape;
+without an answer the handler answers the reference-only 500.
 
 The mount runs on a connection in autocommit, with a jOOQ `Configuration`
 carrying no Graphitron transaction provider. A mount that has to write (for

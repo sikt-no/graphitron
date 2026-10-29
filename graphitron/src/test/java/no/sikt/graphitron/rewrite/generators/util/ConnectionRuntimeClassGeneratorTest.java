@@ -291,6 +291,129 @@ class ConnectionRuntimeClassGeneratorTest {
             "java.lang.Integer", "java.lang.Throwable", "java.lang.String", "graphql.schema.DataFetchingEnvironment");
     }
 
+    // --- the engine's instrumentation chain, the Settings form, and the mount's own exception --------
+
+    private static graphql.schema.GraphQLSchema trivialSchema() {
+        return new graphql.schema.idl.SchemaGenerator().makeExecutableSchema(
+            new graphql.schema.idl.SchemaParser().parse("type Query { x: String }"),
+            graphql.schema.idl.RuntimeWiring.newRuntimeWiring().build());
+    }
+
+    private Object runtimeOverFakeSource() throws Throwable {
+        return runtimeClass.getConstructor(DataSource.class, SQLDialect.class)
+            .newInstance(fakeDataSource(), SQLDialect.POSTGRES);
+    }
+
+    private static List<graphql.execution.instrumentation.Instrumentation> chainOf(graphql.GraphQL engine) {
+        assertThat(engine.getInstrumentation()).isInstanceOf(graphql.execution.instrumentation.ChainedInstrumentation.class);
+        return ((graphql.execution.instrumentation.ChainedInstrumentation) engine.getInstrumentation())
+            .getInstrumentations();
+    }
+
+    @Test
+    void newGraphQL_withInstrumentations_keepsGraphitronsFirstAndTheGivenOnesAfterItInOrder() throws Throwable {
+        var first = new graphql.execution.instrumentation.SimplePerformantInstrumentation();
+        var second = new graphql.execution.instrumentation.SimplePerformantInstrumentation();
+        Method newGraphQL = runtimeClass.getMethod("newGraphQL", graphql.schema.GraphQLSchema.class,
+            graphql.execution.instrumentation.Instrumentation[].class);
+        assertThat(newGraphQL.isVarArgs()).isTrue();
+
+        var builder = (graphql.GraphQL.Builder) newGraphQL.invoke(runtimeOverFakeSource(), trivialSchema(),
+            new graphql.execution.instrumentation.Instrumentation[] {first, second});
+        var chain = chainOf(builder.build());
+
+        assertThat(chain).hasSize(3);
+        assertThat(chain.get(0).getClass().getName())
+            .isEqualTo(SCHEMA_PACKAGE + ".GraphitronConnectionInstrumentation");
+        assertThat(chain.subList(1, 3)).containsExactly(first, second);
+    }
+
+    @Test
+    void newGraphQL_withNoInstrumentations_isTheConnectionInstrumentationAlone() throws Throwable {
+        Method newGraphQL = runtimeClass.getMethod("newGraphQL", graphql.schema.GraphQLSchema.class,
+            graphql.execution.instrumentation.Instrumentation[].class);
+        var builder = (graphql.GraphQL.Builder) newGraphQL.invoke(runtimeOverFakeSource(), trivialSchema(),
+            new graphql.execution.instrumentation.Instrumentation[0]);
+
+        assertThat(chainOf(builder.build())).extracting(i -> i.getClass().getName())
+            .containsExactly(SCHEMA_PACKAGE + ".GraphitronConnectionInstrumentation");
+    }
+
+    @Test
+    void newGraphQL_refusesANullInstrumentation() throws Throwable {
+        Method newGraphQL = runtimeClass.getMethod("newGraphQL", graphql.schema.GraphQLSchema.class,
+            graphql.execution.instrumentation.Instrumentation[].class);
+        Object runtime = runtimeOverFakeSource();
+        assertThatThrownBy(() -> {
+            try {
+                newGraphQL.invoke(runtime, trivialSchema(),
+                    new graphql.execution.instrumentation.Instrumentation[] {null});
+            } catch (InvocationTargetException e) {
+                throw e.getCause();
+            }
+        }).isInstanceOf(NullPointerException.class);
+    }
+
+    @Test
+    void runtime_settingsForm_hands_theSettingsToTheConnectionItAcquires() throws Throwable {
+        Settings settings = new Settings().withRenderFormatted(true);
+        Object runtime = runtimeClass.getConstructor(DataSource.class, SQLDialect.class, Settings.class)
+            .newInstance(fakeDataSource(), SQLDialect.POSTGRES, settings);
+        Method acquire = java.util.Arrays.stream(runtimeClass.getMethods())
+            .filter(m -> m.getName().equals("acquire"))
+            .findFirst().orElseThrow();
+        Class<?>[] parameterTypes = acquire.getParameterTypes();
+        Object[] arguments = new Object[parameterTypes.length];
+        for (int i = 0; i < arguments.length; i++) {
+            if (parameterTypes[i].getName().equals(SCHEMA_PACKAGE + ".SessionState")) {
+                arguments[i] = RecordingSessionState.createLifecycle(harness, SCHEMA_PACKAGE);
+            }
+        }
+
+        Object pinned = acquire.invoke(runtime, arguments);
+        try {
+            assertThat(pinned.getClass().getMethod("settings").invoke(pinned)).isSameAs(settings);
+        } finally {
+            release(pinned);
+        }
+    }
+
+    @Test
+    void mountCause_isTheMountsOwnExceptionWhereverARejectedMountIsOnTheChain() throws Throwable {
+        Class<?> tenantConnections = harness.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+        Class<?> mountException = harness.load(SCHEMA_PACKAGE + ".SessionMountException");
+        Method mountCause = tenantConnections.getMethod("mountCause", Throwable.class);
+        Method isMountFailure = tenantConnections.getMethod("isMountFailure", Throwable.class);
+
+        var theMountsOwn = new IllegalStateException("the routine said no");
+        Throwable rejected = (Throwable) mountException.getConstructor(Throwable.class).newInstance(theMountsOwn);
+        var wrapped = new java.util.concurrent.CompletionException(new RuntimeException("outer", rejected));
+
+        assertThat(mountCause.invoke(null, rejected)).isEqualTo(Optional.of(theMountsOwn));
+        assertThat(mountCause.invoke(null, wrapped)).isEqualTo(Optional.of(theMountsOwn));
+        assertThat(isMountFailure.invoke(null, wrapped)).isEqualTo(true);
+
+        var unrelated = new RuntimeException("not a mount", new IllegalStateException());
+        assertThat(mountCause.invoke(null, unrelated)).isEqualTo(Optional.empty());
+        assertThat(isMountFailure.invoke(null, unrelated)).isEqualTo(false);
+    }
+
+    @Test
+    void mountCause_isAlwaysEmptyWithoutAMount() throws Throwable {
+        // A build with no session identity declares no SessionMountException; the facade's
+        // sessionMountFailure still compiles, and answers empty.
+        var plain = compile(SessionIdentityRows.empty());
+        try {
+            Class<?> tenantConnections = plain.load(SCHEMA_PACKAGE + "." + ConnectionRuntimeClassGenerator.TENANT_CONNECTIONS_CLASS_NAME);
+            assertThat(tenantConnections.getMethod("mountCause", Throwable.class)
+                .invoke(null, new RuntimeException("anything"))).isEqualTo(Optional.empty());
+            assertThat(tenantConnections.getMethod("isMountFailure", Throwable.class)
+                .invoke(null, new RuntimeException("anything"))).isEqualTo(false);
+        } finally {
+            plain.close();
+        }
+    }
+
     @Test
     void runtime_carriesTheLogThroughAWitherAndAnOptionalAccessor() {
         TypeSpec runtime = unit(ConnectionRuntimeClassGenerator.generate(PACKAGE),

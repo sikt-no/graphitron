@@ -15,14 +15,17 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 import jakarta.ws.rs.core.UriInfo;
 import no.sikt.graphitron.jakarta.rest.GraphiqlBundle;
+import no.sikt.graphitron.jakarta.rest.GraphqlEndpoint;
 import no.sikt.graphitron.jakarta.rest.GraphqlHttpHandler;
 import no.sikt.graphitron.jakarta.rest.OperationPolicy;
 
 /**
- * A consumer resource mounting the library's delegates on a path of its own, shaped like the worked
- * example in {@link GraphqlHttpHandler}'s javadoc: a path parameter binding the calling environment
- * structurally, authentication in the resource method before any delegation, and an operation policy
- * selected per request rather than configured once.
+ * A consumer resource mounting the library's delegates on a path of its own, in the
+ * delegate-and-holder flow that predates {@link GraphqlEndpoint}: a path parameter binding the
+ * calling environment structurally, authentication in the resource method before any delegation, the
+ * request's values carried to the adapter's {@code newExecutionInput()} through a request-scoped
+ * bean, and an operation policy selected per request rather than configured once. It stays to show
+ * that flow still works; {@link EndpointMountedGraphqlResource} is the shape to copy.
  *
  * <p>Mounted at {@code /env/{callingEnvironment}/graphql} rather than the realistic
  * {@code /graphql/{callingEnvironment}}: a {@code @Path} class in test sources is registered for

@@ -1,5 +1,6 @@
 package no.sikt.graphitron.rewrite.generators.util;
 
+import com.palantir.javapoet.ArrayTypeName;
 import com.palantir.javapoet.ClassName;
 import com.palantir.javapoet.CodeBlock;
 import com.palantir.javapoet.FieldSpec;
@@ -921,6 +922,25 @@ public final class ConnectionRuntimeClassGenerator {
                 + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n")
             .build();
 
+        var settingsConstructor = MethodSpec.constructorBuilder()
+            .addModifiers(Modifier.PUBLIC)
+            .addParameter(DATA_SOURCE, "dataSource")
+            .addParameter(SQL_DIALECT, "dialect")
+            .addParameter(SETTINGS, "settings")
+            .addStatement(multiTenant
+                    ? "this(new $T(dataSource, dialect, settings), $T.of(),"
+                        + " boundedFanOutPool(DEFAULT_FAN_OUT_CONCURRENCY), DEFAULT_FAN_OUT_TIMEOUT)"
+                    : "this(new $T(dataSource, dialect, settings), $T.of())",
+                source, MAP)
+            .addJavadoc("Builds the single-source runtime over one consumer-owned {@code DataSource},\n"
+                + "dialect and jOOQ {@code Settings} (no per-tenant routing), so a schema or render mapping\n"
+                + "the consumer configured reaches every context graphitron mints. Delegating convenience\n"
+                + "over the {@link Source}-form constructor.\n"
+                + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
+                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
+                + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n")
+            .build();
+
         var dataSourceMapConstructor = MethodSpec.constructorBuilder()
             .addModifiers(Modifier.PUBLIC)
             .addParameter(DATA_SOURCE, "defaultDataSource")
@@ -1109,9 +1129,9 @@ public final class ConnectionRuntimeClassGenerator {
                 + "{@code Graphitron.buildSchema(...)}: {@code var engine = runtime.newGraphQL(Graphitron.buildSchema(b -> {})).build();}.\n"
                 + "\n"
                 + "<p>A later {@code .instrumentation(other)} on the returned builder replaces the attached\n"
-                + "instrumentation, after which nothing is pinned or mounted; add your own (for example\n"
-                + "OpenTelemetry) through a {@code ChainedInstrumentation} that keeps\n"
-                + "{@code new GraphitronConnectionInstrumentation(this)} in the chain. Keep graphql-java's\n"
+                + "instrumentation, after which nothing is pinned or mounted; to add your own (for example\n"
+                + "OpenTelemetry) use {@link #newGraphQL(graphql.schema.GraphQLSchema, graphql.execution.instrumentation.Instrumentation...)},\n"
+                + "which keeps graphitron's first in the chain. Keep graphql-java's\n"
                 + "serial mutation strategy: a {@code .mutationExecutionStrategy(...)} that is not an\n"
                 + "{@code AsyncSerialExecutionStrategy} is refused when a mutation starts, since each\n"
                 + "top-level mutation field settles its transaction when the next one starts.\n"
@@ -1125,6 +1145,35 @@ public final class ConnectionRuntimeClassGenerator {
                 + "there the caller owns the {@code DSLContext}, transactions, and identity.\n"
                 + "@param schema the {@link graphql.schema.GraphQLSchema} from {@code Graphitron.buildSchema(...)}\n"
                 + "@return a builder with the owned-connection instrumentation attached, ready for {@code .build()}\n")
+            .build();
+
+        var instrumentationType = ClassName.get("graphql.execution.instrumentation", "Instrumentation");
+        var chainedInstrumentation = ClassName.get("graphql.execution.instrumentation", "ChainedInstrumentation");
+        var newGraphQLWithInstrumentations = MethodSpec.methodBuilder("newGraphQL")
+            .addModifiers(Modifier.PUBLIC)
+            .varargs()
+            .returns(graphQLBuilder)
+            .addParameter(graphQLSchema, "schema")
+            .addParameter(ArrayTypeName.of(instrumentationType), "instrumentations")
+            .addStatement("$T.requireNonNull(instrumentations, $S)", OBJECTS, "instrumentations")
+            .addStatement("$T<$T> chain = new $T<>()", ClassName.get("java.util", "List"), instrumentationType,
+                ClassName.get("java.util", "ArrayList"))
+            .addStatement("chain.add(new $T(this))", instrumentation)
+            .beginControlFlow("for ($T instrumentation : instrumentations)", instrumentationType)
+            .addStatement("chain.add($T.requireNonNull(instrumentation, $S))", OBJECTS, "instrumentation")
+            .endControlFlow()
+            .addStatement("return $T.newGraphQL(schema).instrumentation(new $T(chain))", graphQL, chainedInstrumentation)
+            .addJavadoc("Like {@link #newGraphQL(graphql.schema.GraphQLSchema)}, with {@code instrumentations}\n"
+                + "(for example OpenTelemetry) chained after the connection-lifecycle instrumentation, in the\n"
+                + "order given, so adding one never removes connection handling and the consumer names\n"
+                + "no chained instrumentation of their own. With none it is the one-argument form.\n"
+                + "\n"
+                + "<p>A later {@code .instrumentation(other)} on the returned builder still replaces the whole\n"
+                + "chain, graphitron's included, after which nothing is pinned or mounted; pass instrumentations\n"
+                + "here rather than setting them on the builder.\n"
+                + "@param schema the {@link graphql.schema.GraphQLSchema} from {@code Graphitron.buildSchema(...)}\n"
+                + "@param instrumentations further instrumentations, run after graphitron's; none may be {@code null}\n"
+                + "@return a builder with the owned-connection instrumentation attached first, ready for {@code .build()}\n")
             .build();
 
         var builder = TypeSpec.classBuilder(RUNTIME_CLASS_NAME)
@@ -1162,10 +1211,12 @@ public final class ConnectionRuntimeClassGenerator {
             builder.addMethod(dataSourceMapConstructor);
         }
         builder.addMethod(constructor)
+            .addMethod(settingsConstructor)
             .addMethod(dialectAccessor)
             .addMethod(acquire)
             .addMethod(acquireForTenant)
             .addMethod(newGraphQL)
+            .addMethod(newGraphQLWithInstrumentations)
             .addMethod(withFetcherErrorLog)
             .addMethod(fetcherErrorLogAccessor)
             .addMethod(withFetcherErrorResponse)
@@ -1672,7 +1723,8 @@ public final class ConnectionRuntimeClassGenerator {
             .addMethod(releaseAll)
             .addMethod(ofEnvironment(self))
             .addMethod(staticDslDefault(self))
-            .addMethod(isMountFailure(mounts ? sessionMountException : null))
+            .addMethod(mountCause(mounts ? sessionMountException : null))
+            .addMethod(isMountFailure())
             .addMethod(MutationFieldScopeEmitter.beginField(self))
             .addMethod(MutationFieldScopeEmitter.enlist(self, tenantKey, multiTenant))
             .addMethod(MutationFieldScopeEmitter.settleField(self, provider, tenantKey, multiTenant))
@@ -2122,28 +2174,51 @@ public final class ConnectionRuntimeClassGenerator {
     }
 
     /**
-     * {@code static boolean isMountFailure(Throwable thrown)}: whether a rejected mount is anywhere
-     * on {@code thrown}'s cause chain. Emitted in every build so the fixed {@code ErrorRouter} can
+     * {@code static Optional<Throwable> mountCause(Throwable thrown)}: the exception the mount
+     * itself threw, when a rejected mount is anywhere on {@code thrown}'s cause chain. Emitted in
+     * every build so the facade's {@code sessionMountFailure} and the fixed {@code ErrorRouter} can
      * ask without naming {@code SessionMountException}, which exists only with a mount; without
-     * one ({@code sessionMountException == null}) the answer is always {@code false}.
+     * one ({@code sessionMountException == null}) the answer is always empty.
      */
-    private static MethodSpec isMountFailure(ClassName sessionMountException) {
-        var builder = MethodSpec.methodBuilder("isMountFailure")
+    private static MethodSpec mountCause(ClassName sessionMountException) {
+        var optionalThrowable = ParameterizedTypeName.get(OPTIONAL, ClassName.get(Throwable.class));
+        var builder = MethodSpec.methodBuilder("mountCause")
             .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
-            .returns(boolean.class)
+            .returns(optionalThrowable)
             .addParameter(Throwable.class, "thrown");
         if (sessionMountException == null) {
-            builder.addStatement("return false");
+            builder.addStatement("return $T.empty()", OPTIONAL);
         } else {
             builder
                 .beginControlFlow("for ($T t = thrown; t != null; t = t.getCause())", Throwable.class)
                 .beginControlFlow("if (t instanceof $T)", sessionMountException)
-                .addStatement("return true")
+                .addStatement("return $T.ofNullable(t.getCause())", OPTIONAL)
                 .endControlFlow()
                 .endControlFlow()
-                .addStatement("return false");
+                .addStatement("return $T.empty()", OPTIONAL);
         }
         return builder
+            .addJavadoc("The exception the configured mount threw, when a rejected session mount is on\n"
+                + "{@code thrown}'s cause chain; empty otherwise, and always empty without a mount. The\n"
+                + "facade's {@code sessionMountFailure} returns this, so an application can answer a rejected\n"
+                + "identity from the mount's own exception without naming {@code SessionMountException}.\n"
+                + "@param thrown what was caught\n"
+                + "@return the mount's own exception, if a rejected mount is on the chain\n")
+            .build();
+    }
+
+    /**
+     * {@code static boolean isMountFailure(Throwable thrown)}: whether a rejected mount is anywhere
+     * on {@code thrown}'s cause chain, which is whether {@link #mountCause} is present. Emitted in
+     * every build so the fixed {@code ErrorRouter} can ask without naming
+     * {@code SessionMountException}.
+     */
+    private static MethodSpec isMountFailure() {
+        return MethodSpec.methodBuilder("isMountFailure")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(boolean.class)
+            .addParameter(Throwable.class, "thrown")
+            .addStatement("return mountCause(thrown).isPresent()")
             .addJavadoc("Whether {@code thrown}'s cause chain carries a rejected session mount. The error\n"
                 + "router declines such a throw: the operation fails as a whole when it completes, so no\n"
                 + "field logs it, mints a reference for it, or places it in a payload.\n"

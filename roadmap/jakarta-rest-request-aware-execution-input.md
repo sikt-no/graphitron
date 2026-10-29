@@ -134,7 +134,7 @@ The five questions the Backlog text left open, answered:
 
 ## Breaking change
 
-None in the library: the parameterless `newExecutionInput()`, `clientFault`, the three existing `GraphqlHttpHandler` entry points and every `AbstractGraphitronApplication` constructor keep working, and the generated additions are overloads. The `@RequestScoped`-holder flow still works; its javadoc stops recommending it. Known consumers: tilgangsstyring (!6441), opptak (migrating), graphitron-sakila-example.
+None in behaviour: the parameterless `newExecutionInput()`, `clientFault`, the three existing `GraphqlHttpHandler` entry points and every `AbstractGraphitronApplication` constructor keep working, and the generated additions are overloads. The `@RequestScoped`-holder flow still works; its javadoc stops recommending it. One source edge: a call that passes a literal `null` as the policy, `handler.post(body, headers, null)`, is now ambiguous between the policy and supplier overloads and stops compiling; the documented unrestricted form `handler.post(body, headers)` is unaffected, and the javadoc says to write that. Known consumers: tilgangsstyring (!6441), opptak (migrating), graphitron-sakila-example.
 
 ## Tests
 
@@ -161,6 +161,16 @@ The library has no test tree of its own, so the tests live in graphitron-sakila-
 * **R1102** (Spec): `$session` by member; opptak needs it alongside this item.
 * **R1108** (Backlog) and **R530** (Backlog): the manual describes the shape this item lands.
 * **R1096** (Spec): consumes `AcceptLanguage.parse` and the supplier flow for `Accept-Language`.
+
+## Delivery notes
+
+Shipped in one change on the branch. Where it differs from the plan above, and what the reviewer should look at:
+
+* **The one source edge** is the literal-`null` ambiguity named under Breaking change, which the plan had not seen: adding `post(body, headers, Supplier)` beside the existing `post(body, headers, OperationPolicy)` is what makes it.
+* **`GraphqlResource` is now a locator**, as the plan intended: one `@Path("")` method behind the built-in-endpoint gate returns the same `GraphqlEndpoint.Request` a consumer's resource does, so there is one set of arms. The existing conformance, mounted-endpoint and overlap suites run through it unchanged.
+* **The startup check is best-effort.** A container proxy declares every method itself, so `GraphqlEngine` looks past classes named like a generated proxy or subclass (`_ClientProxy`, `_Subclass`, `$$`, `$Proxy`) to the application's own class, and counts an unrecognised type as overriding, so the ERROR line can be missing but never wrong. The default method's refusal is what answers a request.
+* **What the tests show and do not.** `EndpointMountedTest` runs the locator under Quarkus REST, the only JAX-RS runtime in the repo; no other runtime was tried. The default seam's refusal and the startup decision are unit-tested (`BuiltInSeamTest`), but the redacted `500` for a built-in endpoint with no seam, and the startup log line itself, are not asserted end to end, because the test adapter overrides the seam. The jOOQ `Settings` reaching the pinned connection is pinned in `ConnectionRuntimeClassGeneratorTest`, not through the sakila example, whose adapter passes default settings. The library has no test tree, so its tests sit in `graphitron-sakila-example`, the library's own two in package `no.sikt.graphitron.jakarta.rest` there so they can see its package-private decision.
+* **Not done here:** the consumer acceptance, tilgangsstyring !6441 rewritten to this shape with its suite green. It is done in fs-plattform against a snapshot and is the evidence the plan names for Done.
 
 ## Other solutions we've considered
 

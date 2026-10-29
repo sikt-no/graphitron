@@ -1,6 +1,7 @@
 package no.sikt.graphitron.sakila.example.app;
 
 import graphql.ExecutionInput;
+import graphql.GraphQL;
 import jakarta.annotation.Priority;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Alternative;
@@ -10,6 +11,7 @@ import jakarta.ws.rs.NotAuthorizedException;
 import jakarta.ws.rs.WebApplicationException;
 import jakarta.ws.rs.core.Context;
 import jakarta.ws.rs.core.HttpHeaders;
+import jakarta.ws.rs.core.Response;
 import no.sikt.graphitron.generated.Graphitron;
 import no.sikt.graphitron.generated.schema.SessionMountException;
 
@@ -61,6 +63,17 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
     /** Sentinel header turning the built-in {@code /graphql} endpoint off for one request. */
     static final String BUILT_IN_HEADER = "X-Graphitron-Built-In";
 
+    /** {@code off} answers {@code 404} for the GraphiQL page and its assets, built-in or mounted. */
+    static final String GRAPHIQL_HEADER = "X-Graphitron-Graphiql";
+
+    /** The rejected-identity hook's modes; see {@link #rejectedIdentity(Throwable)}. */
+    static final String HOOK_ANSWERS = "hook";
+    static final String HOOK_DECLINES = "hook-declines";
+
+    /** Which of the two hooks answered a rejected identity, and the class of the cause it was given. */
+    static final String ANSWERED_BY_HEADER = "X-Answered-By";
+    static final String CAUSE_CLASS_HEADER = "X-Cause-Class";
+
     @Context
     HttpHeaders headers;
 
@@ -75,6 +88,38 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
     @Override
     public boolean builtInEndpointEnabled() {
         return !"off".equals(headers.getHeaderString(BUILT_IN_HEADER));
+    }
+
+    /**
+     * The engine with a recording instrumentation chained after graphitron's, so every test in this
+     * module also runs with an extra instrumentation present; {@link EngineAssemblyTest} reads what
+     * it recorded.
+     */
+    @Override
+    public GraphQL.Builder engineBuilder() {
+        return engine(RecordingInstrumentation.INSTANCE);
+    }
+
+    @Override
+    public boolean graphiqlEnabled() {
+        return !"off".equals(headers.getHeaderString(GRAPHIQL_HEADER));
+    }
+
+    /**
+     * With {@link #HOOK_ANSWERS} as the rejected-identity mode, answers a mount failure with a 401
+     * naming this hook and the class of the exception it was given; {@code clientFault} below would
+     * answer the same failure with a 403, so which status arrives shows which hook ran. Any other
+     * mode declines, leaving the decision to {@code clientFault}.
+     */
+    @Override
+    public Optional<WebApplicationException> rejectedIdentity(Throwable mountCause) {
+        if (HOOK_ANSWERS.equals(headers.getHeaderString(REJECTED_IDENTITY_HEADER))) {
+            return Optional.of(new WebApplicationException(Response.status(401)
+                .header(ANSWERED_BY_HEADER, "rejectedIdentity")
+                .header(CAUSE_CLASS_HEADER, mountCause.getClass().getName())
+                .build()));
+        }
+        return super.rejectedIdentity(mountCause);
     }
 
     @Override
@@ -117,6 +162,13 @@ public class FaultInjectingGraphitronApplication extends SakilaGraphitronApplica
         }
         if ("null".equals(mode)) {
             return null;
+        }
+        if (HOOK_ANSWERS.equals(mode) || HOOK_DECLINES.equals(mode)) {
+            // Reached for a mount failure only when rejectedIdentity declined (or never ran); the 403
+            // distinguishes this hook's answer from rejectedIdentity's 401.
+            return Optional.of(new WebApplicationException(Response.status(403)
+                .header(ANSWERED_BY_HEADER, "clientFault")
+                .build()));
         }
         if (thrown instanceof SessionMountException mount && mount.getCause() != null) {
             return Optional.of(new NotAuthorizedException("identity rejected", "Bearer"));

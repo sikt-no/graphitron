@@ -106,6 +106,16 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(buildSchemaJavadoc(federationLink))
             .build();
 
+        var buildSchemaDefault = MethodSpec.methodBuilder("buildSchema")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(graphQLSchema)
+            .addStatement("return buildSchema(customizer -> {})")
+            .addJavadoc("The executable schema with no customization: {@code buildSchema(customizer -> {})}.\n"
+                + "Written so an adapter can pass {@code Graphitron::buildSchema} wherever a schema\n"
+                + "supplier is wanted.\n"
+                + "@return the fully wired {@link graphql.schema.GraphQLSchema}\n")
+            .build();
+
         // TreeMap iteration order is alphabetical by key: same order generated fetchers will
         // resolve them in, same order the user docs talk about them in, deterministic across runs.
         // Read off the schema's cached classification rather than re-running the classifier:
@@ -181,6 +191,38 @@ public final class GraphitronFacadeGenerator {
             .addJavadoc(runtimeJavadoc())
             .build();
 
+        var settings = ClassName.get("org.jooq.conf", "Settings");
+        var runtimeWithSettings = MethodSpec.methodBuilder("runtime")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(graphitronRuntime)
+            .addParameter(dataSource, "dataSource")
+            .addParameter(sqlDialect, "dialect")
+            .addParameter(settings, "settings")
+            .addStatement("return new $T(dataSource, dialect, settings)", graphitronRuntime)
+            .addJavadoc("Builds the application-scoped runtime over a {@code DataSource}, dialect and jOOQ\n"
+                + "{@code Settings} (schema or render mapping), so they reach every context graphitron mints.\n"
+                + "Otherwise as {@link #runtime(javax.sql.DataSource, org.jooq.SQLDialect)}.\n"
+                + "@param dataSource the consumer's pooled {@code DataSource}; must not be {@code null}\n"
+                + "@param dialect the jOOQ {@code SQLDialect} for this database; must not be {@code null}\n"
+                + "@param settings the jOOQ {@code Settings}; {@code null} means defaults\n"
+                + "@return the application-scoped runtime, to be held for the app's lifetime\n")
+            .build();
+
+        var optional = ClassName.get("java.util", "Optional");
+        var sessionMountFailure = MethodSpec.methodBuilder("sessionMountFailure")
+            .addModifiers(Modifier.PUBLIC, Modifier.STATIC)
+            .returns(ParameterizedTypeName.get(optional, ClassName.get(Throwable.class)))
+            .addParameter(Throwable.class, "thrown")
+            .addStatement("return $T.mountCause(thrown)", tenantConnections)
+            .addJavadoc("The exception the configured session mount threw, when {@code thrown} is, or is\n"
+                + "caused by, a rejected mount; empty otherwise, and always empty in a build without a\n"
+                + "session identity. {@code execute} throws a rejected mount in place of a result, so an\n"
+                + "application that serves over HTTP passes this to its adapter and answers a rejected\n"
+                + "identity from the mount's own exception, without naming the generated exception.\n"
+                + "@param thrown what escaped execution\n"
+                + "@return the mount's own exception, if a rejected mount is on the cause chain\n")
+            .build();
+
         var self = ClassName.get(outputPackage, CLASS_NAME);
         var logger = ClassName.get("org.slf4j", "Logger");
         var loggerFactory = ClassName.get("org.slf4j", "LoggerFactory");
@@ -202,6 +244,7 @@ public final class GraphitronFacadeGenerator {
             .addField(loggerField)
             .addField(escapeHatchNoticeField)
             .addMethod(buildSchema)
+            .addMethod(buildSchemaDefault)
             .addMethod(newExecutionInput)
             .addMethod(newOwnedExecutionInput);
         if (newOwnedExecutionInputTyped != null) {
@@ -210,7 +253,9 @@ public final class GraphitronFacadeGenerator {
         classBuilder
             .addMethod(newGraphQL)
             .addMethod(runtime)
-            .addMethod(schemaSdl(graphQLSchema, outputPackage, federationLink, usesOneOf));
+            .addMethod(runtimeWithSettings)
+            .addMethod(schemaSdl(graphQLSchema, outputPackage, federationLink, usesOneOf))
+            .addMethod(sessionMountFailure);
 
         if (federationLink) {
             var SCHEMA_TRANSFORMER = ClassName.get("com.apollographql.federation.graphqljava", "SchemaTransformer");

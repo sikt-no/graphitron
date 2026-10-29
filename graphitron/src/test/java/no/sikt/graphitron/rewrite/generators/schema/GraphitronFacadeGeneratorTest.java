@@ -37,8 +37,46 @@ class GraphitronFacadeGeneratorTest {
     void generatedClass_exposesBuildSchemaBothFactoriesNewGraphQLAndRuntime() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0);
         assertThat(spec.methodSpecs()).extracting(m -> m.name())
-            .containsExactly("buildSchema", "newExecutionInput", "newOwnedExecutionInput", "newGraphQL", "runtime",
-                "schemaSdl");
+            .containsExactly("buildSchema", "buildSchema", "newExecutionInput", "newOwnedExecutionInput", "newGraphQL",
+                "runtime", "runtime", "schemaSdl", "sessionMountFailure");
+    }
+
+    // ===== what an adapter reaches by method reference =====
+
+    private static java.util.List<com.palantir.javapoet.MethodSpec> methodsNamed(String name) {
+        return GraphitronFacadeGenerator.generate(emptySchema(), "com.example").get(0).methodSpecs().stream()
+            .filter(m -> m.name().equals(name))
+            .toList();
+    }
+
+    @Test
+    void buildSchema_hasANoArgumentFormAnAdapterCanPassAsASupplier() {
+        var noArg = methodsNamed("buildSchema").stream().filter(m -> m.parameters().isEmpty()).toList();
+        assertThat(noArg).hasSize(1);
+        assertThat(noArg.get(0).modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(noArg.get(0).returnType().toString()).isEqualTo("graphql.schema.GraphQLSchema");
+    }
+
+    @Test
+    void runtime_hasASettingsFormBesideTheDataSourceAndDialectForm() {
+        assertThat(methodsNamed("runtime")).extracting(m -> m.parameters().stream().map(p -> p.type().toString()).toList())
+            .containsExactlyInAnyOrder(
+                java.util.List.of("javax.sql.DataSource", "org.jooq.SQLDialect"),
+                java.util.List.of("javax.sql.DataSource", "org.jooq.SQLDialect", "org.jooq.conf.Settings"));
+        assertThat(methodsNamed("runtime")).allSatisfy(m -> {
+            assertThat(m.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+            assertThat(m.returnType().toString()).isEqualTo("com.example.schema.GraphitronRuntime");
+        });
+    }
+
+    @Test
+    void sessionMountFailure_takesAThrowableAndAnswersTheMountsOwnExceptionInEveryBuild() {
+        // Present with no session identity too (the call is always empty there), so an adapter's
+        // constructor argument compiles whichever way the build is configured.
+        var method = methodsNamed("sessionMountFailure").get(0);
+        assertThat(method.modifiers()).contains(Modifier.PUBLIC, Modifier.STATIC);
+        assertThat(method.parameters()).extracting(p -> p.type().toString()).containsExactly("java.lang.Throwable");
+        assertThat(method.returnType().toString()).isEqualTo("java.util.Optional<java.lang.Throwable>");
     }
 
     @ParameterizedTest(name = "federationLink={0}, usesOneOf={1}")
@@ -208,21 +246,24 @@ class GraphitronFacadeGeneratorTest {
     }
 
     // ===== federation overload =====
+    // The no-argument buildSchema() is separate (see buildSchema_hasANoArgumentForm...); these count the
+    // overloads that take a customizer.
+
 
     @Test
-    void nonFederation_exposesSingleBuildSchemaMethod() {
+    void nonFederation_exposesSingleCustomizingBuildSchemaMethod() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", false, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("buildSchema"))
+            .filter(m -> m.name().equals("buildSchema") && !m.parameters().isEmpty())
             .count();
         assertThat(buildSchemaCount).isEqualTo(1);
     }
 
     @Test
-    void federation_exposesTwoBuildSchemaMethods() {
+    void federation_exposesTwoCustomizingBuildSchemaMethods() {
         var spec = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0);
         var buildSchemaCount = spec.methodSpecs().stream()
-            .filter(m -> m.name().equals("buildSchema"))
+            .filter(m -> m.name().equals("buildSchema") && !m.parameters().isEmpty())
             .count();
         assertThat(buildSchemaCount).isEqualTo(2);
     }
@@ -230,7 +271,7 @@ class GraphitronFacadeGeneratorTest {
     @Test
     void federation_secondBuildSchemaMethod_hasFederationCustomizerParameter() {
         var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0).methodSpecs().stream()
-            .filter(m -> m.name().equals("buildSchema"))
+            .filter(m -> m.name().equals("buildSchema") && !m.parameters().isEmpty())
             .toList();
         var twoArg = methods.get(1);
         assertThat(twoArg.parameters()).hasSize(2);
@@ -241,7 +282,7 @@ class GraphitronFacadeGeneratorTest {
     @Test
     void federation_secondBuildSchemaMethod_delegatesToGraphitronSchemaBuildTwoArg() {
         var methods = GraphitronFacadeGenerator.generate(emptySchema(), "com.example", true, false, no.sikt.graphitron.emit.SessionIdentityRows.empty()).get(0).methodSpecs().stream()
-            .filter(m -> m.name().equals("buildSchema"))
+            .filter(m -> m.name().equals("buildSchema") && !m.parameters().isEmpty())
             .toList();
         var body = methods.get(1).code().toString();
         assertThat(body).contains(
