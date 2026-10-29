@@ -17,8 +17,6 @@ import static no.sikt.graphitron.model.Tables.GRAPHITRON_SPELLED_REFERENCE_ENTRY
 import static org.jooq.impl.DSL.excluded;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ROUTINE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_TABLE_ENTRY;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_ARGUMENT;
-import static no.sikt.graphitron.model.Tables.GRAPHQL_FIELD;
 import static no.sikt.graphitron.model.Tables.SQL_COLUMN;
 import static no.sikt.graphitron.model.Tables.SQL_ENUM_BINDING;
 import static no.sikt.graphitron.model.Tables.SQL_CONSTRAINT;
@@ -83,8 +81,6 @@ final class FactWrites {
         writers.put(GRAPHITRON_ARGUMENT_REFERENCE_STEP_ENTRY, FactWrites::graphitronArgumentReferenceStep);
         writers.put(GRAPHITRON_MUTATION_ENTRY, FactWrites::graphitronMutation);
         writers.put(GRAPHITRON_ROUTINE_ENTRY, FactWrites::graphitronRoutine);
-        writers.put(GRAPHQL_FIELD, FactWrites::graphqlField);
-        writers.put(GRAPHQL_ARGUMENT, FactWrites::graphqlArgument);
         writers.put(SQL_TABLE, FactWrites::sqlTable);
         writers.put(SQL_CONSTRAINT, FactWrites::sqlConstraint);
         writers.put(SQL_COLUMN, FactWrites::sqlColumn);
@@ -305,120 +301,6 @@ final class FactWrites {
                                row.get(t.ROUTINE_REF_NAMESPACE_PART),
                                row.get(t.ROUTINE_REF_NAME_PART),
                                row.get(t.ARGMAPPING),
-                               row.get(t.TOUCHED_AT));
-        }
-        batch.execute();
-    }
-
-    private static void graphqlField(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHQL_FIELD;
-        var batch = dsl.batch(dsl.insertInto(t)
-                .columns(t.GRAPH_NAME,
-                         t.TYPE_NAME,
-                         t.FIELD_NAME,
-                         t.ORDINAL,
-                         t.DECLARATION_LINE,
-                         t.DECLARATION_COLUMN,
-                         t.TYPE_SDL,
-                         t.NAMED_TYPE,
-                         t.NON_NULL,
-                         t.IS_LIST,
-                         t.ITEM_NON_NULL,
-                         t.LIST_DEPTH,
-                         t.DEFAULT_VALUE_SDL,
-                         t.DESCRIPTION,
-                         t.SOURCE_NAME,
-                         t.SOURCE_LINE,
-                         t.SOURCE_COLUMN,
-                         t.SITE_GRAPH_REF,
-                         t.SITE_SOURCE_REF,
-                         t.SITE_LINE_REF,
-                         t.SITE_COLUMN_REF,
-                         t.DECLARATION_GRAPH_REF,
-                         t.DECLARATION_TYPE_REF,
-                         t.DECLARATION_SOURCE_REF,
-                         t.DECLARATION_LINE_REF,
-                         t.DECLARATION_COLUMN_REF,
-                         t.TOUCHED_AT)
-                .values(markers(27)));
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.GRAPH_NAME),
-                               row.get(t.TYPE_NAME),
-                               row.get(t.FIELD_NAME),
-                               row.get(t.ORDINAL),
-                               row.get(t.DECLARATION_LINE),
-                               row.get(t.DECLARATION_COLUMN),
-                               row.get(t.TYPE_SDL),
-                               row.get(t.NAMED_TYPE),
-                               row.get(t.NON_NULL),
-                               row.get(t.IS_LIST),
-                               row.get(t.ITEM_NON_NULL),
-                               row.get(t.LIST_DEPTH),
-                               row.get(t.DEFAULT_VALUE_SDL),
-                               row.get(t.DESCRIPTION),
-                               row.get(t.SOURCE_NAME),
-                               row.get(t.SOURCE_LINE),
-                               row.get(t.SOURCE_COLUMN),
-                               row.get(t.SITE_GRAPH_REF),
-                               row.get(t.SITE_SOURCE_REF),
-                               row.get(t.SITE_LINE_REF),
-                               row.get(t.SITE_COLUMN_REF),
-                               row.get(t.DECLARATION_GRAPH_REF),
-                               row.get(t.DECLARATION_TYPE_REF),
-                               row.get(t.DECLARATION_SOURCE_REF),
-                               row.get(t.DECLARATION_LINE_REF),
-                               row.get(t.DECLARATION_COLUMN_REF),
-                               row.get(t.TOUCHED_AT));
-        }
-        batch.execute();
-    }
-
-    private static void graphqlArgument(DSLContext dsl, List<TableRecord<?>> rows) {
-        var t = GRAPHQL_ARGUMENT;
-        var batch = dsl.batch(dsl.insertInto(t)
-                .columns(t.GRAPH_NAME,
-                         t.TYPE_NAME,
-                         t.FIELD_NAME,
-                         t.ARGUMENT_NAME,
-                         t.ORDINAL,
-                         t.TYPE_SDL,
-                         t.NAMED_TYPE,
-                         t.NON_NULL,
-                         t.IS_LIST,
-                         t.ITEM_NON_NULL,
-                         t.LIST_DEPTH,
-                         t.DEFAULT_VALUE_SDL,
-                         t.DESCRIPTION,
-                         t.SOURCE_NAME,
-                         t.SOURCE_LINE,
-                         t.SOURCE_COLUMN,
-                         t.SITE_GRAPH_REF,
-                         t.SITE_SOURCE_REF,
-                         t.SITE_LINE_REF,
-                         t.SITE_COLUMN_REF,
-                         t.TOUCHED_AT)
-                .values(markers(21)));
-        for (TableRecord<?> row : rows) {
-            batch = batch.bind(row.get(t.GRAPH_NAME),
-                               row.get(t.TYPE_NAME),
-                               row.get(t.FIELD_NAME),
-                               row.get(t.ARGUMENT_NAME),
-                               row.get(t.ORDINAL),
-                               row.get(t.TYPE_SDL),
-                               row.get(t.NAMED_TYPE),
-                               row.get(t.NON_NULL),
-                               row.get(t.IS_LIST),
-                               row.get(t.ITEM_NON_NULL),
-                               row.get(t.LIST_DEPTH),
-                               row.get(t.DEFAULT_VALUE_SDL),
-                               row.get(t.DESCRIPTION),
-                               row.get(t.SOURCE_NAME),
-                               row.get(t.SOURCE_LINE),
-                               row.get(t.SOURCE_COLUMN),
-                               row.get(t.SITE_GRAPH_REF),
-                               row.get(t.SITE_SOURCE_REF),
-                               row.get(t.SITE_LINE_REF),
-                               row.get(t.SITE_COLUMN_REF),
                                row.get(t.TOUCHED_AT));
         }
         batch.execute();
