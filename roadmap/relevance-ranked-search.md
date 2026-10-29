@@ -597,8 +597,8 @@ its own documentation against its own contract.
   `film.search_text (title || description)` sketch is dropped: folding long
   description text into a trigram column is exactly what the how-to warns
   against, and the fixture must not model the anti-pattern (long prose is
-  prose search's demand, out of v1). Bump
-  `<jooq.codegen.schema.version>` per landing.
+  prose search's demand, out of v1). The catalog regenerates on its own,
+  its version being a hash of `init.sql` and the module's pom.
 - The boot-time supply probe in the emitted runtime (beside the
   `ConnectionHelper` generator): always on, and on failure it marks the
   binding so the affected field short-circuits to a client-visible error

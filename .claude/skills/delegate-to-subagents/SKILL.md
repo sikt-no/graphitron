@@ -42,7 +42,7 @@ copy them**: copies go stale, and stale copies are how the slips below happened.
   "Building and testing": the full reactor unless the commits are confined to `roadmap/`.
 - Any project rule the change can trip, named by where it lives: the testing rules in
   `docs/architecture/principles/development-principles.adoc`, the modeling discipline, the open
-  roadmap item's gates and in-flight register, the catalog bump below.
+  roadmap item's gates and in-flight register.
 - The user's rulings for this task, **quoted as binding**.
 - The verdict list, and what must not be touched, with the reason.
 - "Never make a test pass by copying the actual output without understanding the difference."
@@ -71,9 +71,6 @@ Each of these was a rule that already existed; the brief or the check did not na
 - A `docs/` edit was verified with the `roadmap-tool,docs` scope and broke trunk:
   `DocSizeBudgetTest` in graphitron-sakila-example reads `development-principles.adoc`. Only a diff
   confined to `roadmap/` takes the scoped build.
-- A change to `graphitron-sakila-db`'s `init.sql` went out without bumping
-  `jooq.codegen.schema.version` in that module's pom, so other sessions kept building a stale
-  catalog. Name the bump in any brief that may touch the fixture.
 - A failure was attributed to another session's branch from a non-clean build. Before blaming
   anything outside the diff, reproduce with `mvn clean install` and the session's `no/sikt`
   artifacts wiped.

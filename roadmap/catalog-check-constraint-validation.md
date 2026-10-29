@@ -550,8 +550,8 @@ The four-file delta (plus model + emitter glue):
   `@graphitron`.
 - `graphitron-sakila-db/src/main/resources/init.sql`: add CHECK constraints
   to one or more fixture tables (one per recognized shape, plus one
-  unrecognized for strict-mode coverage). Bump
-  `<jooq.codegen.schema.version>` so jOOQ regenerates.
+  unrecognized for strict-mode coverage). jOOQ regenerates on its own: the
+  catalog's version is a hash of `init.sql` and the module's pom.
 - `graphitron-sakila-db/pom.xml`: enable
   `<includeCheckConstraints>true</includeCheckConstraints>` in the codegen
   configuration.
