@@ -1,7 +1,7 @@
 ---
 id: R1098
 title: "A graphitron-jakarta-rest subgraph writes only what is its own"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 4
 theme: runtime-connection
