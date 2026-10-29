@@ -245,7 +245,7 @@ final class TypeFetcherEmissionContext {
     // translation they build, so two fields binding one class through the same SDL layout share one
     // and the same class bound through two layouts gets two.
     private final java.util.Map<String, String> validationPathNames = new java.util.LinkedHashMap<>();
-    private final java.util.List<no.sikt.graphitron.javapoet.FieldSpec> validationPathFields =
+    private final java.util.List<com.palantir.javapoet.FieldSpec> validationPathFields =
         new java.util.ArrayList<>();
 
     /**
@@ -264,7 +264,7 @@ final class TypeFetcherEmissionContext {
             for (int n = 2; validationPathNames.containsValue(name); n++) {
                 name = stem + "_" + n;
             }
-            validationPathFields.add(no.sikt.graphitron.javapoet.FieldSpec.builder(
+            validationPathFields.add(com.palantir.javapoet.FieldSpec.builder(
                     no.sikt.graphitron.rewrite.generators.schema.ConstraintViolationsClassGenerator.pathsClass(outputPackage),
                     name, javax.lang.model.element.Modifier.PRIVATE, javax.lang.model.element.Modifier.STATIC,
                     javax.lang.model.element.Modifier.FINAL)
@@ -274,7 +274,7 @@ final class TypeFetcherEmissionContext {
         });
     }
 
-    java.util.List<no.sikt.graphitron.javapoet.FieldSpec> drainValidationPathFields() {
+    java.util.List<com.palantir.javapoet.FieldSpec> drainValidationPathFields() {
         var out = java.util.List.copyOf(validationPathFields);
         validationPathFields.clear();
         return out;

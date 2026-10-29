@@ -254,7 +254,7 @@ public class ConnectionHelperClassGenerator {
         // literal ('NC-17'), not the Java constant's name toString() gives, and it is the literal
         // the column's DataType parses back. Generic over the column's type so the wildcard capture
         // type-checks in Java 17.
-        var t = no.sikt.graphitron.javapoet.TypeVariableName.get("T");
+        var t = com.palantir.javapoet.TypeVariableName.get("T");
         var databaseValue = MethodSpec.methodBuilder("databaseValue")
             .addModifiers(Modifier.PRIVATE, Modifier.STATIC)
             .addTypeVariable(t)
