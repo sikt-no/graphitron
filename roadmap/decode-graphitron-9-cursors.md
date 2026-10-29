@@ -1,7 +1,7 @@
 ---
 id: R1088
 title: "A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade"
-status: In Progress
+status: In Review
 bucket: enhancement
 priority: 3
 theme: pagination
