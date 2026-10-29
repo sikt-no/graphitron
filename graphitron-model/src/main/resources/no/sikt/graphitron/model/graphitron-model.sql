@@ -10800,42 +10800,36 @@ COMMENT ON COLUMN graphitron_argmapping_parameter.method_name IS 'the method the
 COMMENT ON COLUMN graphitron_argmapping_parameter.method_descriptor IS 'that method''s descriptor, which tells overloads apart';
 COMMENT ON COLUMN graphitron_argmapping_parameter.parameter_position IS 'the position in the method''s parameter list of the parameter whose name is the entry''s left side; what the parameter takes is the parameter row''s, not copied here';
 
-CREATE VIEW graphitron_entry_defect_rule
-  (graph_name, source_name, source_line, source_column, code, detail) AS
--- The @routine that heads a chain: the last one written at a mutation-root field.
-WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
-    FROM graphitron_routine_entry r
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
-     AND ro.operation = 'MUTATION'
-   WHERE r.source_name IS NOT NULL
-     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
-                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
-                         AND r2.field_name = r.field_name)
-),
--- A root field's first @reference with no @routine written before it. A @routine establishes the
--- table-bound producer a @reference must be part of, and a root field has no source row, so a path
--- written there departs from nothing until a routine written ahead of it gives it one. A @routine
--- written only after the @reference starts its query too late for it, so that @reference is refused
--- as well.
-root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
-  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
-    FROM graphitron_field_reference_entry fr
-    JOIN graphql_root_operation ro
-      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
-     AND ro.operation IN ('QUERY', 'MUTATION')
-   WHERE fr.source_name IS NOT NULL
-     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
-                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
-                          AND f2.field_name = fr.field_name)
-     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
-                      WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
-                        AND r.field_name = fr.field_name AND r.source_name = fr.source_name
-                        AND (r.source_line < fr.source_line
-                             OR (r.source_line = fr.source_line
-                                 AND r.source_column < fr.source_column)))
-),
+CREATE TABLE graphitron_argmapping_pair_defect (
+  graph_name    VARCHAR NOT NULL,
+  source_name   VARCHAR NOT NULL,
+  source_line   INT     NOT NULL,
+  source_column INT     NOT NULL,
+  position      INT     NOT NULL,
+  code          VARCHAR NOT NULL,
+  detail        VARCHAR,
+  PRIMARY KEY (graph_name, source_name, source_line, source_column, position, code),
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, position)
+    REFERENCES graphitron_ast_argmapping_pair_entry (graph_name, source_name, source_line, source_column, position)
+    ON DELETE CASCADE,
+  -- The string's own verdict, so an entry defect cannot outlive the string's row in
+  -- graphitron_entry_defect and goes with it.
+  FOREIGN KEY (graph_name, source_name, source_line, source_column, code)
+    REFERENCES graphitron_entry_defect (graph_name, source_name, source_line, source_column, code)
+    ON DELETE CASCADE
+);
+COMMENT ON TABLE graphitron_argmapping_pair_defect IS 'One written argMapping entry a rule refuses, under the code that names the rule: the entry-grain detail of the defect graphitron_entry_defect states once for the whole string. For example brukerId: $session.nope on a handle with no such member is one row reading SESSION_MEMBER_UNKNOWN and the member written, under the string''s one row.';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.graph_name IS 'the owning graph''s partition, carried from the entry';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_name IS 'the file the mapping string was written in, the first of the four columns that are the entry''s key in graphitron_ast_argmapping_pair_entry';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_line IS 'source line of the mapping string, part of the entry''s key';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.source_column IS 'source column of the mapping string, part of the entry''s key and, with the two above, the position of the string''s row in graphitron_entry_defect';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.position IS 'the entry''s 0-based position within its own argMapping list, completing its key';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.code IS 'which defect, a graphitron_defect_type key reached through the string''s row; an entry may offend two rules and then carries two rows';
+COMMENT ON COLUMN graphitron_argmapping_pair_defect.detail IS 'the specific one entry''s message quotes back: the spelling, the member, or the parameter against what it should be';
+
+CREATE VIEW graphitron_argmapping_pair_defect_rule
+  (graph_name, source_name, source_line, source_column, position, code, detail) AS
+WITH
 -- Every argMapping entry whose right side reads the session handle, bare or by member. The member
 -- is what follows the dot; a deeper path is refused where the sigil is scanned, not here.
 session_pair (graph_name, source_name, source_line, source_column, position, bound_to, member) AS (
@@ -10889,6 +10883,85 @@ session_binding_type (graph_name, source_name, source_line, source_column, posit
    WHERE sp.member IS NULL
       OR (SELECT COUNT(*) FROM graphitron_session_handle_member m
            WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) = 1
+)
+SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
+       'SESSION_BINDING_WITHOUT_IDENTITY', sp.bound_to
+  FROM session_pair sp
+ WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
+UNION ALL
+-- The session is configured and no handle class is named, so there is nothing for the sigil to read.
+SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
+       'SESSION_HANDLE_UNNAMED', sp.bound_to
+  FROM session_pair sp
+ WHERE EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
+   AND NOT EXISTS (SELECT 1 FROM store_graph_session_handle h WHERE h.graph_name = sp.graph_name)
+UNION ALL
+-- $session.<member> naming a member the handle does not offer. The detail is the member written;
+-- what the handle does offer is graphitron_session_handle_member's rows, which a message joins in.
+SELECT u.graph_name, u.source_name, u.source_line, u.source_column, u.position,
+       'SESSION_MEMBER_UNKNOWN', u.detail
+  FROM session_unknown_member u
+UNION ALL
+-- $session.<member> naming a member two accessors offer, which has no single thing to read.
+SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column, sp.position,
+       'SESSION_MEMBER_AMBIGUOUS', sp.member
+  FROM session_pair sp
+ WHERE sp.member IS NOT NULL
+   AND (SELECT COUNT(*) FROM graphitron_session_handle_member m
+         WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) > 1
+UNION ALL
+-- The parameter is not declared as what it reads, on the full spelling. A primitive may bind its
+-- boxed parameter and no other pair is loosened.
+SELECT t.graph_name, t.source_name, t.source_line, t.source_column, t.position,
+       'SESSION_BINDING_TYPE_MISMATCH',
+       t.bound_to || ': parameter ' || t.parameter_name || ' is ' || t.parameter_type
+         || ', expected ' || t.expected
+  FROM session_binding_type t
+ WHERE t.expected IS NOT NULL
+   AND t.parameter_type <> t.expected
+   AND NOT EXISTS (SELECT 1 FROM (VALUES ('boolean', 'java.lang.Boolean'), ('byte', 'java.lang.Byte'),
+                                         ('char', 'java.lang.Character'), ('short', 'java.lang.Short'),
+                                         ('int', 'java.lang.Integer'), ('long', 'java.lang.Long'),
+                                         ('float', 'java.lang.Float'), ('double', 'java.lang.Double'))
+                          b (prim, boxed)
+                    WHERE b.prim = t.expected AND b.boxed = t.parameter_type);
+COMMENT ON VIEW graphitron_argmapping_pair_defect_rule IS 'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.';
+
+CREATE VIEW graphitron_entry_defect_rule
+  (graph_name, source_name, source_line, source_column, code, detail) AS
+-- The @routine that heads a chain: the last one written at a mutation-root field.
+WITH head (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT r.graph_name, r.type_name, r.field_name, r.source_name, r.source_line, r.source_column
+    FROM graphitron_routine_entry r
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = r.graph_name AND ro.type_name = r.type_name
+     AND ro.operation = 'MUTATION'
+   WHERE r.source_name IS NOT NULL
+     AND r.ordinal = (SELECT MAX(r2.ordinal) FROM graphitron_routine_entry r2
+                       WHERE r2.graph_name = r.graph_name AND r2.type_name = r.type_name
+                         AND r2.field_name = r.field_name)
+),
+-- A root field's first @reference with no @routine written before it. A @routine establishes the
+-- table-bound producer a @reference must be part of, and a root field has no source row, so a path
+-- written there departs from nothing until a routine written ahead of it gives it one. A @routine
+-- written only after the @reference starts its query too late for it, so that @reference is refused
+-- as well.
+root_reference (graph_name, type_name, field_name, source_name, source_line, source_column) AS (
+  SELECT fr.graph_name, fr.type_name, fr.field_name, fr.source_name, fr.source_line, fr.source_column
+    FROM graphitron_field_reference_entry fr
+    JOIN graphql_root_operation ro
+      ON ro.graph_name = fr.graph_name AND ro.type_name = fr.type_name
+     AND ro.operation IN ('QUERY', 'MUTATION')
+   WHERE fr.source_name IS NOT NULL
+     AND fr.ordinal = (SELECT MIN(f2.ordinal) FROM graphitron_field_reference_entry f2
+                        WHERE f2.graph_name = fr.graph_name AND f2.type_name = fr.type_name
+                          AND f2.field_name = fr.field_name)
+     AND NOT EXISTS (SELECT 1 FROM graphitron_routine_entry r
+                      WHERE r.graph_name = fr.graph_name AND r.type_name = fr.type_name
+                        AND r.field_name = fr.field_name AND r.source_name = fr.source_name
+                        AND (r.source_line < fr.source_line
+                             OR (r.source_line = fr.source_line
+                                 AND r.source_column < fr.source_column)))
 )
 -- More than one write on one field. The row sits at the head, the individual applications
 -- being legal each on their own and the plurality being what has no emitter.
@@ -11559,60 +11632,12 @@ SELECT f.graph_name, f.source_name, f.source_line, f.source_column,
     ON ro.graph_name = f.graph_name AND ro.type_name = f.type_name
    AND ro.operation = 'SUBSCRIPTION'
 UNION ALL
--- A $session binding where no <sessionState> is configured. A string carries several entries and
--- the defect's key is one row per position and code, so a string's offending entries collapse to
--- one row naming the least offending spelling; fixing it surfaces the next.
-SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column,
-       'SESSION_BINDING_WITHOUT_IDENTITY',
-       MIN(sp.bound_to)
-  FROM session_pair sp
- WHERE NOT EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
- GROUP BY sp.graph_name, sp.source_name, sp.source_line, sp.source_column
-UNION ALL
--- A $session binding where the session is configured and no handle class is named, so there is
--- nothing for the sigil to read.
-SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column,
-       'SESSION_HANDLE_UNNAMED',
-       MIN(sp.bound_to)
-  FROM session_pair sp
- WHERE EXISTS (SELECT 1 FROM store_graph_session_supplied s WHERE s.graph_name = sp.graph_name)
-   AND NOT EXISTS (SELECT 1 FROM store_graph_session_handle h WHERE h.graph_name = sp.graph_name)
- GROUP BY sp.graph_name, sp.source_name, sp.source_line, sp.source_column
-UNION ALL
--- $session.<member> naming a member the handle does not offer. The detail is the member written;
--- what the handle does offer is the member relation's rows, which the message joins in.
-SELECT u.graph_name, u.source_name, u.source_line, u.source_column,
-       'SESSION_MEMBER_UNKNOWN',
-       MIN(u.detail)
-  FROM session_unknown_member u
- GROUP BY u.graph_name, u.source_name, u.source_line, u.source_column
-UNION ALL
--- $session.<member> naming a member two accessors offer, which has no single thing to read.
-SELECT sp.graph_name, sp.source_name, sp.source_line, sp.source_column,
-       'SESSION_MEMBER_AMBIGUOUS',
-       MIN(sp.member)
-  FROM session_pair sp
- WHERE sp.member IS NOT NULL
-   AND (SELECT COUNT(*) FROM graphitron_session_handle_member m
-         WHERE m.graph_name = sp.graph_name AND m.member_name = sp.member) > 1
- GROUP BY sp.graph_name, sp.source_name, sp.source_line, sp.source_column
-UNION ALL
--- A $session binding whose parameter is not declared as what it reads, on the full spelling. A
--- primitive may bind its boxed parameter and no other pair is loosened.
-SELECT t.graph_name, t.source_name, t.source_line, t.source_column,
-       'SESSION_BINDING_TYPE_MISMATCH',
-       MIN(t.bound_to || ': parameter ' || t.parameter_name || ' is ' || t.parameter_type
-           || ', expected ' || t.expected)
-  FROM session_binding_type t
- WHERE t.expected IS NOT NULL
-   AND t.parameter_type <> t.expected
-   AND NOT EXISTS (SELECT 1 FROM (VALUES ('boolean', 'java.lang.Boolean'), ('byte', 'java.lang.Byte'),
-                                         ('char', 'java.lang.Character'), ('short', 'java.lang.Short'),
-                                         ('int', 'java.lang.Integer'), ('long', 'java.lang.Long'),
-                                         ('float', 'java.lang.Float'), ('double', 'java.lang.Double'))
-                          b (prim, boxed)
-                    WHERE b.prim = t.expected AND b.boxed = t.parameter_type)
- GROUP BY t.graph_name, t.source_name, t.source_line, t.source_column;
+-- A $session binding the session configuration cannot answer, at the written position of the
+-- string, once per code however many of its entries offend. Which entries, and what is wrong with
+-- each, is graphitron_argmapping_pair_defect's: this row is the verdict and those rows its detail.
+SELECT DISTINCT r.graph_name, r.source_name, r.source_line, r.source_column, r.code,
+       CAST(NULL AS VARCHAR)
+  FROM graphitron_argmapping_pair_defect_rule r;
 COMMENT ON VIEW graphitron_entry_defect_rule IS 'One row the entry-defect rule computes, in the shape graphitron_entry_defect stores: the rule itself, evaluated on demand rather than read off disk. For example a capture inserts this view''s rows for one graph into graphitron_entry_defect, which is the name every reader spells; naming this relation instead asks for on-demand evaluation and gets it.';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.graph_name IS 'the owning graph''s partition, carried from the entry; the leading key dimension that keeps one workspace''s graphs apart';
 -- COMMENT ON COLUMN graphitron_entry_defect_rule.source_name IS 'the file the offending directive was written in, the first of the three columns naming its position; with them a reference into graphql_ast_entry, which is the supertype that makes a @routine application and a path element the same kind of thing to point at';
@@ -16083,6 +16108,9 @@ INSERT INTO meta_grain VALUES
   ('argmapping-parameter',
    'one argMapping entry that binds a parameter of the method its code reference resolved to',
    'graph_name, source_name, source_line, source_column, position', 'sdl'),
+  ('argmapping-pair-defect',
+   'one argMapping entry a rule refuses, under the code that names the rule',
+   'graph_name, source_name, source_line, source_column, position, code', 'sdl'),
   ('facet-binding',
    'one @asFacet application, at the input field it sits on, in one graph',
    'graph_name, type_name, field_name', 'sdl'),
@@ -16730,6 +16758,14 @@ INSERT INTO meta_relation VALUES
    'The Java parameter one written argMapping entry binds: the entry, and the parameter of the method its code reference resolved to that carries the name written on its left.',
    'For example the entry brukerId: $session.brukerId on a @service resolves to the parameter named brukerId of the one method the service names, and an entry whose method is overloaded, missing or compiled without -parameters has no row.',
    'The join a check of an argMapping''s left side needs and every such check used to rebuild: the entry''s string sits under a code reference, the reference resolves to one method, and the method''s parameters carry the names an entry targets. An entry that does not resolve has no row, which is what a defect arm anti-joins on, and a parameter name the class file does not carry resolves nowhere rather than guessing, on the parameter column''s own terms.'),
+  ('graphitron_argmapping_pair_defect_rule', 'argmapping-pair-defect', 'derivation',
+   'One row the argMapping-entry defect rule computes, in the shape graphitron_argmapping_pair_defect stores: the rule itself, evaluated on demand rather than read off disk.',
+   'For example a capture inserts this view''s rows for one graph into graphitron_argmapping_pair_defect, and graphitron_entry_defect_rule rolls them up to the string.',
+   'The rule, kept in the catalog rather than in the stage that runs it. It sits at the entry because that is where each offence is: a string carries several entries, and judging them at the string would force the offences into one value, which the fact schema refuses for a set. The string-grain verdict is read off these rows, so there is one statement of the rule and two grains of its answer.'),
+  ('graphitron_argmapping_pair_defect', 'argmapping-pair-defect', 'derivation',
+   'One written argMapping entry a rule refuses, under the code that names the rule: the entry-grain detail of the defect graphitron_entry_defect states once for the whole string.',
+   'For example brukerId: $session.nope on a handle with no such member is one row reading SESSION_MEMBER_UNKNOWN and the member written, under the string''s one row.',
+   'The child of graphitron_entry_defect at the grain a mapping string is made of. The defect relation is keyed by the written position of a directive, which for an argMapping is the string; a string holds several entries and a message names one, so the specifics of a defect are rows under the string''s row and the string''s row is the verdict. Keeping them apart is what lets every offending entry be reported at once without collapsing a set into one value, and the foreign key to the string''s row is what makes a sweep of the verdict collect its details. Named for the grain and not for a rule: the session rules are the first to judge an entry, not the only ones that could.'),
   ('graphql_schema_problem', 'graph-schema-problem', 'graphql-assembly',
    'Reading this graph''s documents and making a schema of them produced this problem: one of the refusals the toolchain this graph is built with raised, whichever of the four stages raised it.',
    'For example a file that will not parse is one row naming that file, a second file declaring a type an earlier file already declares is another, and a second federation @link is a third.',

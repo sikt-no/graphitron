@@ -502,6 +502,9 @@ class RelationRegistrationGateTest {
         // states no defect population at all: the walk threw, and a thrown error is not a
         // row anything can be held to. What pins it is the entry-defect fact documents.
         registrations.put("graphitron_entry_defect", Arm.UNSHADOWED);
+        // The entry-grain detail of the same collapse, on the same terms.
+        registrations.put("graphitron_argmapping_pair_defect", Arm.UNSHADOWED);
+        registrations.put("graphitron_argmapping_pair_defect_rule", Arm.DERIVED);
         registrations.put("graphitron_defect_type", Arm.UNSHADOWED);
         registrations.put("intent_authored_claim_rejection", Arm.DERIVED);
         // The diagnostics union view is a pure re-projection of its five arms, so its agreement

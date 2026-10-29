@@ -127,7 +127,9 @@ class StageOrderGateTest {
         new Step("ArgMappingParameters", null,
             Set.of("graphitron_argmapping_parameter")),
         new Step("EntryDefects", "graphitron_entry_defect_rule",
-            Set.of("graphitron_entry_defect")));
+            Set.of("graphitron_entry_defect")),
+        new Step("ArgMappingPairDefects", "graphitron_argmapping_pair_defect_rule",
+            Set.of("graphitron_argmapping_pair_defect")));
 
     /**
      * The roster is the stratum, name for name and write set for write set, in order. Without this

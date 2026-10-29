@@ -11,8 +11,8 @@ import java.util.List;
 import java.util.Set;
 
 import static no.sikt.graphitron.model.Tables.CODE_CLASS;
+import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_PAIR_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_ARGMAPPING_SITE;
-import static no.sikt.graphitron.model.Tables.GRAPHITRON_ENTRY_DEFECT;
 import static no.sikt.graphitron.model.Tables.GRAPHITRON_SESSION_HANDLE_MEMBER;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SESSION_HANDLE;
 import static no.sikt.graphitron.model.Tables.STORE_GRAPH_SOURCE;
@@ -26,10 +26,11 @@ import static org.jooq.impl.DSL.selectOne;
  * hold.
  *
  * <p>The first kind is five defect codes, each a stored {@code graphitron_entry_defect} row at the
- * written position of the mapping string, one row per string and code naming one offending entry.
- * The verdict is the row; what this class adds is the coordinate the string sits on, from
- * {@code graphitron_argmapping_site}, the members the handle offers where a member is unknown,
- * from {@code graphitron_session_handle_member}, and the message.
+ * written position of the mapping string, with one {@code graphitron_argmapping_pair_defect} row
+ * under it for every entry that offends. Each offending entry is one error. What this class adds
+ * is the coordinate the string sits on, from {@code graphitron_argmapping_site}, the members the
+ * handle offers where a member is unknown, from {@code graphitron_session_handle_member}, and the
+ * message.
  *
  * <p>The second kind has no written SDL position, which is the defect relation's key, so it is
  * read and not stored: a handle row with no class row under any source the graph reads. It mints
@@ -45,8 +46,8 @@ public final class SessionIdentityDefects {
         "SESSION_MEMBER_AMBIGUOUS", "SESSION_BINDING_TYPE_MISMATCH");
 
     /** Every relation this component's statements name. */
-    public static final Set<Table<?>> READS = Set.of(GRAPHITRON_ENTRY_DEFECT,
-        GRAPHITRON_ARGMAPPING_SITE, GRAPHITRON_SESSION_HANDLE_MEMBER, STORE_GRAPH_SESSION_HANDLE,
+    public static final Set<Table<?>> READS = Set.of(
+        GRAPHITRON_ARGMAPPING_PAIR_DEFECT, GRAPHITRON_ARGMAPPING_SITE, GRAPHITRON_SESSION_HANDLE_MEMBER, STORE_GRAPH_SESSION_HANDLE,
         STORE_GRAPH_SOURCE, CODE_CLASS);
 
     /** One stored defect, with the coordinate its mapping string sits on and what its message needs. */
@@ -83,7 +84,7 @@ public final class SessionIdentityDefects {
 
     /** The defect rows and the unresolved handle over {@code graphName}'s partition. */
     public static Detection detect(DSLContext dsl, String graphName) {
-        var defect = GRAPHITRON_ENTRY_DEFECT;
+        var defect = GRAPHITRON_ARGMAPPING_PAIR_DEFECT;
         var site = GRAPHITRON_ARGMAPPING_SITE;
         var offered = String.join(", ", dsl
             .selectDistinct(GRAPHITRON_SESSION_HANDLE_MEMBER.MEMBER_NAME)
@@ -105,7 +106,8 @@ public final class SessionIdentityDefects {
                     : r.value2(),
                 r.value3(), new SourceLocation(r.value5(), r.value6(), r.value4())));
         var sorted = bindings.stream()
-            .sorted(Comparator.comparing(Binding::coordinate).thenComparing(Binding::code))
+            .sorted(Comparator.comparing(Binding::coordinate).thenComparing(Binding::code)
+                .thenComparing(Binding::detail))
             .toList();
 
         var handle = STORE_GRAPH_SESSION_HANDLE;

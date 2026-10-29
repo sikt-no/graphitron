@@ -109,7 +109,9 @@ public final class DerivationStratum {
                 SessionHandleMembers::derive),
             step("ArgMappingParameters", "graphitron_argmapping_parameter",
                 ArgMappingParameters::derive),
-            step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive));
+            step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive),
+            step("ArgMappingPairDefects", "graphitron_argmapping_pair_defect",
+                ArgMappingPairDefects::derive));
     }
 
     /**

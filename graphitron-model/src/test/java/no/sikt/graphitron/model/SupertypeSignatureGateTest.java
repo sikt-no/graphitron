@@ -340,7 +340,13 @@ class SupertypeSignatureGateTest {
         // about. That turned out to be wrong in its premise rather than its reasoning: all three
         // spell a coordinate, and the grammar already tells them apart, so the collapsed relation
         // keys on the coordinate with neither a nullable column nor a discriminator.
-        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated"));
+        Set.of("graphitron_ast_input_value_deprecated_entry", "graphitron_deprecated"),
+        // One defect at two grains, decided and not a supertype owed: the string's row is the
+        // verdict a position carries, and the entry's row is the specific of each entry under it,
+        // tied by a foreign key so the verdict's sweep collects the details. The payload is the
+        // same column because a detail is one thing at either grain; folding them would put a
+        // nullable position beside a discriminator saying which grain a row is.
+        Set.of("graphitron_argmapping_pair_defect", "graphitron_entry_defect"));
 
     /**
      * Every view that reconstructs a set by unioning its members and naming its payload, as
