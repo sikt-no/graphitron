@@ -1,7 +1,7 @@
 ---
 id: R1120
 title: "The POM switches session identity on; the consumer supplies it per request as code"
-status: Ready
+status: In Progress
 bucket: feature
 priority: 4
 theme: runtime-connection
