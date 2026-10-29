@@ -15,8 +15,6 @@
 
     <properties>
         <maven.deploy.skip>true</maven.deploy.skip>
-        <!-- Increment when init.sql changes to force jOOQ regeneration on incremental builds -->
-        <jooq.codegen.schema.version>2.49</jooq.codegen.schema.version>
         <db.url>jdbc:tc:postgresql:18:///rewrite_test?TC_TMPFS=/testtmpfs:rw&amp;TC_INITSCRIPT=file:${project.basedir}/src/main/resources/init.sql</db.url>
         <db.username>postgres</db.username>
         <db.password>postgres</db.password>
@@ -69,6 +67,35 @@
                 </configuration>
             </plugin>
             <plugin>
+                <!-- The catalog's version is a hash of what it is generated from, init.sql and this
+                     pom's codegen configuration, so jOOQ regenerates exactly when either changes and
+                     no contributor has a version to bump. -->
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-antrun-plugin</artifactId>
+                <version>3.2.0</version>
+                <executions>
+                    <execution>
+                        <id>sakila-catalog-inputs-sha</id>
+                        <phase>initialize</phase>
+                        <goals>
+                            <goal>run</goal>
+                        </goals>
+                        <configuration>
+                            <exportAntProperties>true</exportAntProperties>
+                            <target>
+                                <checksum algorithm="SHA-256" totalproperty="sakila.catalog.inputs.sha"
+                                          todir="${project.build.directory}/catalog-inputs-sha">
+                                    <fileset dir="${project.basedir}">
+                                        <include name="src/main/resources/init.sql"/>
+                                        <include name="pom.xml"/>
+                                    </fileset>
+                                </checksum>
+                            </target>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+            <plugin>
                 <groupId>org.jooq</groupId>
                 <artifactId>jooq-codegen-maven</artifactId>
                 <executions>
@@ -119,7 +146,7 @@
                                 </strategy>
                                 <database>
                                     <includes>public\..*|nodeidfixture\..*|idreffixture\..*|multischema_a\..*|multischema_b\..*</includes>
-                                    <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
+                                    <schemaVersionProvider>${sakila.catalog.inputs.sha}</schemaVersionProvider>
                                     <includeIndexes>true</includeIndexes>
                                     <forcedTypes>
                                         <!-- R413: converter-backed domain column. Maps the
@@ -190,7 +217,7 @@
                                 <database>
                                     <inputSchema>singleschema</inputSchema>
                                     <includes>singleschema\..*</includes>
-                                    <schemaVersionProvider>${jooq.codegen.schema.version}</schemaVersionProvider>
+                                    <schemaVersionProvider>${sakila.catalog.inputs.sha}</schemaVersionProvider>
                                     <includeIndexes>true</includeIndexes>
                                 </database>
                                 <target>
