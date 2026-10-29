@@ -301,6 +301,26 @@ class SessionHookExecutionTest {
     }
 
     @Test
+    void inputBuiltWithoutTheFactory_failsBeforeAnyStatement_evenForOperationsThatTouchNoTable() {
+        // ExecutionInput is graphql-java's type, so the factory cannot be required by signature:
+        // the instrumentation is the enforcer, and it refuses a plain input whatever the operation
+        // reads, introspection included, before a connection is taken.
+        var opened = new CopyOnWriteArrayList<Connection>();
+        var runtime = no.sikt.graphitron.generated.Graphitron.runtime(countingDataSource(opened), SQLDialect.POSTGRES);
+        var engine = runtime.newGraphQL(no.sikt.graphitron.generated.Graphitron.buildSchema(b -> {})).build();
+
+        for (String query : List.of("{ __typename }", "{ __schema { queryType { name } } }")) {
+            assertThatThrownBy(() -> engine.execute(
+                    graphql.ExecutionInput.newExecutionInput().query(query).build()))
+                .as(query)
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("newOwnedExecutionInput")
+                .hasMessageContaining("no session state");
+        }
+        assertThat(opened).as("refused before any connection was taken").isEmpty();
+    }
+
+    @Test
     void chainedInstrumentation_stillLetsTheRejectionEscape_inEitherOrder() {
         // Pins the graphql-java premise the override rests on: a throw from
         // instrumentExecutionResult escapes execute, also from inside a ChainedInstrumentation,

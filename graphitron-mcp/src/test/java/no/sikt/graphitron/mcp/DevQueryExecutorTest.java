@@ -56,6 +56,54 @@ class DevQueryExecutorTest {
         }
         """;
 
+    /**
+     * A schema that mounts identity: the generated executor takes the generated {@code SessionState}
+     * in the fifth position, and the consumer's own {@code DevSession} builds one from the claims.
+     */
+    private static final String SESSION_EXECUTOR_SOURCE = """
+        package com.example.sess;
+
+        import java.sql.Connection;
+        import java.util.Map;
+
+        public final class GraphitronDevExecutor {
+            public static String execute(Connection connection, String dialect, String query,
+                    Map<String, Object> variables, SessionState session, Map<String, Object> contextArgs) {
+                if (session == null) {
+                    throw new IllegalStateException("needs a session state");
+                }
+                return "session=" + session.claims();
+            }
+        }
+        """;
+
+    private static final String SESSION_STATE_SOURCE = """
+        package com.example.sess;
+
+        public record SessionState(String claims) {}
+        """;
+
+    private static final String DEV_SESSION_SOURCE = """
+        package com.example.sess;
+
+        public final class DevSession {
+            public static SessionState of(String claims) {
+                if ("reject".equals(claims)) {
+                    throw new IllegalArgumentException("claims refused by the session builder");
+                }
+                return new SessionState(claims);
+            }
+
+            public static String wrongReturn(String claims) {
+                return claims;
+            }
+
+            public SessionState notStatic(String claims) {
+                return new SessionState(claims);
+            }
+        }
+        """;
+
     private static final String DRIVER_SOURCE = """
         package com.example.fakedb;
 
@@ -139,6 +187,9 @@ class DevQueryExecutorTest {
         classesDir = Files.createDirectories(tempDir.resolve("graphitron-classes"));
         libDir = Files.createDirectories(tempDir.resolve("lib"));
         compile(EXECUTOR_SOURCE, "com/example/GraphitronDevExecutor.java", classesDir);
+        compile(SESSION_STATE_SOURCE, "com/example/sess/SessionState.java", classesDir);
+        compile(SESSION_EXECUTOR_SOURCE, "com/example/sess/GraphitronDevExecutor.java", classesDir);
+        compile(DEV_SESSION_SOURCE, "com/example/sess/DevSession.java", classesDir);
         compile(DRIVER_SOURCE, "com/example/fakedb/FakeDriver.java", libDir);
         Path services = Files.createDirectories(libDir.resolve("META-INF/services"));
         Files.writeString(services.resolve("java.sql.Driver"), "com.example.fakedb.FakeDriver\n");
@@ -149,7 +200,7 @@ class DevQueryExecutorTest {
         Files.createDirectories(sourceFile.getParent());
         Files.writeString(sourceFile, source);
         int result = ToolProvider.getSystemJavaCompiler().run(null, null, null,
-            "-d", outputDir.toString(), sourceFile.toString());
+            "-d", outputDir.toString(), "-cp", outputDir.toString(), sourceFile.toString());
         assertThat(result).as("javac exit code for " + relativePath).isZero();
     }
 
@@ -240,5 +291,65 @@ class DevQueryExecutorTest {
         DevQueryExecutor.execute(wiring(), db("c"), "{ ping }", null, null);
         assertThatThrownBy(() -> Class.forName("com.example.GraphitronDevExecutor"))
             .isInstanceOf(ClassNotFoundException.class);
+    }
+
+    private DevQueryExecutor.Wiring sessionWiring() {
+        return new DevQueryExecutor.Wiring("com.example.sess", classesDir, List.of(libDir));
+    }
+
+    private DevQueryExecutor.DbConfig sessionDb(String claims, String session) {
+        return new DevQueryExecutor.DbConfig("jdbc:fake:dev", "dev", "secret", "POSTGRES", claims, session);
+    }
+
+    @Test
+    void sessionMethod_isResolvedOnTheProjectClassesAndRunBeforeTheExecutor() throws Exception {
+        String result = DevQueryExecutor.execute(sessionWiring(),
+            sessionDb("{\"sub\":\"u1\"}", "com.example.sess.DevSession#of"), "{ ping }", null, null);
+        assertThat(result).isEqualTo("session={\"sub\":\"u1\"}");
+    }
+
+    @Test
+    void missingSessionMethod_failsLoudNamingTheConfigurationKnob() {
+        assertThatThrownBy(() -> DevQueryExecutor.execute(sessionWiring(),
+                sessionDb("c", null), "{ ping }", null, null))
+            .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
+            .hasMessageContaining("<devDatabase><session>")
+            .hasMessageContaining("GRAPHITRON_DEV_SESSION");
+        assertThat(System.getProperty(CLOSED)).as("connection closed on failure too").isEqualTo("true");
+    }
+
+    @Test
+    void sessionMethodOfTheWrongShape_isRejectedWithItsOwnMessage() {
+        for (String wrong : List.of("com.example.sess.DevSession#wrongReturn",
+                "com.example.sess.DevSession#notStatic")) {
+            assertThatThrownBy(() -> DevQueryExecutor.execute(sessionWiring(),
+                    sessionDb("c", wrong), "{ ping }", null, null))
+                .as(wrong)
+                .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
+                .hasMessageContaining(wrong)
+                .hasMessageContaining("public static method taking the claims String and returning")
+                .hasMessageContaining("com.example.sess.SessionState");
+        }
+    }
+
+    @Test
+    void sessionMethodThatDoesNotResolveOrIsMalformed_isRejectedNamingTheReference() {
+        assertThatThrownBy(() -> DevQueryExecutor.execute(sessionWiring(),
+                sessionDb("c", "com.example.sess.DevSession#absent"), "{ ping }", null, null))
+            .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
+            .hasMessageContaining("does not resolve")
+            .hasMessageContaining("com.example.sess.DevSession#absent");
+        assertThatThrownBy(() -> DevQueryExecutor.execute(sessionWiring(),
+                sessionDb("c", "DevSession"), "{ ping }", null, null))
+            .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
+            .hasMessageContaining("fqcn#method");
+    }
+
+    @Test
+    void sessionMethodThatThrows_surfacesItsMessageVerbatim() {
+        assertThatThrownBy(() -> DevQueryExecutor.execute(sessionWiring(),
+                sessionDb("reject", "com.example.sess.DevSession#of"), "{ ping }", null, null))
+            .isInstanceOf(DevQueryExecutor.DevExecutionException.class)
+            .hasMessage("claims refused by the session builder");
     }
 }

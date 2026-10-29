@@ -59,7 +59,7 @@ class TestServiceStub {
 
     /**
      * Fixture: a {@code $session}-bound parameter ({@code argMapping: "identity: $session"}).
-     * The handle type is {@code String}, matching {@code SessionHooksFixtures}' handled arms,
+     * The handle type is {@code String}, matching the string-handled identity fixture,
      * so the factory-shape tests can pin that the bound parameter grows no factory slot.
      */
     public static String principalOf(org.jooq.DSLContext dsl, String identity) {
