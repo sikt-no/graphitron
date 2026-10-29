@@ -33,7 +33,6 @@ Tracks remaining generator work. For the model taxonomy, see [Code Generation Tr
 | `R1099` | Inputs navigate through output fields, and argMapping names its source <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | Ready | 2026-10-25 <sub>created 2026-10-24</sub> | [plan](input-navigation-through-output-fields.md) |
 | `R1100` | A node type can narrow its key and still accept ids minted under the old key | In Progress | 2026-10-29 <sub>created 2026-10-26</sub> | [plan](legacy-node-key-shape.md) |
 | `R851` | Retire @classified, @classifiedType and @commits: the corpus asserts relations, not leaves <sub>blocked by: [derived-read-cost-is-a-shape-problem](derived-read-cost-is-a-shape-problem.md)</sub> | In Progress | 2026-08-27 | [plan](corpus-directives-to-expect-equals.md) |
-| `R1088` | A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade | In Review | 2026-10-29 <sub>created 2026-10-22</sub> | [plan](decode-graphitron-9-cursors.md) |
 | `R623` | Redirect Maven output to a log file in web sessions via .mvn/maven.config | Spec | 2026-08-11 <sub>created 2026-08-10</sub> | [plan](web-session-maven-build-log.md) |
 | `R842` | Refused patterns gather in one section instead of a residue in every table | Spec | 2026-08-26 | [plan](refused-patterns-gather-in-one-section.md) |
 | `R1120` | The POM switches session identity on; the consumer supplies it per request as code | Spec | 2026-10-29 <sub>created 2026-10-28</sub> | [plan](owned-session-state-supplied-per-request.md) |
@@ -602,7 +601,6 @@ Cross-cutting view of every Active and Backlog item by `theme:`. Themes are a cl
 
 ### pagination
 
-- `R1088` [**A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade**](decode-graphitron-9-cursors.md) — In Review, enhancement
 - `R297` [**Collapse the shareable boolean on ConnectionType/EdgeType/PageInfoType; read federation flags off schemaType()**](collapse-connection-shareable-boolean.md) — Backlog, tech-debt
 - `R10` [**Drop the assembled-schema rebuild in favour of per-variant graphql-java forms**](drop-assembled-schema-rebuild.md) — Backlog, cleanup
 - `R208` [**Retire the @asConnection(connectionName:) deprecated argument**](retire-connection-name-override.md) — Backlog, cleanup
