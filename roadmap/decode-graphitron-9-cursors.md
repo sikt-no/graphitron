@@ -1,7 +1,7 @@
 ---
 id: R1088
 title: "A cursor issued by Graphitron 9 is rejected, so a client that stores cursors loses its place at the upgrade"
-status: In Review
+status: Ready
 bucket: enhancement
 priority: 3
 theme: pagination
@@ -215,3 +215,25 @@ Verdict: sign off. Question one passes: a client that stored a Graphitron 9 curs
 The R1085 edit `## Roadmap entries` assigns to this session is made in this commit: R1085 keeps only the error-path fix.
 
 **Non-blocking.** The format change is consumer-visible on the wire (the cursor of every 10 snapshot changes), so the Done gate's changelog line should say so alongside the 9-compatibility it restores.
+
+### Round 4 (2026-10-29, In Review -> Done, reviewer session 01FY5UvsZbWjdXJ99oomUy5E)
+
+Verdict: rework, on the Done gate's retirement-sweep obligation. Everything else passes, and the rework is two contributor-doc paragraphs; no code change is asked.
+
+Question one passes. The delivered codec is the approved one: `ConnectionHelper` writes and reads the 9 JSON-array format in place of the NUL tuple, decode binds through the new `ColumnValues.fromDatabase` (database-type parse, then `converter.from`, then the precision check), `PlanCompileGraph` is untouched and the frozen-scaffold pin gains `util.ColumnValues`, no dependency is added, and the emitted code is Java 17. The three departures in "Implementation notes" are recorded in the body and each is sound. The enum literal goes further: it is what makes "the database value" true for an enum column, it is the text 9 wrote, and two cases pin it (a 10 cursor and a 9 cursor on the NC-17 film). The added `FilmSort.RATING` fixture and `CursorFormatExecutionTest` class are in proportion. The reader rejects every malformed shape the plan lists, and each failure is an `IllegalArgumentException` that reaches the catch.
+
+Question two passes. `CursorFormatExecutionTest` demonstrates the Goal directly: 9 cursors built in SQL with `jsonArray` (`WzJd` pages to films 3 and 4 with `endCursor` `WyI0Il0`, the text-plus-numeric order, `before:`/`last:`, the numeric composite key) keep their place, and the completion boundary is rejected. It also covers the converter column (10 forward and backward, and a 9 cursor in PostgreSQL's offset rendering), the Oracle `DATE` rendering, the pinned format, escapes, a `null` element and the malformed shapes. `ColumnValuesTest` pins `fromDatabase` as the plan asks. The three `GraphQLQueryTest` malformed-cursor tests are rebuilt. The existing round-trip families pass unchanged. There are no code-string assertions on generated bodies. `mvn install -Plocal-db` passes on trunk at 5500942. My first run failed in `SortKeyOrderPipelineTest` on `stint_badge_person_fkey`; that was the stale-sandbox-DB cascade from my own fast-forward bringing in new DDL, and it passed green after a re-seed. The declared retired vocabulary greps clean outside `graphitron-mcp`, and the manual changes carry no roadmap-internal markers.
+
+**Finding 1 (retirement sweep: prose describing the replaced mechanism). Two contributor docs still prescribe `field.getDataType().convert()` as the cursor's decode path.**
+
+The sweep asks the reviewer to skim the item's touched areas for prose paraphrasing what the item replaced. This item moved cursor decode off the converted `DataType.convert` on purpose: the design measured that call returning `null` for a converter's user text and handing back a user-type input unconverted. The Implementation notes record that the call left `ConnectionHelper`. Two docs still name it as the cursor mechanism:
+
+- `docs/architecture/reference/emitter-conventions.adoc`, "Cursor encode/decode": "*Encode/decode a seek value*: `field.getDataType().convert(rawValue)` ; the `DataType` and its registered `Converter` do the coercion". This is false for the delivered codec on both sides. Encode writes the converter's `to` of the record value (an enum as its literal); decode goes through `ColumnValues.fromDatabase`. As a convention it prescribes the call this item fixed a defect by leaving, so a contributor who follows it reintroduces the converter-column failure.
+- `docs/architecture/principles/development-principles.adoc`, "Model metadata over parallel type systems": the exemplar says cursor "encode/decode goes through `field.getDataType().convert()` instead of a hand-rolled type-tag system". The principle itself still holds, since the cursor stays column-driven with no type tag, but the named call is no longer the one used.
+
+What would satisfy it: restate both passages against the delivered codec. Encode writes each value's database value (the column converter's `to`, an enum's literal) as a JSON string. Decode parses it as the column's database type and runs the converter through `ColumnValues.fromDatabase`, never the converted `DataType.convert`. Keep the no-type-tag point the principle makes. Neither spec gate named these files under Implementation, so this is a gap in the plan as much as in the delivery. It is small, but it is the convention a future cursor change will be built from.
+
+**Non-blocking.**
+
+- No test exercises `writeJsonString`'s escaping on the encode side: no sakila text holds `"`, `\` or a control character, and the escape test goes through decode only. The emitted writer reads correctly (`"` and `\` backslashed, `\n` and `\t` short, every other character below U+0020 as `\u00XX`). The plan did not ask for an encode-side test either, so this is a note, not a finding.
+- Round 3's changelog note still applies at Done: the line should say the wire format changed for 10-snapshot cursors, alongside the 9 compatibility it restores.
