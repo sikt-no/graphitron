@@ -85,7 +85,7 @@ The conversion runs inside the generated `NodeIdEncoder.decodeColumns`, before i
 4. Pick the current key's values out of the checked legacy values and re-encode them with `encode(typeId, ...)`. Return that id. `encode` writes `toString()` of each value, and the exact rule guarantees a checked value's `toString()` is the text `encode<Type>` writes for it, so the result is the id the row's current encode produces.
 5. Any other arity returns the id unchanged; `decodeColumns`' own arity check then rejects it.
 
-The pick in step 4 is a position map computed at build time by column name, so the dropped columns need not be last and the legacy shape may list the key columns in another order.
+The pick in step 4 is a position map the store derives by column (`current_position`, below), so the dropped columns need not be last and the legacy shape may list the key columns in another order.
 
 On a successful conversion it logs the type id, once per type id per process at `INFO` and at `DEBUG` after that, the pattern `reportFold` already uses (a concurrent set of seen type ids). It logs no client-supplied value. This is what tells a schema owner the legacy shape can go: there is no metrics dependency in the generated runtime, and a consumer that wants a count can count the lines.
 
@@ -103,68 +103,90 @@ A legacy id and its current form are different strings for one row, so anything 
 
 A DELETE with `missingAsDeleted: true` answers a missing row with an id built from the key values its WHERE compared (`TypeFetcherGenerator.missingRowEcho`), never from the input string. For a legacy input those are the converted values, so the echo is the current-form id. That is the only form Graphitron can mint itself, it is what `node(id:){ id }` and a deleted row's `RETURNING` already answer, and it keeps "every id in a response is the current form" true without an exception. The javadoc on `DeleteRows.IdempotentByPrimaryKey` and `missingRowEcho` that says the echo is "the id the client sent" is reworded to "the id the client sent, in the current shape".
 
+## A store fact keyed by type id
+
+The legacy shape is a fact of the wire type id, not of a GraphQL type or a decode helper: `decodeColumns` knows the type id and nothing else about its target, and an id's type id is what names its id space. It lands in the fact store (the SQL model `graphitron-model.sql` that capture fills from the SDL, the jOOQ catalog and the classpath), and nowhere in the walked `GraphitronSchema` model. That follows the strangler rule in `docs/architecture/explanation/pipeline-overview.adoc`: while the walk and the store are both live, a new capability is a new fact relation, never a new leaf component or walk-side registry. Nothing in `NodeType`, `HelperRef.Decode`, `NodeProvenance`, `TypeBuilder` or `BuildContext` changes.
+
+Keying by type id also closes a gap a per-helper shape would leave. `BuildContext.resolveOneRecordDecode` serves the `@service` jOOQ-record path from catalog metadata without minting a `HelperRef.Decode`, and `JooqRecordInstantiationEmitter` calls `decodeColumns` directly; a shape carried on decode helpers would never reach it. A shape keyed by type id reaches every caller.
+
+**Capture**, following the modeling discipline (`docs/architecture/explanation/modeling-discipline.adoc`): base facts first, shaped like the `keyColumns` facts they sit beside.
+
+* `graphitron_node_legacykeycolumn_entry`: one `legacyKeyColumns` element of an `@node`, as written, keyed `(graph_name, type_name, position)` with a `column_ref`, beside `graphitron_node_keycolumn_entry` and written by the same capture. Wherever `keyColumns` has an AST-level decode relation as well (`graphitron_ast_node_keycolumn_entry`), `legacyKeyColumns` gets its twin, so the two arguments are captured the same way.
+* `sql_node_legacy_key_column`: one position of a table class's `__NODE_LEGACY_KEY_COLUMNS` array, naming the column it resolves to, beside `sql_node_key_column`. Its foreign key is into `sql_node_metadata`, so a legacy array on a class that publishes no usable identity pair cannot be stored; that is the "legacy shape without a node key" rule, held by the schema rather than by code.
+* `sql_node_legacy_key_unreadable`: a table whose class declares `__NODE_LEGACY_KEY_COLUMNS` that cannot be used (not a non-empty `Field<?>[]`, a null entry, an entry naming no column of the table, or declared on a class without a usable identity pair). Separate from `sql_node_metadata_unreadable` on purpose: the legacy constant is an independent axis, and a malformed one must not flip the table's identity to the fallback tiers. `JooqCatalog` gains a reading of the constant with its own three-way outcome (absent, present, malformed) through the same `statedConstant` and `columnOf`, and leaves `nodeIdMetadata`, `NodeIdMetadata` and `stateNodeMetadata` as they are.
+
+**Derive**, in the anchoring phase, as a stage after `NodeKeyColumns`:
+
+* `graphitron_node_legacy_keycolumn`: one position of the legacy key shape a wire type id answers to in a graph. Columns: `graph_name`, `type_id`, `position`, `column_name`, the table's `table_source_name` / `table_schema` / `table_name`, `current_position` (the column's position in the current key, `NULL` for a column the current key dropped; this is the pick the conversion makes, computed once here rather than by name-matching in the emitter) and `column_origin` (`SDL_PINNED` or `JOOQ_METADATA`, carried because the fix for a catalog-origin defect is in the generator configuration, not the SDL). Primary key `(graph_name, type_id, position)`, which is "one legacy shape per type id" held by the database; `UNIQUE (graph_name, type_id, column_name)` holds "no repeats"; a foreign key into `sql_column`.
+* The contributors are every node type (`graphitron_node`, its current key from `graphitron_node_keycolumn`, its legacy list from the SDL entry or else its bound table's `sql_node_legacy_key_column`) and every table-bound non-node type over a table with usable node metadata (its type id from `sql_node_metadata`, its current key from `sql_node_key_column`): the population a `@nodeId(typeName:)` catalog decode or the record path can decode for.
+* Like `NodeKeyColumns`, the stage anchors only shapes that pass every rule below, all positions or none. A shape that fails is absent here and present as a defect.
+
+**Read.** A store read beside `StoreNodeTables`, assembling each type id's legacy columns as `ColumnRef`s on a `TableRef` (the constants class from `sql_schema`, as `StoreNodeTables` does) with the current positions. It rides `StoreDetections` as an emission fact, the way `keyProjections` does, and `GraphQLRewriteGenerator` hands it to `NodeIdEncoderClassGenerator.generate`.
+
+The store's other node relations, and the LSP hover and MCP schema view reading them, are unchanged; a hover line for the legacy shape is a later nicety, not part of this item.
+
 ## Build-time rules
 
-`legacyKeyColumns` (or `__NODE_LEGACY_KEY_COLUMNS`) is refused at build time when:
+A legacy shape is refused when:
 
 * **It does not cover the current key.** Some current key column is missing from it, so a legacy id cannot be converted without reading the row.
 * **It is the current key reordered.** Given the rule above, a legacy shape of the current key's arity holds exactly the current key's columns; the two shapes could not be told apart by arity, which the conversion relies on.
 * **It names a column the table lacks.**
-* **It names the same column twice.** The conversion matches by column name.
+* **It names the same column twice.** The conversion picks by column.
 * **SDL and the catalog both state one and the lists differ**, in content or order. See below.
-* **Its type id is shared with another decode target over a different table or key.** The legacy table in `NodeIdEncoder` is keyed by type id, because `decodeColumns` knows the type id and nothing else about its target. Node type ids are already unique (`TypeBuilder`'s type-id uniqueness check); a `@nodeId(typeName:)` leaf naming a `@table` type decodes through a catalog decode minted from that table's metadata, and two tables can publish one `__NODE_TYPE_ID` (the `collide_a` / `collide_b` fixtures do). When one of two decode targets sharing a type id declares a legacy shape and they differ in table or current key, the conversion would rewrite ids the other target owns. The mint (`BuildContext.catalogNodeDecode`) refuses it on the leaf. Two targets over one table with one current key share the shape, which is right: they read one id space.
-
-There is no separate "declared on a type with no node key" rule. Every `NodeType` has a node key (declared, catalog, or primary key; a missing primary key is already refused), and a catalog class stating `__NODE_LEGACY_KEY_COLUMNS` without `__NODE_KEY_COLUMNS` is malformed metadata, below.
-
-### Typed rejections
-
-The rules land as typed `Rejection` leaves with their own `lspCode()`. A typed leaf is a sealed record a diagnostic consumer switches on instead of parsing prose; the `@node` failures in `TypeBuilder.buildTableType` are untyped `Rejection.structural` today.
-
-* A new sub-seal `NodeKeyError` of `Rejection.AuthorError`, under the `graphitron.node-key.` namespace, alongside `PivotError` and `WireCoercionError`:
-  * `LegacyShapeMissesKeyColumns(typeName, missing)`, `graphitron.node-key.legacy-misses-key-columns`;
-  * `LegacyShapeReordersKey(typeName)`, `graphitron.node-key.legacy-reorders-key`;
-  * `LegacyShapeRepeatsColumn(typeName, column)`, `graphitron.node-key.legacy-repeats-column`;
-  * `CatalogDisagreement(typeName, argument, sdlColumns, catalogColumns)`, `graphitron.node-key.catalog-disagreement`, where `argument` is `keyColumns` or `legacyKeyColumns`;
-  * `LegacyShapeTypeIdShared(typeId, typeName, otherTypeName)`, `graphitron.node-key.legacy-type-id-shared`.
-* An unresolvable column in either list is the existing `Rejection.unknownNodeIdKeyColumn` (`AuthorError.UnknownName`, attempt kind `NODEID_KEY_COLUMN`, with candidates), which the diagnostics glossary already documents for `keyColumns` and `ArgmappingProjectionDefects` already mints. `TypeBuilder`'s joined `keyColumns` prose moves onto it, reporting the first unresolved column; the LSP already flags every misspelled element separately.
-
-The existing `keyColumns` rules that the new argument shares (unresolved column, SDL disagreeing with the catalog) are typed alongside, because leaving them prose would give one fault two shapes depending on which argument it is in. The rules the new argument does not share stay `Rejection.structural`: `@node` without `implements Node`, a defaulted key over a table with no primary key, and malformed catalog metadata.
+* **Its type id is shared with another contributor over a different table or current key.** Node type ids are already unique (`NODE_TYPE_ID_SHARED`), but a table-bound non-node type over a metadata table answers to its table's `__NODE_TYPE_ID`, and two tables can publish one (the `collide_a` / `collide_b` fixtures do). If one of them declares a legacy shape, the conversion would rewrite ids the other owns. Two contributors over one table with one current key share the shape, which is right: they read one id space.
+* **The catalog constant is unreadable.** Unlike `NODE_METADATA_UNREADABLE`, which is a warning because a fallback tier answers, there is no fallback here: ignoring the constant would leave every stored legacy id failing at runtime.
 
 ### SDL against the catalog
 
-The current key keeps its rule: SDL `keyColumns` wins, differing column sets reject (now `CatalogDisagreement` with `argument = keyColumns`), differing order warns. The legacy shape is resolved independently, then checked against whichever current key won:
+The current key keeps its rule (SDL `keyColumns` wins, differing sets reject, differing order warns). The legacy shape is resolved independently and checked against whichever current key won:
 
 * only SDL states it, or only the catalog does: that list is the legacy shape;
-* both state it: they must be the same columns in the same order, compared case-insensitively by SQL name, else `CatalogDisagreement` with `argument = legacyKeyColumns`.
+* both state it: they must be the same columns in the same order, compared case-insensitively by SQL name.
 
-There is no order-warning tier for the legacy shape. Its order is the wire format of ids already issued; SDL cannot pin a different order of them, and a list in the wrong order would read every legacy id's values into the wrong columns.
+There is no order-warning tier for the legacy shape. Its order is the wire format of ids already issued, so SDL cannot pin a different order of them, and a list in the wrong order would read every legacy id's values into the wrong columns.
+
+### How the rules are enforced
+
+Each rule is an arm of the `graphitron_entry_defect_rule` view with a roster row, the mechanism that already carries `NODE_KEY_COLUMN_UNRESOLVED`, `NODE_WITHOUT_KEY`, `NODE_TYPE_ID_SHARED` and `NODE_METADATA_UNREADABLE`, so the editor shows every one through the `diagnostic` view with no LSP code:
+
+* `NODE_LEGACY_KEY_COLUMN_UNRESOLVED`, at the element;
+* `NODE_LEGACY_KEY_MISSES_KEY_COLUMN`, `NODE_LEGACY_KEY_REORDERS_KEY`, `NODE_LEGACY_KEY_REPEATS_COLUMN`, `NODE_LEGACY_KEY_DISAGREES_WITH_METADATA`, at the `@node` application, or for a catalog-origin shape at each bound type's `@table` as `NODE_METADATA_UNREADABLE` is;
+* `NODE_LEGACY_TYPE_ID_SHARED`, at each contributing type's `@table`, naming the other on `NODE_TYPE_ID_SHARED`'s terms;
+* `NODE_LEGACY_METADATA_UNREADABLE`, at each bound type's `@table`.
+
+All are `error`. The build fails on them through a new `StoreDetections` family, `NodeLegacyKeyDefects`, on `DefaultPageSizeDefects`' pattern: it reads the stored defect rows over the classification domain and mints one `ValidationError` each, `Rejection.unknownNodeIdKeyColumn` for the unresolved element (the typed leaf `ArgmappingProjectionDefects` already mints for that lookup) and `Rejection.structural` with a message naming the code's remedy for the rest. No new `Rejection` leaf: the roster code is the stable identifier, as it is for every store-native defect.
+
+The existing `keyColumns` rules in `TypeBuilder.buildTableType` stay as they are. They are walk-side prose with store twins already, and moving their build gate onto the store is that rule family's own migration, not this item's.
 
 ## Implementation
 
-* **Directive.** `graphitron-model`'s `directives.graphqls`: `@node` gains `legacyKeyColumns: [String!]` with a description. `BuildContext` gains `ARG_LEGACY_KEY_COLUMNS`.
-* **Catalog.** `JooqCatalog` reads `__NODE_LEGACY_KEY_COLUMNS` beside the other two constants, through the same `statedConstant`, and `validateFields` checks it with the `__NODE_KEY_COLUMNS` shape rules (non-empty `Field<?>[]`, no null entry, every entry a column of the table via `columnOf`) plus "declared without `__NODE_KEY_COLUMNS`". A failure is `NodeIdMetadataLookup.Malformed`, so `nodeIdMetadataDiagnostic` and the capture's `nodeMetadataOf` both see it. `NodeIdMetadata` gains `legacyKeyColumns` (empty when the constant is absent). The relational rules (coverage, reordering, repeats) are not checked here, because the current key they are checked against may come from SDL.
-* **Model.** `NodeType` gains `List<ColumnRef> legacyKeyColumns` after `nodeKeyColumns`, empty when none is declared. `HelperRef.Decode` gains `legacyColumnShape` beside `outputColumnShape`, empty when none, so the emitter reads one shape off every decode it emits, node type or catalog decode alike; `buildNodeType` fills both from one list, as it already does for the current key. `BuildContext.TargetKeys.OfCatalog` gains the legacy list so `catalogNodeDecode` can fill it. `NodeProvenance` does not gain an axis: no reader asks where a legacy shape came from, and when both sources state one they are equal by the rule above.
-* **Classifier.** `TypeBuilder.buildTableType` reads the argument where it reads `keyColumns` (`argStringList(objType, DIR_NODE, ...)`), resolves it with `svc.resolveKeyColumn`, applies the SDL-against-catalog rule, and runs one shared check, a static method on a small `LegacyKeyShape` helper beside `NodeIndex`, returning the first `NodeKeyError` or empty. `BuildContext.catalogNodeDecode` runs the same check on catalog metadata and the type-id sharing check against `NodeIndex` and earlier mints; it returns a rejection the leaf reports instead of a decode.
-* **Emitter.** `NodeIdEncoderClassGenerator` collects every `HelperRef.Decode` with a non-empty legacy shape, one entry per type id, and emits a private static nested record holding the legacy columns (table constants, as `decodeColumns` callers pass them), their parse classes (`SlotParse.parseClasses`) and the `int[]` position map, plus a static map from type id to it, filled in a static initializer (generated sources target Java 17 and avoid `var`; `Map.of` caps at ten entries). It emits `toCurrentId`, the shared slot-check helper, the hit-logging set, and the one-line gate at the top of `decodeColumns`. No call site changes.
+* **Directive.** `graphitron-model`'s `directives.graphqls`: `@node` gains `legacyKeyColumns: [String!]` with a description. The walk reads nothing from it.
+* **Catalog reading.** `JooqCatalog`: the `__NODE_LEGACY_KEY_COLUMNS` reading described above, and `JooqFactCapture` writing `sql_node_legacy_key_column` or `sql_node_legacy_key_unreadable` beside its node-metadata rows, swept with them.
+* **SDL capture.** The `graphitron_node_legacykeycolumn_entry` writer (and its AST twin if `keyColumns` has one) beside the `keyColumns` writers in `GraphitronTypeEntries` / `GraphitronAnchor`.
+* **Store DDL.** The new relations with their comments, registered as `RelationRegistrationGateTest` and `meta_relation` require (owner, grain, mark and sweep), and `meta_gatherer_dependency` updated for the derivation's upstream reads.
+* **Derivation.** A `NodeLegacyKeyShapes` stage after `NodeKeyColumns` writing `graphitron_node_legacy_keycolumn`; the defect arms in `graphitron_entry_defect_rule` and their roster rows.
+* **Detection and read.** `NodeLegacyKeyDefects` as a `StoreDetections` family with its `READS`; the legacy-shape read as an emission-fact member of `StoreDetections`, assembled the way `StoreNodeTables` assembles a node's `TableRef` and `ColumnRef`s.
+* **Emitter.** `NodeIdEncoderClassGenerator.generate` takes the read. It emits a private static nested record per legacy shape holding the legacy columns (table constants, as `decodeColumns` callers pass them), their parse classes (`SlotParse.parseClasses`) and the `int[]` of current positions, plus a static map from type id to it, filled in a static initializer (generated sources target Java 17 and avoid `var`; `Map.of` caps at ten entries). It emits `toCurrentId`, the shared slot-check helper, the hit-logging set and the one-line gate at the top of `decodeColumns`. No call site changes.
 * **Javadoc.** `DeleteRows.IdempotentByPrimaryKey` and `TypeFetcherGenerator.missingRowEcho`, per the echo decision above; the `NodeIdEncoderClassGenerator` class javadoc gains a paragraph on the conversion.
-* **LSP.** `LspVocabulary` binds `DirectiveArg("node", "legacyKeyColumns")` to `CatalogColumnBinding`, as `keyColumns` is bound, so completion, per-element typo flags and hover come for free. `RejectionSeverityCoverageTest` gains a sample per new arm.
-* **Fact store.** No new relation. The store's node relations (`graphitron_ast_node_keycolumn_entry`, `sql_node_key_column`, `graphitron_node_keycolumn`) feed the LSP hover, the MCP schema view and `StoreNodeTables`, none of which has a question about the legacy shape; the emitter reads the classified model. Capturing the argument would add a relation no consumer reads. A store reader that wants it later adds it under the modeling discipline then.
-* **Docs.** The drafts above; the new arms in `docs/architecture/explanation/typed-rejection.adoc`; the `nodeid-key-column` entry of `diagnostics-glossary.adoc` names `legacyKeyColumns` beside `keyColumns`. `RejectionResidueDrainageTest.RESIDUE_LEAVES` gains the new leaves.
-* **Fixtures.** `NodeIdFixtureGenerator.Metadata` gains an optional legacy list, emitted as `__NODE_LEGACY_KEY_COLUMNS`, on one fixture table with a spare column for the catalog-form pipeline tests.
+* **LSP.** `LspVocabulary` binds `DirectiveArg("node", "legacyKeyColumns")` to `CatalogColumnBinding`, as `keyColumns` is bound, so completion and per-element typo flags come for free.
+* **Docs.** The drafts above; the `nodeid-key-column` entry of `diagnostics-glossary.adoc` names `legacyKeyColumns` beside `keyColumns`.
+* **Fixtures.** `NodeIdFixtureGenerator.Metadata` gains an optional legacy list, emitted as `__NODE_LEGACY_KEY_COLUMNS`, on one fixture table with a spare column, plus one malformed case for the unreadable arm.
 
 ## Tests
 
 * **Generated encoder, unit** (`graphitron-sakila-example`, `test/internal`, beside `NodeIdFoldWarningTest`, over the execution fixture's type): `toCurrentId` returns the id unchanged for a current id, a type with no legacy shape, a foreign type id and an unknown arity; converts a legacy id to exactly what `encode` produces from the key values; returns `null` for a legacy id whose dropped value does not parse; logs the type id once at `INFO` and then at `DEBUG`, and no client value. `decodeColumns` over a legacy id returns the current key values.
-* **Catalog, unit** (`JooqCatalogNodeIdMetadataTest`): each malformed `__NODE_LEGACY_KEY_COLUMNS` case, the legacy constant without the key constant, and a well-formed one surfacing on `NodeIdMetadata`.
-* **Build rejections** (a classification test beside `MutationDmlNodeIdClassificationTest`): one case per `NodeKeyError` arm and per argument for `CatalogDisagreement`; an unresolved `legacyKeyColumns` and an unresolved `keyColumns` entry both as `UnknownName` with `NODEID_KEY_COLUMN`; the type-id sharing rule over the `collide_a` / `collide_b` fixtures; and the accepting cases (dropped column first, legacy shape over a defaulted primary-key current key, SDL and catalog equal).
-* **Pipeline:** `NodeType.legacyKeyColumns()` and `decodeMethod().legacyColumnShape()` filled from SDL and from catalog metadata; a catalog decode for a `@table`-only `@nodeId(typeName:)` target carrying the table's legacy shape.
-* **Execution** (`graphitron-sakila-example`). A new node type over `inventory`, `InventoryItem`, with current key `(inventory_id)` and legacy shape `(store_id, inventory_id, last_update)`: dropped columns on both sides of the kept one, so the by-name pick is pinned end to end. `inventory` is chosen because `rental` references it, which a `@reference` case needs; `InventoryUnit` already covers the table as a superkey node with its own type id, so every leaf names its type with `typeName:`. Legacy ids are minted in the test with `encode`:
+* **Catalog reading, unit** (`JooqCatalogNodeIdMetadataTest`): each malformed `__NODE_LEGACY_KEY_COLUMNS` case, the constant on a class without the identity pair, a well-formed one, and a malformed legacy constant leaving `nodeIdMetadata` and `nodeMetadataOf` exactly as they were.
+* **Store, seeded** (`graphitron-model`, on the seeded-store harness the node relations' own tests use): `graphitron_node_legacy_keycolumn` from an SDL shape, from a catalog shape, from both when equal, with `current_position` for a dropped column first, last and in the middle; for a table-bound non-node contributor; absent, with the right defect row, for each rule above.
+* **Pipeline** (on `StoreNodeTablesTest`'s terms, real SDL over the real catalog): the legacy-shape read assembles the columns and current positions an emitted conversion spells, from SDL and from the fixture catalog's constant; each defect code becomes a build error through `NodeLegacyKeyDefects`, with the type-id sharing case over `collide_a` / `collide_b`.
+* **Execution** (`graphitron-sakila-example`). A new node type over `inventory`, `InventoryItem`, with current key `(inventory_id)` and legacy shape `(store_id, inventory_id, last_update)`: dropped columns on both sides of the kept one, so the pick is pinned end to end. `inventory` is chosen because `rental` references it, which a `@reference` case needs; `InventoryUnit` already covers the table as a superkey node with its own type id, so every leaf names its type with `typeName:`. Legacy ids are minted in the test with `encode`:
   * `node` and `nodes` resolve a legacy id, including one whose `last_update` has since changed in SQL, and return the current-form id; `InventoryUnit`'s stale-id `node` case stays null beside it, the contrast between keeping a superkey and narrowing one.
   * A `@nodeId` filter argument and a `@nodeId @reference` input field over `rental` accept a legacy id.
   * Single and bulk UPDATE and DELETE by a legacy id hit the row; the payload ids, and the `missingAsDeleted` echo of a legacy id for a missing row, are current-form.
   * A bulk UPDATE carrying one row's legacy and current ids is refused by the duplicate guard, as two current ids are.
   * A legacy id with an unparseable `last_update` is rejected the way a malformed id is today.
   * `_entities` in the federated schema resolves a legacy id, over a node type there given a legacy shape.
+  * A `@service` jOOQ-record input decoding a legacy id through the record path, the caller no decode helper reaches.
 
 ## Relationship to R1093
 
