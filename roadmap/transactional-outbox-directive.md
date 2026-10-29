@@ -293,7 +293,7 @@ Shipped: the directive and its store vocabulary, the table target, the `<outbox>
 
 Starts once R1120's handle-member relation is on trunk. The leaves relation gains the session-member source: `$session.<member>` resolves against that relation by member name, and the member's `slot_type` and `erased_class` decide the serialization check (a type that cannot be written as JSON is a defect row). The unknown-member rejection is a defect row too, produced by joining this item's captured pairs, including the `<outbox><payload>` pairs from the configuration, to R1120's relation. The emit reads a member through the generated `TenantConnections.sessionMember_<name>(dsl, fieldCoordinate)` accessor called with the emit's own `tx`, the connection the message's statement runs on, never from `env`. On the escape hatch a `$session` source fails the field, as a `$session` service parameter does. The common `<payload>` admits `$session` from here, and the Goal's `actor: $session.userId` is this phase. Until it lands the Goal's common payload reads `$scope` only.
 
-### Phase 2: the function target (shipped)
+### Phase 2: the function target (shipped at `f31c78147`)
 
 Shipped: the capture of routines that are no table, the routine target and its defects, and the emit of one routine call per message. The store did not hold these routines (`sql_routine` was fed from the table census, so it held table-valued functions only), which is why phase 2 began in the capture. What it came to:
 
@@ -304,6 +304,8 @@ Shipped: the capture of routines that are no table, the routine target and its d
 * **Tests.** Fact documents for the capture, the resolving scenario and two defect cases; a pipeline test of the call; an execution test and a direct-call unit test on PostgreSQL against `outbox_emit`, which stamps the aggregate id so a row it wrote is told from one written directly.
 
 ### Phase 3: `@service` and routine writes
+
+Owned by the work that moves `@service` generation onto the store, which builds it on the store-row seam phases 1 and 2 shipped (`OutboxQuery` reads the rows, `OutboxEmitter` renders the companion, and the DML sites call it through `outboxHook`) rather than on a second walk-driven call site. What is left for it to settle is the `$result` source: the companion reads the written rows back by a captured key, and a service return has none.
 
 Starts once R1101 phase 2 (nested scopes join the field transaction) is on trunk; phases 1 and 2 do not wait for it.
 
