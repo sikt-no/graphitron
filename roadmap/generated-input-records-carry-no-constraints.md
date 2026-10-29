@@ -15,14 +15,13 @@ last-updated: 2026-10-29
 ## Goal
 
 An author who puts Jakarta Bean Validation constraints on the input class their `@service` method
-takes, and gives the field's error channel a `{handler: VALIDATION}` member, gets one typed error per
-violated constraint in the payload's `errors` list, with the service never called. Today the same
-schema and the same annotations produce nothing: graphitron validates a copy of the argument it
-generated itself, which carries no constraints, so the handler cannot fire. When this lands,
-graphitron validates the very instance it is about to hand the service, so the annotations the
-author already writes on that class are the ones that count. (An *error channel* is the set of
-`@error` types a payload's `errors` field can hold; a `{handler: VALIDATION}` member is the one that
-receives validation failures.)
+takes, and gives the field's error channel (the set of `@error` types its payload's `errors` field
+can hold) a `{handler: VALIDATION}` member, gets one typed error per violated constraint in that
+`errors` list, with the service never called. Today the same schema and the same annotations produce
+nothing: graphitron validates a copy of the argument it generated itself, which carries no
+constraints, so the handler cannot fire. When this lands, graphitron validates the very instance it
+is about to hand the service, so the annotations the author already writes on that class are the
+ones that count.
 
 The sakila example already has the shape. `Mutation.countFilmDrafts` takes a list of
 `FilmDraftInput`, binds each element to the consumer record `FilmDraft`, and shares the
@@ -97,140 +96,174 @@ section point here.
 > argument (or element). Nested classes are validated only where you ask for it with `@Valid`, as
 > Bean Validation always does.
 >
-> Only values bound to a class are validated. A scalar or enum argument, an input read field by
-> field into scalar parameters, and a jOOQ record parameter are passed through unchecked; to
-> constrain one, take the argument as an input bound to a class. (A `@mutation` field's character
-> length check is separate and described below.)
+> Only values bound to a class you wrote are validated. A scalar or enum argument, an input read
+> field by field into scalar parameters, an input passed through as a `Map`, and a jOOQ record
+> parameter are passed through unchecked; to constrain one, take the argument as an input bound to
+> a record or bean. Validation runs after Graphitron has resolved the request's tenant and decoded
+> any node ids in the arguments, so a client error from either of those is reported instead of the
+> violations. (A `@mutation` field's character length check is separate and described below.)
 
-The `Coming from Graphitron 9` line gains: "Put the constraints Graphitron 9 read from jOOQ's
-generated annotations on the class your `@service` method takes."
+The `Coming from Graphitron 9` line keeps its last sentence true: Graphitron 10 does not read
+jOOQ's `<validationAnnotations>`, because it does not validate jOOQ record parameters.
+
 
 ## Implementation
 
-Two phases, each its own commit: phase 1 is the observable change, phase 2 deletes what phase 1
-leaves without a reader.
+*Model: where the instance comes from.* A `@service` parameter bound to a consumer class is a
+`MappingEntry.FromArg` whose `ValueShape` is a `ValueShape.RecordInput` or
+`ValueShape.JavaBeanInput`, directly or as the element of one `ValueShape.ListOf` (a bean parameter
+binds at most one list: `InputBeanResolver.peelSdlListNonNull` peels one level and
+`ServiceMethodCallWalker.isListType` matches only `List<Bean>`). Two facts are missing for
+validating it:
 
-### Phase 1: validate the bound instance
+- *The argument the class binds.* A bean always binds a whole top-level argument
+  (`ServiceMethodCallEmitter.compositeHelperCall` emits `createX(env.getArgument(outerArg))`), but
+  the composite carries no path, so the emitter recovers the argument name by walking the bindings
+  (`ServiceMethodCallEmitter.outerArgOf`), which yields `""` for a class with no bound fields. The
+  composite gains the argument's name as a component, set by the walker that builds it, as
+  `ValueShape.JooqRecordInput` already carries its `sdlPath`; `outerArgOf` retires, and the
+  `ValueShape` javadoc's "paths live on the leaves" sentence is corrected.
+- *Which parameters are targets.* A sealed sub-interface `ValueShape.BoundClass` over `RecordInput`
+  and `JavaBeanInput` names the class-bound composite once; the twin arms in `listExpression`,
+  `compositeHelperCall` and `TypeFetcherGenerator.collectFromValueShape` collapse onto it. The
+  targets are then a derivation over `methodArgs`, not a stored copy:
+  `ServiceMethodCall.validationTargets()` is a `default` method returning one
+  `ServiceMethodCall.ValidationTarget` per `FromArg` whose shape is a `BoundClass` (`Single`) or a
+  `ListOf` of one (`PerElement`), carrying the entry's call-site local
+  (`MappingEntry.FromArg.javaName()`) and the `BoundClass`. Parameters binding scalars, enums,
+  `Map` pass-throughs or `ValueShape.JooqRecordInput` yield no target.
 
-*Model.* `ServiceMethodCall.validatedArguments()` and the `ServiceMethodCall.ValidatedArgument`
-arms (`Raw`, `InputObject`, `InputObjectList`, `InputObjectNestedList`) are replaced by
-`validationTargets()`: one `ServiceMethodCall.ValidationTarget` per method-round `MappingEntry.FromArg`
-whose `ValueShape`, under any number of `ValueShape.ListOf` wrappers, is a `ValueShape.RecordInput`
-or `ValueShape.JavaBeanInput`. A target carries the call-site local it validates
-(`MappingEntry.FromArg.javaName()`), the SDL path the parameter binds (argument name plus any
-sub-path, read from the parameter's `ParamSource.Arg` in `ServiceMethodCallWalker`, which is where
-`validatedArguments` is computed today), and the bound `ValueShape` itself, which carries the list
-depth and the `ValueShape.FieldBinding` tree the path translation below reads. Parameters binding
-scalars, enums or `ValueShape.JooqRecordInput` yield no target. Two parameters binding one argument
-both get a target only if both bind a class; that is the honest reading, since each is a distinct
-instance the service receives.
+The stored `validatedArguments` component, its walker computation
+(`ServiceMethodCallWalker.validatedArguments`) and the `ServiceMethodCall.ValidatedArgument` arms
+retire.
 
-*Emission.* `TypeFetcherGenerator.validatorPreStep` moves from ahead of the service call's
-statements to between `ServiceMethodCallEmitter`'s per-entry var-decls and its `result`
-assignment, so it validates the locals the call is about to pass. `ServiceMethodCallEmitter` keeps
-owning statement order: it gains the seam (a pre-call block parameter, or returning the bindings
-and the call as two lists; implementer's choice), and the `buildServiceFetcherCommon` call
-site, the one that emits the pre-step today, takes it; the polymorphic emitter's calls emit no
-pre-step and stay as they are. The block stays inside the fetcher's `try`, as today. Per target: skip a
-null value; walk each `ListOf` level with a loop, skipping null elements and appending the index to
-the argument path; call `validator.validate(element)`. No `env.getArgument`, no `fromMap`. A field
-with no targets emits no pre-step at all, so no `getValidator` call either.
+*Emission: order.* The pre-step moves from the first statement inside the fetcher's `try` to just
+before the `result` assignment in `ServiceMethodCallEmitter`'s output, so it validates the locals
+the call is about to pass and nothing is built twice. `ServiceMethodCallEmitter` keeps owning
+statement order and gains the seam (a pre-call block parameter); only the
+`buildServiceFetcherCommon` call site, the one that emits the pre-step today, passes one. The
+reorder is a behaviour change and is accepted: validation now runs after the tenant hand-down
+(divination and the empty-answer short-circuit), the `DSLContext` prelude and node-id decoding, so a
+tenant refusal or an undecodable id is reported instead of the violations, and a request whose
+slots name no tenant returns the field's empty answer without validating. Validating first would
+mean materialising the beans ahead of the tenant hand-down, which a divining field reads its
+tenant from; the order the call already has is the simpler truth. The comment above the pre-step's
+call site in `buildServiceFetcherCommon`, which promises the opposite, is rewritten.
+
+*Emission: the walk.* Per target: skip a null local; for `PerElement`, loop over the list,
+skipping null elements and appending the index to the argument path; call
+`validator.validate(value)`. No `env.getArgument`, no `fromMap`. A field with no targets emits no
+pre-step and no `getValidator` call.
 
 *Path translation.* A Jakarta property path names Java members; the error `path` must name SDL
-input fields. `ConstraintViolations.toGraphQLError` gains a translation argument built at codegen
-from the target's `FieldBinding` tree: a property node whose name matches a binding's Java member
-(decapitalised setter suffix for `JavaBeanInput`) contributes that binding's whole `accessPath`
-(more than one segment where the field flattened from a grouping input) and descends into the
-binding's shape, through `ListOf` for container element nodes, whose index or key passes through.
-A node the tree does not know (reached through the consumer's own `@Valid` on a member graphitron
-did not bind) keeps its Java name, as does everything below it. Emit the translation once per
-distinct bound class, as a static constant on the `*Fetchers` class or in a generated helper,
-deduplicated on `ClassName` as `collectBeanHelpersFromCarrier` already does for the instantiation
-helpers. `sizeExceeded` and the shared `validationError` builder are untouched, so the column-length
-check keeps its wire shape.
+input fields. `ConstraintViolations.toGraphQLError` takes a translation built at codegen as a pure
+projection of the target's `FieldBinding` tree, render-side, with no model slot: a property node
+whose name equals a binding's `ValueShape.FieldBinding.javaFieldName` (already the decapitalised
+property name for a bean, from `InputBeanResolver.indexJavaBeanSetters`) contributes that binding's
+whole `accessPath`, more than one segment where the field flattened from a grouping input, and
+descends into the binding's shape. An index or key is read from whichever node carries it: for a
+cascaded `List<@Valid Bean>` member Bean Validation puts it on the next property node
+(`isInIterable()`), not on a container-element node, and today's `toGraphQLError` drops it there,
+which this fixes. A node the tree does not know (reached through the consumer's own `@Valid` on a
+member graphitron did not bind) keeps its Java name, as does everything below it. The translation is
+emitted once per distinct binding tree (record equality on the `BoundClass`), not once per
+`ClassName`: one class bound from two SDL inputs with different grouping layouts needs two.
+`sizeExceeded` and the shared `validationError` builder are untouched, so the column-length check
+keeps its wire shape.
 
-*Classification.* The walk recurses through any number of `ListOf` levels, so
-`FieldBuilder.unvalidatableArgumentReason`, its `GraphitronSchemaValidator` mirror and the
-list-of-lists rejection retire.
+*Classification.* `FieldBuilder.unvalidatableArgumentReason`, its `GraphitronSchemaValidator`
+mirror and the list-of-lists rejection retire. The reason is not a deeper walk: `[[Input]]` can only
+bind as a `Map` pass-through (`TestServiceStub.runSakWithInputGrid`), which yields no target, so
+such a field classifies under a VALIDATION channel and emits no pre-step.
 
 *Fixtures and prose.* `FilmDraft.title` gains `@NotBlank`; `graphitron-sakila-service` gains
-`jakarta.validation-api` (managed in the root pom; `provided` scope suffices, since the example
-module already supplies the runtime). `FilmDraftService`, `FilmValidatedLookupService`, the
-`schema.graphqls` comments on `countFilmDrafts`, `filmLookupValidated` and `FilmLookupValidationFailed`,
-and the `validatorPreStep` and `ConstraintViolationsClassGenerator` javadoc are rewritten to the new
-fact: `filmLookupValidated` now pins that a VALIDATION channel whose field binds no class emits no
-pre-step and still dispatches. Docs: the draft above into `error-channel.adoc`, the `handler` row
-and `VALIDATION` section of `docs/manual/reference/directives/error.adoc`, and any
-`docs/architecture/` page describing the pre-step's target (grep `fromMap`, `validatorPreStep`).
+`jakarta.validation-api` (managed in the root pom; `provided` scope, since the example module
+supplies the runtime). `FilmDraftService`, `FilmValidatedLookupService`, the `schema.graphqls`
+comments on `countFilmDrafts`, `filmLookupValidated` and `FilmLookupValidationFailed`, and the
+`validatorPreStep` and `ConstraintViolationsClassGenerator` javadoc are rewritten to the new fact;
+`filmLookupValidated` now pins that a VALIDATION channel whose field binds no class still
+dispatches. Docs: the draft above into `error-channel.adoc`, the `handler` row and `VALIDATION`
+section of `docs/manual/reference/directives/error.adoc`, and any `docs/architecture/` page
+describing the pre-step's target (grep `fromMap`, `validatorPreStep`).
 
-### Phase 2: retire the generated input classes
+## Neighbouring items
 
-After phase 1 nothing reads the `<outputPackage>.inputs` classes: `HasInputRecordShape`'s own
-javadoc names the generator and the validator pre-step as its only two consumers. Delete
-`InputRecordGenerator`, `InputRecordPlanner`, `TypeUnitCommand.InputRecordUnit`,
-`GeneratedUnits.inputRecord`, the `GraphQLRewriteGenerator` and `PlanCompileGraph` wiring,
-`HasInputRecordShape`, `InputRecordShape` and the `recordShape` component on the four
-`GraphitronType.InputType` records, with their tests (`InputRecordGeneratorTest`,
-`InputRecordRenderTestSupport`, and the input-record rows of `TypeUnitMembershipTest`,
-`FetcherEdgeRelationTest`, `FetcherPipelineTest`). The view `graphitron_argument_reachable_input`
-in `graphitron-model.sql`, with its `meta_relation` row, goes too if `InputRecordPlanner` remains its
-only reader (it is at the time of writing).
+After this item nothing reads the generated `<outputPackage>.inputs` classes: the pre-step was
+their only reader (by grep; `HasInputRecordShape`'s javadoc census of "two consumers" is wrong,
+since `validatorPreStep` builds the class name itself rather than reading `recordShape()`). This
+item does not delete them, because three open items are designed on them or on the reach fact
+behind them, and their fate is one decision that belongs in one place:
 
-One behaviour hangs on the shape and must be decided, not dropped by accident:
-`TypeBuilder.buildInputRecordShape` returns `null` for an input whose field type does not resolve,
-which routes the type to `UnclassifiedType`. Check whether another classifier step rejects that
-input on its own. If one does, the null arm goes with the shape. If this is the only rejection, it
-stays as a plain classification check over the input's field types, no longer building a shape,
-and `InputTypeValidationTest` pins it either way.
+- R1011 (`input-classes-emitted-without-a-reader`, Backlog) is that place. Its goal, emit an input
+  class only where a validated field reads one, becomes "emit none" once this lands, and it is
+  where the retirement inventory (`InputRecordGenerator`, `InputRecordPlanner`,
+  `HasInputRecordShape`, `InputRecordShape`, the `TypeUnitRelation` and `EmitPlan` wiring, the
+  `ModelEmitVocabularyGuardTest` exemption) belongs.
+- R92 (`catalog-check-constraint-validation`, Spec) attaches CHECK-derived constraints through a
+  `ConstraintMapping` on the `.inputs` classes and on jOOQ records, and states that the pre-step
+  validates the `.inputs` instance. After this item neither is validated: its input-side mapping
+  has to target the class the service binds, and its record-side mapping only takes effect if it
+  adds `ValueShape.JooqRecordInput` targets with the partial-record caveat below.
+- R98 (`multi-source-input-validation`, Backlog) attaches constraints per `InputRecordShape`
+  component, with the same consequence.
+
+R1099 (`input-navigation-through-output-fields`, Ready) dissolves `graphitron_argument_reachable_input`
+on its own schedule; nothing here touches the view.
 
 ## Tests
 
-- Execution tier (`GraphQLQueryTest`), the item's acceptance evidence:
-  `countFilmDrafts` with one blank title among two elements returns `count: null` and exactly one
-  `FilmWriteInvalid` with `path ["countFilmDrafts", "in", "1", "title"]` and the interpolated
-  `@NotBlank` message, and the service is not called; with both titles non-blank the existing
-  `countFilmDrafts_*` cases hold unchanged. `filmLookupValidated_*` hold unchanged.
-- Execution tier, path translation: one new `@service` fixture whose input binds a consumer class
-  through a grouping input that flattens onto it, with a constraint on the flattened member and a
-  nested `@Valid` member; asserts the SDL path (grouping field kept) for both. A class-level
-  constraint on the same class asserts the path ends at the argument.
-- Pipeline tier: the generated wrapper for `countFilmDrafts` validates the bound local after the
-  bindings and before the call, and the wrapper for `filmLookupValidated` contains no `getValidator`
-  call.
-- Classification: a list-of-lists bound-class argument under a VALIDATION channel now classifies,
-  replacing the rejection case for `unvalidatableArgumentReason`.
-- Phase 2: no file is emitted under `<outputPackage>.inputs` (assert on the emitted unit set), and
-  the `UnclassifiedType` decision above is pinned in `InputTypeValidationTest`.
+- Execution tier (`GraphQLQueryTest`), the item's acceptance evidence: `countFilmDrafts` with one
+  blank title among two elements returns `count: null` and exactly one `FilmWriteInvalid` with
+  `path ["countFilmDrafts", "in", "1", "title"]` and the interpolated `@NotBlank` message. The
+  service not being called is shown by the null `count`, which only the service sets. The existing
+  `countFilmDrafts_*` cases hold unchanged.
+- Execution tier, path translation: one new `@service` fixture whose input binds a consumer record
+  through a grouping input that flattens onto it, with a constraint on the flattened member, a
+  `List<@Valid ...>` member carrying a constraint on its element class, and a class-level
+  constraint. Asserts the SDL path for each: grouping field kept, the element index present, the
+  class-level path ending at the argument.
+- Execution tier, no pre-step where there is no target: `filmLookupValidated` succeeds through an
+  `ExecutionInput` that carries no `GraphitronContext`, the way
+  `countFilmDrafts_failureInsideValidation_isHandledByTheFetchersCatchArm` provokes the opposite,
+  showing no validator was asked for.
+- Classification: `ErrorChannelClassificationTest`'s `INPUT_GRID_SDL` under a VALIDATION channel
+  now classifies, replacing its rejection case.
+- `FetcherPipelineTest.inputRecord_validatorPreStep_receivesTypedRecordNotMap` asserts on generated
+  body text and pins the retired target; it is deleted, not rewritten. No new test reads a
+  generated method body.
 
 ## Retired vocabulary
 
-`ValidatedArgument`, `validatedArguments`, `InputObjectNestedList`, `unvalidatableArgumentReason`
-(phase 1); `InputRecordGenerator`, `InputRecordPlanner`, `InputRecordUnit`, `HasInputRecordShape`,
-`InputRecordShape`, `recordShape`, `fromMap`, `graphitron_argument_reachable_input`, the
-`<outputPackage>.inputs` package (phase 2). Prose to sweep: "the generated input record",
-"validates the graphitron-emitted", "no constraint annotations", "the walk produces zero violations".
+`ValidatedArgument`, `validatedArguments`, `InputObjectNestedList`, `unvalidatableArgumentReason`,
+`outerArgOf`. Prose to sweep: "the generated input record" and "the graphitron-emitted" where they
+describe what the pre-step validates, "no constraint annotations", "the walk produces zero
+violations", "runs before tenant resolution".
 
 ## Other solutions we've considered
 
 - *Constraints declared in SDL and emitted onto the generated record.* Closes the loop with no
   consumer Java, and would reach scalar arguments. It costs a new directive and a mapping from SDL
   to the constraint vocabulary, and duplicates what the class the service takes can already say.
-  Nothing here forecloses it later; it would need the generated classes back, which phase 2 deletes
-  as having no reader today.
+  It stays open: the generated classes still exist after this item.
 - *Jakarta method validation (`ExecutableValidator.validateParameters`).* Would reach scalar
   parameters (`lookup(@Positive Integer id)`), but the specification excludes static methods and
   most `@service` methods are static; it would split VALIDATION's behaviour by call shape.
 - *A consumer-supplied `ValidatorFactory`.* Reopens programmatic `ConstraintMapping` against the
   generated classes; the smallest change and the one that pushes most onto the author, and it keeps
   graphitron validating an object the service never sees.
-- *Walking jOOQ record parameters too.* jOOQ can generate constraint annotations, but the
-  `@mutation` column-length check already covers the length case, and walking both would report one
-  overlong value twice.
-- *Warning at build time on a VALIDATION channel whose field validates nothing.* The sakila schema
-  shows why not: a VALIDATION type shared by DML mutations and a `@service` mutation is a
-  deliberate shape, and the warning would fire on every `@service` field in that union with no way
-  to silence it but splitting the union. Omitting the pre-step where there is no target, plus the
-  manual's rule, carries the signal instead.
+- *Walking jOOQ record parameters too.* jOOQ's `<validationAnnotations>` derives constraints from the
+  database, which is the attraction. But a jOOQ record bound from an input carries only the columns
+  the input names, and jOOQ annotates every non-nullable column without a default `@NotNull`, so a
+  partial record (an update naming two columns) would fail on every column it leaves unset. Making
+  that sound needs a notion of which columns a record was bound for, which is R92's territory, where
+  database-derived constraints are the subject.
+- *Validating before the tenant hand-down.* Keeps today's promise that violations win, at the cost
+  of materialising bound classes ahead of tenant resolution, which a divining field reads its tenant
+  from. Rejected; the order is stated in the manual instead.
+- *Warning at build time on a VALIDATION channel whose field validates nothing.* A VALIDATION type
+  shared by DML mutations and a `@service` mutation is a deliberate shape (`FilmWriteInvalid`), and
+  the warning would fire on every `@service` field in that union with no way to silence it but
+  splitting the union. The manual's rule carries the signal instead.
 
 ## Provenance
 
