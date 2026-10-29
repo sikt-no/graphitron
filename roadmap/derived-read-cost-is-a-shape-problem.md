@@ -1018,6 +1018,10 @@ decode's condition relations, their readers having moved to `graphql_directive_a
 The two `@referenceFor` step relations, their one reader having moved to the step twins:
 `graphitron_reference_for_step_entry` and `graphitron_argument_reference_for_step_entry`.
 
+**Renamed, configuration to the `store_` family.** `graphql_source_input` (now
+`store_graph_source_input`): a recipe entry matched to a file the graph claims is configuration the
+run held, which the `store_` family's charter keeps.
+
 **Renamed, chain to path.** `graphitron_field_chain_link` (now `graphitron_field_path`),
 `graphitron_field_chain_link_reading`, `graphitron_field_chain_link_resolution` and its `_rule`,
 `_keyed`, `_keyless` and `_open`, `graphitron_field_chain_application`, `intent_field_chain_start`,
