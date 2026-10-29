@@ -6,20 +6,16 @@ import no.sikt.graphitron.rewrite.test.jooq.public_.udt.records.SessionHandleRec
 import org.jooq.Configuration;
 
 /**
- * The hand-written facade shape of the {@code <sessionState>} method-hook contract: a public
- * static mount with exactly one seam parameter ({@code Configuration}), a payload the facade
- * reshapes before binding (one raw claims JSON string, split into the composite the database
- * routine takes), and the routine's composite handle as the return type. The sibling shape,
- * naming the jOOQ-generated executing method directly
- * ({@code Routines#sessionConnect}), is configured on another execution of the same reactor, so
- * "generated and hand-written are indistinguishable to the resolver" is exercised rather than
- * asserted.
+ * A hand-written facade the example's session callbacks call: a mount taking the jOOQ
+ * {@code Configuration} a {@code MountedSession} carries and a payload the facade reshapes before
+ * binding (one raw claims JSON string, split into the composite the database routine takes), and
+ * returning the routine's composite handle, which the unmount takes back. The sibling shape, calling
+ * the jOOQ-generated executing method ({@code Routines#sessionConnect}) straight from the
+ * callback, is configured on another execution of the same reactor, so both are exercised.
  *
  * <p>Contract notes this class exists to model: no checked exceptions (the JDBC residue inside
- * the generated routine call already surfaces unchecked through jOOQ); session-scoped state only
- * ({@code session_connect} issues {@code set_config(..., false)}); and a payload parameter name
- * ({@code claims}) that is the public factory-slot identity on
- * {@code Graphitron.newOwnedExecutionInput(...)}.
+ * the generated routine call already surfaces unchecked through jOOQ), and session-scoped state
+ * only ({@code session_connect} issues {@code set_config(..., false)}).
  */
 public final class SakilaSessionIdentity {
 

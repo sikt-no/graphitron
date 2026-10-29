@@ -8,7 +8,7 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The mount of the converted-tenant fixture, configured on its {@code <tenantColumn>owner_org}
- * execution: a handle-less mount whose tenant slot is {@code Optional<String>}, the Java type the
+ * execution: a handle-less mount whose tenant is an {@code Optional<String>}, the Java type the
  * converter gives {@code owner_org}. It touches no database; it records which tenant each
  * connection was mounted for, so an execution test can assert that a key supplied as
  * {@code "0186"} reaches the mount in the column's form, {@code "186"}.

@@ -11,11 +11,10 @@ import java.util.concurrent.CopyOnWriteArrayList;
 
 /**
  * The multi-tenant sibling of {@link SakilaSessionIdentity}, configured on the
- * {@code <tenantColumn>} execution: a mount that declares the tenant slot, a parameter typed
- * {@code Optional} of the tenant column's Java type ({@code film_id}, so {@code Integer}), which
- * graphitron recognises by type and fills with the tenant each connection is mounted for
- * ({@code Optional.empty()} for the default source). The slot is not payload, so the factory
- * still asks only for {@code claims}.
+ * {@code <tenantColumn>} execution: a mount that takes the tenant a {@code MountedSession} answers,
+ * an {@code Optional} of the tenant column's Java type ({@code film_id}, so {@code Integer}), the
+ * tenant each connection is mounted for ({@code Optional.empty()} for the default source). The
+ * request's claims are captured by the callback that calls this facade.
  *
  * <p>The tenant is bound into the {@code tenant} field of the composite the database routine
  * takes, the way a per-tenant identity (a VPD context, a per-tenant role set) would be. Every

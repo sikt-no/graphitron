@@ -80,7 +80,7 @@ class DevExecuteExecutionTest {
         String devResult;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             devResult = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", query, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("userId", USER_ID));
+                connection, "POSTGRES", query, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
 
         ExecutionResult inApp = inAppEngine.execute(
@@ -118,7 +118,7 @@ class DevExecuteExecutionTest {
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
                 connection, "POSTGRES", query, Map.of("ids", java.util.List.of("1")),
-                no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("userId", USER_ID));
+                no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
         assertThat(result).contains("\"filmId\":1").doesNotContain("\"errors\"");
     }
@@ -133,7 +133,7 @@ class DevExecuteExecutionTest {
         String result;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", mutation, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("userId", USER_ID));
+                connection, "POSTGRES", mutation, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
 
         // The mutation ran for real (the generated fetcher returned the inserted row) ...
@@ -163,7 +163,7 @@ class DevExecuteExecutionTest {
         String result;
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             result = GraphitronDevExecutor.execute(
-                connection, "POSTGRES", mutation, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("userId", USER_ID));
+                connection, "POSTGRES", mutation, null, no.sikt.graphitron.sakila.example.app.SakilaSessions.of(CLAIMS), Map.of("claims", CLAIMS, "userId", USER_ID));
         }
 
         assertThat(result)
@@ -183,7 +183,7 @@ class DevExecuteExecutionTest {
         try (Connection connection = SakilaDatabase.connect(jdbcUrl, jdbcUser, jdbcPassword)) {
             assertThatThrownBy(() -> GraphitronDevExecutor.execute(
                     connection, "POSTGRES", "{ films { filmId } }", null,
-                    (no.sikt.graphitron.generated.schema.SessionState) null, Map.of("userId", USER_ID)))
+                    (no.sikt.graphitron.generated.schema.SessionState) null, Map.of("claims", CLAIMS, "userId", USER_ID)))
                 .isInstanceOf(IllegalStateException.class)
                 .hasMessageContaining("<sessionState>")
                 .hasMessageContaining("GRAPHITRON_DEV_SESSION");
@@ -201,7 +201,7 @@ class DevExecuteExecutionTest {
             assertThatThrownBy(() -> GraphitronDevExecutor.execute(
                     connection, "POSTGRES", "{ films { filmId } }", null,
                     no.sikt.graphitron.sakila.example.app.SakilaSessions.of("{\"sub\": \"reject-me\"}"),
-                    Map.of("userId", USER_ID)))
+                    Map.of("claims", CLAIMS, "userId", USER_ID)))
                 .hasMessageContaining("unentitled principal: reject-me");
         }
     }
