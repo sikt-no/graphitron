@@ -50,11 +50,6 @@ extend schema @expectEquals(relation: "store_graph_lint_excluded_type", rows: ""
   1,       *Internal
   """)
 
-extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
-  graph_name
-  fixture
-  """)
-
 extend schema @expectEquals(relation: "store_graph_session_handle", rows: """
   handle_class
   com.example.Identity

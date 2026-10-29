@@ -493,6 +493,8 @@ class RelationRegistrationGateTest {
         registrations.put("intent_resolved_field_claim", Arm.DERIVED);
         registrations.put("intent_type_domain", Arm.DERIVED);
         registrations.put("graphitron_argmapping_candidate", Arm.DERIVED);
+        registrations.put("graphitron_session_handle_member", Arm.DERIVED);
+        registrations.put("graphitron_argmapping_parameter", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path", Arm.DERIVED);
         registrations.put("intent_input_occurrence_path_step", Arm.DERIVED);
         registrations.put("intent_authored_claim_conflict", Arm.DERIVED);

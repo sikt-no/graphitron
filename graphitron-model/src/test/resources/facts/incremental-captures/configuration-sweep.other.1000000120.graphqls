@@ -6,8 +6,8 @@
 type Unrelated { note: String }
 
 extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
-  graph_name, touched_at
-  fixture,    1000000120
+  touched_at
+  1000000120
   """)
 
 extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """

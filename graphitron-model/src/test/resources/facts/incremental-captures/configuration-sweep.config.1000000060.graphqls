@@ -19,8 +19,8 @@ extend schema @assertEmpty(relation: "store_graph_max_allowed_page_size")
 extend schema @assertEmpty(relation: "store_graph_session_handle")
 
 extend schema @expectEquals(relation: "store_graph_session_supplied", rows: """
-  graph_name, touched_at
-  fixture,    1000000060
+  touched_at
+  1000000060
   """)
 
 extend schema @expectEquals(relation: "store_graph_lint_disabled_rule", rows: """

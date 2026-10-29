@@ -105,6 +105,10 @@ public final class DerivationStratum {
                 NodeIdDecodeHopColumns::derive),
             step("NodeIdDecodeColumns", "graphitron_node_id_decode_column",
                 NodeIdDecodeColumns::derive),
+            step("SessionHandleMembers", "graphitron_session_handle_member",
+                SessionHandleMembers::derive),
+            step("ArgMappingParameters", "graphitron_argmapping_parameter",
+                ArgMappingParameters::derive),
             step("EntryDefects", "graphitron_entry_defect", EntryDefects::derive));
     }
 

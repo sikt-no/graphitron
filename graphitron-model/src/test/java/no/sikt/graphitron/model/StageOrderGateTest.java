@@ -122,6 +122,10 @@ class StageOrderGateTest {
             Set.of("graphitron_node_id_decode_hop_column")),
         new Step("NodeIdDecodeColumns", "graphitron_node_id_decode_column_rule",
             Set.of("graphitron_node_id_decode_column")),
+        new Step("SessionHandleMembers", null,
+            Set.of("graphitron_session_handle_member")),
+        new Step("ArgMappingParameters", null,
+            Set.of("graphitron_argmapping_parameter")),
         new Step("EntryDefects", "graphitron_entry_defect_rule",
             Set.of("graphitron_entry_defect")));
 
