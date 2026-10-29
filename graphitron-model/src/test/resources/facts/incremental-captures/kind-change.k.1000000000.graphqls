@@ -1,0 +1,11 @@
+# The first reading writes a field definition at 5:3. The second rewrites this file so the same
+# position holds an enum value instead.
+
+type Kind {
+  title: String
+}
+
+extend schema @assertContains(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name,  source_line, source_column
+  Kind,      title, 5,           3
+  """)

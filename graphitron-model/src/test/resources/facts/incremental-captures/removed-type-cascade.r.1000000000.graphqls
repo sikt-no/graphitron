@@ -1,0 +1,15 @@
+# The first reading writes a type with a field, an argument on it and a directive applied to it.
+# The second rewrites this file without the type.
+
+type Gone {
+  shelf(first: Int): String @deprecated
+}
+
+type Kept {
+  name: String
+}
+
+extend schema @assertContains(relation: "graphql_ast_field_argument_entry", rows: """
+  type_name, field_name, name
+  Gone,      shelf,      first
+  """)

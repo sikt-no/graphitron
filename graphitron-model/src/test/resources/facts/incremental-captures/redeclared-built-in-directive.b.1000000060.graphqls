@@ -10,14 +10,24 @@ extend schema @assertAbsent(relation: "graphql_directive", rows: """
   include,        specification.graphqls
   """)
 
-extend schema @assertContains(relation: "graphql_ast_directive_definition_entry", rows: """
-  name,  source_name,            touched_at
-  oneOf, specification.graphqls, 1000000000
+# The instant is the entry supertype's: every oneOf declaration, the redeclaring file's and the
+# specification's, keeps the first reading's.
+extend schema @assertContains(relation: "graphql_ast_entry", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_directive_definition_entry WHERE name = 'oneOf')
+  """, rows: """
+  source_name,            touched_at
+  specification.graphqls, 1000000000
   """)
 
-extend schema @assertContains(relation: "graphql_ast_directive_definition_entry", rows: """
-  name,  touched_at
-  oneOf, 1000000000
+extend schema @assertAbsent(relation: "graphql_ast_entry", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_directive_definition_entry WHERE name = 'oneOf')
+  """, rows: """
+  touched_at
+  1000000060
   """)
 
 extend schema @assertContains(relation: "graphql_directive", rows: """

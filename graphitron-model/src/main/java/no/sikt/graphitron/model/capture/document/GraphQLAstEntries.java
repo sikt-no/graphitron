@@ -163,41 +163,19 @@ public final class GraphQLAstEntries {
     }
 
     /**
-     * What the sweep deletes from, and the only thing that reads it. Listed rather than found by
-     * prefix: a relation added above and not here would keep its stale rows silently, and a list
-     * that has to be edited alongside is the cheapest way to make that visible.
-     *
-     * <p>In writing order, parents first, which is the order the keys demand. The sweep walks it
-     * backwards.
-     */
-    private static final List<Table<?>> TABLES_TO_SWEEP = List.of(
-        GRAPHQL_AST_ENTRY, GRAPHQL_AST_ELEMENT_ENTRY, GRAPHQL_AST_DIRECTIVE_APPLICATION_ENTRY,
-        GRAPHQL_AST_TYPE_DECLARATION_ENTRY, GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY,
-        GRAPHQL_AST_SCHEMA_DEFINITION_ENTRY, GRAPHQL_AST_FIELD_DEFINITION_ENTRY,
-        GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY, GRAPHQL_AST_IMPLEMENTS_ENTRY,
-        GRAPHQL_AST_UNION_MEMBER_ENTRY, GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY,
-        GRAPHQL_AST_OPERATION_TYPE_DEFINITION_ENTRY, GRAPHQL_AST_FIELD_ARGUMENT_ENTRY,
-        GRAPHQL_AST_INPUT_FIELD_ENTRY, GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY,
-        GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY, GRAPHQL_AST_FIELD_DIRECTIVE_ENTRY,
-        GRAPHQL_AST_INPUT_VALUE_DIRECTIVE_ENTRY, GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY,
-        GRAPHQL_AST_SCHEMA_DIRECTIVE_ENTRY, GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY,
-        GRAPHQL_AST_VALUE_ENTRY);
-
-    /**
-     * Deletes this file's rows that this reading did not touch, which are the nodes the author
+     * Deletes this file's positions that this reading did not touch, which are the nodes the author
      * removed. Scoped to the file, so a reading of one document says nothing about another's rows.
+     * The supertype alone: every subtype row is a position a row here names, and every subtype's
+     * keys cascade, to this row and to the parent it was written inside, so what was written at or
+     * under a removed position goes with it.
      */
     private static void sweep(DSLContext dsl, String graph, String source, LocalDateTime touchedAt) {
-        // Table.field(Field) is a lookup by name returning the loop's own typed column, so one
-        // relation's three name them on all eighteen.
-        var named = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
-        for (Table<?> table : TABLES_TO_SWEEP.reversed()) {
-            dsl.deleteFrom(table)
-                .where(table.field(named.GRAPH_NAME).eq(graph))
-                .and(table.field(named.SOURCE_NAME).eq(source))
-                .and(table.field(named.TOUCHED_AT).ne(touchedAt))
-                .execute();
-        }
+        var a = GRAPHQL_AST_ENTRY;
+        dsl.deleteFrom(a)
+            .where(a.GRAPH_NAME.eq(graph))
+            .and(a.SOURCE_NAME.eq(source))
+            .and(a.TOUCHED_AT.ne(touchedAt))
+            .execute();
     }
 
     /**
@@ -216,6 +194,11 @@ public final class GraphQLAstEntries {
      *
      * <p>Called before the arm's own insert rather than after, the arm's foreign key naming this
      * row. Root kinds pass a null parent and say so once, here, rather than nineteen times.
+     *
+     * <p>A position that held another kind in the last reading is deleted first rather than
+     * overwritten. Its subtype row is of the other kind, keyed by the same position, and the upsert
+     * here cannot reach it; deleting the position takes it by cascade, which is what lets this
+     * relation's instant stand for every subtype's.
      */
     private static void supertype(DSLContext dsl, String graph, LocalDateTime touchedAt,
                                   EntryKind kind, List<? extends Written> nodes) {
@@ -225,18 +208,32 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
+            nested -> sourceRef(nested.node()),
             nested -> val(kind, a.ENTRY_KIND),
             // A root was written inside nothing, so its parent columns are null together. The
             // three top-level kinds are the roots and every other arm always has one.
             nested -> nested.parent() == null ? inline((Integer) null) : parentLine(nested.parent()),
             nested -> nested.parent() == null ? inline((Integer) null) : parentColumn(nested.parent()),
             nested -> val(touchedAt, a.TOUCHED_AT)));
+        var positions = nodes.stream().collect(Rows.toRowList(
+            nested -> val(graph, a.GRAPH_NAME),
+            nested -> sourceName(nested.node()),
+            nested -> sourceLine(nested.node()),
+            nested -> sourceColumn(nested.node()),
+            nested -> val(kind, a.ENTRY_KIND)));
+        BindBatch.execute(dsl, positions, markers ->
+            dsl.deleteFrom(a)
+                .where(a.GRAPH_NAME.eq(org.jooq.impl.DSL.param(a.GRAPH_NAME)))
+                .and(a.SOURCE_NAME.eq(org.jooq.impl.DSL.param(a.SOURCE_NAME)))
+                .and(a.SOURCE_LINE.eq(org.jooq.impl.DSL.param(a.SOURCE_LINE)))
+                .and(a.SOURCE_COLUMN.eq(org.jooq.impl.DSL.param(a.SOURCE_COLUMN)))
+                .and(a.ENTRY_KIND.ne(org.jooq.impl.DSL.param(a.ENTRY_KIND))));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(a, a.GRAPH_NAME, a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN,
-                    a.ENTRY_KIND, a.PARENT_LINE, a.PARENT_COLUMN, a.TOUCHED_AT)
+                    a.SOURCE_REF, a.ENTRY_KIND, a.PARENT_LINE, a.PARENT_COLUMN, a.TOUCHED_AT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(a.ENTRY_KIND, excluded(a.ENTRY_KIND))
+                .set(a.SOURCE_REF, excluded(a.SOURCE_REF))
                 .set(a.PARENT_LINE, excluded(a.PARENT_LINE))
                 .set(a.PARENT_COLUMN, excluded(a.PARENT_COLUMN))
                 .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
@@ -266,19 +263,16 @@ public final class GraphQLAstEntries {
             nested -> val(coordinate.apply(nested), e.COORDINATE),
             nested -> val(declarationKind(declaration.apply(nested)), e.DECLARATION_KIND),
             nested -> sourceLine(declaration.apply(nested)),
-            nested -> sourceColumn(declaration.apply(nested)),
-            nested -> val(touchedAt, e.TOUCHED_AT)));
+            nested -> sourceColumn(declaration.apply(nested))));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(e, e.GRAPH_NAME, e.SOURCE_NAME, e.SOURCE_LINE, e.SOURCE_COLUMN,
-                    e.COORDINATE, e.DECLARATION_KIND, e.DECLARATION_LINE, e.DECLARATION_COLUMN,
-                    e.TOUCHED_AT)
+                    e.COORDINATE, e.DECLARATION_KIND, e.DECLARATION_LINE, e.DECLARATION_COLUMN)
                 .values(markers)
                 .onDuplicateKeyUpdate()
                 .set(e.COORDINATE, excluded(e.COORDINATE))
                 .set(e.DECLARATION_KIND, excluded(e.DECLARATION_KIND))
                 .set(e.DECLARATION_LINE, excluded(e.DECLARATION_LINE))
-                .set(e.DECLARATION_COLUMN, excluded(e.DECLARATION_COLUMN))
-                .set(e.TOUCHED_AT, excluded(e.TOUCHED_AT)));
+                .set(e.DECLARATION_COLUMN, excluded(e.DECLARATION_COLUMN)));
     }
 
     /**
@@ -295,15 +289,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> val(nested.node().getName(), a.NAME),
-            nested -> val(touchedAt, a.TOUCHED_AT)));
+            nested -> val(nested.node().getName(), a.NAME)));
         BindBatch.execute(dsl, rows, markers ->
             dsl.insertInto(a, a.GRAPH_NAME, a.SOURCE_NAME, a.SOURCE_LINE, a.SOURCE_COLUMN,
-                    a.NAME, a.TOUCHED_AT)
+                    a.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(a.NAME, excluded(a.NAME))
-                .set(a.TOUCHED_AT, excluded(a.TOUCHED_AT)));
+                .set(a.NAME, excluded(a.NAME)));
     }
 
     /** A root: written inside nothing, so the anchor's parent columns are null together. */
@@ -323,19 +315,14 @@ public final class GraphQLAstEntries {
             node -> sourceName(node),
             node -> sourceLine(node),
             node -> sourceColumn(node),
-            node -> sourceRef(node),
-            node -> val(touchedAt, t.TOUCHED_AT),
             node -> val(kind(node), t.KIND),
             node -> val(node instanceof SDLExtensionDefinition, t.IS_EXTENSION),
             node -> val(node.getName(), t.NAME),
             node -> val(text(node), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.KIND, t.IS_EXTENSION, t.NAME, t.DESCRIPTION)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.KIND, t.IS_EXTENSION, t.NAME, t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.KIND, excluded(t.KIND))
                 .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
                 .set(t.NAME, excluded(t.NAME))
@@ -354,18 +341,13 @@ public final class GraphQLAstEntries {
             node -> sourceName(node),
             node -> sourceLine(node),
             node -> sourceColumn(node),
-            node -> sourceRef(node),
-            node -> val(touchedAt, t.TOUCHED_AT),
             node -> val(node.getName(), t.NAME),
             node -> val(node.isRepeatable(), t.REPEATABLE),
             node -> val(text(node), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.NAME, t.REPEATABLE, t.DESCRIPTION)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.NAME, t.REPEATABLE, t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.NAME, excluded(t.NAME))
                 .set(t.REPEATABLE, excluded(t.REPEATABLE))
                 .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
@@ -386,17 +368,12 @@ public final class GraphQLAstEntries {
             node -> sourceName(node),
             node -> sourceLine(node),
             node -> sourceColumn(node),
-            node -> sourceRef(node),
-            node -> val(touchedAt, t.TOUCHED_AT),
             node -> val(node instanceof SDLExtensionDefinition, t.IS_EXTENSION),
             node -> val(text(node), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.IS_EXTENSION, t.DESCRIPTION)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.IS_EXTENSION, t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.IS_EXTENSION, excluded(t.IS_EXTENSION))
                 .set(t.DESCRIPTION, excluded(t.DESCRIPTION)));
     }
@@ -413,8 +390,6 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
@@ -427,14 +402,11 @@ public final class GraphQLAstEntries {
             nested -> val(listDepth(nested.node().getType()), t.LIST_DEPTH),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
                     t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -462,8 +434,6 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.typeName(), t.TYPE_NAME),
@@ -478,15 +448,12 @@ public final class GraphQLAstEntries {
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME,
                     t.FIELD_NAME, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
                     t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -514,8 +481,6 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
@@ -529,15 +494,12 @@ public final class GraphQLAstEntries {
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.TYPE_SDL,
                     t.NAMED_TYPE, t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH,
                     t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -566,8 +528,6 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME),
@@ -580,14 +540,11 @@ public final class GraphQLAstEntries {
             nested -> val(writtenSdl(nested.node().getDefaultValue()), t.DEFAULT_VALUE_SDL),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.TYPE_SDL, t.NAMED_TYPE,
                     t.NON_NULL, t.IS_LIST, t.ITEM_NON_NULL, t.LIST_DEPTH, t.DEFAULT_VALUE_SDL,
                     t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME))
@@ -613,20 +570,15 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(text(nested.node()), t.DESCRIPTION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.DESCRIPTION)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.NAME, t.DESCRIPTION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -643,19 +595,14 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.INTERFACE_NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.INTERFACE_NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.INTERFACE_NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -671,19 +618,14 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nameOf(nested.parent()), t.TYPE_NAME),
             nested -> val(nested.node().getName(), t.MEMBER_NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.MEMBER_NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.TYPE_NAME, t.MEMBER_NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.TYPE_NAME, excluded(t.TYPE_NAME))
@@ -699,18 +641,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.LOCATION)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.LOCATION)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.LOCATION)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.LOCATION, excluded(t.LOCATION)));
@@ -725,19 +662,14 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.OPERATION),
             nested -> val(nested.node().getTypeName().getName(), t.TYPE_NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.OPERATION, t.TYPE_NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.OPERATION, t.TYPE_NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.OPERATION, excluded(t.OPERATION))
@@ -754,18 +686,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME)));
@@ -780,18 +707,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME)));
@@ -807,18 +729,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME)));
@@ -833,18 +750,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME)));
@@ -859,18 +771,13 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME)));
@@ -885,19 +792,14 @@ public final class GraphQLAstEntries {
             nested -> sourceName(nested.node()),
             nested -> sourceLine(nested.node()),
             nested -> sourceColumn(nested.node()),
-            nested -> sourceRef(nested.node()),
-            nested -> val(touchedAt, t.TOUCHED_AT),
             nested -> parentLine(nested.parent()),
             nested -> parentColumn(nested.parent()),
             nested -> val(nested.node().getName(), t.NAME),
             nested -> val(printAstCompact(nested.node().getValue()), t.VALUE_SDL)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.VALUE_SDL)
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME, t.VALUE_SDL)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))
                 .set(t.PARENT_COLUMN, excluded(t.PARENT_COLUMN))
                 .set(t.NAME, excluded(t.NAME))
@@ -941,8 +843,6 @@ public final class GraphQLAstEntries {
             written -> sourceName(written.node()),
             written -> sourceLine(written.node()),
             written -> sourceColumn(written.node()),
-            written -> sourceRef(written.node()),
-            written -> val(touchedAt, t.TOUCHED_AT),
             written -> parentLine(written.holder()),
             written -> parentColumn(written.holder()),
             written -> val(enclosingLine(written.parent()), t.PARENT_LINE),
@@ -952,13 +852,10 @@ public final class GraphQLAstEntries {
             written -> val(valueKind(written.node()), t.KIND),
             written -> val(valueText(written.node()), t.WRITTEN_TEXT)));
         BindBatch.execute(dsl, rows, markers ->
-            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.SOURCE_REF,
-                    t.TOUCHED_AT, t.HOLDER_LINE, t.HOLDER_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN,
+            dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE, t.SOURCE_COLUMN, t.HOLDER_LINE, t.HOLDER_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN,
                     t.POSITION, t.OBJECT_FIELD_NAME, t.KIND, t.WRITTEN_TEXT)
                 .values(markers)
                 .onDuplicateKeyUpdate()
-                .set(t.SOURCE_REF, excluded(t.SOURCE_REF))
-                .set(t.TOUCHED_AT, excluded(t.TOUCHED_AT))
                 .set(t.HOLDER_LINE, excluded(t.HOLDER_LINE))
                 .set(t.HOLDER_COLUMN, excluded(t.HOLDER_COLUMN))
                 .set(t.PARENT_LINE, excluded(t.PARENT_LINE))

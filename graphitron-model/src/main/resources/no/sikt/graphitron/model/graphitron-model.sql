@@ -661,6 +661,7 @@ CREATE TABLE graphql_ast_entry (
   source_name   VARCHAR NOT NULL,
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
+  source_ref    VARCHAR,
   entry_kind    VARCHAR NOT NULL,
   parent_line   INT,
   parent_column INT,
@@ -670,6 +671,8 @@ CREATE TABLE graphql_ast_entry (
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
+  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
+  CHECK (source_ref IS NULL OR source_ref = source_name),
   CHECK ((parent_line IS NULL) = (parent_column IS NULL)),
   CHECK (entry_kind IN ('TYPE_DECLARATION', 'DIRECTIVE_DEFINITION', 'SCHEMA_DEFINITION',
                         'FIELD_DEFINITION', 'ENUM_VALUE_DEFINITION', 'IMPLEMENTS',
@@ -687,7 +690,8 @@ COMMENT ON COLUMN graphql_ast_entry.source_column IS 'column of the entry, on th
 COMMENT ON COLUMN graphql_ast_entry.entry_kind IS 'which entry relation holds the rest of this row, named for the relation rather than for the grammar so a reader wanting more than the position and the tree joins the relation this names. Stored rather than derived from which subtype happens to hold a matching row, on graphql_element.element_kind''s reasoning: the writer knows it, and deciding it once at the write keeps every reader from asking';
 COMMENT ON COLUMN graphql_ast_entry.parent_line IS 'line of the entry this one was written inside, null at a root: a type declaration, a directive definition, the schema definition. This is where the entry stratum''s tree lives, and it lives here rather than on the subtypes because three of them have a parent whose relation is not fixed and could reference nothing at all';
 COMMENT ON COLUMN graphql_ast_entry.parent_column IS 'column of the same, null with its sibling exactly at a root';
-COMMENT ON COLUMN graphql_ast_entry.touched_at IS 'when the reading that wrote this row ran. Swept per file with the subtypes that key into it, a document''s reading being what claims its positions, and the subtypes swept first, a parent position outliving nothing that still points at it';
+COMMENT ON COLUMN graphql_ast_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh. Held here once for every entry, a subtype row being a position this row already names';
+COMMENT ON COLUMN graphql_ast_entry.touched_at IS 'when the reading that wrote this row ran, and the only instant the entry family keeps. Swept per file here alone, a document''s reading being what claims its positions: every subtype row is a position this row names and every subtype''s keys cascade, to this row and to the parent it was written inside, so deleting a position takes all that was written at or under it. A position whose kind changed is deleted before it is written again, which is what lets one instant stand for the subtypes too';
 
 CREATE TABLE graphql_ast_element_entry (
   graph_name    VARCHAR NOT NULL,
@@ -698,7 +702,6 @@ CREATE TABLE graphql_ast_element_entry (
   declaration_kind   VARCHAR NOT NULL,
   declaration_line   INT     NOT NULL,
   declaration_column INT     NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
@@ -713,7 +716,6 @@ COMMENT ON COLUMN graphql_ast_element_entry.graph_name IS 'the owning graph''s p
 COMMENT ON COLUMN graphql_ast_element_entry.source_name IS 'the file the declaration was written in';
 COMMENT ON COLUMN graphql_ast_element_entry.source_line IS 'line of the declaration, which is the entry''s own position';
 COMMENT ON COLUMN graphql_ast_element_entry.source_column IS 'column of the same. Keyed by the position and not by the coordinate, two documents declaring one type being two rows here and one row in graphql_element, which is the whole difference between what a document wrote and what the corpus settled on';
-COMMENT ON COLUMN graphql_ast_element_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
 COMMENT ON COLUMN graphql_ast_element_entry.coordinate IS 'the coordinate this declaration names, in the specification''s grammar. A string the document''s own names compose and nothing else: no key into graphql_element, which does not exist when this is written and which is this relation''s composed counterpart rather than its parent. The subtypes each generate the same expression from their own columns, and this is where that spelling is stated once for a reader who wants the coordinate without knowing which kind declared it. The schema block''s $schema is the one spelling composed from no name at all, a schema block having none, and a dollar sign being illegal in a GraphQL name is what makes a constant safe here';
 COMMENT ON COLUMN graphql_ast_element_entry.declaration_kind IS 'which of the three kinds of declaration the element was written inside: a type declaration, the schema block, or a directive definition, which is the element itself where it is one. Written by capture, which holds the declaration while it writes what sits inside it; the depth differs by kind, nought for a declaration, one for a field, an input field, an enum value or a directive argument, two for a field argument, and no reader climbs it';
 COMMENT ON COLUMN graphql_ast_element_entry.declaration_line IS 'line of the declaration the element was written inside, in the file above, a declaration being written in the file that holds what it declares';
@@ -739,7 +741,6 @@ CREATE TABLE graphql_ast_directive_application_entry (
   source_line   INT     NOT NULL,
   source_column INT     NOT NULL,
   name          VARCHAR NOT NULL,
-  touched_at    TIMESTAMP NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
@@ -750,7 +751,6 @@ COMMENT ON COLUMN graphql_ast_directive_application_entry.graph_name IS 'the own
 COMMENT ON COLUMN graphql_ast_directive_application_entry.source_name IS 'the file the application was written in';
 COMMENT ON COLUMN graphql_ast_directive_application_entry.source_line IS 'line of the application, which is the entry''s own position';
 COMMENT ON COLUMN graphql_ast_directive_application_entry.source_column IS 'column of the same. Keyed by the position because a position is what an application has: a directive applied twice in one file is two rows here, and the name is what they share rather than what tells them apart';
-COMMENT ON COLUMN graphql_ast_directive_application_entry.touched_at IS 'when the reading that produced this row ran, carried from the entry this describes. The reading finishes by deleting its file''s rows carrying an older instant, and this relation is swept beside the arms that write it so a position the author removed leaves the hierarchy whole';
 COMMENT ON COLUMN graphql_ast_directive_application_entry.name IS 'the directive name written here, without the at sign. The one column the five sites share, which is why this relation exists: a reader asking where a named directive was written joins this once instead of unioning five relations that differ only in what the application was written inside. What it was written inside is the parent hop graphql_ast_entry already carries, so the site is a join away and not a column here';
 
 CREATE TABLE graphql_ast_type_declaration_entry (
@@ -758,8 +758,6 @@ CREATE TABLE graphql_ast_type_declaration_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   kind           VARCHAR NOT NULL,
   is_extension   BOOLEAN NOT NULL,
   name           VARCHAR NOT NULL,
@@ -768,9 +766,6 @@ CREATE TABLE graphql_ast_type_declaration_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name),
   CHECK (kind IN ('OBJECT', 'INTERFACE', 'UNION', 'ENUM', 'INPUT_OBJECT', 'SCALAR'))
 );
 COMMENT ON TABLE graphql_ast_type_declaration_entry IS 'A type declaration as one document wrote it: this position in this file declares or extends a named type of this kind and this name. For example type Film { title: String } is one row saying OBJECT, and extend type Film { rating: Rating } is another saying OBJECT and an extension.';
@@ -778,8 +773,6 @@ COMMENT ON COLUMN graphql_ast_type_declaration_entry.graph_name IS 'the owning g
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_type_declaration_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_type_declaration_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.kind IS 'which of the six declaration forms was written here, read off the node class the parser produced rather than off the text';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.is_extension IS 'whether this position extends a type rather than defining it. TRUE and FALSE are both ordinary states of a well-formed corpus, and a name carrying only extensions is an author error some detection reports, never a refusal here';
 COMMENT ON COLUMN graphql_ast_type_declaration_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -827,26 +820,19 @@ CREATE TABLE graphql_ast_directive_definition_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   name           VARCHAR NOT NULL,
   repeatable     BOOLEAN NOT NULL,
   description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_directive_definition_entry IS 'A DirectiveDefinition as one document wrote it: this position in this file defines a directive of this name. For example directive @key(fields: String!) repeatable on OBJECT is one row, its argument and its two locations being rows of their own that name this position.';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_directive_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_directive_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.repeatable IS 'whether the definition carried the repeatable keyword';
 COMMENT ON COLUMN graphql_ast_directive_definition_entry.description IS 'the description written here, which is the node''s own, or NULL where none was';
@@ -856,25 +842,18 @@ CREATE TABLE graphql_ast_schema_definition_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   is_extension   BOOLEAN NOT NULL,
   description    VARCHAR,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_schema_definition_entry IS 'A SchemaDefinition as one document wrote it: this position in this file declares or extends the schema''s own node. For example schema { query: Query } is one row, and extend schema { subscription: Sub } is another marked an extension.';
 COMMENT ON COLUMN graphql_ast_schema_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_schema_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_schema_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_schema_definition_entry.is_extension IS 'whether this position extends the schema node rather than declaring it';
 COMMENT ON COLUMN graphql_ast_schema_definition_entry.description IS 'the description written here, or NULL where none was';
 
@@ -883,8 +862,6 @@ CREATE TABLE graphql_ast_field_definition_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -900,11 +877,9 @@ CREATE TABLE graphql_ast_field_definition_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name),
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
   CHECK (is_list = (list_depth > 0))
 );
@@ -913,8 +888,6 @@ COMMENT ON COLUMN graphql_ast_field_definition_entry.graph_name IS 'the owning g
 COMMENT ON COLUMN graphql_ast_field_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_field_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_field_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_field_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -932,8 +905,6 @@ CREATE TABLE graphql_ast_enum_value_definition_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -943,19 +914,15 @@ CREATE TABLE graphql_ast_enum_value_definition_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_enum_value_definition_entry IS 'An EnumValueDefinition as one document wrote it: this position in this file declares an enum value of this name on the declaration it was written inside. For example the G inside enum Rating { G PG } is one row, at ordinal 0 of that declaration''s values.';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_enum_value_definition_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -967,8 +934,6 @@ CREATE TABLE graphql_ast_implements_entry (
   source_name     VARCHAR NOT NULL,
   source_line     INT     NOT NULL,
   source_column   INT     NOT NULL,
-  source_ref      VARCHAR,
-  touched_at      TIMESTAMP NOT NULL,
   parent_line     INT     NOT NULL,
   parent_column   INT     NOT NULL,
   type_name       VARCHAR NOT NULL,
@@ -977,19 +942,15 @@ CREATE TABLE graphql_ast_implements_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_implements_entry IS 'An interface named in an implements clause as one document wrote it: this position in this file says the declaration it was written inside implements an interface of this name. For example type Film implements Node & Aged draws two rows, Node at ordinal 0 and Aged at ordinal 1.';
 COMMENT ON COLUMN graphql_ast_implements_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_implements_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_implements_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_implements_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_implements_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_implements_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_implements_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_implements_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_implements_entry.interface_name IS 'the interface name written here. Nothing says a type of this name was declared anywhere: an implements clause naming an absent interface is exactly the state this row exists to hold';
@@ -1004,8 +965,6 @@ CREATE TABLE graphql_ast_union_member_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   type_name      VARCHAR NOT NULL,
@@ -1014,19 +973,15 @@ CREATE TABLE graphql_ast_union_member_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_union_member_entry IS 'A member named in a union as one document wrote it: this position in this file says the union it was written inside has a member of this name. For example union Media = Film | Show draws two rows, Film at ordinal 0 and Show at ordinal 1.';
 COMMENT ON COLUMN graphql_ast_union_member_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_union_member_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_union_member_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_union_member_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_union_member_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_union_member_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_union_member_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_union_member_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_union_member_entry.member_name IS 'the member type name written here. Nothing says a type of this name was declared anywhere, on graphql_ast_implements_entry.interface_name''s terms';
@@ -1037,8 +992,6 @@ CREATE TABLE graphql_ast_directive_location_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   location       VARCHAR NOT NULL,
@@ -1046,19 +999,15 @@ CREATE TABLE graphql_ast_directive_location_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_directive_location_entry IS 'A DirectiveLocation as one document wrote it: this position in this file names a place the directive defined above it may be applied. For example the OBJECT and the INTERFACE of directive @key on OBJECT | INTERFACE are two rows.';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_directive_location_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_directive_location_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_directive_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_directive_location_entry.location IS 'the location name written here, kept as written and not checked against the specification''s list, which is graphql-java''s to police and the schema problems'' to report';
@@ -1068,8 +1017,6 @@ CREATE TABLE graphql_ast_operation_type_definition_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   operation      VARCHAR NOT NULL,
@@ -1078,19 +1025,15 @@ CREATE TABLE graphql_ast_operation_type_definition_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_schema_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_schema_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_operation_type_definition_entry IS 'An OperationTypeDefinition as one document wrote it: this position in this file binds one root operation to one type name. For example the query: Query inside schema { query: Query } is one row.';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_schema_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_operation_type_definition_entry.operation IS 'the root operation named here, spelled as the author wrote it, which the grammar makes lower case. Not checked against the three the specification allows, on graphql_ast_directive_location_entry.location''s terms';
@@ -1101,8 +1044,6 @@ CREATE TABLE graphql_ast_field_argument_entry (
   source_name        VARCHAR NOT NULL,
   source_line        INT     NOT NULL,
   source_column      INT     NOT NULL,
-  source_ref         VARCHAR,
-  touched_at         TIMESTAMP NOT NULL,
   parent_line        INT     NOT NULL,
   parent_column      INT     NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -1120,11 +1061,9 @@ CREATE TABLE graphql_ast_field_argument_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name),
+    REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
   CHECK (is_list = (list_depth > 0))
 );
@@ -1133,8 +1072,6 @@ COMMENT ON COLUMN graphql_ast_field_argument_entry.graph_name IS 'the owning gra
 COMMENT ON COLUMN graphql_ast_field_argument_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_field_argument_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_field_argument_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_field_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_field_argument_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -1154,8 +1091,6 @@ CREATE TABLE graphql_ast_input_field_entry (
   source_name        VARCHAR NOT NULL,
   source_line        INT     NOT NULL,
   source_column      INT     NOT NULL,
-  source_ref         VARCHAR,
-  touched_at         TIMESTAMP NOT NULL,
   parent_line        INT     NOT NULL,
   parent_column      INT     NOT NULL,
   type_name          VARCHAR NOT NULL,
@@ -1172,11 +1107,9 @@ CREATE TABLE graphql_ast_input_field_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name),
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
   CHECK (is_list = (list_depth > 0))
 );
@@ -1185,8 +1118,6 @@ COMMENT ON COLUMN graphql_ast_input_field_entry.graph_name IS 'the owning graph'
 COMMENT ON COLUMN graphql_ast_input_field_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_input_field_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_input_field_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_input_field_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_input_field_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_input_field_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_input_field_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_input_field_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -1205,8 +1136,6 @@ CREATE TABLE graphql_ast_directive_argument_entry (
   source_name        VARCHAR NOT NULL,
   source_line        INT     NOT NULL,
   source_column      INT     NOT NULL,
-  source_ref         VARCHAR,
-  touched_at         TIMESTAMP NOT NULL,
   parent_line        INT     NOT NULL,
   parent_column      INT     NOT NULL,
   name               VARCHAR NOT NULL,
@@ -1222,11 +1151,9 @@ CREATE TABLE graphql_ast_directive_argument_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_element_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name),
+    REFERENCES graphql_ast_directive_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE,
   CHECK (is_list OR item_non_null IS NULL),
   CHECK (is_list = (list_depth > 0))
 );
@@ -1235,8 +1162,6 @@ COMMENT ON COLUMN graphql_ast_directive_argument_entry.graph_name IS 'the owning
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_directive_argument_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_directive_argument_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_directive_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_directive_argument_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -1254,31 +1179,22 @@ CREATE TABLE graphql_ast_type_directive_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_type_declaration_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_type_directive_entry IS 'A directive applied to a type declaration, as one document wrote it: this position in this file applies a directive of this name to the declaration it was written on. For example the @table on type Film @table(name: "film").';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_type_directive_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_type_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_type_declaration_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_type_directive_entry.name IS 'the directive name written here, without the at sign. Nothing says a directive of this name was defined anywhere: applying an undefined directive is a state this row holds and a schema problem reports';
@@ -1288,31 +1204,22 @@ CREATE TABLE graphql_ast_field_directive_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_field_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_field_directive_entry IS 'A directive applied to a field, as one document wrote it: this position in this file applies a directive of this name to the field it was written on. For example the @field on title: String @field(name: "title").';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_field_directive_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_field_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_field_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_field_directive_entry.name IS 'the directive name written here, without the at sign. Nothing says a directive of this name was defined anywhere: applying an undefined directive is a state this row holds and a schema problem reports';
@@ -1322,29 +1229,19 @@ CREATE TABLE graphql_ast_input_value_directive_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_input_value_directive_entry IS 'A directive applied to an input value, as one document wrote it: this position in this file applies a directive of this name to the field argument, input field or directive argument it was written on. For example the @lookupKey on title(lang: Lang @lookupKey): String.';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_input_value_directive_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_input_value_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_input_value_directive_entry.name IS 'the directive name written here, without the at sign. Nothing says a directive of this name was defined anywhere: applying an undefined directive is a state this row holds and a schema problem reports';
@@ -1354,31 +1251,22 @@ CREATE TABLE graphql_ast_enum_value_directive_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_enum_value_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_enum_value_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_enum_value_directive_entry IS 'A directive applied to an enum value, as one document wrote it: this position in this file applies a directive of this name to the value it was written on. For example the @index on enum Rating { G @index }.';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_enum_value_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_enum_value_directive_entry.name IS 'the directive name written here, without the at sign. Nothing says a directive of this name was defined anywhere: applying an undefined directive is a state this row holds and a schema problem reports';
@@ -1388,31 +1276,22 @@ CREATE TABLE graphql_ast_schema_directive_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
-    REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_directive_application_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
-    REFERENCES graphql_ast_schema_definition_entry (graph_name, source_name, source_line, source_column),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    REFERENCES graphql_ast_schema_definition_entry (graph_name, source_name, source_line, source_column)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_schema_directive_entry IS 'A directive applied to a schema definition, as one document wrote it: this position in this file applies a directive of this name to the schema block it was written on. For example the @link on schema @link(as: "fed") { query: Query }.';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_schema_directive_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_schema_directive_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.parent_line IS 'source line of the node this one was written inside, and the first half of a key into graphql_ast_schema_definition_entry. Both are in this file and one reading writes both, so the reference is a constraint rather than a lookup a reader has to trust';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.parent_column IS 'source column of the same, and the second half of that key. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_schema_directive_entry.name IS 'the directive name written here, without the at sign. Nothing says a directive of this name was defined anywhere: applying an undefined directive is a state this row holds and a schema problem reports';
@@ -1422,8 +1301,6 @@ CREATE TABLE graphql_ast_applied_argument_entry (
   source_name    VARCHAR NOT NULL,
   source_line    INT     NOT NULL,
   source_column  INT     NOT NULL,
-  source_ref     VARCHAR,
-  touched_at     TIMESTAMP NOT NULL,
   parent_line    INT     NOT NULL,
   parent_column  INT     NOT NULL,
   name           VARCHAR NOT NULL,
@@ -1431,18 +1308,13 @@ CREATE TABLE graphql_ast_applied_argument_entry (
   PRIMARY KEY (graph_name, source_name, source_line, source_column),
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
-    ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
-  CHECK (source_ref IS NULL OR source_ref = source_name)
+    ON DELETE CASCADE
 );
 COMMENT ON TABLE graphql_ast_applied_argument_entry IS 'An argument of a directive application as one document wrote it: this position in this file passes a value of this name to the application it was written inside. For example the fields: "id" inside @key(fields: "id") is one row, carrying the value as it was written.';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.graph_name IS 'the owning graph''s partition, anchored by store_graph; the leading key dimension that keeps one workspace''s graphs apart';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_applied_argument_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_applied_argument_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.parent_line IS 'source line of the node this one was written inside. No foreign key defends it: the parent is a row of whichever relation holds that kind, and picking the relation is a resolution';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.parent_column IS 'source column of the same. No ordinal sits beside these two: within one parent the nodes of a kind are ordered by the position they were written at, which is the key';
 COMMENT ON COLUMN graphql_ast_applied_argument_entry.name IS 'the name written here, which is the node''s own getName(). Deliberately not unique: two positions naming one thing is the state this family exists to hold';
@@ -1453,8 +1325,6 @@ CREATE TABLE graphql_ast_value_entry (
   source_name       VARCHAR NOT NULL,
   source_line       INT     NOT NULL,
   source_column     INT     NOT NULL,
-  source_ref        VARCHAR,
-  touched_at        TIMESTAMP NOT NULL,
   holder_line       INT     NOT NULL,
   holder_column     INT     NOT NULL,
   parent_line       INT,
@@ -1467,12 +1337,9 @@ CREATE TABLE graphql_ast_value_entry (
   FOREIGN KEY (graph_name, source_name, source_line, source_column)
     REFERENCES graphql_ast_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  FOREIGN KEY (graph_name) REFERENCES store_graph (graph_name),
-  FOREIGN KEY (source_ref) REFERENCES store_source (source_name) ON DELETE SET NULL,
   FOREIGN KEY (graph_name, source_name, parent_line, parent_column)
     REFERENCES graphql_ast_value_entry (graph_name, source_name, source_line, source_column)
     ON DELETE CASCADE,
-  CHECK (source_ref IS NULL OR source_ref = source_name),
   CHECK (kind IN ('STRING', 'INT', 'FLOAT', 'BOOLEAN', 'NULL', 'ENUM', 'LIST', 'OBJECT',
                   'VARIABLE')),
   CHECK ((parent_line IS NULL) = (parent_column IS NULL)),
@@ -1485,8 +1352,6 @@ COMMENT ON COLUMN graphql_ast_value_entry.graph_name IS 'the owning graph''s par
 COMMENT ON COLUMN graphql_ast_value_entry.source_name IS 'the file this node was written in. No foreign key here, deliberately: source_ref beside it carries the reference. A node is in the file it was written in by definition, so the attribution holds whether or not the registry still vouches for the reading';
 COMMENT ON COLUMN graphql_ast_value_entry.source_line IS 'source line of the node, 1-based per the graphql-java convention';
 COMMENT ON COLUMN graphql_ast_value_entry.source_column IS 'source column of the node, 1-based per the graphql-java convention. In the key because a line does not identify a node: minified SDL puts many on one line';
-COMMENT ON COLUMN graphql_ast_value_entry.source_ref IS 'a second copy of source_name, nullable, carrying the registry reference the key column cannot: one column cannot both refuse a delete and survive one. Deleting a registry row nulls this and deletes nothing, so a file that went away leaves this graph''s reading of it standing and flagged, and the owning graph reaps its own on its next refresh';
-COMMENT ON COLUMN graphql_ast_value_entry.touched_at IS 'when the reading that produced this row ran. The reading finishes by deleting its file''s rows carrying an older instant, which are the nodes the author removed and which an upsert alone cannot find. Not a modification time for the node, which is store_source.mtime''s';
 COMMENT ON COLUMN graphql_ast_value_entry.holder_line IS 'source line of the node the whole written expression belongs to: an applied argument, or an argument, input field or directive definition argument carrying a default. Repeated on every node of the tree rather than held only at its root, so one predicate fetches a whole expression and no reader walks upward to find out which slot it was written at. No foreign key defends it: the holder is a row of whichever of the four relations holds that kind, and picking the relation is a resolution';
 COMMENT ON COLUMN graphql_ast_value_entry.holder_column IS 'source column of the same';
 COMMENT ON COLUMN graphql_ast_value_entry.parent_line IS 'source line of the value this one was written inside, null at the root of an expression. Unlike holder_line this is a key back into this relation, because the enclosing node is a value and there is one relation for those';

@@ -11,10 +11,16 @@ extend schema @assertAbsent(relation: "graphql_type", rows: """
   Ephemeral, OBJECT
   """)
 
-extend schema @assertContains(relation: "graphql_ast_type_declaration_entry", rows: """
-  name,        touched_at
-  Kept,        1000000000
-  Replacement, 1000000060
+# The instant is the entry supertype's, the one the sweep reads: Kept at 4:1 of the untouched
+# file, Replacement at 7:1 of this one.
+extend schema @expectEquals(relation: "graphql_ast_entry", where: """
+  (graph_name, source_name, source_line, source_column) IN (
+    SELECT graph_name, source_name, source_line, source_column
+      FROM graphql_ast_type_declaration_entry WHERE name IN ('Kept', 'Replacement'))
+  """, rows: """
+  entry_kind,       source_line, touched_at
+  TYPE_DECLARATION, 4,           1000000000
+  TYPE_DECLARATION, 7,           1000000060
   """)
 
 extend schema @assertContains(relation: "graphql_type", rows: """

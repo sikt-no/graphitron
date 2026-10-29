@@ -46,6 +46,7 @@ import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_APPLIED_ARGUMENT_ENTRY
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_ARGUMENT_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_DIRECTIVE_LOCATION_ENTRY;
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENUM_VALUE_DIRECTIVE_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_ARGUMENT_ENTRY;
@@ -332,8 +333,8 @@ class GraphQLAstEntriesTest {
             var t = GRAPHQL_AST_TYPE_DIRECTIVE_ENTRY;
 
             assertThatThrownBy(() -> dsl.insertInto(t, t.GRAPH_NAME, t.SOURCE_NAME, t.SOURCE_LINE,
-                        t.SOURCE_COLUMN, t.TOUCHED_AT, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
-                    .values(GRAPH, file.toString(), 99, 1, LocalDateTime.now(), 99, 1, "nowhere")
+                        t.SOURCE_COLUMN, t.PARENT_LINE, t.PARENT_COLUMN, t.NAME)
+                    .values(GRAPH, file.toString(), 99, 1, 99, 1, "nowhere")
                     .execute())
                 .as("no declaration was written at that position, so the row is about nothing")
                 .hasMessageContaining("Referential integrity");
@@ -468,10 +469,13 @@ class GraphQLAstEntriesTest {
     void removingASourceFlagsTheReadingRatherThanDeletingIt(@TempDir Path tmp) {
         Path file = write(tmp, "removed.graphqls", "type Gone { a: String }\n");
         var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
+        var e = GRAPHQL_AST_ENTRY;
 
         withSeededStore(GRAPH, dsl -> {
             read(dsl, file);
-            assertThat(dsl.select(t.SOURCE_NAME, t.SOURCE_REF).from(t)
+            assertThat(dsl.select(e.SOURCE_NAME, e.SOURCE_REF).from(e)
+                    .join(t).on(t.GRAPH_NAME.eq(e.GRAPH_NAME), t.SOURCE_NAME.eq(e.SOURCE_NAME),
+                        t.SOURCE_LINE.eq(e.SOURCE_LINE), t.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
                     .where(t.NAME.eq("Gone")).fetch())
                 .as("before the removal, the registry vouches for the reading")
                 .extracting(r -> r.value1(), r -> r.value2())
@@ -479,7 +483,9 @@ class GraphQLAstEntriesTest {
 
             dsl.deleteFrom(STORE_SOURCE).where(STORE_SOURCE.SOURCE_NAME.eq(file.toString())).execute();
 
-            assertThat(dsl.select(t.SOURCE_NAME, t.SOURCE_REF).from(t)
+            assertThat(dsl.select(e.SOURCE_NAME, e.SOURCE_REF).from(e)
+                    .join(t).on(t.GRAPH_NAME.eq(e.GRAPH_NAME), t.SOURCE_NAME.eq(e.SOURCE_NAME),
+                        t.SOURCE_LINE.eq(e.SOURCE_LINE), t.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
                     .where(t.NAME.eq("Gone")).fetch())
                 .as("the row stands, still saying which file declared it, and no longer vouched for")
                 .extracting(r -> r.value1(), r -> r.value2())

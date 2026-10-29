@@ -14,6 +14,7 @@ import no.sikt.graphitron.model.config.ClasspathEntry;
 import java.nio.file.Path;
 import java.util.List;
 
+import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_FIELD_DEFINITION_ENTRY;
 import static no.sikt.graphitron.model.Tables.GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
 import static no.sikt.graphitron.model.Tables.CODE_SCALAR_CONSTANT;
@@ -84,11 +85,15 @@ class GraphitronStoreTest {
                     STORE_SOURCE.SOURCE_NAME.like("%film.graphqls")))
                 .as("the file is in the source registry").isEqualTo(1);
 
+            var e = GRAPHQL_AST_ENTRY;
+            var t = GRAPHQL_AST_TYPE_DECLARATION_ENTRY;
             assertThat(store.dsl()
-                    .selectDistinct(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_REF)
-                    .from(GRAPHQL_AST_TYPE_DECLARATION_ENTRY)
-                    .where(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.NAME.eq("Film"))
-                    .fetch(GRAPHQL_AST_TYPE_DECLARATION_ENTRY.SOURCE_REF))
+                    .selectDistinct(e.SOURCE_REF)
+                    .from(e)
+                    .join(t).on(t.GRAPH_NAME.eq(e.GRAPH_NAME), t.SOURCE_NAME.eq(e.SOURCE_NAME),
+                        t.SOURCE_LINE.eq(e.SOURCE_LINE), t.SOURCE_COLUMN.eq(e.SOURCE_COLUMN))
+                    .where(t.NAME.eq("Film"))
+                    .fetch(e.SOURCE_REF))
                 .as("and the twin vouches for the reading")
                 .allSatisfy(ref -> assertThat(ref).endsWith("film.graphqls"));
         }

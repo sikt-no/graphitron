@@ -1,0 +1,19 @@
+# The second reading: 5:3, a field definition in the first, is an enum value now.
+#
+
+enum Kind {
+  TITLE
+}
+
+# The position's kind changed, so the reading deletes the position before writing it again, and the
+# field definition written there goes with it by cascade; an upsert of the position alone would have
+# left it beside the enum value, keyed by the same position.
+extend schema @assertAbsent(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name
+  Kind,      title
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_enum_value_definition_entry", rows: """
+  type_name, name,  source_line, source_column
+  Kind,      TITLE, 5,           3
+  """)

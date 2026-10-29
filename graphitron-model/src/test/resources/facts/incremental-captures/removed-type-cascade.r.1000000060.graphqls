@@ -1,0 +1,32 @@
+# The second reading drops Gone. The sweep deletes the positions this reading did not write from the
+# entry supertype alone, and what was written under them goes by cascade, through the type
+# declaration each field was written inside and the field each argument and application was.
+
+type Kept {
+  name: String
+}
+
+extend schema @assertAbsent(relation: "graphql_ast_type_declaration_entry", rows: """
+  name
+  Gone
+  """)
+
+extend schema @assertAbsent(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name
+  Gone,      shelf
+  """)
+
+extend schema @assertAbsent(relation: "graphql_ast_field_argument_entry", rows: """
+  type_name, field_name, name
+  Gone,      shelf,      first
+  """)
+
+extend schema @assertAbsent(relation: "graphql_ast_field_directive_entry", rows: """
+  name
+  deprecated
+  """)
+
+extend schema @assertContains(relation: "graphql_ast_field_definition_entry", rows: """
+  type_name, name
+  Kept,      name
+  """)
